@@ -20,7 +20,7 @@ pub async fn human_pause(base_ms: u64, variance_pct: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::Duration;
 
     #[tokio::test]
     async fn test_random_delay_bounds() {

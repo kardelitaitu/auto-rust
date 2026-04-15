@@ -1,1 +1,0 @@
-Just shipped a feature!\n\nCheck it out at github\n#coding

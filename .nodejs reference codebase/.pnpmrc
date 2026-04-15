@@ -1,4 +1,0 @@
-# pnpm-specific configuration
-public-hoist-pattern[]=*eslint*
-public-hoist-pattern[]=*prettier*
-public-hoist-pattern[]=*vitest*

@@ -12,6 +12,7 @@ mod utils;
 mod logger;
 mod validation;
 mod api;
+mod metrics;
 
 use anyhow::Result;
 use log::{info, warn, LevelFilter};
@@ -79,11 +80,17 @@ async fn run_async() -> Result<()> {
 
     // Create orchestrator and run tasks
     let mut orchestrator = orchestrator::Orchestrator::new(config);
+    let metrics = metrics::MetricsCollector::new(1000);
 
     for (i, group) in groups.iter().enumerate() {
         info!("Executing group {}/{}", i + 1, groups.len());
         orchestrator.execute_group(group, &sessions).await?;
         info!("Group {} complete", i + 1);
+    }
+
+    // Export run summary
+    if let Err(e) = metrics.export_summary() {
+        warn!("Failed to export run summary: {}", e);
     }
 
     // Graceful shutdown

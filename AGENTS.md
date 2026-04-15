@@ -169,9 +169,9 @@ Need external app integration (GitHub, Slack)?
 - [ ] Add provider fallback strategy hooks
 
 ### Phase 5 - Observability
-- [ ] Create metrics collector: task counts, durations, session stats, API stats
-- [ ] Add task history ring buffer and per-task breakdown
-- [ ] Export `run-summary.json` at shutdown
+- [x] Create metrics collector: task counts, durations, session stats, API stats
+- [x] Add task history ring buffer and per-task breakdown
+- [x] Export `run-summary.json` at shutdown
 - [ ] Add periodic health/memory logs with threshold warnings
 
 ### Phase 6 - Utility Hardening

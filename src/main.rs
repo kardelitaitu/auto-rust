@@ -12,7 +12,7 @@ mod utils;
 mod logger;
 
 use anyhow::Result;
-use log::{info, LevelFilter};
+use log::{info, warn, LevelFilter};
 
 fn main() {
     // Set current directory to project root
@@ -61,7 +61,7 @@ async fn run_async() -> Result<()> {
     let config = config::load_config()?;
 
     // Discover and connect to browsers
-    let sessions = browser::discover_browsers(&config).await?;
+    let mut sessions = browser::discover_browsers(&config).await?;
     info!("Connected to {} browser(s)", sessions.len());
 
     if args.tasks.is_empty() {
@@ -83,6 +83,14 @@ async fn run_async() -> Result<()> {
         info!("Group {} complete", i + 1);
     }
 
+    // Graceful shutdown
+    info!("Shutting down sessions...");
+    for i in 0..sessions.len() {
+        let session = &mut sessions[i];
+        if let Err(e) = session.graceful_shutdown().await {
+            warn!("Error during shutdown of {}: {}", session.id, e);
+        }
+    }
     info!("All tasks completed successfully");
     Ok(())
 }

@@ -151,10 +151,10 @@ Need external app integration (GitHub, Slack)?
 - [x] Add worker/page health checks and stale-task cleanup
 
 ### Phase 2 - Session Lifecycle
-- [ ] Implement full `connect_to_browser` for configured profiles (currently TODO)
-- [ ] Add session state tracking (`idle`, `busy`, `failed`) and failure score
-- [ ] Add managed page registry and guaranteed release on all code paths
-- [ ] Add graceful shutdown flow (cancel active tasks -> close pages -> close browsers)
+- [x] Implement full `connect_to_browser` for configured profiles (currently TODO)
+- [x] Add session state tracking (`idle`, `busy`, `failed`) and failure score
+- [x] Add managed page registry and guaranteed release on all code paths
+- [x] Add graceful shutdown flow (cancel active tasks -> close pages -> close browsers)
 
 ### Phase 3 - Config + Validation
 - [ ] Add file-backed config loader (`config/*.toml`) with env override precedence

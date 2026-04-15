@@ -1,9 +1,17 @@
 use chromiumoxide::{Browser, Handler, Page};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use log::warn;
+use log::{info, warn};
 use anyhow;
 use futures::StreamExt;
+use dashmap::DashSet;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionState {
+    Idle,
+    Busy,
+    Failed,
+}
 
 pub struct Session {
     pub id: String,
@@ -20,6 +28,12 @@ pub struct Session {
     // Health tracking
     failure_count: std::sync::atomic::AtomicUsize,
     is_healthy: std::sync::atomic::AtomicBool,
+    
+    // State tracking
+    state: parking_lot::Mutex<SessionState>,
+    
+    // Page registry (tracks active pages)
+    active_pages: DashSet<u64>,
 }
 
 impl Session {
@@ -64,7 +78,41 @@ impl Session {
             active_workers: std::sync::atomic::AtomicUsize::new(0),
             failure_count: std::sync::atomic::AtomicUsize::new(0),
             is_healthy: std::sync::atomic::AtomicBool::new(true),
+            state: parking_lot::Mutex::new(SessionState::Idle),
+            active_pages: DashSet::new(),
         }
+    }
+
+    /// Register a page to track it
+    pub fn register_page(&self, page_id: u64) {
+        self.active_pages.insert(page_id);
+    }
+
+    /// Unregister a page (release it)
+    pub fn unregister_page(&self, page_id: u64) {
+        self.active_pages.remove(&page_id);
+    }
+
+    /// Get count of active pages
+    pub fn active_page_count(&self) -> usize {
+        self.active_pages.len()
+    }
+
+    /// State management
+    pub fn state(&self) -> SessionState {
+        *self.state.lock()
+    }
+
+    pub fn set_state(&self, new_state: SessionState) {
+        *self.state.lock() = new_state;
+    }
+
+    pub fn is_idle(&self) -> bool {
+        *self.state.lock() == SessionState::Idle
+    }
+
+    pub fn is_busy(&self) -> bool {
+        *self.state.lock() == SessionState::Busy
     }
 
     pub fn is_healthy(&self) -> bool {
@@ -136,5 +184,26 @@ impl Session {
         if let Err(e) = Arc::try_unwrap(page).unwrap().close().await {
             warn!("[{}] Error closing page: {}", self.id, e);
         }
+    }
+
+    /// Graceful shutdown - cancel tasks, close pages, close browser
+    pub async fn graceful_shutdown(&mut self) -> anyhow::Result<()> {
+        info!("[{}] Starting graceful shutdown", self.id);
+        
+        // Mark as failed to stop new tasks
+        self.set_state(SessionState::Failed);
+        
+        // Close the browser
+        if let Err(e) = self.browser.close().await {
+            warn!("[{}] Error closing browser: {}", self.id, e);
+        }
+        
+        // Cancel handler task
+        if let Some(task) = self.handler_task.take() {
+            let _ = task.abort();
+        }
+        
+        info!("[{}] Shutdown complete", self.id);
+        Ok(())
     }
 }

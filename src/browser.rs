@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::session::Session;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use log::{info, debug, warn};
 use std::time::Duration;
 use futures::stream::{self, StreamExt};
@@ -56,9 +56,29 @@ pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
     Ok(sessions)
 }
 
-async fn connect_to_browser(_profile: &crate::config::BrowserProfile, _config: &Config) -> Result<Session> {
-    // TODO: Use chromiumoxide to connect to CDP endpoint
-    todo!()
+async fn connect_to_browser(profile: &crate::config::BrowserProfile, _config: &Config) -> Result<Session> {
+    let ws_endpoint = &profile.ws_endpoint;
+    
+    if ws_endpoint.is_empty() {
+        bail!("Empty WebSocket endpoint for profile: {}", profile.name);
+    }
+    
+    info!("Connecting to configured browser: {}", profile.name);
+    
+    let (browser, handler) = chromiumoxide::Browser::connect(ws_endpoint).await
+        .map_err(|e| anyhow::anyhow!("Failed to connect to {}: {}", profile.name, e))?;
+    
+    let session = Session::new(
+        format!("config-{}", profile.name),
+        profile.name.clone(),
+        profile.r#type.clone(),
+        browser,
+        handler,
+        5, // max_workers
+    );
+    
+    info!("Connected to configured browser: {}", profile.name);
+    Ok(session)
 }
 
 /// Auto-discover local browsers (Brave, Chrome, etc.)

@@ -1,0 +1,56 @@
+# Browser Configuration Template
+# Copy to config.toml and fill in your browser endpoints
+
+[browser]
+# Auto-discovery connectors to use (leave empty to scan all)
+connectors = ["localChrome", "ixbrowser", "roxybrowser"]
+
+# Connection timeout in milliseconds
+connection_timeout_ms = 10000
+
+# Max retries for browser discovery
+max_discovery_retries = 3
+discovery_retry_delay_ms = 5000
+
+# Circuit breaker settings
+[browser.circuit_breaker]
+enabled = true
+failure_threshold = 5
+success_threshold = 3
+half_open_time_ms = 30000
+
+# Browser profiles
+[[browser.profiles]]
+name = "chrome-1"
+type = "localChrome"
+ws_endpoint = "ws://localhost:9222"
+
+[[browser.profiles]]
+name = "brave-1"
+type = "localBrave"
+ws_endpoint = "ws://localhost:9001"
+
+[[browser.profiles]]
+name = "ixbrowser-profile-1"
+type = "ixbrowser"
+ws_endpoint = "ws://localhost:9223"
+
+# Orchestrator settings
+[orchestrator]
+# Max concurrent tasks across all browsers
+max_global_concurrency = 20
+
+# Task timeout in milliseconds
+task_timeout_ms = 600000
+
+# Group timeout in milliseconds
+group_timeout_ms = 600000
+
+# Worker acquisition timeout in milliseconds
+worker_wait_timeout_ms = 10000
+
+# Stuck worker threshold in milliseconds
+stuck_worker_threshold_ms = 120000
+
+# Delay between task starts to prevent network spikes
+task_stagger_delay_ms = 2000

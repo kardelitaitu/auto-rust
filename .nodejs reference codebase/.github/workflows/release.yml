@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm run test:bun:all
+
+      - name: Run lint
+        run: pnpm run lint
+
+      - name: Build (if applicable)
+        run: pnpm run build || echo "No build step"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log $TAG --pretty=format:"- %s (%h)")
+          else
+            COMMITS=$(git log ${PREV_TAG}..$TAG --pretty=format:"- %s (%h)")
+          fi
+          
+          CONTRIBUTORS=$(git log ${PREV_TAG:-HEAD}..$TAG --pretty=format:"- %an" | sort -u)
+          
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "## Changes in ${TAG}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Commits" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Contributors" >> $GITHUB_OUTPUT
+          echo "$CONTRIBUTORS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.ref_name }}
+          body: ${{ steps.release_notes.outputs.notes }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to npm (optional)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          pnpm publish --access public --no-git-checks || echo "npm publish skipped"
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Notify release
+        if: always()
+        run: |
+          echo "Release ${{ github.ref_name }} completed!"
+          echo "View at: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

@@ -1,0 +1,203 @@
+{
+    "_comment": "Auto-AI Configuration Settings - Copy to settings.json and customize",
+    "_docs": "See docs/CONFIGURATION-GUIDE.md for detailed explanations",
+
+    "twitter": {
+        "_comment": "Twitter/X automation settings",
+        "session": {
+            "_comment": "Session duration and profile randomization",
+            "minSeconds": 300,
+            "maxSeconds": 540,
+            "randomProfile": true
+        },
+        "engagement": {
+            "_comment": "Maximum engagement limits per session",
+            "maxReplies": 3,
+            "maxRetweets": 1,
+            "maxQuotes": 1,
+            "maxLikes": 5,
+            "maxFollows": 2,
+            "maxBookmarks": 2
+        },
+        "reply": {
+            "_comment": "Reply generation settings",
+            "probability": 0.6,
+            "minChars": 10,
+            "maxChars": 200,
+            "emojiChance": 0.3,
+            "questionChance": 0.2,
+            "methods": {
+                "replyA": { "weight": 40, "enabled": true },
+                "replyB": { "weight": 40, "enabled": true },
+                "replyC": { "weight": 20, "enabled": true }
+            }
+        },
+        "quote": {
+            "_comment": "Quote tweet settings",
+            "probability": 0.2,
+            "methods": {
+                "quoteA": { "weight": 40, "enabled": true },
+                "quoteB": { "weight": 40, "enabled": true },
+                "quoteC": { "weight": 10, "enabled": true }
+            }
+        },
+        "timing": {
+            "_comment": "Human-like timing delays (milliseconds)",
+            "warmupMin": 1000,
+            "warmupMax": 3000,
+            "scrollMin": 300,
+            "scrollMax": 700,
+            "scrollPauseMin": 1500,
+            "scrollPauseMax": 4000,
+            "readMin": 5000,
+            "readMax": 15000,
+            "diveRead": 10000,
+            "globalScrollMultiplier": 2.0
+        },
+        "phases": {
+            "_comment": "Session phase distribution",
+            "warmupPercent": 0.1,
+            "activePercent": 0.7,
+            "cooldownPercent": 0.2
+        },
+        "actions": {
+            "_comment": "Action probabilities",
+            "reply": { "probability": 0.6, "enabled": true },
+            "quote": { "probability": 0.2, "enabled": true },
+            "like": { "probability": 0.15, "enabled": true },
+            "bookmark": { "probability": 0.05, "enabled": true },
+            "retweet": { "probability": 0.2, "enabled": true }
+        },
+        "goHome": {
+            "_comment": "Return to home timeline after actions",
+            "enabled": true
+        }
+    },
+
+    "ui": {
+        "_comment": "Dashboard UI settings",
+        "dashboard": {
+            "enabled": true,
+            "port": 3001,
+            "broadcastIntervalMs": 2000,
+            "colorScheme": "dark"
+        }
+    },
+
+    "llm": {
+        "_comment": "LLM provider configuration - enable ONE primary provider",
+        "vllm": {
+            "_comment": "vLLM server (self-hosted)",
+            "enabled": false,
+            "endpoint": "http://localhost:8000/v1",
+            "model": "meta-llama/Llama-3.3-70B-Instruct",
+            "timeout": 120000
+        },
+        "local": {
+            "_comment": "Local Ollama LLM (free, requires ollama serve)",
+            "enabled": true,
+            "provider": "ollama",
+            "endpoint": "http://localhost:11434",
+            "model": "hermes3:8b",
+            "textModel": "hermes3:8b",
+            "timeout": 30000,
+            "warmup": false,
+            "vision": false
+        },
+        "cloud": {
+            "_comment": "OpenRouter cloud LLM (paid, better reasoning)",
+            "provider": "openrouter",
+            "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+            "timeout": 120000,
+            "enabled": false,
+            "retryAttempts": 1,
+            "retryDelay": 3000,
+            "requestQueue": {
+                "enabled": true,
+                "interval": 300
+            },
+            "providers": [
+                {
+                    "name": "openrouter1",
+                    "apiKey": "YOUR_OPENROUTER_API_KEY",
+                    "model": "arcee-ai/trinity-large-preview:free"
+                }
+            ]
+        },
+        "fallback": {
+            "_comment": "Fallback retry settings",
+            "enabled": true,
+            "maxRetries": 2,
+            "retryDelay": 2000
+        }
+    },
+
+    "humanization": {
+        "_comment": "Human-like behavior simulation settings",
+        "mouse": {
+            "_comment": "Mouse movement physics",
+            "minDuration": 300,
+            "maxDuration": 1500,
+            "baseSpeed": 2.0,
+            "jitterRange": 2
+        },
+        "keystroke": {
+            "_comment": "Typing rhythm simulation",
+            "baseDelay": 120,
+            "stdDev": 40,
+            "punctuationPause": 300,
+            "spacePause": 150
+        },
+        "idle": {
+            "_comment": "Idle micro-movements to simulate presence",
+            "wiggleFrequency": 2000,
+            "wiggleMagnitude": 5,
+            "enabled": true
+        }
+    },
+
+    "verification": {
+        "_comment": "Action verification settings",
+        "auditTimeout": 5000,
+        "preFlightEnabled": true,
+        "postFlightEnabled": true,
+        "waitForStateTimeout": 5000
+    },
+
+    "state": {
+        "_comment": "Session state management",
+        "maxBreadcrumbs": 50,
+        "compactionThreshold": 20
+    },
+
+    "system": {
+        "_comment": "System-wide settings",
+        "environment": "development",
+        "logLevel": "info",
+        "sessionTimeoutMs": 1800000,
+        "cleanupIntervalMs": 300000
+    },
+
+    "concurrencyPerBrowser": 50,
+
+    "logging": {
+        "_comment": "Logging and monitoring settings",
+        "engagementProgress": {
+            "enabled": true,
+            "showProgressBar": true,
+            "progressBarStyle": "blocks",
+            "showPercent": true,
+            "showCounts": true
+        },
+        "finalStats": {
+            "enabled": true,
+            "showQueueStatus": true,
+            "showEngagement": true,
+            "showDuration": true
+        },
+        "queueMonitor": {
+            "enabled": true,
+            "interval": 30000
+        }
+    }
+}

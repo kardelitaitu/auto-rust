@@ -1,0 +1,4 @@
+packages:
+    - '.'
+    - 'api/ui/electron-dashboard'
+    - 'api/ui/electron-dashboard/renderer'

@@ -1,0 +1,25 @@
+node_modules/
+*.log
+coverage/
+dist/
+.nyc_output/
+*.tgz
+*.tar.gz
+*.zip
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.env
+.env.*
+config/*.json
+config/*.js
+!config/settings.json
+!config/browserAPI.json
+!config/timeouts.json
+
+# Dashboard local data (persisted history)
+data/

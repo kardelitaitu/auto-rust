@@ -1,0 +1,347 @@
+/**
+ * Auto-AI Framework - Proprietary Software
+ * Copyright (c) 2025 gantengmaksimal - All Rights Reserved
+ * Unauthorized copying, distribution, or modification prohibited
+ */
+
+/**
+ * @fileoverview Behavioral Persona System
+ * 16 pre-defined profiles controlling speed, typo rate, hover, hesitation, etc.
+ * Persona-aware modules read from getPersona() to calibrate their behavior.
+ *
+ * @module api/persona
+ */
+
+export const PERSONAS = {
+    casual: {
+        speed: 0.8,
+        hoverMin: 1000,
+        hoverMax: 3000,
+        typoRate: 0.04,
+        correctionRate: 0.85,
+        hesitation: 0.15,
+        hesitationDelay: 400,
+        scrollSpeed: 1.0,
+        clickHold: 120,
+        pathStyle: 'muscle',
+        microMoveChance: 0.06,
+        idleChance: 0.02,
+        muscleModel: { Kp: 0.1, Ki: 0.01, Kd: 0.05 },
+        overshootProb: 0.15,
+    },
+    efficient: {
+        speed: 1.5,
+        hoverMin: 100,
+        hoverMax: 300,
+        typoRate: 0.01,
+        correctionRate: 0.95,
+        hesitation: 0.03,
+        hesitationDelay: 100,
+        scrollSpeed: 1.3,
+        clickHold: 60,
+        pathStyle: 'muscle',
+        microMoveChance: 0.02,
+        idleChance: 0.01,
+        muscleModel: { Kp: 0.2, Ki: 0.02, Kd: 0.08 },
+        overshootProb: 0.05,
+    },
+    researcher: {
+        speed: 0.7,
+        hoverMin: 2000,
+        hoverMax: 4000,
+        typoRate: 0.025,
+        correctionRate: 0.9,
+        hesitation: 0.1,
+        hesitationDelay: 500,
+        scrollSpeed: 0.7,
+        clickHold: 150,
+        pathStyle: 'muscle',
+        microMoveChance: 0.08,
+        idleChance: 0.03,
+        muscleModel: { Kp: 0.08, Ki: 0.008, Kd: 0.04 },
+        overshootProb: 0.1,
+    },
+    power: {
+        speed: 2,
+        hoverMin: 50,
+        hoverMax: 100,
+        typoRate: 0.005,
+        correctionRate: 0.98,
+        hesitation: 0.01,
+        hesitationDelay: 50,
+        scrollSpeed: 1.5,
+        clickHold: 50,
+        pathStyle: 'muscle',
+        microMoveChance: 0.01,
+        idleChance: 0.005,
+        muscleModel: { Kp: 0.18, Ki: 0.02, Kd: 0.07 },
+        overshootProb: 0.02,
+    },
+    glitchy: {
+        speed: 0.9,
+        hoverMin: 200,
+        hoverMax: 3000,
+        typoRate: 0.075,
+        correctionRate: 0.6,
+        hesitation: 0.2,
+        hesitationDelay: 600,
+        scrollSpeed: 1.0,
+        clickHold: 100,
+        pathStyle: 'zigzag',
+        microMoveChance: 0.1,
+        idleChance: 0.03,
+        muscleModel: { Kp: 0.12, Ki: 0.012, Kd: 0.06 },
+        overshootProb: 0.25,
+    },
+    elderly: {
+        speed: 0.4,
+        hoverMin: 3000,
+        hoverMax: 5000,
+        typoRate: 0.06,
+        correctionRate: 0.7,
+        hesitation: 0.25,
+        hesitationDelay: 800,
+        scrollSpeed: 0.5,
+        clickHold: 250,
+        pathStyle: 'arc',
+        microMoveChance: 0.12,
+        idleChance: 0.04,
+        muscleModel: { Kp: 0.05, Ki: 0.005, Kd: 0.03 },
+        overshootProb: 0.08,
+    },
+    teen: {
+        speed: 1.3,
+        hoverMin: 100,
+        hoverMax: 500,
+        typoRate: 0.05,
+        correctionRate: 0.75,
+        hesitation: 0.05,
+        hesitationDelay: 150,
+        scrollSpeed: 1.4,
+        clickHold: 70,
+        pathStyle: 'muscle',
+        microMoveChance: 0.05,
+        idleChance: 0.03,
+        muscleModel: { Kp: 0.18, Ki: 0.018, Kd: 0.07 },
+        overshootProb: 0.12,
+    },
+    professional: {
+        speed: 1.2,
+        hoverMin: 500,
+        hoverMax: 1000,
+        typoRate: 0.015,
+        correctionRate: 0.95,
+        hesitation: 0.05,
+        hesitationDelay: 200,
+        scrollSpeed: 1.1,
+        clickHold: 80,
+        pathStyle: 'muscle',
+        microMoveChance: 0.03,
+        idleChance: 0.01,
+        muscleModel: { Kp: 0.15, Ki: 0.015, Kd: 0.06 },
+        overshootProb: 0.03,
+    },
+    gamer: {
+        speed: 1.6,
+        hoverMin: 50,
+        hoverMax: 150,
+        typoRate: 0.02,
+        correctionRate: 0.9,
+        hesitation: 0.02,
+        hesitationDelay: 80,
+        scrollSpeed: 1.4,
+        clickHold: 50,
+        pathStyle: 'muscle',
+        microMoveChance: 0.02,
+        idleChance: 0.015,
+        muscleModel: { Kp: 0.22, Ki: 0.025, Kd: 0.09 },
+        overshootProb: 0.01,
+    },
+    typer: {
+        speed: 1,
+        hoverMin: 200,
+        hoverMax: 400,
+        typoRate: 0.015,
+        correctionRate: 0.95,
+        hesitation: 0.03,
+        hesitationDelay: 100,
+        scrollSpeed: 1.0,
+        clickHold: 80,
+        pathStyle: 'muscle',
+        microMoveChance: 0.03,
+        idleChance: 0.01,
+        muscleModel: { Kp: 0.12, Ki: 0.012, Kd: 0.06 },
+        overshootProb: 0.02,
+    },
+    hesitant: {
+        speed: 0.6,
+        hoverMin: 3000,
+        hoverMax: 6000,
+        typoRate: 0.05,
+        correctionRate: 0.8,
+        hesitation: 0.3,
+        hesitationDelay: 1000,
+        scrollSpeed: 0.8,
+        clickHold: 200,
+        pathStyle: 'arc',
+        microMoveChance: 0.15,
+        idleChance: 0.04,
+        muscleModel: { Kp: 0.07, Ki: 0.007, Kd: 0.035 },
+        overshootProb: 0.3,
+    },
+    impulsive: {
+        speed: 1.4,
+        hoverMin: 50,
+        hoverMax: 150,
+        typoRate: 0.06,
+        correctionRate: 0.65,
+        hesitation: 0.02,
+        hesitationDelay: 50,
+        scrollSpeed: 1.3,
+        clickHold: 50,
+        pathStyle: 'muscle',
+        microMoveChance: 0.04,
+        idleChance: 0.02,
+        muscleModel: { Kp: 0.2, Ki: 0.02, Kd: 0.09 },
+        overshootProb: 0.2,
+    },
+    distracted: {
+        speed: 0.9,
+        hoverMin: 500,
+        hoverMax: 4000,
+        typoRate: 0.035,
+        correctionRate: 0.8,
+        hesitation: 0.2,
+        hesitationDelay: 700,
+        scrollSpeed: 0.9,
+        clickHold: 100,
+        pathStyle: 'muscle',
+        microMoveChance: 0.1,
+        idleChance: 0.06,
+        muscleModel: { Kp: 0.11, Ki: 0.011, Kd: 0.055 },
+        overshootProb: 0.18,
+    },
+    focused: {
+        speed: 1.1,
+        hoverMin: 800,
+        hoverMax: 1500,
+        typoRate: 0.01,
+        correctionRate: 0.95,
+        hesitation: 0.03,
+        hesitationDelay: 150,
+        scrollSpeed: 1.0,
+        clickHold: 90,
+        pathStyle: 'muscle',
+        microMoveChance: 0.02,
+        idleChance: 0.005,
+        muscleModel: { Kp: 0.14, Ki: 0.014, Kd: 0.065 },
+        overshootProb: 0.02,
+    },
+    newbie: {
+        speed: 0.5,
+        hoverMin: 2000,
+        hoverMax: 4000,
+        typoRate: 0.09,
+        correctionRate: 0.6,
+        hesitation: 0.25,
+        hesitationDelay: 900,
+        scrollSpeed: 0.5,
+        clickHold: 300,
+        pathStyle: 'arc',
+        microMoveChance: 0.18,
+        idleChance: 0.05,
+        muscleModel: { Kp: 0.06, Ki: 0.006, Kd: 0.03 },
+        overshootProb: 0.2,
+    },
+    expert: {
+        speed: 1.4,
+        hoverMin: 150,
+        hoverMax: 400,
+        typoRate: 0.005,
+        correctionRate: 0.99,
+        hesitation: 0.01,
+        hesitationDelay: 50,
+        scrollSpeed: 1.2,
+        clickHold: 60,
+        pathStyle: 'muscle',
+        microMoveChance: 0.01,
+        idleChance: 0.005,
+        muscleModel: { Kp: 0.18, Ki: 0.018, Kd: 0.08 },
+        overshootProb: 0.01,
+    },
+};
+
+/** @type {string} */
+let activePersonaName = 'casual';
+
+/** @type {object} */
+let activePersona = { ...PERSONAS.casual };
+
+/** @type {number} */
+let sessionStartTime = Date.now();
+
+/**
+ * Get current session duration in ms.
+ * @returns {number}
+ */
+export function getSessionDuration() {
+    return Date.now() - sessionStartTime;
+}
+
+/**
+ * Set the active persona.
+ * @param {string} name - Persona name (e.g. 'casual', 'efficient', 'power')
+ * @param {object} [overrides] - Optional parameter overrides merged on top
+ */
+export function setPersona(name, overrides = {}) {
+    const base = PERSONAS[name];
+    if (!base && name !== 'custom') {
+        throw new Error(
+            `Unknown persona "${name}". Available: ${Object.keys(PERSONAS).join(', ')}`
+        );
+    }
+    activePersonaName = name;
+    activePersona = { ...(base || PERSONAS.casual), ...overrides };
+
+    // Session-level Biometric Randomization (Ghost 3.0)
+    // Ensures that even the same persona has a unique physical signature each time it is loaded.
+    if (activePersona.muscleModel) {
+        const drift = 0.1; // 10% drift
+        activePersona.muscleModel.Kp *= 1 + (Math.random() * drift * 2 - drift);
+        activePersona.muscleModel.Ki *= 1 + (Math.random() * drift * 2 - drift);
+        activePersona.muscleModel.Kd *= 1 + (Math.random() * drift * 2 - drift);
+    }
+}
+
+/**
+ * Get the full active persona config.
+ * @returns {object} Active persona parameters
+ */
+export function getPersona() {
+    return activePersona;
+}
+
+/**
+ * Get a single persona parameter.
+ * @param {string} key - Parameter name (e.g. 'speed', 'typoRate')
+ * @returns {*} Parameter value
+ */
+export function getPersonaParam(key) {
+    return activePersona[key];
+}
+
+/**
+ * Get the active persona name.
+ * @returns {string}
+ */
+export function getPersonaName() {
+    return activePersonaName;
+}
+
+/**
+ * List all available persona names.
+ * @returns {string[]}
+ */
+export function listPersonas() {
+    return Object.keys(PERSONAS);
+}

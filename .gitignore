@@ -1,0 +1,22 @@
+# Rust
+/target
+# Keep Cargo.lock committed for reproducible binary builds
+
+# Config (contains live browser URLs)
+config.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+auto-rust.log
+log

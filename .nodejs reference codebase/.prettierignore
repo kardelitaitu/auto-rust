@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+api/ui/electron-dashboard/dist-exe/
+
+# Coverage
+api/coverage/
+coverage/
+
+# Logs
+*.log
+logs.json
+logs.txt
+
+# IDE
+.vscode/
+.idea/
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Lock files
+package-lock.json
+pnpm-lock.yaml
+
+# Test outputs
+vitest-individual.txt
+
+# Auto-generated
+api/docs/

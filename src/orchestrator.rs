@@ -200,19 +200,27 @@ async fn execute_task_on_session(
     }
 }
 
-/// Execute a task with retry logic
+/// Execute a task with timeout and retry logic
 async fn execute_task_with_retry(
     task_def: &TaskDefinition,
     session: &Session,
     config: &Config,
 ) -> Result<()> {
-    let max_retries = 2;
+    let max_retries = config.orchestrator.max_retries;
+    let task_timeout = Duration::from_millis(config.orchestrator.task_timeout_ms);
+    let retry_delay = Duration::from_millis(config.orchestrator.retry_delay_ms);
 
     // Acquire worker permit
     let permit = session
         .acquire_worker(config.orchestrator.worker_wait_timeout_ms)
         .await
         .ok_or_else(|| anyhow::anyhow!("Failed to acquire worker"))?;
+
+    // Check session health
+    if !session.is_healthy().await {
+        session.mark_unhealthy();
+        bail!("Session {} is unhealthy, skipping task", session.id);
+    }
 
     // Acquire page
     let page = session.acquire_page().await?;
@@ -225,9 +233,12 @@ async fn execute_task_with_retry(
             .collect(),
     );
 
-    info!("[{}][{}] Executing task...", session.id, task_def.name);
+    info!("[{}][{}] Executing task (timeout: {}ms, retries: {})...", 
+        session.id, task_def.name, config.orchestrator.task_timeout_ms, max_retries);
     
-    let result = crate::task::perform_task(&page, &session.id, &task_def.name, payload_json, max_retries).await;
+    let result = tokio::time::timeout(task_timeout, 
+        crate::task::perform_task(&page, &session.id, &task_def.name, payload_json, max_retries)
+    ).await;
 
     // Release page
     session.release_page(page).await;
@@ -235,19 +246,25 @@ async fn execute_task_with_retry(
     // Drop permit (releases worker)
     drop(permit);
 
-    let final_result = match result {
-        Ok(task_result) => {
+    match result {
+        Ok(Ok(task_result)) => {
             if task_result.is_success() {
+                session.mark_healthy();
                 Ok(())
             } else {
                 let error = task_result.last_error.clone().unwrap_or_else(|| "Unknown error".to_string());
+                session.increment_failure();
                 Err(anyhow::anyhow!("Task {} failed: {}", task_def.name, error))
             }
         }
-        Err(e) => {
-            Err(anyhow::anyhow!("Task {} execution error: {}", task_def.name, e))
+        Ok(Err(e)) => {
+            session.increment_failure();
+            Err(anyhow::anyhow!("Task {} error: {}", task_def.name, e))
         }
-    };
-
-    final_result
+        Err(_) => {
+            session.increment_failure();
+            session.mark_unhealthy();
+            Err(anyhow::anyhow!("Task {} timed out after {}ms", task_def.name, config.orchestrator.task_timeout_ms))
+        }
+    }
 }

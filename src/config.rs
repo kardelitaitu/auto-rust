@@ -56,6 +56,8 @@ pub struct OrchestratorConfig {
     #[allow(dead_code)]
     pub stuck_worker_threshold_ms: u64,
     pub task_stagger_delay_ms: u64,
+    pub max_retries: u32,
+    pub retry_delay_ms: u64,
 }
 
 pub fn load_config() -> Result<Config> {
@@ -90,6 +92,8 @@ pub fn load_config() -> Result<Config> {
             worker_wait_timeout_ms: 10000,
             stuck_worker_threshold_ms: 120000,
             task_stagger_delay_ms: 2000,
+            max_retries: 2,
+            retry_delay_ms: 500,
         },
     })
 }

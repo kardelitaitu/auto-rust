@@ -16,6 +16,10 @@ pub struct Session {
     // Worker semaphore (controls concurrent page access)
     worker_semaphore: Arc<Semaphore>,
     pub active_workers: std::sync::atomic::AtomicUsize,
+    
+    // Health tracking
+    failure_count: std::sync::atomic::AtomicUsize,
+    is_healthy: std::sync::atomic::AtomicBool,
 }
 
 impl Session {
@@ -58,7 +62,29 @@ impl Session {
             handler_task: Some(handler_task),
             worker_semaphore: Arc::new(Semaphore::new(max_workers)),
             active_workers: std::sync::atomic::AtomicUsize::new(0),
+            failure_count: std::sync::atomic::AtomicUsize::new(0),
+            is_healthy: std::sync::atomic::AtomicBool::new(true),
         }
+    }
+
+    pub fn is_healthy(&self) -> bool {
+        self.is_healthy.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn mark_healthy(&self) {
+        self.is_healthy.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn mark_unhealthy(&self) {
+        self.is_healthy.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn increment_failure(&self) {
+        self.failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn get_failure_count(&self) -> usize {
+        self.failure_count.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Acquire a worker permit from the semaphore

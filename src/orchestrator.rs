@@ -217,7 +217,7 @@ async fn execute_task_with_retry(
         .ok_or_else(|| anyhow::anyhow!("Failed to acquire worker"))?;
 
     // Check session health
-    if !session.is_healthy().await {
+    if !session.is_healthy() {
         session.mark_unhealthy();
         bail!("Session {} is unhealthy, skipping task", session.id);
     }

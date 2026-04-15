@@ -145,10 +145,10 @@ Need external app integration (GitHub, Slack)?
 - [x] Add consistent error typing (`timeout`, `validation`, `navigation`, `session`)
 
 ### Phase 1 - Orchestrator Reliability
-- [ ] Add per-task timeout (`task_timeout_ms`) with cancellation propagation
-- [ ] Add group timeout hard-stop (`group_timeout_ms`) for batch execution
-- [ ] Add retry policy with attempt metadata (`attempt`, `max_retries`, `last_error`)
-- [ ] Add worker/page health checks and stale-task cleanup
+- [x] Add per-task timeout (`task_timeout_ms`) with cancellation propagation
+- [x] Add group timeout hard-stop (`group_timeout_ms`) for batch execution
+- [x] Add retry policy with attempt metadata (`attempt`, `max_retries`, `last_error`)
+- [x] Add worker/page health checks and stale-task cleanup
 
 ### Phase 2 - Session Lifecycle
 - [ ] Implement full `connect_to_browser` for configured profiles (currently TODO)

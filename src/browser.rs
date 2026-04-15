@@ -4,8 +4,6 @@ use anyhow::{Result, bail};
 use log::{info, debug, warn};
 use std::time::Duration;
 use futures::stream::{self, StreamExt};
-use chromiumoxide::Handler;
-use std::sync::Arc;
 
 pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
     let mut sessions = Vec::new();

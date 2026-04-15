@@ -1,4 +1,4 @@
-use chromiumoxide::{Browser, Handler, Page};
+use chromiumoxide::{Browser, Handler};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use log::{info, warn};
@@ -7,6 +7,7 @@ use futures::StreamExt;
 use dashmap::DashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum SessionState {
     Idle,
     Busy,
@@ -33,6 +34,7 @@ pub struct Session {
     state: parking_lot::Mutex<SessionState>,
     
     // Page registry (tracks active pages)
+    #[allow(dead_code)]
     active_pages: DashSet<u64>,
 }
 

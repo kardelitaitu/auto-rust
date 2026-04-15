@@ -43,6 +43,7 @@ pub struct BrowserProfile {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct RoxybrowserConfig {
     pub enabled: bool,
     pub api_url: String,

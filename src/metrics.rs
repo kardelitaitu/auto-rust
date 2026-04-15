@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TaskMetrics {
     pub task_name: String,
     pub status: TaskStatus,
@@ -16,12 +17,14 @@ pub struct TaskMetrics {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum TaskStatus {
     Success,
     Failed,
     Timeout,
 }
 
+#[allow(dead_code)]
 pub struct MetricsCollector {
     total_tasks: Arc<AtomicUsize>,
     succeeded: Arc<AtomicUsize>,
@@ -34,6 +37,7 @@ pub struct MetricsCollector {
 }
 
 impl MetricsCollector {
+    #[allow(dead_code)]
     pub fn new(max_history: usize) -> Self {
         Self {
             total_tasks: Arc::new(AtomicUsize::new(0)),
@@ -47,11 +51,13 @@ impl MetricsCollector {
         }
     }
 
+    #[allow(dead_code)]
     pub fn task_started(&self) {
         self.active_tasks.fetch_add(1, Ordering::SeqCst);
         self.total_tasks.fetch_add(1, Ordering::SeqCst);
     }
 
+    #[allow(dead_code)]
     pub fn task_completed(&self, metrics: TaskMetrics) {
         self.active_tasks.fetch_sub(1, Ordering::SeqCst);
         self.total_duration_ms

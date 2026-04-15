@@ -27,26 +27,6 @@ impl TaskResult {
         }
     }
 
-    pub fn failed(error: String, duration_ms: u64) -> Self {
-        Self {
-            status: TaskStatus::Failed(error),
-            attempt: 1,
-            max_retries: 0,
-            last_error: None,
-            duration_ms,
-        }
-    }
-
-    pub fn timeout(duration_ms: u64) -> Self {
-        Self {
-            status: TaskStatus::Timeout,
-            attempt: 1,
-            max_retries: 0,
-            last_error: Some("Task timed out".to_string()),
-            duration_ms,
-        }
-    }
-
     pub fn with_retry(mut self, attempt: u32, max_retries: u32, last_error: String) -> Self {
         self.attempt = attempt;
         self.max_retries = max_retries;
@@ -57,14 +37,10 @@ impl TaskResult {
     pub fn is_success(&self) -> bool {
         matches!(self.status, TaskStatus::Success)
     }
-
-    pub fn can_retry(&self) -> bool {
-        matches!(self.status, TaskStatus::Failed(_) | TaskStatus::Timeout)
-            && self.attempt < self.max_retries
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum TaskErrorKind {
     Timeout,
     Validation,
@@ -75,6 +51,7 @@ pub enum TaskErrorKind {
 }
 
 impl TaskErrorKind {
+    #[allow(dead_code)]
     pub fn classify(error: &str) -> Self {
         let e = error.to_lowercase();
         if e.contains("timeout") || e.contains("deadline") {
@@ -93,9 +70,11 @@ impl TaskErrorKind {
     }
 }
 
+#[allow(dead_code)]
 pub type TaskResultFn = Box<dyn Fn() -> TaskResult + Send + Sync>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct RunSummary {
     pub total_tasks: usize,
     pub succeeded: usize,
@@ -106,6 +85,7 @@ pub struct RunSummary {
 }
 
 impl RunSummary {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             total_tasks: 0,
@@ -117,6 +97,7 @@ impl RunSummary {
         }
     }
 
+    #[allow(dead_code)]
     pub fn add(&mut self, result: TaskResult) {
         self.total_tasks += 1;
         self.total_duration_ms += result.duration_ms;
@@ -130,6 +111,7 @@ impl RunSummary {
         self.results.push(result);
     }
 
+    #[allow(dead_code)]
     pub fn success_rate(&self) -> f64 {
         if self.total_tasks == 0 {
             return 0.0;

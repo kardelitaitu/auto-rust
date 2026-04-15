@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chromiumoxide::cdp::browser_protocol::network;
 
+#[allow(dead_code)]
 fn blocked_patterns() -> Vec<String> {
     vec![
         // Images
@@ -36,6 +37,7 @@ fn dom_cleanup_js() -> &'static str {
     "#
 }
 
+#[allow(dead_code)]
 pub async fn block_heavy_resources(page: &chromiumoxide::Page) -> Result<()> {
     // Network-level blocking is the primary bandwidth/resource saver.
     page.execute(network::EnableParams::default()).await?;
@@ -47,14 +49,17 @@ pub async fn block_heavy_resources(page: &chromiumoxide::Page) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn block_images(page: &chromiumoxide::Page) -> Result<()> {
     block_heavy_resources(page).await
 }
 
+#[allow(dead_code)]
 pub async fn block_media(page: &chromiumoxide::Page) -> Result<()> {
     block_heavy_resources(page).await
 }
 
+#[allow(dead_code)]
 pub async fn unblock_all(_page: &chromiumoxide::Page) -> Result<()> {
     log::info!("   [utils] All URLs unblocked (no-op)");
     Ok(())

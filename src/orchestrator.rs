@@ -208,7 +208,7 @@ async fn execute_task_with_retry(
 ) -> Result<()> {
     let max_retries = config.orchestrator.max_retries;
     let task_timeout = Duration::from_millis(config.orchestrator.task_timeout_ms);
-    let retry_delay = Duration::from_millis(config.orchestrator.retry_delay_ms);
+    let _retry_delay = Duration::from_millis(config.orchestrator.retry_delay_ms);
 
     // Acquire worker permit
     let permit = session
@@ -223,7 +223,7 @@ async fn execute_task_with_retry(
     }
 
     // Acquire page
-    let page = session.acquire_page().await?;
+    let _page = session.acquire_page().await?;
 
     // Acquire page
     let page = session.acquire_page().await?;

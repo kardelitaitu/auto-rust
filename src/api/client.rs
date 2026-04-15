@@ -21,7 +21,8 @@ impl ApiClient {
         }
     }
 
-    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    #[allow(dead_code)]
+pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let response = self.client.get(&url).send().await?;
         
@@ -55,12 +56,14 @@ impl ApiClient {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum CircuitState {
     Closed,
     Open,
     HalfOpen,
 }
 
+#[allow(dead_code)]
 pub struct CircuitBreaker {
     failure_threshold: u32,
     success_threshold: u32,
@@ -71,6 +74,7 @@ pub struct CircuitBreaker {
 }
 
 impl CircuitBreaker {
+    #[allow(dead_code)]
     pub fn new(failure_threshold: u32, success_threshold: u32, half_open_timeout_ms: u64) -> Self {
         Self {
             failure_threshold,
@@ -82,10 +86,12 @@ impl CircuitBreaker {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_closed(&self) -> bool {
         self.state == CircuitState::Closed
     }
 
+    #[allow(dead_code)]
     pub fn record_success(&mut self) {
         self.successes += 1;
         
@@ -96,6 +102,7 @@ impl CircuitBreaker {
         }
     }
 
+    #[allow(dead_code)]
     pub fn record_failure(&mut self) {
         self.failures += 1;
         

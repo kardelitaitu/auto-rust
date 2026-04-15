@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chromiumoxide::Page;
 use serde_json::Value;
-use log::{info, warn, error, debug};
+use log::{info, warn, error};
 use std::fs;
 use crate::utils::{navigation, scroll, timing};
 use rand::seq::SliceRandom;
@@ -45,7 +45,7 @@ pub async fn run(session_id: &str, page: &Page, _payload: Value) -> Result<()> {
     Ok(())
 }
 
-async fn perform_browsing_behavior(session_id: &str, page: &Page) -> Result<()> {
+async fn perform_browsing_behavior(_session_id: &str, page: &Page) -> Result<()> {
     // Random scroll to simulate reading
     scroll::random_scroll(page).await?;
 

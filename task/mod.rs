@@ -10,8 +10,10 @@ use crate::utils::{block_images, block_media};
 pub async fn perform_task(page: &Page, session_id: &str, name: &str, payload: Value) -> Result<()> {
     let clean_name = name.strip_suffix(".js").unwrap_or(name);
 
-    block_images(page).await?;
-    block_media(page).await?;
+    if clean_name == "cookiebot" {
+        block_images(page).await?;
+        block_media(page).await?;
+    }
 
     match clean_name {
         "cookiebot" => cookiebot::run(session_id, page, payload).await,

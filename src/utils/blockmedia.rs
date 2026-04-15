@@ -1,24 +1,43 @@
 use anyhow::Result;
-use chromiumoxide::Page;
+use chromiumoxide::cdp::browser_protocol::network;
 
-/// Block media after page load (reduces rendering but doesn't stop network requests)
-/// Note: True media blocking requires browser-level CDP setup before navigation
-#[allow(dead_code)]
-pub async fn block_media(_page: &Page) -> Result<()> {
-    // Media blocking via JS has limited effectiveness because:
-    // 1. Browser starts loading before JS runs
-    // 2. Media requests already in flight
-    // 3. True blocking requires CDP Network.setBlockedURLs before navigation
+pub async fn block_images(page: &chromiumoxide::Page) -> Result<()> {
+    let params = network::SetBlockedUrLsParams::new(vec![
+        "*.png".into(),
+        "*.jpg".into(),
+        "*.jpeg".into(),
+        "*.gif".into(),
+        "*.webp".into(),
+        "*.svg".into(),
+        "*.bmp".into(),
+        "data:image/*".into(),
+    ]);
     
-    // For production, configure Brave/Roxybrowser with:
-    // - Extension-based ad blocking
-    // - Browser launch args: --blink-settings=imagesEnabled=false
-    // - Or use CDP to set blocked URLs at browser level
-    
+    page.execute(params).await?;
+
+    log::info!("   [utils] Images blocked via Network.setBlockedURLs");
     Ok(())
 }
 
-#[allow(dead_code)]
-pub async fn unblock_media(_page: &Page) -> Result<()> {
+pub async fn block_media(page: &chromiumoxide::Page) -> Result<()> {
+    let params = network::SetBlockedUrLsParams::new(vec![
+        "*.mp4".into(),
+        "*.webm".into(),
+        "*.m3u8".into(),
+        "*.ts".into(),
+    ]);
+    
+    page.execute(params).await?;
+
+    log::info!("   [utils] Media blocked via Network.setBlockedURLs");
+    Ok(())
+}
+
+pub async fn unblock_all(page: &chromiumoxide::Page) -> Result<()> {
+    let params = network::SetBlockedUrLsParams::new(vec![]);
+    
+    page.execute(params).await?;
+
+    log::info!("   [utils] All URLs unblocked");
     Ok(())
 }

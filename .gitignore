@@ -20,3 +20,12 @@ Thumbs.db
 logs/
 auto-rust.log
 log
+
+# Migration steps
+.migration-steps/
+
+# Nodejs reference codebase
+.nodejs reference codebase/
+
+# Qwen
+.qwen/

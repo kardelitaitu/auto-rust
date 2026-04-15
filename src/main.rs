@@ -13,6 +13,7 @@ mod logger;
 mod validation;
 mod api;
 mod metrics;
+mod tests;
 
 use anyhow::Result;
 use log::{info, warn, LevelFilter};

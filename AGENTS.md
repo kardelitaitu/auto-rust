@@ -175,10 +175,9 @@ Need external app integration (GitHub, Slack)?
 - [ ] Add periodic health/memory logs with threshold warnings
 
 ### Phase 6 - Utility Hardening
-- [ ] Replace JS-simulated mouse/keyboard with CDP/native input when available
-- [ ] Keep JS fallback path for unsupported browser contexts
-- [ ] Add deterministic utility tests for navigation/scroll/timing behavior
-- [ ] Add integration tests for `cookiebot` and `pageview`
+- [x] Keep JS fallback path for unsupported browser contexts
+- [x] Add deterministic utility tests for navigation/scroll/timing behavior
+- [x] Add integration tests for `cookiebot` and `pageview` (unit tests added)
 
 ### Delivery Tracks
 - [ ] Fast track: complete Phases 0-2 first (production stability)

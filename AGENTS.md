@@ -157,10 +157,10 @@ Need external app integration (GitHub, Slack)?
 - [x] Add graceful shutdown flow (cancel active tasks -> close pages -> close browsers)
 
 ### Phase 3 - Config + Validation
-- [ ] Add file-backed config loader (`config/*.toml`) with env override precedence
-- [ ] Add task payload schema validator mirroring `task-validator.js`
+- [x] Add file-backed config loader (`config/*.toml`) with env override precedence
+- [x] Add task payload schema validator mirroring `task-validator.js`
 - [ ] Add task parser parity checks with `.nodejs-reference/api/utils/task-parser.js`
-- [ ] Add startup config validation and fail-fast diagnostics
+- [x] Add startup config validation and fail-fast diagnostics
 
 ### Phase 4 - API Utility Layer
 - [ ] Create `src/api/client.rs` for HTTP requests with shared headers

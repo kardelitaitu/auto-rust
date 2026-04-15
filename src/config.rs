@@ -1,6 +1,8 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
+use log::{info, warn};
 use serde::Deserialize;
 use std::env;
+use std::path::Path;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -61,6 +63,23 @@ pub struct OrchestratorConfig {
 }
 
 pub fn load_config() -> Result<Config> {
+    // Try to load from config/default.toml first
+    let config_path = Path::new("config/default.toml");
+
+    if config_path.exists() {
+        info!("Loading config from {}", config_path.display());
+        let content = std::fs::read_to_string(config_path)?;
+        let file_config: Config = toml::from_str(&content)?;
+
+        // Apply environment variable overrides
+        return apply_env_overrides(file_config);
+    }
+
+    // Fall back to code-based config with env overrides
+    apply_env_overrides(load_code_config()?)
+}
+
+fn load_code_config() -> Result<Config> {
     let roxybrowser_url =
         env::var("ROXYBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:50000/".to_string());
     let roxybrowser_key = env::var("ROXYBROWSER_API_KEY")
@@ -96,4 +115,49 @@ pub fn load_config() -> Result<Config> {
             retry_delay_ms: 500,
         },
     })
+}
+
+fn apply_env_overrides(mut config: Config) -> Result<Config> {
+    // Environment variable overrides
+    if let Ok(url) = env::var("ROXYBROWSER_API_URL") {
+        config.browser.roxybrowser.api_url = url;
+    }
+    if let Ok(key) = env::var("ROXYBROWSER_API_KEY") {
+        config.browser.roxybrowser.api_key = key;
+    }
+    if let Ok(concurrency) = env::var("MAX_GLOBAL_CONCURRENCY") {
+        config.orchestrator.max_global_concurrency = concurrency
+            .parse()
+            .unwrap_or(config.orchestrator.max_global_concurrency);
+    }
+    if let Ok(timeout) = env::var("TASK_TIMEOUT_MS") {
+        config.orchestrator.task_timeout_ms = timeout
+            .parse()
+            .unwrap_or(config.orchestrator.task_timeout_ms);
+    }
+    if let Ok(retries) = env::var("MAX_RETRIES") {
+        config.orchestrator.max_retries =
+            retries.parse().unwrap_or(config.orchestrator.max_retries);
+    }
+
+    Ok(config)
+}
+
+/// Validate configuration at startup
+pub fn validate_config(config: &Config) -> Result<()> {
+    if config.orchestrator.max_global_concurrency == 0 {
+        bail!("max_global_concurrency must be > 0");
+    }
+    if config.orchestrator.task_timeout_ms == 0 {
+        bail!("task_timeout_ms must be > 0");
+    }
+    if config.orchestrator.group_timeout_ms == 0 {
+        bail!("group_timeout_ms must be > 0");
+    }
+    if config.orchestrator.max_retries > 10 {
+        warn!("max_retries > 10 may cause long running times");
+    }
+
+    info!("Config validation passed");
+    Ok(())
 }

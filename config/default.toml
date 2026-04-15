@@ -1,0 +1,26 @@
+# Orchestrator Configuration
+# Load from file or use environment overrides
+
+[browser]
+max_discovery_retries = 3
+discovery_retry_delay_ms = 5000
+
+[[browser.profiles]]
+name = "brave-local"
+type = "brave"
+ws_endpoint = ""
+
+[browser.roxybrowser]
+enabled = true
+api_url = "http://127.0.0.1:50000/"
+api_key = "c6ae203adfe0327a63ccc9174c178dec"
+
+[orchestrator]
+max_global_concurrency = 20
+task_timeout_ms = 600000
+group_timeout_ms = 600000
+worker_wait_timeout_ms = 10000
+stuck_worker_threshold_ms = 120000
+task_stagger_delay_ms = 2000
+max_retries = 2
+retry_delay_ms = 500

@@ -10,6 +10,7 @@ mod task;
 
 mod utils;
 mod logger;
+mod validation;
 
 use anyhow::Result;
 use log::{info, warn, LevelFilter};
@@ -59,6 +60,7 @@ async fn run_async() -> Result<()> {
 
     // Load configuration
     let config = config::load_config()?;
+    config::validate_config(&config)?;
 
     // Discover and connect to browsers
     let mut sessions = browser::discover_browsers(&config).await?;

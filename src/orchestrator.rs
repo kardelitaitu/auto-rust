@@ -225,6 +225,10 @@ async fn execute_task_with_retry(
     // Acquire page
     let page = session.acquire_page().await?;
 
+    // Acquire page
+    let page = session.acquire_page().await?;
+
+    // Build and validate payload
     let payload_json = serde_json::Value::Object(
         task_def
             .payload
@@ -232,6 +236,10 @@ async fn execute_task_with_retry(
             .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
             .collect(),
     );
+    
+    if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
+        bail!("Task {} validation failed: {}", task_def.name, e);
+    }
 
     info!("[{}][{}] Executing task (timeout: {}ms, retries: {})...", 
         session.id, task_def.name, config.orchestrator.task_timeout_ms, max_retries);

@@ -163,9 +163,9 @@ Need external app integration (GitHub, Slack)?
 - [x] Add startup config validation and fail-fast diagnostics
 
 ### Phase 4 - API Utility Layer
-- [ ] Create `src/api/client.rs` for HTTP requests with shared headers
+- [x] Create `src/api/client.rs` for HTTP requests with shared headers
 - [ ] Add retry with jitter/backoff (`retries`, `factor`, `max_delay`)
-- [ ] Add optional circuit-breaker module (feature-flagged)
+- [x] Add optional circuit-breaker module (feature-flagged)
 - [ ] Add provider fallback strategy hooks
 
 ### Phase 5 - Observability

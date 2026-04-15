@@ -156,33 +156,24 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
 
     info!("Discovering Roxybrowser from: {}", api_url);
 
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}browser/connection_info", api_url))
-        .header("X-API-Key", api_key)
-        .timeout(Duration::from_millis(5000))
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Roxybrowser API request failed: {}", e))?;
+    let client = crate::api::ApiClient::new(api_url.clone());
+    
+    #[derive(serde::Deserialize)]
+    struct RoxyResponse {
+        code: i64,
+        msg: Option<String>,
+        data: Option<Vec<serde_json::Value>>,
+    }
+    
+    let response: RoxyResponse = client.get_with_key("browser/connection_info", api_key).await?;
 
-    let data: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to parse Roxybrowser response: {}", e))?;
-
-    // Check response code
-    if let Some(code) = data.get("code").and_then(|c| c.as_i64()) {
-        if code != 0 {
-            let msg = data.get("msg").and_then(|m| m.as_str()).unwrap_or("unknown");
-            warn!("Roxybrowser API error: {} (code: {})", msg, code);
-            return Ok(vec![]);
-        }
+    if response.code != 0 {
+        let msg = response.msg.as_deref().unwrap_or("unknown");
+        warn!("Roxybrowser API error: {} (code: {})", msg, response.code);
+        return Ok(vec![]);
     }
 
-    let profiles = data.get("data")
-        .and_then(|d| d.as_array())
-        .map(|arr| arr.to_vec())
-        .unwrap_or_default();
+    let profiles = response.data.unwrap_or_default();
 
     if profiles.is_empty() {
         info!("No open Roxybrowser profiles found");

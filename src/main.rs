@@ -11,6 +11,7 @@ mod task;
 mod utils;
 mod logger;
 mod validation;
+mod api;
 
 use anyhow::Result;
 use log::{info, warn, LevelFilter};

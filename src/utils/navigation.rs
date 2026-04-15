@@ -1,10 +1,12 @@
 use chromiumoxide::Page;
 use anyhow::Result;
 use tokio::time::{timeout, Duration};
+use crate::utils::block_heavy_resources;
 
-#[allow(dead_code)]
 pub async fn goto(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
-    // Navigate to URL with timeout
+    // Apply a single unified network blocklist before navigation.
+    block_heavy_resources(page).await?;
+
     timeout(
         Duration::from_millis(timeout_ms),
         page.goto(url)
@@ -14,9 +16,7 @@ pub async fn goto(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn wait_for_load(page: &Page, timeout_ms: u64) -> Result<()> {
-    // Wait for network idle (no network activity for 500ms)
     timeout(
         Duration::from_millis(timeout_ms),
         page.wait_for_navigation()

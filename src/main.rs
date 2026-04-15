@@ -3,6 +3,7 @@ mod config;
 mod browser;
 mod orchestrator;
 mod session;
+mod result;
 
 #[path = "../task/mod.rs"]
 mod task;

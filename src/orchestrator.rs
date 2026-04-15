@@ -206,58 +206,48 @@ async fn execute_task_with_retry(
     session: &Session,
     config: &Config,
 ) -> Result<()> {
-    let max_retries = 2; // Mirrors Node.js maxTaskRetries
-    let mut attempt = 0;
+    let max_retries = 2;
 
-    loop {
-        attempt += 1;
+    // Acquire worker permit
+    let permit = session
+        .acquire_worker(config.orchestrator.worker_wait_timeout_ms)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Failed to acquire worker"))?;
 
-        // Acquire worker permit
-        let permit = session
-            .acquire_worker(config.orchestrator.worker_wait_timeout_ms)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("Failed to acquire worker"))?;
+    // Acquire page
+    let page = session.acquire_page().await?;
 
-        // Acquire page
-        let page = session.acquire_page().await?;
+    let payload_json = serde_json::Value::Object(
+        task_def
+            .payload
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect(),
+    );
 
-        // Execute the task
-        let payload_json = serde_json::Value::Object(
-            task_def
-                .payload
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                .collect(),
-        );
+    info!("[{}][{}] Executing task...", session.id, task_def.name);
+    
+    let result = crate::task::perform_task(&page, &session.id, &task_def.name, payload_json, max_retries).await;
 
-        info!("[{}][{}] Executing task...", session.id, task_def.name);
-        
-        let result = crate::task::perform_task(&page, &session.id, &task_def.name, payload_json).await;
+    // Release page
+    session.release_page(page).await;
 
-        // Release page
-        session.release_page(page).await;
+    // Drop permit (releases worker)
+    drop(permit);
 
-        // Drop permit (releases worker)
-        drop(permit);
-
-        match result {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                if attempt <= max_retries {
-                    warn!(
-                        "[{}][{}] Attempt {}/{} failed: {}. Retrying...",
-                        session.id, task_def.name, attempt, max_retries + 1, e
-                    );
-                    continue;
-                } else {
-                    bail!(
-                        "Task {} failed after {} attempts: {}",
-                        task_def.name,
-                        attempt,
-                        e
-                    );
-                }
+    let final_result = match result {
+        Ok(task_result) => {
+            if task_result.is_success() {
+                Ok(())
+            } else {
+                let error = task_result.last_error.clone().unwrap_or_else(|| "Unknown error".to_string());
+                Err(anyhow::anyhow!("Task {} failed: {}", task_def.name, error))
             }
         }
-    }
+        Err(e) => {
+            Err(anyhow::anyhow!("Task {} execution error: {}", task_def.name, e))
+        }
+    };
+
+    final_result
 }

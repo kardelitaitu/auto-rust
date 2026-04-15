@@ -24,8 +24,8 @@ log
 # Migration steps
 .migration-steps/
 
-# Nodejs reference codebase
-.nodejs reference codebase/
+# Nodejs reference
+.nodejs-reference
 
 # Qwen
 .qwen/

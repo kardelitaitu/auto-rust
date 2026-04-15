@@ -136,3 +136,50 @@ Need external app integration (GitHub, Slack)?
 - `tavily_search`, `tavily_extract`, `tavily_research`, `tavily_skill` - All working
 - `tavily_map`, `tavily_crawl` - May return invalid start URL errors
   - **Fallback:** Use `tavily_search` + `tavily_extract` combination
+
+## Development Tasklist (Rust vs `.nodejs-reference`)
+
+### Phase 0 - Foundations
+- [x] Create `src/result.rs` for unified task result contract: `success | failed | timeout`
+- [x] Refactor `task::perform_task` and orchestrator execution path to return structured result
+- [x] Add consistent error typing (`timeout`, `validation`, `navigation`, `session`)
+
+### Phase 1 - Orchestrator Reliability
+- [ ] Add per-task timeout (`task_timeout_ms`) with cancellation propagation
+- [ ] Add group timeout hard-stop (`group_timeout_ms`) for batch execution
+- [ ] Add retry policy with attempt metadata (`attempt`, `max_retries`, `last_error`)
+- [ ] Add worker/page health checks and stale-task cleanup
+
+### Phase 2 - Session Lifecycle
+- [ ] Implement full `connect_to_browser` for configured profiles (currently TODO)
+- [ ] Add session state tracking (`idle`, `busy`, `failed`) and failure score
+- [ ] Add managed page registry and guaranteed release on all code paths
+- [ ] Add graceful shutdown flow (cancel active tasks -> close pages -> close browsers)
+
+### Phase 3 - Config + Validation
+- [ ] Add file-backed config loader (`config/*.toml`) with env override precedence
+- [ ] Add task payload schema validator mirroring `task-validator.js`
+- [ ] Add task parser parity checks with `.nodejs-reference/api/utils/task-parser.js`
+- [ ] Add startup config validation and fail-fast diagnostics
+
+### Phase 4 - API Utility Layer
+- [ ] Create `src/api/client.rs` for HTTP requests with shared headers
+- [ ] Add retry with jitter/backoff (`retries`, `factor`, `max_delay`)
+- [ ] Add optional circuit-breaker module (feature-flagged)
+- [ ] Add provider fallback strategy hooks
+
+### Phase 5 - Observability
+- [ ] Create metrics collector: task counts, durations, session stats, API stats
+- [ ] Add task history ring buffer and per-task breakdown
+- [ ] Export `run-summary.json` at shutdown
+- [ ] Add periodic health/memory logs with threshold warnings
+
+### Phase 6 - Utility Hardening
+- [ ] Replace JS-simulated mouse/keyboard with CDP/native input when available
+- [ ] Keep JS fallback path for unsupported browser contexts
+- [ ] Add deterministic utility tests for navigation/scroll/timing behavior
+- [ ] Add integration tests for `cookiebot` and `pageview`
+
+### Delivery Tracks
+- [ ] Fast track: complete Phases 0-2 first (production stability)
+- [ ] Full parity: complete Phases 0-6 (feature parity with Node reference)

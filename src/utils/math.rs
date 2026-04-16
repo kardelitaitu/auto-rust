@@ -1,15 +1,63 @@
+//! Mathematical utility functions for randomness and Gaussian distributions.
+//!
+//! Provides:
+//! - Uniform random number generation
+//! - Gaussian distribution sampling with bounds
+//! - Statistical utilities for human-like behavior simulation
+
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
+/// Generates a random integer within the specified inclusive range.
+/// Uses a thread-local random number generator for performance.
+///
+/// # Arguments
+/// * `min` - Lower bound (inclusive)
+/// * `max` - Upper bound (inclusive)
+///
+/// # Returns
+/// A random integer between min and max (inclusive)
+///
+/// # Examples
+/// ```
+/// let roll = random_in_range(1, 6); // Returns a value between 1 and 6
+/// assert!(roll >= 1 && roll <= 6);
+/// ```
 #[allow(dead_code)]
 pub fn random_in_range(min: u64, max: u64) -> u64 {
     let mut rng = rand::thread_rng();
     rng.gen_range(min..=max)
 }
 
+/// Generates a random number from a Gaussian (normal) distribution,
+/// clamped to the specified range.
+///
+/// This function samples from a normal distribution with the given mean and standard deviation,
+/// then discards samples that fall outside the [min, max] range and resamples until
+/// a valid value is obtained.
+///
+/// # Arguments
+/// * `mean` - Mean of the normal distribution
+/// * `std_dev` - Standard deviation of the normal distribution (must be positive)
+/// * `min` - Minimum allowed value (inclusive)
+/// * `max` - Maximum allowed value (inclusive)
+///
+/// # Returns
+/// A random f64 value from the Gaussian distribution clamped to [min, max]
+///
+/// # Panics
+/// Panics if std_dev is not positive (handled via expect with descriptive message)
+///
+/// # Examples
+/// ```
+/// // Generate a value around 100 with std dev 10, clamped to 80-120
+/// let val = gaussian(100.0, 10.0, 80.0, 120.0);
+/// assert!(val >= 80.0 && val <= 120.0);
+/// ```
 #[allow(dead_code)]
 pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
-    let normal = Normal::new(mean, std_dev).unwrap();
+    let normal = Normal::new(mean, std_dev)
+        .expect("Failed to create normal distribution - standard deviation must be positive");
     let mut rng = rand::thread_rng();
 
     loop {
@@ -23,20 +71,18 @@ pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
 
     #[test]
     fn test_random_in_range() {
         let result = random_in_range(10, 20);
-        assert!(result >= 10 && result <= 20);
+        assert!((10..=20).contains(&result));
     }
 
     #[test]
     fn test_gaussian_bounds() {
         // Test that gaussian respects bounds
         let result = gaussian(100.0, 10.0, 80.0, 120.0);
-        assert!(result >= 80.0 && result <= 120.0);
+        assert!((80.0..=120.0).contains(&result));
     }
 
     #[test]

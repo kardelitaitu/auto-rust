@@ -4,7 +4,7 @@
 
 # Config (contains live browser URLs)
 config.toml
-
+.gitignore
 # IDE
 .idea/
 .vscode/
@@ -20,6 +20,7 @@ Thumbs.db
 logs/
 auto-rust.log
 log
+rust-analyzer-problems.log
 
 # Migration steps
 .migration-steps/

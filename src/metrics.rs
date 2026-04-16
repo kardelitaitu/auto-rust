@@ -1,3 +1,11 @@
+//! Performance metrics collection and reporting module.
+//!
+//! Provides real-time monitoring of:
+//! - Task execution counts and success rates
+//! - Performance timing and duration tracking
+//! - Historical task records for analysis
+//! - Run summary export to JSON files
+
 use parking_lot::RwLock;
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -6,37 +14,70 @@ use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+/// Records detailed metrics for a single task execution.
+/// Captures timing, outcome, and execution context for performance analysis
+/// and debugging purposes.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct TaskMetrics {
+    /// Name of the task that was executed
     pub task_name: String,
+    /// Final status of the task execution
     pub status: TaskStatus,
+    /// Time taken to execute the task in milliseconds
     pub duration_ms: u64,
+    /// ID of the session that executed the task
     pub session_id: String,
+    /// Which attempt number this execution represents
     pub attempt: u32,
 }
 
+/// Status of a task execution outcome.
+/// Note: This is a duplicate of the TaskStatus enum in result.rs.
+/// Consider consolidating these in the future.
+/// TODO: Use the TaskStatus from result.rs instead
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum TaskStatus {
+    /// Task completed successfully
     Success,
+    /// Task failed with an error
     Failed,
+    /// Task exceeded its timeout limit
     Timeout,
 }
 
+/// Collects and aggregates performance metrics across all task executions.
+/// Provides real-time statistics and historical data for monitoring system health
+/// and performance. Thread-safe for concurrent access.
 #[allow(dead_code)]
 pub struct MetricsCollector {
+    /// Total number of tasks executed
     total_tasks: Arc<AtomicUsize>,
+    /// Number of tasks that succeeded
     succeeded: Arc<AtomicUsize>,
+    /// Number of tasks that failed
     failed: Arc<AtomicUsize>,
+    /// Number of tasks that timed out
     timed_out: Arc<AtomicUsize>,
+    /// Total execution time across all tasks in milliseconds
     total_duration_ms: Arc<AtomicUsize>,
+    /// Number of currently active tasks
     active_tasks: Arc<AtomicUsize>,
+    /// Rolling history of recent task executions
     task_history: Arc<RwLock<VecDeque<TaskMetrics>>>,
+    /// Maximum number of historical records to keep
     max_history: usize,
 }
 
 impl MetricsCollector {
+    /// Creates a new metrics collector with the specified history buffer size.
+    ///
+    /// # Arguments
+    /// * `max_history` - Maximum number of task records to keep in memory
+    ///
+    /// # Returns
+    /// A new MetricsCollector instance ready for recording metrics
     #[allow(dead_code)]
     pub fn new(max_history: usize) -> Self {
         Self {
@@ -93,6 +134,11 @@ impl MetricsCollector {
         }
     }
 
+    /// Calculates the success rate as a percentage of total tasks.
+    /// Returns 0.0 if no tasks have been executed.
+    ///
+    /// # Returns
+    /// Success rate as a percentage (0.0 to 100.0)
     pub fn success_rate(&self) -> f64 {
         let total = self.total_tasks.load(Ordering::SeqCst);
         if total == 0 {
@@ -102,13 +148,22 @@ impl MetricsCollector {
     }
 }
 
+/// A point-in-time snapshot of metrics data.
+/// Contains all current metric values for serialization and reporting.
+/// Used for exporting metrics to external systems or files.
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricsSnapshot {
+    /// Total number of tasks executed so far
     pub total_tasks: usize,
+    /// Number of tasks that completed successfully
     pub succeeded: usize,
+    /// Number of tasks that failed
     pub failed: usize,
+    /// Number of tasks that timed out
     pub timed_out: usize,
+    /// Number of tasks currently in progress
     pub active_tasks: usize,
+    /// Total execution time across all completed tasks in milliseconds
     pub total_duration_ms: u64,
 }
 
@@ -118,14 +173,24 @@ impl Default for MetricsCollector {
     }
 }
 
+/// Summary of a complete orchestration run exported to run-summary.json.
+/// Contains final statistics and outcome of all tasks executed during the run.
+/// Used for post-run analysis and reporting.
 #[derive(Debug, Serialize)]
 pub struct RunSummary {
+    /// ISO 8601 timestamp when the summary was generated
     pub timestamp: String,
+    /// Total number of tasks attempted during the run
     pub total_tasks: usize,
+    /// Number of tasks that completed successfully
     pub succeeded: usize,
+    /// Number of tasks that failed permanently
     pub failed: usize,
+    /// Number of tasks that timed out
     pub timed_out: usize,
+    /// Overall success rate as a percentage
     pub success_rate: f64,
+    /// Total execution time for the entire run in milliseconds
     pub total_duration_ms: u64,
 }
 

@@ -5,6 +5,9 @@ pub mod keyboard;
 pub mod timing;
 pub mod math;
 pub mod blockmedia;
+pub mod zoom;
+pub mod page_size;
+pub mod profile;
 
 // Re-export everything for easy importing: use crate::utils::*;
 #[allow(unused_imports)]
@@ -21,3 +24,9 @@ pub use timing::*;
 pub use math::*;
 #[allow(unused_imports)]
 pub use blockmedia::*;
+#[allow(unused_imports)]
+pub use zoom::*;
+#[allow(unused_imports)]
+pub use page_size::*;
+#[allow(unused_imports)]
+pub use profile::*;

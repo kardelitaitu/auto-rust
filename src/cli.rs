@@ -1,4 +1,11 @@
-use anyhow::Result;
+//! Command-line interface and task parsing module.
+//!
+//! This module handles:
+//! - Command-line argument parsing using clap
+//! - Task group parsing (handling "then" separators)
+//! - Task definition structures
+//! - Formatting task groups for display and logging
+
 use clap::Parser;
 use std::collections::HashMap;
 
@@ -20,6 +27,12 @@ pub struct Args {
     pub browsers: Option<String>,
 }
 
+/// Parses command-line arguments using clap.
+/// Uses the Args struct definition to automatically parse and validate
+/// command-line input. Exits with an error message if parsing fails.
+///
+/// # Returns
+/// Parsed command-line arguments as an Args struct
 pub fn parse_args() -> Args {
     Args::parse()
 }
@@ -33,14 +46,14 @@ pub struct TaskDefinition {
 
 /// Parse CLI args into task groups for sequential execution
 /// Mirrors the Node.js task-parser.js logic
-pub fn parse_task_groups(task_args: &[String]) -> Result<Vec<Vec<TaskDefinition>>> {
+pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
     let mut groups: Vec<Vec<TaskDefinition>> = Vec::new();
     let mut current_group: Vec<TaskDefinition> = Vec::new();
     let mut current_task: Option<String> = None;
     let mut current_payload: HashMap<String, String> = HashMap::new();
 
     if task_args.is_empty() {
-        return Ok(vec![]);
+        return vec![];
     }
 
     for arg in task_args {
@@ -131,7 +144,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Result<Vec<Vec<TaskDefinition>
         groups.push(current_group);
     }
 
-    Ok(groups)
+    groups
 }
 
 fn is_numeric(value: &str) -> bool {
@@ -166,16 +179,36 @@ fn format_url(value: &str) -> String {
     // Contains dot or is localhost → treat as URL, prepend https://
     let before_port = trimmed.split(':').next().unwrap_or(trimmed);
     if trimmed.contains('.') || before_port == "localhost" {
-        return format!("https://{}", trimmed);
+        return format!("https://{trimmed}");
     }
 
     // Not a URL, return as-is
     trimmed.to_string()
 }
 
-/// Format parsed task groups for display logging
+/// Formats parsed task groups into a human-readable string for logging.
+/// Creates a summary showing the structure of task groups and total task count.
+/// Useful for displaying execution plans to users.
+///
+/// # Arguments
+/// * `groups` - Slice of task groups, where each group is a vector of tasks
+///
+/// # Returns
+/// Formatted string describing the task groups (e.g., "3 tasks (1 then 2)")
+///
+/// # Examples
+/// ```
+/// let groups = vec![
+///     vec![TaskDefinition { name: "cookiebot".to_string(), payload: HashMap::new() }],
+///     vec![
+///         TaskDefinition { name: "pageview".to_string(), payload: HashMap::new() },
+///         TaskDefinition { name: "pageview".to_string(), payload: HashMap::new() }
+///     ]
+/// ];
+/// assert_eq!(format_task_groups(&groups), "3 tasks (1 then 2)");
+/// ```
 pub fn format_task_groups(groups: &[Vec<TaskDefinition>]) -> String {
-    let total: usize = groups.iter().map(|g| g.len()).sum();
+    let total: usize = groups.iter().map(Vec::len).sum();
 
     if total == 0 {
         return "No tasks".to_string();
@@ -203,14 +236,14 @@ mod tests {
 
     #[test]
     fn test_parse_task_groups_empty() {
-        let result = parse_task_groups(&[]).unwrap();
+        let result = parse_task_groups(&[]);
         assert_eq!(result.len(), 0);
     }
 
     #[test]
     fn test_parse_task_groups_single_task() {
         let args = vec!["cookiebot".to_string()];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
@@ -221,7 +254,7 @@ mod tests {
     #[test]
     fn test_parse_task_groups_with_js_extension() {
         let args = vec!["cookiebot.js".to_string()];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
@@ -231,7 +264,7 @@ mod tests {
     #[test]
     fn test_parse_task_groups_with_url() {
         let args = vec!["pageview=www.reddit.com".to_string()];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
@@ -245,7 +278,7 @@ mod tests {
     #[test]
     fn test_parse_task_groups_with_explicit_url() {
         let args = vec!["pageview=url=https://example.com".to_string()];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
@@ -260,7 +293,7 @@ mod tests {
     #[test]
     fn test_parse_task_groups_multiple_tasks_same_group() {
         let args = vec!["cookiebot".to_string(), "pageview=reddit.com".to_string()];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 2);
@@ -279,7 +312,7 @@ mod tests {
             "then".to_string(),
             "pageview=reddit.com".to_string(),
         ];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].len(), 1);
@@ -301,7 +334,7 @@ mod tests {
             "then".to_string(),
             "cookiebot".to_string(),
         ];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 2);
 
@@ -322,7 +355,7 @@ mod tests {
     #[test]
     fn test_parse_task_groups_with_numeric_value() {
         let args = vec!["taskname=42".to_string()];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
@@ -333,7 +366,7 @@ mod tests {
     #[test]
     fn test_parse_task_groups_with_spaces() {
         let args = vec!["task=value with spaces".to_string()];
-        let result = parse_task_groups(&args).unwrap();
+        let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);

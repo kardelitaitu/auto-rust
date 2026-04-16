@@ -6,28 +6,28 @@ use crate::utils::{navigation, scroll, timing, mouse};
 use rand;
 
 pub async fn run(session_id: &str, page: &Page, payload: Value) -> Result<()> {
-    info!("[{}][pageview] Task started", session_id);
+    info!("[{session_id}][pageview] Task started");
 
     // Extract URL from payload
     let url = extract_url_from_payload(&payload)?;
-    info!("[{}][pageview] Visiting URL: {}", session_id, url);
+    info!("[{session_id}][pageview] Visiting URL: {url}");
 
     // Navigate to URL
-    if let Err(e) = navigation::goto(&page, &url, 30000).await {
-        warn!("[{}][pageview] Failed to navigate to {}: {}", session_id, url, e);
+    if let Err(e) = navigation::goto(page, &url, 30000).await {
+        warn!("[{session_id}][pageview] Failed to navigate to {url}: {e}");
         return Err(e);
     }
 
     // Wait for page load
-    if let Err(e) = navigation::wait_for_load(&page, 10000).await {
-        warn!("[{}][pageview] Failed to wait for page load {}: {}", session_id, url, e);
+    if let Err(e) = navigation::wait_for_load(page, 10000).await {
+        warn!("[{session_id}][pageview] Failed to wait for page load {url}: {e}");
         return Err(e);
     }
 
     // Perform human-like page viewing behavior
     perform_pageview_behavior(page).await?;
 
-    info!("[{}][pageview] Task completed successfully for: {}", session_id, url);
+    info!("[{session_id}][pageview] Task completed successfully for: {url}");
     Ok(())
 }
 
@@ -46,7 +46,7 @@ async fn perform_pageview_behavior(page: &Page) -> Result<()> {
         // Move mouse to a random position on the page
         let target_x = rand::random::<f64>() * 800.0; // Assume 800px width
         let target_y = rand::random::<f64>() * 600.0; // Assume 600px height
-        mouse::human_mouse_move_to(page, target_x, target_y).await?;
+        mouse::cursor_move_to(page, target_x, target_y).await?;
         timing::human_pause(1000, 30).await;
     }
 
@@ -71,5 +71,5 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
         }
     }
 
-    Err(anyhow::anyhow!("No URL found in payload: {:?}", payload))
+    Err(anyhow::anyhow!("No URL found in payload: {payload:?}"))
 }

@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_task_result_success() {
@@ -44,4 +43,3 @@ mod tests {
         );
     }
 }
-

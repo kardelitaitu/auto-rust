@@ -37,6 +37,67 @@ fn dom_cleanup_js() -> &'static str {
     "#
 }
 
+// Aggressive JS-level blocking for cookiebot task.
+// Overrides fetch() and XMLHttpRequest to prevent media requests altogether.
+fn cookiebot_block_js() -> &'static str {
+    r#"
+        (() => {
+            const BLOCK_EXTENSIONS = ['ts', 'm3u8', 'mp4', 'webm', 'mp3', 'wav', 'opus', 'aac', 'ogg', 'mpd', 'mkv', 'avi', 'mov', 'flv'];
+            
+            function shouldBlock(url) {
+                try {
+                    const u = new URL(url, location.href);
+                    const pathname = u.pathname.toLowerCase();
+                    return BLOCK_EXTENSIONS.some(ext => pathname.endsWith('.' + ext));
+                } catch {
+                    return false;
+                }
+            }
+
+            // Override fetch()
+            const OriginalFetch = window.fetch;
+            window.fetch = function(input, init) {
+                if (typeof input === 'string' && shouldBlock(input)) {
+                    console.log('[cookiebot-block] Blocked fetch:', input);
+                    return Promise.reject(new TypeError('Blocked by cookiebot'));
+                }
+                if (input instanceof Request && shouldBlock(input.url)) {
+                    console.log('[cookiebot-block] Blocked fetch:', input.url);
+                    return Promise.reject(new TypeError('Blocked by cookiebot'));
+                }
+                return OriginalFetch.apply(this, arguments);
+            };
+
+            // Override XMLHttpRequest
+            const OriginalXHR = window.XMLHttpRequest;
+            window.XMLHttpRequest = function() {
+                const xhr = new OriginalXHR();
+                const origOpen = xhr.open;
+                xhr.open = function(method, url, ...args) {
+                    if (shouldBlock(url)) {
+                        console.log('[cookiebot-block] Blocked XHR:', url);
+                        // Replace open with a no-op that throws if send is called
+                        xhr.send = () => { throw new TypeError('Blocked by cookiebot'); };
+                        return;
+                    }
+                    return origOpen.apply(this, [method, url, ...args]);
+                };
+                return xhr;
+            };
+
+            // Also block WebSocket (some streams use WS)
+            const OrigWS = window.WebSocket;
+            window.WebSocket = function(url, protocols) {
+                if (shouldBlock(url)) {
+                    console.log('[cookiebot-block] Blocked WebSocket:', url);
+                    return;
+                }
+                return new OrigWS(url, protocols);
+            };
+        })()
+    "#
+}
+
 #[allow(dead_code)]
 pub async fn block_heavy_resources(page: &chromiumoxide::Page) -> Result<()> {
     // Network-level blocking is the primary bandwidth/resource saver.
@@ -45,6 +106,19 @@ pub async fn block_heavy_resources(page: &chromiumoxide::Page) -> Result<()> {
 
     // DOM cleanup is a fallback for already-present media elements.
     page.evaluate(dom_cleanup_js()).await?;
+
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn block_heavy_resources_for_cookiebot(page: &chromiumoxide::Page) -> Result<()> {
+    // Network-level blocking (same as general)
+    page.execute(network::EnableParams::default()).await?;
+    page.execute(network::SetBlockedUrLsParams::new(blocked_patterns())).await?;
+
+    // DOM cleanup PLUS fetch/XHR override (separated by semicolon to avoid invocation)
+    let script = format!("{};\n{}", dom_cleanup_js(), cookiebot_block_js());
+    page.evaluate(script).await?;
 
     Ok(())
 }

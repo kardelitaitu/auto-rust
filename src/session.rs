@@ -1,39 +1,64 @@
+//! Browser session lifecycle management module.
+//!
+//! Manages individual browser sessions including:
+//! - Session creation and initialization
+//! - Worker/page allocation with semaphore-based concurrency control
+//! - Health monitoring and failure tracking
+//! - Graceful shutdown and cleanup
+
 use chromiumoxide::{Browser, Handler};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use log::{info, warn};
-use anyhow;
 use futures::StreamExt;
 use dashmap::DashSet;
+use crate::utils::profile::{BrowserProfile, random_preset, randomize_profile};
 
+/// Represents the current operational state of a browser session.
+/// Used to track session health and availability for task assignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum SessionState {
+    /// Session is available and ready to accept tasks
     Idle,
+    /// Session is currently executing a task
     Busy,
+    /// Session has failed and is not available for tasks
     Failed,
 }
 
+/// Represents a browser session with connection management and health monitoring.
+/// A session encapsulates a browser instance and manages its lifecycle, worker allocation,
+/// and health status for reliable task execution.
 pub struct Session {
+    /// Unique identifier for this session
     pub id: String,
+    /// Human-readable name for this session
     pub name: String,
+    /// Browser profile type (e.g., "chrome", "brave") (currently unused)
     #[allow(dead_code)]
     pub profile_type: String,
+    /// Behavioral profile for human-like interactions (cursor, typing, etc.)
+    pub behavior_profile: BrowserProfile,
+    /// The underlying Chromium Oxide browser instance
     pub browser: Browser,
+    /// Background task handle for event handling (internal use)
     handler_task: Option<tokio::task::JoinHandle<()>>,
 
-    // Worker semaphore (controls concurrent page access)
+    /// Semaphore controlling concurrent page access within this session
     worker_semaphore: Arc<Semaphore>,
+    /// Number of currently active worker threads/pages
     pub active_workers: std::sync::atomic::AtomicUsize,
-    
-    // Health tracking
+
+    /// Count of consecutive failures for health monitoring
     failure_count: std::sync::atomic::AtomicUsize,
+    /// Whether this session is considered healthy for task execution
     is_healthy: std::sync::atomic::AtomicBool,
-    
-    // State tracking
+
+    /// Current operational state of the session
     state: parking_lot::Mutex<SessionState>,
-    
-    // Page registry (tracks active pages)
+
+    /// Registry of active page IDs (currently unused)
     #[allow(dead_code)]
     active_pages: DashSet<u64>,
 }
@@ -67,13 +92,14 @@ impl Session {
                     }
                 }
             }
-            log::debug!("Handler task ended for session {}", id_clone);
+            log::debug!("Handler task ended for session {id_clone}");
         });
 
         Self {
             id,
             name,
             profile_type,
+            behavior_profile: randomize_profile(&random_preset()),
             browser,
             handler_task: Some(handler_task),
             worker_semaphore: Arc::new(Semaphore::new(max_workers)),
@@ -86,21 +112,25 @@ impl Session {
     }
 
     /// Register a page to track it
+    #[allow(dead_code)]
     pub fn register_page(&self, page_id: u64) {
         self.active_pages.insert(page_id);
     }
 
     /// Unregister a page (release it)
+    #[allow(dead_code)]
     pub fn unregister_page(&self, page_id: u64) {
         self.active_pages.remove(&page_id);
     }
 
     /// Get count of active pages
+    #[allow(dead_code)]
     pub fn active_page_count(&self) -> usize {
         self.active_pages.len()
     }
 
     /// State management
+    #[allow(dead_code)]
     pub fn state(&self) -> SessionState {
         *self.state.lock()
     }
@@ -109,10 +139,12 @@ impl Session {
         *self.state.lock() = new_state;
     }
 
+    #[allow(dead_code)]
     pub fn is_idle(&self) -> bool {
         *self.state.lock() == SessionState::Idle
     }
 
+    #[allow(dead_code)]
     pub fn is_busy(&self) -> bool {
         *self.state.lock() == SessionState::Busy
     }
@@ -133,12 +165,13 @@ impl Session {
         self.failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
+    #[allow(dead_code)]
     pub fn get_failure_count(&self) -> usize {
         self.failure_count.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Acquire a worker permit from the semaphore
-    /// Equivalent to Node.js sessionManager.acquireWorker()
+    /// Equivalent to Node.js `sessionManager.acquireWorker()`
     pub async fn acquire_worker(&self, timeout_ms: u64) -> Option<tokio::sync::SemaphorePermit<'_>> {
         use tokio::time::{timeout, Duration};
 
@@ -172,7 +205,7 @@ impl Session {
     }
 
     /// Acquire a page for task execution
-    /// Equivalent to Node.js sessionManager.acquirePage()
+    /// Equivalent to Node.js `sessionManager.acquirePage()`
     pub async fn acquire_page(&self) -> anyhow::Result<Arc<chromiumoxide::Page>> {
         // Create new page (equivalent to browser.newPage())
         let page = self.browser.new_page("about:blank").await?;
@@ -180,10 +213,10 @@ impl Session {
     }
 
     /// Release a page (close it)
-    /// Equivalent to Node.js sessionManager.releasePage()
+    /// Equivalent to Node.js `sessionManager.releasePage()`
     pub async fn release_page(&self, page: Arc<chromiumoxide::Page>) {
         // Close the page
-        if let Err(e) = Arc::try_unwrap(page).unwrap().close().await {
+        if let Err(e) = Arc::try_unwrap(page).expect("Failed to unwrap Arc<Page> - page has multiple references").close().await {
             warn!("[{}] Error closing page: {}", self.id, e);
         }
     }
@@ -200,10 +233,10 @@ impl Session {
             warn!("[{}] Error closing browser: {}", self.id, e);
         }
         
-        // Cancel handler task
-        if let Some(task) = self.handler_task.take() {
-            let _ = task.abort();
-        }
+         // Cancel handler task
+         if let Some(task) = self.handler_task.take() {
+             task.abort();
+         }
         
         info!("[{}] Shutdown complete", self.id);
         Ok(())

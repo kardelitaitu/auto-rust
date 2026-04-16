@@ -1,3 +1,10 @@
+//! Task execution module.
+//!
+//! Provides the core task execution infrastructure:
+//! - Generic task runner with retry logic
+//! - Task-specific implementations (cookiebot, pageview, etc.)
+//! - Error classification and result reporting
+
 use anyhow::Result;
 use chromiumoxide::Page;
 use serde_json::Value;
@@ -6,7 +13,7 @@ use crate::result::{TaskResult, TaskStatus};
 pub mod cookiebot;
 pub mod pageview;
 
-use crate::utils::block_heavy_resources;
+use crate::utils::block_heavy_resources_for_cookiebot;
 
 pub async fn perform_task(
     page: &Page, 
@@ -62,12 +69,12 @@ async fn execute_single_attempt(
     payload: &Value,
 ) -> Result<()> {
     if name == "cookiebot" {
-        block_heavy_resources(page).await?;
+        block_heavy_resources_for_cookiebot(page).await?;
     }
 
     match name {
         "cookiebot" => cookiebot::run(session_id, page, payload.clone()).await,
         "pageview" => pageview::run(session_id, page, payload.clone()).await,
-        _ => Err(anyhow::anyhow!("Unknown task: {}", name)),
+        _ => Err(anyhow::anyhow!("Unknown task: {name}")),
     }
 }

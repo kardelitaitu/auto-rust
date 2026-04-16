@@ -1,9 +1,16 @@
 # Orchestrator Configuration
-# Load from file or use environment overrides
 
 [browser]
 max_discovery_retries = 3
 discovery_retry_delay_ms = 5000
+connectors = []
+connection_timeout_ms = 30000
+
+[browser.circuit_breaker]
+enabled = true
+failure_threshold = 5
+success_threshold = 3
+half_open_time_ms = 30000
 
 [[browser.profiles]]
 name = "brave-local"

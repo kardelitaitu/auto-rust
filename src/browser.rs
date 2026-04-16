@@ -1,3 +1,11 @@
+//! Browser discovery, connection, and management module.
+//!
+//! Handles:
+//! - Browser profile discovery from configuration
+//! - Establishing WebSocket connections to browser instances
+//! - Managing browser lifecycle and health checks
+//! - Integration with RoxyBrowser API for cloud-hosted browsers
+
 use crate::config::Config;
 use crate::session::Session;
 use anyhow::{Result, bail};
@@ -27,7 +35,7 @@ pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
         }
 
         // Try Roxybrowser discovery (always enabled)
-        let roxy_sessions = discover_roxybrowser(&config).await?;
+        let roxy_sessions = discover_roxybrowser(config).await?;
         for session in roxy_sessions {
             info!("Discovered Roxybrowser: {}", session.name);
             sessions.push(session);
@@ -99,9 +107,9 @@ async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
 
 /// Discover a Brave browser instance on a specific port
 async fn discover_brave_on_port(port: u16, _config: &Config) -> Result<Option<Session>> {
-    let cdp_url = format!("http://127.0.0.1:{}/json/version", port);
+    let cdp_url = format!("http://127.0.0.1:{port}/json/version");
 
-    debug!("Checking Brave on port {}", port);
+    debug!("Checking Brave on port {port}");
 
     // Try to connect with timeout
     let client = reqwest::Client::new();
@@ -116,14 +124,14 @@ async fn discover_brave_on_port(port: u16, _config: &Config) -> Result<Option<Se
             if let Ok(version_data) = resp.json::<serde_json::Value>().await {
                 if let Some(ws_url) = version_data.get("webSocketDebuggerUrl") {
                     if let Some(ws_str) = ws_url.as_str() {
-                        info!("Found Brave browser on port {}", port);
+                        info!("Found Brave browser on port {port}");
 
                         // Try to connect to chromiumoxide
                         match chromiumoxide::Browser::connect(ws_str).await {
                             Ok((browser, handler)) => {
                                 let session = Session::new(
-                                    format!("brave-{}", port),
-                                    format!("Brave on port {}", port),
+                                    format!("brave-{port}"),
+                                    format!("Brave on port {port}"),
                                     "localBrave".to_string(),
                                     browser,
                                     handler,
@@ -132,7 +140,7 @@ async fn discover_brave_on_port(port: u16, _config: &Config) -> Result<Option<Se
                                 return Ok(Some(session));
                             }
                             Err(e) => {
-                                warn!("Failed to connect to Brave on port {}: {}", port, e);
+                                warn!("Failed to connect to Brave on port {port}: {e}");
                             }
                         }
                     }
@@ -152,7 +160,7 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
     let api_url = &config.browser.roxybrowser.api_url;
     let api_key = &config.browser.roxybrowser.api_key;
 
-    info!("Discovering Roxybrowser from: {}", api_url);
+    info!("Discovering Roxybrowser from: {api_url}");
 
     let client = crate::api::ApiClient::new(api_url.clone());
     
@@ -184,39 +192,35 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
 
     for (i, profile) in profiles.iter().enumerate() {
         let ws_url = profile.get("ws")
-            .and_then(|w| w.as_str())
-            .map(|s| s.to_string());
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
 
         let http_url = profile.get("http")
-            .and_then(|h| h.as_str())
-            .map(|s| s.to_string());
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
 
-        let ws_url = match ws_url {
-            Some(url) => url,
-            None => {
-                match http_url {
-                    Some(http) => format!("{}", http.replace("http", "ws")),
-                    None => {
-                        warn!("Profile {} missing ws/http, skipping", i);
-                        continue;
-                    }
-                }
-            }
+        let ws_url = if let Some(url) = ws_url {
+            url
+        } else if let Some(http) = http_url {
+            http.replace("http", "ws")
+        } else {
+            warn!("Profile {i} missing ws/http, skipping");
+            continue;
         };
 
         // Use windowName as ID (the profile name user set in Roxybrowser), prepend with "roxy-"
         let profile_id = profile.get("windowName")
             .and_then(|w| w.as_str())
-            .map(|s| format!("roxy-{}", s))
-            .unwrap_or_else(|| format!("roxy-{}", i));
+            .map(|s| format!("roxy-{s}"))
+            .unwrap_or_else(|| format!("roxy-{i}"));
 
         let profile_name = profile.get("name")
             .or_else(|| profile.get("windowName"))
             .and_then(|n| n.as_str())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("Roxybrowser-{}", i));
+            .unwrap_or_else(|| format!("Roxybrowser-{i}"));
 
-        debug!("Connecting to Roxybrowser: {} ({})", profile_name, ws_url);
+        debug!("Connecting to Roxybrowser: {profile_name} ({ws_url})");
 
         match chromiumoxide::Browser::connect(&ws_url).await {
             Ok((browser, handler)) => {
@@ -229,10 +233,10 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
                     5,
                 );
                 sessions.push(session);
-                info!("Connected to Roxybrowser: {}", profile_name);
+                info!("Connected to Roxybrowser: {profile_name}");
             }
             Err(e) => {
-                warn!("Failed to connect to Roxybrowser {}: {}", profile_name, e);
+                warn!("Failed to connect to Roxybrowser {profile_name}: {e}");
             }
         }
     }

@@ -4,14 +4,13 @@ use crate::utils::math::{random_in_range, gaussian};
 use crate::utils::timing::human_pause;
 
 #[allow(dead_code)]
-pub async fn natural_typing(page: &Page, selector: &str, text: &str) -> Result<()> {
-    // Focus the element first
-    page.evaluate(format!("document.querySelector('{}').focus();", selector)).await?;
+pub async fn natural_typing(page: &Page, selector: &str, text: &str, typo_rate: f64) -> Result<()> {
+    page.evaluate(format!("document.querySelector('{selector}').focus();")).await?;
 
     // Type each character with human-like timing
     for (i, ch) in text.chars().enumerate() {
-        // Occasionally make typos (backspace and retype)
-        if should_make_typo() && i > 0 {
+        // Occasionally make typos based on typo rate
+        if (random_in_range(0, 100) as f64 / 100.0) < typo_rate && i > 0 {
             await_typo_correction(page, ch).await?;
         } else {
             await_type_character(page, ch).await?;
@@ -31,13 +30,13 @@ async fn await_type_character(page: &Page, ch: char) -> Result<()> {
         const element = document.activeElement;
         if (element) {{
             const inputEvent = new InputEvent('input', {{
-                data: '{}',
+                data: '{ch}',
                 bubbles: true
             }});
-            element.value += '{}';
+            element.value += '{ch}';
             element.dispatchEvent(inputEvent);
         }}
-    ", ch, ch)).await?;
+    ")).await?;
 
     human_pause(key_delay, 30).await;
     Ok(())
@@ -71,13 +70,13 @@ pub async fn press_key(page: &Page, key: &str) -> Result<()> {
         const element = document.activeElement;
         if (element) {{
             const keyEvent = new KeyboardEvent('keydown', {{
-                key: '{}',
-                code: '{}',
+                key: '{key}',
+                code: '{key}',
                 bubbles: true
             }});
             element.dispatchEvent(keyEvent);
         }}
-    ", key, key)).await?;
+    ")).await?;
 
     human_pause(50, 20).await;
     Ok(())

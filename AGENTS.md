@@ -179,6 +179,12 @@ Need external app integration (GitHub, Slack)?
 - [x] Add deterministic utility tests for navigation/scroll/timing behavior
 - [x] Add integration tests for `cookiebot` and `pageview` (unit tests added)
 
+### Commands
+
+- Test: `cargo test`
+- Clippy lint: `cargo clippy --all-targets --all-features > rust-analyzer-problems.log 2>&1`
+- Build: `cargo build --all-features`
+
 ### Delivery Tracks
 - [ ] Fast track: complete Phases 0-2 first (production stability)
 - [ ] Full parity: complete Phases 0-6 (feature parity with Node reference)

@@ -1,17 +1,80 @@
+//! File-based logging implementation.
+//!
+//! Provides thread-safe logging to both stdout and a log file with:
+//! - Configurable log levels
+//! - Timestamped log entries
+//! - Structured logging with session/profile/task context
+
 use chrono::Local;
 use log::LevelFilter;
 use log::{Log, Metadata, Record};
+use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
 
+// Thread-local storage for logging context.
+thread_local! {
+    static LOG_CONTEXT: RefCell<LogContext> = RefCell::new(LogContext::default());
+}
+
+/// Logging context containing session and task information.
+#[derive(Debug, Clone, Default)]
+pub struct LogContext {
+    pub session_id: Option<String>,
+    pub profile_name: Option<String>,
+    pub task_name: Option<String>,
+}
+
+impl LogContext {
+    /// Returns formatted context string like "[brave-9002][Teen][pageview]"
+    pub fn format(&self) -> String {
+        let mut parts = Vec::new();
+
+        if let Some(ref sid) = self.session_id {
+            parts.push(format!("[{}]", sid));
+        }
+
+        if let Some(ref profile) = self.profile_name {
+            parts.push(format!("[{}]", profile));
+        }
+
+        if let Some(ref task) = self.task_name {
+            parts.push(format!("[{}]", task));
+        }
+
+        parts.join("")
+    }
+}
+
+/// Sets the logging context for the current thread.
+pub fn set_log_context(ctx: LogContext) {
+    LOG_CONTEXT.with(|c| c.replace(ctx));
+}
+
+/// Gets the current logging context.
+pub fn get_log_context() -> LogContext {
+    LOG_CONTEXT.with(|c| c.borrow().clone())
+}
+
+/// Clears the logging context.
+#[allow(dead_code)]
+pub fn clear_log_context() {
+    LOG_CONTEXT.with(|c| c.replace(LogContext::default()));
+}
+
+/// Logger implementation that writes log messages to both stdout and a file.
+/// Provides thread-safe logging with configurable log levels.
 pub struct FileLogger {
+    /// Thread-safe file handle for writing log messages
     file: Mutex<File>,
+    /// Minimum log level to output (messages below this level are ignored)
     level: LevelFilter,
 }
 
 impl FileLogger {
+    /// Creates a new FileLogger that writes to the specified file path.
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, std::io::Error> {
         let file = OpenOptions::new()
             .write(true)
@@ -34,10 +97,25 @@ impl Log for FileLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let timestamp = Local::now().format("%H:%M:%S").to_string();
-            let msg = format!("{} {} {}\n", timestamp, record.level(), record.args());
+
+            // Get logging context
+            let ctx = get_log_context();
+            let context_str = ctx.format();
+
+            let msg = if context_str.is_empty() {
+                format!("{} {} {}\n", timestamp, record.level(), record.args())
+            } else {
+                format!(
+                    "{} {} {} {}\n",
+                    timestamp,
+                    context_str,
+                    record.level(),
+                    record.args()
+                )
+            };
 
             // Write to stdout
-            print!("{}", msg);
+            print!("{msg}");
 
             // Write to file
             if let Ok(mut file) = self.file.lock() {

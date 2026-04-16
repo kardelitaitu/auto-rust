@@ -1,6 +1,15 @@
+//! Task orchestration and execution coordination module.
+//!
+//! The orchestrator manages:
+//! - Parallel execution of task groups across sessions
+//! - Global concurrency control via semaphores
+//! - Retry logic and error handling
+//! - Load balancing and resource allocation
+
 use crate::config::Config;
 use crate::session::Session;
 use crate::cli::TaskDefinition;
+use crate::logger::{LogContext, set_log_context};
 use anyhow::{Result, bail};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -8,13 +17,53 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
 
+/// Formats milliseconds into a human-readable duration string.
+fn format_duration(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{}ms", ms)
+    } else if ms < 60000 {
+        let secs = ms / 1000;
+        format!("{}s", secs)
+    } else if ms < 3600000 {
+        let mins = ms / 60000;
+        let secs = (ms % 60000) / 1000;
+        if secs == 0 {
+            format!("{}min", mins)
+        } else {
+            format!("{}min {}s", mins, secs)
+        }
+    } else {
+        let hours = ms / 3600000;
+        let mins = (ms % 3600000) / 60000;
+        if mins == 0 {
+            format!("{}h", hours)
+        } else {
+            format!("{}h {}min", hours, mins)
+        }
+    }
+}
+
+/// Central coordinator for task execution across multiple browser sessions.
+/// Manages global concurrency limits, session allocation, and task distribution.
+/// Ensures efficient resource utilization and fault tolerance.
 pub struct Orchestrator {
+    /// Configuration settings for orchestration behavior
     config: Config,
+    /// Global counter of currently active tasks across all sessions
     global_active_tasks: Arc<AtomicUsize>,
+    /// Semaphore limiting total concurrent tasks across all sessions
     global_semaphore: Arc<Semaphore>,
 }
 
 impl Orchestrator {
+    /// Creates a new orchestrator with the given configuration.
+    /// Initializes global concurrency controls and prepares for task execution.
+    ///
+    /// # Arguments
+    /// * `config` - Configuration settings for orchestration behavior
+    ///
+    /// # Returns
+    /// A new Orchestrator instance ready for task execution
     pub fn new(config: Config) -> Self {
         Self {
             global_active_tasks: Arc::new(AtomicUsize::new(0)),
@@ -23,8 +72,16 @@ impl Orchestrator {
         }
     }
 
-    /// Execute a group of tasks across all sessions
-    /// Tasks within a group run in parallel
+    /// Executes a group of tasks across available browser sessions.
+    /// Tasks within a group run in parallel across different sessions,
+    /// respecting global concurrency limits.
+    ///
+    /// # Arguments
+    /// * `group` - Slice of task definitions to execute
+    /// * `sessions` - Available browser sessions for task execution
+    ///
+    /// # Returns
+    /// Vector of task results, one for each task in the group
     pub async fn execute_group(
         &mut self,
         group: &[TaskDefinition],
@@ -51,9 +108,7 @@ impl Orchestrator {
 
         let task_futures: Vec<_> = group
             .iter()
-            .cloned()
             .map(|task_def| {
-                let sessions = sessions;
                 let global_active = self.global_active_tasks.clone();
                 let global_sem = self.global_semaphore.clone();
                 let config = self.config.clone();
@@ -71,8 +126,8 @@ impl Orchestrator {
 
                     // Find an available session and execute the task
                     let result = execute_task_on_session(
-                        &task_def,
-                        &sessions,
+                        task_def,
+                        sessions,
                         &config,
                     )
                     .await;
@@ -102,7 +157,7 @@ impl Orchestrator {
                 );
 
                 if fail_count > 0 {
-                    warn!("{} task(s) failed in group", fail_count);
+                    warn!("{fail_count} task(s) failed in group");
                 }
 
                 Ok(())
@@ -141,7 +196,7 @@ async fn execute_task_on_session(
             let task_def = task_def.clone();
             let config = config.clone();
             async move {
-                let result = execute_task_with_retry(&task_def, &session, &config).await;
+                let result = execute_task_with_retry(&task_def, session, &config).await;
                 (session.id.clone(), result)
             }
         })
@@ -241,8 +296,18 @@ async fn execute_task_with_retry(
         bail!("Task {} validation failed: {}", task_def.name, e);
     }
 
-    info!("[{}][{}] Executing task (timeout: {}ms, retries: {})...", 
-        session.id, task_def.name, config.orchestrator.task_timeout_ms, max_retries);
+    // Set logging context for structured output
+    let profile_name = session.behavior_profile.name.clone();
+    let ctx = LogContext {
+        session_id: Some(session.id.clone()),
+        profile_name: Some(profile_name),
+        task_name: Some(task_def.name.clone()),
+    };
+    set_log_context(ctx);
+    
+    let timeout_display = format_duration(config.orchestrator.task_timeout_ms);
+    info!("Executing task (timeout: {}, retries: {})...", 
+        timeout_display, max_retries);
     
     let result = tokio::time::timeout(task_timeout, 
         crate::task::perform_task(&page, &session.id, &task_def.name, payload_json, max_retries)

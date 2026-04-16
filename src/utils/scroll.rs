@@ -1,3 +1,11 @@
+//! Scrolling and page interaction utilities.
+//!
+//! Provides functions for simulating human-like scrolling behavior:
+//! - Random scrolling with variable speed and direction
+//! - Smooth scrolling to specific positions
+//! - Human-like pauses to simulate reading behavior
+//! - Utilities for page navigation and interaction
+
 use chromiumoxide::Page;
 use anyhow::Result;
 use crate::utils::math::{random_in_range, gaussian};
@@ -27,19 +35,19 @@ pub async fn human_scroll(page: &Page, direction: &str, amount: i32) -> Result<(
     match direction {
         "down" => scroll_down(page, amount).await,
         "up" => scroll_up(page, amount).await,
-        _ => Err(anyhow::anyhow!("Invalid scroll direction: {}", direction)),
+        _ => Err(anyhow::anyhow!("Invalid scroll direction: {direction}")),
     }
 }
 
 async fn scroll_down(page: &Page, amount: i32) -> Result<()> {
     // Execute JavaScript to scroll down
-    page.evaluate(format!("window.scrollBy({{top: {}, behavior: 'smooth'}});", amount)).await?;
+    page.evaluate(format!("window.scrollBy({{top: {amount}, behavior: 'smooth'}});")).await?;
     Ok(())
 }
 
 async fn scroll_up(page: &Page, amount: i32) -> Result<()> {
     // Execute JavaScript to scroll up
-    page.evaluate(format!("window.scrollBy({{top: -{}, behavior: 'smooth'}});", amount)).await?;
+    page.evaluate(format!("window.scrollBy({{top: -{amount}, behavior: 'smooth'}});")).await?;
     Ok(())
 }
 

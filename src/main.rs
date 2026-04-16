@@ -1,3 +1,18 @@
+//! # Rust Orchestrator
+//!
+//! A high-performance, multi-browser automation orchestrator built in Rust.
+//! Executes automated tasks across multiple browser sessions with advanced
+//! concurrency control, session management, and failure recovery.
+//!
+//! ## Architecture
+//! - **CLI Parser**: Parses command-line arguments into task definitions
+//! - **Config**: Loads and validates configuration from TOML files and environment
+//! - **Browser Manager**: Discovers and manages browser connections
+//! - **Orchestrator**: Coordinates task execution across sessions
+//! - **Session**: Manages individual browser session lifecycle
+//! - **Metrics**: Collects performance statistics and exports summaries
+//! - **Tasks**: Specialized task implementations (cookiebot, pageview, etc.)
+
 mod cli;
 mod config;
 mod browser;
@@ -38,7 +53,7 @@ fn main() {
     }
 
     if let Err(e) = run() {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }
@@ -75,9 +90,9 @@ async fn run_async() -> Result<()> {
     }
 
     // Parse tasks into groups (separated by "then")
-    let groups = cli::parse_task_groups(&args.tasks)?;
+    let groups = cli::parse_task_groups(&args.tasks);
     let task_groups_display = cli::format_task_groups(&groups);
-    info!("Processing {}", task_groups_display);
+    info!("Processing {task_groups_display}");
 
     // Create orchestrator and run tasks
     let mut orchestrator = orchestrator::Orchestrator::new(config);
@@ -91,13 +106,12 @@ async fn run_async() -> Result<()> {
 
     // Export run summary
     if let Err(e) = metrics.export_summary() {
-        warn!("Failed to export run summary: {}", e);
+        warn!("Failed to export run summary: {e}");
     }
 
     // Graceful shutdown
     info!("Shutting down sessions...");
-    for i in 0..sessions.len() {
-        let session = &mut sessions[i];
+    for session in &mut sessions {
         if let Err(e) = session.graceful_shutdown().await {
             warn!("Error during shutdown of {}: {}", session.id, e);
         }

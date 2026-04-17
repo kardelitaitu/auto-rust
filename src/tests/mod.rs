@@ -1,4 +1,5 @@
 mod result_tests;
+mod click_policy_tests;
 
 #[cfg(test)]
 mod config_tests {

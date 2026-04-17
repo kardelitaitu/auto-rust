@@ -260,8 +260,7 @@ pub async fn zoom_to(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::utils::math::random_in_range;
+    use crate::utils::math::gaussian;
     
     #[test]
     fn test_zoom_calculations() {

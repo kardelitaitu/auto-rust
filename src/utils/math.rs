@@ -56,6 +56,16 @@ pub fn random_in_range(min: u64, max: u64) -> u64 {
 /// ```
 #[allow(dead_code)]
 pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
+    if !mean.is_finite() || !std_dev.is_finite() || !min.is_finite() || !max.is_finite() {
+        return mean;
+    }
+    if min >= max {
+        return min;
+    }
+    if std_dev <= 0.0 {
+        return mean.clamp(min, max);
+    }
+
     let normal = Normal::new(mean, std_dev)
         .expect("Failed to create normal distribution - standard deviation must be positive");
     let mut rng = rand::thread_rng();
@@ -119,5 +129,11 @@ mod tests {
 
         // Should be close to expected standard deviation (within 20% tolerance)
         assert!((std_dev - expected_std).abs() / expected_std < 0.2);
+    }
+
+    #[test]
+    fn test_gaussian_degenerate_bounds() {
+        let value = gaussian(42.0, 10.0, 10.0, 10.0);
+        assert_eq!(value, 10.0);
     }
 }

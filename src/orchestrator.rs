@@ -278,9 +278,6 @@ async fn execute_task_with_retry(
     }
 
     // Acquire page
-    let _page = session.acquire_page().await?;
-
-    // Acquire page
     let page = session.acquire_page().await?;
 
     // Build and validate payload

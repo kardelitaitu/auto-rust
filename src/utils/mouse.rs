@@ -1,50 +1,148 @@
 //! Mouse simulation and human-computer interaction utilities.
 //!
 //! Provides functions for simulating realistic mouse movements and clicks:
-//! - Human-like mouse movement using Bezier curves
-//! - Click simulation with proper timing
+//! - Human-like mouse movement using Bezier curves and various path styles
+//! - Click simulation with proper timing and precision
 //! - Fitts's Law calculations for optimal target sizing
 //! - Configurable velocity and trajectory randomization
 //! - Utilities for human-computer interaction studies
 
 use chromiumoxide::Page;
+use chromiumoxide::layout::Point as CdpPoint;
 use anyhow::Result;
 use crate::utils::math::{random_in_range, gaussian};
 use crate::utils::timing::human_pause;
 use crate::utils::page_size::get_viewport;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::time::{timeout, Duration};
 
-/// Configuration for cursor movement behavior.
-/// Allows customization of movement speed, trajectory, and timing.
+static MOUSE_OVERLAY_ENABLED: AtomicBool = AtomicBool::new(true);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub enum PathStyle {
+    Bezier,
+    Arc,
+    Zigzag,
+    Overshoot,
+    Stopped,
+    Muscle,
+}
+
+impl Default for PathStyle {
+    fn default() -> Self {
+        PathStyle::Bezier
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub enum Precision {
+    Exact,
+    Safe,
+    Rough,
+}
+
+impl Default for Precision {
+    fn default() -> Self {
+        Precision::Safe
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub enum Speed {
+    Fast,
+    Normal,
+    Slow,
+}
+
+impl Default for Speed {
+    fn default() -> Self {
+        Speed::Normal
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
+
+impl Default for MouseButton {
+    fn default() -> Self {
+        MouseButton::Left
+    }
+}
+
+impl MouseButton {
+    fn as_button_index(&self) -> u16 {
+        match self {
+            MouseButton::Left => 0,
+            MouseButton::Right => 2,
+            MouseButton::Middle => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CursorMovementConfig {
-    /// Base speed multiplier (higher = faster). Default: 1.0
     pub speed_multiplier: f64,
-    /// Minimum delay between movement steps in milliseconds. Default: 10
     pub min_step_delay_ms: u64,
-    /// Maximum additional delay variance in milliseconds. Default: 90
     pub max_step_delay_variance_ms: u64,
-    /// Bezier curve control point spread (higher = more curved). Default: 50.0
     pub curve_spread: f64,
-    /// Number of steps in the bezier curve (higher = smoother but slower). Default: None (random 10-20)
     pub steps: Option<u32>,
-    /// Whether to add random micro-pauses during movement. Default: true
     pub add_micro_pauses: bool,
+    pub path_style: PathStyle,
+    pub precision: Precision,
+    pub speed: Speed,
 }
 
 impl Default for CursorMovementConfig {
     fn default() -> Self {
         Self {
             speed_multiplier: 1.0,
-            min_step_delay_ms: 10,
-            max_step_delay_variance_ms: 90,
+            min_step_delay_ms: 2,
+            max_step_delay_variance_ms: 5,
             curve_spread: 50.0,
             steps: None,
             add_micro_pauses: true,
+            path_style: PathStyle::Bezier,
+            precision: Precision::Safe,
+            speed: Speed::Normal,
         }
     }
 }
 
-/// Represents a 2D point for mouse movement calculations.
+impl CursorMovementConfig {
+    #[allow(dead_code)]
+    pub fn with_speed(mut self, speed: Speed) -> Self {
+        self.speed = speed;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_precision(mut self, precision: Precision) -> Self {
+        self.precision = precision;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_path_style(mut self, style: PathStyle) -> Self {
+        self.path_style = style;
+        self
+    }
+
+    fn speed_config(&self) -> (f64, (u64, u64), bool) {
+        match self.speed {
+            Speed::Fast => (0.1, (1, 3), true),
+            Speed::Normal => (0.5, (2, 5), false),
+            Speed::Slow => (1.0, (5, 10), false),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Point {
     x: f64,
@@ -57,71 +155,116 @@ impl Point {
     }
 }
 
-/// Moves the mouse cursor to a target position using a human-like Bezier curve trajectory.
-/// Uses default configuration with sensible human-like parameters.
-///
-/// # Arguments
-/// * `page` - The browser page to perform the mouse movement on
-/// * `target_x` - Target X coordinate
-/// * `target_y` - Target Y coordinate
-///
-/// # Returns
-/// Ok(()) if the movement succeeds
+pub fn set_overlay_enabled(enabled: bool) {
+    MOUSE_OVERLAY_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn is_overlay_enabled() -> bool {
+    MOUSE_OVERLAY_ENABLED.load(Ordering::Relaxed)
+}
+
 pub async fn cursor_move_to(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
     cursor_move_to_with_config(page, target_x, target_y, &CursorMovementConfig::default()).await
 }
 
-/// Moves the mouse cursor with configurable behavior.
-///
-/// # Arguments
-/// * `page` - The browser page to perform the mouse movement on
-/// * `target_x` - Target X coordinate
-/// * `target_y` - Target Y coordinate
-/// * `config` - Configuration for movement behavior
-///
-/// # Returns
-/// Ok(()) if the movement succeeds
 pub async fn cursor_move_to_with_config(
     page: &Page,
     target_x: f64,
     target_y: f64,
     config: &CursorMovementConfig,
 ) -> Result<()> {
-    let viewport = get_viewport(page).await?;
-    
+    let viewport = timeout(Duration::from_secs(2), get_viewport(page))
+        .await
+        .map_err(|_| anyhow::anyhow!("cursor_move_to_with_config viewport timeout"))??;
     let start_x = viewport.width / 2.0;
     let start_y = viewport.height / 2.0;
 
+    // Degenerate path guard: if source and target are effectively identical,
+    // dispatch one move event and return to avoid zero-range sampling.
+    let dx = target_x - start_x;
+    let dy = target_y - start_y;
+    if dx.hypot(dy) < 0.5 {
+        dispatch_mousemove(page, target_x, target_y).await?;
+        return Ok(());
+    }
+
     let start_point = Point::new(start_x, start_y);
     let end_point = Point::new(target_x, target_y);
-    let points = generate_bezier_curve_with_config(&start_point, &end_point, config);
+
+    let points = match config.path_style {
+        PathStyle::Bezier => generate_bezier_curve_with_config(&start_point, &end_point, config),
+        PathStyle::Arc => generate_arc_curve(&start_point, &end_point),
+        PathStyle::Zigzag => generate_zigzag_curve(&start_point, &end_point),
+        PathStyle::Overshoot => generate_overshoot_curve(&start_point, &end_point),
+        PathStyle::Stopped => generate_stopped_curve(&start_point, &end_point),
+        PathStyle::Muscle => generate_muscle_path(&start_point, &end_point),
+    };
+
+    let (move_multiplier, _, disable_human_path) = config.speed_config();
+    let use_human_path = config.add_micro_pauses && !disable_human_path;
 
     for point in points {
-        page.evaluate(format!(
-            "if (window.mouse) {{window.mouse.move({}, {});}} else {{document.dispatchEvent(new MouseEvent('mousemove', {{clientX: {}, clientY: {}, bubbles: true}}));}}",
-            point.x, point.y, point.x, point.y
-        )).await?;
+        dispatch_mousemove(page, point.x, point.y).await?;
 
-        let delay = (config.min_step_delay_ms as f64 / config.speed_multiplier) as u64;
-        let variance = (config.max_step_delay_variance_ms as f64 / config.speed_multiplier) as u32;
-        human_pause(delay, variance).await;
+        if use_human_path {
+            let delay = (config.min_step_delay_ms as f64 / config.speed_multiplier / move_multiplier) as u64;
+            let variance = (config.max_step_delay_variance_ms as f64 / config.speed_multiplier / move_multiplier) as u32;
+            human_pause(delay, variance).await;
 
-        if config.add_micro_pauses && random_in_range(0, 100) < 10 {
-            human_pause(random_in_range(50, 200), 20).await;
+            if random_in_range(0, 100) < 10 {
+                human_pause(random_in_range(50, 200), 20).await;
+            }
         }
     }
 
     Ok(())
 }
 
-/// Generates a series of points along a Bezier curve between two points.
-#[allow(dead_code)]
-#[allow(dead_code)]
-fn generate_bezier_curve(start: &Point, end: &Point) -> Vec<Point> {
-    generate_bezier_curve_with_config(start, end, &CursorMovementConfig::default())
+pub async fn cursor_move_to_immediate(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
+    dispatch_mousemove(page, target_x, target_y).await
 }
 
-/// Generates Bezier curve with custom configuration.
+async fn dispatch_mousemove(page: &Page, x: f64, y: f64) -> Result<()> {
+    timeout(
+        Duration::from_secs(2),
+        page.move_mouse(CdpPoint::new(x, y)),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("dispatch_mousemove move_mouse timed out"))??;
+
+    if is_overlay_enabled() {
+        let offset_x = x - 6.0;
+        let offset_y = y - 6.0;
+        let eval = page.evaluate(format!(
+            "(function() {{
+                let dot = document.getElementById('__auto_rust_mouse_overlay');
+                if (!dot) {{
+                    dot = document.createElement('div');
+                    dot.id = '__auto_rust_mouse_overlay';
+                    dot.style.position = 'fixed';
+                    dot.style.width = '12px';
+                    dot.style.height = '12px';
+                    dot.style.borderRadius = '50%';
+                    dot.style.background = '#00ff00';
+                    dot.style.border = '1px solid #00cc00';
+                    dot.style.boxShadow = '0 0 6px #00ff00';
+                    dot.style.pointerEvents = 'none';
+                    dot.style.zIndex = '2147483647';
+                    document.body.appendChild(dot);
+                }}
+                dot.style.left = '{}px';
+                dot.style.top = '{}px';
+                dot.style.display = 'block';
+            }})();",
+            offset_x, offset_y
+        ));
+
+        let _ = timeout(Duration::from_millis(500), eval).await;
+    }
+
+    Ok(())
+}
+
 fn generate_bezier_curve_with_config(start: &Point, end: &Point, config: &CursorMovementConfig) -> Vec<Point> {
     let mut points = Vec::new();
 
@@ -158,61 +301,214 @@ fn bezier_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
     Point::new(x, y)
 }
 
-/// Clicks at the specified coordinates by first moving the mouse and then performing a click.
-///
-/// # Arguments
-/// * `page` - The browser page to perform the click on
-/// * `x` - X coordinate of the click location
-/// * `y` - Y coordinate of the click location
-///
-/// # Returns
-/// Ok(()) if the click succeeds
-#[allow(dead_code)]
+fn generate_arc_curve(start: &Point, end: &Point) -> Vec<Point> {
+    let mid_x = (start.x + end.x) / 2.0;
+    let distance = ((end.x - start.x).powi(2) + (end.y - start.y).powi(2)).sqrt();
+    let mid_y = (start.y + end.y) / 2.0 - distance * 0.3 * if random_in_range(0, 2) == 0 { 1.0 } else { -1.0 };
+
+    let control = Point::new(mid_x, mid_y);
+    let mut points = Vec::new();
+    let steps = 10;
+
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        points.push(bezier_point(start.clone(), control.clone(), control.clone(), end.clone(), t));
+    }
+    points
+}
+
+fn generate_zigzag_curve(start: &Point, end: &Point) -> Vec<Point> {
+    let mut points = Vec::new();
+    let steps = 4;
+    let distance = ((end.x - start.x).powi(2) + (end.y - start.y).powi(2)).sqrt();
+    let zigzag_amount = distance * 0.1;
+
+    for i in 0..=steps {
+        let progress = i as f64 / steps as f64;
+        let base_x = start.x + (end.x - start.x) * progress;
+        let base_y = start.y + (end.y - start.y) * progress;
+
+        let perp_x = -(end.y - start.y) / distance * zigzag_amount * if i % 2 == 0 { 1.0 } else { -1.0 };
+        let perp_y = (end.x - start.x) / distance * zigzag_amount * if i % 2 == 0 { 1.0 } else { -1.0 };
+
+        points.push(Point::new(base_x + perp_x, base_y + perp_y));
+    }
+    points
+}
+
+fn generate_overshoot_curve(start: &Point, end: &Point) -> Vec<Point> {
+    let overshoot_scale = 1.2;
+    let overshoot_x = start.x + (end.x - start.x) * overshoot_scale;
+    let overshoot_y = start.y + (end.y - start.y) * overshoot_scale;
+
+    vec![
+        start.clone(),
+        Point::new(overshoot_x, overshoot_y),
+        end.clone(),
+    ]
+}
+
+fn generate_stopped_curve(start: &Point, end: &Point) -> Vec<Point> {
+    let stops = 3;
+    let mut points = Vec::new();
+
+    for i in 0..=stops {
+        let progress = i as f64 / stops as f64;
+        let x = start.x + (end.x - start.x) * progress;
+        let y = start.y + (end.y - start.y) * progress;
+        points.push(Point::new(x, y));
+    }
+    points
+}
+
+fn generate_muscle_path(start: &Point, end: &Point) -> Vec<Point> {
+    let mut points = Vec::new();
+    let max_steps = 20;
+    let tolerance = 2.0;
+
+    let mut current = start.clone();
+
+    for _ in 0..max_steps {
+        let dx = end.x - current.x;
+        let dy = end.y - current.y;
+        let dist = (dx.powi(2) + dy.powi(2)).sqrt();
+
+        if dist < tolerance {
+            points.push(end.clone());
+            break;
+        }
+
+        let kp = 0.8;
+        let step_size = dist.min(50.0) * kp;
+        let next_x = current.x + (dx / dist) * step_size;
+        let next_y = current.y + (dy / dist) * step_size;
+
+        let jitter = gaussian(0.0, 0.8, -2.0, 2.0);
+        current = Point::new(next_x + jitter, next_y + jitter);
+        points.push(current.clone());
+    }
+
+    points
+}
+
 pub async fn click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     left_click_at(page, x, y).await
 }
 
-/// Left click at coordinates.
+#[allow(dead_code)]
+pub async fn click_at_with_options(
+    page: &Page,
+    x: f64,
+    y: f64,
+    button: MouseButton,
+    move_to_first: bool,
+    precision: Precision,
+    hover_ms: u64,
+) -> Result<()> {
+    let viewport = get_viewport(page).await?;
+
+    if x < 0.0 || x > viewport.width || y < 0.0 || y > viewport.height {
+        anyhow::bail!("Coordinates ({}, {}) outside viewport ({}x{})", x, y, viewport.width, viewport.height);
+    }
+
+    let mut target_x = x;
+    let mut target_y = y;
+
+    match precision {
+        Precision::Rough => {
+            target_x = x + random_in_range(0, 20) as f64 - 10.0;
+            target_y = y + random_in_range(0, 20) as f64 - 10.0;
+        }
+        Precision::Safe => {
+            target_x = x + random_in_range(0, 6) as f64 - 3.0;
+            target_y = y + random_in_range(0, 6) as f64 - 3.0;
+        }
+        Precision::Exact => {}
+    }
+
+    if move_to_first {
+        cursor_move_to(page, target_x, target_y).await?;
+    } else {
+        dispatch_mousemove(page, target_x, target_y).await?;
+    }
+
+    if hover_ms > 0 {
+        human_pause(hover_ms, 20).await;
+    }
+
+    dispatch_click(page, target_x, target_y, button).await
+}
+
 pub async fn left_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     cursor_move_to(page, x, y).await?;
     human_pause(50, 50).await;
-    dispatch_click_event(page, x, y, 0).await
+    dispatch_click(page, x, y, MouseButton::Left).await
 }
 
-/// Middle click at coordinates.
-#[allow(dead_code)]
 #[allow(dead_code)]
 pub async fn middle_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     cursor_move_to(page, x, y).await?;
     human_pause(50, 50).await;
-    dispatch_click_event(page, x, y, 1).await
+    dispatch_click(page, x, y, MouseButton::Middle).await
 }
 
-/// Right click at coordinates.
-#[allow(dead_code)]
 #[allow(dead_code)]
 pub async fn right_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     cursor_move_to(page, x, y).await?;
     human_pause(50, 50).await;
-    dispatch_click_event(page, x, y, 2).await
+    dispatch_click(page, x, y, MouseButton::Right).await
 }
 
-async fn dispatch_click_event(page: &Page, x: f64, y: f64, button: u16) -> Result<()> {
-    page.evaluate(format!(
-        "const el = document.elementFromPoint({}, {}); if (el) {{el.dispatchEvent(new MouseEvent('click', {{bubbles: true, cancelable: true, clientX: {}, clientY: {}, button: {}}}));}}",
-        x, y, x, y, button
-    )).await?;
+async fn dispatch_click(page: &Page, x: f64, y: f64, button: MouseButton) -> Result<()> {
+    let button_idx = button.as_button_index();
+
+    let eval = page.evaluate(format!(
+        "(function() {{
+            const el = document.elementFromPoint({}, {});
+            if (!el) return;
+            
+            const downEvent = new MouseEvent('mousedown', {{
+                bubbles: true,
+                cancelable: true,
+                clientX: {},
+                clientY: {},
+                button: {}
+            }});
+            el.dispatchEvent(downEvent);
+            
+            const upEvent = new MouseEvent('mouseup', {{
+                bubbles: true,
+                cancelable: true,
+                clientX: {},
+                clientY: {},
+                button: {}
+            }});
+            el.dispatchEvent(upEvent);
+            
+            const clickEvent = new MouseEvent('click', {{
+                bubbles: true,
+                cancelable: true,
+                clientX: {},
+                clientY: {},
+                button: {}
+            }});
+            el.dispatchEvent(clickEvent);
+        }})();",
+        x, y, x, y, button_idx, x, y, button_idx, x, y, button_idx
+    ));
+
+    timeout(Duration::from_secs(2), eval)
+    .await
+    .map_err(|_| anyhow::anyhow!("dispatch_click timed out"))??;
     Ok(())
 }
 
-/// Clicks on a CSS selector element.
 #[allow(dead_code)]
 pub async fn click_selector(page: &Page, selector: &str) -> Result<()> {
     let (x, y) = crate::utils::page_size::get_element_center(page, selector).await?;
     click_at(page, x, y).await
 }
 
-/// Calculates the optimal target size for a clicking task using Fitts's Law.
 #[allow(dead_code)]
 pub fn fitts_law_optimal_size(distance: f64, time: f64) -> f64 {
     let id = time / 100.0;

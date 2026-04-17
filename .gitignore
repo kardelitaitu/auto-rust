@@ -30,3 +30,6 @@ rust-analyzer-problems.log
 
 # Qwen
 .qwen/
+
+
+.env

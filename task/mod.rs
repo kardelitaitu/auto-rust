@@ -12,6 +12,9 @@ use crate::result::{TaskResult, TaskStatus};
 
 pub mod cookiebot;
 pub mod pageview;
+pub mod demo_keyboard;
+pub mod demo_mouse;
+// pub mod twitteractivity;
 
 use crate::utils::block_heavy_resources_for_cookiebot;
 
@@ -75,6 +78,8 @@ async fn execute_single_attempt(
     match name {
         "cookiebot" => cookiebot::run(session_id, page, payload.clone()).await,
         "pageview" => pageview::run(session_id, page, payload.clone()).await,
+        "demo-keyboard" => demo_keyboard::run(session_id, page, payload.clone()).await,
+        "demo-mouse" => demo_mouse::run(session_id, page, payload.clone()).await,
         _ => Err(anyhow::anyhow!("Unknown task: {name}")),
     }
 }

@@ -8,6 +8,7 @@ pub mod blockmedia;
 pub mod zoom;
 pub mod page_size;
 pub mod profile;
+pub mod clipboard;
 
 // Re-export everything for easy importing: use crate::utils::*;
 #[allow(unused_imports)]
@@ -30,3 +31,5 @@ pub use zoom::*;
 pub use page_size::*;
 #[allow(unused_imports)]
 pub use profile::*;
+#[allow(unused_imports)]
+pub use clipboard::*;

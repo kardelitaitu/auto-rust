@@ -1,17 +1,4 @@
 //! # Rust Orchestrator
-//!
-//! A high-performance, multi-browser automation orchestrator built in Rust.
-//! Executes automated tasks across multiple browser sessions with advanced
-//! concurrency control, session management, and failure recovery.
-//!
-//! ## Architecture
-//! - **CLI Parser**: Parses command-line arguments into task definitions
-//! - **Config**: Loads and validates configuration from TOML files and environment
-//! - **Browser Manager**: Discovers and manages browser connections
-//! - **Orchestrator**: Coordinates task execution across sessions
-//! - **Session**: Manages individual browser session lifecycle
-//! - **Metrics**: Collects performance statistics and exports summaries
-//! - **Tasks**: Specialized task implementations (cookiebot, pageview, etc.)
 
 mod cli;
 mod config;
@@ -34,13 +21,10 @@ use anyhow::Result;
 use log::{info, warn, LevelFilter};
 
 fn main() {
-    // Set current directory to project root
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(target) = exe_path.parent() {
             let target_str = target.to_string_lossy();
-            // In dev mode: target/debug/rust-orchestrator.exe -> go to project root
-            // In release mode: (some path)/rust-orchestrator.exe -> stay where we are
-            if target_str.contains("target\\debug") || target_str.contains("target/release") {
+            if target_str.contains("target\\debug") || target_str.contains("target\\release") {
                 if let Some(root) = target.parent() {
                     if let Some(project_root) = root.parent() {
                         let _ = std::env::set_current_dir(project_root);
@@ -66,22 +50,17 @@ fn run() -> Result<()> {
 }
 
 async fn run_async() -> Result<()> {
-    // Initialize file logger
     let logger = logger::FileLogger::new("log")?;
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(LevelFilter::Info);
 
     info!("Rust Orchestrator - Starting up...");
 
-    // Parse CLI
     let args = cli::parse_args();
-
-    // Load configuration
     let config = config::load_config()?;
     config::validate_config(&config)?;
 
-    // Discover and connect to browsers
-    let mut sessions = browser::discover_browsers(&config).await?;
+    let sessions = browser::discover_browsers(&config).await?;
     info!("Connected to {} browser(s)", sessions.len());
 
     if args.tasks.is_empty() {
@@ -89,12 +68,10 @@ async fn run_async() -> Result<()> {
         return Ok(());
     }
 
-    // Parse tasks into groups (separated by "then")
     let groups = cli::parse_task_groups(&args.tasks);
     let task_groups_display = cli::format_task_groups(&groups);
     info!("Processing {task_groups_display}");
 
-    // Create orchestrator and run tasks
     let mut orchestrator = orchestrator::Orchestrator::new(config);
     let metrics = metrics::MetricsCollector::new(1000);
 
@@ -104,18 +81,11 @@ async fn run_async() -> Result<()> {
         info!("Group {} complete", i + 1);
     }
 
-    // Export run summary
     if let Err(e) = metrics.export_summary() {
         warn!("Failed to export run summary: {e}");
     }
 
-    // Graceful shutdown
-    info!("Shutting down sessions...");
-    for session in &mut sessions {
-        if let Err(e) = session.graceful_shutdown().await {
-            warn!("Error during shutdown of {}: {}", session.id, e);
-        }
-    }
-    info!("All tasks completed successfully");
+    // Don't close browser - keep it open for user
+    info!("Tasks done - browser kept open");
     Ok(())
 }

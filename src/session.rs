@@ -43,6 +43,7 @@ pub struct Session {
     /// The underlying Chromium Oxide browser instance
     pub browser: Browser,
     /// Background task handle for event handling (internal use)
+    #[allow(dead_code)]
     handler_task: Option<tokio::task::JoinHandle<()>>,
 
     /// Semaphore controlling concurrent page access within this session
@@ -135,6 +136,7 @@ impl Session {
         *self.state.lock()
     }
 
+    #[allow(dead_code)]
     pub fn set_state(&self, new_state: SessionState) {
         *self.state.lock() = new_state;
     }
@@ -222,6 +224,7 @@ impl Session {
     }
 
     /// Graceful shutdown - cancel tasks, close pages, close browser
+    #[allow(dead_code)]
     pub async fn graceful_shutdown(&mut self) -> anyhow::Result<()> {
         info!("[{}] Starting graceful shutdown", self.id);
         

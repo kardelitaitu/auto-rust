@@ -4,7 +4,6 @@
 
 # Config (contains live browser URLs)
 config.toml
-.gitignore
 # IDE
 .idea/
 .vscode/
@@ -21,12 +20,18 @@ logs/
 auto-rust.log
 log
 rust-analyzer-problems.log
+clippy_output.txt
+run-summary.json
 
 # Migration steps
 .migration-steps/
 
 # Nodejs reference
 .nodejs-reference
+
+# Graphify / analysis outputs
+.graphify_*.json
+graphify-out/
 
 # Qwen
 .qwen/

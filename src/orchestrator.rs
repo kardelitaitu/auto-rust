@@ -277,9 +277,6 @@ async fn execute_task_with_retry(
         bail!("Session {} is unhealthy, skipping task", session.id);
     }
 
-    // Acquire page
-    let page = session.acquire_page().await?;
-
     // Build and validate payload
     let payload_json = serde_json::Value::Object(
         task_def
@@ -292,6 +289,18 @@ async fn execute_task_with_retry(
     if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
         bail!("Task {} validation failed: {}", task_def.name, e);
     }
+
+    // Acquire page. For pageview, open the target URL directly instead of blank first.
+    let page = if task_def.name == "pageview" {
+        let target_url = payload_json
+            .get("url")
+            .and_then(|v| v.as_str())
+            .or_else(|| payload_json.get("value").and_then(|v| v.as_str()))
+            .ok_or_else(|| anyhow::anyhow!("pageview requires a url or value payload"))?;
+        session.acquire_page_at(target_url).await?
+    } else {
+        session.acquire_page().await?
+    };
 
     // Set logging context for structured output
     let profile_name = session.behavior_profile.name.clone();
@@ -306,9 +315,20 @@ async fn execute_task_with_retry(
     info!("Executing task (timeout: {}, retries: {})...", 
         timeout_display, max_retries);
     
-    let result = tokio::time::timeout(task_timeout, 
-        crate::task::perform_task(&page, &session.id, &task_def.name, payload_json, max_retries)
-    ).await;
+    let task_ctx = crate::runtime::task_context::TaskContext::new(
+        session.id.clone(),
+        page.clone(),
+        session.behavior_profile.clone(),
+        session.behavior_runtime,
+    );
+
+    let result = tokio::time::timeout(
+        task_timeout,
+        crate::task::perform_task(&task_ctx, &task_def.name, payload_json, max_retries),
+    )
+    .await;
+
+    drop(task_ctx);
 
     // Release page
     session.release_page(page).await;

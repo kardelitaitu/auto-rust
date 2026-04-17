@@ -5,14 +5,13 @@
 //! typing speed, clicking behavior, scrolling, and timing delays.
 //!
 //! # Usage
-//! ```
-//! use crate::utils::profile::{BrowserProfile, ProfilePreset, randomize_profile};
+//! ```no_run
+//! use rust_orchestrator::utils::{randomize_profile, ProfilePreset};
 //!
 //! // Get a preset and randomize it for this session
 //! let profile = randomize_profile(&ProfilePreset::Teen);
 //!
-//! // Use with cursor movement
-//! use crate::utils::mouse::cursor_move_to_with_profile(page, x, y, &profile).await;
+//! // Pass `profile` into mouse and typing helpers that accept custom configs.
 //! ```
 
 use rand::Rng;
@@ -26,6 +25,77 @@ pub struct ProfileParam {
     pub base: f64,
     /// Deviation percentage (e.g., 10.0 = ±10% variation)
     pub deviation_pct: f64,
+}
+
+/// Scroll behavior derived from a browser profile.
+/// Tasks can use this to tune scroll amount, pause, and smoothness consistently.
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollBehavior {
+    /// Typical scroll amount in pixels.
+    pub amount: i32,
+    /// Typical pause after a scroll action in milliseconds.
+    pub pause_ms: u64,
+    /// Whether to favor smoother, more variable scrolling.
+    pub smooth: bool,
+    /// Whether to occasionally backtrack a little.
+    pub back_scroll: bool,
+}
+
+/// Cursor behavior derived from a browser profile.
+/// Tasks can use this to tune cursor movement cadence consistently.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorBehavior {
+    /// Minimum delay between cursor moves in milliseconds.
+    pub interval_min_ms: u64,
+    /// Maximum delay between cursor moves in milliseconds.
+    pub interval_max_ms: u64,
+}
+
+/// Typing behavior derived from a browser profile.
+#[derive(Debug, Clone, Copy)]
+pub struct TypingBehavior {
+    /// Mean delay between keystrokes in milliseconds.
+    pub keystroke_mean_ms: u64,
+    /// Keystroke jitter in milliseconds.
+    pub keystroke_stddev_ms: u64,
+    /// Pause between words in milliseconds.
+    pub word_pause_ms: u64,
+    /// Typo probability per character, percentage.
+    pub typo_rate_pct: f64,
+    /// Delay before noticing a typo in milliseconds.
+    pub typo_notice_delay_ms: u64,
+    /// Delay before correcting a typo in milliseconds.
+    pub typo_retry_delay_ms: u64,
+    /// Chance of correcting a typo, percentage.
+    pub typo_recovery_chance_pct: f64,
+}
+
+/// Click behavior derived from a browser profile.
+#[derive(Debug, Clone, Copy)]
+pub struct ClickBehavior {
+    /// Delay after reaching target before clicking.
+    pub reaction_delay_ms: u64,
+    /// Click offset around the target center in pixels.
+    pub offset_px: i32,
+}
+
+/// General action delay behavior derived from a browser profile.
+#[derive(Debug, Clone, Copy)]
+pub struct ActionDelayBehavior {
+    /// Minimum delay between actions in milliseconds.
+    pub min_ms: u64,
+    /// Allowed variance percentage.
+    pub variance_pct: f64,
+}
+
+/// Session-stable behavior snapshot derived from a browser profile.
+#[derive(Debug, Clone, Copy)]
+pub struct ProfileRuntime {
+    pub cursor: CursorBehavior,
+    pub typing: TypingBehavior,
+    pub click: ClickBehavior,
+    pub scroll: ScrollBehavior,
+    pub action_delay: ActionDelayBehavior,
 }
 
 impl ProfileParam {
@@ -165,6 +235,77 @@ impl BrowserProfile {
             ProfilePreset::Leisure => Self::leisure(),
         }
     }
+
+    /// Derives scroll behavior from the profile.
+    pub fn scroll_behavior(&self) -> ScrollBehavior {
+        let amount = self.scroll_amount.random_clamped(120.0, 2_000.0).round() as i32;
+        let pause_ms = self.scroll_pause.random_clamped(80.0, 3_000.0).round() as u64;
+        let smoothness = self.scroll_smoothness.random_clamped(0.0, 100.0);
+
+        ScrollBehavior {
+            amount: amount.max(1),
+            pause_ms: pause_ms.max(1),
+            smooth: smoothness >= 50.0,
+            back_scroll: smoothness < 20.0 && rand::thread_rng().gen_bool(0.2),
+        }
+    }
+
+    /// Derives cursor behavior from the profile.
+    pub fn cursor_behavior(&self) -> CursorBehavior {
+        let speed = self.cursor_speed.random_clamped(0.25, 3.0);
+        let step_delay = self.cursor_step_delay.random_clamped(1.0, 60.0);
+
+        let mut interval_min_ms = (step_delay * (2.5 / speed.max(0.25))).round() as u64;
+        let mut interval_max_ms = (step_delay * (3.5 / speed.max(0.25))).round() as u64;
+
+        interval_min_ms = interval_min_ms.clamp(200, 5_000);
+        interval_max_ms = interval_max_ms.clamp(interval_min_ms, 8_000);
+
+        CursorBehavior {
+            interval_min_ms,
+            interval_max_ms,
+        }
+    }
+
+    /// Derives typing behavior from the profile.
+    pub fn typing_behavior(&self) -> TypingBehavior {
+        TypingBehavior {
+            keystroke_mean_ms: self.typing_speed_mean.random_clamped(20.0, 500.0).round() as u64,
+            keystroke_stddev_ms: self.typing_speed_stddev.random_clamped(5.0, 150.0).round() as u64,
+            word_pause_ms: self.typing_word_pause.random_clamped(50.0, 2_000.0).round() as u64,
+            typo_rate_pct: self.typo_rate.random_clamped(0.0, 20.0),
+            typo_notice_delay_ms: self.typo_notice_delay.random_clamped(50.0, 2_000.0).round() as u64,
+            typo_retry_delay_ms: self.typo_retry_delay.random_clamped(20.0, 1_000.0).round() as u64,
+            typo_recovery_chance_pct: self.typo_recovery_chance.random_clamped(0.0, 100.0),
+        }
+    }
+
+    /// Derives click behavior from the profile.
+    pub fn click_behavior(&self) -> ClickBehavior {
+        ClickBehavior {
+            reaction_delay_ms: self.click_reaction_delay.random_clamped(0.0, 2_000.0).round() as u64,
+            offset_px: self.click_offset.random_clamped(0.0, 50.0).round() as i32,
+        }
+    }
+
+    /// Derives general action delay behavior from the profile.
+    pub fn action_delay_behavior(&self) -> ActionDelayBehavior {
+        ActionDelayBehavior {
+            min_ms: self.action_delay_min.random_clamped(0.0, 5_000.0).round() as u64,
+            variance_pct: self.action_delay_variance_pct.random_clamped(0.0, 100.0),
+        }
+    }
+
+    /// Builds a stable runtime snapshot for a session.
+    pub fn runtime(&self) -> ProfileRuntime {
+        ProfileRuntime {
+            cursor: self.cursor_behavior(),
+            typing: self.typing_behavior(),
+            click: self.click_behavior(),
+            scroll: self.scroll_behavior(),
+            action_delay: self.action_delay_behavior(),
+        }
+    }
 }
 
 // ============================================================================
@@ -236,7 +377,7 @@ impl BrowserProfile {
             typing_word_pause: p(500.0, 30.0),
             typo_notice_delay: p(300.0, 30.0),
             typo_retry_delay: p(200.0, 30.0),
-            typo_recovery_chance: p(80.0, 20.0),
+            typo_recovery_chance: p(96.0, 20.0),
             click_reaction_delay: p(50.0, 30.0),
             click_offset: p(5.0, 40.0),
             scroll_amount: p(500.0, 30.0),
@@ -258,13 +399,13 @@ impl BrowserProfile {
             cursor_precision: p(85.0, 10.0),
             cursor_micro_pause_chance: p(5.0, 40.0),
             cursor_micro_pause_duration: p(50.0, 40.0),
-            typing_speed_mean: p(80.0, 30.0),
+            typing_speed_mean: p(130.0, 30.0),
             typing_speed_stddev: p(30.0, 40.0),
             typo_rate: p(5.0, 50.0),
             typing_word_pause: p(300.0, 40.0),
             typo_notice_delay: p(200.0, 40.0),
             typo_retry_delay: p(100.0, 40.0),
-            typo_recovery_chance: p(60.0, 30.0),
+            typo_recovery_chance: p(72.0, 30.0),
             click_reaction_delay: p(30.0, 40.0),
             click_offset: p(15.0, 40.0),
             scroll_amount: p(800.0, 40.0),
@@ -292,7 +433,7 @@ impl BrowserProfile {
             typing_word_pause: p(800.0, 20.0),
             typo_notice_delay: p(500.0, 20.0),
             typo_retry_delay: p(300.0, 20.0),
-            typo_recovery_chance: p(95.0, 5.0),
+            typo_recovery_chance: p(98.0, 5.0),
             click_reaction_delay: p(100.0, 20.0),
             click_offset: p(2.0, 30.0),
             scroll_amount: p(300.0, 20.0),
@@ -314,13 +455,13 @@ impl BrowserProfile {
             cursor_precision: p(99.0, 1.0),
             cursor_micro_pause_chance: p(8.0, 30.0),
             cursor_micro_pause_duration: p(80.0, 30.0),
-            typing_speed_mean: p(100.0, 10.0),
+            typing_speed_mean: p(125.0, 10.0),
             typing_speed_stddev: p(25.0, 20.0),
             typo_rate: p(1.0, 40.0),
             typing_word_pause: p(400.0, 25.0),
             typo_notice_delay: p(250.0, 25.0),
             typo_retry_delay: p(150.0, 25.0),
-            typo_recovery_chance: p(85.0, 15.0),
+            typo_recovery_chance: p(98.0, 15.0),
             click_reaction_delay: p(40.0, 25.0),
             click_offset: p(3.0, 30.0),
             scroll_amount: p(400.0, 25.0),
@@ -342,13 +483,13 @@ impl BrowserProfile {
             cursor_precision: p(97.0, 3.0),
             cursor_micro_pause_chance: p(3.0, 50.0),
             cursor_micro_pause_duration: p(30.0, 50.0),
-            typing_speed_mean: p(70.0, 20.0),
+            typing_speed_mean: p(120.0, 20.0),
             typing_speed_stddev: p(20.0, 30.0),
             typo_rate: p(0.5, 50.0),
             typing_word_pause: p(200.0, 30.0),
             typo_notice_delay: p(150.0, 30.0),
             typo_retry_delay: p(80.0, 30.0),
-            typo_recovery_chance: p(50.0, 40.0),
+            typo_recovery_chance: p(60.0, 40.0),
             click_reaction_delay: p(20.0, 30.0),
             click_offset: p(2.0, 40.0),
             scroll_amount: p(1000.0, 30.0),
@@ -370,13 +511,13 @@ impl BrowserProfile {
             cursor_precision: p(99.5, 0.5),
             cursor_micro_pause_chance: p(25.0, 20.0),
             cursor_micro_pause_duration: p(250.0, 20.0),
-            typing_speed_mean: p(180.0, 15.0),
+            typing_speed_mean: p(190.0, 15.0),
             typing_speed_stddev: p(35.0, 20.0),
             typo_rate: p(0.5, 40.0),
             typing_word_pause: p(700.0, 20.0),
             typo_notice_delay: p(450.0, 20.0),
             typo_retry_delay: p(280.0, 20.0),
-            typo_recovery_chance: p(90.0, 10.0),
+            typo_recovery_chance: p(98.0, 10.0),
             click_reaction_delay: p(150.0, 20.0),
             click_offset: p(1.0, 30.0),
             scroll_amount: p(250.0, 25.0),
@@ -398,13 +539,13 @@ impl BrowserProfile {
             cursor_precision: p(80.0, 15.0),
             cursor_micro_pause_chance: p(2.0, 50.0),
             cursor_micro_pause_duration: p(20.0, 50.0),
-            typing_speed_mean: p(60.0, 25.0),
+            typing_speed_mean: p(120.0, 25.0),
             typing_speed_stddev: p(15.0, 40.0),
             typo_rate: p(8.0, 50.0),
             typing_word_pause: p(150.0, 40.0),
             typo_notice_delay: p(120.0, 40.0),
             typo_retry_delay: p(60.0, 40.0),
-            typo_recovery_chance: p(80.0, 15.0),
+            typo_recovery_chance: p(96.0, 15.0),
             click_reaction_delay: p(15.0, 40.0),
             click_offset: p(20.0, 40.0),
             scroll_amount: p(1200.0, 35.0),
@@ -426,13 +567,13 @@ impl BrowserProfile {
             cursor_precision: p(90.0, 15.0),
             cursor_micro_pause_chance: p(15.0, 60.0),
             cursor_micro_pause_duration: p(120.0, 60.0),
-            typing_speed_mean: p(120.0, 50.0),
+            typing_speed_mean: p(140.0, 50.0),
             typing_speed_stddev: p(50.0, 50.0),
             typo_rate: p(5.0, 80.0),
             typing_word_pause: p(500.0, 60.0),
             typo_notice_delay: p(350.0, 60.0),
             typo_retry_delay: p(250.0, 60.0),
-            typo_recovery_chance: p(25.0, 40.0),
+            typo_recovery_chance: p(30.0, 40.0),
             click_reaction_delay: p(60.0, 60.0),
             click_offset: p(10.0, 60.0),
             scroll_amount: p(600.0, 60.0),
@@ -482,13 +623,13 @@ impl BrowserProfile {
             cursor_precision: p(92.0, 8.0),
             cursor_micro_pause_chance: p(15.0, 30.0),
             cursor_micro_pause_duration: p(150.0, 30.0),
-            typing_speed_mean: p(150.0, 20.0),
+            typing_speed_mean: p(160.0, 20.0),
             typing_speed_stddev: p(45.0, 25.0),
             typo_rate: p(3.0, 40.0),
             typing_word_pause: p(600.0, 25.0),
             typo_notice_delay: p(400.0, 25.0),
             typo_retry_delay: p(250.0, 25.0),
-            typo_recovery_chance: p(75.0, 25.0),
+            typo_recovery_chance: p(90.0, 25.0),
             click_reaction_delay: p(70.0, 30.0),
             click_offset: p(8.0, 35.0),
             scroll_amount: p(400.0, 30.0),
@@ -510,13 +651,13 @@ impl BrowserProfile {
             cursor_precision: p(98.0, 2.0),
             cursor_micro_pause_chance: p(5.0, 30.0),
             cursor_micro_pause_duration: p(50.0, 30.0),
-            typing_speed_mean: p(80.0, 15.0),
+            typing_speed_mean: p(125.0, 15.0),
             typing_speed_stddev: p(20.0, 20.0),
             typo_rate: p(0.8, 40.0),
             typing_word_pause: p(300.0, 20.0),
             typo_notice_delay: p(200.0, 20.0),
             typo_retry_delay: p(120.0, 20.0),
-            typo_recovery_chance: p(90.0, 10.0),
+            typo_recovery_chance: p(98.0, 10.0),
             click_reaction_delay: p(30.0, 20.0),
             click_offset: p(3.0, 30.0),
             scroll_amount: p(900.0, 20.0),
@@ -538,13 +679,13 @@ impl BrowserProfile {
             cursor_precision: p(85.0, 15.0),
             cursor_micro_pause_chance: p(35.0, 25.0),
             cursor_micro_pause_duration: p(350.0, 25.0),
-            typing_speed_mean: p(250.0, 20.0),
+            typing_speed_mean: p(260.0, 20.0),
             typing_speed_stddev: p(60.0, 30.0),
             typo_rate: p(8.0, 40.0),
             typing_word_pause: p(900.0, 25.0),
             typo_notice_delay: p(600.0, 25.0),
             typo_retry_delay: p(400.0, 25.0),
-            typo_recovery_chance: p(75.0, 20.0),
+            typo_recovery_chance: p(90.0, 20.0),
             click_reaction_delay: p(250.0, 25.0),
             click_offset: p(25.0, 35.0),
             scroll_amount: p(200.0, 35.0),
@@ -566,13 +707,13 @@ impl BrowserProfile {
             cursor_precision: p(99.5, 0.5),
             cursor_micro_pause_chance: p(2.0, 40.0),
             cursor_micro_pause_duration: p(25.0, 40.0),
-            typing_speed_mean: p(60.0, 12.0),
+            typing_speed_mean: p(120.0, 12.0),
             typing_speed_stddev: p(15.0, 20.0),
             typo_rate: p(0.2, 50.0),
             typing_word_pause: p(180.0, 20.0),
             typo_notice_delay: p(100.0, 25.0),
             typo_retry_delay: p(60.0, 25.0),
-            typo_recovery_chance: p(99.0, 1.0),
+            typo_recovery_chance: p(98.0, 1.0),
             click_reaction_delay: p(15.0, 25.0),
             click_offset: p(1.0, 30.0),
             scroll_amount: p(1200.0, 15.0),
@@ -594,13 +735,13 @@ impl BrowserProfile {
             cursor_precision: p(88.0, 12.0),
             cursor_micro_pause_chance: p(40.0, 30.0),
             cursor_micro_pause_duration: p(400.0, 40.0),
-            typing_speed_mean: p(130.0, 30.0),
+            typing_speed_mean: p(140.0, 30.0),
             typing_speed_stddev: p(55.0, 35.0),
             typo_rate: p(5.0, 50.0),
             typing_word_pause: p(600.0, 50.0),
             typo_notice_delay: p(400.0, 50.0),
             typo_retry_delay: p(280.0, 50.0),
-            typo_recovery_chance: p(30.0, 30.0),
+            typo_recovery_chance: p(36.0, 30.0),
             click_reaction_delay: p(80.0, 50.0),
             click_offset: p(12.0, 45.0),
             scroll_amount: p(450.0, 45.0),
@@ -622,13 +763,13 @@ impl BrowserProfile {
             cursor_precision: p(97.0, 3.0),
             cursor_micro_pause_chance: p(3.0, 40.0),
             cursor_micro_pause_duration: p(40.0, 40.0),
-            typing_speed_mean: p(90.0, 10.0),
+            typing_speed_mean: p(120.0, 10.0),
             typing_speed_stddev: p(20.0, 15.0),
             typo_rate: p(0.5, 30.0),
             typing_word_pause: p(250.0, 15.0),
             typo_notice_delay: p(150.0, 15.0),
             typo_retry_delay: p(80.0, 15.0),
-            typo_recovery_chance: p(92.0, 8.0),
+            typo_recovery_chance: p(98.0, 8.0),
             click_reaction_delay: p(25.0, 15.0),
             click_offset: p(2.0, 25.0),
             scroll_amount: p(850.0, 15.0),
@@ -656,7 +797,7 @@ impl BrowserProfile {
             typing_word_pause: p(900.0, 15.0),
             typo_notice_delay: p(600.0, 15.0),
             typo_retry_delay: p(400.0, 15.0),
-            typo_recovery_chance: p(97.0, 3.0),
+            typo_recovery_chance: p(98.0, 3.0),
             click_reaction_delay: p(180.0, 15.0),
             click_offset: p(1.0, 25.0),
             scroll_amount: p(250.0, 10.0),
@@ -678,13 +819,13 @@ impl BrowserProfile {
             cursor_precision: p(75.0, 20.0),
             cursor_micro_pause_chance: p(1.0, 60.0),
             cursor_micro_pause_duration: p(15.0, 60.0),
-            typing_speed_mean: p(50.0, 30.0),
+            typing_speed_mean: p(120.0, 30.0),
             typing_speed_stddev: p(12.0, 45.0),
             typo_rate: p(5.0, 40.0),
             typing_word_pause: p(100.0, 50.0),
             typo_notice_delay: p(80.0, 50.0),
             typo_retry_delay: p(40.0, 50.0),
-            typo_recovery_chance: p(65.0, 20.0),
+            typo_recovery_chance: p(78.0, 20.0),
             click_reaction_delay: p(10.0, 50.0),
             click_offset: p(30.0, 45.0),
             scroll_amount: p(1500.0, 25.0),
@@ -712,7 +853,7 @@ impl BrowserProfile {
             typing_word_pause: p(1200.0, 12.0),
             typo_notice_delay: p(800.0, 12.0),
             typo_retry_delay: p(500.0, 12.0),
-            typo_recovery_chance: p(99.5, 0.5),
+            typo_recovery_chance: p(98.0, 0.5),
             click_reaction_delay: p(300.0, 12.0),
             click_offset: p(0.0, 20.0),
             scroll_amount: p(150.0, 15.0),
@@ -734,13 +875,13 @@ impl BrowserProfile {
             cursor_precision: p(93.0, 12.0),
             cursor_micro_pause_chance: p(15.0, 50.0),
             cursor_micro_pause_duration: p(150.0, 50.0),
-            typing_speed_mean: p(120.0, 40.0),
+            typing_speed_mean: p(130.0, 40.0),
             typing_speed_stddev: p(45.0, 45.0),
             typo_rate: p(3.0, 70.0),
             typing_word_pause: p(500.0, 50.0),
             typo_notice_delay: p(350.0, 50.0),
             typo_retry_delay: p(220.0, 50.0),
-            typo_recovery_chance: p(70.0, 40.0),
+            typo_recovery_chance: p(84.0, 40.0),
             click_reaction_delay: p(60.0, 50.0),
             click_offset: p(8.0, 50.0),
             scroll_amount: p(550.0, 50.0),
@@ -762,13 +903,13 @@ impl BrowserProfile {
             cursor_precision: p(78.0, 18.0),
             cursor_micro_pause_chance: p(8.0, 50.0),
             cursor_micro_pause_duration: p(35.0, 50.0),
-            typing_speed_mean: p(65.0, 28.0),
+            typing_speed_mean: p(120.0, 28.0),
             typing_speed_stddev: p(18.0, 45.0),
             typo_rate: p(9.0, 55.0),
             typing_word_pause: p(180.0, 45.0),
             typo_notice_delay: p(100.0, 45.0),
             typo_retry_delay: p(50.0, 45.0),
-            typo_recovery_chance: p(78.0, 15.0),
+            typo_recovery_chance: p(93.0, 15.0),
             click_reaction_delay: p(18.0, 45.0),
             click_offset: p(22.0, 45.0),
             scroll_amount: p(1100.0, 35.0),
@@ -790,13 +931,13 @@ impl BrowserProfile {
             cursor_precision: p(90.0, 10.0),
             cursor_micro_pause_chance: p(25.0, 25.0),
             cursor_micro_pause_duration: p(300.0, 25.0),
-            typing_speed_mean: p(200.0, 18.0),
+            typing_speed_mean: p(210.0, 18.0),
             typing_speed_stddev: p(55.0, 22.0),
             typo_rate: p(2.5, 45.0),
             typing_word_pause: p(800.0, 20.0),
             typo_notice_delay: p(500.0, 20.0),
             typo_retry_delay: p(320.0, 20.0),
-            typo_recovery_chance: p(78.0, 22.0),
+            typo_recovery_chance: p(93.0, 22.0),
             click_reaction_delay: p(120.0, 22.0),
             click_offset: p(10.0, 35.0),
             scroll_amount: p(280.0, 28.0),
@@ -905,6 +1046,113 @@ mod tests {
             let profile = BrowserProfile::from_preset(&preset);
             assert!(!profile.name.is_empty());
             assert!(!profile.description.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_runtime_snapshot_is_stable_shape() {
+        let profile = BrowserProfile::average();
+        let runtime = profile.runtime();
+
+        assert!(runtime.cursor.interval_min_ms >= 200);
+        assert!(runtime.cursor.interval_max_ms >= runtime.cursor.interval_min_ms);
+        assert!(runtime.scroll.amount > 0);
+        assert!(runtime.scroll.pause_ms > 0);
+        assert!(runtime.typing.keystroke_mean_ms > 0);
+        assert!(runtime.click.reaction_delay_ms <= 2_000);
+        assert!(runtime.action_delay.min_ms <= 5_000);
+    }
+
+    #[test]
+    fn test_derived_behaviors_are_within_bounds() {
+        let profile = BrowserProfile::thorough();
+        let cursor = profile.cursor_behavior();
+        let scroll = profile.scroll_behavior();
+        let typing = profile.typing_behavior();
+        let click = profile.click_behavior();
+        let action_delay = profile.action_delay_behavior();
+
+        assert!(cursor.interval_min_ms <= cursor.interval_max_ms);
+        assert!(scroll.amount > 0);
+        assert!(scroll.pause_ms > 0);
+        assert!(typing.keystroke_mean_ms > 0);
+        assert!(typing.word_pause_ms > 0);
+        assert!(typing.typo_rate_pct >= 0.0);
+        assert!(click.reaction_delay_ms <= 2_000);
+        assert!(action_delay.min_ms <= 5_000);
+    }
+
+    #[test]
+    fn test_typing_speed_table_is_slowed_down() {
+        let presets = [
+            ProfilePreset::Average,
+            ProfilePreset::Teen,
+            ProfilePreset::Senior,
+            ProfilePreset::Enthusiast,
+            ProfilePreset::PowerUser,
+            ProfilePreset::Cautious,
+            ProfilePreset::Impatient,
+            ProfilePreset::Erratic,
+            ProfilePreset::Researcher,
+            ProfilePreset::Casual,
+            ProfilePreset::Professional,
+            ProfilePreset::Novice,
+            ProfilePreset::Expert,
+            ProfilePreset::Distracted,
+            ProfilePreset::Focused,
+            ProfilePreset::Analytical,
+            ProfilePreset::QuickScanner,
+            ProfilePreset::Thorough,
+            ProfilePreset::Adaptive,
+            ProfilePreset::Stressed,
+            ProfilePreset::Leisure,
+        ];
+
+        for preset in presets {
+            let profile = BrowserProfile::from_preset(&preset);
+            assert!(
+                profile.typing_speed_mean.base >= 120.0,
+                "preset {:?} is too fast: {}",
+                preset,
+                profile.typing_speed_mean.base
+            );
+        }
+    }
+
+    #[test]
+    fn test_typo_recovery_table_stays_under_100() {
+        let presets = [
+            ProfilePreset::Average,
+            ProfilePreset::Teen,
+            ProfilePreset::Senior,
+            ProfilePreset::Enthusiast,
+            ProfilePreset::PowerUser,
+            ProfilePreset::Cautious,
+            ProfilePreset::Impatient,
+            ProfilePreset::Erratic,
+            ProfilePreset::Researcher,
+            ProfilePreset::Casual,
+            ProfilePreset::Professional,
+            ProfilePreset::Novice,
+            ProfilePreset::Expert,
+            ProfilePreset::Distracted,
+            ProfilePreset::Focused,
+            ProfilePreset::Analytical,
+            ProfilePreset::QuickScanner,
+            ProfilePreset::Thorough,
+            ProfilePreset::Adaptive,
+            ProfilePreset::Stressed,
+            ProfilePreset::Leisure,
+        ];
+
+        for preset in presets {
+            let profile = BrowserProfile::from_preset(&preset);
+            assert!(
+                profile.typo_recovery_chance.base <= 98.0,
+                "preset {:?} is too high: {}",
+                preset,
+                profile.typo_recovery_chance.base
+            );
         }
     }
 }

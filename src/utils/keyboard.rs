@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chromiumoxide::Page;
+use crate::internal::profile::TypingBehavior;
 use crate::utils::math::{gaussian, random_in_range};
 use crate::utils::timing::human_pause;
 
@@ -101,6 +102,10 @@ pub async fn type_text(page: &Page, text: &str) -> Result<()> {
     type_text_with_options(page, text, 100).await
 }
 
+pub async fn type_text_profiled(page: &Page, text: &str, behavior: &TypingBehavior) -> Result<()> {
+    type_text_with_options(page, text, behavior.keystroke_mean_ms).await
+}
+
 pub async fn type_text_with_options(page: &Page, text: &str, base_delay_ms: u64) -> Result<()> {
     for ch in text.chars() {
         dispatch_input_event(page, ch).await?;
@@ -137,6 +142,24 @@ pub async fn release_all(page: &Page) -> Result<()> {
 }
 
 pub async fn natural_typing(page: &Page, selector: &str, text: &str, typo_rate: f64) -> Result<()> {
+    let behavior = TypingBehavior {
+        keystroke_mean_ms: 120,
+        keystroke_stddev_ms: 40,
+        word_pause_ms: 500,
+        typo_rate_pct: typo_rate * 100.0,
+        typo_notice_delay_ms: 300,
+        typo_retry_delay_ms: 200,
+        typo_recovery_chance_pct: 80.0,
+    };
+    natural_typing_profiled(page, selector, text, &behavior).await
+}
+
+pub async fn natural_typing_profiled(
+    page: &Page,
+    selector: &str,
+    text: &str,
+    behavior: &TypingBehavior,
+) -> Result<()> {
     let selector_json = serde_json::to_string(selector)?;
     page.evaluate(format!(
         "(function() {{
@@ -147,10 +170,11 @@ pub async fn natural_typing(page: &Page, selector: &str, text: &str, typo_rate: 
     .await?;
 
     for (i, ch) in text.chars().enumerate() {
+        let typo_rate = behavior.typo_rate_pct.clamp(0.0, 100.0) / 100.0;
         if (random_in_range(0, 100) as f64 / 100.0) < typo_rate && i > 0 {
-            typo_correction(page, ch).await?;
+            typo_correction_profiled(page, ch, behavior).await?;
         } else {
-            type_character(page, ch).await?;
+            type_character_profiled(page, ch, behavior).await?;
         }
     }
 
@@ -188,7 +212,15 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
                 document.execCommand('insertText', false, text);
             }} else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {{
                 const start = el.selectionStart ?? el.value.length;
-                el.value = el.value.slice(0, start) + text + el.value.slice(start);
+                const end = el.selectionEnd ?? start;
+                el.value = el.value.slice(0, start) + text + el.value.slice(end);
+                const next = start + text.length;
+                if (typeof el.setSelectionRange === 'function') {{
+                    el.setSelectionRange(next, next);
+                }} else {{
+                    el.selectionStart = next;
+                    el.selectionEnd = next;
+                }}
                 el.dispatchEvent(new InputEvent('input', {{ bubbles: true, data: text }}));
             }}
         }})();"
@@ -198,6 +230,7 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn type_character(page: &Page, ch: char) -> Result<()> {
     let key_delay = gaussian(120.0, 40.0, 50.0, 300.0) as u64;
     dispatch_input_event(page, ch).await?;
@@ -205,6 +238,19 @@ async fn type_character(page: &Page, ch: char) -> Result<()> {
     Ok(())
 }
 
+async fn type_character_profiled(page: &Page, ch: char, behavior: &TypingBehavior) -> Result<()> {
+    let key_delay = gaussian(
+        behavior.keystroke_mean_ms as f64,
+        behavior.keystroke_stddev_ms.max(1) as f64,
+        50.0,
+        500.0,
+    ) as u64;
+    dispatch_input_event(page, ch).await?;
+    human_pause(key_delay, 30).await;
+    Ok(())
+}
+
+#[allow(dead_code)]
 async fn typo_correction(page: &Page, correct_char: char) -> Result<()> {
     let wrong_char = get_similar_char(correct_char);
     type_character(page, wrong_char).await?;
@@ -213,6 +259,21 @@ async fn typo_correction(page: &Page, correct_char: char) -> Result<()> {
     press(page, "Backspace").await?;
     human_pause(200, 50).await;
     type_character(page, correct_char).await?;
+    Ok(())
+}
+
+async fn typo_correction_profiled(
+    page: &Page,
+    correct_char: char,
+    behavior: &TypingBehavior,
+) -> Result<()> {
+    let wrong_char = get_similar_char(correct_char);
+    type_character_profiled(page, wrong_char, behavior).await?;
+
+    human_pause(behavior.typo_notice_delay_ms, 50).await;
+    press(page, "Backspace").await?;
+    human_pause(behavior.typo_retry_delay_ms, 50).await;
+    type_character_profiled(page, correct_char, behavior).await?;
     Ok(())
 }
 

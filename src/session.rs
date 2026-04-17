@@ -12,7 +12,7 @@ use tokio::sync::Semaphore;
 use log::{info, warn};
 use futures::StreamExt;
 use dashmap::DashSet;
-use crate::utils::profile::{BrowserProfile, random_preset, randomize_profile};
+use crate::internal::profile::{BrowserProfile, ProfileRuntime, random_preset, randomize_profile};
 
 /// Represents the current operational state of a browser session.
 /// Used to track session health and availability for task assignment.
@@ -40,6 +40,8 @@ pub struct Session {
     pub profile_type: String,
     /// Behavioral profile for human-like interactions (cursor, typing, etc.)
     pub behavior_profile: BrowserProfile,
+    /// Session-stable derived behavior snapshot.
+    pub behavior_runtime: ProfileRuntime,
     /// The underlying Chromium Oxide browser instance
     pub browser: Browser,
     /// Background task handle for event handling (internal use)
@@ -96,11 +98,15 @@ impl Session {
             log::debug!("Handler task ended for session {id_clone}");
         });
 
+        let behavior_profile = randomize_profile(&random_preset());
+        let behavior_runtime = behavior_profile.runtime();
+
         Self {
             id,
             name,
             profile_type,
-            behavior_profile: randomize_profile(&random_preset()),
+            behavior_profile,
+            behavior_runtime,
             browser,
             handler_task: Some(handler_task),
             worker_semaphore: Arc::new(Semaphore::new(max_workers)),
@@ -214,11 +220,18 @@ impl Session {
         Ok(Arc::new(page))
     }
 
+    /// Acquire a page that opens directly on the target URL.
+    pub async fn acquire_page_at(&self, url: &str) -> anyhow::Result<Arc<chromiumoxide::Page>> {
+        let page = self.browser.new_page(url).await?;
+        Ok(Arc::new(page))
+    }
+
     /// Release a page (close it)
     /// Equivalent to Node.js `sessionManager.releasePage()`
     pub async fn release_page(&self, page: Arc<chromiumoxide::Page>) {
-        // Close the page
-        if let Err(e) = Arc::try_unwrap(page).expect("Failed to unwrap Arc<Page> - page has multiple references").close().await {
+        // Close the page directly; TaskContext may still hold an Arc reference.
+        let page_to_close = (*page).clone();
+        if let Err(e) = page_to_close.close().await {
             warn!("[{}] Error closing page: {}", self.id, e);
         }
     }

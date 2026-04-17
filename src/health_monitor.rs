@@ -5,7 +5,7 @@ pub enum HealthState {
 }
 
 pub struct HealthMonitor {
-    session_id: String,
+    _session_id: String,
     failure_count: std::sync::atomic::AtomicUsize,
     is_healthy: std::sync::atomic::AtomicBool,
 }
@@ -13,7 +13,7 @@ pub struct HealthMonitor {
 impl HealthMonitor {
     pub fn new(session_id: String) -> Self {
         Self {
-            session_id,
+            _session_id: session_id,
             failure_count: std::sync::atomic::AtomicUsize::new(0),
             is_healthy: std::sync::atomic::AtomicBool::new(true),
         }

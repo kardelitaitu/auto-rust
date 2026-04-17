@@ -6,6 +6,7 @@
 use anyhow::{bail, Result};
 use log::{info, warn};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 
@@ -41,6 +42,12 @@ pub struct BrowserConfig {
     pub profiles: Vec<BrowserProfile>,
     /// RoxyBrowser API integration settings
     pub roxybrowser: RoxybrowserConfig,
+    /// Optional browser user-agent override applied to new pages
+    #[serde(default)]
+    pub user_agent: Option<String>,
+    /// Optional extra HTTP headers applied to new pages
+    #[serde(default)]
+    pub extra_http_headers: BTreeMap<String, String>,
 }
 
 /// Configuration for circuit breaker pattern implementation.
@@ -160,6 +167,8 @@ fn load_code_config() -> Result<Config> {
                 api_url: roxybrowser_url,
                 api_key: roxybrowser_key,
             },
+            user_agent: None,
+            extra_http_headers: BTreeMap::new(),
         },
         orchestrator: OrchestratorConfig {
             max_global_concurrency: 20,
@@ -182,6 +191,9 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     if let Ok(key) = env::var("ROXYBROWSER_API_KEY") {
         config.browser.roxybrowser.api_key = key;
     }
+    if let Ok(user_agent) = env::var("BROWSER_USER_AGENT") {
+        config.browser.user_agent = Some(user_agent);
+    }
     if let Ok(concurrency) = env::var("MAX_GLOBAL_CONCURRENCY") {
         config.orchestrator.max_global_concurrency = concurrency
             .parse()
@@ -195,6 +207,13 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     if let Ok(retries) = env::var("MAX_RETRIES") {
         config.orchestrator.max_retries =
             retries.parse().unwrap_or(config.orchestrator.max_retries);
+    }
+    if let Ok(raw_headers) = env::var("BROWSER_EXTRA_HTTP_HEADERS") {
+        config.browser.extra_http_headers = raw_headers
+            .split(';')
+            .filter_map(|pair| pair.split_once('='))
+            .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            .collect();
     }
 
     Ok(config)

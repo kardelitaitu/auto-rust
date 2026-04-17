@@ -10,7 +10,7 @@ pub mod page_size;
 pub mod profile;
 pub mod clipboard;
 
-// Re-export everything for easy importing: use crate::utils::*;
+// Internal implementation module; tasks should import `crate::prelude::*` instead.
 #[allow(unused_imports)]
 pub use navigation::*;
 #[allow(unused_imports)]

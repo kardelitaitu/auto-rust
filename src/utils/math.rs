@@ -1,4 +1,4 @@
-//! Mathematical utility functions for randomness and Gaussian distributions.
+//! Internal mathematical helpers for randomness and Gaussian distributions.
 //!
 //! Provides:
 //! - Uniform random number generation
@@ -19,7 +19,9 @@ use rand_distr::{Distribution, Normal};
 /// A random integer between min and max (inclusive)
 ///
 /// # Examples
-/// ```
+/// ```rust
+/// use rust_orchestrator::utils::random_in_range;
+///
 /// let roll = random_in_range(1, 6); // Returns a value between 1 and 6
 /// assert!(roll >= 1 && roll <= 6);
 /// ```
@@ -49,7 +51,9 @@ pub fn random_in_range(min: u64, max: u64) -> u64 {
 /// Panics if std_dev is not positive (handled via expect with descriptive message)
 ///
 /// # Examples
-/// ```
+/// ```rust
+/// use rust_orchestrator::utils::gaussian;
+///
 /// // Generate a value around 100 with std dev 10, clamped to 80-120
 /// let val = gaussian(100.0, 10.0, 80.0, 120.0);
 /// assert!(val >= 80.0 && val <= 120.0);

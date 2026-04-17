@@ -198,6 +198,8 @@ fn format_url(value: &str) -> String {
 ///
 /// # Examples
 /// ```
+/// # use rust_orchestrator::cli::{format_task_groups, TaskDefinition};
+/// # use std::collections::HashMap;
 /// let groups = vec![
 ///     vec![TaskDefinition { name: "cookiebot".to_string(), payload: HashMap::new() }],
 ///     vec![
@@ -205,7 +207,7 @@ fn format_url(value: &str) -> String {
 ///         TaskDefinition { name: "pageview".to_string(), payload: HashMap::new() }
 ///     ]
 /// ];
-/// assert_eq!(format_task_groups(&groups), "3 tasks (1 then 2)");
+/// assert_eq!(format_task_groups(&groups), "3 task(s) [Group 1: cookiebot | Group 2: pageview, pageview]");
 /// ```
 pub fn format_task_groups(groups: &[Vec<TaskDefinition>]) -> String {
     let total: usize = groups.iter().map(Vec::len).sum();

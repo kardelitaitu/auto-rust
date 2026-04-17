@@ -260,7 +260,7 @@ Enjoyment-focused - slow, exploratory
 ## Usage Example
 
 ```rust
-use crate::utils::profile::{BrowserProfile, ProfilePreset, randomize_profile};
+use rust_orchestrator::prelude::*;
 
 // Get a preset and randomize it for this session
 let profile = randomize_profile(&ProfilePreset::Teen);

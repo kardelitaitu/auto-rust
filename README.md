@@ -163,19 +163,25 @@ api_key = "your-api-key"                # API authentication key
 ```
 src/
 ├── main.rs          # Application entry point
+├── lib.rs           # Public framework surface and prelude
 ├── cli.rs           # Command-line argument parsing
 ├── config.rs        # Configuration management
 ├── browser.rs       # Browser connection and management
 ├── orchestrator.rs  # Task orchestration logic
+├── runtime/         # TaskContext and lifecycle helpers
+├── capabilities/    # Public mouse/keyboard/navigation/scroll APIs
+├── state/           # Session-scoped state handles
 ├── session.rs       # Session lifecycle management
 ├── result.rs        # Result types and error handling
 ├── api/             # HTTP client utilities
 ├── metrics.rs       # Performance monitoring
-├── utils/           # Utility functions
+├── utils/           # Internal implementation utilities
 └── task/            # Task implementations
     ├── mod.rs
     ├── cookiebot.rs
     └── pageview.rs
+examples/
+└── task_template.rs # Starter task using the public prelude
 ```
 
 ### Building for Development
@@ -218,6 +224,37 @@ cargo doc --open
 ```
 
 ## 📚 API Reference
+
+### Task Authoring
+
+Use the framework prelude in new tasks:
+
+```rust
+use rust_orchestrator::prelude::*;
+
+pub async fn run(ctx: &TaskContext, payload: serde_json::Value) -> anyhow::Result<()> {
+    ctx.navigate_to("https://example.com", 30000).await?;
+    ctx.pause(500, 20).await;
+    ctx.press("End").await?;
+    ctx.type_text("hello").await?;
+    Ok(())
+}
+```
+
+### Result Types
+
+- `TaskContext` for browser actions and session-scoped state
+- `ClipboardState` for per-session clipboard caching
+- `capabilities::*` for reusable mouse, keyboard, navigation, scroll, and timing helpers
+- `runtime::*` for lifecycle/session orchestration helpers
+
+### Recommended Imports
+
+```rust
+use rust_orchestrator::prelude::*;
+```
+
+That keeps task code on the public API surface instead of the lower-level utility modules.
 
 ### Core Types
 

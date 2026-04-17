@@ -4,11 +4,14 @@
 //! - Generic task runner with retry logic
 //! - Task-specific implementations (cookiebot, pageview, etc.)
 //! - Error classification and result reporting
+//!
+//! Task authors should import `crate::prelude::*` and accept `TaskContext`.
 
 use anyhow::Result;
-use chromiumoxide::Page;
 use serde_json::Value;
+
 use crate::result::{TaskResult, TaskStatus};
+use crate::prelude::TaskContext;
 
 pub mod cookiebot;
 pub mod pageview;
@@ -16,12 +19,9 @@ pub mod demo_keyboard;
 pub mod demo_mouse;
 // pub mod twitteractivity;
 
-use crate::utils::block_heavy_resources_for_cookiebot;
-
 pub async fn perform_task(
-    page: &Page, 
-    session_id: &str, 
-    name: &str, 
+    ctx: &TaskContext,
+    name: &str,
     payload: Value,
     max_retries: u32,
 ) -> Result<TaskResult> {
@@ -32,9 +32,9 @@ pub async fn perform_task(
 
     while attempt < max_retries.max(1) {
         attempt += 1;
-        
-        let result = execute_single_attempt(page, session_id, clean_name, &payload).await;
-        
+
+        let result = execute_single_attempt(ctx, clean_name, &payload).await;
+
         match result {
             Ok(()) => {
                 return Ok(TaskResult::success(start.elapsed().as_millis() as u64)
@@ -66,20 +66,15 @@ pub async fn perform_task(
 }
 
 async fn execute_single_attempt(
-    page: &Page, 
-    session_id: &str, 
-    name: &str, 
+    ctx: &TaskContext,
+    name: &str,
     payload: &Value,
 ) -> Result<()> {
-    if name == "cookiebot" {
-        block_heavy_resources_for_cookiebot(page).await?;
-    }
-
     match name {
-        "cookiebot" => cookiebot::run(session_id, page, payload.clone()).await,
-        "pageview" => pageview::run(session_id, page, payload.clone()).await,
-        "demo-keyboard" => demo_keyboard::run(session_id, page, payload.clone()).await,
-        "demo-mouse" => demo_mouse::run(session_id, page, payload.clone()).await,
+        "cookiebot" => cookiebot::run(ctx, payload.clone()).await,
+        "pageview" => pageview::run(ctx, payload.clone()).await,
+        "demo-keyboard" => demo_keyboard::run(ctx, payload.clone()).await,
+        "demo-mouse" => demo_mouse::run(ctx, payload.clone()).await,
         _ => Err(anyhow::anyhow!("Unknown task: {name}")),
     }
 }

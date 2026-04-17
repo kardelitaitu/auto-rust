@@ -8,15 +8,17 @@
 //! - Utilities for human-computer interaction studies
 
 use chromiumoxide::Page;
-use chromiumoxide::layout::Point as CdpPoint;
 use anyhow::Result;
 use crate::utils::math::{random_in_range, gaussian};
+use crate::utils::scroll;
 use crate::utils::timing::human_pause;
 use crate::utils::page_size::get_viewport;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::time::{timeout, Duration};
 
 static MOUSE_OVERLAY_ENABLED: AtomicBool = AtomicBool::new(true);
+static CURSOR_X: AtomicU64 = AtomicU64::new(0);
+static CURSOR_Y: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -163,6 +165,18 @@ pub fn is_overlay_enabled() -> bool {
     MOUSE_OVERLAY_ENABLED.load(Ordering::Relaxed)
 }
 
+fn set_cursor_position(x: f64, y: f64) {
+    CURSOR_X.store(x.to_bits(), Ordering::Relaxed);
+    CURSOR_Y.store(y.to_bits(), Ordering::Relaxed);
+}
+
+fn cursor_position() -> (f64, f64) {
+    (
+        f64::from_bits(CURSOR_X.load(Ordering::Relaxed)),
+        f64::from_bits(CURSOR_Y.load(Ordering::Relaxed)),
+    )
+}
+
 pub async fn cursor_move_to(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
     cursor_move_to_with_config(page, target_x, target_y, &CursorMovementConfig::default()).await
 }
@@ -225,43 +239,51 @@ pub async fn cursor_move_to_immediate(page: &Page, target_x: f64, target_y: f64)
 }
 
 async fn dispatch_mousemove(page: &Page, x: f64, y: f64) -> Result<()> {
-    timeout(
-        Duration::from_secs(2),
-        page.move_mouse(CdpPoint::new(x, y)),
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("dispatch_mousemove move_mouse timed out"))??;
+    set_cursor_position(x, y);
+    dispatch_mousemove_dom(page, x, y).await?;
 
-    if is_overlay_enabled() {
-        let offset_x = x - 6.0;
-        let offset_y = y - 6.0;
-        let eval = page.evaluate(format!(
-            "(function() {{
-                let dot = document.getElementById('__auto_rust_mouse_overlay');
-                if (!dot) {{
-                    dot = document.createElement('div');
-                    dot.id = '__auto_rust_mouse_overlay';
-                    dot.style.position = 'fixed';
-                    dot.style.width = '12px';
-                    dot.style.height = '12px';
-                    dot.style.borderRadius = '50%';
-                    dot.style.background = '#00ff00';
-                    dot.style.border = '1px solid #00cc00';
-                    dot.style.boxShadow = '0 0 6px #00ff00';
-                    dot.style.pointerEvents = 'none';
-                    dot.style.zIndex = '2147483647';
-                    document.body.appendChild(dot);
-                }}
-                dot.style.left = '{}px';
-                dot.style.top = '{}px';
-                dot.style.display = 'block';
-            }})();",
-            offset_x, offset_y
-        ));
+    Ok(())
+}
 
-        let _ = timeout(Duration::from_millis(500), eval).await;
+async fn dispatch_mousemove_dom(_page: &Page, x: f64, y: f64) -> Result<()> {
+    set_cursor_position(x, y);
+    Ok(())
+}
+
+pub async fn sync_cursor_overlay(page: &Page) -> Result<()> {
+    if !is_overlay_enabled() {
+        return Ok(());
     }
 
+    let (x, y) = cursor_position();
+    let eval = page.evaluate(format!(
+        "(function() {{
+            let dot = document.getElementById('__auto_rust_mouse_overlay');
+            if (!dot) {{
+                dot = document.createElement('div');
+                dot.id = '__auto_rust_mouse_overlay';
+                dot.style.position = 'fixed';
+                dot.style.width = '12px';
+                dot.style.height = '12px';
+                dot.style.borderRadius = '50%';
+                dot.style.background = '#00ff00';
+                dot.style.border = '1px solid #00cc00';
+                dot.style.boxShadow = '0 0 6px #00ff00';
+                dot.style.pointerEvents = 'none';
+                dot.style.zIndex = '2147483647';
+                document.body.appendChild(dot);
+            }}
+            dot.style.left = '{}px';
+            dot.style.top = '{}px';
+            dot.style.display = 'block';
+        }})();",
+        x - 6.0,
+        y - 6.0
+    ));
+
+    timeout(Duration::from_millis(500), eval)
+        .await
+        .map_err(|_| anyhow::anyhow!("sync_cursor_overlay timed out"))??;
     Ok(())
 }
 
@@ -395,6 +417,18 @@ pub async fn click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     left_click_at(page, x, y).await
 }
 
+pub async fn click_at_without_move(page: &Page, x: f64, y: f64) -> Result<()> {
+    dispatch_click(page, x, y, MouseButton::Left).await
+}
+
+pub async fn left_click_at_without_move(page: &Page, x: f64, y: f64) -> Result<()> {
+    dispatch_click(page, x, y, MouseButton::Left).await
+}
+
+pub async fn right_click_at_without_move(page: &Page, x: f64, y: f64) -> Result<()> {
+    dispatch_click(page, x, y, MouseButton::Right).await
+}
+
 #[allow(dead_code)]
 pub async fn click_at_with_options(
     page: &Page,
@@ -505,6 +539,7 @@ async fn dispatch_click(page: &Page, x: f64, y: f64, button: MouseButton) -> Res
 
 #[allow(dead_code)]
 pub async fn click_selector(page: &Page, selector: &str) -> Result<()> {
+    scroll::scroll_into_view(page, selector).await?;
     let (x, y) = crate::utils::page_size::get_element_center(page, selector).await?;
     click_at(page, x, y).await
 }

@@ -1,13 +1,15 @@
 use anyhow::Result;
-use chromiumoxide::Page;
 use serde_json::Value;
 use log::{info, warn, error};
 use std::fs;
 use std::time::Instant;
-use crate::utils::{navigation, scroll, timing};
+use crate::prelude::TaskContext;
+use crate::internal::blockmedia;
 use rand::seq::SliceRandom;
 
-pub async fn run(session_id: &str, page: &Page, _payload: Value) -> Result<()> {
+pub async fn run(ctx: &TaskContext, _payload: Value) -> Result<()> {
+    let session_id = ctx.session_id();
+    blockmedia::block_heavy_resources_for_cookiebot(ctx.page()).await?;
     // Read URLs from data/cookiebot.txt
     let mut urls = read_cookiebot_urls()?;
     if urls.is_empty() {
@@ -26,7 +28,7 @@ pub async fn run(session_id: &str, page: &Page, _payload: Value) -> Result<()> {
         let nav_start = Instant::now();
         
         // Step 1: Navigate to URL (max 15s)
-        if let Err(e) = navigation::goto(page, url, 15000).await {
+        if let Err(e) = ctx.navigate_to(url, 15000).await {
             warn!("[{session_id}][cookiebot] Failed to navigate to {url}: {e}");
             continue;
         }
@@ -35,7 +37,7 @@ pub async fn run(session_id: &str, page: &Page, _payload: Value) -> Result<()> {
         let elapsed_ms = nav_start.elapsed().as_millis() as u64;
         let remaining_time = 20000u64.saturating_sub(elapsed_ms);
         
-        if let Err(e) = navigation::wait_for_load(page, remaining_time).await {
+        if let Err(e) = ctx.wait_for_load(remaining_time).await {
             warn!("[{session_id}][cookiebot] Page load timeout after {}ms for {url}: {e}", remaining_time);
             // Continue anyway - page might be partially loaded
         }
@@ -46,7 +48,7 @@ pub async fn run(session_id: &str, page: &Page, _payload: Value) -> Result<()> {
 
         // Phase 2: Browsing behavior with timing
         let browse_start = Instant::now();
-        if let Err(e) = perform_browsing_behavior(session_id, page).await {
+        if let Err(e) = perform_browsing_behavior(session_id, ctx).await {
             error!("[{session_id}][cookiebot] Browsing behavior error: {e}");
         }
         let browse_duration = browse_start.elapsed();
@@ -59,28 +61,28 @@ pub async fn run(session_id: &str, page: &Page, _payload: Value) -> Result<()> {
             browse_duration.as_millis());
 
         // Phase 3: Pause between URLs
-        timing::human_pause(3000, 50).await;
+        ctx.pause(3000, 50).await;
     }
 
     Ok(())
 }
 
-async fn perform_browsing_behavior(_session_id: &str, page: &Page) -> Result<()> {
+async fn perform_browsing_behavior(_session_id: &str, ctx: &TaskContext) -> Result<()> {
     // Random scroll to simulate reading
-    scroll::random_scroll(page).await?;
+    ctx.random_scroll().await?;
 
     // Pause to simulate reading time
-    timing::human_pause(5000, 30).await;
+    ctx.pause(5000, 30).await;
 
     // Maybe scroll to bottom and back to top
     if rand::random::<bool>() {
-        scroll::scroll_to_bottom(page).await?;
-        timing::human_pause(2000, 40).await;
-        scroll::scroll_to_top(page).await?;
+        ctx.scroll_to_bottom().await?;
+        ctx.pause(2000, 40).await;
+        ctx.scroll_to_top().await?;
     }
 
     // Final pause before moving to next URL
-    timing::human_pause(2000, 50).await;
+    ctx.pause(2000, 50).await;
 
     Ok(())
 }

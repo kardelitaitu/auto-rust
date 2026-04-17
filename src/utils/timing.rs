@@ -1,4 +1,4 @@
-//! Timing and delay utility functions for human-like automation.
+//! Internal timing and delay helpers for human-like automation.
 //!
 //! Provides functions for:
 //! - Random delays within specified ranges
@@ -37,9 +37,12 @@ pub async fn random_delay(min_ms: u64, max_ms: u64) {
 /// reasonable range (10ms to 30s) to prevent extreme values.
 ///
 /// # Examples
-/// ```
+/// ```no_run
+/// # use rust_orchestrator::prelude::timing::human_pause;
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// // Pause for approximately 500ms with ±20% variability
 /// human_pause(500, 20).await;
+/// # });
 /// ```
 #[allow(dead_code)]
 pub async fn human_pause(base_ms: u64, variance_pct: u32) {

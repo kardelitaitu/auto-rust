@@ -1,24 +1,6 @@
-//! # Rust Orchestrator
-
-mod cli;
-mod config;
-mod browser;
-mod orchestrator;
-mod session;
-mod result;
-
-#[path = "../task/mod.rs"]
-mod task;
-
-mod utils;
-mod logger;
-mod validation;
-mod api;
-mod metrics;
-mod tests;
-
 use anyhow::Result;
 use log::{info, warn, LevelFilter};
+use rust_orchestrator::{browser, cli, config, logger, metrics, orchestrator};
 
 fn main() {
     if let Ok(exe_path) = std::env::current_exe() {
@@ -44,9 +26,7 @@ fn main() {
 
 fn run() -> Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        run_async().await
-    })
+    rt.block_on(async { run_async().await })
 }
 
 async fn run_async() -> Result<()> {
@@ -85,7 +65,7 @@ async fn run_async() -> Result<()> {
         warn!("Failed to export run summary: {e}");
     }
 
-    // Don't close browser - keep it open for user
     info!("Tasks done - browser kept open");
     Ok(())
 }
+

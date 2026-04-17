@@ -1,5 +1,6 @@
 mod result_tests;
 mod click_policy_tests;
+mod blockmedia_policy_tests;
 
 #[cfg(test)]
 mod config_tests {
@@ -7,6 +8,7 @@ mod config_tests {
         validate_config, BrowserConfig, CircuitBreakerConfig, Config, OrchestratorConfig,
         RoxybrowserConfig,
     };
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_validate_config_valid() {
@@ -28,6 +30,8 @@ mod config_tests {
                     api_url: "http://localhost".to_string(),
                     api_key: "key".to_string(),
                 },
+                user_agent: None,
+                extra_http_headers: BTreeMap::new(),
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 5,
@@ -64,6 +68,8 @@ mod config_tests {
                     api_url: "http://localhost".to_string(),
                     api_key: "key".to_string(),
                 },
+                user_agent: None,
+                extra_http_headers: BTreeMap::new(),
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 0,

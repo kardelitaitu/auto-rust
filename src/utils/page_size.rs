@@ -97,9 +97,10 @@ pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
 /// # Returns
 /// Ok((x, y)) with center coordinates of the element, Err if element not found
 pub async fn get_element_center(page: &Page, selector: &str) -> Result<(f64, f64)> {
+    let selector_js = serde_json::to_string(selector)?;
     let js = format!("
         (() => {{
-            const el = document.querySelector('{}');
+            const el = document.querySelector({});
             if (!el) return null;
             const rect = el.getBoundingClientRect();
             return {{
@@ -109,7 +110,7 @@ pub async fn get_element_center(page: &Page, selector: &str) -> Result<(f64, f64
                 height: rect.height
             }};
         }})()
-    ", selector);
+    ", selector_js);
     
     let result = page.evaluate(js).await?;
     let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to get element center value"))?;
@@ -147,9 +148,10 @@ impl ElementCoords {
 /// Ok((min_x, min_y, max_x, max_y)) with element bounds, Err if element not found
 #[allow(dead_code)]
 pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64, f64, f64)> {
+    let selector_js = serde_json::to_string(selector)?;
     let js = format!("
         (() => {{
-            const el = document.querySelector('{}');
+            const el = document.querySelector({});
             if (!el) return null;
             const rect = el.getBoundingClientRect();
             return {{
@@ -159,7 +161,7 @@ pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64
                 height: rect.height
             }};
         }})()
-    ", selector);
+    ", selector_js);
     
     let result = page.evaluate(js).await?;
     let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to get element bounds value"))?;

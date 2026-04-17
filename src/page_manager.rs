@@ -4,7 +4,6 @@ use log::{info, warn};
 use dashmap::DashSet;
 use chromiumoxide::Browser;
 
-#[derive(Clone)]
 pub struct PageManager {
     session_id: String,
     browser: Browser,
@@ -64,7 +63,7 @@ impl PageManager {
         Ok(())
     }
 
-    pub async fn close_browser(&self) -> anyhow::Result<()> {
+    pub async fn close_browser(&mut self) -> anyhow::Result<()> {
         self.browser.close().await?;
         Ok(())
     }

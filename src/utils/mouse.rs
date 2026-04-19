@@ -22,7 +22,9 @@ static CURSOR_Y: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
+#[derive(Default)]
 pub enum PathStyle {
+    #[default]
     Bezier,
     Arc,
     Zigzag,
@@ -31,52 +33,38 @@ pub enum PathStyle {
     Muscle,
 }
 
-impl Default for PathStyle {
-    fn default() -> Self {
-        PathStyle::Bezier
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
+#[derive(Default)]
 pub enum Precision {
     Exact,
+    #[default]
     Safe,
     Rough,
 }
 
-impl Default for Precision {
-    fn default() -> Self {
-        Precision::Safe
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
+#[derive(Default)]
 pub enum Speed {
     Fast,
+    #[default]
     Normal,
     Slow,
 }
 
-impl Default for Speed {
-    fn default() -> Self {
-        Speed::Normal
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum MouseButton {
+    #[default]
     Left,
     Right,
     Middle,
 }
 
-impl Default for MouseButton {
-    fn default() -> Self {
-        MouseButton::Left
-    }
-}
 
 impl MouseButton {
     fn as_button_index(&self) -> u16 {

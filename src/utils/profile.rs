@@ -957,13 +957,13 @@ fn p(base: f64, deviation_pct: f64) -> ProfileParam {
 /// Creates a randomized profile from a preset for this session.
 /// Applies random variation to all parameters based on their deviation percentages.
 pub fn randomize_profile(preset: &ProfilePreset) -> BrowserProfile {
-    let profile = BrowserProfile::from_preset(preset);
+    
 
     // Note: The ProfileParam::random() is called when using the profile,
     // so the profile itself stores the base values and deviation.
     // This function can be extended if we want to pre-randomize all values.
 
-    profile
+    BrowserProfile::from_preset(preset)
 }
 
 /// Returns a random profile preset.

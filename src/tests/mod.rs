@@ -1,12 +1,14 @@
-mod result_tests;
-mod click_policy_tests;
 mod blockmedia_policy_tests;
+mod click_policy_tests;
+mod page_manager_policy_tests;
+mod task_registry_policy_tests;
+mod result_tests;
 
 #[cfg(test)]
 mod config_tests {
     use crate::config::{
         validate_config, BrowserConfig, CircuitBreakerConfig, Config, OrchestratorConfig,
-        RoxybrowserConfig,
+        RoxybrowserConfig, TwitterActivityConfig,
     };
     use std::collections::BTreeMap;
 
@@ -43,6 +45,7 @@ mod config_tests {
                 max_retries: 2,
                 retry_delay_ms: 500,
             },
+            twitter_activity: TwitterActivityConfig::default(),
         };
 
         assert!(validate_config(&config).is_ok());
@@ -81,6 +84,7 @@ mod config_tests {
                 max_retries: 2,
                 retry_delay_ms: 500,
             },
+            twitter_activity: TwitterActivityConfig::default(),
         };
 
         assert!(validate_config(&config).is_err());
@@ -109,6 +113,8 @@ mod metrics_tests {
             duration_ms: 100,
             session_id: "s1".to_string(),
             attempt: 1,
+            error_kind: None,
+            last_error: None,
         });
 
         assert_eq!(mc.success_rate(), 100.0);

@@ -10,26 +10,45 @@ This document covers all configuration-related aspects of the Twitter activity t
 
 ## 3. Rust Implementation Plan (Config-Related Parts)
 
+Add these modules to `task/twitteractivity.rs` or inline all helpers:
+
 ### Directory Structure
 
 ```
-src/task/
-  mod.rs               # Register twitteractivity module
-  twitteractivity.rs   # Main entry
-  twitter_agent.rs     # TwitterAgent struct
-  twitter_navigation.rs
-  twitter_feed.rs
-  twitter_dive.rs
-  twitter_interact.rs
-  twitter_popup.rs
-  twitter_sentiment.rs
-  twitter_limits.rs
-  twitter_persona.rs
+task/
+  mod.rs                       # Task registry
+  twitteractivity.rs           # Main entry point (imports from utils)
 
 src/utils/twitter/
-  selectors.rs
-  humanized.rs
-  mod.rs
+  mod.rs                       # Module declarations + re-exports
+  twitteractivity_navigation.rs
+  twitteractivity_feed.rs
+  twitteractivity_dive.rs
+  twitteractivity_interact.rs
+  twitteractivity_popup.rs
+  twitteractivity_sentiment.rs
+  twitteractivity_persona.rs
+  twitteractivity_selectors.rs
+  twitteractivity_humanized.rs
+
+src/validation/
+  task.rs
+```
+task/
+  mod.rs                       # Task registry
+  twitteractivity.rs           # Main entry point & TwitterAgent implementation
+
+src/utils/twitter/
+  mod.rs                       # Re-exports all twitteractivity_* modules
+  twitteractivity_navigation.rs
+  twitteractivity_feed.rs
+  twitteractivity_dive.rs
+  twitteractivity_interact.rs
+  twitteractivity_popup.rs
+  twitteractivity_sentiment.rs
+  twitteractivity_persona.rs
+  twitteractivity_selectors.rs
+  twitteractivity_humanized.rs
 
 src/validation/
   task.rs
@@ -38,35 +57,43 @@ src/validation/
 ### Public API (task-level)
 
 ```rust
-// src/task/twitteractivity.rs
-pub async fn run(
-    session_id: &str,
-    page: &Page,
-    payload: Value,
-    max_retries: u32
-) -> Result<TaskResult> {
-    let config = load_twitter_config()?;
-    let profile = get_session_profile()?;
-    let mut agent = TwitterAgent::new(page, profile, config).await?;
-    agent.run_session(cycles: 5..10, duration: 540..840).await
+// task/twitteractivity.rs
+// Import all Twitter helper modules from utils
+use crate::utils::twitter::{
+    twitteractivity_navigation::select_entry_point,
+    twitteractivity_feed::find_random_tweet,
+    twitteractivity_dive::{click_tweet, load_tweet_context},
+    twitteractivity_interact::{like_tweet, retweet_tweet, follow_user, bookmark_tweet},
+    twitteractivity_popup::close_all_modals,
+    twitteractivity_sentiment::contains_negative_sentiment,
+    twitteractivity_persona::TwitterPersona,
+    twitteractivity_selectors::*,
+};
+
+use crate::prelude::TaskContext;
+use anyhow::Result;
+use serde_json::Value;
+
+pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
+    // Load global config containing Twitter section
+    let config = crate::config::load_config()?;
+    let profile = ctx.behavior_profile().clone();
+    
+    // Initialize Twitter agent and run session
+    let mut agent = TwitterAgent::new(ctx.clone(), profile, config.twitter);
+    agent.run_session().await
 }
+
+// TwitterAgent struct and impl follow...
 ```
 
-**Task Registration** (in `src/task/mod.rs`):
+**Task Registration** (in `task/mod.rs`):
 ```rust
-pub mod cookiebot;
-pub mod pageview;
 pub mod twitteractivity;
 
-// In perform_task match arm:
-match clean_name {
-    "cookiebot" => cookiebot::run(session_id, page, payload.clone()).await,
-    "pageview" => pageview::run(session_id, page, payload.clone()).await,
-    "twitteractivity" => twitteractivity::run(session_id, page, payload.clone(), max_retries).await,
-    _ => Err(anyhow::anyhow!("Unknown task: {name}")),
-}
+// In execute_single_attempt match arm:
+"twitteractivity" => twitteractivity::run(ctx, payload.clone()).await,
 ```
-
 ---
 
 ## 4. Config Schema Extensions (`config/default.toml` + `src/config.rs`)
@@ -329,7 +356,7 @@ This uses TOML defaults for everything except those two fields. The config loade
 We already have 21 `BrowserProfile` presets. Twitter-specific personas overlay on top:
 
 ```rust
-// src/task/twitter_persona.rs
+// src/utils/twitter/twitteractivity_persona.rs
 pub enum TwitterPersona {
     Efficient,    // fast cursor, low idle, low dwell time
     Casual,       // average speeds, medium idle
@@ -367,4 +394,4 @@ V1 will use **mostly mouse actions**; keyboard-only for search (if implemented).
 
 ---
 
-*This document is part of the Twitter Activity task planning suite. See [README.md](README.md) for navigation.*
+*This document is part of the Twitter Activity task planning suite. See [README.md](README.md) for navigation.

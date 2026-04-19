@@ -9,6 +9,8 @@ pub mod zoom;
 pub mod page_size;
 pub mod profile;
 pub mod clipboard;
+pub mod text;
+pub mod twitter;
 
 // Internal implementation module; tasks should import `crate::prelude::*` instead.
 #[allow(unused_imports)]
@@ -33,3 +35,5 @@ pub use page_size::*;
 pub use profile::*;
 #[allow(unused_imports)]
 pub use clipboard::*;
+#[allow(unused_imports)]
+pub use text::*;

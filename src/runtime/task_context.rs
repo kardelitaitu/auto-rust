@@ -56,16 +56,20 @@ impl TaskContext {
         &self.behavior_runtime
     }
 
-    pub async fn navigate_to(&self, url: &str, timeout_ms: u64) -> Result<()> {
+    pub async fn navigate(&self, url: &str, timeout_ms: u64) -> Result<()> {
         navigation::goto(self.page(), url, timeout_ms).await
     }
 
+    pub async fn navigate_to(&self, url: &str, timeout_ms: u64) -> Result<()> {
+        self.navigate(url, timeout_ms).await
+    }
+
     pub async fn navigate_to_light(&self, url: &str, timeout_ms: u64) -> Result<()> {
-        navigation::goto_light(self.page(), url, timeout_ms).await
+        self.navigate(url, timeout_ms).await
     }
 
     pub async fn navigate_to_raw(&self, url: &str, timeout_ms: u64) -> Result<()> {
-        navigation::goto_raw(self.page(), url, timeout_ms).await
+        self.navigate(url, timeout_ms).await
     }
 
     pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {

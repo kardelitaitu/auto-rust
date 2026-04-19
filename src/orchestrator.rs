@@ -3,13 +3,17 @@
 //! The orchestrator manages:
 //! - Parallel execution of task groups across sessions
 //! - Global concurrency control via semaphores
-//! - Retry logic and error handling
-//! - Load balancing and resource allocation
+//! - Retry logic with exponential backoff
+//! - Error handling and load balancing
+//! - Resource allocation and distribution
 
+use crate::api::RetryPolicy;
 use crate::config::Config;
+use crate::metrics::{MetricsCollector};
 use crate::session::Session;
 use crate::cli::TaskDefinition;
 use crate::logger::{LogContext, set_log_context};
+use crate::result::{TaskErrorKind, TaskResult};
 use anyhow::{Result, bail};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -86,6 +90,7 @@ impl Orchestrator {
         &mut self,
         group: &[TaskDefinition],
         sessions: &[Session],
+        metrics: Arc<MetricsCollector>,
     ) -> Result<()> {
         if sessions.is_empty() {
             bail!("No active sessions available");
@@ -107,13 +112,14 @@ impl Orchestrator {
         let group_timeout = Duration::from_millis(self.config.orchestrator.group_timeout_ms);
 
         let task_futures: Vec<_> = group
-            .iter()
-            .map(|task_def| {
-                let global_active = self.global_active_tasks.clone();
-                let global_sem = self.global_semaphore.clone();
-                let config = self.config.clone();
+        .iter()
+        .map(|task_def| {
+            let global_active = self.global_active_tasks.clone();
+            let global_sem = self.global_semaphore.clone();
+            let config = self.config.clone();
+            let metrics = metrics.clone();
 
-                async move {
+            async move {
                     // Global concurrency throttling
                     let _permit = global_sem.acquire().await?;
                     global_active.fetch_add(1, Ordering::SeqCst);
@@ -129,6 +135,7 @@ impl Orchestrator {
                         task_def,
                         sessions,
                         &config,
+                        metrics.clone(),
                     )
                     .await;
 
@@ -178,6 +185,7 @@ async fn execute_task_on_session(
     task_def: &TaskDefinition,
     sessions: &[Session],
     config: &Config,
+    metrics: Arc<MetricsCollector>,
 ) -> Result<()> {
     if sessions.is_empty() {
         bail!("No sessions available");
@@ -195,8 +203,9 @@ async fn execute_task_on_session(
         .map(|session| {
             let task_def = task_def.clone();
             let config = config.clone();
+            let metrics = metrics.clone();
             async move {
-                let result = execute_task_with_retry(&task_def, session, &config).await;
+                let result = execute_task_with_retry(&task_def, session, &config, metrics).await;
                 (session.id.clone(), result)
             }
         })
@@ -208,22 +217,27 @@ async fn execute_task_on_session(
     let mut success_count = 0;
     let mut failed_sessions = Vec::new();
 
-    for (session_id, result) in results {
-        match result {
-            Ok(_) => {
-                info!(
-                    "[{}][{}] Completed",
-                    session_id, task_def.name
-                );
-                success_count += 1;
-            }
-            Err(e) => {
-                warn!(
-                    "[{}][{}] Failed: {}",
-                    session_id, task_def.name, e
-                );
-                failed_sessions.push(session_id);
-            }
+    for (session_id, task_result) in results {
+        metrics.task_completed_from_result(
+            task_def.name.clone(),
+            session_id.clone(),
+            &task_result,
+        );
+
+        if task_result.is_success() {
+            info!("[{}][{}] Completed", session_id, task_def.name);
+            success_count += 1;
+        } else {
+            warn!(
+                "[{}][{}] Failed: {}",
+                session_id,
+                task_def.name,
+                task_result
+                    .last_error
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string())
+            );
+            failed_sessions.push(session_id);
         }
     }
 
@@ -255,29 +269,49 @@ async fn execute_task_on_session(
     }
 }
 
-/// Execute a task with timeout and retry logic
+/// Execute a task with timeout and retry logic using exponential backoff
 async fn execute_task_with_retry(
     task_def: &TaskDefinition,
     session: &Session,
     config: &Config,
-) -> Result<()> {
+    metrics: Arc<MetricsCollector>,
+) -> TaskResult {
+    let start = std::time::Instant::now();
     let max_retries = config.orchestrator.max_retries;
     let task_timeout = Duration::from_millis(config.orchestrator.task_timeout_ms);
-    let _retry_delay = Duration::from_millis(config.orchestrator.retry_delay_ms);
+    metrics.task_started();
+
+    // Create retry policy with exponential backoff and jitter
+    let retry_policy = RetryPolicy {
+        max_retries,
+        initial_delay: Duration::from_millis(config.orchestrator.retry_delay_ms),
+        max_delay: Duration::from_secs(30),
+        factor: 2.0,
+        jitter: 0.3,
+    };
 
     // Acquire worker permit
-    let permit = session
-        .acquire_worker(config.orchestrator.worker_wait_timeout_ms)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Failed to acquire worker"))?;
+    let permit = match session.acquire_worker(config.orchestrator.worker_wait_timeout_ms).await {
+        Some(permit) => permit,
+        None => {
+            return TaskResult::failure(
+                start.elapsed().as_millis() as u64,
+                "Failed to acquire worker".to_string(),
+                TaskErrorKind::Session,
+            );
+        }
+    };
 
-    // Check session health
     if !session.is_healthy() {
         session.mark_unhealthy();
-        bail!("Session {} is unhealthy, skipping task", session.id);
+        drop(permit);
+        return TaskResult::failure(
+            start.elapsed().as_millis() as u64,
+            format!("Session {} is unhealthy, skipping task", session.id),
+            TaskErrorKind::Session,
+        );
     }
 
-    // Build and validate payload
     let payload_json = serde_json::Value::Object(
         task_def
             .payload
@@ -285,24 +319,56 @@ async fn execute_task_with_retry(
             .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
             .collect(),
     );
-    
+
     if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
-        bail!("Task {} validation failed: {}", task_def.name, e);
+        drop(permit);
+        return TaskResult::failure(
+            start.elapsed().as_millis() as u64,
+            format!("Task {} validation failed: {}", task_def.name, e),
+            TaskErrorKind::Validation,
+        );
     }
 
-    // Acquire page. For pageview, open the target URL directly instead of blank first.
     let page = if task_def.name == "pageview" {
         let target_url = payload_json
             .get("url")
             .and_then(|v| v.as_str())
-            .or_else(|| payload_json.get("value").and_then(|v| v.as_str()))
-            .ok_or_else(|| anyhow::anyhow!("pageview requires a url or value payload"))?;
-        session.acquire_page_at(target_url).await?
+            .or_else(|| payload_json.get("value").and_then(|v| v.as_str()));
+        match target_url {
+            Some(target_url) => match session.acquire_page_at(target_url).await {
+                Ok(page) => page,
+                Err(e) => {
+                    drop(permit);
+                    return TaskResult::failure(
+                        start.elapsed().as_millis() as u64,
+                        e.to_string(),
+                        TaskErrorKind::Browser,
+                    );
+                }
+            },
+            None => {
+                drop(permit);
+                return TaskResult::failure(
+                    start.elapsed().as_millis() as u64,
+                    "pageview requires a url or value payload".to_string(),
+                    TaskErrorKind::Validation,
+                );
+            }
+        }
     } else {
-        session.acquire_page().await?
+        match session.acquire_page().await {
+            Ok(page) => page,
+            Err(e) => {
+                drop(permit);
+                return TaskResult::failure(
+                    start.elapsed().as_millis() as u64,
+                    e.to_string(),
+                    TaskErrorKind::Browser,
+                );
+            }
+        }
     };
 
-    // Set logging context for structured output
     let profile_name = session.behavior_profile.name.clone();
     let ctx = LogContext {
         session_id: Some(session.id.clone()),
@@ -310,51 +376,97 @@ async fn execute_task_with_retry(
         task_name: Some(task_def.name.clone()),
     };
     set_log_context(ctx);
-    
+
     let timeout_display = format_duration(config.orchestrator.task_timeout_ms);
-    info!("Executing task (timeout: {}, retries: {})...", 
-        timeout_display, max_retries);
-    
-    let task_ctx = crate::runtime::task_context::TaskContext::new(
-        session.id.clone(),
-        page.clone(),
-        session.behavior_profile.clone(),
-        session.behavior_runtime,
+    info!(
+        "Executing task (timeout: {}, retries: {})...",
+        timeout_display, max_retries
     );
 
-    let result = tokio::time::timeout(
-        task_timeout,
-        crate::task::perform_task(&task_ctx, &task_def.name, payload_json, max_retries),
-    )
-    .await;
+    let mut last_failure: Option<(String, TaskErrorKind)> = None;
+    let mut attempt = 0;
 
-    drop(task_ctx);
+    for current_attempt in 1..=retry_policy.max_retries + 1 {
+        attempt = current_attempt;
 
-    // Release page
-    session.release_page(page).await;
+        let task_ctx = crate::runtime::task_context::TaskContext::new(
+            session.id.clone(),
+            page.clone(),
+            session.behavior_profile.clone(),
+            session.behavior_runtime,
+        );
 
-    // Drop permit (releases worker)
-    drop(permit);
+        let task_result = tokio::time::timeout(
+            task_timeout,
+            crate::task::perform_task(&task_ctx, &task_def.name, payload_json.clone(), max_retries),
+        )
+        .await;
 
-    match result {
-        Ok(Ok(task_result)) => {
-            if task_result.is_success() {
+        drop(task_ctx);
+
+        match task_result {
+            Ok(Ok(task_result)) if task_result.is_success() => {
+                session.release_page(page).await;
+                drop(permit);
                 session.mark_healthy();
-                Ok(())
-            } else {
-                let error = task_result.last_error.clone().unwrap_or_else(|| "Unknown error".to_string());
-                session.increment_failure();
-                Err(anyhow::anyhow!("Task {} failed: {}", task_def.name, error))
+                return task_result.with_attempt(current_attempt, max_retries);
+            }
+            Ok(Ok(task_result)) => {
+                let error = task_result
+                    .last_error
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string());
+                let kind = task_result
+                    .error_kind
+                    .unwrap_or_else(|| TaskErrorKind::classify(&error));
+                last_failure = Some((error, kind));
+            }
+            Ok(Err(e)) => {
+                let error = e.to_string();
+                last_failure = Some((error.clone(), TaskErrorKind::classify(&error)));
+            }
+            Err(_) => {
+                last_failure = Some((
+                    format!("Task timed out after {}ms", config.orchestrator.task_timeout_ms),
+                    TaskErrorKind::Timeout,
+                ));
             }
         }
-        Ok(Err(e)) => {
-            session.increment_failure();
-            Err(anyhow::anyhow!("Task {} error: {}", task_def.name, e))
+
+        if current_attempt >= retry_policy.max_retries + 1 {
+            break;
         }
-        Err(_) => {
-            session.increment_failure();
-            session.mark_unhealthy();
-            Err(anyhow::anyhow!("Task {} timed out after {}ms", task_def.name, config.orchestrator.task_timeout_ms))
+
+        if !last_failure
+            .as_ref()
+            .map(|(_, kind)| kind.is_retryable())
+            .unwrap_or(false)
+        {
+            break;
         }
+
+        let delay = retry_policy.delay_for_attempt(current_attempt);
+        tokio::time::sleep(delay).await;
     }
+
+    session.release_page(page).await;
+    drop(permit);
+    session.increment_failure();
+
+    let (msg, kind) = last_failure.unwrap_or_else(|| {
+        (
+            "Unknown task failure".to_string(),
+            TaskErrorKind::Unknown,
+        )
+    });
+    if kind == TaskErrorKind::Timeout {
+        session.mark_unhealthy();
+    }
+
+    TaskResult::failure(
+        start.elapsed().as_millis() as u64,
+        format!("Task {} failed after retries: {}", task_def.name, msg),
+        kind,
+    )
+    .with_retry(attempt.max(1), max_retries, msg)
 }

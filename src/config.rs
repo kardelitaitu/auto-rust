@@ -12,13 +12,16 @@ use std::path::Path;
 
 /// Top-level configuration structure for the Rust Orchestrator.
 /// Contains all settings for browser connections, task orchestration, and system behavior.
-/// Configuration can be loaded from TOML files and overridden with environment variables.
+/// Configuration can be loaded from TOML files with environment variable overrides.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     /// Browser connection and discovery settings
     pub browser: BrowserConfig,
     /// Task orchestration and concurrency settings
     pub orchestrator: OrchestratorConfig,
+    /// Twitter activity task configuration
+    #[serde(default)]
+    pub twitter_activity: TwitterActivityConfig,
 }
 
 /// Configuration for browser connections and management.
@@ -116,6 +119,44 @@ pub struct OrchestratorConfig {
     pub retry_delay_ms: u64,
 }
 
+/// Configuration for the Twitter/X activity task.
+#[derive(Debug, Deserialize, Clone)]
+pub struct TwitterActivityConfig {
+    /// Duration of feed scanning phase in milliseconds (default: 60s)
+    #[serde(default = "default_feed_scan_duration")]
+    pub feed_scan_duration_ms: u64,
+    /// Number of scroll actions during feed scanning (default: 10)
+    #[serde(default = "default_feed_scroll_count")]
+    pub feed_scroll_count: u32,
+    /// Number of tweets to consider for engagement per scan (default: 5)
+    #[serde(default = "default_engagement_candidate_count")]
+    pub engagement_candidate_count: u32,
+    /// Path to persona file (optional)
+    #[serde(default)]
+    pub persona_file_path: Option<String>,
+}
+
+fn default_feed_scan_duration() -> u64 {
+    60_000
+}
+fn default_feed_scroll_count() -> u32 {
+    10
+}
+fn default_engagement_candidate_count() -> u32 {
+    5
+}
+
+impl Default for TwitterActivityConfig {
+    fn default() -> Self {
+        Self {
+            feed_scan_duration_ms: default_feed_scan_duration(),
+            feed_scroll_count: default_feed_scroll_count(),
+            engagement_candidate_count: default_engagement_candidate_count(),
+            persona_file_path: None,
+        }
+    }
+}
+
 /// Loads configuration from file and environment variables.
 /// Attempts to load from `config/default.toml` first, then applies environment
 /// variable overrides. Falls back to hardcoded defaults if no config file exists.
@@ -180,6 +221,7 @@ fn load_code_config() -> Result<Config> {
             max_retries: 2,
             retry_delay_ms: 500,
         },
+        twitter_activity: TwitterActivityConfig::default(),
     })
 }
 
@@ -232,19 +274,285 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 /// # Errors
 /// Returns an error if any required values are zero or invalid
 pub fn validate_config(config: &Config) -> Result<()> {
-    if config.orchestrator.max_global_concurrency == 0 {
-        bail!("max_global_concurrency must be > 0");
-    }
-    if config.orchestrator.task_timeout_ms == 0 {
-        bail!("task_timeout_ms must be > 0");
-    }
-    if config.orchestrator.group_timeout_ms == 0 {
-        bail!("group_timeout_ms must be > 0");
-    }
-    if config.orchestrator.max_retries > 10 {
-        warn!("max_retries > 10 may cause long running times");
-    }
-
+    let report = ConfigValidationReport::new();
+    
+    // Validate orchestrator settings
+    report.validate_orchestrator_config(&config.orchestrator)?;
+    
+    // Validate browser settings
+    report.validate_browser_config(&config.browser)?;
+    
+    // Validate circuit breaker config
+    report.validate_circuit_breaker(&config.browser.circuit_breaker)?;
+    
+    // Validate Twitter Activity config
+    report.validate_twitter_activity_config(&config.twitter_activity)?;
+    
     info!("Config validation passed");
     Ok(())
+}
+
+/// Detailed validation report for configuration
+#[derive(Debug, Clone)]
+pub struct ConfigValidationReport {
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+impl ConfigValidationReport {
+    pub fn new() -> Self {
+        Self {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+    
+    /// Validate orchestrator configuration with range checks
+    pub fn validate_orchestrator_config(&self, config: &OrchestratorConfig) -> Result<()> {
+        // Concurrency validation (1-100 range)
+        if config.max_global_concurrency == 0 {
+            bail!("max_global_concurrency must be > 0");
+        }
+        if config.max_global_concurrency > 100 {
+            bail!(
+                "max_global_concurrency ({}) exceeds maximum recommended value (100). \
+                 Values this high may cause resource exhaustion.",
+                config.max_global_concurrency
+            );
+        }
+        if config.max_global_concurrency > 50 {
+            warn!(
+                "max_global_concurrency ({}) is high. Consider using a connection pool or \
+                 rate limiting to avoid overwhelming target servers.",
+                config.max_global_concurrency
+            );
+        }
+        
+        // Timeout validations
+        if config.task_timeout_ms == 0 {
+            bail!("task_timeout_ms must be > 0");
+        }
+        if config.task_timeout_ms < 5_000 {
+            warn!(
+                "task_timeout_ms ({}) is very low. Tasks may timeout before completing.",
+                config.task_timeout_ms
+            );
+        }
+        if config.task_timeout_ms > 3_600_000 {
+            warn!(
+                "task_timeout_ms ({}) is very high (>1 hour). Consider breaking tasks into smaller units.",
+                config.task_timeout_ms
+            );
+        }
+        
+        if config.group_timeout_ms == 0 {
+            bail!("group_timeout_ms must be > 0");
+        }
+        if config.group_timeout_ms < config.task_timeout_ms {
+            warn!(
+                "group_timeout_ms ({}) is less than task_timeout_ms ({}). \
+                 This may cause group timeouts before individual tasks complete.",
+                config.group_timeout_ms,
+                config.task_timeout_ms
+            );
+        }
+        
+        // Worker timeout validation
+        if config.worker_wait_timeout_ms == 0 {
+            bail!("worker_wait_timeout_ms must be > 0");
+        }
+        if config.worker_wait_timeout_ms < 1_000 {
+            warn!(
+                "worker_wait_timeout_ms ({}) is very low. Workers may timeout before acquiring resources.",
+                config.worker_wait_timeout_ms
+            );
+        }
+        
+        // Retry validation
+        if config.max_retries > 10 {
+            warn!(
+                "max_retries ({}) is high. This may cause long running times and \
+                 excessive resource usage on persistent failures.",
+                config.max_retries
+            );
+        }
+        if config.retry_delay_ms == 0 {
+            warn!("retry_delay_ms is 0. Consider adding a delay to avoid tight retry loops.");
+        }
+        if config.retry_delay_ms > 30_000 {
+            warn!(
+                "retry_delay_ms ({}) is very high. This may cause long delays between retries.",
+                config.retry_delay_ms
+            );
+        }
+        
+        // Stagger delay validation
+        if config.task_stagger_delay_ms > 10_000 {
+            warn!(
+                "task_stagger_delay_ms ({}) is very high. This may cause slow group execution.",
+                config.task_stagger_delay_ms
+            );
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate browser configuration
+    pub fn validate_browser_config(&self, config: &BrowserConfig) -> Result<()> {
+        // Discovery retry validation
+        if config.max_discovery_retries == 0 {
+            bail!("max_discovery_retries must be > 0");
+        }
+        if config.max_discovery_retries > 10 {
+            warn!(
+                "max_discovery_retries ({}) is high. This may cause long startup delays.",
+                config.max_discovery_retries
+            );
+        }
+        
+        if config.discovery_retry_delay_ms == 0 {
+            warn!("discovery_retry_delay_ms is 0. Consider adding a delay between retries.");
+        }
+        if config.discovery_retry_delay_ms > 60_000 {
+            warn!(
+                "discovery_retry_delay_ms ({}) is very high. This may cause long startup delays.",
+                config.discovery_retry_delay_ms
+            );
+        }
+        
+        // Profile name uniqueness validation
+        let mut seen_names = std::collections::HashSet::new();
+        for profile in &config.profiles {
+            if !seen_names.insert(&profile.name) {
+                bail!("Duplicate browser profile name: '{}'. Profile names must be unique.", profile.name);
+            }
+            
+            // Validate profile name is not empty
+            if profile.name.trim().is_empty() {
+                bail!("Browser profile name cannot be empty");
+            }
+        }
+        
+        // RoxyBrowser API URL format validation
+        if !config.roxybrowser.api_url.is_empty() {
+            let url = &config.roxybrowser.api_url;
+            if !url.starts_with("http://") && !url.starts_with("https://") {
+                bail!(
+                    "RoxyBrowser API URL must start with http:// or https://. Got: {}",
+                    url
+                );
+            }
+            if !url.ends_with('/') {
+                warn!(
+                    "RoxyBrowser API URL does not end with '/'. This may cause incorrect API paths. Got: {}",
+                    url
+                );
+            }
+        }
+        
+        // API key validation (warn if empty but don't fail - might not be using RoxyBrowser)
+        if config.roxybrowser.enabled && config.roxybrowser.api_key.is_empty() {
+            warn!("RoxyBrowser is enabled but api_key is empty. API requests will fail.");
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate circuit breaker configuration
+    pub fn validate_circuit_breaker(&self, config: &CircuitBreakerConfig) -> Result<()> {
+        if !config.enabled {
+            return Ok(());
+        }
+        
+        if config.failure_threshold == 0 {
+            bail!("circuit_breaker.failure_threshold must be > 0");
+        }
+        if config.failure_threshold > 20 {
+            warn!(
+                "circuit_breaker.failure_threshold ({}) is very high. Circuit may not trip on real failures.",
+                config.failure_threshold
+            );
+        }
+        
+        if config.success_threshold == 0 {
+            bail!("circuit_breaker.success_threshold must be > 0");
+        }
+        if config.success_threshold > 10 {
+            warn!(
+                "circuit_breaker.success_threshold ({}) is high. Circuit may take long to close.",
+                config.success_threshold
+            );
+        }
+        
+        if config.half_open_time_ms < 5_000 {
+            warn!(
+                "circuit_breaker.half_open_time_ms ({}) is very low. Circuit may close prematurely.",
+                config.half_open_time_ms
+            );
+        }
+        if config.half_open_time_ms > 300_000 {
+            warn!(
+                "circuit_breaker.half_open_time_ms ({}) is very high. Recovery may take too long.",
+                config.half_open_time_ms
+            );
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate Twitter Activity configuration
+    pub fn validate_twitter_activity_config(&self, config: &TwitterActivityConfig) -> Result<()> {
+        // Feed scan duration validation (10s - 30min range)
+        if config.feed_scan_duration_ms < 10_000 {
+            warn!(
+                "twitter_activity.feed_scan_duration_ms ({}) is very low (<10s). \
+                 Feed scan may not capture enough content.",
+                config.feed_scan_duration_ms
+            );
+        }
+        if config.feed_scan_duration_ms > 1_800_000 {
+            bail!(
+                "twitter_activity.feed_scan_duration_ms ({}) exceeds maximum (30min). \
+                 Consider breaking into multiple shorter scans.",
+                config.feed_scan_duration_ms
+            );
+        }
+        
+        // Feed scroll count validation
+        if config.feed_scroll_count == 0 {
+            bail!("twitter_activity.feed_scroll_count must be > 0");
+        }
+        if config.feed_scroll_count > 100 {
+            warn!(
+                "twitter_activity.feed_scroll_count ({}) is very high. This may trigger rate limiting.",
+                config.feed_scroll_count
+            );
+        }
+        
+        // Engagement candidate count validation
+        if config.engagement_candidate_count == 0 {
+            bail!("twitter_activity.engagement_candidate_count must be > 0");
+        }
+        if config.engagement_candidate_count > 20 {
+            warn!(
+                "twitter_activity.engagement_candidate_count ({}) is high. Consider a smaller number for more focused engagement.",
+                config.engagement_candidate_count
+            );
+        }
+        
+        // Persona file path validation (if provided)
+        if let Some(path) = &config.persona_file_path {
+            if !std::path::Path::new(path).exists() {
+                warn!("twitter_activity.persona_file_path does not exist: {}", path);
+            }
+        }
+        
+        Ok(())
+    }
+}
+
+impl Default for ConfigValidationReport {
+    fn default() -> Self {
+        Self::new()
+    }
 }

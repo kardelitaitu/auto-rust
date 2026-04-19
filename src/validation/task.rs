@@ -45,6 +45,9 @@ impl TaskPayload {
         match self.name.as_str() {
             "cookiebot" => self.validate_cookiebot(),
             "pageview" => self.validate_pageview(),
+            "twitterfollow" => self.validate_twitterfollow(),
+            "twitterreply" => self.validate_twitterreply(),
+            "twitteractivity" => self.validate_twitteractivity(),
             _ => {
                 info!("No validation schema for task: {}", self.name);
                 Ok(())
@@ -78,8 +81,95 @@ impl TaskPayload {
 
         Ok(())
     }
+
+    fn validate_twitterfollow(&self) -> Result<()> {
+        if !self.payload.is_object() {
+            bail!("twitterfollow payload must be an object");
+        }
+
+        let has_username = self
+            .payload
+            .get("username")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_url = self
+            .payload
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_value = self
+            .payload
+            .get("value")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+
+        if !(has_username || has_url || has_value) {
+            bail!("twitterfollow payload requires username, url, or value");
+        }
+
+        Ok(())
+    }
+
+    fn validate_twitterreply(&self) -> Result<()> {
+        if !self.payload.is_object() {
+            bail!("twitterreply payload must be an object");
+        }
+
+        let has_url = self
+            .payload
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_value = self
+            .payload
+            .get("value")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+
+        if !(has_url || has_value) {
+            bail!("twitterreply payload requires url or value");
+        }
+
+        Ok(())
+    }
+
+    fn validate_twitteractivity(&self) -> Result<()> {
+        if !self.payload.is_object() {
+            bail!("twitteractivity payload must be an object");
+        }
+        Ok(())
+    }
 }
 
 pub fn validate_task(name: &str, payload: Value) -> Result<()> {
     TaskPayload::new(name.to_string(), payload).validate()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_task;
+    use serde_json::json;
+
+    #[test]
+    fn twitterfollow_requires_target() {
+        assert!(validate_task("twitterfollow", json!({})).is_err());
+        assert!(validate_task("twitterfollow", json!({"username":"dika"})).is_ok());
+    }
+
+    #[test]
+    fn twitterreply_requires_url_or_value() {
+        assert!(validate_task("twitterreply", json!({})).is_err());
+        assert!(validate_task("twitterreply", json!({"url":"https://x.com/a/status/1"})).is_ok());
+    }
+
+    #[test]
+    fn twitteractivity_requires_object() {
+        assert!(validate_task("twitteractivity", json!([])).is_err());
+        assert!(validate_task("twitteractivity", json!({})).is_ok());
+    }
 }

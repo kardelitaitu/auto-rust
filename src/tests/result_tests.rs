@@ -7,6 +7,7 @@ mod tests {
         assert!(result.is_success());
         assert_eq!(result.duration_ms, 100);
         assert_eq!(result.attempt, 1);
+        assert_eq!(result.error_kind, None);
     }
 
     #[test]
@@ -41,5 +42,8 @@ mod tests {
             crate::result::TaskErrorKind::classify("session closed"),
             crate::result::TaskErrorKind::Session
         );
+
+        assert!(crate::result::TaskErrorKind::Timeout.is_retryable());
+        assert!(!crate::result::TaskErrorKind::Validation.is_retryable());
     }
 }

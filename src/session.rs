@@ -7,6 +7,7 @@
 //! - Graceful shutdown and cleanup
 
 use chromiumoxide::{Browser, Handler};
+use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use log::{info, warn};
@@ -63,7 +64,7 @@ pub struct Session {
 
     /// Registry of active page IDs (currently unused)
     #[allow(dead_code)]
-    active_pages: DashSet<u64>,
+    active_pages: DashSet<TargetId>,
 }
 
 impl Session {
@@ -120,14 +121,14 @@ impl Session {
 
     /// Register a page to track it
     #[allow(dead_code)]
-    pub fn register_page(&self, page_id: u64) {
+    pub fn register_page(&self, page_id: TargetId) {
         self.active_pages.insert(page_id);
     }
 
     /// Unregister a page (release it)
     #[allow(dead_code)]
-    pub fn unregister_page(&self, page_id: u64) {
-        self.active_pages.remove(&page_id);
+    pub fn unregister_page(&self, page_id: &str) {
+        self.active_pages.remove(page_id);
     }
 
     /// Get count of active pages
@@ -217,23 +218,28 @@ impl Session {
     pub async fn acquire_page(&self) -> anyhow::Result<Arc<chromiumoxide::Page>> {
         // Create new page (equivalent to browser.newPage())
         let page = self.browser.new_page("about:blank").await?;
-        Ok(Arc::new(page))
+        let page = Arc::new(page);
+        self.register_page(page.target_id().clone());
+        Ok(page)
     }
 
     /// Acquire a page that opens directly on the target URL.
     pub async fn acquire_page_at(&self, url: &str) -> anyhow::Result<Arc<chromiumoxide::Page>> {
         let page = self.browser.new_page(url).await?;
-        Ok(Arc::new(page))
+        let page = Arc::new(page);
+        self.register_page(page.target_id().clone());
+        Ok(page)
     }
 
     /// Release a page (close it)
     /// Equivalent to Node.js `sessionManager.releasePage()`
     pub async fn release_page(&self, page: Arc<chromiumoxide::Page>) {
-        // Close the page directly; TaskContext may still hold an Arc reference.
+        let page_id = page.target_id().clone();
         let page_to_close = (*page).clone();
         if let Err(e) = page_to_close.close().await {
-            warn!("[{}] Error closing page: {}", self.id, e);
+            warn!("[{}] Error closing page {:?}: {}", self.id, page_id, e);
         }
+        self.unregister_page(page_id.as_ref());
     }
 
     /// Graceful shutdown - cancel tasks, close pages, close browser
@@ -243,6 +249,18 @@ impl Session {
         
         // Mark as failed to stop new tasks
         self.set_state(SessionState::Failed);
+
+        // Close any remaining open pages first
+        if let Ok(pages) = self.browser.pages().await {
+            for page in pages {
+                let page_id = page.target_id().clone();
+                let page_to_close = page.clone();
+                if let Err(e) = page_to_close.close().await {
+                    warn!("[{}] Error closing page {:?} during shutdown: {}", self.id, page_id, e);
+                }
+                self.unregister_page(page_id.as_ref());
+            }
+        }
         
         // Close the browser
         if let Err(e) = self.browser.close().await {

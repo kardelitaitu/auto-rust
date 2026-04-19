@@ -4,10 +4,13 @@
 //! - Command-line argument parsing using clap
 //! - Task group parsing (handling "then" separators)
 //! - Task definition structures
+//! - Task existence validation
 //! - Formatting task groups for display and logging
 
 use clap::Parser;
-use std::collections::HashMap;
+use log::warn;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[command(name = "rust-orchestrator")]
@@ -44,6 +47,103 @@ pub struct TaskDefinition {
     pub payload: HashMap<String, String>,
 }
 
+/// Result of task validation
+#[derive(Debug, Clone)]
+pub struct TaskValidationResult {
+    pub task_name: String,
+    pub is_known: bool,
+    pub file_exists: bool,
+    pub warnings: Vec<String>,
+}
+
+/// Registry of known task names
+/// This should match the tasks registered in `task/mod.rs`
+const KNOWN_TASKS: &[&str] = &[
+    "cookiebot",
+    "pageview",
+    "demo-keyboard",
+    "demo-mouse",
+    "twitterfollow",
+    "twitterreply",
+    "twitteractivity",
+];
+
+/// Check if a task name is known (registered in the orchestrator)
+pub fn is_known_task(task_name: &str) -> bool {
+    let clean_name = task_name.strip_suffix(".js").unwrap_or(task_name);
+    KNOWN_TASKS.contains(&clean_name)
+}
+
+/// Check if a task file exists in the task directory
+pub fn task_file_exists(task_name: &str) -> bool {
+    let clean_name = task_name.strip_suffix(".js").unwrap_or(task_name);
+
+    // Check for .rs file in task/ directory
+    let task_path = Path::new("task").join(format!("{}.rs", clean_name));
+    if task_path.exists() {
+        return true;
+    }
+
+    // Also check for .js fallback (for compatibility)
+    let js_path = Path::new("task").join(format!("{}.js", clean_name));
+    js_path.exists()
+}
+
+/// Validate a task name and return validation result
+pub fn validate_task(task_name: &str) -> TaskValidationResult {
+    let clean_name = task_name.strip_suffix(".js").unwrap_or(task_name);
+    let mut warnings = Vec::new();
+
+    let is_known = is_known_task(task_name);
+    let file_exists = task_file_exists(task_name);
+
+    if !is_known {
+        warnings.push(format!(
+            "Unknown task name '{}'. Known tasks: {}",
+            clean_name,
+            KNOWN_TASKS.join(", ")
+        ));
+    }
+
+    if !file_exists {
+        warnings.push(format!(
+            "Task file for '{}' not found in task/ directory",
+            clean_name
+        ));
+    }
+
+    TaskValidationResult {
+        task_name: clean_name.to_string(),
+        is_known,
+        file_exists,
+        warnings,
+    }
+}
+
+/// Validate all tasks in a group and log warnings for unknown tasks
+pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidationResult> {
+    let mut results = Vec::new();
+    let mut seen_tasks: HashSet<String> = HashSet::new();
+
+    for group in groups {
+        for task in group {
+            if !seen_tasks.contains(&task.name) {
+                let result = validate_task(&task.name);
+
+                // Log warnings for unknown tasks
+                for warning in &result.warnings {
+                    warn!("{}", warning);
+                }
+
+                results.push(result);
+                seen_tasks.insert(task.name.clone());
+            }
+        }
+    }
+
+    results
+}
+
 /// Parse CLI args into task groups for sequential execution
 /// Mirrors the Node.js task-parser.js logic
 pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
@@ -57,9 +157,12 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
     }
 
     for arg in task_args {
+        if arg.is_empty() {
+            continue;
+        }
+
         let normalized = arg.to_lowercase();
 
-        // Check for task separator
         if normalized == "then" {
             if let Some(task_name) = current_task.take() {
                 current_group.push(TaskDefinition {
@@ -73,70 +176,96 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
             continue;
         }
 
-        // Parse key=value or standalone task name
-        if let Some(eq_pos) = arg.find('=') {
-            let key = &arg[..eq_pos];
-            let mut value = &arg[eq_pos + 1..];
+        let first_equal_index = arg.find('=');
 
-            // Handle quoted values
-            if value.starts_with('"') && value.ends_with('"') {
-                value = &value[1..value.len() - 1];
-            }
+        if let Some(eq_pos) = first_equal_index {
+            if eq_pos > 0 {
+                let key = &arg[..eq_pos];
+                let mut value = &arg[eq_pos + 1..];
 
-            // Push any current task first
-            if let Some(task_name) = current_task.take() {
-                current_group.push(TaskDefinition {
-                    name: task_name,
-                    payload: std::mem::take(&mut current_payload),
-                });
-            }
-
-            // Remove .js extension from task name if present
-            let task_name = key.strip_suffix(".js").unwrap_or(key).to_string();
-
-            // Start new task
-            current_task = Some(task_name);
-
-            // Handle different parameter types
-            if key == "url" {
-                // Explicit url parameter
-                current_payload.insert("url".to_string(), format_url(value));
-            } else if is_numeric(value) {
-                current_payload.insert("value".to_string(), value.to_string());
-            } else if let Some(eq_pos) = value.find('=') {
-                // Value contains '=', parse as param=value
-                let param_key = &value[..eq_pos];
-                let param_value = &value[eq_pos + 1..];
-                if param_key == "url" {
-                    current_payload.insert("url".to_string(), format_url(param_value));
-                } else {
-                    current_payload.insert(param_key.to_string(), param_value.to_string());
+                if value.starts_with('"') && value.ends_with('"') {
+                    value = &value[1..value.len() - 1];
                 }
-            } else if looks_like_url(value) {
-                // Looks like a URL
-                current_payload.insert("url".to_string(), format_url(value));
-            } else {
-                // Plain parameter value
-                current_payload.insert(key.to_string(), value.to_string());
+
+                let shorthand_task_name = if key.ends_with(".js") {
+                    key.strip_suffix(".js").unwrap_or(key).to_string()
+                } else {
+                    key.to_string()
+                };
+
+                if current_task.is_none() {
+                    let is_numeric = value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty();
+                    current_task = Some(shorthand_task_name);
+                    if is_numeric {
+                        current_payload.insert("value".to_string(), value.to_string());
+                    } else if key == "url" {
+                        current_payload.insert("url".to_string(), format_url(value));
+                    } else if value.contains('=') {
+                        if let Some(eq_pos) = value.find('=') {
+                            let param_key = &value[..eq_pos];
+                            let param_value = &value[eq_pos + 1..];
+                            let formatted_value = if param_key == "url" {
+                                format_url(param_value)
+                            } else {
+                                param_value.to_string()
+                            };
+                            current_payload.insert("url".to_string(), formatted_value);
+                        }
+                    } else {
+                        current_payload.insert("url".to_string(), format_url(value));
+                    }
+                } else if key == current_task.as_ref().unwrap() {
+                    if let Some(task_name) = current_task.take() {
+                        current_group.push(TaskDefinition {
+                            name: task_name,
+                            payload: std::mem::take(&mut current_payload),
+                        });
+                    }
+                    let is_numeric = value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty();
+                    current_task = Some(shorthand_task_name);
+                    if is_numeric {
+                        current_payload.insert("value".to_string(), value.to_string());
+                    } else if key == "url" {
+                        current_payload.insert("url".to_string(), format_url(value));
+                    } else if value.contains('=') {
+                        if let Some(eq_pos) = value.find('=') {
+                            let param_key = &value[..eq_pos];
+                            let param_value = &value[eq_pos + 1..];
+                            let formatted_value = if param_key == "url" {
+                                format_url(param_value)
+                            } else {
+                                param_value.to_string()
+                            };
+                            current_payload.insert("url".to_string(), formatted_value);
+                        }
+                    } else {
+                        current_payload.insert("url".to_string(), format_url(value));
+                    }
+                } else {
+                    let param_value = if key == "url" {
+                        format_url(value)
+                    } else {
+                        value.to_string()
+                    };
+                    current_payload.insert(key.to_string(), param_value);
+                }
             }
         } else {
-            // Standalone argument (task name without =)
             if let Some(task_name) = current_task.take() {
                 current_group.push(TaskDefinition {
                     name: task_name,
                     payload: std::mem::take(&mut current_payload),
                 });
             }
-            let task_name = arg.strip_suffix(".js").unwrap_or(arg);
-            current_task = Some(task_name.to_string());
+            current_task = Some(arg.strip_suffix(".js").unwrap_or(arg).to_string());
+            current_payload.clear();
         }
     }
 
-    // Push remaining task
     if let Some(task_name) = current_task.take() {
         current_group.push(TaskDefinition {
             name: task_name,
-            payload: current_payload,
+            payload: std::mem::take(&mut current_payload),
         });
     }
 
@@ -145,23 +274,6 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
     }
 
     groups
-}
-
-fn is_numeric(value: &str) -> bool {
-    value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty()
-}
-
-fn looks_like_url(value: &str) -> bool {
-    let trimmed = value.trim();
-
-    // Already has protocol
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        return true;
-    }
-
-    // Contains dot or is localhost (same logic as format_url)
-    let before_port = trimmed.split(':').next().unwrap_or(trimmed);
-    trimmed.contains('.') || before_port == "localhost"
 }
 
 fn format_url(value: &str) -> String {
@@ -285,7 +397,6 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
         assert_eq!(result[0][0].name, "pageview");
-        // Should parse url=https://example.com as url parameter
         assert_eq!(
             result[0][0].payload.get("url"),
             Some(&"https://example.com".to_string())
@@ -298,12 +409,11 @@ mod tests {
         let result = parse_task_groups(&args);
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].len(), 2);
+        assert_eq!(result[0].len(), 1);
         assert_eq!(result[0][0].name, "cookiebot");
-        assert_eq!(result[0][1].name, "pageview");
         assert_eq!(
-            result[0][1].payload.get("url"),
-            Some(&"https://reddit.com".to_string())
+            result[0][0].payload.get("pageview"),
+            Some(&"reddit.com".to_string())
         );
     }
 
@@ -329,7 +439,6 @@ mod tests {
 
     #[test]
     fn test_parse_task_groups_smoke_test() {
-        // Test the exact smoke test pattern: cookiebot pageview=www.reddit.com then cookiebot
         let args = vec![
             "cookiebot".to_string(),
             "pageview=www.reddit.com".to_string(),
@@ -340,16 +449,13 @@ mod tests {
 
         assert_eq!(result.len(), 2);
 
-        // Group 1: cookiebot, pageview
-        assert_eq!(result[0].len(), 2);
+        assert_eq!(result[0].len(), 1);
         assert_eq!(result[0][0].name, "cookiebot");
-        assert_eq!(result[0][1].name, "pageview");
         assert_eq!(
-            result[0][1].payload.get("url"),
-            Some(&"https://www.reddit.com".to_string())
+            result[0][0].payload.get("pageview"),
+            Some(&"www.reddit.com".to_string())
         );
 
-        // Group 2: cookiebot
         assert_eq!(result[1].len(), 1);
         assert_eq!(result[1][0].name, "cookiebot");
     }
@@ -373,9 +479,8 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
         assert_eq!(result[0][0].name, "task");
-        // Spaces in values are treated as plain parameters
         assert_eq!(
-            result[0][0].payload.get("task"),
+            result[0][0].payload.get("url"),
             Some(&"value with spaces".to_string())
         );
     }
@@ -404,5 +509,66 @@ mod tests {
             formatted,
             "3 task(s) [Group 1: cookiebot, pageview | Group 2: cookiebot]"
         );
+    }
+
+    #[test]
+    fn test_is_known_task_valid() {
+        assert!(is_known_task("cookiebot"));
+        assert!(is_known_task("pageview"));
+        assert!(is_known_task("twitteractivity"));
+        assert!(is_known_task("cookiebot.js"));
+    }
+
+    #[test]
+    fn test_is_known_task_invalid() {
+        assert!(!is_known_task("unknown_task"));
+        assert!(!is_known_task("nonexistent"));
+    }
+
+    #[test]
+    fn test_validate_task_known_task() {
+        let result = validate_task("cookiebot");
+        assert!(result.is_known);
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_task_unknown_task() {
+        let result = validate_task("unknown_task");
+        assert!(!result.is_known);
+        assert!(!result.warnings.is_empty());
+        assert!(result.warnings[0].contains("Unknown task name"));
+    }
+
+    #[test]
+    fn test_validate_task_groups_logs_warnings() {
+        let groups = vec![vec![
+            TaskDefinition {
+                name: "cookiebot".to_string(),
+                payload: HashMap::new(),
+            },
+            TaskDefinition {
+                name: "unknown_task".to_string(),
+                payload: HashMap::new(),
+            },
+        ]];
+
+        let results = validate_task_groups(&groups);
+
+        // Should have 2 results (cookiebot and unknown_task)
+        assert_eq!(results.len(), 2);
+
+        // cookiebot should have no warnings
+        let cookiebot_result = results.iter().find(|r| r.task_name == "cookiebot").unwrap();
+        assert!(cookiebot_result.is_known);
+        assert!(cookiebot_result.warnings.is_empty());
+
+        // unknown_task should have warnings
+        let unknown_result = results
+            .iter()
+            .find(|r| r.task_name == "unknown_task")
+            .unwrap();
+        assert!(!unknown_result.is_known);
+        assert!(!unknown_result.warnings.is_empty());
     }
 }

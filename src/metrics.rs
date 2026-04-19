@@ -5,14 +5,19 @@
 //! - Performance timing and duration tracking
 //! - Historical task records for analysis
 //! - Run summary export to JSON files
+//! - Memory usage monitoring
 
 use parking_lot::RwLock;
 use serde::Serialize;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::File;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use log::{info, warn};
+
+use crate::result::TaskErrorKind;
+use crate::result::TaskResult;
 
 /// Records detailed metrics for a single task execution.
 /// Captures timing, outcome, and execution context for performance analysis
@@ -30,6 +35,49 @@ pub struct TaskMetrics {
     pub session_id: String,
     /// Which attempt number this execution represents
     pub attempt: u32,
+    /// Classified error kind for failed outcomes
+    pub error_kind: Option<TaskErrorKind>,
+    /// Error message for failed outcomes
+    pub last_error: Option<String>,
+}
+
+/// Memory usage snapshot for monitoring
+#[derive(Debug, Clone, Serialize)]
+pub struct MemorySnapshot {
+    /// Total allocated memory in bytes (if available)
+    pub allocated_bytes: Option<usize>,
+    /// Number of active sessions
+    pub active_sessions: usize,
+    /// Number of active workers/tasks
+    pub active_workers: usize,
+    /// Task queue depth
+    pub task_queue_depth: usize,
+    /// Timestamp of snapshot
+    pub timestamp_ms: u64,
+}
+
+/// Memory and performance monitoring thresholds
+#[derive(Debug, Clone)]
+pub struct MemoryThresholds {
+    /// Warning threshold for memory usage (bytes)
+    pub warning_bytes: usize,
+    /// Critical threshold for memory usage (bytes)
+    pub critical_bytes: usize,
+    /// Warning threshold for active tasks
+    pub warning_active_tasks: usize,
+    /// Critical threshold for active tasks
+    pub critical_active_tasks: usize,
+}
+
+impl Default for MemoryThresholds {
+    fn default() -> Self {
+        Self {
+            warning_bytes: 500 * 1024 * 1024, // 500 MB
+            critical_bytes: 1024 * 1024 * 1024, // 1 GB
+            warning_active_tasks: 50,
+            critical_active_tasks: 100,
+        }
+    }
 }
 
 /// Status of a task execution outcome.
@@ -66,6 +114,8 @@ pub struct MetricsCollector {
     active_tasks: Arc<AtomicUsize>,
     /// Rolling history of recent task executions
     task_history: Arc<RwLock<VecDeque<TaskMetrics>>>,
+    /// Breakdown of failures by error kind
+    failure_breakdown: Arc<RwLock<BTreeMap<TaskErrorKind, usize>>>,
     /// Maximum number of historical records to keep
     max_history: usize,
 }
@@ -88,6 +138,7 @@ impl MetricsCollector {
             total_duration_ms: Arc::new(AtomicUsize::new(0)),
             active_tasks: Arc::new(AtomicUsize::new(0)),
             task_history: Arc::new(RwLock::new(VecDeque::new())),
+            failure_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
             max_history,
         }
     }
@@ -110,9 +161,15 @@ impl MetricsCollector {
             }
             TaskStatus::Failed => {
                 self.failed.fetch_add(1, Ordering::SeqCst);
+                if let Some(kind) = metrics.error_kind {
+                    let mut breakdown = self.failure_breakdown.write();
+                    *breakdown.entry(kind).or_insert(0) += 1;
+                }
             }
             TaskStatus::Timeout => {
                 self.timed_out.fetch_add(1, Ordering::SeqCst);
+                let mut breakdown = self.failure_breakdown.write();
+                *breakdown.entry(TaskErrorKind::Timeout).or_insert(0) += 1;
             }
         }
 
@@ -123,7 +180,37 @@ impl MetricsCollector {
         history.push_back(metrics);
     }
 
+    pub fn task_completed_from_result(
+        &self,
+        task_name: String,
+        session_id: String,
+        result: &TaskResult,
+    ) {
+        let status = match &result.status {
+            crate::result::TaskStatus::Success => TaskStatus::Success,
+            crate::result::TaskStatus::Failed(_) => TaskStatus::Failed,
+            crate::result::TaskStatus::Timeout => TaskStatus::Timeout,
+        };
+
+        self.task_completed(TaskMetrics {
+            task_name,
+            status,
+            duration_ms: result.duration_ms,
+            session_id,
+            attempt: result.attempt,
+            error_kind: result.error_kind,
+            last_error: result.last_error.clone(),
+        });
+    }
+
     pub fn get_stats(&self) -> MetricsSnapshot {
+        let failure_breakdown = self
+            .failure_breakdown
+            .read()
+            .iter()
+            .map(|(kind, count)| (format!("{:?}", kind), *count))
+            .collect();
+
         MetricsSnapshot {
             total_tasks: self.total_tasks.load(Ordering::SeqCst),
             succeeded: self.succeeded.load(Ordering::SeqCst),
@@ -131,6 +218,7 @@ impl MetricsCollector {
             timed_out: self.timed_out.load(Ordering::SeqCst),
             active_tasks: self.active_tasks.load(Ordering::SeqCst),
             total_duration_ms: self.total_duration_ms.load(Ordering::SeqCst) as u64,
+            failure_breakdown,
         }
     }
 
@@ -146,6 +234,101 @@ impl MetricsCollector {
         }
         (self.succeeded.load(Ordering::SeqCst) as f64 / total as f64) * 100.0
     }
+
+    /// Get a memory and performance snapshot
+    pub fn get_memory_snapshot(
+        &self,
+        active_sessions: usize,
+        task_queue_depth: usize,
+    ) -> MemorySnapshot {
+        MemorySnapshot {
+            allocated_bytes: get_allocated_memory(),
+            active_sessions,
+            active_workers: self.active_tasks.load(Ordering::SeqCst),
+            task_queue_depth,
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        }
+    }
+
+    /// Check memory and task thresholds, log warnings if exceeded
+    pub fn check_thresholds(&self, thresholds: &MemoryThresholds, active_sessions: usize) {
+        let snapshot = self.get_memory_snapshot(active_sessions, 0);
+        
+        // Check active tasks
+        if snapshot.active_workers >= thresholds.critical_active_tasks {
+            warn!(
+                "CRITICAL: Active tasks ({}) exceeds critical threshold ({})",
+                snapshot.active_workers, thresholds.critical_active_tasks
+            );
+        } else if snapshot.active_workers >= thresholds.warning_active_tasks {
+            warn!(
+                "WARNING: Active tasks ({}) exceeds warning threshold ({})",
+                snapshot.active_workers, thresholds.warning_active_tasks
+            );
+        }
+    }
+
+    /// Log current memory and performance status
+    pub fn log_status(&self, active_sessions: usize) {
+        let snapshot = self.get_memory_snapshot(active_sessions, 0);
+        let stats = self.get_stats();
+        let failures = self.failure_breakdown.read();
+        
+        let memory_str = match snapshot.allocated_bytes {
+            Some(bytes) => format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0)),
+            None => "N/A".to_string(),
+        };
+        
+        info!(
+            "Metrics Report | Sessions: {} | Active tasks: {} | Total: {} | Success: {:.1}% | Memory: {}",
+            active_sessions,
+            snapshot.active_workers,
+            stats.total_tasks,
+            self.success_rate(),
+            memory_str
+        );
+
+        if !failures.is_empty() {
+            let top_failure = failures
+                .iter()
+                .max_by_key(|(_, count)| **count)
+                .map(|(kind, count)| format!("{:?}={}", kind, count))
+                .unwrap_or_else(|| "none".to_string());
+            info!("Metrics failure breakdown | top={top_failure} | kinds={}", failures.len());
+        }
+    }
+}
+
+/// Get current allocated memory (platform-specific)
+#[cfg(target_os = "linux")]
+fn get_allocated_memory() -> Option<usize> {
+    // Try to read from /proc/self/status
+    use std::fs;
+    let status = fs::read_to_string("/proc/self/status").ok()?;
+    for line in status.lines() {
+        if line.starts_with("VmRSS:") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                return parts[1].parse::<usize>().ok().map(|kb| kb * 1024);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn get_allocated_memory() -> Option<usize> {
+    // On Windows, we'd need to use winapi crate for accurate memory info
+    // For now, return None
+    None
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn get_allocated_memory() -> Option<usize> {
+    None
 }
 
 /// A point-in-time snapshot of metrics data.
@@ -165,6 +348,8 @@ pub struct MetricsSnapshot {
     pub active_tasks: usize,
     /// Total execution time across all completed tasks in milliseconds
     pub total_duration_ms: u64,
+    /// Failure counts grouped by error kind
+    pub failure_breakdown: BTreeMap<String, usize>,
 }
 
 impl Default for MetricsCollector {
@@ -192,6 +377,8 @@ pub struct RunSummary {
     pub success_rate: f64,
     /// Total execution time for the entire run in milliseconds
     pub total_duration_ms: u64,
+    /// Failure counts grouped by error kind
+    pub failure_breakdown: BTreeMap<String, usize>,
 }
 
 impl MetricsCollector {
@@ -208,6 +395,7 @@ impl MetricsCollector {
             timed_out: stats.timed_out,
             success_rate: self.success_rate(),
             total_duration_ms: stats.total_duration_ms,
+            failure_breakdown: stats.failure_breakdown,
         };
 
         let json = serde_json::to_string_pretty(&summary)?;

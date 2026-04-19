@@ -57,31 +57,27 @@ pub async fn pinch_zoom(
     // For simplicity, we'll animate one finger at a time with small delays
     
     // Move first finger
-    if let Err(e) = simulate_drag(
+    simulate_drag(
         page,
         finger1_start_x,
         finger1_start_y,
         finger1_end_x,
         finger1_end_y,
         duration_ms / 2,
-    ).await {
-        return Err(e);
-    }
+    ).await?;
     
     // Small delay between finger movements
     human_pause(50, 20).await;
     
     // Move second finger
-    if let Err(e) = simulate_drag(
+    simulate_drag(
         page,
         finger2_start_x,
         finger2_start_y,
         finger2_end_x,
         finger2_end_y,
         duration_ms / 2,
-    ).await {
-        return Err(e);
-    }
+    ).await?;
     
     Ok(())
 }
@@ -132,17 +128,15 @@ async fn simulate_drag(
     human_pause(10, 20).await;
     
     // Simulate release
-    page.evaluate(format!(
-        "if (window.touch) {{ \
-         const touchEnd = new TouchEvent('touchend', {{ \
+    page.evaluate("if (window.touch) { \
+         const touchEnd = new TouchEvent('touchend', { \
            touches: [], \
            changedTouches: [window.touch], \
            bubbles: true \
-         }}); \
+         }); \
          window.touch = null; \
          document.dispatchEvent(touchEnd); \
-        }}",
-    )).await?;
+        }".to_string()).await?;
     
     Ok(())
 }

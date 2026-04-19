@@ -1,0 +1,15 @@
+# LLM Configuration
+
+# Primary provider: "ollama" | "openrouter"
+provider = "ollama"
+
+[ollama]
+base_url = "http://localhost:11434"
+model = "llama3.2:latest"
+timeout_ms = 120000
+
+[openrouter]
+# Override with env var: OPENROUTER_API_KEY
+api_key = ""
+model = "anthropic/claude-3-haiku"
+timeout_ms = 60000

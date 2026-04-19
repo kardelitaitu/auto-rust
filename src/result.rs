@@ -25,6 +25,8 @@ pub struct TaskResult {
     pub max_retries: u32,
     /// The most recent error message, if the task failed
     pub last_error: Option<String>,
+    /// Classified error kind for failed outcomes
+    pub error_kind: Option<TaskErrorKind>,
     /// Total execution time in milliseconds
     pub duration_ms: u64,
 }
@@ -44,6 +46,18 @@ impl TaskResult {
             attempt: 1,
             max_retries: 0,
             last_error: None,
+            error_kind: None,
+            duration_ms,
+        }
+    }
+
+    pub fn failure(duration_ms: u64, error: String, error_kind: TaskErrorKind) -> Self {
+        Self {
+            status: TaskStatus::Failed(error.clone()),
+            attempt: 1,
+            max_retries: 0,
+            last_error: Some(error),
+            error_kind: Some(error_kind),
             duration_ms,
         }
     }
@@ -65,6 +79,17 @@ impl TaskResult {
         self
     }
 
+    pub fn with_attempt(mut self, attempt: u32, max_retries: u32) -> Self {
+        self.attempt = attempt;
+        self.max_retries = max_retries;
+        self
+    }
+
+    pub fn with_error_kind(mut self, error_kind: TaskErrorKind) -> Self {
+        self.error_kind = Some(error_kind);
+        self
+    }
+
     pub fn is_success(&self) -> bool {
         matches!(self.status, TaskStatus::Success)
     }
@@ -73,7 +98,7 @@ impl TaskResult {
 /// Categorizes different types of errors that can occur during task execution.
 /// This enum helps with error handling, logging, and debugging by classifying
 /// errors into specific categories for appropriate handling.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[allow(dead_code)]
 pub enum TaskErrorKind {
     /// Task execution exceeded the configured timeout limit
@@ -116,6 +141,17 @@ impl TaskErrorKind {
         } else {
             TaskErrorKind::Unknown
         }
+    }
+
+    pub fn is_retryable(self) -> bool {
+        matches!(
+            self,
+            TaskErrorKind::Timeout
+                | TaskErrorKind::Navigation
+                | TaskErrorKind::Session
+                | TaskErrorKind::Browser
+                | TaskErrorKind::Unknown
+        )
     }
 }
 

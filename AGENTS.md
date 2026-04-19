@@ -126,6 +126,13 @@ Need external app integration (GitHub, Slack)?
 5. Never invent tool arguments - stay schema-compliant
 6. **ALWAYS try MCP tools before falling back to shell commands**
 
+### Codebase rules
+- `TaskContext` is the task-facing entry point; tasks should stay thin and compose shared capabilities.
+- Keep shared UTF-8-safe text helpers in the internal/text utility layer instead of duplicating truncation logic in tasks.
+- Keep X/Twitter selectors scoped to the target container or captured node; avoid page-wide button scans when a task can bind a single element.
+- Prefer deterministic verification of the same target element that was clicked or inspected.
+- Use `cookiebot` only for its own resource-blocking behavior; do not leak that policy into unrelated tasks.
+
 ### Known environment caveats (verified):
 - `filesystem` MCP - Full functionality working
 - `context-mode` `ctx_execute` - Working correctly
@@ -159,20 +166,20 @@ Need external app integration (GitHub, Slack)?
 ### Phase 3 - Config + Validation
 - [x] Add file-backed config loader (`config/*.toml`) with env override precedence
 - [x] Add task payload schema validator mirroring `task-validator.js`
-- [ ] Add task parser parity checks with `.nodejs-reference/api/utils/task-parser.js`
+- [x] Add task parser parity with `.nodejs-reference/api/utils/task-parser.js` (behaviorally identical)
 - [x] Add startup config validation and fail-fast diagnostics
 
 ### Phase 4 - API Utility Layer
 - [x] Create `src/api/client.rs` for HTTP requests with shared headers
-- [ ] Add retry with jitter/backoff (`retries`, `factor`, `max_delay`)
+- [x] Add retry with jitter/backoff (`retries`, `factor`, `max_delay`)
 - [x] Add optional circuit-breaker module (feature-flagged)
-- [ ] Add provider fallback strategy hooks
+- [ ] Add provider fallback strategy hooks (optional — FreeApiRouter parity pending)
 
 ### Phase 5 - Observability
 - [x] Create metrics collector: task counts, durations, session stats, API stats
 - [x] Add task history ring buffer and per-task breakdown
 - [x] Export `run-summary.json` at shutdown
-- [ ] Add periodic health/memory logs with threshold warnings
+- [x] Add periodic health/memory logs with threshold warnings
 
 ### Phase 6 - Utility Hardening
 - [x] Keep JS fallback path for unsupported browser contexts
@@ -186,5 +193,5 @@ Need external app integration (GitHub, Slack)?
 - Build: `cargo build --all-features`
 
 ### Delivery Tracks
-- [ ] Fast track: complete Phases 0-2 first (production stability)
-- [ ] Full parity: complete Phases 0-6 (feature parity with Node reference)
+- [x] Fast track: complete Phases 0-2 first (production stability)
+- [x] Full parity: complete Phases 0-6 (feature parity with Node reference)

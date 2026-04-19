@@ -10,11 +10,6 @@ pub mod session {
     pub use crate::session::{Session, SessionState};
 }
 
-pub mod page_manager {
-    #[allow(unused_imports)]
-    pub use crate::page_manager::PageManager;
-}
-
 pub mod worker_pool {
     #[allow(unused_imports)]
     pub use crate::worker_pool::WorkerPool;

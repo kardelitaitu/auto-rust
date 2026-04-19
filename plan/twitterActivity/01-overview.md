@@ -1,11 +1,11 @@
 # Twitter Activity Task — Overview
 
 **Task Name:** `twitterActivity`  
-**Helper Modules:** `twitter-{search,feed,interact,follow,profile}.rs` (see section 7)  
+**Helper Modules (in `src/utils/twitter/`):** `twitteractivity_navigation.rs`, `twitteractivity_feed.rs`, `twitteractivity_dive.rs`, `twitteractivity_interact.rs`, `twitteractivity_popup.rs`, `twitteractivity_sentiment.rs`, `twitteractivity_persona.rs`, plus `twitteractivity_selectors.rs` and `twitteractivity_humanized.rs` (see section 7)  
 **Reference Implementation:** `auto-ai/tasks/api-twitterActivity.js` (Node.js reference)  
 **Status:** Planning phase → Ready for implementation  
 **Created:** 2026-04-17  
-**Last Updated:** 2026-04-17 (post-architecture-review)
+**Last Updated:** 2026-04-17 (modules located in utils/twitter)
 
 ---
 
@@ -23,7 +23,7 @@ Before implementing, review these existing utilities you can leverage:
 | Block media | `src/utils/blockmedia.rs` | `block_heavy_resources(page)` — block images/videos for speed |
 | Profiles | `src/utils/profile.rs` | `BrowserProfile` (21 presets), `ProfileParam`, `randomize_profile()` |
 | Config | `src/config.rs` | `Config` struct, TOML loader, env overrides, validation |
-| Task runner | `src/task/mod.rs` + `cookiebot.rs`, `pageview.rs` | How to register, `perform_task` retry loop, `TaskResult` |
+| Task runner | `task/mod.rs` + `task/cookiebot.rs`, `task/pageview.rs` | How to register, `perform_task` retry loop, `TaskResult` |
 | Metrics | `src/metrics.rs` | `MetricsCollector`, `RunSummary` JSON export |
 | Validation | `src/validation/task.rs` | Payload validation per-task |
 | CLI | `src/cli.rs` | `cargo run twitterActivity`, or `cargo run twitterActivity cycles=7` |

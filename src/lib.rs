@@ -6,14 +6,15 @@
 pub mod api;
 pub mod browser;
 pub mod capabilities;
+pub mod llm;
 pub mod cli;
 pub mod config;
+pub mod health_logger;
 pub mod health_monitor;
 pub mod internal;
 pub mod logger;
 pub mod metrics;
 pub mod orchestrator;
-pub mod page_manager;
 pub mod result;
 pub mod runtime;
 pub mod session;
@@ -28,6 +29,7 @@ pub mod task;
 
 pub use runtime::task_context::TaskContext;
 pub use state::ClipboardState;
+pub use llm::{Llm, LlmClient, ChatMessage, LlmProvider};
 
 /// Convenience imports for task authors.
 pub mod prelude {

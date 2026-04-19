@@ -1,6 +1,6 @@
 # Twitter Agent — State Machine & Cycle Flow
 
-This document describes the `TwitterAgent` orchestrator: its state, per-cycle execution flow, and helper methods.
+This document describes the `TwitterAgent` orchestrator: its state, per-cycle execution flow, and helper methods. All code uses the actual `TaskContext` API and the renamed helper modules (`twitteractivity_*`).
 
 ---
 
@@ -11,7 +11,7 @@ This document describes the `TwitterAgent` orchestrator: its state, per-cycle ex
 ```rust
 // TwitterAgent orchestrates N cycles (5–10) within a total duration budget (540–840s)
 pub struct TwitterAgent {
-    page: Page,
+    ctx: TaskContext,
     profile: BrowserProfile,
     config: TwitterConfig,
     state: AgentState,
@@ -100,12 +100,13 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     // ═══════════════════════════════════════════════════════════════
     // PHASE 2: Navigate with timeout
     // ═══════════════════════════════════════════════════════════════
-    let nav_result = timeout(
-        Duration::from_secs(20),
-        navigation::goto(&self.page, &url, 15000)
+    let nav_deadline = tokio::time::sleep(tokio::time::Duration::from_secs(20));
+    let nav_res = tokio::time::timeout(
+        tokio::time::Duration::from_secs(20),
+        self.ctx.navigate(&url, 15000)
     ).await;
 
-    match nav_result {
+    match nav_res {
         Ok(Ok(())) => { /* proceed */ }
         Ok(Err(e)) => {
             warn!("[twitter][cycle {}] Navigation failed: {}", self.state.cycle, e);
@@ -118,12 +119,12 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     }
 
     // Wait for network idle (or timeout)
-    let _ = navigation::wait_for_load(&self.page, 5000).await;
+    let _ = self.ctx.wait_for_load(5000).await;
 
     // ═══════════════════════════════════════════════════════════════
     // PHASE 3: Close popups/modals (defensive)
     // ═══════════════════════════════════════════════════════════════
-    if let Err(e) = twitter_popup::close_all_modals(&self.page).await {
+    if let Err(e) = crate::utils::twitter::twitteractivity_popup::close_all_modals(&self.ctx).await {
         warn!("[twitter][cycle {}] Modal close error: {}", self.state.cycle, e);
         // Non-fatal — continue
     }
@@ -157,7 +158,7 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     // ═══════════════════════════════════════════════════════════════
     // PHASE 6: Locate a tweet in feed (surface level)
     // ═══════════════════════════════════════════════════════════════
-    let tweet = match twitter_feed::find_random_tweet(&self.page).await {
+    let tweet = match crate::utils::twitter::twitteractivity_feed::find_random_tweet(&self.ctx).await {
         Ok(Some(t)) => t,
         Ok(None) => {
             warn!("[twitter][cycle {}] No tweets found in feed", self.state.cycle);
@@ -175,7 +176,7 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     // ═══════════════════════════════════════════════════════════════
     // PHASE 7: Click tweet to expand (dive into context)
     // ═══════════════════════════════════════════════════════════════
-    if let Err(e) = twitter_dive::click_tweet(&self.page, &tweet).await {
+    if let Err(e) = crate::utils::twitter::twitteractivity_dive::click_tweet(&self.ctx, &tweet).await {
         warn!("[twitter][cycle {}] Click failed: {}", self.state.cycle, e);
         return Ok(CycleOutcome::ClickFailed);
     }
@@ -188,7 +189,7 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     // ═══════════════════════════════════════════════════════════════
     // PHASE 9: Load tweet context (post-click, post-reading)
     // ═══════════════════════════════════════════════════════════════
-    let context = match twitter_dive::load_tweet_context(&self.page, &tweet).await {
+    let context = match crate::utils::twitter::twitteractivity_dive::load_tweet_context(&self.ctx, &tweet).await {
         Ok(ctx) => ctx,
         Err(e) => {
             warn!("[twitter][cycle {}] Context load failed: {}", self.state.cycle, e);
@@ -200,7 +201,7 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     // PHASE 10: Sentiment guard (keyword blocklist)
     // ═══════════════════════════════════════════════════════════════
     if self.config.sentiment.block_negative_engagement {
-        if twitter_sentiment::contains_negative_sentiment(&context.full_text, &self.config.sentiment.negative_keywords) {
+        if crate::utils::twitter::twitteractivity_sentiment::contains_negative_sentiment(&context.full_text, &self.config.sentiment.negative_keywords) {
             info!("[twitter][cycle {}] Blocked by sentiment guard (negative content)", self.state.cycle);
             self.state.counters.skipped_sentiment += 1;
             return Ok(CycleOutcome::BlockedBySentiment);
@@ -228,19 +229,19 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     let action_start = Instant::now();
     match action {
         Engagement::Like => {
-            if let Err(e) = twitter_interact::like_tweet(&self.page, &tweet).await {
+            if let Err(e) = crate::utils::twitter::twitteractivity_interact::like_tweet(&self.ctx, &tweet).await {
                 warn!("[twitter][cycle {}] Like failed: {}", self.state.cycle, e);
                 return Ok(CycleOutcome::ActionFailed(action));
             }
         }
         Engagement::Retweet => {
-            if let Err(e) = twitter_interact::retweet_tweet(&self.page, &tweet).await {
+            if let Err(e) = crate::utils::twitter::twitteractivity_interact::retweet_tweet(&self.ctx, &tweet).await {
                 warn!("[twitter][cycle {}] Retweet failed: {}", self.state.cycle, e);
                 return Ok(CycleOutcome::ActionFailed(action));
             }
         }
         Engagement::Follow => {
-            if let Err(e) = twitter_interact::follow_user(&self.page, &tweet).await {
+            if let Err(e) = crate::utils::twitter::twitteractivity_interact::follow_user(&self.ctx, &tweet).await {
                 warn!("[twitter][cycle {}] Follow failed: {}", self.state.cycle, e);
                 return Ok(CycleOutcome::ActionFailed(action));
             }
@@ -264,7 +265,7 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
                 info!("[twitter][cycle {}] Bookmark skipped (limit=0)", self.state.cycle);
                 return Ok(CycleOutcome::ActionDisabled);
             }
-            if let Err(e) = twitter_interact::bookmark_tweet(&self.page, &tweet).await {
+            if let Err(e) = crate::utils::twitter::twitteractivity_interact::bookmark_tweet(&self.ctx, &tweet).await {
                 warn!("[twitter][cycle {}] Bookmark failed: {}", self.state.cycle, e);
                 return Ok(CycleOutcome::ActionFailed(action));
             }
@@ -272,9 +273,9 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
      }
     let action_duration = action_start.elapsed();
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // PHASE 11: Update counters and log
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     self.increment_counter(&action);
     info!(
         "[twitter][cycle {}] ✓ {:?} @{} ({}ms)",
@@ -284,10 +285,10 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
         action_duration.as_millis()
     );
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // PHASE 12: Human pause before next cycle
-    // ═══════════════════════════════════════════════════════════════
-    timing::human_pause(3000, 50).await;
+    // ═══════════════════════════════════════════════════════════
+    self.ctx.pause(3000, 50).await;
 
     Ok(CycleOutcome::Engaged(action))
 }
@@ -302,7 +303,6 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     }
 
     /// Build the list of engagement actions still allowed by limits and probability > 0.
-    /// Each action is checked against its per-session counter and engagement config.
     fn available_engagement_actions(&self) -> Vec<Engagement> {
         let mut actions = Vec::new();
         if self.state.counters.likes < self.config.limits.max_likes_per_session
@@ -348,7 +348,6 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
         use rand::distributions::{Distribution, WeightedIndex};
         use std::collections::HashMap;
 
-        // Build weight map: action → configured probability
         let mut action_weights: HashMap<Engagement, f64> = HashMap::new();
         action_weights.insert(Engagement::Like, self.config.engagement.like_probability);
         action_weights.insert(Engagement::Retweet, self.config.engagement.retweet_probability);
@@ -357,25 +356,22 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
         action_weights.insert(Engagement::Quote, self.config.engagement.quote_probability);
         action_weights.insert(Engagement::Bookmark, self.config.engagement.bookmark_probability);
 
-        // Extract weights for available actions only
         let mut weights_vec = Vec::new();
         for action in available {
             let w = action_weights.get(action).cloned().unwrap_or(0.0);
-            weights_vec.push(w.max(0.0)); // no negative weights
+            weights_vec.push(w.max(0.0));
         }
 
         let sum: f64 = weights_vec.iter().sum();
         if sum <= 0.0 || weights_vec.is_empty() {
-            // Fallback: uniform random among available
             let idx = rand::random::<usize>() % available.len();
             return available[idx];
         }
 
-        // Normalize to positive integers for WeightedIndex
         let int_weights: Vec<u32> = weights_vec
             .iter()
             .map(|&w| (w / sum * 1000.0) as u32)
-            .map(|w| if w == 0 { 1 } else { w }) // avoid zero weight collapse
+            .map(|w| if w == 0 { 1 } else { w })
             .collect();
 
         match WeightedIndex::new(&int_weights) {
@@ -384,7 +380,6 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
                 available[idx]
             }
             Err(_) => {
-                // Fallback uniform
                 let idx = rand::random::<usize>() % available.len();
                 available[idx]
             }
@@ -392,28 +387,36 @@ async fn run_cycle(&mut self) -> Result<CycleOutcome> {
     }
 
     /// Simulate human reading behavior after tweet expansion.
-    /// Includes short pauses, minor scroll within tweet, maybe open replies.
     async fn simulate_reading(&self, tweet: &TweetMetadata) -> Result<()> {
         // Pause to "read" the tweet text (3–6 seconds)
         let read_time = rand::thread_rng().gen_range(3000..6000);
-        timing::human_pause(read_time, 30).await;
+        self.ctx.pause(read_time, 30).await;
 
         // Maybe scroll a bit within tweet if it's long (20% chance)
         if rand::random::<f64>() < 0.2 {
             let small_scroll = rand::thread_rng().gen_range(50..200);
-            scroll::scroll_down(&self.page, small_scroll).await?;
-            timing::human_pause(500, 30).await;
+            self.ctx.page().evaluate(format!(
+                "window.scrollBy({{top: {}, behavior: 'smooth'}});",
+                small_scroll
+            )).await?;
+            self.ctx.pause(500, 30).await;
         }
 
         // Small chance (10%) to glance at replies — scroll down 1–2 screenfuls
         if rand::random::<f64>() < 0.1 {
-            let vp = page_size::get_viewport(&self.page).await?;
+            let vp = self.ctx.viewport().await?;
             let scroll_amount = (vp.height * (1.0 + rand::random::<f64>())) as i32;
-            scroll::scroll_down(&self.page, scroll_amount).await?;
-            timing::human_pause(2000, 40).await;
+            self.ctx.page().evaluate(format!(
+                "window.scrollBy({{top: {}, behavior: 'smooth'}});",
+                scroll_amount
+            )).await?;
+            self.ctx.pause(2000, 40).await;
             // Scroll back to tweet
-            scroll::scroll_up(&self.page, scroll_amount).await?;
-            timing::human_pause(500, 30).await;
+            self.ctx.page().evaluate(format!(
+                "window.scrollBy({{top: {}, behavior: 'smooth'}});",
+                -scroll_amount
+            )).await?;
+            self.ctx.pause(500, 30).await;
         }
 
         Ok(())

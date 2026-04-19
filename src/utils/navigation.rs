@@ -2,28 +2,39 @@ use anyhow::Result;
 use chromiumoxide::cdp::browser_protocol::network::{
     Headers, SetExtraHttpHeadersParams, SetUserAgentOverrideParams,
 };
-use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
 use chromiumoxide::Page;
 use tokio::time::{timeout, Duration};
 
 use crate::utils::math::random_in_range;
-use crate::utils::mouse::cursor_move_to_immediate;
-use crate::utils::page_size::get_viewport;
 use crate::utils::timing::human_pause;
 
 pub async fn goto(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
-    goto_raw(page, url, timeout_ms).await
+    goto_with_trampoline(page, url, timeout_ms).await
 }
 
-pub async fn goto_with_warmup(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
-    timeout(Duration::from_millis(timeout_ms), async {
-        let _ = timeout(Duration::from_secs(3), warmup_before_navigate(page)).await;
-        page.execute(NavigateParams::new(url.to_string())).await?;
-        Ok::<(), anyhow::Error>(())
-    })
-    .await??;
-
-    Ok(())
+pub async fn goto_with_trampoline(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
+    let referrers = [
+        "https://www.google.com",
+        "https://www.bing.com",
+        "https://search.yahoo.com",
+        "https://duckduckgo.com",
+        "https://www.reddit.com",
+        "https://x.com",
+        "https://web.telegram.org",
+        "https://web.whatsapp.com",
+    ];
+    
+    let len = referrers.len() as u64;
+    let idx = random_in_range(0, len.saturating_sub(1)) as usize;
+    let trampoline = referrers[idx];
+    
+    if random_in_range(0, 10) < 3 {
+        goto_raw(page, url, timeout_ms).await
+    } else {
+        goto_raw(page, trampoline, timeout_ms / 3).await?;
+        human_pause(random_in_range(1500, 3000), 30).await;
+        goto_raw(page, url, timeout_ms / 3).await
+    }
 }
 
 pub async fn goto_light(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
@@ -84,26 +95,6 @@ pub async fn wait_for_any_visible_selector(
         }
     })
     .await?
-}
-
-async fn warmup_before_navigate(page: &Page) -> Result<()> {
-    let viewport = timeout(Duration::from_secs(1), get_viewport(page)).await;
-    if let Ok(Ok(viewport)) = viewport {
-        let moves = random_in_range(1, 2);
-        for _ in 0..moves {
-            let x = random_in_range(0, viewport.width.max(1.0) as u64) as f64;
-            let y = random_in_range(0, viewport.height.max(1.0) as u64) as f64;
-            let _ = timeout(
-                Duration::from_millis(700),
-                cursor_move_to_immediate(page, x, y),
-            )
-            .await;
-            human_pause(random_in_range(80, 220), 30).await;
-        }
-    }
-
-    human_pause(random_in_range(150, 420), 35).await;
-    Ok(())
 }
 
 async fn wait_for_page_settle(page: &Page) -> Result<()> {

@@ -30,6 +30,10 @@ pub mod clipboard {
     pub use crate::utils::clipboard::*;
 }
 
+pub mod text {
+    pub use crate::utils::text::*;
+}
+
 pub mod blockmedia {
     pub use crate::utils::blockmedia::*;
 }

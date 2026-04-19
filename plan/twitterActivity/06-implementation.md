@@ -9,8 +9,8 @@ This document covers implementation milestones, rollout strategy, known gaps, re
 ### 9.1 Dependencies (No new crates expected)
 
 **Reuse existing utilities:**
-- `crate::utils::navigation::{goto, wait_for_load}`
-- `crate::utils::scroll::{random_scroll, scroll_to_bottom}`
+- `crate::utils::navigation::{goto, wait_for_load}` (used internally by `TaskContext::navigate`)
+- `crate::utils::scroll::{random_scroll, scroll_to_bottom, scroll_into_view}`
 - `crate::utils::mouse::{cursor_move_to, click_at}`
 - `crate::utils::timing::human_pause`
 - `crate::utils::page_size::{get_viewport, get_element_center}`
@@ -37,10 +37,11 @@ No new third-party dependencies. All functionality achievable with `chromiumoxid
 
 ### 9.3 Selector Maintenance Strategy
 
-Centralize all Twitter CSS selectors in `src/utils/twitter/selectors.rs`. Implement a **selector health check** at startup (optional):
+Centralize all Twitter CSS selectors in `src/utils/twitter/twitteractivity_selectors.rs`. Implement a **selector health check** at startup (optional):
 
 ```rust
-pub async fn validate_selectors(page: &Page) -> Result<()> {
+pub async fn validate_selectors(ctx: &TaskContext) -> Result<()> {
+    use crate::utils::twitter::twitteractivity_selectors::*;
     let critical = [
         (BTN_LIKE, "like button"),
         (BTN_RETWEET, "retweet button"),
@@ -48,7 +49,10 @@ pub async fn validate_selectors(page: &Page) -> Result<()> {
     ];
 
     for (selector, name) in &critical {
-        if page.querySelector(selector).await?.is_none() {
+        let js = format!("document.querySelector({}) !== null", serde_json::to_string(selector)?);
+        let exists = ctx.page().evaluate(js).await?.value()
+            .and_then(|v| v.as_bool()).unwrap_or(false);
+        if !exists {
             warn!("Twitter selector health: {name} ({}) not found", selector);
         }
     }
@@ -73,11 +77,11 @@ pub async fn validate_selectors(page: &Page) -> Result<()> {
 - [ ] Write unit test: `load_config()` + env override integration
 
 **M0.2: Task Registration**
-- [ ] Create `src/task/twitteractivity.rs` (stub: `run()` returning `TaskResult::success(0)`)
-- [ ] Register in `src/task/mod.rs` (`pub mod twitteractivity`)
+- [ ] Create `task/twitteractivity.rs` (stub: `run()` returning `TaskResult::success(0)`)
+- [ ] Register in `task/mod.rs` (`pub mod twitteractivity;`)
 - [ ] Add match arm in `perform_task()` (in `task/mod.rs`)
 - [ ] Add validation schema in `src/validation/task.rs` (any object OK for V1)
-- [ ] Verify task discovered: `cargo run twitterActivity` reaches stub
+- [ ] Verify task discovered: `cargo run twitteractivity` reaches stub
 
 **M0.3: Profile Extension (Twitter-specific)**
 - [ ] Add `dive_probability: ProfileParam` field to `BrowserProfile` in `src/utils/profile.rs`
@@ -91,53 +95,43 @@ pub async fn validate_selectors(page: &Page) -> Result<()> {
 ### Phase 1 — Core Infrastructure (Day 1–2)
 
 **M1: Navigation & Entry Points**
-- [ ] Create `src/task/twitter_navigation.rs`
-- [ ] Implement `weighted_pick()` utility
-- [ ] Define `ENTRY_POINTS` constant with weights per spec
-- [ ] Implement `select_entry_point()` (category → concrete URL)
-- [ ] Implement `navigate_to()` with 20s timeout budget
-- [ ] Add unit test: `select_entry_point()` returns valid URL for all categories
-- [ ] Integration: `TwitterAgent::run_cycle()` Phase 1–2 logs entry URL
+- [ ] Implement `select_entry_point()` in `src/utils/twitter/twitteractivity_navigation.rs`
+- [ ] `TwitterAgent::run_cycle()` calls `crate::utils::twitter::select_entry_point(&config).await` → URL
+- [ ] Then calls `ctx.navigate(&url, 15000)` + `ctx.wait_for_load(5000)`
 
 **M2: Feed Scanning & Tweet Extraction**
-- [ ] Create `src/task/twitter_feed.rs`
-- [ ] Implement `find_random_tweet()` using selector family cascade
-- [ ] Write `extract_metadata_from_element()` with JS evaluate
-- [ ] Add `TweetMetadata` struct (id, author, text_preview, has_media)
-- [ ] Create `src/utils/twitter/selectors.rs` with all selectors
-- [ ] Integration: verify agent finds at least 1 tweet per cycle (log count)
-- [ ] Unit test: mock page DOM → extraction returns expected metadata
+- [ ] Create `src/utils/twitter/twitteractivity_feed.rs`
+- [ ] Implement `find_random_tweet(ctx: &TaskContext) -> Result<Option<TweetMetadata>>` using JS evaluation
+- [ ] Add `TweetMetadata` struct (id, author_handle, author_name, text_preview, has_media, selector_used)
+- [ ] Create `src/utils/twitter/twitteractivity_selectors.rs` with all selectors
+- [ ] Integration: `TwitterAgent` verifies `find_random_tweet` returns at least 1 tweet per cycle
 
 **M3: Popup Handler**
-- [ ] Create `src/task/twitter_popup.rs`
-- [ ] Implement `close_all_modals()` iterating dismiss selectors
-- [ ] Add ESC key fallback
-- [ ] Inject in `run_cycle()` after navigation arrive
-- [ ] Integration: run on x.com — observe any modals dismissed (log each)
+- [ ] Create `src/utils/twitter/twitteractivity_popup.rs`
+- [ ] Implement `close_all_modals(ctx: &TaskContext)` using JS clicks + ESC key
+- [ ] Inject in `run_cycle()` after navigation arrives
 
 ---
 
 ### Phase 2 — Engagement Actions (Day 2)
 
 **M4: Like Action**
-- [ ] Implement `twitter_interact::like_tweet()`
-- [ ] Locate `[data-testid="like"]` button
-- [ ] Hover → click via `mouse::cursor_move_to` + `click_at`
-- [ ] Verify state change (wait up to 2s for `[data-testid="unlike"]`)
-- [ ] Add skip-if-already-liked logic
+- [ ] `src/utils/twitter/twitteractivity_interact.rs` already exists with `like_tweet()` implementation
+- [ ] Use JS to check for `[data-testid="unlike"]` to skip if already liked
+- [ ] Hover → click via `ctx.move_mouse_to(x, y)` + `ctx.click(x, y)`
+- [ ] Verify state change by polling for `unlike` button (max 2s)
 - [ ] Integration test: run 1 cycle → verify like appears on test account (manual check)
 
 **M5: Retweet Action**
-- [ ] Implement `twitter_interact::retweet_tweet()`
+- [ ] Implement `retweet_tweet()` in same module
 - [ ] Click retweet → modal → click confirm (native RT, no quote)
 - [ ] Verify modal closes (best-effort)
 - [ ] Integration: RT a known tweet, verify on account
 
 **M6: Follow Action**
-- [ ] Implement `twitter_interact::follow_user()`
-- [ ] Find follow button inline or via author profile link
-- [ ] Click, verify state → "Following" or "Pending"
-- [ ] Skip if already following
+- [ ] Implement `follow_user()` in same module
+- [ ] Check for `[data-testid="following"]` to skip if already following
+- [ ] Click follow button, verify state change (best-effort)
 - [ ] Integration: follow a test user, verify state change
 
 **M7: Bookmark Stub (disabled V1)**
@@ -149,33 +143,37 @@ pub async fn validate_selectors(page: &Page) -> Result<()> {
 ### Phase 3 — Agent Logic & Orchestration (Day 2–3)
 
 **M8: TwitterAgent State Machine**
-- [ ] Create `src/task/twitter_agent.rs`
-- [ ] Implement struct: `TwitterAgent { page, profile, config, state, persona }`
-- [ ] `run_session()`: loop cycles until max_cycles or duration budget
-- [ ] `run_cycle()`: full flow (nav → modal close → dive decision → tweet find → click → simulate_reading → context load → sentiment → limit check → action)
-- [ ] `select_entry_point()` delegates to navigation module
-- [ ] `should_dive()`: `rand::random::<f64>() < profile.dive_probability * persona.multiplier()`
-- [ ] `roll_engagement()`: pick action weighted by config probabilities (from available set)
-- [ ] `can_engage()`: consult counters + limits
-- [ ] `increment_counter()`: update `EngagementCounters`
-- [ ] Phase tracking (warmup/active/cooldown) — used for V2 timing overrides
+- [ ] Implement `TwitterAgent` inside `task/twitteractivity.rs`
+- [ ] Struct: `TwitterAgent { ctx: TaskContext, profile: BrowserProfile, config: TwitterConfig, state: AgentState, persona: TwitterPersona }`
+- [ ] `run_session()`: loop cycles until `max_cycles` or `max_duration_sec` reached
+- [ ] `run_cycle()` full flow:
+  1. Budget check → return `SessionComplete` if done
+  2. `crate::utils::twitter::select_entry_point(&config).await?` → URL
+  3. `ctx.navigate(&url, 15000)` + `ctx.wait_for_load(5000)` with timeout wrapper
+  4. `crate::utils::twitter::close_all_modals(&ctx).await`
+  5. Determine phase (warmup/active/cooldown)
+  6. Dive decision: `rand::random::<f64>() < profile.dive_probability.random() * persona.dive_probability_multiplier()`
+  7. `crate::utils::twitter::find_random_tweet(ctx)` → `TweetMetadata`
+  8. `crate::utils::twitter::click_tweet(ctx, tweet)`
+  9. `simulate_reading(tweet)` — internal method with `ctx.page().evaluate` scrolls + `ctx.pause`
+  10. `crate::utils::twitter::load_tweet_context(ctx, tweet)` → `TweetContext`
+  11. Sentiment guard: if config enabled, `crate::utils::twitter::contains_negative_sentiment(&text, &blocklist)` → skip
+  12. Build available actions via counters vs limits
+  13. Roll engagement using weighted probabilities
+  14. Execute selected action via `crate::utils::twitter::{like_tweet, retweet_tweet, follow_user}` (others disabled)
+  15. Update counters, log outcome, `ctx.pause(3000, 50)`
+- [ ] Helper methods: `increment_counter`, `available_engagement_actions`, `roll_engagement`
 
 **M9: Limits & Counters**
-- [ ] `EngagementCounters` struct with per-action u32 (likes, retweets, follows, replies, quotes, bookmarks)
-- [ ] `can_engage()` checks each action's limit
-- [ ] Log when limit hit (info level)
+- [ ] `EngagementCounters` as member of `AgentState`; `can_engage()` and `increment()` methods
+- [ ] Log when an action skipped due to limit
 
 **M10: Sentiment Guard**
-- [ ] Create `src/task/twitter_sentiment.rs`
-- [ ] `contains_negative_sentiment()`: lowercase substring search against blocklist
-- [ ] Config flag: `block_negative_engagement` (default false)
-- [ ] If enabled: block action, log matched keyword, record skip
+- [ ] `src/utils/twitter/twitteractivity_sentiment.rs` with `contains_negative_sentiment(text, &blocklist) -> bool`
+- [ ] Config flag `block_negative_engagement` controls check
 
 **M11: Persona Mapping**
-- [ ] Create `src/task/twitter_persona.rs`
-- [ ] `TwitterPersona::from_profile(profile)` heuristic mapping
-- [ ] `input_method_weights()` — currently informational (V1 all mouse), V2 for keyboard/wheel mix
-- [ ] `dive_probability_multiplier()` adjusts base profile.dive_probability
+- [ ] `src/utils/twitter/twitteractivity_persona.rs` with `TwitterPersona::from_profile(profile)` and `dive_probability_multiplier()`
 
 ---
 
@@ -183,18 +181,17 @@ pub async fn validate_selectors(page: &Page) -> Result<()> {
 
 **M12: Config Integration**
 - [ ] Extend `Config` struct with `twitter: TwitterConfig`
-- [ ] Add `default_twitter_config()` in `config.rs`
+- [ ] Add `default_twitter_config()` in `src/config.rs`
 - [ ] Merge TOML + env overrides in `apply_env_overrides()`
 - [ ] Add validation in `validate_config()`:
   - `max_cycles >= min_cycles`
   - `max_duration_sec >= min_duration_sec`
-  - engagement probabilities sum ≤ 1.0 (warning only, not error)
+  - engagement probabilities sum ≤ 1.0 (warning only)
   - entry point weights sum to ~100 (±5 tolerance)
 
 **M13: Validation Schema**
-- [ ] Extend `src/validation/task.rs` with `validate_twitteractivity()`
-- [ ] V1: accept any JSON object (no required fields)
-- [ ] Future: validate optional fields like `cycles=3` or `max_likes=2`
+- [ ] Extend `src/validation/task.rs` with `validate_twitteractivity()` accepting any JSON object for V1
+- [ ] Future: validate optional fields like `cycles` or `max_likes`
 - [ ] Unit test: valid payload accepted, invalid rejected
 
 ---
@@ -202,58 +199,53 @@ pub async fn validate_selectors(page: &Page) -> Result<()> {
 ### Phase 5 — Metrics & Logging (Day 3)
 
 **M14: Task Metrics**
-- [ ] `TwitterAgent` accumulates `TwitterMetrics`
-- [ ] At task end, log final summary:
-  ```
-  [twitter] Session complete: cycles=8, likes=4, retweets=2, follows=1,
-           skipped_dive=2, duration=723s, profile=Casual
-  ```
-- [ ] Ensure all log lines include `[twitter]` tag for log parsing
+- [ ] `TwitterAgent` accumulates `TwitterMetrics` (defined in `05-metrics.md`)
+- [ ] At task end, log final summary line with cycles, engagement counts, duration, persona
+- [ ] Ensure all log lines include `[twitter]` tag
 
 **M15: Run Summary Compatibility**
-- [ ] Verify `perform_task()` returns `TaskResult::success()` if at least one engagement succeeded
-- [ ] If all cycles skipped (no engagements), still return Success (not failure)
-- [ ] `run-summary.json` from `MetricsCollector` captures top-level stats
+- [ ] `perform_task()` returns `TaskResult::success()` for any successful session (even if zero engagements)
+- [ ] `run-summary.json` from `MetricsCollector` captures top-level success count
 
 ---
 
 ### Phase 6 — Integration & Polish (Day 3)
 
 **M16: End-to-End Dry Run**
-- [ ] `cargo run twitterActivity` on machine with browser connected
-- [ ] Observe log: entry point selection, tweet found, actions executed
-- [ ] Verify no panics, no unwrap() crashes
+- [ ] `cargo run twitteractivity` on machine with browser connected
+- [ ] Observe logs: entry URL, tweet found, actions, pauses
+- [ ] Verify no panics / unwraps
 - [ ] Check counters never exceed limits
-- [ ] Monitor for modal storms — increase dismiss selector coverage if needed
+- [ ] Monitor modal dismissals; add selectors to `twitteractivity_popup` if needed
 
 **M17: Error Path Verification**
-- [ ] Simulate network timeout (block x.com) → verify navigation timeout handling
+- [ ] Simulate network timeout (block x.com) → verify navigation timeout handling, cycle continues
 - [ ] Simulate selector rot (rename a selector) → verify graceful skip (no panic)
-- [ ] Simulate action failure (element detached) → verify warning logged
+- [ ] Simulate action failure (e.g., make like button detached) → verify warning logged and cycle continues
 
 **M18: Config Edge Cases**
-- [ ] Test `TWITTER_ENABLED=false` → task should exit early with info log
-- [ ] Test `TWITTER_MAX_CYCLES=0` → zero cycles, task completes (edge, but valid)
-- [ ] Test probabilities sum > 1.0 → warning log, but proceeds (over-limit is OK)
+- [ ] Test `TWITTER_ENABLED=false` → task exits early with info log
+- [ ] Test `TWITTER_MAX_CYCLES=0` → zero cycles, task completes (edge but valid)
+- [ ] Test probabilities sum > 1.0 → warning log, but proceeds
 
 **M19: Documentation & Final Review**
-- [ ] Update `README.md` with `twitterActivity` usage example
-- [ ] Add sample `config/default.toml` Twitter section to README
-- [ ] Document environment variable table
-- [ ] Code review checklist: error handling, no unwraps, proper logging
+- [ ] Update `README.md` with `twitteractivity` usage example
+- [ ] Add sample `config/default.toml` Twitter section
+- [ ] Document `TWITTER_*` environment variables
+- [ ] Code review: error handling, no `unwrap()`, proper logging
 
 ---
 
 ### Phase 7 — Deferred (V2, Future)
 
 **V2 Roadmap** (not in initial scope):
-- [ ] LLM-powered replies & quote tweets (`twitter_llm.rs`)
+- [ ] LLM-powered replies & quote tweets (`twitteractivity_llm.rs`)
 - [ ] Sentiment analysis with NLP wordlists (VADER-style)
 - [ ] Bookmark action implementation
 - [ ] Reply action implementation (keyboard typing simulation)
 - [ ] Dynamic entry point weights (per-session randomization ±10%)
 - [ ] Advanced persona behaviors: hesitation micro-movements, overscroll, tab-switch simulation
-- [ ] `run-summary.json` embedded per-task metadata
+- [ ] `run-summary.json` embedded per-task metadata for Twitter breakdown
 - [ ] Dashboard: real-time metrics UI (web sockets)
 
 ---
@@ -263,7 +255,7 @@ pub async fn validate_selectors(page: &Page) -> Result<()> {
 V1 is complete when **all** of the following are verified:
 
 **Functional Requirements**
-- [ ] `cargo run twitterActivity` executes without panics or unwrap crashes
+- [ ] `cargo run twitteractivity` executes without panics or unwrap crashes
 - [ ] Task completes 5–10 cycles (random within config range)
 - [ ] Total session duration falls within 540–840 seconds (9–14min)
 - [ ] At least one engagement (like/retweet/follow) occurs per session on average (configurable probability ≥ 0.1)
@@ -272,38 +264,38 @@ V1 is complete when **all** of the following are verified:
 
 **Reliability Requirements**
 - [ ] Navigation failures (timeout, DNS error) do NOT crash the task — individual cycles are skipped, session continues
-- [ ] Missing UI elements (e.g., already-liked tweet) are handled gracefully with info-level logs
-- [ ] Modals are dismissed automatically; if a modal persists, task continues without crashing
-- [ ] No evidence of `anyhow!` or `panic!` in logs across 10 consecutive runs
+- [ ] Missing UI elements handled gracefully with info-level logs
+- [ ] Modals dismissed automatically; persistent modal does not crash task
+- [ ] No `anyhow!` or `panic!` in logs across 10 consecutive runs
 
 **Observability Requirements**
-- [ ] Every log line includes `[twitter]` tag (searchable in log files)
+- [ ] Every log line includes `[twitter]` tag
 - [ ] Per-cycle logs: entry URL, tweet found, action taken (or skip reason), duration
 - [ ] Final summary line: `[twitter] Session complete: cycles=X, likes=Y, retweets=Z, follows=W, skipped=N, duration=Ts`
-- [ ] `run-summary.json` exports with `task="twitterActivity"` and success status
+- [ ] `run-summary.json` exports `task="twitteractivity"` with success status
 
 **Configuration Requirements**
-- [ ] All config fields in `[twitter]` section are loaded from `config/default.toml`
+- [ ] All config fields in `[twitter]` section loaded from `config/default.toml`
 - [ ] All `TWITTER_*` environment variables override TOML values
 - [ ] Validation passes at startup: weights sum ~100, probabilities ≤ 1.0, non-negative limits
-- [ ] Task gracefully handles `TWITTER_ENABLED=false` (early exit with info log)
+- [ ] Task handles `TWITTER_ENABLED=false` gracefully (early exit with info log)
 
 **Testing Requirements**
 - [ ] Unit tests pass: `cargo test`
-- [ ] Clippy warnings addressed: `cargo clippy --all-targets --all-features`
+- [ ] Clippy clean: `cargo clippy --all-targets --all-features`
 - [ ] Build succeeds: `cargo build --all-features`
-- [ ] Manual integration: run task on live x.com (public), verify actions appear on test account (or at least logs show engagements attempted)
-- [ ] Verify counters reset on subsequent runs (no cross-session state bleed)
+- [ ] Manual integration: run on live x.com, verify actions appear or logs show engagements attempted
+- [ ] Counters reset on subsequent runs (no cross-session state bleed)
 
 **Code Quality Requirements**
-- [ ] No `unwrap()` or `expect()` on `Result`/`Option` in production code (only in tests)
+- [ ] No `unwrap()` or `expect()` on `Result`/`Option` in production code
 - [ ] All public functions have `#[allow(dead_code)]` removed (or justified)
 - [ ] Module docs (`//!`) explain purpose
 - [ ] Functions have inline comments for non-obvious logic
 - [ ] Error types use `anyhow::Result` with context-rich messages
 
 **Deployment Readiness**
-- [ ] `README.md` updated with `twitterActivity` usage examples
+- [ ] `README.md` updated with `twitteractivity` usage examples
 - [ ] Environment variable table included in docs
 - [ ] `config/default.toml` sample includes `[twitter]` section
 - [ ] Known limitations documented (no LLM, no bookmarks, no replies)
@@ -332,7 +324,7 @@ V1 is complete when **all** of the following are verified:
 ### Phase 4 — Tuning
 - Adjust probabilities if engagement rate too low/high
 - Tweak entry point weights if certain pages yield poor dive rates
-- Update selectors in `selectors.rs` as Twitter UI evolves
+- Update selectors in `src/utils/twitter/twitteractivity_selectors.rs` as Twitter UI evolves
 
 ---
 
@@ -348,7 +340,7 @@ V1 is complete when **all** of the following are verified:
 | Dynamic entry weight jitter | Deferred V2 | Static weights OK for V1 |
 | Thread engagement (click "Show more replies") | Deferred V2 | Currently only surface-level tweets |
 | Video/audio playback | Blocked by design | Media allowed but not explicitly blocked; no playback tracking |
-| Cookie consent handling | Basic in `twitter_popup.rs` | May need expansion if new consent banners appear |
+| Cookie consent handling | Basic in `twitteractivity_popup.rs` | May need expansion if new consent banners appear |
 
 ---
 
@@ -358,9 +350,10 @@ V1 is complete when **all** of the following are verified:
 - Browser automation patterns: `task/cookiebot.rs`, `task/pageview.rs`
 - Utilities: `src/utils/{navigation,scroll,mouse,timing,profile,blockmedia,page_size}.rs`
 - Config system: `src/config.rs`
-- Task orchestration: `src/orchestrator.rs`, `src/task/mod.rs`
+- Task orchestration: `src/orchestrator.rs`, `task/mod.rs`
 - Metrics: `src/metrics.rs`
 - Validation: `src/validation/task.rs`
+- Helper modules: `src/utils/twitter/twitteractivity_*.rs` (all in one directory)
 
 ---
 
@@ -380,7 +373,7 @@ Based on user feedback (2026-04-17), the following decisions are confirmed:
 | 8 | **Rate Limits** | Likes=5, Retweets=3, Follows=2 | Conservative caps; configurable via env |
 | 9 | **Sentiment Blocklist** | ~10–15 conservative keywords | Avoid false positives; expand after manual review |
 | 10 | **Validation Schema** | Simple object check (any JSON) | No required fields; extensible for V2 |
-| 11 | **Fallback Selector Order** | First-match cascade | Try article→cellInnerDiv→fallback→XPath |
+| 11 | **Fallback Selector Order** | First-match cascade | Try article→cellInnerDiv→fallback→XPath (implemented via JS querySelectorAll on each in turn) |
 | 12 | **Action Failure Handling** | Skip silently, continue | No retry; log warning, proceed to next cycle |
 | 13 | **AI Reply/Quote Flags** | `reply_with_ai = false`, `quote_with_ai = false` | Default off; require explicit config to enable (V2) |
 | 14 | **Persona Support** | Extend `BrowserProfile` with `dive_probability` | Base engage rate per profile; persona provides multiplier |

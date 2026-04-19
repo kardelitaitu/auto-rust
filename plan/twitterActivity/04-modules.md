@@ -1,14 +1,18 @@
 # Twitter Activity — Helper Modules Specification
 
-This document specifies all helper modules that support the `twitteractivity` task. Each module is a separate Rust file under `src/task/` or `src/utils/twitter/`.
+This document specifies all helper modules that support the `twitteractivity` task. All helper modules reside in `src/utils/twitter/` as a cohesive utility layer. The main task (`task/twitteractivity.rs`) imports and uses these helpers via `crate::utils::twitter::...`.
 
 ---
 
-## `twitter_navigation.rs`
+## `src/utils/twitter/twitteractivity_navigation.rs`
 
-**Responsibility**: Entry URL selection and navigation with error handling.
+**Responsibility**: Entry URL selection. Navigation is performed via `TaskContext::navigate()`.
 
 ```rust
+use crate::prelude::TaskContext;
+use crate::config::TwitterConfig;
+use anyhow::Result;
+
 /// Pre-defined entry point URLs with weights for weighted random selection.
 /// Categories (weight total = 100):
 /// - Home (59%):       https://x.com/
@@ -33,31 +37,6 @@ pub async fn select_entry_point(config: &TwitterConfig) -> Result<String> {
         _ => Err(anyhow!("unknown entry category: {category}")),
     }
 }
-
-/// Navigate to URL with 20s total timeout (15s nav + 5s wait_for_load)
-#[allow(dead_code)]
-pub async fn navigate_to(page: &Page, url: &str) -> Result<()> {
-    let nav_start = std::time::Instant::now();
-    navigation::goto(page, url, 15000).await?;
-
-    let elapsed = nav_start.elapsed().as_millis() as u64;
-    let remaining = 20000u64.saturating_sub(elapsed);
-
-    match timeout(
-        Duration::from_millis(remaining),
-        navigation::wait_for_load(page, remaining)
-    ).await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => {
-            warn!("wait_for_load returned error: {e}, continuing anyway");
-            Ok(())
-        }
-        Err(_) => {
-            warn!("wait_for_load timeout after {remaining}ms, continuing");
-            Ok(())
-        }
-    }
-}
 ```
 
 **Functions to implement**:
@@ -68,11 +47,16 @@ pub async fn navigate_to(page: &Page, url: &str) -> Result<()> {
 
 ---
 
-## `twitter_feed.rs`
+## `src/utils/twitter/twitteractivity_feed.rs`
 
-**Responsibility**: Scroll the feed and locate candidate tweets using resilient selectors.
+**Responsibility**: Scan the feed and locate candidate tweets using selector families.
 
 ```rust
+use crate::prelude::TaskContext;
+use anyhow::Result;
+use serde_json::Value;
+use crate::utils::twitter::twitteractivity_selectors::*;
+
 /// Representation of a tweet found in the feed.
 #[derive(Debug, Clone)]
 pub struct TweetMetadata {
@@ -81,52 +65,62 @@ pub struct TweetMetadata {
     pub author_name: String,
     pub text_preview: String,
     pub has_media: bool,
-    pub element_handle: Option<ElementHandle>,
     pub selector_used: String,
 }
 
 /// Scans the current feed viewport and returns a random tweet candidate.
-#[allow(dead_code)]
-pub async fn find_random_tweet(page: &Page) -> Result<Option<TweetMetadata>> {
+pub async fn find_random_tweet(ctx: &TaskContext) -> Result<Option<TweetMetadata>> {
     let selectors = [
-        selectors::TWEET_ARTICLE,
-        selectors::TWEET_CELL_INNER,
-        selectors::TWEET_ARTICLE_FALLBACK,
-        selectors::TWEET_XPATH,
+        TWEET_ARTICLE,
+        TWEET_CELL_INNER,
+        TWEET_ARTICLE_FALLBACK,
     ];
 
-    let mut candidates = Vec::new();
+    // Use JS evaluation to collect tweet metadata in one shot
+    for &selector in &selectors {
+        let js = format!(r#"
+            (() => {{
+                const els = document.querySelectorAll({});
+                if (els.length === 0) return [];
+                return Array.from(els).slice(0, 20).map(el => {{
+                    const id = el.getAttribute("data-tweet-id") || "";
+                    const authorHandle = el.getAttribute("data-author-handle") || "";
+                    const authorName = el.querySelector('[data-testid="User-Names"]')?.innerText?.trim() || "";
+                    const text = el.querySelector('[data-testid="tweetText"]')?.innerText?.trim() || "";
+                    const hasMedia = el.querySelector('img, video') !== null;
+                    return {{ id, author_handle: authorHandle, author_name: authorName, text_preview: text, has_media: hasMedia }};
+                }});
+            }})()
+        "#, serde_json::to_string(selector)?);
 
-    for selector in &selectors {
-        let elements = page.querySelectorAll(selector).await?;
-        if !elements.is_empty() {
-            for el in &elements {
-                if let Some(meta) = extract_metadata_from_element(el, selector).await? {
-                    candidates.push(meta);
-                }
-            }
-        }
-        if !candidates.is_empty() {
-            break;
+        let result = ctx.page().evaluate(js).await?;
+        let value = result.value().ok_or_else(|| anyhow::anyhow!("No value returned from feed scan"))?;
+        let tweets: Vec<TweetMetadata> = serde_json::from_value(value.clone())?;
+        if !tweets.is_empty() {
+            let idx = rand::thread_rng().gen_range(0..tweets.len());
+            let mut chosen = tweets[idx].clone();
+            chosen.selector_used = selector.to_string();
+            return Ok(Some(chosen));
         }
     }
 
-    if candidates.is_empty() {
-        return Ok(None);
-    }
-
-    let idx = rand::thread_rng().gen_range(0..candidates.len());
-    Ok(Some(candidates[idx].clone()))
+    Ok(None)
 }
 ```
 
 ---
 
-## `twitter_dive.rs`
+## `src/utils/twitter/twitteractivity_dive.rs`
 
 **Responsibility**: Click into tweet, expand content, extract full context.
 
 ```rust
+use crate::prelude::TaskContext;
+use crate::utils::page_size::get_element_center;
+use anyhow::{anyhow, Result};
+use serde_json::Value;
+use std::time::Instant;
+
 /// Full tweet context after expansion.
 #[derive(Debug, Clone)]
 pub struct TweetContext {
@@ -141,210 +135,211 @@ pub struct TweetContext {
     pub is_from_followed_account: bool,
 }
 
-/// Clicks tweet to expand it (if collapsed), then extracts full context.
-#[allow(dead_code)]
 pub async fn load_tweet_context(
-    page: &Page,
-    tweet: &TweetMetadata
+    ctx: &TaskContext,
+    tweet: &super::TweetMetadata
 ) -> Result<TweetContext> {
-    // Scroll tweet into view
-    let viewport = page_size::get_viewport(page).await?;
-    let target_y = viewport.height / 2.0;
-    page.evaluate(format!(
-        "window.scrollTo({{top: {}, behavior: 'smooth'}});",
-        target_y as i32
-    )).await?;
-    human_pause(500, 30).await;
+    // Scroll tweet into view using smooth JS
+    let selector_js = serde_json::to_string(&tweet.selector_used)?;
+    let js = format!(r#"
+        (() => {{
+            const el = document.querySelector({});
+            if (!el) return null;
+            el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+            return true;
+        }})()
+    "#, selector_js);
+    ctx.page().evaluate(js).await?;
+    ctx.pause(500, 30).await;
 
-    // Click tweet to expand (caller ensures tweet is present)
-    // ... (use mouse::cursor_move_to + click_at on tweet.element_handle center)
+    // Click at the element center
+    click_tweet(ctx, tweet).await?;
 
     // Wait for expansion
-    human_pause(1000, 50).await;
+    ctx.pause(1000, 50).await;
 
-    // Scrape full context via evaluate (see full spec in monolith for JS code)
-    // Returns TweetContext
-    unimplemented!()
+    // Scrape full context via JS evaluation
+    let js = r#"
+        (() => {
+            const tweetEl = document.querySelector('article[data-testid="tweet"]');
+            if (!tweetEl) return null;
+            const text = tweetEl.querySelector('[data-testid="tweetText"]')?.innerText?.trim() || "";
+            return {
+                tweet_id: tweetEl.getAttribute("data-tweet-id") || "",
+                author_handle: tweetEl.getAttribute("data-author-handle") || "",
+                full_text: text,
+                reply_count: 0,
+                retweet_count: 0,
+                like_count: 0,
+                quote_count: 0,
+                timestamp: null,
+                is_from_followed_account: false
+            };
+        })()
+    "#;
+    let result = ctx.page().evaluate(js).await?;
+    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to extract tweet context"))?;
+    let ctx_val: TweetContext = serde_json::from_value(value)?;
+    Ok(ctx_val)
 }
 
 /// Click a tweet to expand it.
-#[allow(dead_code)]
-pub async fn click_tweet(page: &Page, tweet: &TweetMetadata) -> Result<()> {
-    // Use element handle to get center coordinates, then mouse click
-    // Ensure element is in viewport first
-    unimplemented!()
+pub async fn click_tweet(ctx: &TaskContext, tweet: &super::TweetMetadata) -> Result<()> {
+    let selector = &tweet.selector_used;
+    let (x, y) = get_element_center(ctx.page(), selector).await?;
+    ctx.move_mouse_to(x, y).await?;
+    ctx.pause(200, 40).await;  // hover pause
+    ctx.click(x, y).await?;
+    Ok(())
 }
 ```
 
 ---
 
-## `twitter_interact.rs`
+## `src/utils/twitter/twitteractivity_interact.rs`
 
 **Responsibility**: UI automation for engagement actions.
 
 ```rust
-/// Like a tweet — clicks like button and verifies state flips to "liked".
-#[allow(dead_code)]
-pub async fn like_tweet(page: &Page, tweet: &TweetMetadata) -> Result<()> {
-    let like_btn = page.querySelector(selectors::BTN_LIKE).await?;
+use crate::prelude::TaskContext;
+use crate::utils::page_size::get_element_center;
+use crate::utils::twitter::twitteractivity_selectors::*;
 
-    if like_btn.is_none() {
-        // Already liked? Check for unlike button
-        let unlike_btn = page.querySelector(selectors::BTN_UNLIKE).await?;
-        if unlike_btn.is_some() {
-            info!("[twitter] Tweet already liked, skipping");
-            return Ok(());
-        }
-        bail!("Like button not found");
+/// Like a tweet — clicks like button and verifies state flips to "liked".
+pub async fn like_tweet(ctx: &TaskContext, tweet: &super::TweetMetadata) -> Result<()> {
+    // Use JS to check if already liked
+    let already_liked = ctx.page().evaluate(r#"
+        (() => document.querySelector('[data-testid="unlike"]') !== null)
+    "#).await?.value().and_then(|v| v.as_bool()).unwrap_or(false);
+
+    if already_liked {
+        info!("[twitter] Tweet already liked, skipping");
+        return Ok(());
     }
 
-    let (x, y) = page_size::get_element_center(page, selectors::BTN_LIKE).await?;
-    mouse::cursor_move_to(page, x, y).await?;
-    human_pause(200, 40).await;  // hover pause
-    mouse::click_at(page, x, y).await?;
+    let (x, y) = get_element_center(ctx.page(), BTN_LIKE).await?;
+    ctx.move_mouse_to(x, y).await?;
+    ctx.pause(200, 40).await;
+    ctx.click(x, y).await?;
 
-    // Verify state change: like → unlike (or color change)
-    let start = Instant::now();
+    // Verify state change: wait up to 2s for unlike to appear
+    let start = std::time::Instant::now();
     loop {
-        let new_btn = page.querySelector(selectors::BTN_UNLIKE).await?;
-        if new_btn.is_some() || start.elapsed() > Duration::from_secs(2) {
+        let found = ctx.page().evaluate(r#"document.querySelector('[data-testid="unlike"]') !== null"#)
+            .await?.value().and_then(|v| v.as_bool()).unwrap_or(false);
+        if found || start.elapsed() > std::time::Duration::from_secs(2) {
             break;
         }
-        human_pause(100, 20).await;
+        ctx.pause(100, 20).await;
     }
 
     Ok(())
 }
 
 /// Retweet (native RT, no comment).
-#[allow(dead_code)]
-pub async fn retweet_tweet(page: &Page, tweet: &TweetMetadata) -> Result<()> {
-    let rt_btn = page.querySelector(selectors::BTN_RETWEET).await?
-        .ok_or_else(|| anyhow!("Retweet button not found"))?;
+pub async fn retweet_tweet(ctx: &TaskContext, tweet: &super::TweetMetadata) -> Result<()> {
+    let (x, y) = get_element_center(ctx.page(), BTN_RETWEET).await?;
+    ctx.move_mouse_to(x, y).await?;
+    ctx.click(x, y).await?;
+    ctx.pause(300, 40).await;
 
-    let (x, y) = page_size::get_element_center(page, selectors::BTN_RETWEET).await?;
-    mouse::click_at(page, x, y).await?;
-    human_pause(300, 40).await;
+    // Modal appears — click "Retweet" confirm button
+    let (cx, cy) = get_element_center(ctx.page(), BTN_RETWEET_CONFIRM).await?;
+    ctx.move_mouse_to(cx, cy).await?;
+    ctx.click(cx, cy).await?;
 
-    // Modal appears — click "Retweet" confirm button (not "Quote")
-    let confirm_selector = selectors::MODAL_RETWEET_CONFIRM;
-    let confirm_btn = page.querySelector(confirm_selector).await?
-        .ok_or_else(|| anyhow!("Retweet confirm button not found"))?;
-
-    let (cx, cy) = page_size::get_element_center(page, confirm_selector).await?;
-    mouse::click_at(page, cx, cy).await?;
-
-    // Verify modal closes (best effort)
-    human_pause(1000, 50).await;
+    // Verify modal closes (best-effort)
+    ctx.pause(1000, 50).await;
 
     Ok(())
 }
 
 /// Follow user.
-#[allow(dead_code)]
-pub async fn follow_user(page: &Page, tweet: &TweetMetadata) -> Result<()> {
-    let follow_btn = page.querySelector(selectors::BTN_FOLLOW).await?;
+pub async fn follow_user(ctx: &TaskContext, tweet: &super::TweetMetadata) -> Result<()> {
+    // Check already following?
+    let already_following = ctx.page().evaluate(r#"
+        (() => document.querySelector('[data-testid="following"]') !== null)
+    "#).await?.value().and_then(|v| v.as_bool()).unwrap_or(false);
 
-    if follow_btn.is_none() {
-        // Possibly already following? Check "Following" state
-        let following_btn = page.querySelector(selectors::BTN_FOLLOWING).await?;
-        if following_btn.is_some() {
-            info!("[twitter] Already following @{}", tweet.author_handle);
-            return Ok(());
-        }
-        bail!("Follow button not found for @{}", tweet.author_handle);
+    if already_following {
+        info!("[twitter] Already following @{}", tweet.author_handle);
+        return Ok(());
     }
 
-    let (x, y) = page_size::get_element_center(page, selectors::BTN_FOLLOW).await?;
-    mouse::click_at(page, x, y).await?;
+    let (x, y) = get_element_center(ctx.page(), BTN_FOLLOW).await?;
+    ctx.move_mouse_to(x, y).await?;
+    ctx.click(x, y).await?;
 
-    // Verify state: "Follow" → "Following" or "Pending"
-    human_pause(800, 50).await;
+    // Verify state change (best-effort)
+    ctx.pause(800, 50).await;
 
     Ok(())
 }
 
 /// Bookmark tweet (disabled V1, stub for future).
-#[allow(dead_code)]
-pub async fn bookmark_tweet(page: &Page, tweet: &TweetMetadata) -> Result<()> {
+pub async fn bookmark_tweet(_ctx: &TaskContext, _tweet: &super::TweetMetadata) -> Result<()> {
     bail!("Bookmark action disabled in V1");
 }
 ```
 
 ---
 
-## `twitter_popup.rs`
+## `src/utils/twitter/twitteractivity_popup.rs`
 
 **Responsibility**: Dismiss known modal/popup types after every navigation.
 
 ```rust
-/// Known modal/popup types with dismissal selectors.
-#[derive(Debug, Clone, Copy)]
-pub enum ModalType {
-    SignUpOverlay,
-    NotificationPrompt,
-    CookieBanner,
-    EmailUpdate,
-    AppInstallPrompt,
-    Unknown,
-}
+use crate::prelude::TaskContext;
+use crate::utils::page_size::get_element_center;
+use crate::utils::twitter::twitteractivity_selectors::*;
 
-/// Attempts to close all known modal types. Idempotent — safe to call repeatedly.
-#[allow(dead_code)]
-pub async fn close_all_modals(page: &Page) -> Result<()> {
+pub async fn close_all_modals(ctx: &TaskContext) -> Result<()> {
     let dismiss_selectors = [
-        selectors::MODAL_CLOSE_X,
-        selectors::MODAL_CLOSE_BUTTON,
-        selectors::MODAL_SIGNUP_CLOSE,
-        selectors::MODAL_NOTIFICATION_DISMISS,
-        selectors::MODAL_COOKIE_ACCEPT,
-        selectors::MODAL_COOKIE_REJECT,
-        selectors::MODAL_EMAIL_NAG_CLOSE,
+        MODAL_CLOSE_X,
+        MODAL_CLOSE_BUTTON,
+        MODAL_SIGNUP_CLOSE,
+        MODAL_NOTIFICATION_DISMISS,
+        MODAL_COOKIE_ACCEPT,
+        MODAL_COOKIE_REJECT,
+        MODAL_EMAIL_NAG_CLOSE,
     ];
 
     for selector in &dismiss_selectors {
-        if let Some(el) = page.querySelector(selector).await? {
-            info!("[twitter_popup] Dismissing modal (selector: {selector})");
-            let (x, y) = page_size::get_element_center(page, selector).await?;
-            mouse::click_at(page, x, y).await?;
-            human_pause(500, 30).await;
+        let js = format!(r#"
+            (() => {{
+                const el = document.querySelector({});
+                if (!el) return false;
+                el.click();
+                return true;
+            }})()
+        "#, serde_json::to_string(selector)?);
+        let clicked = ctx.page().evaluate(js).await?.value()
+            .and_then(|v| v.as_bool()).unwrap_or(false);
+        if clicked {
+            info!("[twitter_popup] Dismissed modal: {}", selector);
+            ctx.pause(500, 30).await;
         }
     }
 
     // Also attempt ESC key as universal close
-    page.keyboard().press_key("Escape").await?;
-    human_pause(300, 20).await;
+    ctx.press("Escape").await?;
+    ctx.pause(300, 20).await;
 
     Ok(())
-}
-
-/// Checks if a known modal is currently visible.
-#[allow(dead_code)]
-pub async fn is_modal_visible(page: &Page) -> bool {
-    for selector in &MODAL_SELECTORS {
-        if let Ok(Some(el)) = page.querySelector(selector).await {
-            if el.is_visible().await.unwrap_or(false) {
-                return true;
-            }
-        }
-    }
-    false
 }
 ```
 
 ---
 
-## `twitter_sentiment.rs`
+## `src/utils/twitter/twitteractivity_sentiment.rs`
 
 **Responsibility**: Lightweight sentiment detection using keyword blocklist.
 
 ```rust
+use log::info;
+
 /// Check if text contains negative sentiment keywords.
-#[allow(dead_code)]
-pub fn contains_negative_sentiment(
-    text: &str,
-    blocklist: &[String]
-) -> bool {
+pub fn contains_negative_sentiment(text: &str, blocklist: &[String]) -> bool {
     let lower = text.to_lowercase();
     blocklist.iter().any(|word| lower.contains(word))
 }
@@ -352,60 +347,13 @@ pub fn contains_negative_sentiment(
 
 ---
 
-## `twitter_limits.rs`
-
-**Responsibility**: Track per-session engagement counters with hard caps.
-
-```rust
-#[derive(Debug, Clone, Copy)]
-pub struct EngagementCounters {
-    pub likes: u32,
-    pub retweets: u32,
-    pub follows: u32,
-    pub replies: u32,
-    pub quotes: u32,
-    pub bookmarks: u32,
-}
-
-impl EngagementCounters {
-    pub fn new() -> Self {
-        Self {
-            likes: 0, retweets: 0, follows: 0,
-            replies: 0, quotes: 0, bookmarks: 0,
-        }
-    }
-
-    pub fn can_engage(&self, action: Engagement, limits: &TwitterLimits) -> bool {
-        match action {
-            Engagement::Like => self.likes < limits.max_likes_per_session,
-            Engagement::Retweet => self.retweets < limits.max_retweets_per_session,
-            Engagement::Follow => self.follows < limits.max_follows_per_session,
-            Engagement::Reply => self.replies < limits.max_replies_per_session,
-            Engagement::Quote => self.quotes < limits.max_quotes_per_session,
-            Engagement::Bookmark => self.bookmarks < limits.max_bookmarks_per_session,
-        }
-    }
-
-    pub fn increment(&mut self, action: Engagement) {
-        match action {
-            Engagement::Like => self.likes += 1,
-            Engagement::Retweet => self.retweets += 1,
-            Engagement::Follow => self.follows += 1,
-            Engagement::Reply => self.replies += 1,
-            Engagement::Quote => self.quotes += 1,
-            Engagement::Bookmark => self.bookmarks += 1,
-        }
-    }
-}
-```
-
----
-
-## `twitter_persona.rs`
+## `src/utils/twitter/twitteractivity_persona.rs`
 
 **Responsibility**: Map `BrowserProfile` → `TwitterPersona` and adjust behavior overlays.
 
 ```rust
+use crate::utils::profile::BrowserProfile;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TwitterPersona {
     Efficient,
@@ -433,18 +381,6 @@ impl TwitterPersona {
         }
     }
 
-    /// Returns (mouse%, keyboard%, wheel%) input method weights.
-    pub fn input_method_weights(&self) -> (f64, f64, f64) {
-        match self {
-            Self::Efficient => (0.80, 0.15, 0.05),
-            Self::Casual => (0.72, 0.18, 0.10),
-            Self::Researcher => (0.60, 0.30, 0.10),
-            Self::Hesitant => (0.50, 0.35, 0.15),
-            Self::Distracted => (0.65, 0.20, 0.15),
-            Self::Focused => (0.75, 0.20, 0.05),
-        }
-    }
-
     pub fn dive_probability_multiplier(&self) -> f64 {
         match self {
             Self::Efficient => 1.2,
@@ -460,7 +396,7 @@ impl TwitterPersona {
 
 ---
 
-## `src/utils/twitter/selectors.rs`
+## `src/utils/twitter/twitteractivity_selectors.rs`
 
 **Centralized selector definitions with fallbacks**.
 
@@ -469,7 +405,6 @@ impl TwitterPersona {
 pub const TWEET_ARTICLE: &str = "article[data-testid=\"tweet\"]";
 pub const TWEET_CELL_INNER: &str = "div[data-testid=\"cellInnerDiv\"]";
 pub const TWEET_ARTICLE_FALLBACK: &str = "article";
-pub const TWEET_XPATH: &str = "//article[contains(@*, 'tweet')]";
 
 /// Button selectors
 pub const BTN_LIKE: &str = "[data-testid=\"like\"]";
@@ -489,41 +424,21 @@ pub const MODAL_NOTIFICATION_DISMISS: &str = "button[aria-label=\"Dismiss\"]";
 pub const MODAL_COOKIE_ACCEPT: &str = "button:has-text('Accept all cookies')";
 pub const MODAL_COOKIE_REJECT: &str = "button:has-text('Reject non-essential cookies')";
 pub const MODAL_EMAIL_NAG_CLOSE: &str = "[data-testid=\"dismiss\"]";
-
-/// Text content selectors
-pub const TEXT_TWEET: &str = "[data-testid=\"tweetText\"]";
-pub const TEXT_USERNAME: &str = "[data-testid=\"User-Names\"]";
 ```
-
-**Fallback strategy**: Each action tries primary selector, then secondary, then XPath alternative. Log which selector succeeded.
 
 ---
 
-## `src/utils/twitter/humanized.rs`
+## `src/utils/twitter/twitteractivity_humanized.rs`
 
 Humanization helpers specific to Twitter interaction:
 
 ```rust
+use crate::prelude::TaskContext;
+
 /// Hover briefly before clicking (simulates visual verification).
-pub async fn hover_pause(page: &Page, x: f64, y: f64) -> Result<()> {
-    mouse::cursor_move_to(page, x, y).await?;
-    human_pause(200, 40).await;
-    Ok(())
-}
-
-/// Idle wiggle — tiny cursor movements simulating inattention.
-pub async fn idle_wiggle(page: &Page) -> Result<()> {
-    if rand::random::<f64>() < 0.15 {
-        use crate::utils::math::random_in_range;
-        let base_x = random_in_range(100, 800) as f64;
-        let base_y = random_in_range(100, 600) as f64;
-
-        mouse::cursor_move_to(page, base_x + 10.0, base_y).await?;
-        human_pause(50, 20).await;
-        mouse::cursor_move_to(page, base_x - 10.0, base_y).await?;
-        human_pause(50, 20).await;
-        mouse::cursor_move_to(page, base_x, base_y).await?;
-    }
+pub async fn hover_before_click(ctx: &TaskContext, x: f64, y: f64) -> Result<()> {
+    ctx.move_mouse_to(x, y).await?;
+    ctx.pause(200, 40).await;
     Ok(())
 }
 ```
@@ -533,11 +448,26 @@ pub async fn idle_wiggle(page: &Page) -> Result<()> {
 ## `src/utils/twitter/mod.rs`
 
 ```rust
-pub mod selectors;
-pub mod humanized;
+pub mod twitteractivity_navigation;
+pub mod twitteractivity_feed;
+pub mod twitteractivity_dive;
+pub mod twitteractivity_interact;
+pub mod twitteractivity_popup;
+pub mod twitteractivity_sentiment;
+pub mod twitteractivity_persona;
+pub mod twitteractivity_selectors;
+pub mod twitteractivity_humanized;
 
-pub use selectors::*;
-pub use humanized::*;
+pub use twitteractivity_navigation::select_entry_point;
+pub use twitteractivity_feed::TweetMetadata;
+pub use twitteractivity_feed::find_random_tweet;
+pub use twitteractivity_dive::{click_tweet, load_tweet_context, TweetContext};
+pub use twitteractivity_interact::{like_tweet, retweet_tweet, follow_user, bookmark_tweet};
+pub use twitteractivity_popup::close_all_modals;
+pub use twitteractivity_sentiment::contains_negative_sentiment;
+pub use twitteractivity_persona::TwitterPersona;
+pub use twitteractivity_selectors::*;
+pub use twitteractivity_humanized::*;
 ```
 
 ---

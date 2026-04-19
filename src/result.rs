@@ -222,3 +222,118 @@ impl Default for RunSummary {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_task_result_success() {
+        let result = TaskResult::success(100);
+        assert!(result.is_success());
+        assert_eq!(result.duration_ms, 100);
+        assert_eq!(result.attempt, 1);
+    }
+
+    #[test]
+    fn test_task_result_failure() {
+        let result = TaskResult::failure(50, "test error".to_string(), TaskErrorKind::Browser);
+        assert!(!result.is_success());
+        assert_eq!(result.duration_ms, 50);
+        assert_eq!(result.last_error, Some("test error".to_string()));
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Browser));
+    }
+
+    #[test]
+    fn test_task_result_with_retry() {
+        let result = TaskResult::success(10).with_retry(2, 3, "retry error".to_string());
+        assert_eq!(result.attempt, 2);
+        assert_eq!(result.max_retries, 3);
+        assert_eq!(result.last_error, Some("retry error".to_string()));
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_timeout() {
+        let kind = TaskErrorKind::classify("Operation exceeded timeout");
+        assert_eq!(kind, TaskErrorKind::Timeout);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_validation() {
+        let kind = TaskErrorKind::classify("Invalid input schema");
+        assert_eq!(kind, TaskErrorKind::Validation);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_navigation() {
+        let kind = TaskErrorKind::classify("Failed to navigate to URL");
+        assert_eq!(kind, TaskErrorKind::Navigation);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_session() {
+        let kind = TaskErrorKind::classify("Session expired");
+        assert_eq!(kind, TaskErrorKind::Session);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_browser() {
+        let kind = TaskErrorKind::classify("Browser crashed");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_unknown() {
+        let kind = TaskErrorKind::classify("Something went wrong");
+        assert_eq!(kind, TaskErrorKind::Unknown);
+    }
+
+    #[test]
+    fn test_task_error_kind_retryable() {
+        assert!(TaskErrorKind::Timeout.is_retryable());
+        assert!(TaskErrorKind::Navigation.is_retryable());
+        assert!(TaskErrorKind::Session.is_retryable());
+        assert!(TaskErrorKind::Browser.is_retryable());
+        assert!(!TaskErrorKind::Validation.is_retryable());
+    }
+
+    #[test]
+    fn test_run_summary_new() {
+        let summary = RunSummary::new();
+        assert_eq!(summary.total_tasks, 0);
+        assert_eq!(summary.succeeded, 0);
+    }
+
+    #[test]
+    fn test_run_summary_add_success() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        assert_eq!(summary.total_tasks, 1);
+        assert_eq!(summary.succeeded, 1);
+        assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn test_run_summary_add_failure() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        assert_eq!(summary.total_tasks, 1);
+        assert_eq!(summary.succeeded, 0);
+        assert_eq!(summary.failed, 1);
+    }
+
+    #[test]
+    fn test_run_summary_success_rate() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::failure(50, "e".to_string(), TaskErrorKind::Browser));
+        assert!((summary.success_rate() - 66.66).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_run_summary_empty_success_rate() {
+        let summary = RunSummary::new();
+        assert_eq!(summary.success_rate(), 0.0);
+    }
+}

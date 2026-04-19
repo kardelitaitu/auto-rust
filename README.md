@@ -25,6 +25,12 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - `internal`: framework-only bridge layer for shared helpers
 - `utils`: low-level implementation details and helper modules
 
+### Future Browser Connectors
+- Current browser discovery covers configured Chromium profiles, Roxybrowser, and local Brave instances.
+- Planned next step is to add more connector backends behind the same runtime/session API.
+- Goal: keep task code unchanged while expanding support for additional Chromium-compatible browsers and connector styles.
+- Other Chromium-compatible browsers are planned as future connectors, not current default support.
+
 ### Production Hardening
 - **Graceful Shutdown**: Ctrl+C signal handling with clean task cancellation
 - **Exponential Backoff**: Smart retry with jitter to prevent thundering herd
@@ -40,7 +46,7 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 ### Prerequisites
 
 - Rust 1.70+ ([Install Rust](https://rustup.rs/))
-- A compatible browser (Brave, Chrome, etc.) or [RoxyBrowser](https://roxybrowser.com/)
+- Current supported browsers: Brave and [RoxyBrowser](https://roxybrowser.com/)
 
 ### Build from Source
 
@@ -148,6 +154,18 @@ cargo run pageview=url=https://example.com,scroll_read_amount=400,scroll_read_pa
 | `scroll_read_variable_speed` | bool | true | Variable scroll speed |
 | `scroll_read_back_scroll` | bool | false | Scroll back to top |
 
+### DemoQA Text Box (`demoqa`)
+Demonstrates the task-api on the DemoQA text box page: focus, keyboard input, random cursor movement, submit, and output verification.
+It writes a fixed sample record:
+- Full Name: `Demo QA`
+- Email: `demoqa@example.com`
+- Current Address: `123 Demo Street, Demo City`
+- Permanent Address: `456 Demo Avenue, Demo Town`
+
+```bash
+cargo run demoqa
+```
+
 ### Twitter Activity (`twitteractivity`)
 Automated Twitter/X engagement with persona-based behavior.
 
@@ -194,8 +212,8 @@ type = "brave"
 ws_endpoint = ""  # Empty for auto-discovery
 
 [[browser.profiles]]
-name = "chrome-remote"
-type = "chrome"
+name = "chromium-remote"
+type = "chromium"
 ws_endpoint = "ws://192.168.1.100:9222"
 
 # RoxyBrowser Integration
@@ -526,17 +544,19 @@ Create new tasks in `task/` directory:
 use rust_orchestrator::prelude::*;
 use serde_json::Value;
 
-pub async fn run(ctx: &TaskContext, payload: Value) -> anyhow::Result<()> {
+pub async fn run(api: &TaskContext, payload: Value) -> anyhow::Result<()> {
     // Navigate to URL
     let url = payload.get("url")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing url"))?;
     
-    ctx.navigate_to(url, 30000).await?;
+    api.navigate_to(url, 30000).await?;
     
     // Human-like behavior
-    ctx.pause(1000, 20).await;
-    ctx.random_scroll().await?;
+    api.focus("input, textarea").await?;
+    api.keyboard("input, textarea", "Hello").await?;
+    api.pause(1000).await;
+    api.random_scroll().await?;
     
     Ok(())
 }
@@ -550,8 +570,14 @@ Add to `task/mod.rs`:
 pub mod my_new_task;
 
 // In perform_task():
-"my_new_task" => my_new_task::run(ctx, payload.clone()).await,
+"my_new_task" => my_new_task::run(api, payload.clone()).await,
 ```
+
+Note: `TaskContext` is the task-api. `keyboard(...)` is the preferred typing verb. `api.r#type(...)` remains available if you want the Rust-keyword-safe alias.
+
+High-level task-api verbs already include a short settle pause after the action. `api.pause(base_ms)` is the explicit uniform wait helper and uses a 20% deviation band.
+
+Common task-api verbs now include `api.click(...)`, `api.click_and_wait(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.hover(...)`, `api.keyboard(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
 
 ## 🤝 Contributing
 
@@ -596,3 +622,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ---
 
 **Note**: This is a Rust port of an existing Node.js browser automation system, providing better performance and reliability for production workloads.
+

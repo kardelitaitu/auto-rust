@@ -17,6 +17,8 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+use crate::utils::mouse::{CursorMovementConfig, PathStyle, Precision, Speed};
+
 /// A profile parameter with base value and deviation percentage.
 /// Allows randomized variation per session while maintaining profile characteristics.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -51,6 +53,31 @@ pub struct CursorBehavior {
     pub interval_max_ms: u64,
 }
 
+impl CursorBehavior {
+    /// Converts cursor cadence into a concrete movement config.
+    pub fn to_movement_config(&self) -> CursorMovementConfig {
+        let interval_min_ms = self.interval_min_ms.max(1);
+        let interval_max_ms = self.interval_max_ms.max(interval_min_ms);
+        CursorMovementConfig {
+            speed_multiplier: (120.0 / interval_min_ms as f64).clamp(0.35, 3.0),
+            min_step_delay_ms: interval_min_ms,
+            max_step_delay_variance_ms: interval_max_ms.saturating_sub(interval_min_ms).max(1),
+            curve_spread: interval_max_ms.saturating_sub(interval_min_ms).max(20) as f64,
+            steps: None,
+            add_micro_pauses: true,
+            path_style: PathStyle::Bezier,
+            precision: Precision::Safe,
+            speed: if interval_min_ms <= 8 {
+                Speed::Fast
+            } else if interval_min_ms >= 20 {
+                Speed::Slow
+            } else {
+                Speed::Normal
+            },
+        }
+    }
+}
+
 /// Typing behavior derived from a browser profile.
 #[derive(Debug, Clone, Copy)]
 pub struct TypingBehavior {
@@ -75,6 +102,8 @@ pub struct TypingBehavior {
 pub struct ClickBehavior {
     /// Delay after reaching target before clicking.
     pub reaction_delay_ms: u64,
+    /// Variance allowed around the reaction delay.
+    pub reaction_delay_variance_pct: f64,
     /// Click offset around the target center in pixels.
     pub offset_px: i32,
 }
@@ -267,6 +296,12 @@ impl BrowserProfile {
         }
     }
 
+    /// Converts cursor behavior into a concrete movement config.
+    pub fn cursor_movement_config(&self) -> CursorMovementConfig {
+        let cursor = self.cursor_behavior();
+        cursor.to_movement_config()
+    }
+
     /// Derives typing behavior from the profile.
     pub fn typing_behavior(&self) -> TypingBehavior {
         TypingBehavior {
@@ -284,6 +319,9 @@ impl BrowserProfile {
     pub fn click_behavior(&self) -> ClickBehavior {
         ClickBehavior {
             reaction_delay_ms: self.click_reaction_delay.random_clamped(0.0, 2_000.0).round() as u64,
+            reaction_delay_variance_pct: self
+                .action_delay_variance_pct
+                .random_clamped(0.0, 100.0),
             offset_px: self.click_offset.random_clamped(0.0, 50.0).round() as i32,
         }
     }

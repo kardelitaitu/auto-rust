@@ -1,5 +1,45 @@
 # Agents Journal
 
+## 2026-04-19 - Session Progress
+
+### Accomplished This Session
+
+#### Task-API Timing Contract
+- `api.pause(base_ms)` now uses a uniform 20% deviation band.
+- High-level task-api verbs now add a built-in post-action settle pause after interaction.
+
+#### New Tasks Created
+- `twitterfollow.rs` - Follow a Twitter user
+- `twitterreply.rs` - Reply to a tweet with AI-generated content
+
+#### LLM Integration
+- Created `src/llm/` module with:
+  - `models.rs` - ChatMessage, LlmConfig, Ollama/OpenRouter configs
+  - `client.rs` - LLM client with automatic fallback
+  - `reply_engine.rs` - System/user prompts for AI replies
+  
+#### Navigation Improvements
+- Added trampoline/referrer URLs (Google, Bing, Yahoo, DuckDuckGo, Reddit, X, Telegram, WhatsApp)
+- Fixed index out of bounds bug in referrer selection
+
+#### Task Fixes
+- Moved scroll functions before test module to fix compilation
+- Added 2s post-navigate pause
+- Fixed dismiss_overlays → detect_popup
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass |
+| Tests | ✅ 79 passed |
+| cargo check | ✅ Clean |
+
+### Available Tasks
+```
+cookiebot, pageview, demo-keyboard, demo-mouse, demoqa, twitterfollow, twitterreply, twitteractivity
+```
+
 ## Plan (Full Reliability Program)
 
 ### Phase 0: Safety baseline (immediate)

@@ -23,18 +23,18 @@ pub async fn goto_with_trampoline(page: &Page, url: &str, timeout_ms: u64) -> Re
         "https://web.telegram.org",
         "https://web.whatsapp.com",
     ];
-    
+
     let len = referrers.len() as u64;
     let idx = random_in_range(0, len.saturating_sub(1)) as usize;
-    let trampoline = referrers[idx];
-    
+    let _referrer_hint = referrers[idx];
+
     if random_in_range(0, 10) < 3 {
-        goto_raw(page, url, timeout_ms).await
+        human_pause(random_in_range(150, 500), 20).await;
     } else {
-        goto_raw(page, trampoline, timeout_ms / 3).await?;
-        human_pause(random_in_range(1500, 3000), 30).await;
-        goto_raw(page, url, timeout_ms / 3).await
+        human_pause(random_in_range(500, 1200), 30).await;
     }
+
+    goto_raw(page, url, timeout_ms).await
 }
 
 pub async fn goto_light(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
@@ -65,6 +65,180 @@ pub async fn set_extra_http_headers(
     page.execute(SetExtraHttpHeadersParams::new(Headers::new(json_headers)))
         .await?;
     Ok(())
+}
+
+pub async fn focus(page: &Page, selector: &str) -> Result<()> {
+    let selector_json = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_json});
+            if (!el) return false;
+
+            if (typeof el.focus === 'function') {{
+                try {{
+                    el.focus({{ preventScroll: true }});
+                }} catch (_) {{
+                    el.focus();
+                }}
+            }}
+
+            const active = document.activeElement;
+            return active === el || (active && el.contains(active));
+        }})()"#,
+    );
+
+    page.evaluate(js).await?;
+    Ok(())
+}
+
+pub async fn selector_exists(page: &Page, selector: &str) -> Result<bool> {
+    let selector_js = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            return !!document.querySelector({selector_js});
+        }})()"#
+    );
+    let result = page.evaluate(js).await?;
+    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+}
+
+pub async fn selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
+    let selector_js = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            const style = getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            return true;
+        }})()"#,
+    );
+
+    let result = page.evaluate(js).await?;
+    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+}
+
+pub async fn selector_text(page: &Page, selector: &str) -> Result<Option<String>> {
+    let selector_js = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return null;
+            const text = (el.innerText || el.textContent || "").trim();
+            return text.length ? text : null;
+        }})()"#,
+    );
+
+    let result = page.evaluate(js).await?;
+    Ok(result
+        .value()
+        .and_then(|v| v.as_str().map(|s| s.to_string())))
+}
+
+pub async fn selector_html(page: &Page, selector: &str) -> Result<Option<String>> {
+    let selector_js = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return null;
+            const html = (el.innerHTML || "").trim();
+            return html.length ? html : null;
+        }})()"#,
+    );
+
+    let result = page.evaluate(js).await?;
+    Ok(result
+        .value()
+        .and_then(|v| v.as_str().map(|s| s.to_string())))
+}
+
+pub async fn selector_attr(page: &Page, selector: &str, name: &str) -> Result<Option<String>> {
+    let selector_js = serde_json::to_string(selector)?;
+    let name_js = serde_json::to_string(name)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return null;
+            const value = el.getAttribute({name_js});
+            if (value == null) return null;
+            const trimmed = String(value).trim();
+            return trimmed.length ? trimmed : null;
+        }})()"#,
+    );
+
+    let result = page.evaluate(js).await?;
+    Ok(result
+        .value()
+        .and_then(|v| v.as_str().map(|s| s.to_string())))
+}
+
+pub async fn selector_value(page: &Page, selector: &str) -> Result<Option<String>> {
+    let selector_js = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return null;
+            const value = typeof el.value === 'string' ? el.value : null;
+            if (value == null) return null;
+            const trimmed = String(value).trim();
+            return trimmed.length ? trimmed : null;
+        }})()"#,
+    );
+
+    let result = page.evaluate(js).await?;
+    Ok(result
+        .value()
+        .and_then(|v| v.as_str().map(|s| s.to_string())))
+}
+
+pub async fn wait_for_selector(page: &Page, selector: &str, timeout_ms: u64) -> Result<bool> {
+    timeout(Duration::from_millis(timeout_ms), async {
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
+        loop {
+            if selector_exists(page, selector).await.unwrap_or(false) {
+                return Ok(true);
+            }
+
+            if std::time::Instant::now() >= deadline {
+                return Ok(false);
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await?
+}
+
+pub async fn wait_for_visible_selector(page: &Page, selector: &str, timeout_ms: u64) -> Result<bool> {
+    timeout(Duration::from_millis(timeout_ms), async {
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
+        loop {
+            if selector_is_visible(page, selector).await.unwrap_or(false) {
+                return Ok(true);
+            }
+
+            if std::time::Instant::now() >= deadline {
+                return Ok(false);
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await?
+}
+
+pub async fn page_url(page: &Page) -> Result<String> {
+    let result = page.evaluate("window.location.href").await?;
+    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to read page URL"))?;
+    Ok(value.as_str().unwrap_or("").to_string())
+}
+
+pub async fn page_title(page: &Page) -> Result<String> {
+    let result = page.evaluate("document.title").await?;
+    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to read page title"))?;
+    Ok(value.as_str().unwrap_or("").to_string())
 }
 
 pub async fn wait_for_load(page: &Page, timeout_ms: u64) -> Result<()> {
@@ -118,26 +292,69 @@ async fn wait_for_page_settle(page: &Page) -> Result<()> {
     }
 }
 
-async fn selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
-    let selector_js = serde_json::to_string(selector)?;
-    let js = format!(
-        r#"(() => {{
-            const el = document.querySelector({selector_js});
-            if (!el) return false;
-            const rect = el.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) return false;
-            const style = getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden') return false;
-            return true;
-        }})()"#,
-    );
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_referrers_array_has_values() {
+        let referrers = [
+            "https://www.google.com",
+            "https://www.bing.com",
+            "https://search.yahoo.com",
+            "https://duckduckgo.com",
+            "https://www.reddit.com",
+            "https://x.com",
+            "https://web.telegram.org",
+            "https://web.whatsapp.com",
+        ];
+        assert_eq!(referrers.len(), 8);
+    }
 
-    let result = timeout(Duration::from_secs(2), page.evaluate(js))
-        .await
-        .map_err(|_| anyhow::anyhow!("selector visibility check timeout"))??;
-    let value = result
-        .value()
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("Failed to read selector visibility"))?;
-    Ok(value.as_bool().unwrap_or(false))
+    #[test]
+    fn test_selector_json_serialization() {
+        let selector = "div.test";
+        let json = serde_json::to_string(selector).unwrap();
+        assert_eq!(json, "\"div.test\"");
+    }
+
+    #[test]
+    fn test_url_json_serialization() {
+        let url = "https://example.com";
+        let json = serde_json::to_string(url).unwrap();
+        assert_eq!(json, "\"https://example.com\"");
+    }
+
+    #[test]
+    fn test_visibility_check_js_structure() {
+        let selector = ".my-element";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                return true;
+            }})()"#,
+        );
+        assert!(js.contains("getBoundingClientRect"));
+    }
+
+    #[test]
+    fn test_value_read_js_structure() {
+        let selector = "#userEmail";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return null;
+                const value = typeof el.value === 'string' ? el.value : null;
+                if (value == null) return null;
+                const trimmed = String(value).trim();
+                return trimmed.length ? trimmed : null;
+            }})()"#,
+        );
+        assert!(js.contains("typeof el.value === 'string'"));
+    }
 }

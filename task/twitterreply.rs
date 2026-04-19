@@ -12,25 +12,25 @@ const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const CONTEXT_REPLIES: u32 = 5;
 const POST_WAIT_MS: u64 = 5000;
 
-pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
+pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     info!("Task started - target: {}", tweet_url);
 
     info!("Trampoline navigation...");
-    ctx.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
     sleep(Duration::from_millis(2000)).await;
     
     info!("Scrolling down (10-20s)...");
-    scroll_down_random(ctx).await?;
+    scroll_down_random(api).await?;
     
     info!("Scrolling up (5-10s)...");
-    scroll_up_faster(ctx).await?;
+    scroll_up_faster(api).await?;
 
     info!("Extracting tweet and context...");
-    let (author, tweet_text) = extract_main_tweet(ctx).await?;
+    let (author, tweet_text) = extract_main_tweet(api).await?;
     info!("Tweet by @{}: {}", author, preview_chars(&tweet_text, 50));
 
-    let replies = extract_replies(ctx, CONTEXT_REPLIES).await?;
+    let replies = extract_replies(api, CONTEXT_REPLIES).await?;
     info!("Extracted {} replies for context", replies.len());
 
     info!("Generating AI reply...");
@@ -48,17 +48,17 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
     info!("AI Reply: {}", reply_text);
 
     info!("Clicking reply button...");
-    click_reply_button(ctx).await?;
+    click_reply_button(api).await?;
 
     sleep(Duration::from_millis(1500)).await;
 
     info!("Typing reply...");
-    type_reply(ctx, &reply_text).await?;
+    type_reply(api, &reply_text).await?;
 
     sleep(Duration::from_millis(1000)).await;
 
     info!("Posting reply...");
-    let posted = post_reply(ctx).await?;
+    let posted = post_reply(api).await?;
 
     if posted {
         info!("Reply posted successfully!");
@@ -94,8 +94,8 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
     Err(anyhow::anyhow!("No URL found in payload"))
 }
 
-async fn extract_main_tweet(ctx: &TaskContext) -> Result<(String, String)> {
-    let page = ctx.page();
+async fn extract_main_tweet(api: &TaskContext) -> Result<(String, String)> {
+    let page = api.page();
     
     let result = page.evaluate(r#"
         (function() {
@@ -123,8 +123,8 @@ async fn extract_main_tweet(ctx: &TaskContext) -> Result<(String, String)> {
     Err(anyhow::anyhow!("Could not extract tweet"))
 }
 
-async fn extract_replies(ctx: &TaskContext, limit: u32) -> Result<Vec<(String, String)>> {
-    let page = ctx.page();
+async fn extract_replies(api: &TaskContext, limit: u32) -> Result<Vec<(String, String)>> {
+    let page = api.page();
     
     let js = format!(r#"
         (function() {{
@@ -164,37 +164,14 @@ async fn extract_replies(ctx: &TaskContext, limit: u32) -> Result<Vec<(String, S
     Ok(replies)
 }
 
-async fn click_reply_button(ctx: &TaskContext) -> Result<()> {
-    let page = ctx.page();
-    
-    let result = page.evaluate(r#"
-        (function() {
-            var btn = document.querySelector('[data-testid="reply"]');
-            if (btn) {
-                var rect = btn.getBoundingClientRect();
-                return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-            }
-            return null;
-        })()
-    "#).await?;
-    
-    let value = result.value();
-    if let Some(v) = value {
-        if let Some(obj) = v.as_object() {
-            let x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            
-            ctx.move_mouse_fast(x, y).await?;
-            ctx.left_click_fast(x, y).await?;
-            return Ok(());
-        }
-    }
-    
-    Err(anyhow::anyhow!("Reply button not found"))
+async fn click_reply_button(api: &TaskContext) -> Result<()> {
+    let outcome = api.click("[data-testid=\"reply\"]").await?;
+    info!("Reply {}", outcome.summary());
+    Ok(())
 }
 
-async fn type_reply(ctx: &TaskContext, text: &str) -> Result<()> {
-    let page = ctx.page();
+async fn type_reply(api: &TaskContext, text: &str) -> Result<()> {
+    let page = api.page();
     
     let result = page.evaluate(r#"
         (function() {
@@ -208,7 +185,7 @@ async fn type_reply(ctx: &TaskContext, text: &str) -> Result<()> {
     let value = result.value();
     if let Some(v) = value {
         if let Some(true) = v.as_bool() {
-            ctx.type_text(text).await?;
+            api.type_text(text).await?;
             return Ok(());
         }
     }
@@ -216,35 +193,12 @@ async fn type_reply(ctx: &TaskContext, text: &str) -> Result<()> {
     Err(anyhow::anyhow!("Composer not found"))
 }
 
-async fn post_reply(ctx: &TaskContext) -> Result<bool> {
-    let page = ctx.page();
-    
-    let result = page.evaluate(r#"
-        (function() {
-            var btn = document.querySelector('[data-testid="tweetButton"]') || 
-                    document.querySelector('[data-testid="tweetButtonInline"]');
-            if (btn && !btn.disabled) {
-                var rect = btn.getBoundingClientRect();
-                return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-            }
-            return null;
-        })()
-    "#).await?;
-    
-    let value = result.value();
-    if let Some(v) = value {
-        if let Some(obj) = v.as_object() {
-            let x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            
-            if x > 0.0 && y > 0.0 {
-                ctx.left_click_fast(x, y).await?;
-                return Ok(true);
-            }
-        }
-    }
-    
-    Ok(false)
+async fn post_reply(api: &TaskContext) -> Result<bool> {
+    let outcome = api
+        .click("[data-testid=\"tweetButton\"], [data-testid=\"tweetButtonInline\"]")
+        .await?;
+    info!("Post {}", outcome.summary());
+    Ok(true)
 }
 
 fn sanitize_reply(text: &str) -> String {
@@ -262,9 +216,9 @@ fn sanitize_reply(text: &str) -> String {
     result
 }
 
-async fn scroll_down_random(ctx: &TaskContext) -> Result<()> {
+async fn scroll_down_random(api: &TaskContext) -> Result<()> {
     let duration_ms = rand::thread_rng().gen_range(10000..=20000);
-    let page = ctx.page();
+    let page = api.page();
     let start = std::time::Instant::now();
     
     while start.elapsed().as_millis() < duration_ms {
@@ -278,9 +232,9 @@ async fn scroll_down_random(ctx: &TaskContext) -> Result<()> {
     Ok(())
 }
 
-async fn scroll_up_faster(ctx: &TaskContext) -> Result<()> {
+async fn scroll_up_faster(api: &TaskContext) -> Result<()> {
     let duration_ms = rand::thread_rng().gen_range(5000..=10000);
-    let page = ctx.page();
+    let page = api.page();
     let start = std::time::Instant::now();
     
     while start.elapsed().as_millis() < duration_ms {
@@ -336,3 +290,5 @@ mod tests {
         assert!(out.ends_with("..."));
     }
 }
+
+

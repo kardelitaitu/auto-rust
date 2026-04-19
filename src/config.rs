@@ -157,6 +157,144 @@ impl Default for TwitterActivityConfig {
     }
 }
 
+#[allow(dead_code)]
+impl Default for BrowserConfig {
+    fn default() -> Self {
+        Self {
+            connectors: vec![],
+            connection_timeout_ms: 30000,
+            max_discovery_retries: 3,
+            discovery_retry_delay_ms: 500,
+            circuit_breaker: CircuitBreakerConfig::default(),
+            profiles: vec![],
+            roxybrowser: RoxybrowserConfig::default(),
+            user_agent: None,
+            extra_http_headers: BTreeMap::new(),
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl Default for OrchestratorConfig {
+    fn default() -> Self {
+        Self {
+            max_global_concurrency: 5,
+            task_timeout_ms: 60000,
+            group_timeout_ms: 300000,
+            worker_wait_timeout_ms: 10000,
+            stuck_worker_threshold_ms: 120000,
+            task_stagger_delay_ms: 500,
+            max_retries: 3,
+            retry_delay_ms: 2000,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl Default for CircuitBreakerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            failure_threshold: 5,
+            success_threshold: 3,
+            half_open_time_ms: 30000,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl Default for RoxybrowserConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_url: "http://localhost:4444".to_string(),
+            api_key: String::new(),
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl Default for BrowserProfile {
+    fn default() -> Self {
+        Self {
+            name: "default".to_string(),
+            r#type: "chrome".to_string(),
+            ws_endpoint: String::new(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_browser_config() -> BrowserConfig {
+        BrowserConfig {
+            connectors: vec![],
+            connection_timeout_ms: 30000,
+            max_discovery_retries: 3,
+            discovery_retry_delay_ms: 500,
+            circuit_breaker: CircuitBreakerConfig::default(),
+            profiles: vec![BrowserProfile::default()],
+            roxybrowser: RoxybrowserConfig::default(),
+            user_agent: None,
+            extra_http_headers: BTreeMap::new(),
+        }
+    }
+
+    fn test_orchestrator_config() -> OrchestratorConfig {
+        OrchestratorConfig {
+            max_global_concurrency: 5,
+            task_timeout_ms: 60000,
+            group_timeout_ms: 300000,
+            worker_wait_timeout_ms: 10000,
+            stuck_worker_threshold_ms: 120000,
+            task_stagger_delay_ms: 500,
+            max_retries: 3,
+            retry_delay_ms: 2000,
+        }
+    }
+
+    #[test]
+    fn test_browser_config_defaults() {
+        let config = BrowserConfig::default();
+        assert_eq!(config.max_discovery_retries, 3);
+        assert_eq!(config.discovery_retry_delay_ms, 500);
+        assert!(config.profiles.is_empty());
+    }
+
+    #[test]
+    fn test_orchestrator_config_defaults() {
+        let config = OrchestratorConfig::default();
+        assert_eq!(config.max_global_concurrency, 5);
+        assert_eq!(config.task_timeout_ms, 60000);
+        assert_eq!(config.max_retries, 3);
+    }
+
+    #[test]
+    fn test_twitter_activity_config_defaults() {
+        let config = TwitterActivityConfig::default();
+        assert_eq!(config.feed_scan_duration_ms, 60000);
+        assert_eq!(config.feed_scroll_count, 10);
+        assert_eq!(config.engagement_candidate_count, 5);
+    }
+
+    #[test]
+    fn test_circuit_breaker_config_defaults() {
+        let config = CircuitBreakerConfig::default();
+        assert_eq!(config.failure_threshold, 5);
+        assert_eq!(config.success_threshold, 3);
+        assert_eq!(config.half_open_time_ms, 30000);
+    }
+
+    #[test]
+    fn test_roxybrowser_config_defaults() {
+        let config = RoxybrowserConfig::default();
+        assert_eq!(config.api_url, "http://localhost:4444");
+        assert!(!config.enabled);
+    }
+}
+
 /// Loads configuration from file and environment variables.
 /// Attempts to load from `config/default.toml` first, then applies environment
 /// variable overrides. Falls back to hardcoded defaults if no config file exists.

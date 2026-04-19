@@ -211,15 +211,22 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
             if (el.isContentEditable) {{
                 document.execCommand('insertText', false, text);
             }} else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {{
-                const start = el.selectionStart ?? el.value.length;
-                const end = el.selectionEnd ?? start;
-                el.value = el.value.slice(0, start) + text + el.value.slice(end);
-                const next = start + text.length;
-                if (typeof el.setSelectionRange === 'function') {{
-                    el.setSelectionRange(next, next);
+                const hasSelectionApi =
+                    typeof el.selectionStart === 'number' &&
+                    typeof el.selectionEnd === 'number' &&
+                    typeof el.setSelectionRange === 'function';
+                if (hasSelectionApi) {{
+                    const start = el.selectionStart ?? el.value.length;
+                    const end = el.selectionEnd ?? start;
+                    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+                    const next = start + text.length;
+                    try {{
+                        el.setSelectionRange(next, next);
+                    }} catch (_) {{
+                        // Some input types (for example email) do not support selection ranges.
+                    }}
                 }} else {{
-                    el.selectionStart = next;
-                    el.selectionEnd = next;
+                    el.value = (el.value || '') + text;
                 }}
                 el.dispatchEvent(new InputEvent('input', {{ bubbles: true, data: text }}));
             }}
@@ -296,5 +303,83 @@ fn get_similar_char(ch: char) -> char {
         'n' => 'm',
         'm' => 'n',
         _ => ch,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_press_options_defaults() {
+        let options = PressOptions::default();
+        assert!(options.modifiers.is_empty());
+        assert_eq!(options.delay, 0);
+        assert_eq!(options.repeat, 1);
+        assert!(options.down_and_up);
+    }
+
+    #[test]
+    fn test_normalize_modifier_ctrl() {
+        assert_eq!(normalize_modifier("ctrl"), "Control");
+        assert_eq!(normalize_modifier("control"), "Control");
+        assert_eq!(normalize_modifier("CTRL"), "Control");
+    }
+
+    #[test]
+    fn test_normalize_modifier_shift() {
+        assert_eq!(normalize_modifier("shift"), "Shift");
+    }
+
+    #[test]
+    fn test_normalize_modifier_alt() {
+        assert_eq!(normalize_modifier("alt"), "Alt");
+    }
+
+    #[test]
+    fn test_normalize_modifier_meta() {
+        assert_eq!(normalize_modifier("meta"), "Meta");
+        assert_eq!(normalize_modifier("cmd"), "Meta");
+        assert_eq!(normalize_modifier("command"), "Meta");
+        assert_eq!(normalize_modifier("win"), "Meta");
+    }
+
+    #[test]
+    fn test_is_modifier() {
+        assert!(is_modifier("Control"));
+        assert!(is_modifier("Shift"));
+        assert!(is_modifier("Alt"));
+        assert!(is_modifier("Meta"));
+        assert!(!is_modifier("a"));
+        assert!(!is_modifier("Enter"));
+    }
+
+    #[test]
+    fn test_get_similar_char_row() {
+        assert_eq!(get_similar_char('a'), 's');
+        assert_eq!(get_similar_char('s'), 'a');
+        assert_eq!(get_similar_char('d'), 'f');
+    }
+
+    #[test]
+    fn test_get_similar_char_middle() {
+        assert_eq!(get_similar_char('e'), 'r');
+        assert_eq!(get_similar_char('r'), 'e');
+        assert_eq!(get_similar_char('w'), 'q');
+        assert_eq!(get_similar_char('q'), 'w');
+    }
+
+    #[test]
+    fn test_get_similar_char_home() {
+        assert_eq!(get_similar_char('t'), 'y');
+        assert_eq!(get_similar_char('y'), 't');
+        assert_eq!(get_similar_char('o'), 'p');
+        assert_eq!(get_similar_char('p'), 'o');
+    }
+
+    #[test]
+    fn test_get_similar_char_no_match() {
+        assert_eq!(get_similar_char('z'), 'z');
+        assert_eq!(get_similar_char('1'), '1');
     }
 }

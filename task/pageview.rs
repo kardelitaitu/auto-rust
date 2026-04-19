@@ -106,20 +106,19 @@ impl PageviewConfig {
     }
 }
 
-pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
-    let session_id = ctx.session_id();
-    info!("[{session_id}][pageview] Task started");
+pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    info!("Task started");
 
     let url = extract_url_from_payload(&payload)?;
-    let profile = ctx.behavior_runtime();
+    let profile = api.behavior_runtime();
     let config = PageviewConfig::from_payload(
         &payload,
         profile.cursor,
         profile.scroll,
     )?;
-    info!("[{session_id}][pageview] Visiting URL: {url}");
+    info!("Visiting URL: {}", url);
 
-    ctx.pause(config.initial_pause_ms, 25).await;
+    api.pause(config.initial_pause_ms).await;
     let x_selectors = [
         "[data-testid=\"primaryColumn\"]",
         "main[role=\"main\"]",
@@ -127,27 +126,27 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
         "[data-testid=\"tweet\"]",
         "form[action*=\"/i/flow/login\"]",
     ];
-    match ctx
+    match api
         .wait_for_any_visible_selector(&x_selectors, config.selector_wait_ms)
         .await
     {
-        Ok(true) => info!("[{session_id}][pageview] Visible content detected"),
-        Ok(false) => info!("[{session_id}][pageview] No target selector visible yet, continuing"),
-        Err(e) => info!("[{session_id}][pageview] Selector readiness check skipped: {e}"),
+        Ok(true) => info!("Visible content detected"),
+        Ok(false) => info!("No target selector visible yet, continuing"),
+        Err(e) => info!("Selector readiness check skipped: {}", e),
     }
 
-    perform_pageview_behavior(ctx, &config).await?;
+    perform_pageview_behavior(api, &config).await?;
 
-    info!("[{session_id}][pageview] Task completed successfully for: {url}");
+    info!("Task completed successfully for: {}", url);
     Ok(())
 }
 
-async fn perform_pageview_behavior(ctx: &TaskContext, config: &PageviewConfig) -> Result<()> {
+async fn perform_pageview_behavior(api: &TaskContext, config: &PageviewConfig) -> Result<()> {
     let deadline = Instant::now() + config.duration();
-    let viewport = match ctx.viewport().await {
+    let viewport = match api.viewport().await {
         Ok(viewport) => Some(viewport),
         Err(e) => {
-            warn!("[{}][pageview] viewport unavailable: {}", ctx.session_id(), e);
+            warn!("viewport unavailable: {}", e);
             None
         }
     };
@@ -162,13 +161,13 @@ async fn perform_pageview_behavior(ctx: &TaskContext, config: &PageviewConfig) -
         if now >= next_cursor_move {
             if let Some(viewport) = viewport.as_ref() {
                 let (x, y) = random_screen_point(viewport.width, viewport.height);
-                ctx.move_mouse_fast(x, y).await?;
+                api.move_mouse_fast(x, y).await?;
             }
             next_cursor_move = now + config.cursor_interval();
         }
 
         if now >= next_scroll_burst {
-            ctx.scroll_read(
+            api.scroll_read(
                 config.scroll_read_pauses,
                 config.scroll_read_amount,
                 config.scroll_read_variable_speed,
@@ -179,7 +178,7 @@ async fn perform_pageview_behavior(ctx: &TaskContext, config: &PageviewConfig) -
         }
 
         if now >= next_overlay_sync {
-            ctx.sync_cursor_overlay().await?;
+            api.sync_cursor_overlay().await?;
             next_overlay_sync = Instant::now() + config.overlay_sync();
         }
 
@@ -389,3 +388,5 @@ mod tests {
         assert!(config.scroll_read_back_scroll);
     }
 }
+
+

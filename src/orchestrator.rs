@@ -470,3 +470,37 @@ async fn execute_task_with_retry(
     )
     .with_retry(attempt.max(1), max_retries, msg)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_duration_milliseconds() {
+        assert_eq!(format_duration(500), "500ms");
+        assert_eq!(format_duration(999), "999ms");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(format_duration(1000), "1s");
+        assert_eq!(format_duration(5000), "5s");
+        assert_eq!(format_duration(45000), "45s");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        assert_eq!(format_duration(60000), "1min");
+        assert_eq!(format_duration(65000), "1min 5s");
+        assert_eq!(format_duration(120000), "2min");
+        assert_eq!(format_duration(125000), "2min 5s");
+    }
+
+    #[test]
+    fn test_format_duration_hours() {
+        assert_eq!(format_duration(3600000), "1h");
+        assert_eq!(format_duration(3660000), "1h 1min");
+        assert_eq!(format_duration(7200000), "2h");
+        assert_eq!(format_duration(7320000), "2h 2min");
+    }
+}

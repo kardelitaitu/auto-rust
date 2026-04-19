@@ -82,8 +82,12 @@ pub fn center_position(viewport: &Viewport) -> (f64, f64) {
 #[allow(dead_code)]
 pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
     use crate::utils::math::random_in_range;
-    let x = random_in_range(margin as u64, (viewport.width - margin) as u64) as f64;
-    let y = random_in_range(margin as u64, (viewport.height - margin) as u64) as f64;
+    let safe_margin_x = margin.max(1.0).min((viewport.width / 4.0).max(1.0));
+    let safe_margin_y = margin.max(1.0).min((viewport.height / 4.0).max(1.0));
+    let max_x = (viewport.width - safe_margin_x).max(safe_margin_x + 1.0);
+    let max_y = (viewport.height - safe_margin_y).max(safe_margin_y + 1.0);
+    let x = random_in_range(safe_margin_x as u64, max_x as u64) as f64;
+    let y = random_in_range(safe_margin_y as u64, max_y as u64) as f64;
     (x, y)
 }
 

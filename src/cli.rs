@@ -63,6 +63,7 @@ const KNOWN_TASKS: &[&str] = &[
     "pageview",
     "demo-keyboard",
     "demo-mouse",
+    "demoqa",
     "twitterfollow",
     "twitterreply",
     "twitteractivity",

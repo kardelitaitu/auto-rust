@@ -14,7 +14,8 @@ fn main() {
     println!("  press(page, key) - Press a single key");
     println!("  press_with_options(page, key, options) - Press with options");
     println!("  press_with_modifiers(page, key, modifiers) - Press with modifier keys");
-    println!("  type_text(page, text) - Type text with human timing");
+    println!("  focus(page, selector) - Focus an element before typing");
+    println!("  r#type(page, selector, text) - Type text with human timing");
     println!("  type_text_with_options(page, text, base_delay) - Type with custom delay");
     println!("  hold(page, key, duration_ms) - Hold a key for duration");
     println!("  release_all(page) - Release all modifier keys");
@@ -70,7 +71,8 @@ fn main() {
     println!();
 
     println!("  // Type text with human-like timing");
-    println!("  type_text(&page, \"Hello World!\").await?;");
+    println!("  api.focus(\"input, textarea\").await?;");
+    println!("  api.r#type(\"input, textarea\", \"Hello World!\").await?;");
     println!();
 
     println!("  // Type with custom base delay (ms)");

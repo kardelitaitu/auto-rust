@@ -1,4 +1,8 @@
 //! Runtime lifecycle and task execution context.
+//!
+//! `TaskContext` is the task-api surface. It exposes the short
+//! `api.*` verbs used by task code and keeps browser/session lifecycle
+//! hidden behind the runtime layer.
 
 pub mod browser {
     #[allow(unused_imports)]

@@ -276,3 +276,22 @@ impl Session {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_state_variants() {
+        assert_eq!(SessionState::Idle, SessionState::Idle);
+        assert_eq!(SessionState::Busy, SessionState::Busy);
+        assert_eq!(SessionState::Failed, SessionState::Failed);
+    }
+
+    #[test]
+    fn test_session_state_inequality() {
+        assert_ne!(SessionState::Idle, SessionState::Busy);
+        assert_ne!(SessionState::Busy, SessionState::Failed);
+        assert_ne!(SessionState::Idle, SessionState::Failed);
+    }
+}

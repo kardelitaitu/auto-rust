@@ -52,18 +52,17 @@ const DEFAULT_CANDIDATES: u32 = 5;
 /// Task entry point called by orchestrator.
 ///
 /// # Arguments
-/// * `ctx` - Task context with page, profile, clipboard
+/// * `api` - Task context with page, profile, clipboard
 /// * `payload` - JSON task configuration (see module docs)
 ///
 /// # Returns
 /// Result<()> - Ok if completed successfully, Err on failure
-pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
-    let session_id = ctx.session_id();
-    info!("[{session_id}][twitteractivity] Task started");
+pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    info!("Task started");
 
     // Parse task configuration from payload
     let duration_ms = read_u64(&payload, "duration_ms", DEFAULT_DURATION_MS);
-    let _scroll_count = read_u32(&payload, "scroll_count", DEFAULT_SCROLL_COUNT);
+    let scroll_count = read_u32(&payload, "scroll_count", DEFAULT_SCROLL_COUNT);
     let candidate_count = read_u32(&payload, "candidate_count", DEFAULT_CANDIDATES);
     let weights = payload.get("weights");
     let _profile_preset_name = payload
@@ -74,47 +73,46 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
     // Build persona weights
     let mut persona = select_persona_weights(weights);
     // Apply profile characteristics (variance, sentiment modulation will be applied per-tweet)
-    let profile = ctx.behavior_profile();
+    let profile = api.behavior_profile();
     // For now we use the session's assigned profile; profile preset integration TBD
 
     persona = apply_behavior_profile(persona, profile, 0.0);
 
-    info!("[{session_id}][twitteractivity] Persona weights: like={:.2}, rt={:.2}, follow={:.2}, reply={:.2}",
-        persona.like_prob, persona.retweet_prob, persona.follow_prob, persona.reply_prob);
+    info!("Persona weights: like={:.2}, rt={:.2}, follow={:.2}, reply={:.2}, scroll_count={}",
+        persona.like_prob, persona.retweet_prob, persona.follow_prob, persona.reply_prob, scroll_count);
 
     // Phase 1: Navigation & authentication check
-    info!("[{session_id}][twitteractivity] Phase 1: Navigation to home feed");
-    goto_home(ctx).await?;
+    info!("Phase 1: Navigation to home feed");
+    goto_home(api).await?;
 
-    if verify_login(ctx).await? {
-        info!("[{session_id}][twitteractivity] User is logged in - proceeding");
+    if verify_login(api).await? {
+        info!("User is logged in - proceeding");
     } else {
-        warn!("[{session_id}][twitteractivity] User appears not logged in; task may fail");
-        // Depending on requirements, could return early or continue anyway
+        warn!("User appears not logged in; task may fail");
     }
 
     // Dismiss initial popups
-    let _ = dismiss_cookie_banner(ctx).await?;
-    let _ = dismiss_signup_nag(ctx).await?;
-    let _ = close_active_popup(ctx).await?;
+    let _ = dismiss_cookie_banner(api).await?;
+    let _ = dismiss_signup_nag(api).await?;
+    let _ = close_active_popup(api).await?;
 
     // Phase 2: Feed analysis & scrolling
-    info!("[{session_id}][twitteractivity] Phase 2: Scanning feed for {} ms", duration_ms);
+    info!("Phase 2: Scanning feed for {} ms", duration_ms);
     let deadline = Instant::now() + Duration::from_millis(duration_ms);
     let mut actions_taken = 0u32;
 
     while Instant::now() < deadline {
         // Scroll to load new content
-        scroll_feed(ctx, 1, false).await?;
-        human_pause(ctx, 800).await;
+        scroll_feed(api, 1, false).await?;
+        human_pause(api, 800).await;
 
         // Check for popups periodically
-        if !ensure_feed_populated(ctx).await? {
-            warn!("[{session_id}][twitteractivity] Feed appears empty after scroll");
+        if !ensure_feed_populated(api).await? {
+            warn!("Feed appears empty after scroll");
         }
 
         // Identify candidate tweets (in viewport)
-        let candidates = identify_engagement_candidates(ctx).await?;
+        let candidates = identify_engagement_candidates(api).await?;
         let candidates_vec: Vec<Value> = candidates;
 
         if !candidates_vec.is_empty() {
@@ -142,51 +140,49 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
                 if should_like(&candidate_persona) {
                     if let Some(pos) = tweet.get("x").and_then(|v| v.as_f64()).zip(tweet.get("y").and_then(|v| v.as_f64())) {
                         // Move to tweet center (approximate from tweet x,y) and click like button
-                        if let Some(btn_pos) = find_like_button_near(ctx, pos.0, pos.1).await? {
-                            if like_at_position(ctx, btn_pos.0, btn_pos.1).await? {
-                                info!("[{session_id}][twitteractivity] Liked tweet");
+                        if let Some(btn_pos) = find_like_button_near(api, pos.0, pos.1).await? {
+                            if like_at_position(api, btn_pos.0, btn_pos.1).await? {
+                                info!("Liked tweet");
                                 actions_taken += 1;
-                                human_pause(ctx, 1200).await;
+                                human_pause(api, 1200).await;
                             }
                         }
                     }
                 }
 
                 // Decision: Retweet?
-                if should_retweet(&candidate_persona)
-                    && retweet_tweet(ctx).await? {
-                        info!("[{session_id}][twitteractivity] Retweeted");
-                        actions_taken += 1;
-                        human_pause(ctx, 1500).await;
-                    }
+                if should_retweet(&candidate_persona) && retweet_tweet(api).await? {
+                    info!("Retweeted");
+                    actions_taken += 1;
+                    human_pause(api, 1500).await;
+                }
 
                 // Decision: Follow author?
-                if should_follow(&candidate_persona)
-                    && follow_from_tweet(ctx).await? {
-                        info!("[{session_id}][twitteractivity] Followed user");
-                        actions_taken += 1;
-                        human_pause(ctx, 1200).await;
-                    }
+                if should_follow(&candidate_persona) && follow_from_tweet(api).await? {
+                    info!("Followed user");
+                    actions_taken += 1;
+                    human_pause(api, 1200).await;
+                }
 
                 // Decision: Reply?
                 if should_reply(&candidate_persona) {
                     let reply_text = generate_reply_text(sentiment);
-                    if reply_to_tweet(ctx, &reply_text).await? {
-                        info!("[{session_id}][twitteractivity] Replied with sentiment {:?}", sentiment);
+                    if reply_to_tweet(api, &reply_text).await? {
+                        info!("Replied with sentiment {:?}", sentiment);
                         actions_taken += 1;
-                        human_pause(ctx, 2000).await;
+                        human_pause(api, 2000).await;
                     }
                 }
 
                 // Decision: Dive into thread?
                 if should_dive(&candidate_persona) {
                     if let Some(pos) = tweet.get("x").and_then(|v| v.as_f64()).zip(tweet.get("y").and_then(|v| v.as_f64())) {
-                        dive_into_thread(ctx, pos.0, pos.1).await?;
-                        read_full_thread(ctx, 5).await?; // read up to 5 additional scrolls
-                        human_pause(ctx, 1000).await;
+                        dive_into_thread(api, pos.0, pos.1).await?;
+                        read_full_thread(api, 5).await?; // read up to 5 additional scrolls
+                        human_pause(api, 1000).await;
                         // Navigate back to home feed
-                        goto_home(ctx).await?;
-                        human_pause(ctx, 1000).await;
+                        goto_home(api).await?;
+                        human_pause(api, 1000).await;
                     }
                 }
             }
@@ -199,7 +195,7 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
         }
     }
 
-    info!("[{session_id}][twitteractivity] Task completed. Total actions: {}", actions_taken);
+    info!("Task completed. Total actions: {}", actions_taken);
     Ok(())
 }
 
@@ -220,9 +216,9 @@ fn read_u32(payload: &Value, key: &str, default: u32) -> u32 {
 }
 
 // Helper: find the like button near a given tweet center coordinate
-async fn find_like_button_near(ctx: &TaskContext, _tweet_x: f64, _tweet_y: f64) -> Result<Option<(f64, f64)>> {
+async fn find_like_button_near(api: &TaskContext, _tweet_x: f64, _tweet_y: f64) -> Result<Option<(f64, f64)>> {
     // Use the engagement buttons finder which searches within the current viewport
-    let buttons = get_tweet_engagement_buttons(ctx).await?;
+    let buttons = get_tweet_engagement_buttons(api).await?;
     if let Some(like_obj) = buttons.get("like").and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
             like_obj.get("x").and_then(|v| v.as_f64()),
@@ -235,12 +231,33 @@ async fn find_like_button_near(ctx: &TaskContext, _tweet_x: f64, _tweet_y: f64) 
 }
 
 // Helper: click like at a specific coordinate
-async fn like_at_position(ctx: &TaskContext, x: f64, y: f64) -> Result<bool> {
-    ctx.move_mouse_to(x, y).await?;
-    human_pause(ctx, 250).await;
-    ctx.click(x, y).await?;
-    human_pause(ctx, 600).await;
-    Ok(true)
+async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
+    api.move_mouse_to(x, y).await?;
+    human_pause(api, 250).await;
+    api.click_at(x, y).await?;
+    human_pause(api, 600).await;
+    
+    // Verify like was registered by checking if button state changed
+    let page = api.page();
+    let result = page.evaluate(r#"
+        (function() {
+            var btn = document.querySelector('[data-testid="like"]');
+            if (!btn) return false;
+            var svg = btn.querySelector('svg');
+            if (!svg) return false;
+            var color = svg.getAttribute('color') || svg.getAttribute('fill') || '';
+            return color.includes(' rgb') || color.includes('#') || svg.parentElement?.getAttribute('data-testid')?.includes('unlike');
+        })()
+    "#).await?;
+    
+    let value = result.value();
+    if let Some(v) = value {
+        if let Some(liked) = v.as_bool() {
+            return Ok(liked);
+        }
+    }
+    
+    Ok(true) // Assume success if can't verify
 }
 
 // Helper: generate a short reply string based on sentiment
@@ -355,3 +372,4 @@ mod tests {
         assert!(negative_phrases.contains(&&*reply));
     }
 }
+

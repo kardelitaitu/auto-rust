@@ -1,19 +1,12 @@
-//! Twitter Follow Task — Navigate to a user profile and click the follow button.
-//!
-//! This implementation is deterministic and scoped:
-//! - Uses profile-header-specific selectors to avoid following wrong user
-//! - Pre-checks for already-following state
-//! - Retries with reload on failure (mirrors Node.js robustFollow)
-//! - Verifies success by checking for "Following"/"Unfollow" button state
-
-use log::{info, warn};
 use anyhow::Result;
+use log::{info, warn};
 use serde_json::Value;
 use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
+use crate::utils::mouse::GhostCursor;
 use crate::utils::twitter::{
     close_active_popup,
     twitteractivity_selectors::*,
@@ -23,256 +16,310 @@ use crate::utils::twitter::{
 const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const MAX_ATTEMPTS: u32 = 5;
 const POST_RELOAD_ATTEMPTS: u32 = 2;
-const RETRY_DELAY_BASE_MS: u64 = 500;
 const VERIFY_TIMEOUT_MS: u64 = 20_000;
 
-/// Main entry point
-pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
+/// Retry delay: base 3s + attempt*1s, with ±500ms jitter
+fn backoff_delay(attempt: u32) -> u64 {
+    let base = 3000 + attempt * 1000;
+    let jitter = random_in_range(0, 1000) - 500; // -500 to +500
+    (base as i64 + jitter as i64).max(500) as u64 // min 500ms
+}
+
+pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let username = extract_username_from_payload(&payload)?;
     let profile_url = format!("https://x.com/{}", username);
 
     info!("[twitterfollow] Starting: target=@{}", username);
 
-    // 1. Navigate to profile
-    ctx.navigate(&profile_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.navigate(&profile_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
     info!("[twitterfollow] Navigated to {}", profile_url);
 
-    // 2. Verify we're on the correct profile
-    verify_current_profile(ctx, &username).await?;
+    verify_current_profile(api, &username).await?;
 
-    // 3. Warm-up: read the profile (simulate human)
-    human_pause(ctx, random_in_range(8000, 15000)).await;
+    // Already following pre-check
+    if is_already_following(api).await? {
+        info!("[twitterfollow] Already following @{}", username);
+        return Ok(());
+    }
 
-    // 4. Core follow logic with retries
-    let result = robust_follow(ctx, &username).await;
+    // Humanized read delay
+    human_pause(api, random_in_range(8000, 15000)).await;
 
-    match result {
-        Ok(followed) => {
-            if followed {
-                info!("[twitterfollow] ✅ Successfully followed @{}", username);
-            } else {
-                info!("[twitterfollow] ℹ️ No follow action needed (already following or button not found)");
-            }
-        }
-        Err(e) => {
-            warn!("[twitterfollow] ❌ Failed to follow @{}: {}", username, e);
-        }
+    let followed = robust_follow(api, &username).await?;
+
+    if followed {
+        info!("[twitterfollow] ✅ Successfully followed @{}", username);
+    } else {
+        info!("[twitterfollow] ℹ️ No action needed");
     }
 
     info!("[twitterfollow] Task complete");
     Ok(())
 }
 
-/// Main follow loop with retries and page reload fallback
-async fn robust_follow(ctx: &TaskContext, username: &str) -> Result<bool> {
-    let mut attempt = 0;
+async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
+    let mut attempt = 0u32;
     let mut has_reloaded = false;
+    let mut ghost = GhostCursor::new(api.page_arc());
 
     loop {
         attempt += 1;
 
-        // Check if we've exhausted pre-reload attempts
+        // Exhausted pre-reload attempts → reload
         if attempt > MAX_ATTEMPTS {
             if has_reloaded || POST_RELOAD_ATTEMPTS == 0 {
-                warn!("[twitterfollow] Exhausted all attempts");
                 return Ok(false);
             }
-            // Reload and continue with post-reload attempts
-            info!("[twitterfollow] Reloading page to retry...");
-            ctx.navigate(&format!("https://x.com/{}", username), DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
-            human_pause(ctx, random_in_range(5000, 10000)).await;
+            info!("[twitterfollow] Reloading page for retry...");
+            api.navigate(&format!("https://x.com/{}", username), DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+            human_pause(api, random_in_range(5000, 10000)).await;
             has_reloaded = true;
             continue;
         }
 
-        info!("[twitterfollow] Attempt {}/{}", attempt, MAX_ATTEMPTS + if has_reloaded { POST_RELOAD_ATTEMPTS } else { 0 });
+        info!("[twitterfollow] Attempt {}/{}",
+            attempt,
+            MAX_ATTEMPTS + if has_reloaded { POST_RELOAD_ATTEMPTS } else { 0 });
 
-        // Dismiss any interfering overlays (Escape + close active popup)
-        let _ = ctx.press("Escape").await;
-        let _ = close_active_popup(ctx).await;
+        // Dismiss overlays
+        let _ = api.press("Escape").await;
+        let _ = close_active_popup(api).await;
 
-        // Pre-check: already following?
-        if check_already_following(ctx).await? {
-            info!("[twitterfollow] Already following @{}", username);
+        // Soft error check
+        if check_soft_error(api).await? {
+            human_pause(api, random_in_range(5000, 8000)).await;
+            continue;
+        }
+
+        // Pre-check: already following (includes pending handling)
+        if handle_pending_state(api, username).await? {
             return Ok(true);
         }
 
-        // Locate follow button (scoped to profile header)
-        let button_coords = match find_follow_button_coords(ctx).await {
-            Ok(Some(coords)) => coords,
+        // Locate button
+        let coords = match find_follow_button_coords(api).await {
+            Ok(Some(c)) => c,
             Ok(None) => {
-                warn!("[twitterfollow] Follow button not found");
-                // Retry with delay
-                human_pause(ctx, random_in_range(1000, 3000)).await;
+                warn!("[twitterfollow] Follow button not visible");
+                maybe_backoff(api, attempt).await;
                 continue;
             }
             Err(e) => {
                 warn!("[twitterfollow] Error locating button: {}", e);
-                human_pause(ctx, random_in_range(2000, 5000)).await;
+                maybe_backoff(api, attempt).await;
                 continue;
             }
         };
 
-        // Safety re-check: button text still says "Follow"?
-        if !button_says_follow(ctx).await? {
-            info!("[twitterfollow] Button no longer says 'Follow' (already followed or state changed)");
+        // Safety: button still says "Follow"?
+        if !button_says_follow(api).await? {
+            info!("[twitterfollow] Button state changed to following");
             return Ok(true);
         }
 
-        // Click
-        humanized_click(ctx, button_coords.0, button_coords.1).await?;
-        info!("[twitterfollow] Clicked follow button at ({:.0}, {:.0})", button_coords.0, button_coords.1);
+        // Check actionability (not covered by overlay)
+        if !is_element_actionable(api, coords.0, coords.1).await? {
+            warn!("[twitterfollow] Button not actionable (possibly covered), retrying...");
+            maybe_backoff(api, attempt).await;
+            continue;
+        }
 
-        // Poll for follow state change (until unfollow button appears)
-        match poll_for_follow_success(ctx).await {
+        // Click with GhostCursor robustness
+        if let Err(e) = ghost.click_at(coords.0, coords.1).await {
+            warn!("[twitterfollow] GhostCursor click failed: {}", e);
+            maybe_backoff(api, attempt).await;
+            continue;
+        }
+
+        info!("[twitterfollow] Click successful, verifying...");
+
+        // Verify
+        match poll_for_follow_success(api).await {
             Ok(true) => {
-                info!("[twitterfollow] Follow verified (unfollow button visible)");
+                info!("[twitterfollow] ✅ Follow verified");
                 return Ok(true);
             }
             Ok(false) => {
-                warn!("[twitterfollow] Follow not verified within timeout");
-                // Retry
+                warn!("[twitterfollow] Follow not verified");
             }
             Err(e) => {
                 warn!("[twitterfollow] Verification error: {}", e);
             }
         }
 
-        // Wait before retry
-        let delay = random_in_range(RETRY_DELAY_BASE_MS, RETRY_DELAY_BASE_MS * 2);
-        human_pause(ctx, delay).await;
+        maybe_backoff(api, attempt).await;
     }
 }
 
-/// Pre-check: Is the unfollow button already visible? If yes, we're already following.
-async fn check_already_following(ctx: &TaskContext) -> Result<bool> {
-    // The `selector_following_indicator()` returns true/false if any unfollow-like button exists
-    let js = selector_following_indicator();
-    let result = ctx.page().evaluate(js.to_string()).await?;
-    let value = result.value();
-    if let Some(b) = value.and_then(|v| v.as_bool()) {
-        return Ok(b);
+// ---- Helper functions (unchanged) ----
+
+/// Check for soft errors (rate limits, suspended, etc.)
+async fn check_soft_error(api: &TaskContext) -> Result<bool> {
+    let js = r#"
+        (function() {
+            var body = document.body.innerText.toLowerCase();
+            if (body.includes('rate limit') || body.includes('too many attempts')) {
+                return true;
+            }
+            return false;
+        })()
+    "#;
+    let result = api.page().evaluate(js).await?;
+    Ok(result.value().and_then(|v: &Value| v.as_bool()).unwrap_or(false))
+}
+
+/// Handle pending state: if button says "pending", wait 3s and re-check
+async fn handle_pending_state(api: &TaskContext, _username: &str) -> Result<bool> {
+    if is_already_following(api).await? {
+        return Ok(true);
+    }
+    let info = match get_follow_button_info(api).await? {
+        Some(i) => i,
+        None => return Ok(false),
+    };
+    let txt = info.text.to_lowercase();
+    if txt.contains("pending") {
+        info!("[twitterfollow] Button in 'pending' state, waiting 3s...");
+        human_pause(api, 3000).await;
+        if is_already_following(api).await? {
+            info!("[twitterfollow] Pending resolved to following");
+            return Ok(true);
+        }
     }
     Ok(false)
 }
 
-/// Find follow button coordinates using scoped selector.
-/// Returns `Some((x,y))` for center of button, or `None` if not found.
-async fn find_follow_button_coords(ctx: &TaskContext) -> Result<Option<(f64, f64)>> {
-    let js = selector_follow_button();
-    let result = ctx.page().evaluate(js.to_string()).await?;
-    let value = result.value();
+/// Backoff delay before next attempt
+async fn maybe_backoff(api: &TaskContext, attempt: u32) {
+    if attempt < MAX_ATTEMPTS {
+        let delay = backoff_delay(attempt);
+        human_pause(api, delay).await;
+    }
+}
 
+/// Check if element center point is not covered by another element
+async fn is_element_actionable(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
+    let js = format!(
+        r#"
+        (function() {{
+            var el = document.elementFromPoint({}, {});
+            if (!el) return false;
+            var rect = el.getBoundingClientRect();
+            var centerX = rect.left + rect.width / 2;
+            var centerY = rect.top + rect.height / 2;
+            var dist = Math.sqrt(Math.pow({} - centerX, 2) + Math.pow({} - centerY, 2));
+            return dist < 5;
+        }})()
+        "#,
+        x, y, x, y
+    );
+    let result = api.page().evaluate(js).await?;
+    Ok(result.value().and_then(|v: &Value| v.as_bool()).unwrap_or(false))
+}
+
+async fn is_already_following(api: &TaskContext) -> Result<bool> {
+    match get_follow_button_info(api).await {
+        Ok(Some(info)) => {
+            let t = info.text.to_lowercase();
+            let l = info.label.to_lowercase();
+            Ok(t.contains("following") || t.contains("unfollow") || l.contains("following") || l.contains("unfollow"))
+        }
+        _ => Ok(false),
+    }
+}
+
+async fn find_follow_button_coords(api: &TaskContext) -> Result<Option<(f64, f64)>> {
+    match get_follow_button_info(api).await {
+        Ok(Some(info)) => Ok(Some((info.x, info.y))),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+async fn button_says_follow(api: &TaskContext) -> Result<bool> {
+    match get_follow_button_info(api).await {
+        Ok(Some(info)) => {
+            let t = info.text.to_lowercase();
+            let l = info.label.to_lowercase();
+            Ok(!(t.contains("following") || t.contains("unfollow") || l.contains("following") || l.contains("unfollow")))
+        }
+        Ok(None) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+struct ButtonInfo {
+    x: f64,
+    y: f64,
+    text: String,
+    label: String,
+}
+
+async fn get_follow_button_info(api: &TaskContext) -> Result<Option<ButtonInfo>> {
+    let js = selector_follow_button();
+    let result = api.page().evaluate(js).await?;
+    let value = result.value();
     if let Some(obj) = value.and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
             obj.get("x").and_then(|v| v.as_f64()),
             obj.get("y").and_then(|v| v.as_f64()),
         ) {
-            return Ok(Some((x, y)));
+            let text = obj.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let label = obj.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            return Ok(Some(ButtonInfo { x, y, text, label }));
         }
     }
     Ok(None)
 }
 
-/// Check if the current follow button still says "Follow" (not "Following"/"Pending"/"Unfollow").
-async fn button_says_follow(ctx: &TaskContext) -> Result<bool> {
-    let js = selector_follow_button();
-    let result = ctx.page().evaluate(js.to_string()).await?;
-    let value = result.value();
-
-    if let Some(obj) = value.and_then(|v| v.as_object()) {
-        if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
-            let lower = text.to_lowercase();
-            // If button says "following" or "unfollow", we shouldn't click
-            if lower.contains("following") || lower.contains("unfollow") {
-                return Ok(false);
-            }
-        }
-        if let Some(label) = obj.get("label").and_then(|v| v.as_str()) {
-            let lower = label.to_lowercase();
-            if lower.contains("following") || lower.contains("unfollow") {
-                return Ok(false);
-            }
-        }
-    }
-    Ok(true)
-}
-
-/// Perform a humanized click with mouse move and small pauses.
-async fn humanized_click(ctx: &TaskContext, x: f64, y: f64) -> Result<()> {
-    ctx.move_mouse_to(x, y).await?;
-    human_pause(ctx, 300).await; // deliberate hover
-    ctx.click(x, y).await?;
-    human_pause(ctx, 800).await; // wait for any UI update
-    Ok(())
-}
-
-/// Verify follow success by polling for the unfollow button.
-/// Returns `Ok(true)` if unfollow button appears within timeout.
-async fn poll_for_follow_success(ctx: &TaskContext) -> Result<bool> {
+async fn poll_for_follow_success(api: &TaskContext) -> Result<bool> {
     let deadline = std::time::Instant::now() + Duration::from_millis(VERIFY_TIMEOUT_MS);
-
     loop {
-        // Check 1: Is the unfollow button visible?
-        let js_unfollow = selector_following_indicator(); // returns true if button says following/unfollow
-        let result = ctx.page().evaluate(js_unfollow.to_string()).await?;
-        let value = result.value();
-        if let Some(true) = value.and_then(|v| v.as_bool()) {
+        // Check 1: following indicator (unfollow button)
+        let js_unfollow = selector_following_indicator();
+        let result = api.page().evaluate(js_unfollow.to_string()).await?;
+        if let Some(true) = result.value().and_then(|v: &Value| v.as_bool()) {
             return Ok(true);
         }
 
-        // Check 2: Re-evaluate follow button — did its text change to "Following"?
-        let js_follow = selector_follow_button();
-        let result2 = ctx.page().evaluate(js_follow.to_string()).await?;
-        let value2 = result2.value();
-        if let Some(obj) = value2.and_then(|v| v.as_object()) {
-            if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
-                if text.to_lowercase().contains("following") {
-                    return Ok(true);
-                }
-            }
-            if let Some(label) = obj.get("label").and_then(|v| v.as_str()) {
-                if label.to_lowercase().contains("following") {
-                    return Ok(true);
-                }
-            }
+        // Check 2: follow button text changed to "following"
+        if check_follow_button_says_following(api).await? {
+            return Ok(true);
         }
 
-        // Timeout?
         if std::time::Instant::now() >= deadline {
             return Ok(false);
         }
 
-        // Wait before next poll
         sleep(Duration::from_millis(500)).await;
     }
 }
 
-/// Verify that the current page's URL pathname contains the expected username.
-async fn verify_current_profile(ctx: &TaskContext, expected_username: &str) -> Result<()> {
-    let js = r#"
-        (function() {
-            return window.location.pathname;
-        })()
-    "#;
-    let result = ctx.page().evaluate(js.to_string()).await?;
-    let value = result.value();
-    if let Some(path) = value.and_then(|v| v.as_str()) {
-        // path should be like "/username" or "/username/"
+async fn check_follow_button_says_following(api: &TaskContext) -> Result<bool> {
+    match get_follow_button_info(api).await {
+        Ok(Some(info)) => {
+            let t = info.text.to_lowercase();
+            let l = info.label.to_lowercase();
+            Ok(t.contains("following") || l.contains("following"))
+        }
+        Ok(None) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+async fn verify_current_profile(api: &TaskContext, expected: &str) -> Result<()> {
+    let js = r#"window.location.pathname"#;
+    let result = api.page().evaluate(js.to_string()).await?;
+    if let Some(path) = result.value().and_then(|v: &Value| v.as_str()) {
         let clean = path.trim_matches('/');
-        if clean == expected_username {
+        if clean == expected || clean.to_lowercase() == expected.to_lowercase() {
             return Ok(());
         }
-        // Could be case mismatch? Normalize
-        if clean.to_lowercase() == expected_username.to_lowercase() {
-            return Ok(());
-        }
-        anyhow::bail!("Profile mismatch: expected '{}', got path '{}'", expected_username, path);
+        anyhow::bail!("Profile mismatch: expected '{}', got '{}'", expected, path);
     }
     anyhow::bail!("Could not read current URL pathname");
 }
 
-/// Extract username from payload (supports url/value/username fields)
 fn extract_username_from_payload(payload: &Value) -> Result<String> {
     if let Some(value) = payload.get("url") {
         if let Some(url_str) = value.as_str() {
@@ -285,31 +332,25 @@ fn extract_username_from_payload(payload: &Value) -> Result<String> {
             }
         }
     }
-
     if let Some(value) = payload.get("value") {
-        if let Some(value_str) = value.as_str() {
-            return Ok(value_str.to_string());
+        if let Some(v) = value.as_str() {
+            return Ok(v.to_string());
         }
     }
-
     if let Some(value) = payload.get("username") {
-        if let Some(value_str) = value.as_str() {
-            return Ok(value_str.to_string());
+        if let Some(v) = value.as_str() {
+            return Ok(v.to_string());
         }
     }
-
-    // Fallback: any non-empty string field
     if let Some(obj) = payload.as_object() {
-        for (key, val) in obj {
-            if key != "url" && key != "value" && key != "username" {
-                if let Some(v) = val.as_str() {
-                    if !v.is_empty() {
-                        return Ok(v.to_string());
-                    }
+        for (_, val) in obj {
+            if let Some(v) = val.as_str() {
+                if !v.is_empty() {
+                    return Ok(v.to_string());
                 }
             }
         }
     }
-
     anyhow::bail!("No username found in payload");
 }
+

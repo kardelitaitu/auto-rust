@@ -406,3 +406,146 @@ impl MetricsCollector {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_metrics_collector_new() {
+        let collector = MetricsCollector::new(100);
+        let stats = collector.get_stats();
+        assert_eq!(stats.total_tasks, 0);
+        assert_eq!(stats.succeeded, 0);
+    }
+
+    #[test]
+    fn test_task_started_increments_total() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        let stats = collector.get_stats();
+        assert_eq!(stats.total_tasks, 1);
+    }
+
+    #[test]
+    fn test_task_completed_success() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Success,
+            duration_ms: 100,
+            session_id: "s1".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: None,
+        });
+        let stats = collector.get_stats();
+        assert_eq!(stats.succeeded, 1);
+        assert_eq!(stats.total_tasks, 1);
+    }
+
+    #[test]
+    fn test_task_completed_failure() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Failed,
+            duration_ms: 50,
+            session_id: "s1".to_string(),
+            attempt: 1,
+            error_kind: Some(TaskErrorKind::Browser),
+            last_error: Some("error".to_string()),
+        });
+        let stats = collector.get_stats();
+        assert_eq!(stats.failed, 1);
+    }
+
+    #[test]
+    fn test_task_completed_timeout() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Timeout,
+            duration_ms: 30000,
+            session_id: "s1".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: None,
+        });
+        let stats = collector.get_stats();
+        assert_eq!(stats.timed_out, 1);
+    }
+
+    #[test]
+    fn test_success_rate_calculation() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Success,
+            duration_ms: 100,
+            session_id: "s1".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: None,
+        });
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Failed,
+            duration_ms: 50,
+            session_id: "s2".to_string(),
+            attempt: 1,
+            error_kind: Some(TaskErrorKind::Browser),
+            last_error: Some("e".to_string()),
+        });
+        let rate = collector.success_rate();
+        assert!((rate - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_success_rate_empty() {
+        let collector = MetricsCollector::new(100);
+        let rate = collector.success_rate();
+        assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_memory_thresholds_defaults() {
+        let thresholds = MemoryThresholds::default();
+        assert_eq!(thresholds.warning_bytes, 500 * 1024 * 1024);
+        assert_eq!(thresholds.critical_bytes, 1024 * 1024 * 1024);
+        assert_eq!(thresholds.warning_active_tasks, 50);
+        assert_eq!(thresholds.critical_active_tasks, 100);
+    }
+
+    #[test]
+    fn test_failure_breakdown_tracks_errors() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Failed,
+            duration_ms: 50,
+            session_id: "s1".to_string(),
+            attempt: 1,
+            error_kind: Some(TaskErrorKind::Timeout),
+            last_error: Some("timeout".to_string()),
+        });
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Failed,
+            duration_ms: 50,
+            session_id: "s1".to_string(),
+            attempt: 1,
+            error_kind: Some(TaskErrorKind::Timeout),
+            last_error: Some("timeout".to_string()),
+        });
+        let stats = collector.get_stats();
+        assert_eq!(stats.failure_breakdown.get("Timeout"), Some(&2));
+    }
+}

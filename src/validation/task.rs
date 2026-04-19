@@ -48,6 +48,7 @@ impl TaskPayload {
             "twitterfollow" => self.validate_twitterfollow(),
             "twitterreply" => self.validate_twitterreply(),
             "twitteractivity" => self.validate_twitteractivity(),
+            "demoqa" => self.validate_demoqa(),
             _ => {
                 info!("No validation schema for task: {}", self.name);
                 Ok(())
@@ -144,6 +145,13 @@ impl TaskPayload {
         }
         Ok(())
     }
+
+    fn validate_demoqa(&self) -> Result<()> {
+        if !self.payload.is_object() {
+            bail!("demoqa payload must be an object");
+        }
+        Ok(())
+    }
 }
 
 pub fn validate_task(name: &str, payload: Value) -> Result<()> {
@@ -171,5 +179,11 @@ mod tests {
     fn twitteractivity_requires_object() {
         assert!(validate_task("twitteractivity", json!([])).is_err());
         assert!(validate_task("twitteractivity", json!({})).is_ok());
+    }
+
+    #[test]
+    fn demoqa_requires_object() {
+        assert!(validate_task("demoqa", json!([])).is_err());
+        assert!(validate_task("demoqa", json!({})).is_ok());
     }
 }

@@ -129,3 +129,77 @@ impl Default for OpenRouterConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chat_message_user() {
+        let msg = ChatMessage::user("Hello");
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.content, "Hello");
+    }
+
+    #[test]
+    fn test_chat_message_system() {
+        let msg = ChatMessage::system("You are helpful");
+        assert_eq!(msg.role, "system");
+    }
+
+    #[test]
+    fn test_chat_message_assistant() {
+        let msg = ChatMessage::assistant("Sure, I can help");
+        assert_eq!(msg.role, "assistant");
+    }
+
+    #[test]
+    fn test_chat_request_defaults() {
+        let request = ChatRequest {
+            model: "llama3".to_string(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+        };
+        assert_eq!(request.model, "llama3");
+        assert!(request.messages.is_empty());
+    }
+
+    #[test]
+    fn test_llm_config_defaults() {
+        let config = LlmConfig::default();
+        assert_eq!(config.provider, LlmProvider::Ollama);
+    }
+
+    #[test]
+    fn test_ollama_config_defaults() {
+        let config = OllamaConfig::default();
+        assert_eq!(config.base_url, "http://localhost:11434");
+        assert_eq!(config.model, "llama3.2:latest");
+        assert_eq!(config.timeout_ms, 120000);
+    }
+
+    #[test]
+    fn test_openrouter_config_defaults() {
+        let config = OpenRouterConfig::default();
+        assert_eq!(config.base_url, "https://openrouter.ai/api/v1");
+        assert_eq!(config.model, "anthropic/claude-3-haiku");
+    }
+
+    #[test]
+    fn test_llm_provider_default() {
+        let provider = LlmProvider::default();
+        assert_eq!(provider, LlmProvider::Ollama);
+    }
+
+    #[test]
+    fn test_chat_response_parsing() {
+        let response = ChatResponse {
+            message: Some(ChatMessage::assistant("Response text")),
+            done: Some(true),
+            error: None,
+        };
+        assert!(response.done.unwrap());
+        assert!(response.error.is_none());
+    }
+}

@@ -10,10 +10,10 @@ use super::{twitteractivity_selectors::*, twitteractivity_humanized::*};
 
 /// Checks if any known popup/overlay/modal is present on the page.
 /// Returns a description of the popup type or `None` if none detected.
-pub async fn detect_popup(ctx: &TaskContext) -> Result<Option<String>> {
+pub async fn detect_popup(api: &TaskContext) -> Result<Option<String>> {
     // Check for overlay/modal
     let js = selector_popup_overlay();
-    let result = ctx.page().evaluate(js.to_string()).await?;
+    let result = api.page().evaluate(js.to_string()).await?;
     let value = result.value();
     if value.is_some() && !value.as_ref().unwrap().is_null() {
         return Ok(Some("overlay".to_string()));
@@ -21,14 +21,14 @@ pub async fn detect_popup(ctx: &TaskContext) -> Result<Option<String>> {
 
     // Check for "Follow on X" external redirect confirmation
     let js_confirm = selector_follow_confirm_modal();
-    let result = ctx.page().evaluate(js_confirm.to_string()).await?;
+    let result = api.page().evaluate(js_confirm.to_string()).await?;
     let value = result.value();
     if value.is_some() && !value.as_ref().unwrap().is_null() {
         return Ok(Some("follow_confirm".to_string()));
     }
 
     // Check if login flow is showing
-    if is_login_flow(ctx).await? {
+    if is_login_flow(api).await? {
         return Ok(Some("login_flow".to_string()));
     }
 
@@ -37,8 +37,8 @@ pub async fn detect_popup(ctx: &TaskContext) -> Result<Option<String>> {
 
 /// Attempts to close the currently active popup by clicking its close button.
 /// Returns true if a popup was found and closed.
-pub async fn close_active_popup(ctx: &TaskContext) -> Result<bool> {
-    if let Some(popup_type) = detect_popup(ctx).await? {
+pub async fn close_active_popup(api: &TaskContext) -> Result<bool> {
+    if let Some(popup_type) = detect_popup(api).await? {
         match popup_type.as_str() {
             "follow_confirm" => {
                 // "Follow on X" confirmation: try to find "Cancel" or close button
@@ -55,16 +55,16 @@ pub async fn close_active_popup(ctx: &TaskContext) -> Result<bool> {
                         return null;
                     })()
                 "#;
-                if let Ok(result) = ctx.page().evaluate(cancel_js.to_string()).await {
+                if let Ok(result) = api.page().evaluate(cancel_js.to_string()).await {
                     if let Some(obj) = result.value().and_then(|v: &Value| v.as_object()) {
                         if let (Some(x), Some(y)) = (
                             obj.get("x").and_then(|v: &Value| v.as_f64()),
                             obj.get("y").and_then(|v: &Value| v.as_f64()),
                         ) {
-                            ctx.move_mouse_to(x, y).await?;
-                            human_pause(ctx, 200).await;
-                            ctx.click(x, y).await?;
-                            human_pause(ctx, 500).await;
+                            api.move_mouse_to(x, y).await?;
+                            human_pause(api, 200).await;
+                            api.click_at(x, y).await?;
+                            human_pause(api, 500).await;
                             return Ok(true);
                         }
                     }
@@ -72,7 +72,7 @@ pub async fn close_active_popup(ctx: &TaskContext) -> Result<bool> {
             }
             _ => {
                 // Generic overlay: try to find X button
-                if attempt_close_popup(ctx).await? {
+                if attempt_close_popup(api).await? {
                     return Ok(true);
                 }
             }
@@ -84,7 +84,7 @@ pub async fn close_active_popup(ctx: &TaskContext) -> Result<bool> {
 
 /// Dismisses cookie banners using known selector patterns.
 /// Returns true if a cookie banner was found and dismissed.
-pub async fn dismiss_cookie_banner(ctx: &TaskContext) -> Result<bool> {
+pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
     // Try known cookie banner selectors
     let cookie_selectors = [
         "button[aria-label*='Accept']",
@@ -107,17 +107,17 @@ pub async fn dismiss_cookie_banner(ctx: &TaskContext) -> Result<bool> {
             "#,
             selector.replace('"', "\\\"")
         );
-        let result = ctx.page().evaluate(js).await;
+        let result = api.page().evaluate(js).await;
         if let Ok(res) = result {
             if let Some(obj) = res.value().and_then(|v: &Value| v.as_object()) {
                 if let (Some(x), Some(y)) = (
                     obj.get("x").and_then(|v: &Value| v.as_f64()),
                     obj.get("y").and_then(|v: &Value| v.as_f64()),
                 ) {
-                    ctx.move_mouse_to(x, y).await?;
-                    human_pause(ctx, 200).await;
-                    ctx.click(x, y).await?;
-                    human_pause(ctx, 800).await;
+                    api.move_mouse_to(x, y).await?;
+                    human_pause(api, 200).await;
+                    api.click_at(x, y).await?;
+                    human_pause(api, 800).await;
                     return Ok(true);
                 }
             }
@@ -129,7 +129,7 @@ pub async fn dismiss_cookie_banner(ctx: &TaskContext) -> Result<bool> {
 
 /// Closes any "sign up to join the conversation" nag screens.
 /// Returns true if a signup nag was dismissed.
-pub async fn dismiss_signup_nag(ctx: &TaskContext) -> Result<bool> {
+pub async fn dismiss_signup_nag(api: &TaskContext) -> Result<bool> {
     let js = r#"
         (function() {
             var nag = document.querySelector('div[data-testid="sidebarColumn"]') ||
@@ -144,19 +144,21 @@ pub async fn dismiss_signup_nag(ctx: &TaskContext) -> Result<bool> {
             return null;
         })()
     "#;
-    let result = ctx.page().evaluate(js.to_string()).await?;
+    let result = api.page().evaluate(js.to_string()).await?;
     let value = result.value();
     if let Some(obj) = value.and_then(|v: &Value| v.as_object()) {
         if let (Some(x), Some(y)) = (
             obj.get("x").and_then(|v: &Value| v.as_f64()),
             obj.get("y").and_then(|v: &Value| v.as_f64()),
         ) {
-            ctx.move_mouse_to(x, y).await?;
-            human_pause(ctx, 200).await;
-            ctx.click(x, y).await?;
-            human_pause(ctx, 500).await;
+            api.move_mouse_to(x, y).await?;
+            human_pause(api, 200).await;
+            api.click_at(x, y).await?;
+            human_pause(api, 500).await;
             return Ok(true);
         }
     }
     Ok(false)
 }
+
+

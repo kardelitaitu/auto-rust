@@ -1,5 +1,13 @@
 //! Public browser automation framework surface.
 //!
+//! Task-api verbs live on `TaskContext` and follow the short `api.*`
+//! style:
+//! - `click`, `double_click`, `right_click`, `hover`
+//! - `focus`, `keyboard`, `randomcursor`
+//! - `clear`, `select_all`
+//! - `exists`, `visible`, `text`, `wait_for`, `wait_for_visible`
+//! - `scroll_to`, `url`, `title`
+//!
 //! Tasks should depend on `TaskContext` and the capability/state modules,
 //! not on the lower-level utilities directly.
 

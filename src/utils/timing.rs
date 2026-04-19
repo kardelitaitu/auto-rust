@@ -2,7 +2,7 @@
 //!
 //! Provides functions for:
 //! - Random delays within specified ranges
-//! - Human-like pauses with Gaussian distribution
+//! - Human-like pauses with Gaussian or uniform distribution
 //! - Utilities for simulating realistic timing in automated tasks
 
 use tokio::time::{sleep, Duration};
@@ -52,6 +52,19 @@ pub async fn human_pause(base_ms: u64, variance_pct: u32) {
 
     let delay = gaussian(base_ms as f64, std_dev, min_delay, max_delay);
     sleep(Duration::from_millis(delay as u64)).await;
+}
+
+/// Pauses execution for a uniform random duration around a base value.
+///
+/// The final delay is sampled uniformly from:
+/// `base_ms * (1 - variance_pct)` .. `base_ms * (1 + variance_pct)`
+#[allow(dead_code)]
+pub async fn uniform_pause(base_ms: u64, variance_pct: u32) {
+    let variance = (variance_pct as f64 / 100.0).clamp(0.0, 1.0);
+    let min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
+    let max_delay = (base_ms as f64 * (1.0 + variance)).min(30000.0);
+    let delay = random_in_range(min_delay.round() as u64, max_delay.round() as u64);
+    sleep(Duration::from_millis(delay)).await;
 }
 
 #[cfg(test)]

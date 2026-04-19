@@ -1,7 +1,7 @@
 //! Centralized JavaScript selector snippets for Twitter/X DOM queries.
 //!
 //! All selectors are designed for Twitter/X's dynamic class structure.
-//! Functions return JS code as &'static str that can be passed to `ctx.page().evaluate()`.
+//! Functions return JS code as &'static str that can be passed to `api.page().evaluate()`.
 
 /// Returns the best selector to detect that the main timeline/feed is visible.
 /// Used to verify successful navigation to the home timeline.
@@ -245,3 +245,4 @@ pub fn js_extract_username_from_url() -> &'static str {
         })()
     "#
 }
+

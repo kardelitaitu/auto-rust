@@ -167,25 +167,129 @@ cargo run demoqa
 ```
 
 ### Twitter Activity (`twitteractivity`)
-Automated Twitter/X engagement with persona-based behavior.
+Simulates human-like Twitter/X engagement with persona-based behavior.
 
 ```bash
+# Run with default persona
 cargo run twitteractivity
+
+# Run with custom duration and engagement limits
+cargo run twitteractivity,duration_ms=120000,scroll_count=12
+
+# Run with custom persona weights
+cargo run 'twitteractivity,weights={"like_prob":0.4,"retweet_prob":0.15,"follow_prob":0.05}'
 ```
+
+**Features:**
+- 🎭 **Persona-Based Behavior**: 21 preset personas (teen, senior, professional, etc.)
+- ❤️ **Like Tweets**: Human-like cursor movement and timing
+- 🔁 **Retweet**: Native retweets with modal confirmation
+- 👤 **Follow Users**: From tweet context or profile pages
+- 💬 **Reply**: Context-aware reply composition (V2: LLM-powered)
+- 🧵 **Thread Dives**: Read full conversation threads
+- 🔖 **Bookmark**: Save tweets (disabled in V1, config-driven)
+
+**Engagement Limits (Default):**
+| Action | Limit | Configurable |
+|--------|-------|--------------|
+| Likes | 5 | `TWITTER_MAX_LIKES` |
+| Retweets | 3 | `TWITTER_MAX_RETWEETS` |
+| Follows | 2 | `TWITTER_MAX_FOLLOWS` |
+| Replies | 1 | `TWITTER_MAX_REPLIES` |
+| Thread Dives | 3 | `TWITTER_MAX_THREAD_DIVES` |
+| **Total** | **10** | `TWITTER_MAX_TOTAL_ACTIONS` |
+
+**Configuration:**
+```toml
+[twitter_activity]
+feed_scan_duration_ms = 120000    # 2 minutes
+feed_scroll_count = 12             # Scroll actions
+engagement_candidate_count = 5     # Tweets to consider
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 0                  # Disabled in V1
+max_total_actions = 10
+
+# LLM Configuration (V2 - for smart replies & quote tweets)
+[twitter_activity.llm]
+enabled = false                    # Set true for V2 features
+provider = "ollama"
+model = "llama3.2:latest"
+```
+
+**Payload Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `duration_ms` | u64 | 120000 | Session duration |
+| `scroll_count` | u32 | 12 | Scroll actions |
+| `candidate_count` | u32 | 5 | Engagement candidates |
+| `weights` | object | persona | Engagement probabilities |
+| `profile` | string | Average | Persona preset |
+
+**Persona Presets:**
+`Average`, `Teen`, `Senior`, `Enthusiast`, `PowerUser`, `Cautious`, `Impatient`, `Erratic`, `Researcher`, `Casual`, `Professional`, `Novice`, `Expert`, `Distracted`, `Focused`, `Analytical`, `QuickScanner`, `Thorough`, `Adaptive`, `Stressed`, `Leisure`
+
+---
 
 ### Twitter Follow (`twitterfollow`)
-Twitter/X profile interaction task.
+Navigate to Twitter/X profiles and follow users with human-like behavior.
 
 ```bash
-cargo run twitterfollow
+# Follow from profile URL
+cargo run twitterfollow=url=https://x.com/username
+
+# Follow from tweet URL (navigates to profile)
+cargo run twitterfollow=url=https://x.com/user/status/123
+
+# Follow with username directly
+cargo run 'twitterfollow={"username":"username"}'
 ```
+
+**Features:**
+- 🎯 **Smart URL Detection**: Handles profile URLs, tweet URLs, usernames
+- ✅ **Already Following Check**: Prevents duplicate follows
+- ⏳ **Pending State Handling**: Waits for follow confirmation
+- 🔄 **Retry Logic**: Page reload on failure (up to 7 attempts)
+- 🛡️ **Rate Limit Detection**: Skips actions when rate-limited
+- 👻 **Popup Dismissal**: Handles login/signup modals
+
+**Rate Limit Signals Detected:**
+- "Rate limit"
+- "Too many attempts"
+- "Try again later"
+- "You have been rate limited"
+- "Temporary restriction"
+- "Something went wrong"
+- "Unable to follow"
+
+---
 
 ### Twitter Reply (`twitterreply`)
-Extracts tweet context and composes a reply flow for the currently opened tweet.
+Extract tweet context and compose human-like replies.
 
 ```bash
-cargo run twitterreply=url=https://x.com/...
+# Reply to specific tweet
+cargo run twitterreply=url=https://x.com/user/status/123
 ```
+
+**Features:**
+- 📝 **Context Extraction**: Reads tweet + top replies
+- 🎯 **Sentiment Analysis**: Matches reply tone to context
+- ⚡ **Quick Generation**: Fast, template-based replies
+- 🔜 **V2: LLM-Powered**: Contextual AI-generated replies
+
+**V2 (Planned):**
+- LLM-powered contextual replies
+- Multi-turn conversation tracking
+- Language matching (reply in tweet's language)
+- Smart engagement decisions (skip low-quality tweets)
+
+See `V2_ROADMAP.md` for implementation timeline.
 
 ## ⚙️ Configuration
 
@@ -576,6 +680,7 @@ pub mod my_new_task;
 Note: `TaskContext` is the task-api. `keyboard(...)` is the preferred typing verb. `api.r#type(...)` remains available if you want the Rust-keyword-safe alias.
 
 High-level task-api verbs already include a short settle pause after the action. `api.pause(base_ms)` is the explicit uniform wait helper and uses a 20% deviation band.
+`api.click(selector)` is the default click mechanism: selector pipeline with scroll + move + click. Use coordinate clicks only when you already have coordinates or the selector path is not appropriate.
 
 Common task-api verbs now include `api.click(...)`, `api.click_and_wait(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.hover(...)`, `api.keyboard(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
 

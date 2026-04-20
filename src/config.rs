@@ -134,6 +134,79 @@ pub struct TwitterActivityConfig {
     /// Path to persona file (optional)
     #[serde(default)]
     pub persona_file_path: Option<String>,
+    
+    /// Engagement limits for rate limit protection
+    #[serde(default)]
+    pub engagement_limits: EngagementLimitsConfig,
+}
+
+/// Engagement limits configuration for Twitter automation.
+/// Prevents rate limits and account restrictions by capping actions per session.
+#[derive(Debug, Deserialize, Clone)]
+pub struct EngagementLimitsConfig {
+    /// Maximum likes per session (default: 5)
+    #[serde(default = "default_max_likes")]
+    pub max_likes: u32,
+    /// Maximum retweets per session (default: 3)
+    #[serde(default = "default_max_retweets")]
+    pub max_retweets: u32,
+    /// Maximum follows per session (default: 2)
+    #[serde(default = "default_max_follows")]
+    pub max_follows: u32,
+    /// Maximum replies per session (default: 1)
+    #[serde(default = "default_max_replies")]
+    pub max_replies: u32,
+    /// Maximum thread dives per session (default: 3)
+    #[serde(default = "default_max_thread_dives")]
+    pub max_thread_dives: u32,
+    /// Maximum bookmarks per session (default: 0, disabled in V1)
+    #[serde(default = "default_max_bookmarks")]
+    pub max_bookmarks: u32,
+    /// Maximum total engagement actions per session (default: 10)
+    #[serde(default = "default_max_total_actions")]
+    pub max_total_actions: u32,
+}
+
+fn default_max_likes() -> u32 {
+    5
+}
+
+fn default_max_retweets() -> u32 {
+    3
+}
+
+fn default_max_follows() -> u32 {
+    2
+}
+
+fn default_max_replies() -> u32 {
+    1
+}
+
+fn default_max_thread_dives() -> u32 {
+    3
+}
+
+fn default_max_bookmarks() -> u32 {
+    0
+}
+
+fn default_max_total_actions() -> u32 {
+    10
+}
+
+impl Default for EngagementLimitsConfig {
+    fn default() -> Self {
+        Self {
+            max_likes: default_max_likes(),
+            max_retweets: default_max_retweets(),
+            max_follows: default_max_follows(),
+            max_replies: default_max_replies(),
+            max_thread_dives: default_max_thread_dives(),
+            max_bookmarks: default_max_bookmarks(),
+            max_total_actions: default_max_total_actions(),
+        }
+    }
 }
 
 fn default_feed_scan_duration() -> u64 {
@@ -153,6 +226,7 @@ impl Default for TwitterActivityConfig {
             feed_scroll_count: default_feed_scroll_count(),
             engagement_candidate_count: default_engagement_candidate_count(),
             persona_file_path: None,
+            engagement_limits: EngagementLimitsConfig::default(),
         }
     }
 }
@@ -228,33 +302,6 @@ impl Default for BrowserProfile {
 mod tests {
     use super::*;
 
-    fn test_browser_config() -> BrowserConfig {
-        BrowserConfig {
-            connectors: vec![],
-            connection_timeout_ms: 30000,
-            max_discovery_retries: 3,
-            discovery_retry_delay_ms: 500,
-            circuit_breaker: CircuitBreakerConfig::default(),
-            profiles: vec![BrowserProfile::default()],
-            roxybrowser: RoxybrowserConfig::default(),
-            user_agent: None,
-            extra_http_headers: BTreeMap::new(),
-        }
-    }
-
-    fn test_orchestrator_config() -> OrchestratorConfig {
-        OrchestratorConfig {
-            max_global_concurrency: 5,
-            task_timeout_ms: 60000,
-            group_timeout_ms: 300000,
-            worker_wait_timeout_ms: 10000,
-            stuck_worker_threshold_ms: 120000,
-            task_stagger_delay_ms: 500,
-            max_retries: 3,
-            retry_delay_ms: 2000,
-        }
-    }
-
     #[test]
     fn test_browser_config_defaults() {
         let config = BrowserConfig::default();
@@ -277,6 +324,10 @@ mod tests {
         assert_eq!(config.feed_scan_duration_ms, 60000);
         assert_eq!(config.feed_scroll_count, 10);
         assert_eq!(config.engagement_candidate_count, 5);
+        assert_eq!(config.engagement_limits.max_likes, 5);
+        assert_eq!(config.engagement_limits.max_retweets, 3);
+        assert_eq!(config.engagement_limits.max_follows, 2);
+        assert_eq!(config.engagement_limits.max_total_actions, 10);
     }
 
     #[test]
@@ -396,6 +447,28 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             .collect();
     }
 
+    // Twitter Activity engagement limits overrides
+    if let Ok(max_likes) = env::var("TWITTER_MAX_LIKES") {
+        config.twitter_activity.engagement_limits.max_likes =
+            max_likes.parse().unwrap_or(config.twitter_activity.engagement_limits.max_likes);
+    }
+    if let Ok(max_retweets) = env::var("TWITTER_MAX_RETWEETS") {
+        config.twitter_activity.engagement_limits.max_retweets =
+            max_retweets.parse().unwrap_or(config.twitter_activity.engagement_limits.max_retweets);
+    }
+    if let Ok(max_follows) = env::var("TWITTER_MAX_FOLLOWS") {
+        config.twitter_activity.engagement_limits.max_follows =
+            max_follows.parse().unwrap_or(config.twitter_activity.engagement_limits.max_follows);
+    }
+    if let Ok(max_replies) = env::var("TWITTER_MAX_REPLIES") {
+        config.twitter_activity.engagement_limits.max_replies =
+            max_replies.parse().unwrap_or(config.twitter_activity.engagement_limits.max_replies);
+    }
+    if let Ok(max_total) = env::var("TWITTER_MAX_TOTAL_ACTIONS") {
+        config.twitter_activity.engagement_limits.max_total_actions =
+            max_total.parse().unwrap_or(config.twitter_activity.engagement_limits.max_total_actions);
+    }
+
     Ok(config)
 }
 
@@ -413,19 +486,19 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 /// Returns an error if any required values are zero or invalid
 pub fn validate_config(config: &Config) -> Result<()> {
     let report = ConfigValidationReport::new();
-    
+
     // Validate orchestrator settings
     report.validate_orchestrator_config(&config.orchestrator)?;
-    
+
     // Validate browser settings
     report.validate_browser_config(&config.browser)?;
-    
+
     // Validate circuit breaker config
     report.validate_circuit_breaker(&config.browser.circuit_breaker)?;
-    
+
     // Validate Twitter Activity config
     report.validate_twitter_activity_config(&config.twitter_activity)?;
-    
+
     info!("Config validation passed");
     Ok(())
 }
@@ -444,7 +517,7 @@ impl ConfigValidationReport {
             warnings: Vec::new(),
         }
     }
-    
+
     /// Validate orchestrator configuration with range checks
     pub fn validate_orchestrator_config(&self, config: &OrchestratorConfig) -> Result<()> {
         // Concurrency validation (1-100 range)
@@ -465,7 +538,7 @@ impl ConfigValidationReport {
                 config.max_global_concurrency
             );
         }
-        
+
         // Timeout validations
         if config.task_timeout_ms == 0 {
             bail!("task_timeout_ms must be > 0");
@@ -482,7 +555,7 @@ impl ConfigValidationReport {
                 config.task_timeout_ms
             );
         }
-        
+
         if config.group_timeout_ms == 0 {
             bail!("group_timeout_ms must be > 0");
         }
@@ -490,11 +563,10 @@ impl ConfigValidationReport {
             warn!(
                 "group_timeout_ms ({}) is less than task_timeout_ms ({}). \
                  This may cause group timeouts before individual tasks complete.",
-                config.group_timeout_ms,
-                config.task_timeout_ms
+                config.group_timeout_ms, config.task_timeout_ms
             );
         }
-        
+
         // Worker timeout validation
         if config.worker_wait_timeout_ms == 0 {
             bail!("worker_wait_timeout_ms must be > 0");
@@ -505,7 +577,7 @@ impl ConfigValidationReport {
                 config.worker_wait_timeout_ms
             );
         }
-        
+
         // Retry validation
         if config.max_retries > 10 {
             warn!(
@@ -523,7 +595,7 @@ impl ConfigValidationReport {
                 config.retry_delay_ms
             );
         }
-        
+
         // Stagger delay validation
         if config.task_stagger_delay_ms > 10_000 {
             warn!(
@@ -531,10 +603,10 @@ impl ConfigValidationReport {
                 config.task_stagger_delay_ms
             );
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate browser configuration
     pub fn validate_browser_config(&self, config: &BrowserConfig) -> Result<()> {
         // Discovery retry validation
@@ -547,7 +619,7 @@ impl ConfigValidationReport {
                 config.max_discovery_retries
             );
         }
-        
+
         if config.discovery_retry_delay_ms == 0 {
             warn!("discovery_retry_delay_ms is 0. Consider adding a delay between retries.");
         }
@@ -557,20 +629,23 @@ impl ConfigValidationReport {
                 config.discovery_retry_delay_ms
             );
         }
-        
+
         // Profile name uniqueness validation
         let mut seen_names = std::collections::HashSet::new();
         for profile in &config.profiles {
             if !seen_names.insert(&profile.name) {
-                bail!("Duplicate browser profile name: '{}'. Profile names must be unique.", profile.name);
+                bail!(
+                    "Duplicate browser profile name: '{}'. Profile names must be unique.",
+                    profile.name
+                );
             }
-            
+
             // Validate profile name is not empty
             if profile.name.trim().is_empty() {
                 bail!("Browser profile name cannot be empty");
             }
         }
-        
+
         // RoxyBrowser API URL format validation
         if !config.roxybrowser.api_url.is_empty() {
             let url = &config.roxybrowser.api_url;
@@ -587,21 +662,21 @@ impl ConfigValidationReport {
                 );
             }
         }
-        
+
         // API key validation (warn if empty but don't fail - might not be using RoxyBrowser)
         if config.roxybrowser.enabled && config.roxybrowser.api_key.is_empty() {
             warn!("RoxyBrowser is enabled but api_key is empty. API requests will fail.");
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate circuit breaker configuration
     pub fn validate_circuit_breaker(&self, config: &CircuitBreakerConfig) -> Result<()> {
         if !config.enabled {
             return Ok(());
         }
-        
+
         if config.failure_threshold == 0 {
             bail!("circuit_breaker.failure_threshold must be > 0");
         }
@@ -611,7 +686,7 @@ impl ConfigValidationReport {
                 config.failure_threshold
             );
         }
-        
+
         if config.success_threshold == 0 {
             bail!("circuit_breaker.success_threshold must be > 0");
         }
@@ -621,7 +696,7 @@ impl ConfigValidationReport {
                 config.success_threshold
             );
         }
-        
+
         if config.half_open_time_ms < 5_000 {
             warn!(
                 "circuit_breaker.half_open_time_ms ({}) is very low. Circuit may close prematurely.",
@@ -634,10 +709,10 @@ impl ConfigValidationReport {
                 config.half_open_time_ms
             );
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate Twitter Activity configuration
     pub fn validate_twitter_activity_config(&self, config: &TwitterActivityConfig) -> Result<()> {
         // Feed scan duration validation (10s - 30min range)
@@ -655,7 +730,7 @@ impl ConfigValidationReport {
                 config.feed_scan_duration_ms
             );
         }
-        
+
         // Feed scroll count validation
         if config.feed_scroll_count == 0 {
             bail!("twitter_activity.feed_scroll_count must be > 0");
@@ -666,7 +741,7 @@ impl ConfigValidationReport {
                 config.feed_scroll_count
             );
         }
-        
+
         // Engagement candidate count validation
         if config.engagement_candidate_count == 0 {
             bail!("twitter_activity.engagement_candidate_count must be > 0");
@@ -677,14 +752,76 @@ impl ConfigValidationReport {
                 config.engagement_candidate_count
             );
         }
-        
+
         // Persona file path validation (if provided)
         if let Some(path) = &config.persona_file_path {
             if !std::path::Path::new(path).exists() {
-                warn!("twitter_activity.persona_file_path does not exist: {}", path);
+                warn!(
+                    "twitter_activity.persona_file_path does not exist: {}",
+                    path
+                );
             }
         }
+
+        // Engagement limits validation
+        let limits = &config.engagement_limits;
         
+        if limits.max_total_actions == 0 {
+            bail!("twitter_activity.engagement_limits.max_total_actions must be > 0");
+        }
+        
+        if limits.max_total_actions > 50 {
+            warn!(
+                "twitter_activity.engagement_limits.max_total_actions ({}) is very high. \
+                 This may trigger rate limiting or account restrictions.",
+                limits.max_total_actions
+            );
+        }
+
+        // Check individual limits don't exceed total
+        if limits.max_likes > limits.max_total_actions {
+            warn!(
+                "twitter_activity.engagement_limits.max_likes ({}) exceeds max_total_actions ({}). \
+                 Like limit will be capped by total.",
+                limits.max_likes, limits.max_total_actions
+            );
+        }
+        if limits.max_retweets > limits.max_total_actions {
+            warn!(
+                "twitter_activity.engagement_limits.max_retweets ({}) exceeds max_total_actions ({}).",
+                limits.max_retweets, limits.max_total_actions
+            );
+        }
+        if limits.max_follows > limits.max_total_actions {
+            warn!(
+                "twitter_activity.engagement_limits.max_follows ({}) exceeds max_total_actions ({}).",
+                limits.max_follows, limits.max_total_actions
+            );
+        }
+
+        // Conservative limits warning
+        if limits.max_likes > 10 {
+            warn!(
+                "twitter_activity.engagement_limits.max_likes ({}) is high. \
+                 Twitter may flag this as automated behavior. Recommended: ≤5",
+                limits.max_likes
+            );
+        }
+        if limits.max_retweets > 5 {
+            warn!(
+                "twitter_activity.engagement_limits.max_retweets ({}) is high. \
+                 Twitter may flag this as automated behavior. Recommended: ≤3",
+                limits.max_retweets
+            );
+        }
+        if limits.max_follows > 5 {
+            warn!(
+                "twitter_activity.engagement_limits.max_follows ({}) is high. \
+                 Twitter may flag this as automated behavior. Recommended: ≤2",
+                limits.max_follows
+            );
+        }
+
         Ok(())
     }
 }

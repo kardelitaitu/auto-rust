@@ -2,8 +2,6 @@ use anyhow::Result;
 use serde_json::Value;
 use log::{info, warn};
 use rand::Rng;
-use std::time::Duration;
-use tokio::time::sleep;
 use crate::prelude::TaskContext;
 use crate::llm::{Llm, ChatMessage, reply_engine_system_prompt};
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
@@ -17,8 +15,8 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started - target: {}", tweet_url);
 
     info!("Trampoline navigation...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
-    sleep(Duration::from_millis(2000)).await;
+api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.pause(2000).await;
     
     info!("Scrolling down (10-20s)...");
     scroll_down_random(api).await?;
@@ -48,17 +46,17 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("AI Reply: {}", reply_text);
 
     info!("Clicking reply button...");
-    click_reply_button(api).await?;
+click_reply_button(api).await?;
 
-    sleep(Duration::from_millis(1500)).await;
+    api.pause(1500).await;
 
     info!("Typing reply...");
     type_reply(api, &reply_text).await?;
 
-    sleep(Duration::from_millis(1000)).await;
+    api.pause(1000).await;
 
     info!("Posting reply...");
-    let posted = post_reply(api).await?;
+    let posted = post_reply_with_retry(api, 3).await?;
 
     if posted {
         info!("Reply posted successfully!");
@@ -66,7 +64,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         warn!("Failed to post reply");
     }
 
-    sleep(Duration::from_millis(POST_WAIT_MS)).await;
+    api.pause(POST_WAIT_MS).await;
     info!("Task completed");
     Ok(())
 }
@@ -201,6 +199,27 @@ async fn post_reply(api: &TaskContext) -> Result<bool> {
     Ok(true)
 }
 
+async fn post_reply_with_retry(api: &TaskContext, max_retries: u32) -> Result<bool> {
+    let mut last_error: Option<anyhow::Error> = None;
+    for attempt in 1..=max_retries {
+        match post_reply(api).await {
+            Ok(true) => return Ok(true),
+            Ok(false) => {
+                warn!("Post failed (attempt {}/{})", attempt, max_retries);
+                last_error = Some(anyhow::anyhow!("Post returned false"));
+            }
+            Err(e) => {
+                warn!("Post error (attempt {}/{}): {}", attempt, max_retries, e);
+                last_error = Some(e);
+            }
+        }
+        if attempt < max_retries {
+            api.pause(2000).await;
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {} retries", max_retries)))
+}
+
 fn sanitize_reply(text: &str) -> String {
     let mut result = text.trim().to_string();
     
@@ -224,9 +243,8 @@ async fn scroll_down_random(api: &TaskContext) -> Result<()> {
     while start.elapsed().as_millis() < duration_ms {
         let scroll_amount = rand::thread_rng().gen_range(200..=500);
         let js = format!("window.scrollBy(0, {})", scroll_amount);
-        page.evaluate(js).await?;
-        let pause = rand::thread_rng().gen_range(100..=300);
-        sleep(Duration::from_millis(pause)).await;
+page.evaluate(js).await?;
+        api.pause(200).await;
     }
     
     Ok(())
@@ -240,9 +258,8 @@ async fn scroll_up_faster(api: &TaskContext) -> Result<()> {
     while start.elapsed().as_millis() < duration_ms {
         let scroll_amount = rand::thread_rng().gen_range(400..=800);
         let js = format!("window.scrollBy(0, -{})", scroll_amount);
-        page.evaluate(js).await?;
-        let pause = rand::thread_rng().gen_range(50..=150);
-        sleep(Duration::from_millis(pause)).await;
+page.evaluate(js).await?;
+        api.pause(100).await;
     }
     
     Ok(())

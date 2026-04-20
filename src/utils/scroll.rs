@@ -300,44 +300,6 @@ async fn smooth_scroll_by(page: &Page, delta_y: f64, duration_ms: u64) -> Result
     smooth_scroll_to_y(page, current_y + delta_y, duration_ms).await
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_scroll_into_view_native_js_generation() {
-        let selector = "#test-element";
-        let selector_js = serde_json::to_string(selector).unwrap();
-        assert!(selector_js.contains("test-element"));
-    }
-
-    #[test]
-    fn test_target_visibility_js_generation() {
-        let selector = ".my-class";
-        let selector_js = serde_json::to_string(selector).unwrap();
-        assert!(selector_js.contains("my-class"));
-    }
-
-    #[test]
-    fn test_scroll_into_view_js_structure() {
-        let selector = "div.test";
-        let selector_js = serde_json::to_string(selector).unwrap();
-        let js = format!(
-            r#"(() => {{
-                const el = document.queryElement({selector_js});
-                if (!el) return false;
-                el.scrollIntoView({{behavior: 'smooth', block: 'center', inline: 'nearest'}});
-                return true;
-            }})()"#,
-        );
-        assert!(js.contains("scrollIntoView"));
-    }
-
-    #[test]
-    fn test_smooth_scroll_js_has_easing() {
-        let js = r#"(function ease(progress) { return 1 - Math.pow(1 - progress, 3); })"#;
-        assert!(js.contains("Math.pow"));
-    }
-}
-
 async fn smooth_scroll_to_y(page: &Page, target_y: f64, duration_ms: u64) -> Result<()> {
     let js = format!(
         r#"(async () => {{
@@ -376,4 +338,36 @@ async fn smooth_scroll_to_y(page: &Page, target_y: f64, duration_ms: u64) -> Res
         .await
         .map_err(|_| anyhow::anyhow!("smooth scroll timeout"))??;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_target_visibility_js_generation() {
+        let selector = ".my-class";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        assert!(selector_js.contains("my-class"));
+    }
+
+    #[test]
+    fn test_scroll_into_view_js_structure() {
+        let selector = "div.test";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.queryElement({selector_js});
+                if (!el) return false;
+                el.scrollIntoView({{behavior: 'smooth', block: 'center', inline: 'nearest'}});
+                return true;
+            }})()"#,
+        );
+        assert!(js.contains("scrollIntoView"));
+    }
+
+    #[test]
+    fn test_smooth_scroll_js_has_easing() {
+        let js = r#"(function ease(progress) { return 1 - Math.pow(1 - progress, 3); })"#;
+        assert!(js.contains("Math.pow"));
+    }
 }

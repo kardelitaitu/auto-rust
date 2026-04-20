@@ -2,11 +2,9 @@ use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
 use std::time::Duration;
-use tokio::time::sleep;
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
-use crate::utils::mouse::GhostCursor;
 use crate::utils::twitter::{
     close_active_popup,
     twitteractivity_selectors::*,
@@ -19,20 +17,48 @@ const POST_RELOAD_ATTEMPTS: u32 = 2;
 const VERIFY_TIMEOUT_MS: u64 = 20_000;
 
 /// Retry delay: base 3s + attempt*1s, with ±500ms jitter
+fn extract_url_from_payload(payload: &Value) -> Result<String> {
+    if let Some(value) = payload.get("url") {
+        if let Some(url_str) = value.as_str() {
+            return Ok(normalize_url(url_str));
+        }
+    }
+    if let Some(value) = payload.get("value") {
+        if let Some(url_str) = value.as_str() {
+            return Ok(normalize_url(url_str));
+        }
+    }
+    for (key, val) in payload.as_object().ok_or_else(|| anyhow::anyhow!("payload not an object"))? {
+        if key != "url" && key != "value" {
+            if let Some(v) = val.as_str() {
+                if !v.is_empty() && (v.contains("x.com") || v.contains("twitter.com")) {
+                    return Ok(normalize_url(v));
+                }
+            }
+        }
+    }
+    Err(anyhow::anyhow!("No URL found in payload"))
+}
+
 fn backoff_delay(attempt: u32) -> u64 {
-    let base = 3000 + attempt * 1000;
-    let jitter = random_in_range(0, 1000) - 500; // -500 to +500
-    (base as i64 + jitter as i64).max(500) as u64 // min 500ms
+    let base = 3000u64 + (attempt as u64) * 1000;
+    let jitter = random_in_range(500, 1000);
+    base + jitter
 }
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
-    let username = extract_username_from_payload(&payload)?;
-    let profile_url = format!("https://x.com/{}", username);
+    let input_url = extract_url_from_payload(&payload)?;
+    let username;
 
-    info!("[twitterfollow] Starting: target=@{}", username);
-
-    api.navigate(&profile_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
-    info!("[twitterfollow] Navigated to {}", profile_url);
+    if is_tweet_url(&input_url) {
+        username = tweet_to_profile_flow(api, &input_url).await?;
+    } else {
+        username = extract_username_from_payload(&payload)?;
+        let profile_url = format!("https://x.com/{}", username);
+        info!("[twitterfollow] Starting: target=@{}", username);
+        api.navigate(&profile_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+        info!("[twitterfollow] Navigated to {}", profile_url);
+    }
 
     verify_current_profile(api, &username).await?;
 
@@ -58,9 +84,8 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
-    let mut attempt = 0u32;
+let mut attempt = 0u32;
     let mut has_reloaded = false;
-    let mut ghost = GhostCursor::new(api.page_arc());
 
     loop {
         attempt += 1;
@@ -77,9 +102,14 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
             continue;
         }
 
-        info!("[twitterfollow] Attempt {}/{}",
+info!("[twitterfollow] Attempt {}/{}",
             attempt,
             MAX_ATTEMPTS + if has_reloaded { POST_RELOAD_ATTEMPTS } else { 0 });
+
+        // Wait for page to settle, scroll to make sure button is visible
+        api.pause(500).await;
+        api.scroll_to_top().await?;
+        api.pause(500).await;
 
         // Dismiss overlays
         let _ = api.press("Escape").await;
@@ -96,39 +126,21 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
             return Ok(true);
         }
 
-        // Locate button
-        let coords = match find_follow_button_coords(api).await {
-            Ok(Some(c)) => c,
-            Ok(None) => {
+// Locate and click follow button
+        match find_and_click_follow_button(api).await {
+            Ok(true) => {
+                info!("[twitterfollow] Clicked follow button");
+            }
+            Ok(false) => {
                 warn!("[twitterfollow] Follow button not visible");
                 maybe_backoff(api, attempt).await;
                 continue;
             }
             Err(e) => {
-                warn!("[twitterfollow] Error locating button: {}", e);
+                warn!("[twitterfollow] Error clicking button: {}", e);
                 maybe_backoff(api, attempt).await;
                 continue;
             }
-        };
-
-        // Safety: button still says "Follow"?
-        if !button_says_follow(api).await? {
-            info!("[twitterfollow] Button state changed to following");
-            return Ok(true);
-        }
-
-        // Check actionability (not covered by overlay)
-        if !is_element_actionable(api, coords.0, coords.1).await? {
-            warn!("[twitterfollow] Button not actionable (possibly covered), retrying...");
-            maybe_backoff(api, attempt).await;
-            continue;
-        }
-
-        // Click with GhostCursor robustness
-        if let Err(e) = ghost.click_at(coords.0, coords.1).await {
-            warn!("[twitterfollow] GhostCursor click failed: {}", e);
-            maybe_backoff(api, attempt).await;
-            continue;
         }
 
         info!("[twitterfollow] Click successful, verifying...");
@@ -197,60 +209,97 @@ async fn maybe_backoff(api: &TaskContext, attempt: u32) {
     }
 }
 
-/// Check if element center point is not covered by another element
-async fn is_element_actionable(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
-    let js = format!(
-        r#"
-        (function() {{
-            var el = document.elementFromPoint({}, {});
-            if (!el) return false;
-            var rect = el.getBoundingClientRect();
-            var centerX = rect.left + rect.width / 2;
-            var centerY = rect.top + rect.height / 2;
-            var dist = Math.sqrt(Math.pow({} - centerX, 2) + Math.pow({} - centerY, 2));
-            return dist < 5;
-        }})()
-        "#,
-        x, y, x, y
-    );
-    let result = api.page().evaluate(js).await?;
-    Ok(result.value().and_then(|v: &Value| v.as_bool()).unwrap_or(false))
+async fn find_and_click_follow_button(api: &TaskContext) -> Result<bool> {
+    let page = api.page();
+    
+    // Find follow button: role=button + aria-label="Follow @username" + span="Follow"
+    let follow_js = r#"
+        (function() {
+            var buttons = document.querySelectorAll('[role="button"]');
+            for (var i = 0; i < buttons.length; i++) {
+                var btn = buttons[i];
+                var ariaLabel = btn.getAttribute('aria-label') || '';
+                if (!ariaLabel.toLowerCase().startsWith('follow @')) continue;
+                
+                var spans = btn.querySelectorAll('span');
+                for (var j = 0; j < spans.length; j++) {
+                    var txt = (spans[j].textContent || spans[j].innerText || '').toLowerCase().trim();
+                    if (txt === 'follow') {
+                        var rect = btn.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            btn.click();
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        })()
+    "#;
+    let result = page.evaluate(follow_js).await?;
+    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
 async fn is_already_following(api: &TaskContext) -> Result<bool> {
-    match get_follow_button_info(api).await {
-        Ok(Some(info)) => {
-            let t = info.text.to_lowercase();
-            let l = info.label.to_lowercase();
-            Ok(t.contains("following") || t.contains("unfollow") || l.contains("following") || l.contains("unfollow"))
-        }
-        _ => Ok(false),
-    }
-}
+    let page = api.page();
 
-async fn find_follow_button_coords(api: &TaskContext) -> Result<Option<(f64, f64)>> {
-    match get_follow_button_info(api).await {
-        Ok(Some(info)) => Ok(Some((info.x, info.y))),
-        Ok(None) => Ok(None),
-        Err(e) => Err(e),
-    }
-}
+    // Check for multiple "already following" indicators:
+    // 1. Unfollow button (aria-label starts with "unfollow")
+    // 2. Following button (aria-label equals "following")
+    // 3. Button with data-testid containing "-unfollow" (Twitter's following state)
+    let js = r#"
+        (function() {
+            var buttons = document.querySelectorAll('[role="button"]');
+            for (var i = 0; i < buttons.length; i++) {
+                var btn = buttons[i];
+                var ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                var dataTestId = (btn.getAttribute('data-testid') || '').toLowerCase();
 
-async fn button_says_follow(api: &TaskContext) -> Result<bool> {
-    match get_follow_button_info(api).await {
-        Ok(Some(info)) => {
-            let t = info.text.to_lowercase();
-            let l = info.label.to_lowercase();
-            Ok(!(t.contains("following") || t.contains("unfollow") || l.contains("following") || l.contains("unfollow")))
-        }
-        Ok(None) => Ok(false),
-        Err(e) => Err(e),
-    }
+                // Check for Unfollow or Following aria-label
+                if (ariaLabel.startsWith('unfollow') || ariaLabel === 'following') {
+                    var rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        return true;
+                    }
+                }
+
+                // Check for data-testid containing "-unfollow" (e.g., "1720490042765012992-unfollow")
+                if (dataTestId.includes('-unfollow')) {
+                    var rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        return true;
+                    }
+                }
+            }
+
+            // Also check for span text "Following" inside a button with unfollow testid
+            var allButtons = document.querySelectorAll('button, [role="button"]');
+            for (var i = 0; i < allButtons.length; i++) {
+                var testId = (allButtons[i].getAttribute('data-testid') || '').toLowerCase();
+                if (testId.includes('-unfollow')) {
+                    var spans = allButtons[i].querySelectorAll('span');
+                    for (var j = 0; j < spans.length; j++) {
+                        var txt = (spans[j].textContent || spans[j].innerText || '').trim().toLowerCase();
+                        if (txt === 'following') {
+                            var rect = allButtons[i].getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return false;
+        })()
+    "#;
+    let result = page.evaluate(js).await?;
+    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
 struct ButtonInfo {
-    x: f64,
-    y: f64,
+    #[allow(dead_code)] x: f64,
+    #[allow(dead_code)] y: f64,
     text: String,
     label: String,
 }
@@ -291,7 +340,7 @@ async fn poll_for_follow_success(api: &TaskContext) -> Result<bool> {
             return Ok(false);
         }
 
-        sleep(Duration::from_millis(500)).await;
+        api.pause(500).await;
     }
 }
 
@@ -351,6 +400,60 @@ fn extract_username_from_payload(payload: &Value) -> Result<String> {
             }
         }
     }
-    anyhow::bail!("No username found in payload");
+anyhow::bail!("No username found in payload");
+}
+
+fn normalize_url(url: &str) -> String {
+    let mut url = url.trim().to_string();
+    if !url.starts_with("http") {
+        url = format!("https://{}", url);
+    }
+    url
+        .replace("www.twitter.com/", "x.com/")
+        .replace("www.x.com/", "x.com/")
+}
+
+fn is_tweet_url(url: &str) -> bool {
+    let normalized = normalize_url(url);
+    normalized.contains("/status/") && normalized.contains("x.com/")
+}
+
+fn extract_username_from_tweet_url(url: &str) -> Option<String> {
+    let normalized = normalize_url(url);
+    let path = normalized
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("x.com/");
+
+    path.find("/status/").map(|idx| path[..idx].to_string())
+}
+
+async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &str) -> Result<String> {
+    let username = extract_username_from_tweet_url(tweet_url)
+        .ok_or_else(|| anyhow::anyhow!("Could not extract username from tweet URL"))?;
+
+    info!("[twitterfollow] Navigating to tweet: {}", tweet_url);
+    api.navigate(tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+
+    api.pause(2000).await;
+
+    info!("[twitterfollow] Scrolling down...");
+    api.scroll_to_bottom().await?;
+    api.pause(1000).await;
+
+    info!("[twitterfollow] Scrolling up to top...");
+    api.scroll_to_top().await?;
+    api.pause(1000).await;
+
+    info!("[twitterfollow] Clicking user avatar...");
+    let avatar_click = api.click("[data-testid=\"Tweet-User-Avatar\"]").await?;
+    info!("[twitterfollow] Avatar {}", avatar_click.summary());
+
+    api.pause(1500).await;
+
+    let profile_url = format!("https://x.com/{}", username);
+    info!("[twitterfollow] Navigated to profile: {}", profile_url);
+
+    Ok(username)
 }
 

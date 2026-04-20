@@ -1,0 +1,75 @@
+# Cargo configuration for faster builds with automatic CPU detection
+# Reference: https://doc.rust-lang.org/cargo/reference/config.html
+
+# Build configuration
+[build]
+# Automatically detect CPU cores and use (cores - 1) for system stability
+# Cargo will auto-detect if this is not set, but we can be explicit
+# 
+# For manual override on specific machines, set CARGO_BUILD_JOBS env var:
+#   - 32-thread PC: set CARGO_BUILD_JOBS=31
+#   - 24-thread PC: set CARGO_BUILD_JOBS=23
+#   - 12-thread VPS: set CARGO_BUILD_JOBS=11
+#
+# Or let Cargo auto-detect (recommended - uses all available cores)
+jobs = 31
+
+# Windows-specific: use lld linker (much faster than default MSVC linker)
+# Install LLVM first: https://llvm.org/builds/ or via chocolatey: choco install llvm
+# Then uncomment these lines:
+# [target.x86_64-pc-windows-msvc]
+# linker = "lld-link.exe"
+# rustflags = ["-C", "link-arg=/lld"]
+
+# Alternative: use mold linker (fastest) - install from https://github.com/rui314/mold
+# [target.x86_64-pc-windows-msvc]
+# linker = "mold.exe"
+
+# Optional: Enable sccache for build caching (5-10x faster rebuilds)
+# Install: cargo install sccache OR via chocolatey: choco install sccache
+# rustc-wrapper = "sccache"
+
+[profile.dev]
+# Keep debug info minimal for faster compilation
+debug = "line-tables-only"
+
+# Optimize dependencies slightly without slowing down your code compilation
+opt-level = 1
+
+# Use fat LTO only for release builds, not dev
+lto = "off"
+
+# More codegen units = more parallel compilation
+codegen-units = 256
+
+# Incremental compilation (enabled by default in dev)
+incremental = true
+
+[profile.dev.build-override]
+# Heavily optimize build scripts and proc macros for faster overall builds
+opt-level = 3
+codegen-units = 16
+
+[profile.release]
+# Enable Thin LTO for better optimization without full LTO cost
+lto = "thin"
+
+# More codegen units for parallel release builds
+codegen-units = 64
+
+# Keep debug info for profiling (optional)
+debug = "line-tables-only"
+
+# Optimize for speed
+opt-level = 3
+
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
+
+# Fast release profile - quicker builds with decent optimization
+[profile.fast-release]
+inherits = "release"
+lto = "off"
+codegen-units = 128
+opt-level = 2

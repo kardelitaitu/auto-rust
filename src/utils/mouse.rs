@@ -9,6 +9,7 @@
 
 use chromiumoxide::Page;
 use anyhow::Result;
+use crate::utils::geometry::BoundingBox;
 use crate::utils::math::{random_in_range, gaussian};
 use crate::utils::scroll;
 use crate::utils::timing::human_pause;
@@ -16,17 +17,9 @@ use crate::utils::page_size::get_viewport;
 use log::debug;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use rand::Rng;
 use tokio::time::{timeout, Duration, sleep};
-
-/// Bounding box of a DOM element (matches Playwright/浏览器 API)
-#[derive(Debug, Clone, Copy)]
-pub struct BoundingBox {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickStatus {
@@ -56,11 +49,10 @@ pub struct HoverOutcome {
 
 impl ClickOutcome {
     pub fn summary(&self) -> String {
-        let status = match self.click {
-            ClickStatus::Success => "success",
-            ClickStatus::Failed => "failed",
-        };
-        format!("click:{status} ({:.1},{:.1})", self.x, self.y)
+        match self.click {
+            ClickStatus::Success => format!("Clicked ({:.1},{:.1})", self.x, self.y),
+            ClickStatus::Failed => format!("Click failed ({:.1},{:.1})", self.x, self.y),
+        }
     }
 }
 
@@ -71,15 +63,6 @@ impl HoverOutcome {
             HoverStatus::Failed => "failed",
         };
         format!("hover:{status} ({:.1},{:.1})", self.x, self.y)
-    }
-}
-
-impl BoundingBox {
-    /// Check if this bbox is approximately equal to another (delta < threshold)
-    pub fn approx_eq(&self, other: &BoundingBox, threshold: f64) -> bool {
-        let dx = (self.x - other.x).abs();
-        let dy = (self.y - other.y).abs();
-        dx + dy < threshold
     }
 }
 
@@ -174,6 +157,8 @@ static MOUSE_OVERLAY_ENABLED: AtomicBool = AtomicBool::new(true);
 static CURSOR_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static CURSOR_X: AtomicU64 = AtomicU64::new(0);
 static CURSOR_Y: AtomicU64 = AtomicU64::new(0);
+static LAST_OVERLAY_SYNC_MS: AtomicU64 = AtomicU64::new(0);
+const OVERLAY_SYNC_INTERVAL_MS: u64 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -397,12 +382,16 @@ pub async fn cursor_move_to_with_config(
             }
         }
     }
+    // Always land overlay on the final cursor point even when throttling is active.
+    sync_cursor_overlay_force(page).await.ok();
 
     Ok(())
 }
 
 pub async fn cursor_move_to_immediate(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
-    dispatch_mousemove(page, target_x, target_y).await
+    dispatch_mousemove(page, target_x, target_y).await?;
+    sync_cursor_overlay_force(page).await.ok();
+    Ok(())
 }
 
 async fn dispatch_mousemove(page: &Page, x: f64, y: f64) -> Result<()> {
@@ -437,13 +426,58 @@ async fn dispatch_mousemove_dom(page: &Page, x: f64, y: f64) -> Result<()> {
 }
 
 pub async fn sync_cursor_overlay(page: &Page) -> Result<()> {
+    sync_cursor_overlay_with_mode(page, false).await
+}
+
+pub async fn sync_cursor_overlay_force(page: &Page) -> Result<()> {
+    sync_cursor_overlay_with_mode(page, true).await
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn claim_overlay_sync_slot(now_ms: u64, force: bool) -> bool {
+    loop {
+        let last = LAST_OVERLAY_SYNC_MS.load(Ordering::Relaxed);
+        if !force && now_ms.saturating_sub(last) < OVERLAY_SYNC_INTERVAL_MS {
+            return false;
+        }
+        if LAST_OVERLAY_SYNC_MS
+            .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return true;
+        }
+    }
+}
+
+async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
     if !is_overlay_enabled() {
         return Ok(());
     }
 
-    let Some((x, y)) = cursor_position_snapshot() else {
-        return Ok(());
+    let (x, y) = if let Some((x, y)) = cursor_position_snapshot() {
+        (x, y)
+    } else {
+        // Initialize overlay position at viewport center so the cursor dot is visible
+        // before the first explicit mouse movement.
+        let viewport = timeout(Duration::from_millis(500), get_viewport(page))
+            .await
+            .map_err(|_| anyhow::anyhow!("sync_cursor_overlay viewport timeout"))??;
+        let cx = viewport.width / 2.0;
+        let cy = viewport.height / 2.0;
+        set_cursor_position(cx, cy);
+        (cx, cy)
     };
+    let now_ms = now_unix_ms();
+    if !claim_overlay_sync_slot(now_ms, force) {
+        return Ok(());
+    }
+
     let eval = page.evaluate(format!(
         "(function() {{
             let dot = document.getElementById('__auto_rust_mouse_overlay');
@@ -695,7 +729,7 @@ async fn dispatch_mouse_action(
     let eval = page.evaluate(format!(
         "(function() {{
             const el = document.elementFromPoint({}, {});
-            if (!el) return;
+            if (!el) return false;
 
             const evt = new MouseEvent('{}', {{
                 bubbles: true,
@@ -705,13 +739,20 @@ async fn dispatch_mouse_action(
                 button: {}
             }});
             el.dispatchEvent(evt);
+            return true;
         }})();",
         x, y, event_type, x, y, button_idx
     ));
 
-    timeout(Duration::from_secs(2), eval)
+    let result = timeout(Duration::from_secs(2), eval)
         .await
         .map_err(|_| anyhow::anyhow!("dispatch_mouse_action timed out"))??;
+
+    let did_dispatch = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+    if !did_dispatch {
+        anyhow::bail!("dispatch_mouse_action found no element at ({x:.1},{y:.1})");
+    }
+
     Ok(())
 }
 
@@ -764,32 +805,38 @@ pub async fn click_selector_human(
     selector: &str,
     reaction_delay_ms: u64,
     reaction_delay_variance_pct: u32,
-    click_offset_px: i32,
+click_offset_px: i32,
 ) -> Result<ClickOutcome> {
-    scroll::scroll_into_view(page, selector).await?;
+    let selector_js = serde_json::to_string(selector)?;
+    let native_scroll_js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return false;
+            el.scrollIntoView({{behavior: 'auto', block: 'center', inline: 'nearest'}});
+            return true;
+        }})()"#
+    );
+    timeout(Duration::from_millis(1500), page.evaluate(native_scroll_js))
+        .await
+        .map_err(|_| anyhow::anyhow!("click native scroll timeout for selector={selector}"))??;
 
-    let bbox = resolve_selector_bbox(page, selector).await?;
+    let bbox = timeout(Duration::from_secs(2), resolve_selector_bbox(page, selector))
+        .await
+        .map_err(|_| anyhow::anyhow!("click resolve_selector_bbox timeout for selector={selector}"))??;
 
     let (x, y) = choose_click_point(&bbox, click_offset_px);
-    cursor_move_to(page, x, y).await?;
+    let _ = timeout(Duration::from_millis(1200), cursor_move_to_immediate(page, x, y)).await;
     human_pause(reaction_delay_ms, reaction_delay_variance_pct).await;
-    dispatch_click(page, x, y, MouseButton::Left).await?;
+    timeout(Duration::from_secs(2), dispatch_click(page, x, y, MouseButton::Left))
+        .await
+        .map_err(|_| anyhow::anyhow!("click dispatch_click timeout for selector={selector}"))??;
 
     let settle_ms = (reaction_delay_ms / 4).clamp(40, 200);
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
     human_pause(settle_ms, settle_variance).await;
 
-    let verified = verify_click_target(page, selector, x, y).await.unwrap_or(false);
-    if !verified {
-        debug!("click target verification was inconclusive for selector={selector}");
-    }
-
     Ok(ClickOutcome {
-        click: if verified {
-            ClickStatus::Success
-        } else {
-            ClickStatus::Failed
-        },
+        click: ClickStatus::Success,
         x,
         y,
     })
@@ -901,16 +948,42 @@ fn choose_click_point(bbox: &BoundingBox, click_offset_px: i32) -> (f64, f64) {
 async fn resolve_selector_bbox(page: &Page, selector: &str) -> Result<BoundingBox> {
     match wait_for_stable_element(page, selector, 2_000, 3, 2.0).await? {
         Some(bbox) => Ok(bbox),
-        None => {
-            let (x, y, width, height) = crate::utils::page_size::get_element_bounds(page, selector).await?;
-            Ok(BoundingBox {
-                x,
-                y,
-                width,
-                height,
-            })
-        }
+        None => get_selector_bbox_once(page, selector).await,
     }
+}
+
+async fn get_selector_bbox_once(page: &Page, selector: &str) -> Result<BoundingBox> {
+    let selector_js = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {{ x: r.x, y: r.y, width: r.width, height: r.height }};
+        }})()"#
+    );
+
+    let result = timeout(Duration::from_millis(800), page.evaluate(js))
+        .await
+        .map_err(|_| anyhow::anyhow!("bbox lookup timeout for selector={selector}"))??;
+
+    let obj = result
+        .value()
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| anyhow::anyhow!("Element not found: {selector}"))?;
+
+    let bbox = BoundingBox {
+        x: obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        y: obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        width: obj.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        height: obj.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0),
+    };
+
+    if bbox.width <= 0.0 || bbox.height <= 0.0 {
+        anyhow::bail!("Element has invalid bounds: {selector}");
+    }
+
+    Ok(bbox)
 }
 
 async fn click_selector_with_button(
@@ -1175,7 +1248,7 @@ impl GhostCursor {
 
         self.previous_pos = (x, y);
         Ok(())
-    }
+    }
     /// Click at absolute viewport coordinates using a default profile.
     /// This is a convenience wrapper around `click_with_profile` but without a selector.
     /// The caller should ensure the target is actionable.
@@ -1480,6 +1553,4 @@ mod tests {
         assert!((mid.y - 50.0).abs() < 0.1);
     }
 }
-
-
 

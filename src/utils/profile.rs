@@ -1044,7 +1044,7 @@ mod tests {
         // Should be within ±10%
         for _ in 0..100 {
             let val = param.random();
-            assert!(val >= 90.0 && val <= 110.0, "Value {} out of range", val);
+            assert!((90.0..=110.0).contains(&val), "Value {} out of range", val);
         }
     }
 

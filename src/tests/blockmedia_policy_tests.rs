@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod blockmedia_policy_tests {
+mod blockmedia_policy {
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -30,7 +30,7 @@ mod blockmedia_policy_tests {
         collect_rs_files(&task_root, &mut files);
 
         for file in files {
-            if allowlist.iter().any(|allowed| file == *allowed) {
+            if allowlist.contains(&file) {
                 continue;
             }
 

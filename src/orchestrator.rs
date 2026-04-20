@@ -433,7 +433,7 @@ async fn execute_task_with_retry(
             }
         }
 
-        if current_attempt >= retry_policy.max_retries + 1 {
+        if current_attempt > retry_policy.max_retries {
             break;
         }
 

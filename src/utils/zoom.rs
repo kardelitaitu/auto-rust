@@ -270,6 +270,6 @@ mod tests {
     fn test_random_zoom_amount() {
         // Test that random zoom amounts are in reasonable range
         let zoom_amount = gaussian(1.0, 0.2, 0.5, 2.0);
-        assert!(zoom_amount >= 0.5 && zoom_amount <= 2.0);
+        assert!((0.5..=2.0).contains(&zoom_amount));
     }
 }

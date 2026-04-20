@@ -5,6 +5,8 @@
 use anyhow::{bail, Result};
 use log::{info, warn};
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::timeout;
 
 use crate::capabilities::mouse;
 use crate::prelude::TaskContext;
@@ -26,7 +28,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("- Email: {}", config.email);
     info!("- Current Address: {}", config.current_address);
     info!("- Permanent Address: {}", config.permanent_address);
-    info!("Task API demo: focus -> keyboard -> randomcursor -> click_and_wait -> inspect");
+    info!("Task API demo: focus -> keyboard -> click_and_wait -> inspect");
 
     mouse::set_overlay_enabled(SHOW_CURSOR_OVERLAY);
 
@@ -57,19 +59,22 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("currentAddress value: {}", current_address);
     info!("permanentAddress value: {}", permanent_address);
 
-    let cursor = api.randomcursor().await?;
-    info!("{}", cursor.summary());
-    if SHOW_CURSOR_OVERLAY {
-        api.sync_cursor_overlay().await?;
-    }
+    info!("Clicking submit button");
+    let submit_click = match timeout(Duration::from_secs(12), api.click("#submit")).await {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(e)) => {
+            warn!("Submit click failed: {}", e);
+            return Err(e);
+        }
+        Err(_) => {
+            let e = anyhow::anyhow!("Submit click timed out after 12s");
+            warn!("{}", e);
+            return Err(e);
+        }
+    };
+    info!("{}", submit_click.summary());
 
-    api.scroll_to("#submit").await?;
-    let submit = api.click("#submit").await?;
-    info!("{}", submit.summary());
-    if SHOW_CURSOR_OVERLAY {
-        api.sync_cursor_overlay().await?;
-    }
-
+    info!("Waiting for output panel");
     if !api.wait_for_visible("#output", 10_000).await? {
         bail!("DemoQA output did not become visible after submit");
     }
@@ -95,13 +100,15 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         &config.permanent_address,
     )?;
 
+api.pause(5000).await;
+
     info!("Task completed");
     Ok(())
 }
 
 async fn fill_text_field(api: &TaskContext, selector: &str, value: &str) -> Result<()> {
-    let focus = api.focus(selector).await?;
-    info!("{}", focus.summary());
+    let click = api.click(selector).await?;
+    info!("{}", click.summary());
     if SHOW_CURSOR_OVERLAY {
         api.sync_cursor_overlay().await?;
     }

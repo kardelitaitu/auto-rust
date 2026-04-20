@@ -34,9 +34,9 @@ async fn simulate_task(metrics: Arc<MetricsCollector>, task_id: usize) -> Result
     // Simulate task work (100-500ms)
     let delay_ms = 100 + (task_id % 400);
     tokio::time::sleep(Duration::from_millis(delay_ms as u64)).await;
-    
+
     // Simulate occasional failures (1% failure rate)
-    if task_id % 100 == 0 {
+    if task_id.is_multiple_of(100) {
         metrics.task_completed(rust_orchestrator::metrics::TaskMetrics {
             task_name: "simulated_task".to_string(),
             status: rust_orchestrator::metrics::TaskStatus::Failed,

@@ -31,3 +31,29 @@ stuck_worker_threshold_ms = 120000
 task_stagger_delay_ms = 2000
 max_retries = 2
 retry_delay_ms = 500
+
+# Twitter Activity Task Configuration
+# Controls engagement behavior and rate limits for twitteractivity task
+
+[twitter_activity]
+# Feed scanning settings
+feed_scan_duration_ms = 120000      # 2 minutes
+feed_scroll_count = 12               # Number of scroll actions per scan
+engagement_candidate_count = 5       # Number of tweets to consider for engagement
+
+# Engagement limits (prevent rate limits and account restrictions)
+[twitter_activity.engagement_limits]
+max_likes = 5                        # Maximum likes per session
+max_retweets = 3                     # Maximum retweets per session
+max_follows = 2                      # Maximum follows per session
+max_replies = 1                      # Maximum replies per session
+max_thread_dives = 3                 # Maximum thread reads per session
+max_bookmarks = 0                    # Disabled in V1 (set to 0)
+max_total_actions = 10               # Total engagement actions cap per session
+
+# Environment variable overrides (set these in your shell/.env):
+# TWITTER_MAX_LIKES=5
+# TWITTER_MAX_RETWEETS=3
+# TWITTER_MAX_FOLLOWS=2
+# TWITTER_MAX_REPLIES=1
+# TWITTER_MAX_TOTAL_ACTIONS=10

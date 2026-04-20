@@ -263,3 +263,51 @@ pub fn selector_tweet_user_avatar() -> &'static str {
         })()
     "#
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_selector_feed_visible_returns_js() {
+        let js = selector_feed_visible();
+        assert!(js.contains("querySelector"));
+        assert!(js.contains("data-testid"));
+    }
+
+    #[test]
+    fn test_selector_all_tweets_returns_js() {
+        let js = selector_all_tweets();
+        assert!(js.contains("querySelectorAll"));
+        assert!(js.contains("article"));
+    }
+
+    #[test]
+    fn test_selector_follow_button_returns_js() {
+        let js = selector_follow_button();
+        assert!(js.contains("querySelector"));
+        assert!(js.contains("aria-label"));
+    }
+
+    #[test]
+    fn test_selector_engagement_buttons_returns_js() {
+        let js = selector_engagement_buttons();
+        assert!(js.contains("like"));
+        assert!(js.contains("retweet"));
+        assert!(js.contains("reply"));
+    }
+
+    #[test]
+    fn test_selector_tweet_user_avatar_returns_js() {
+        let js = selector_tweet_user_avatar();
+        assert!(js.contains("Tweet-User-Avatar"));
+        assert!(js.contains("profile_images"));
+    }
+
+    #[test]
+    fn test_selector_login_flow_returns_js() {
+        let js = selector_login_flow();
+        assert!(js.contains("session"));
+        assert!(js.contains("Sign in"));
+    }
+}

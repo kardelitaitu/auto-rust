@@ -417,4 +417,29 @@ mod tests {
         assert!(!check.is_allowed());
         assert_eq!(check.reason(), Some("like limit reached".to_string()));
     }
+
+    #[test]
+    fn test_engagement_limits_with_custom_values() {
+        let limits = EngagementLimits::with_limits(10, 5, 3, 2, 5, 1, 20);
+        let counters = EngagementCounters::new();
+        
+        assert_eq!(limits.max_likes, 10);
+        assert_eq!(limits.max_retweets, 5);
+        assert_eq!(limits.max_follows, 3);
+        assert!(limits.can_like(&counters));
+        assert!(limits.can_retweet(&counters));
+    }
+
+    #[test]
+    fn test_counterv2_to_summary() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_retweet();
+        counters.increment_follow();
+        
+        let summary = counters.to_summary();
+        assert_eq!(summary.get("likes").copied().unwrap_or(0), 1);
+        assert_eq!(summary.get("retweets").copied().unwrap_or(0), 1);
+        assert_eq!(summary.get("follows").copied().unwrap_or(0), 1);
+    }
 }

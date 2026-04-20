@@ -6,7 +6,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use super::twitteractivity_feed::get_tweet_engagement_buttons;
-use super::{twitteractivity_selectors::*, twitteractivity_humanized::*};
+use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
 /// Clicks the "like" (heart) button on the current tweet (assumes tweet is in view).
 /// Returns true if the like action appears to have been successful (state toggled).
@@ -14,8 +14,12 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
     let buttons = get_tweet_engagement_buttons(api).await?;
     if let Some(like_obj) = buttons.get("like").and_then(|v: &Value| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            like_obj.get("x").and_then(|v: &serde_json::Value| v.as_f64()),
-            like_obj.get("y").and_then(|v: &serde_json::Value| v.as_f64()),
+            like_obj
+                .get("x")
+                .and_then(|v: &serde_json::Value| v.as_f64()),
+            like_obj
+                .get("y")
+                .and_then(|v: &serde_json::Value| v.as_f64()),
         ) {
             api.move_mouse_to(x, y).await?;
             human_pause(api, 300).await;
@@ -92,8 +96,12 @@ pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
     let buttons = get_tweet_engagement_buttons(api).await?;
     if let Some(reply_obj) = buttons.get("reply").and_then(|v: &Value| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            reply_obj.get("x").and_then(|v: &serde_json::Value| v.as_f64()),
-            reply_obj.get("y").and_then(|v: &serde_json::Value| v.as_f64()),
+            reply_obj
+                .get("x")
+                .and_then(|v: &serde_json::Value| v.as_f64()),
+            reply_obj
+                .get("y")
+                .and_then(|v: &serde_json::Value| v.as_f64()),
         ) {
             api.move_mouse_to(x, y).await?;
             human_pause(api, 300).await;
@@ -102,10 +110,10 @@ pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
             return Ok(true);
         }
     }
-     Ok(false)
- }
- 
- /// Types text into the currently focused reply composer and sends it.
+    Ok(false)
+}
+
+/// Types text into the currently focused reply composer and sends it.
 /// Note: Assumes `click_reply_button` was called first and composer is open.
 pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     // Try to focus the reply textarea
@@ -124,7 +132,11 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     let textarea_result = api.page().evaluate(textarea_js.to_string()).await?;
     let found = textarea_result
         .value()
-        .and_then(|v: &Value| v.as_object().and_then(|o| o.get("found")).and_then(|fv: &Value| fv.as_bool()))
+        .and_then(|v: &Value| {
+            v.as_object()
+                .and_then(|o| o.get("found"))
+                .and_then(|fv: &Value| fv.as_bool())
+        })
         .unwrap_or(false);
 
     if !found {
@@ -178,4 +190,21 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     Ok(false)
 }
 
+/// Clicks the "bookmark" button on the current tweet.
+/// V1 stub - disabled by default (max_bookmarks=0 in config).
+/// Returns true if bookmark action appears successful.
+pub async fn bookmark_tweet(_api: &TaskContext) -> Result<bool> {
+    // V1 stub - bookmark functionality disabled
+    // To enable in V2: implement bookmark button detection and click
+    log::warn!("bookmark_tweet() called but disabled in V1 (max_bookmarks=0)");
+    Ok(false)
+}
 
+/// Creates a quote tweet with custom text.
+/// V2 feature - requires LLM for text generation.
+/// Returns error in V1.
+pub async fn quote_tweet(_api: &TaskContext, _quote_text: &str) -> Result<bool> {
+    Err(anyhow::anyhow!(
+        "quote_tweet() is a V2 feature - requires LLM text generation"
+    ))
+}

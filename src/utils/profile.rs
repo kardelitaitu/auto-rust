@@ -235,6 +235,18 @@ pub struct BrowserProfile {
     pub action_delay_min: ProfileParam,
     /// Maximum delay variance as percentage of min
     pub action_delay_variance_pct: ProfileParam,
+
+    // === Twitter-specific ===
+    /// Probability of diving into a thread when viewing a tweet (0-100%)
+    #[serde(default = "default_dive_probability")]
+    pub dive_probability: ProfileParam,
+}
+
+fn default_dive_probability() -> ProfileParam {
+    ProfileParam {
+        base: 0.35,  // 35% base probability
+        deviation_pct: 20.0,  // ±20% variation
+    }
 }
 
 impl BrowserProfile {
@@ -309,7 +321,8 @@ impl BrowserProfile {
             keystroke_stddev_ms: self.typing_speed_stddev.random_clamped(5.0, 150.0).round() as u64,
             word_pause_ms: self.typing_word_pause.random_clamped(50.0, 2_000.0).round() as u64,
             typo_rate_pct: self.typo_rate.random_clamped(0.0, 20.0),
-            typo_notice_delay_ms: self.typo_notice_delay.random_clamped(50.0, 2_000.0).round() as u64,
+            typo_notice_delay_ms: self.typo_notice_delay.random_clamped(50.0, 2_000.0).round()
+                as u64,
             typo_retry_delay_ms: self.typo_retry_delay.random_clamped(20.0, 1_000.0).round() as u64,
             typo_recovery_chance_pct: self.typo_recovery_chance.random_clamped(0.0, 100.0),
         }
@@ -318,10 +331,11 @@ impl BrowserProfile {
     /// Derives click behavior from the profile.
     pub fn click_behavior(&self) -> ClickBehavior {
         ClickBehavior {
-            reaction_delay_ms: self.click_reaction_delay.random_clamped(0.0, 2_000.0).round() as u64,
-            reaction_delay_variance_pct: self
-                .action_delay_variance_pct
-                .random_clamped(0.0, 100.0),
+            reaction_delay_ms: self
+                .click_reaction_delay
+                .random_clamped(0.0, 2_000.0)
+                .round() as u64,
+            reaction_delay_variance_pct: self.action_delay_variance_pct.random_clamped(0.0, 100.0),
             offset_px: self.click_offset.random_clamped(0.0, 50.0).round() as i32,
         }
     }
@@ -423,6 +437,7 @@ impl BrowserProfile {
             scroll_pause: p(500.0, 30.0),
             action_delay_min: p(500.0, 30.0),
             action_delay_variance_pct: p(50.0, 20.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -451,6 +466,7 @@ impl BrowserProfile {
             scroll_pause: p(200.0, 40.0),
             action_delay_min: p(300.0, 40.0),
             action_delay_variance_pct: p(60.0, 30.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -479,6 +495,7 @@ impl BrowserProfile {
             scroll_pause: p(800.0, 20.0),
             action_delay_min: p(800.0, 20.0),
             action_delay_variance_pct: p(30.0, 15.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -507,6 +524,7 @@ impl BrowserProfile {
             scroll_pause: p(600.0, 25.0),
             action_delay_min: p(600.0, 25.0),
             action_delay_variance_pct: p(40.0, 20.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -535,6 +553,7 @@ impl BrowserProfile {
             scroll_pause: p(150.0, 30.0),
             action_delay_min: p(200.0, 30.0),
             action_delay_variance_pct: p(30.0, 30.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -563,6 +582,7 @@ impl BrowserProfile {
             scroll_pause: p(1000.0, 15.0),
             action_delay_min: p(1000.0, 20.0),
             action_delay_variance_pct: p(25.0, 15.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -591,6 +611,7 @@ impl BrowserProfile {
             scroll_pause: p(100.0, 40.0),
             action_delay_min: p(100.0, 40.0),
             action_delay_variance_pct: p(20.0, 40.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -619,6 +640,7 @@ impl BrowserProfile {
             scroll_pause: p(400.0, 60.0),
             action_delay_min: p(400.0, 60.0),
             action_delay_variance_pct: p(70.0, 40.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -647,6 +669,7 @@ impl BrowserProfile {
             scroll_pause: p(1500.0, 15.0),
             action_delay_min: p(1500.0, 15.0),
             action_delay_variance_pct: p(20.0, 15.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -675,6 +698,7 @@ impl BrowserProfile {
             scroll_pause: p(700.0, 25.0),
             action_delay_min: p(700.0, 25.0),
             action_delay_variance_pct: p(45.0, 20.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -703,6 +727,7 @@ impl BrowserProfile {
             scroll_pause: p(300.0, 20.0),
             action_delay_min: p(400.0, 20.0),
             action_delay_variance_pct: p(30.0, 20.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -731,6 +756,7 @@ impl BrowserProfile {
             scroll_pause: p(1200.0, 20.0),
             action_delay_min: p(1200.0, 20.0),
             action_delay_variance_pct: p(30.0, 25.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -759,6 +785,7 @@ impl BrowserProfile {
             scroll_pause: p(100.0, 25.0),
             action_delay_min: p(150.0, 25.0),
             action_delay_variance_pct: p(25.0, 25.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -787,6 +814,7 @@ impl BrowserProfile {
             scroll_pause: p(600.0, 50.0),
             action_delay_min: p(600.0, 50.0),
             action_delay_variance_pct: p(80.0, 30.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -815,6 +843,7 @@ impl BrowserProfile {
             scroll_pause: p(250.0, 15.0),
             action_delay_min: p(300.0, 15.0),
             action_delay_variance_pct: p(20.0, 15.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -843,6 +872,7 @@ impl BrowserProfile {
             scroll_pause: p(1800.0, 10.0),
             action_delay_min: p(1800.0, 10.0),
             action_delay_variance_pct: p(15.0, 12.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -871,6 +901,7 @@ impl BrowserProfile {
             scroll_pause: p(80.0, 50.0),
             action_delay_min: p(80.0, 50.0),
             action_delay_variance_pct: p(15.0, 50.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -899,6 +930,7 @@ impl BrowserProfile {
             scroll_pause: p(2000.0, 10.0),
             action_delay_min: p(2000.0, 10.0),
             action_delay_variance_pct: p(12.0, 12.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -927,6 +959,7 @@ impl BrowserProfile {
             scroll_pause: p(550.0, 50.0),
             action_delay_min: p(550.0, 50.0),
             action_delay_variance_pct: p(55.0, 40.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -955,6 +988,7 @@ impl BrowserProfile {
             scroll_pause: p(130.0, 45.0),
             action_delay_min: p(130.0, 45.0),
             action_delay_variance_pct: p(25.0, 45.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 
@@ -983,6 +1017,7 @@ impl BrowserProfile {
             scroll_pause: p(1000.0, 18.0),
             action_delay_min: p(1000.0, 18.0),
             action_delay_variance_pct: p(35.0, 18.0),
+            dive_probability: p(0.35, 20.0),
         }
     }
 }
@@ -995,8 +1030,6 @@ fn p(base: f64, deviation_pct: f64) -> ProfileParam {
 /// Creates a randomized profile from a preset for this session.
 /// Applies random variation to all parameters based on their deviation percentages.
 pub fn randomize_profile(preset: &ProfilePreset) -> BrowserProfile {
-    
-
     // Note: The ProfileParam::random() is called when using the profile,
     // so the profile itself stores the base values and deviation.
     // This function can be extended if we want to pre-randomize all values.
@@ -1194,3 +1227,4 @@ mod tests {
         }
     }
 }
+

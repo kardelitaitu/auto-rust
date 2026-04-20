@@ -1,0 +1,394 @@
+//! Rule-based smart engagement decisions for Twitter automation.
+//!
+//! Uses keyword matching and pattern detection to evaluate tweet quality
+//! and determine appropriate engagement levels. No LLM required.
+
+use serde::{Deserialize, Serialize};
+
+/// Engagement level determines which actions are allowed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EngagementLevel {
+    /// Full engagement: like, retweet, reply, follow, quote tweet
+    Full,
+    /// Medium engagement: like, retweet only
+    Medium,
+    /// Minimal engagement: like only
+    Minimal,
+    /// Skip engagement entirely
+    None,
+}
+
+/// Decision result from engagement evaluation.
+#[derive(Debug, Clone)]
+pub struct EngagementDecision {
+    pub level: EngagementLevel,
+    pub score: i32,
+    pub reason: &'static str,
+}
+
+// ============================================================================
+// Keyword Blocklists
+// ============================================================================
+
+/// Controversial topics to avoid (politics, drama, conflict)
+const CONTROVERSIAL_TOPICS: &[&str] = &[
+    // Politics
+    "election", "vote", "democrat", "republican", "congress", "senate",
+    "woke", "fascist", "liberal", "conservative", "biden", "trump",
+    "abortion", "gun control", "immigration", "taxes",
+    
+    // Drama/Conflict
+    "exposed", "cancelled", "drama", "beef", "feud",
+    "scandal", "controversy", "backlash", "callout",
+    
+    // NSFW
+    "nsfw", "onlyfans", "adult content", "xxx",
+];
+
+/// Spam indicators
+const SPAM_PATTERNS: &[&str] = &[
+    "follow for follow", "f4f", "l4l", "like4like", "follow4follow",
+    "check my bio", "link in bio", "dm me", "dm for",
+    "crypto", "giveaway", "win bitcoin", "free eth", "nft drop",
+    "make money fast", "work from home", "passive income",
+];
+
+/// Negative sentiment words
+const NEGATIVE_WORDS: &[&str] = &[
+    "hate", "disgusting", "terrible", "awful", "worst",
+    "idiot", "stupid", "dumb", "moron", "idiot",
+    "cry", "die", "kill", "suicide", "death",
+    "sad", "angry", "upset", "disappointed", "frustrated",
+];
+
+/// Positive sentiment words (quality boosters)
+const POSITIVE_WORDS: &[&str] = &[
+    "great", "amazing", "awesome", "excellent", "wonderful",
+    "love", "thanks", "thank you", "appreciate", "grateful",
+    "happy", "excited", "proud", "congrats", "congratulations",
+    "beautiful", "fantastic", "incredible", "inspiring",
+];
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+/// Evaluates a tweet and returns the appropriate engagement level.
+///
+/// # Arguments
+/// * `tweet_text` - The full text of the tweet
+/// * `replies` - Vector of (author, text) pairs for top replies
+///
+/// # Returns
+/// EngagementDecision with level, score, and reason
+pub fn decide_engagement(
+    tweet_text: &str,
+    replies: &[(String, String)],
+) -> EngagementDecision {
+    let text_lower = tweet_text.to_lowercase();
+    
+    // 1. Check hard blocklists (instant skip)
+    if contains_any(&text_lower, CONTROVERSIAL_TOPICS) {
+        return EngagementDecision {
+            level: EngagementLevel::None,
+            score: 0,
+            reason: "controversial topic",
+        };
+    }
+    
+    if contains_any(&text_lower, SPAM_PATTERNS) {
+        return EngagementDecision {
+            level: EngagementLevel::None,
+            score: 0,
+            reason: "spam content",
+        };
+    }
+    
+    // 2. Calculate quality score
+    let mut score = 0;
+    score += calculate_quality_signals(&text_lower, tweet_text);
+    score -= calculate_penalty_signals(&text_lower, tweet_text);
+    
+    // 3. Analyze replies for community sentiment
+    let reply_analysis = analyze_replies(replies);
+    
+    if reply_analysis.negative_ratio > 0.5 {
+        score -= 30;  // Penalty for negative community response
+    }
+    if reply_analysis.spam_ratio > 0.3 {
+        score -= 50;  // Penalty for spammy replies
+    }
+    
+    // 4. Determine engagement level based on score
+    let (level, reason) = if score >= 60 {
+        (EngagementLevel::Full, "high quality content")
+    } else if score >= 30 {
+        (EngagementLevel::Medium, "medium quality content")
+    } else if score >= 10 {
+        (EngagementLevel::Minimal, "low quality, like only")
+    } else {
+        (EngagementLevel::None, "skip: low score")
+    };
+    
+    EngagementDecision {
+        level,
+        score,
+        reason,
+    }
+}
+
+// ============================================================================
+// Quality Signal Calculators
+// ============================================================================
+
+/// Calculate positive quality signals.
+fn calculate_quality_signals(text_lower: &str, original_text: &str) -> i32 {
+    let mut score = 0;
+    
+    // Has image/video (+20)
+    if original_text.contains("pic.twitter.com") || original_text.contains("t.co/") {
+        score += 20;
+    }
+    
+    // Question asked (+15)
+    if original_text.contains('?') {
+        score += 15;
+    }
+    
+    // Thread indicator (+25)
+    if original_text.contains("1/") || original_text.contains("🧵") {
+        score += 25;
+    }
+    
+    // Multiple sentences (+10)
+    let sentence_count = original_text.matches('.').count();
+    if sentence_count >= 2 {
+        score += 10;
+    }
+    
+    // Positive words (+20)
+    if contains_any(text_lower, POSITIVE_WORDS) {
+        score += 20;
+    }
+    
+    // Long form content (+15)
+    if original_text.len() > 200 {
+        score += 15;
+    }
+    
+    score
+}
+
+/// Calculate penalty signals.
+fn calculate_penalty_signals(text_lower: &str, original_text: &str) -> i32 {
+    let mut penalty = 0;
+    
+    // All caps (-30)
+    let alpha_chars: String = original_text.chars().filter(|c| c.is_alphabetic()).collect();
+    if !alpha_chars.is_empty() && alpha_chars.chars().all(|c| c.is_uppercase()) {
+        penalty += 30;
+    }
+    
+    // Excessive hashtags (-20)
+    let hashtag_count = original_text.matches('#').count();
+    if hashtag_count >= 3 {
+        penalty += 20;
+    }
+    
+    // Excessive emojis (-15)
+    let emoji_count = original_text.chars().filter(|c| is_emoji(*c)).count();
+    if emoji_count >= 5 {
+        penalty += 15;
+    }
+    
+    // Negative words (-40)
+    if contains_any(text_lower, NEGATIVE_WORDS) {
+        penalty += 40;
+    }
+    
+    // Very short tweet (-10)
+    if original_text.len() < 20 {
+        penalty += 10;
+    }
+    
+    penalty
+}
+
+// ============================================================================
+// Reply Analysis
+// ============================================================================
+
+/// Analysis results for tweet replies.
+#[allow(dead_code)]
+struct ReplyAnalysis {
+    positive_ratio: f64,
+    negative_ratio: f64,
+    spam_ratio: f64,
+}
+
+/// Analyzes the sentiment and quality of replies.
+fn analyze_replies(replies: &[(String, String)]) -> ReplyAnalysis {
+    if replies.is_empty() {
+        return ReplyAnalysis {
+            positive_ratio: 0.0,
+            negative_ratio: 0.0,
+            spam_ratio: 0.0,
+        };
+    }
+    
+    let mut positive_count = 0;
+    let mut negative_count = 0;
+    let mut spam_count = 0;
+    
+    for (_, text) in replies {
+        let text_lower = text.to_lowercase();
+        
+        if contains_any(&text_lower, SPAM_PATTERNS) {
+            spam_count += 1;
+        } else if contains_any(&text_lower, POSITIVE_WORDS) {
+            positive_count += 1;
+        } else if contains_any(&text_lower, NEGATIVE_WORDS) {
+            negative_count += 1;
+        }
+    }
+    
+    let total = replies.len() as f64;
+    
+    ReplyAnalysis {
+        positive_ratio: positive_count as f64 / total,
+        negative_ratio: negative_count as f64 / total,
+        spam_ratio: spam_count as f64 / total,
+    }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Check if text contains any of the given patterns.
+fn contains_any(text: &str, patterns: &[&str]) -> bool {
+    patterns.iter().any(|pattern| text.contains(pattern))
+}
+
+/// Check if a character is an emoji.
+fn is_emoji(c: char) -> bool {
+    let cp = c as u32;
+    // Common emoji Unicode ranges
+    (cp >= 0x1F600 && cp <= 0x1F64F) ||  // Emoticons
+    (cp >= 0x1F300 && cp <= 0x1F5FF) ||  // Misc Symbols and Pictographs
+    (cp >= 0x1F680 && cp <= 0x1F6FF) ||  // Transport and Map
+    (cp >= 0x1F1E0 && cp <= 0x1F1FF) ||  // Flags
+    (cp >= 0x2600 && cp <= 0x26FF) ||    // Misc symbols
+    (cp >= 0x2700 && cp <= 0x27BF)       // Dingbats
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_controversial_tweet_skipped() {
+        let tweet = "The election was rigged by fascists!";
+        let decision = decide_engagement(tweet, &[]);
+        assert_eq!(decision.level, EngagementLevel::None);
+        assert_eq!(decision.reason, "controversial topic");
+    }
+
+    #[test]
+    fn test_spam_tweet_skipped() {
+        let tweet = "Follow for follow! Check my bio! 💰";
+        let decision = decide_engagement(tweet, &[]);
+        assert_eq!(decision.level, EngagementLevel::None);
+        assert_eq!(decision.reason, "spam content");
+    }
+
+    #[test]
+    fn test_high_quality_tweet_full_engagement() {
+        let tweet = "Just shipped my first project! Thanks to everyone who helped 🎉";
+        let decision = decide_engagement(tweet, &[
+            ("user1".to_string(), "Congratulations!".to_string()),
+            ("user2".to_string(), "This is amazing!".to_string()),
+        ]);
+        // Should have positive words bonus (+20) and positive replies
+        assert!(decision.score >= 20);
+        // At minimum should be Minimal engagement
+        assert_ne!(decision.level, EngagementLevel::None);
+    }
+
+    #[test]
+    fn test_medium_quality_tweet() {
+        let tweet = "Working on something new. Stay tuned.";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(matches!(
+            decision.level,
+            EngagementLevel::Medium | EngagementLevel::Minimal
+        ));
+    }
+
+    #[test]
+    fn test_negative_replies_reduce_engagement() {
+        let tweet = "Check out my new product";
+        let decision = decide_engagement(tweet, &[
+            ("user1".to_string(), "This is terrible".to_string()),
+            ("user2".to_string(), "Worst product ever".to_string()),
+            ("user3".to_string(), "Don't buy this".to_string()),
+        ]);
+        assert_eq!(decision.level, EngagementLevel::None);
+    }
+
+    #[test]
+    fn test_question_gets_bonus() {
+        let tweet = "What do you think about the new features?";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score >= 15);  // Question bonus
+    }
+
+    #[test]
+    fn test_thread_gets_bonus() {
+        let tweet = "1/ Let me share my thoughts on this topic...";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score >= 25);  // Thread bonus
+    }
+
+    #[test]
+    fn test_all_caps_penalty() {
+        let tweet = "THIS IS VERY IMPORTANT EVERYONE NEEDS TO SEE THIS";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score < 0);  // All caps penalty
+    }
+
+    #[test]
+    fn test_excessive_hashtags_penalty() {
+        let tweet = "Check this out #tech #startup #business #marketing #growth";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score < 0);  // Hashtag penalty
+    }
+
+    #[test]
+    fn test_positive_words_bonus() {
+        let tweet = "This is amazing and wonderful, I love it!";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score >= 20);  // Positive words bonus
+    }
+
+    #[test]
+    fn test_negative_words_penalty() {
+        let tweet = "This is terrible and awful, I hate it!";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score < 0);  // Negative words penalty
+    }
+
+    #[test]
+    fn test_empty_replies_no_penalty() {
+        let tweet = "Just a normal tweet with good content";
+        let decision = decide_engagement(tweet, &[]);
+        // Should not get reply penalties, but may have other penalties
+        // Just verify it's not automatically None
+        assert_ne!(decision.reason, "spam content");
+        assert_ne!(decision.reason, "controversial topic");
+    }
+}

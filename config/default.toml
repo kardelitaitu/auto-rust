@@ -51,9 +51,25 @@ max_thread_dives = 3                 # Maximum thread reads per session
 max_bookmarks = 0                    # Disabled in V1 (set to 0)
 max_total_actions = 10               # Total engagement actions cap per session
 
-# Environment variable overrides (set these in your shell/.env):
+# LLM Configuration (V2 - for smart replies & quote tweets)
+[twitter_activity.llm]
+enabled = false                      # Set true to enable LLM features
+provider = "ollama"                  # "ollama" or "openrouter"
+model = "llama3.2:latest"            # Ollama model name
+temperature = 0.7                    # Creativity (0.0-1.0)
+max_tokens = 100                     # Max reply length
+timeout_ms = 30000                   # 30s timeout for generation
+reply_probability = 0.05             # 5% of eligible tweets
+quote_tweet_probability = 0.15       # 15% of retweets become quote tweets
+
+# Environment variable overrides:
 # TWITTER_MAX_LIKES=5
 # TWITTER_MAX_RETWEETS=3
 # TWITTER_MAX_FOLLOWS=2
 # TWITTER_MAX_REPLIES=1
 # TWITTER_MAX_TOTAL_ACTIONS=10
+# TWITTER_LLM_ENABLED=true
+# TWITTER_LLM_PROVIDER=ollama
+# TWITTER_LLM_MODEL=llama3.2:latest
+# TWITTER_LLM_REPLY_PROBABILITY=0.05
+# TWITTER_LLM_QUOTE_PROBABILITY=0.15

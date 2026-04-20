@@ -134,10 +134,14 @@ pub struct TwitterActivityConfig {
     /// Path to persona file (optional)
     #[serde(default)]
     pub persona_file_path: Option<String>,
-    
+
     /// Engagement limits for rate limit protection
     #[serde(default)]
     pub engagement_limits: EngagementLimitsConfig,
+
+    /// LLM configuration for V2 features
+    #[serde(default)]
+    pub llm: TwitterLLMConfig,
 }
 
 /// Engagement limits configuration for Twitter automation.
@@ -209,6 +213,85 @@ impl Default for EngagementLimitsConfig {
     }
 }
 
+/// LLM configuration for Twitter V2 features.
+#[derive(Debug, Deserialize, Clone)]
+pub struct TwitterLLMConfig {
+    /// Enable LLM-powered features (replies, quote tweets)
+    #[serde(default)]
+    pub enabled: bool,
+    
+    /// LLM provider: "ollama" or "openrouter"
+    #[serde(default = "default_llm_provider")]
+    pub provider: String,
+    
+    /// Model name (e.g., "llama3.2:latest")
+    #[serde(default = "default_llm_model")]
+    pub model: String,
+    
+    /// Temperature for generation (0.0-1.0)
+    #[serde(default = "default_llm_temperature")]
+    pub temperature: f64,
+    
+    /// Max tokens for replies
+    #[serde(default = "default_llm_max_tokens")]
+    pub max_tokens: u32,
+    
+    /// Timeout in milliseconds
+    #[serde(default = "default_llm_timeout")]
+    pub timeout_ms: u64,
+    
+    /// Probability of replying to eligible tweets (0.0-1.0)
+    #[serde(default = "default_reply_probability")]
+    pub reply_probability: f64,
+    
+    /// Probability of quote tweeting instead of regular retweet (0.0-1.0)
+    #[serde(default = "default_quote_probability")]
+    pub quote_tweet_probability: f64,
+}
+
+fn default_llm_provider() -> String {
+    "ollama".to_string()
+}
+
+fn default_llm_model() -> String {
+    "llama3.2:latest".to_string()
+}
+
+fn default_llm_temperature() -> f64 {
+    0.7
+}
+
+fn default_llm_max_tokens() -> u32 {
+    100
+}
+
+fn default_llm_timeout() -> u64 {
+    30000
+}
+
+fn default_reply_probability() -> f64 {
+    0.05
+}
+
+fn default_quote_probability() -> f64 {
+    0.15
+}
+
+impl Default for TwitterLLMConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: default_llm_provider(),
+            model: default_llm_model(),
+            temperature: default_llm_temperature(),
+            max_tokens: default_llm_max_tokens(),
+            timeout_ms: default_llm_timeout(),
+            reply_probability: default_reply_probability(),
+            quote_tweet_probability: default_quote_probability(),
+        }
+    }
+}
+
 fn default_feed_scan_duration() -> u64 {
     60_000
 }
@@ -227,6 +310,7 @@ impl Default for TwitterActivityConfig {
             engagement_candidate_count: default_engagement_candidate_count(),
             persona_file_path: None,
             engagement_limits: EngagementLimitsConfig::default(),
+            llm: TwitterLLMConfig::default(),
         }
     }
 }
@@ -467,6 +551,26 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     if let Ok(max_total) = env::var("TWITTER_MAX_TOTAL_ACTIONS") {
         config.twitter_activity.engagement_limits.max_total_actions =
             max_total.parse().unwrap_or(config.twitter_activity.engagement_limits.max_total_actions);
+    }
+
+    // Twitter LLM config overrides (V2)
+    if let Ok(enabled) = env::var("TWITTER_LLM_ENABLED") {
+        config.twitter_activity.llm.enabled =
+            enabled.parse().unwrap_or(config.twitter_activity.llm.enabled);
+    }
+    if let Ok(provider) = env::var("TWITTER_LLM_PROVIDER") {
+        config.twitter_activity.llm.provider = provider;
+    }
+    if let Ok(model) = env::var("TWITTER_LLM_MODEL") {
+        config.twitter_activity.llm.model = model;
+    }
+    if let Ok(prob) = env::var("TWITTER_LLM_REPLY_PROBABILITY") {
+        config.twitter_activity.llm.reply_probability =
+            prob.parse().unwrap_or(config.twitter_activity.llm.reply_probability);
+    }
+    if let Ok(prob) = env::var("TWITTER_LLM_QUOTE_PROBABILITY") {
+        config.twitter_activity.llm.quote_tweet_probability =
+            prob.parse().unwrap_or(config.twitter_activity.llm.quote_tweet_probability);
     }
 
     Ok(config)

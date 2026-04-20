@@ -22,6 +22,8 @@ pub struct EngagementCounters {
     pub thread_dives: u32,
     /// Number of bookmarks performed in current session (V2)
     pub bookmarks: u32,
+    /// Number of quote tweets performed in current session (V2)
+    pub quote_tweets: u32,
 }
 
 impl EngagementCounters {
@@ -38,6 +40,7 @@ impl EngagementCounters {
             + self.replies
             + self.thread_dives
             + self.bookmarks
+            + self.quote_tweets
     }
 
     /// Increments the like counter.
@@ -68,6 +71,11 @@ impl EngagementCounters {
     /// Increments the bookmark counter.
     pub fn increment_bookmark(&mut self) {
         self.bookmarks += 1;
+    }
+
+    /// Increments the quote tweet counter.
+    pub fn increment_quote_tweet(&mut self) {
+        self.quote_tweets += 1;
     }
 
     /// Returns a summary of all counters as a HashMap.
@@ -111,6 +119,10 @@ pub struct EngagementLimits {
     #[serde(default = "default_max_bookmarks")]
     pub max_bookmarks: u32,
 
+    /// Maximum quote tweets per session (default: 2, V2 feature)
+    #[serde(default = "default_max_quote_tweets")]
+    pub max_quote_tweets: u32,
+
     /// Maximum total engagement actions per session (default: 10)
     #[serde(default = "default_max_total_actions")]
     pub max_total_actions: u32,
@@ -140,6 +152,10 @@ fn default_max_bookmarks() -> u32 {
     0
 }
 
+fn default_max_quote_tweets() -> u32 {
+    2
+}
+
 fn default_max_total_actions() -> u32 {
     10
 }
@@ -153,6 +169,7 @@ impl Default for EngagementLimits {
             max_replies: default_max_replies(),
             max_thread_dives: default_max_thread_dives(),
             max_bookmarks: default_max_bookmarks(),
+            max_quote_tweets: default_max_quote_tweets(),
             max_total_actions: default_max_total_actions(),
         }
     }
@@ -172,6 +189,7 @@ impl EngagementLimits {
         max_replies: u32,
         max_thread_dives: u32,
         max_bookmarks: u32,
+        max_quote_tweets: u32,
         max_total: u32,
     ) -> Self {
         Self {
@@ -181,6 +199,7 @@ impl EngagementLimits {
             max_replies,
             max_thread_dives,
             max_bookmarks,
+            max_quote_tweets,
             max_total_actions: max_total,
         }
     }
@@ -218,6 +237,12 @@ impl EngagementLimits {
             && counters.total_actions() < self.max_total_actions
     }
 
+    /// Checks if a quote tweet action is allowed given current counters.
+    pub fn can_quote_tweet(&self, counters: &EngagementCounters) -> bool {
+        counters.quote_tweets < self.max_quote_tweets
+            && counters.total_actions() < self.max_total_actions
+    }
+
     /// Returns which actions are still available given current counters.
     pub fn available_actions(&self, counters: &EngagementCounters) -> Vec<&'static str> {
         let mut actions = Vec::new();
@@ -239,6 +264,9 @@ impl EngagementLimits {
         }
         if self.can_bookmark(counters) {
             actions.push("bookmark");
+        }
+        if self.can_quote_tweet(counters) {
+            actions.push("quote_tweet");
         }
 
         actions
@@ -267,6 +295,10 @@ impl EngagementLimits {
         remaining.insert(
             "bookmarks".to_string(),
             self.max_bookmarks.saturating_sub(counters.bookmarks),
+        );
+        remaining.insert(
+            "quote_tweets".to_string(),
+            self.max_quote_tweets.saturating_sub(counters.quote_tweets),
         );
         remaining.insert(
             "total_actions".to_string(),
@@ -359,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_total_actions_limit() {
-        let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 0, 5);
+        let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 0, 2, 5);
         let mut counters = EngagementCounters::new();
 
         // Fill up total actions
@@ -420,14 +452,16 @@ mod tests {
 
     #[test]
     fn test_engagement_limits_with_custom_values() {
-        let limits = EngagementLimits::with_limits(10, 5, 3, 2, 5, 1, 20);
+        let limits = EngagementLimits::with_limits(10, 5, 3, 2, 5, 1, 2, 20);
         let counters = EngagementCounters::new();
-        
+
         assert_eq!(limits.max_likes, 10);
         assert_eq!(limits.max_retweets, 5);
         assert_eq!(limits.max_follows, 3);
+        assert_eq!(limits.max_quote_tweets, 2);
         assert!(limits.can_like(&counters));
         assert!(limits.can_retweet(&counters));
+        assert!(limits.can_quote_tweet(&counters));
     }
 
     #[test]

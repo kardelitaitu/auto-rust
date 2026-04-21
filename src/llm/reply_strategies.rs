@@ -391,7 +391,7 @@ pub fn build_reply_prompt(
                     !(0x2700..=0x27BF).contains(&cp) // Dingbats
                 })
                 .collect::<String>()
-                .replace(|c: char| c == '#', "");
+                .replace('#', "");
 
             prompt.push_str(&format!(
                 "{}. @{}: {}\n",

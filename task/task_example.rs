@@ -62,7 +62,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to target URL
     info!("Navigating to: {}", config.url);
-    api.navigate_to(&config.url, NAVIGATION_TIMEOUT_MS).await?;
+    api.navigate(&config.url, NAVIGATION_TIMEOUT_MS).await?;
 
     // Sync cursor overlay if enabled
     if SHOW_CURSOR_OVERLAY {

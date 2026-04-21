@@ -88,7 +88,7 @@ async fn connect_to_browser(
         profile.r#type.clone(),
         browser,
         handler,
-        5, // max_workers
+        config.browser.max_workers_per_session,
         config.browser.cursor_overlay_ms,
     );
 
@@ -142,7 +142,7 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                                     "localBrave".to_string(),
                                     browser,
                                     handler,
-                                    5, // max_workers
+                                    config.browser.max_workers_per_session,
                                     config.browser.cursor_overlay_ms,
                                 );
                                 return Ok(Some(session));
@@ -244,7 +244,7 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
                     "roxybrowser".to_string(),
                     browser,
                     handler,
-                    5,
+                    config.browser.max_workers_per_session,
                     config.browser.cursor_overlay_ms,
                 );
                 sessions.push(session);

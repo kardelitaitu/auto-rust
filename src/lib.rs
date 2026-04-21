@@ -30,7 +30,6 @@ pub mod state;
 pub mod tests;
 pub mod utils;
 pub mod validation;
-pub mod worker_pool;
 
 #[path = "../task/mod.rs"]
 pub mod task;

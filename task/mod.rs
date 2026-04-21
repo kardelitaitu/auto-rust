@@ -28,52 +28,66 @@ pub mod twitterreply;
 pub mod twitterretweet;
 pub mod twittertest;
 
+pub const TASK_NAMES: &[&str] = &[
+    "cookiebot",
+    "pageview",
+    "demo-keyboard",
+    "demo-mouse",
+    "demoqa",
+    "task-example",
+    "twitteractivity",
+    "twitterdive",
+    "twitterfollow",
+    "twitterlike",
+    "twitterquote",
+    "twitterreply",
+    "twitterretweet",
+    "twittertest",
+];
+
+pub fn is_known_task(name: &str) -> bool {
+    let clean_name = name.strip_suffix(".js").unwrap_or(name);
+    TASK_NAMES.contains(&clean_name)
+}
+
+pub fn known_task_names() -> &'static [&'static str] {
+    TASK_NAMES
+}
+
 pub async fn perform_task(
     api: &TaskContext,
     name: &str,
     payload: Value,
-    max_retries: u32,
+    _max_retries: u32,
 ) -> Result<TaskResult> {
     let start = std::time::Instant::now();
     let clean_name = name.strip_suffix(".js").unwrap_or(name);
-    let mut attempt = 0;
-    let mut last_error = None;
 
-    while attempt < max_retries.max(1) {
-        attempt += 1;
+    let result = execute_single_attempt(api, clean_name, &payload).await;
 
-        let result = execute_single_attempt(api, clean_name, &payload).await;
+    match result {
+        Ok(()) => {
+            Ok(TaskResult::success(start.elapsed().as_millis() as u64))
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            let error_kind = TaskErrorKind::classify(&error_msg);
+            let status = if matches!(error_kind, TaskErrorKind::Timeout) {
+                TaskStatus::Timeout
+            } else {
+                TaskStatus::Failed(error_msg.clone())
+            };
 
-        match result {
-            Ok(()) => {
-                return Ok(TaskResult::success(start.elapsed().as_millis() as u64)
-                    .with_attempt(attempt, max_retries));
-            }
-            Err(e) => {
-                last_error = Some(e.to_string());
-                if attempt < max_retries {
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                }
-            }
+            Ok(TaskResult {
+                status,
+                attempt: 1,
+                max_retries: 0,
+                last_error: Some(error_msg),
+                error_kind: Some(error_kind),
+                duration_ms: start.elapsed().as_millis() as u64,
+            })
         }
     }
-
-    let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
-    let error_kind = TaskErrorKind::classify(&error_msg);
-    let status = if matches!(error_kind, TaskErrorKind::Timeout) {
-        TaskStatus::Timeout
-    } else {
-        TaskStatus::Failed(error_msg.clone())
-    };
-
-    Ok(TaskResult {
-        status,
-        attempt,
-        max_retries,
-        last_error: Some(error_msg),
-        error_kind: Some(error_kind),
-        duration_ms: start.elapsed().as_millis() as u64,
-    })
 }
 
 async fn execute_single_attempt(api: &TaskContext, name: &str, payload: &Value) -> Result<()> {

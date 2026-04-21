@@ -1,80 +1,75 @@
 # Agents Journal
 
-## 2026-04-19 - Session Progress
+## 2026-04-21 - Session Progress
 
 ### Accomplished This Session
+
+#### Documentation Updates
+- Clarified that task groups are intentionally broadcast to every active browser session.
+- Added `pageview` payload alias guidance so `url` and legacy `value` stay aligned.
+- Added a short task-authoring checklist near the API example.
+- Softened the README status block by adding a last-verified date.
+
+#### Human-Like Mouse Simulation Features
+- **Clustered pauses** (`clustered_pause()` in timing.rs): Adds micro-movements between pauses to reduce detection patterns
+- **Pointer events** (`dispatch_pointer_event()` in mouse.rs): Dispatches pointerenter, pointerleave, pointermove, pointerout around clicks
+- **Element-aware hover** (`hover_before_click()`): Detects element type (button, link, input, checkbox, dropdown) and applies appropriate hover duration (60-400ms)
 
 #### Task-API Timing Contract
 - `api.pause(base_ms)` now uses a uniform 20% deviation band.
 - High-level task-api verbs now add a built-in post-action settle pause after interaction.
 - `api.click(selector)` is the default click path; coordinate clicks are escape hatches, not the preferred flow.
 
-#### New Tasks Created
-- `twitterfollow.rs` - Follow a Twitter user
-- `twitterreply.rs` - Reply to a tweet with AI-generated content
+#### Code Review Fixes
+- Fixed clippy warnings in reply_strategies.rs and twitteractivity_limits.rs
+- Removed unused #[allow(dead_code)] from BrowserProfile, Session.profile_type, RoxybrowserConfig
+- Added max_workers_per_session to BrowserConfig with validation
+- Fixed orchestrator.rs timeout error handling (moved drop(task_ctx) after match)
+- Added shared `pageview` target resolver for validation + task execution
+- Added cooperative group timeout cancellation so cleanup can complete
 
 #### LLM Integration
-- Created `src/llm/` module with:
-  - `models.rs` - ChatMessage, LlmConfig, Ollama/OpenRouter configs
-  - `client.rs` - LLM client with automatic fallback
-  - `reply_engine.rs` - System/user prompts for AI replies
-  
-#### Navigation Improvements
-- Added trampoline/referrer URLs (Google, Bing, Yahoo, DuckDuckGo, Reddit, X, Telegram, WhatsApp)
-- Fixed index out of bounds bug in referrer selection
+- Full OpenRouter support with automatic Ollama→OpenRouter fallback
+- Standardized environment variables: LLM_PROVIDER, OLLAMA_URL (was OLLAMA_BASE_URL)
 
-#### Task Fixes
-- Moved scroll functions before test module to fix compilation
-- Added 2s post-navigate pause
-- Fixed dismiss_overlays → detect_popup
+#### Configuration Updates
+- Updated .env with current configuration variables
+- Updated .env.example with comprehensive documentation
+- Updated setup-windows.bat .env generator
 
 ### Current Status
 
 | Item | Status |
 |------|--------|
 | Build | ✅ Pass |
-| Tests | ✅ 79 passed |
-| cargo check | ✅ Clean |
+| Tests | ✅ 68 passed |
+| cargo clippy | ✅ Clean |
 
 ### Available Tasks
 ```
 cookiebot, pageview, demo-keyboard, demo-mouse, demoqa, twitterfollow, twitterreply, twitteractivity
 ```
 
-## Plan (Full Reliability Program)
+## Completed Phases (All Checkboxes ✅)
 
-### Phase 0: Safety baseline (immediate)
-- Unify retry ownership in orchestrator only.
-- Make timeout cancellation explicit with abort tokens.
-- Remove panic paths in page release.
-- Wire active_workers decrement and page registry.
+### Phase 0 - Foundations
+- [x] Unified result types, error typing
 
-### Phase 1: Core execution hardening
-- Introduce strict task state machine: Queued -> Running -> Success/Failed/Timeout/Cancelled.
-- Add per-task abort controller and group-level cancellation fanout.
-- Add deterministic worker acquisition/release guard object.
+### Phase 1 - Orchestrator Reliability
+- [x] Per-task timeout, group timeout, retry metadata, health checks
 
-### Phase 2: Navigation contract
-- Replace goto + wait_for_navigation split with a single deterministic navigate_and_wait abstraction.
-- Encode retryable navigation errors vs fatal errors.
-- Add optional domcontentloaded/load policy per task type.
+### Phase 2 - Session Lifecycle
+- [x] Full connect_to_browser, session state tracking, page registry, graceful shutdown
 
-### Phase 3: Interaction helper reliability
-- Implement CDP-native mouse/keyboard path first, JS fallback second.
-- Add viewport-aware coordinate model (no fixed 800x300 assumptions).
-- Add helper-level health assertions (element exists, page open, context valid).
+### Phase 3 - Config + Validation
+- [x] TOML config loader, task validator, parser parity with Node.js, startup validation
 
-### Phase 4: Config + policy
-- Load config from file + env overrides.
-- Move all timeout/retry/concurrency knobs out of code constants.
-- Add config validation at startup with fail-fast.
+### Phase 4 - API Utility Layer
+- [x] HTTP client with retry, circuit breaker (feature-flagged)
+- [ ] Provider fallback strategy (optional - not required for core)
 
-### Phase 5: Observability
-- Wire RunSummary end-to-end.
-- Emit structured task lifecycle logs and counters.
-- Add run report output (run-summary.json) for postmortem.
+### Phase 5 - Observability
+- [x] Metrics collector, task history ring buffer, run-summary.json export, health logging
 
-### Phase 6: Tests for core + helpers
-- Integration tests for timeout cancellation and worker cleanup.
-- Navigation race tests (redirect, slow load, interrupted nav).
-- Interaction tests for click/type reliability on real DOM targets.
+### Phase 6 - Utility Hardening
+- [x] JS fallback path, deterministic utility tests, integration tests

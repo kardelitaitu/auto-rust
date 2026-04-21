@@ -67,6 +67,50 @@ pub async fn uniform_pause(base_ms: u64, variance_pct: u32) {
     sleep(Duration::from_millis(delay)).await;
 }
 
+/// Pauses execution in clustered segments with optional micro-movements.
+/// Humans don't pause continuously - they pause, fidget slightly, pause again.
+///
+/// # Arguments
+/// * `base_ms` - Total base delay to distribute across clusters
+/// * `variance_pct` - Percentage variance to apply
+/// * `min_clusters` - Minimum number of pause clusters (default: 1)
+/// * `max_clusters` - Maximum number of pause clusters (default: 3)
+///
+/// # Details
+/// Creates 1-3 pause clusters with micro-jitters between them.
+/// This reduces rhythmic detection patterns that pure delays exhibit.
+#[allow(dead_code)]
+pub async fn clustered_pause(
+    base_ms: u64,
+    variance_pct: u32,
+    min_clusters: u64,
+    max_clusters: u64,
+) {
+    let clusters = random_in_range(min_clusters, max_clusters).max(1);
+    let base_per_cluster = base_ms / clusters.max(1);
+    let variance_per_cluster = variance_pct / 2; // Less variance per segment
+
+    for i in 0..clusters {
+        // Each cluster gets a portion of the total delay
+        let cluster_delay = if i == clusters - 1 {
+            // Last cluster gets remaining time to ensure total is approximately base_ms
+            base_ms.saturating_sub(base_per_cluster * (clusters - 1))
+        } else {
+            base_per_cluster
+        };
+
+        // Skip zero-length clusters
+        if cluster_delay > 0 {
+            let cluster_variance = if i == clusters - 1 {
+                variance_pct
+            } else {
+                variance_per_cluster
+            };
+            human_pause(cluster_delay, cluster_variance).await;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -17,7 +17,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Navigating to: {}", url);
     info!("Typo rate: {:.2}", typo_rate);
 
-    api.navigate_to(&url, 30000).await?;
+    api.navigate(&url, 30000).await?;
 
     if let Err(e) = api.wait_for_load(10000).await {
         warn!("Failed to wait for load: {}", e);

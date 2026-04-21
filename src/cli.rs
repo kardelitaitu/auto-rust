@@ -11,6 +11,7 @@ use clap::Parser;
 use log::warn;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use serde_json::Value;
 
 #[derive(Parser, Debug)]
 #[command(name = "rust-orchestrator")]
@@ -44,7 +45,7 @@ pub fn parse_args() -> Args {
 #[derive(Debug, Clone)]
 pub struct TaskDefinition {
     pub name: String,
-    pub payload: HashMap<String, String>,
+    pub payload: HashMap<String, Value>,
 }
 
 /// Result of task validation
@@ -56,24 +57,9 @@ pub struct TaskValidationResult {
     pub warnings: Vec<String>,
 }
 
-/// Registry of known task names
-/// This should match the tasks registered in `task/mod.rs`
-const KNOWN_TASKS: &[&str] = &[
-    "cookiebot",
-    "pageview",
-    "demo-keyboard",
-    "demo-mouse",
-    "demoqa",
-    "twitterfollow",
-    "twitterquote",
-    "twitterreply",
-    "twitteractivity",
-];
-
 /// Check if a task name is known (registered in the orchestrator)
 pub fn is_known_task(task_name: &str) -> bool {
-    let clean_name = task_name.strip_suffix(".js").unwrap_or(task_name);
-    KNOWN_TASKS.contains(&clean_name)
+    crate::task::is_known_task(task_name)
 }
 
 /// Check if a task file exists in the task directory
@@ -100,10 +86,10 @@ pub fn validate_task(task_name: &str) -> TaskValidationResult {
     let file_exists = task_file_exists(task_name);
 
     if !is_known {
+        let known_tasks = crate::task::known_task_names().join(", ");
         warnings.push(format!(
             "Unknown task name '{}'. Known tasks: {}",
-            clean_name,
-            KNOWN_TASKS.join(", ")
+            clean_name, known_tasks
         ));
     }
 
@@ -152,7 +138,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
     let mut groups: Vec<Vec<TaskDefinition>> = Vec::new();
     let mut current_group: Vec<TaskDefinition> = Vec::new();
     let mut current_task: Option<String> = None;
-    let mut current_payload: HashMap<String, String> = HashMap::new();
+    let mut current_payload: HashMap<String, Value> = HashMap::new();
 
     if task_args.is_empty() {
         return vec![];
@@ -199,22 +185,18 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     let is_numeric = value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty();
                     current_task = Some(shorthand_task_name);
                     if is_numeric {
-                        current_payload.insert("value".to_string(), value.to_string());
+                        current_payload.insert("value".to_string(), parse_scalar_value(value));
                     } else if key == "url" {
-                        current_payload.insert("url".to_string(), format_url(value));
+                        current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     } else if value.contains('=') {
                         if let Some(eq_pos) = value.find('=') {
                             let param_key = &value[..eq_pos];
                             let param_value = &value[eq_pos + 1..];
-                            let formatted_value = if param_key == "url" {
-                                format_url(param_value)
-                            } else {
-                                param_value.to_string()
-                            };
-                            current_payload.insert("url".to_string(), formatted_value);
+                            let formatted_value = if param_key == "url" { format_url(param_value) } else { param_value.to_string() };
+                            current_payload.insert("url".to_string(), Value::String(formatted_value));
                         }
                     } else {
-                        current_payload.insert("url".to_string(), format_url(value));
+                        current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     }
                 } else if key == current_task.as_ref().unwrap() {
                     if let Some(task_name) = current_task.take() {
@@ -226,30 +208,25 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     let is_numeric = value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty();
                     current_task = Some(shorthand_task_name);
                     if is_numeric {
-                        current_payload.insert("value".to_string(), value.to_string());
+                        current_payload.insert("value".to_string(), parse_scalar_value(value));
                     } else if key == "url" {
-                        current_payload.insert("url".to_string(), format_url(value));
+                        current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     } else if value.contains('=') {
                         if let Some(eq_pos) = value.find('=') {
                             let param_key = &value[..eq_pos];
                             let param_value = &value[eq_pos + 1..];
-                            let formatted_value = if param_key == "url" {
-                                format_url(param_value)
-                            } else {
-                                param_value.to_string()
-                            };
-                            current_payload.insert("url".to_string(), formatted_value);
+                            let formatted_value = if param_key == "url" { format_url(param_value) } else { param_value.to_string() };
+                            current_payload.insert("url".to_string(), Value::String(formatted_value));
                         }
                     } else {
-                        current_payload.insert("url".to_string(), format_url(value));
+                        current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     }
                 } else {
-                    let param_value = if key == "url" {
-                        format_url(value)
+                    if key == "url" {
+                        current_payload.insert(key.to_string(), Value::String(format_url(value)));
                     } else {
-                        value.to_string()
-                    };
-                    current_payload.insert(key.to_string(), param_value);
+                        current_payload.insert(key.to_string(), parse_scalar_value(value));
+                    }
                 }
             }
         } else {
@@ -298,6 +275,25 @@ fn format_url(value: &str) -> String {
 
     // Not a URL, return as-is
     trimmed.to_string()
+}
+
+fn parse_scalar_value(value: &str) -> Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Value::String(String::new());
+    }
+    if let Ok(boolean) = trimmed.parse::<bool>() {
+        return Value::Bool(boolean);
+    }
+    if let Ok(integer) = trimmed.parse::<i64>() {
+        return Value::Number(integer.into());
+    }
+    if let Ok(float_value) = trimmed.parse::<f64>() {
+        if let Some(number) = serde_json::Number::from_f64(float_value) {
+            return Value::Number(number);
+        }
+    }
+    Value::String(trimmed.to_string())
 }
 
 /// Formats parsed task groups into a human-readable string for logging.
@@ -349,6 +345,7 @@ pub fn format_task_groups(groups: &[Vec<TaskDefinition>]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_parse_task_groups_empty() {
@@ -387,7 +384,7 @@ mod tests {
         assert_eq!(result[0][0].name, "pageview");
         assert_eq!(
             result[0][0].payload.get("url"),
-            Some(&"https://www.reddit.com".to_string())
+            Some(&json!("https://www.reddit.com"))
         );
     }
 
@@ -401,7 +398,7 @@ mod tests {
         assert_eq!(result[0][0].name, "pageview");
         assert_eq!(
             result[0][0].payload.get("url"),
-            Some(&"https://example.com".to_string())
+            Some(&json!("https://example.com"))
         );
     }
 
@@ -415,7 +412,7 @@ mod tests {
         assert_eq!(result[0][0].name, "cookiebot");
         assert_eq!(
             result[0][0].payload.get("pageview"),
-            Some(&"reddit.com".to_string())
+            Some(&json!("reddit.com"))
         );
     }
 
@@ -435,7 +432,7 @@ mod tests {
         assert_eq!(result[1][0].name, "pageview");
         assert_eq!(
             result[1][0].payload.get("url"),
-            Some(&"https://reddit.com".to_string())
+            Some(&json!("https://reddit.com"))
         );
     }
 
@@ -455,7 +452,7 @@ mod tests {
         assert_eq!(result[0][0].name, "cookiebot");
         assert_eq!(
             result[0][0].payload.get("pageview"),
-            Some(&"www.reddit.com".to_string())
+            Some(&json!("www.reddit.com"))
         );
 
         assert_eq!(result[1].len(), 1);
@@ -470,7 +467,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 1);
         assert_eq!(result[0][0].name, "taskname");
-        assert_eq!(result[0][0].payload.get("value"), Some(&"42".to_string()));
+        assert_eq!(result[0][0].payload.get("value"), Some(&json!(42)));
     }
 
     #[test]
@@ -483,7 +480,7 @@ mod tests {
         assert_eq!(result[0][0].name, "task");
         assert_eq!(
             result[0][0].payload.get("url"),
-            Some(&"value with spaces".to_string())
+            Some(&json!("value with spaces"))
         );
     }
 
@@ -497,7 +494,7 @@ mod tests {
                 },
                 TaskDefinition {
                     name: "pageview".to_string(),
-                    payload: [("url".to_string(), "https://reddit.com".to_string())].into(),
+                    payload: [("url".to_string(), json!("https://reddit.com"))].into(),
                 },
             ],
             vec![TaskDefinition {

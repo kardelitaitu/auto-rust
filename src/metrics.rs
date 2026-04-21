@@ -81,17 +81,12 @@ impl Default for MemoryThresholds {
 }
 
 /// Status of a task execution outcome.
-/// Note: This is a duplicate of the TaskStatus enum in result.rs.
-/// Consider consolidating these in the future.
-/// TODO: Use the TaskStatus from result.rs instead
+/// Uses unit variant `Failed` for metrics (error message stored separately in last_error).
+/// Differs from result::TaskStatus::Failed(String) which stores the error for persistence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum TaskStatus {
-    /// Task completed successfully
     Success,
-    /// Task failed with an error
     Failed,
-    /// Task exceeded its timeout limit
     Timeout,
 }
 

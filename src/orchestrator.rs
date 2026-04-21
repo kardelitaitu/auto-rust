@@ -15,11 +15,13 @@ use crate::metrics::MetricsCollector;
 use crate::result::{TaskErrorKind, TaskResult};
 use crate::session::Session;
 use anyhow::{bail, Result};
+use futures::stream::{FuturesUnordered, StreamExt};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
+use tokio_util::sync::CancellationToken;
 
 /// Formats milliseconds into a human-readable duration string.
 fn format_duration(ms: u64) -> String {
@@ -110,29 +112,47 @@ impl Orchestrator {
 
         // Apply group timeout
         let group_timeout = Duration::from_millis(self.config.orchestrator.group_timeout_ms);
+        let group_cancel = CancellationToken::new();
 
-        let task_futures: Vec<_> = group
+        let mut task_futures: FuturesUnordered<_> = group
             .iter()
             .map(|task_def| {
                 let global_active = self.global_active_tasks.clone();
                 let global_sem = self.global_semaphore.clone();
                 let config = self.config.clone();
                 let metrics = metrics.clone();
+                let cancel_token = group_cancel.clone();
 
                 async move {
                     // Global concurrency throttling
                     let _permit = global_sem.acquire().await?;
                     global_active.fetch_add(1, Ordering::SeqCst);
 
+                    if cancel_token.is_cancelled() {
+                        global_active.fetch_sub(1, Ordering::SeqCst);
+                        return Ok(());
+                    }
+
                     // Stagger task starts to prevent network spikes
-                    tokio::time::sleep(Duration::from_millis(
-                        config.orchestrator.task_stagger_delay_ms,
-                    ))
-                    .await;
+                    tokio::select! {
+                        _ = cancel_token.cancelled() => {
+                            global_active.fetch_sub(1, Ordering::SeqCst);
+                            return Ok(());
+                        }
+                        _ = tokio::time::sleep(Duration::from_millis(
+                            config.orchestrator.task_stagger_delay_ms,
+                        )) => {}
+                    }
 
                     // Find an available session and execute the task
-                    let result =
-                        execute_task_on_session(task_def, sessions, &config, metrics.clone()).await;
+                    let result = execute_task_on_session(
+                        task_def,
+                        sessions,
+                        &config,
+                        metrics.clone(),
+                        cancel_token,
+                    )
+                    .await;
 
                     global_active.fetch_sub(1, Ordering::SeqCst);
                     result
@@ -140,37 +160,51 @@ impl Orchestrator {
             })
             .collect();
 
-        // Execute all tasks in parallel within the group
-        let results = timeout(group_timeout, async {
-            futures::future::join_all(task_futures).await
-        })
-        .await;
+        let group_deadline = tokio::time::sleep(group_timeout);
+        tokio::pin!(group_deadline);
+        let mut results = Vec::with_capacity(group.len());
+        let mut timed_out = false;
 
-        match results {
-            Ok(results) => {
-                let success_count = results.iter().filter(|r| r.is_ok()).count();
-                let fail_count = results.len() - success_count;
-
-                info!(
-                    "Group complete: {} succeeded, {} failed ({}s)",
-                    success_count,
-                    fail_count,
-                    group_start.elapsed().as_secs_f64()
-                );
-
-                if fail_count > 0 {
-                    warn!("{fail_count} task(s) failed in group");
+        while !task_futures.is_empty() {
+            tokio::select! {
+                _ = &mut group_deadline, if !timed_out => {
+                    timed_out = true;
+                    warn!(
+                        "Group timeout exceeded ({}ms), cancelling outstanding tasks",
+                        self.config.orchestrator.group_timeout_ms
+                    );
+                    group_cancel.cancel();
                 }
-
-                Ok(())
-            }
-            Err(_) => {
-                bail!(
-                    "Group timeout exceeded ({}ms)",
-                    self.config.orchestrator.group_timeout_ms
-                );
+                maybe_result = task_futures.next() => {
+                    if let Some(result) = maybe_result {
+                        results.push(result);
+                    }
+                }
             }
         }
+
+        if timed_out {
+            bail!(
+                "Group timeout exceeded ({}ms)",
+                self.config.orchestrator.group_timeout_ms
+            );
+        }
+
+        let success_count = results.iter().filter(|r| r.is_ok()).count();
+        let fail_count = results.len() - success_count;
+
+        info!(
+            "Group complete: {} succeeded, {} failed ({}s)",
+            success_count,
+            fail_count,
+            group_start.elapsed().as_secs_f64()
+        );
+
+        if fail_count > 0 {
+            warn!("{fail_count} task(s) failed in group");
+        }
+
+        Ok(())
     }
 }
 
@@ -181,6 +215,7 @@ async fn execute_task_on_session(
     sessions: &[Session],
     config: &Config,
     metrics: Arc<MetricsCollector>,
+    cancel_token: CancellationToken,
 ) -> Result<()> {
     if sessions.is_empty() {
         bail!("No sessions available");
@@ -199,8 +234,16 @@ async fn execute_task_on_session(
             let task_def = task_def.clone();
             let config = config.clone();
             let metrics = metrics.clone();
+            let cancel_token = cancel_token.clone();
             async move {
-                let result = execute_task_with_retry(&task_def, session, &config, metrics).await;
+                let result = execute_task_with_retry(
+                    &task_def,
+                    session,
+                    &config,
+                    metrics,
+                    cancel_token,
+                )
+                .await;
                 (session.id.clone(), result)
             }
         })
@@ -247,8 +290,14 @@ async fn execute_task_on_session(
             sessions.len(),
             failed_sessions.join(", ")
         );
-        // Return Ok if at least one session succeeded
+        // Return Ok if at least one session succeeded, but log warning for partial failure
         if success_count > 0 {
+            warn!(
+                "[{}] Partial failure: {}/{} sessions succeeded (some failed)",
+                task_def.name,
+                success_count,
+                sessions.len()
+            );
             Ok(())
         } else {
             bail!(
@@ -266,6 +315,7 @@ async fn execute_task_with_retry(
     session: &Session,
     config: &Config,
     metrics: Arc<MetricsCollector>,
+    cancel_token: CancellationToken,
 ) -> TaskResult {
     let start = std::time::Instant::now();
     let max_retries = config.orchestrator.max_retries;
@@ -282,10 +332,16 @@ async fn execute_task_with_retry(
     };
 
     // Acquire worker permit
-    let permit = match session
-        .acquire_worker(config.orchestrator.worker_wait_timeout_ms)
-        .await
-    {
+    let permit = match tokio::select! {
+        permit = session.acquire_worker(config.orchestrator.worker_wait_timeout_ms) => permit,
+        _ = cancel_token.cancelled() => {
+            return TaskResult::failure(
+                start.elapsed().as_millis() as u64,
+                format!("Task {} cancelled before worker acquisition", task_def.name),
+                TaskErrorKind::Timeout,
+            );
+        }
+    } {
         Some(permit) => permit,
         None => {
             return TaskResult::failure(
@@ -306,13 +362,7 @@ async fn execute_task_with_retry(
         );
     }
 
-    let payload_json = serde_json::Value::Object(
-        task_def
-            .payload
-            .iter()
-            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-            .collect(),
-    );
+    let payload_json = serde_json::Value::Object(task_def.payload.clone().into_iter().collect());
 
     if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
         drop(permit);
@@ -324,28 +374,25 @@ async fn execute_task_with_retry(
     }
 
     let page = if task_def.name == "pageview" {
-        let target_url = payload_json
-            .get("url")
-            .and_then(|v| v.as_str())
-            .or_else(|| payload_json.get("value").and_then(|v| v.as_str()));
-        match target_url {
-            Some(target_url) => match session.acquire_page_at(target_url).await {
-                Ok(page) => page,
-                Err(e) => {
-                    drop(permit);
-                    return TaskResult::failure(
-                        start.elapsed().as_millis() as u64,
-                        e.to_string(),
-                        TaskErrorKind::Browser,
-                    );
-                }
-            },
-            None => {
+        let target_url = match crate::validation::task::resolve_pageview_target(&payload_json) {
+            Ok(url) => url,
+            Err(e) => {
                 drop(permit);
                 return TaskResult::failure(
                     start.elapsed().as_millis() as u64,
-                    "pageview requires a url or value payload".to_string(),
+                    e.to_string(),
                     TaskErrorKind::Validation,
+                );
+            }
+        };
+        match session.acquire_page_at(&target_url).await {
+            Ok(page) => page,
+            Err(e) => {
+                drop(permit);
+                return TaskResult::failure(
+                    start.elapsed().as_millis() as u64,
+                    e.to_string(),
+                    TaskErrorKind::Browser,
                 );
             }
         }
@@ -381,6 +428,14 @@ async fn execute_task_with_retry(
     let mut attempt = 0;
 
     for current_attempt in 1..=retry_policy.max_retries + 1 {
+        if cancel_token.is_cancelled() {
+            last_failure = Some((
+                format!("Task {} cancelled during group shutdown", task_def.name),
+                TaskErrorKind::Timeout,
+            ));
+            break;
+        }
+
         attempt = current_attempt;
 
         let task_ctx = crate::runtime::task_context::TaskContext::new(
@@ -390,22 +445,31 @@ async fn execute_task_with_retry(
             session.behavior_runtime,
         );
 
-        let task_result = tokio::time::timeout(
-            task_timeout,
-            crate::task::perform_task(&task_ctx, &task_def.name, payload_json.clone(), max_retries),
-        )
-        .await;
-
-        drop(task_ctx);
+        let task_result = tokio::select! {
+            _ = cancel_token.cancelled() => {
+                drop(task_ctx);
+                last_failure = Some((
+                    format!("Task {} cancelled during execution", task_def.name),
+                    TaskErrorKind::Timeout,
+                ));
+                break;
+            }
+            task_result = timeout(
+                task_timeout,
+                crate::task::perform_task(&task_ctx, &task_def.name, payload_json.clone(), max_retries),
+            ) => task_result,
+        };
 
         match task_result {
             Ok(Ok(task_result)) if task_result.is_success() => {
+                drop(task_ctx);
                 session.release_page(page).await;
                 drop(permit);
                 session.mark_healthy();
                 return task_result.with_attempt(current_attempt, max_retries);
             }
             Ok(Ok(task_result)) => {
+                drop(task_ctx);
                 let error = task_result
                     .last_error
                     .clone()
@@ -416,10 +480,12 @@ async fn execute_task_with_retry(
                 last_failure = Some((error, kind));
             }
             Ok(Err(e)) => {
+                drop(task_ctx);
                 let error = e.to_string();
                 last_failure = Some((error.clone(), TaskErrorKind::classify(&error)));
             }
             Err(_) => {
+                drop(task_ctx);
                 last_failure = Some((
                     format!(
                         "Task timed out after {}ms",
@@ -443,16 +509,32 @@ async fn execute_task_with_retry(
         }
 
         let delay = retry_policy.delay_for_attempt(current_attempt);
-        tokio::time::sleep(delay).await;
+        tokio::select! {
+            _ = cancel_token.cancelled() => {
+                last_failure = Some((
+                    format!("Task {} cancelled during retry backoff", task_def.name),
+                    TaskErrorKind::Timeout,
+                ));
+                break;
+            }
+            _ = tokio::time::sleep(delay) => {}
+        }
     }
 
     session.release_page(page).await;
     drop(permit);
-    session.increment_failure();
+
+    let was_cancelled = last_failure
+        .as_ref()
+        .map(|(msg, _)| msg.contains("cancelled"))
+        .unwrap_or(false);
+    if !was_cancelled {
+        session.increment_failure();
+    }
 
     let (msg, kind) = last_failure
         .unwrap_or_else(|| ("Unknown task failure".to_string(), TaskErrorKind::Unknown));
-    if kind == TaskErrorKind::Timeout {
+    if kind == TaskErrorKind::Timeout && !was_cancelled {
         session.mark_unhealthy();
     }
 

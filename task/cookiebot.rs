@@ -27,7 +27,7 @@ pub async fn run(api: &TaskContext, _payload: Value) -> Result<()> {
         let nav_start = Instant::now();
 
         // Step 1: Navigate to URL (max 15s)
-        if let Err(e) = api.navigate_to(url, 15000).await {
+        if let Err(e) = api.navigate(url, 15000).await {
             warn!("Failed to navigate to {}: {}", url, e);
             continue;
         }

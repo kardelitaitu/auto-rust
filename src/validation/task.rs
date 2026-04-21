@@ -45,16 +45,30 @@ impl TaskPayload {
         match self.name.as_str() {
             "cookiebot" => self.validate_cookiebot(),
             "pageview" => self.validate_pageview(),
+            "demo-keyboard" => self.validate_object_payload("demo-keyboard"),
+            "demo-mouse" => self.validate_object_payload("demo-mouse"),
             "twitterfollow" => self.validate_twitterfollow(),
+            "twitterdive" => self.validate_object_payload("twitterdive"),
+            "twitterlike" => self.validate_object_payload("twitterlike"),
             "twitterquote" => self.validate_twitterquote(),
             "twitterreply" => self.validate_twitterreply(),
+            "twitterretweet" => self.validate_object_payload("twitterretweet"),
+            "twittertest" => self.validate_object_payload("twittertest"),
             "twitteractivity" => self.validate_twitteractivity(),
             "demoqa" => self.validate_demoqa(),
+            "task-example" => self.validate_object_payload("task-example"),
             _ => {
                 info!("No validation schema for task: {}", self.name);
                 Ok(())
             }
         }
+    }
+
+    fn validate_object_payload(&self, task_name: &str) -> Result<()> {
+        if !self.payload.is_object() {
+            bail!("{task_name} payload must be an object");
+        }
+        Ok(())
     }
 
     fn validate_cookiebot(&self) -> Result<()> {
@@ -67,21 +81,7 @@ impl TaskPayload {
     }
 
     fn validate_pageview(&self) -> Result<()> {
-        if !self.payload.is_object() {
-            bail!("pageview payload must be an object");
-        }
-
-        // pageview requires 'url' field
-        if !self
-            .payload
-            .get("url")
-            .map(|v| !v.is_null())
-            .unwrap_or(false)
-        {
-            bail!("pageview payload requires 'url' field");
-        }
-
-        Ok(())
+        resolve_pageview_target(&self.payload).map(|_| ())
     }
 
     fn validate_twitterfollow(&self) -> Result<()> {
@@ -197,9 +197,29 @@ pub fn validate_task(name: &str, payload: Value) -> Result<()> {
     TaskPayload::new(name.to_string(), payload).validate()
 }
 
+/// Resolves the target URL for `pageview`.
+///
+/// Accepts both `url` and the legacy `value` alias so validation and task
+/// execution stay in sync.
+pub fn resolve_pageview_target(payload: &Value) -> Result<String> {
+    if !payload.is_object() {
+        bail!("pageview payload must be an object");
+    }
+
+    for key in ["url", "value"] {
+        if let Some(target) = payload.get(key).and_then(|v| v.as_str()) {
+            if !target.trim().is_empty() {
+                return Ok(target.to_string());
+            }
+        }
+    }
+
+    bail!("pageview payload requires 'url' or 'value'");
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_task;
+    use super::{resolve_pageview_target, validate_task};
     use serde_json::json;
 
     #[test]
@@ -224,5 +244,13 @@ mod tests {
     fn demoqa_requires_object() {
         assert!(validate_task("demoqa", json!([])).is_err());
         assert!(validate_task("demoqa", json!({})).is_ok());
+    }
+
+    #[test]
+    fn pageview_accepts_value_alias() {
+        assert_eq!(
+            resolve_pageview_target(&json!({"value":"https://example.com"})).unwrap(),
+            "https://example.com"
+        );
     }
 }

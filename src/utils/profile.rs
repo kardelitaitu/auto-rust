@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::mouse::{CursorMovementConfig, PathStyle, Precision, Speed};
 
-const CURSOR_SPEED_BOOST_FACTOR: f64 = 2.5;
+const CURSOR_SPEED_BOOST_FACTOR: f64 = 4.0;
 const CURSOR_INTERVAL_MIN_FLOOR_MS: u64 = 80;
 
 /// A profile parameter with base value and deviation percentage.
@@ -128,6 +128,7 @@ pub struct ProfileRuntime {
     pub click: ClickBehavior,
     pub scroll: ScrollBehavior,
     pub action_delay: ActionDelayBehavior,
+    pub random_cursor_safe_edge_ratio: f64,
 }
 
 impl ProfileParam {
@@ -355,6 +356,14 @@ impl BrowserProfile {
         }
     }
 
+    /// Derives safe edge ratio for random cursor moves.
+    /// Larger values keep movement farther from viewport edges.
+    pub fn random_cursor_safe_edge_ratio(&self) -> f64 {
+        let precision = self.cursor_precision.base.clamp(60.0, 100.0);
+        let extra = ((100.0 - precision) / 40.0) * 0.08;
+        (0.10 + extra).clamp(0.10, 0.18)
+    }
+
     /// Builds a stable runtime snapshot for a session.
     pub fn runtime(&self) -> ProfileRuntime {
         ProfileRuntime {
@@ -363,6 +372,7 @@ impl BrowserProfile {
             click: self.click_behavior(),
             scroll: self.scroll_behavior(),
             action_delay: self.action_delay_behavior(),
+            random_cursor_safe_edge_ratio: self.random_cursor_safe_edge_ratio(),
         }
     }
 }

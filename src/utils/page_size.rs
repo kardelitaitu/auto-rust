@@ -95,6 +95,23 @@ pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
     (x, y)
 }
 
+/// Generates a random viewport position while avoiding the outer edge band.
+/// `edge_ratio` is clamped to [0.0, 0.45], where 0.10 means avoid outer 10% on each side.
+#[allow(dead_code)]
+pub fn random_position_with_edge_ratio(viewport: &Viewport, edge_ratio: f64) -> (f64, f64) {
+    use crate::utils::math::random_in_range;
+
+    let clamped_ratio = edge_ratio.clamp(0.0, 0.45);
+    let min_x = (viewport.width * clamped_ratio).max(1.0);
+    let min_y = (viewport.height * clamped_ratio).max(1.0);
+    let max_x = (viewport.width * (1.0 - clamped_ratio)).max(min_x + 1.0);
+    let max_y = (viewport.height * (1.0 - clamped_ratio)).max(min_y + 1.0);
+
+    let x = random_in_range(min_x as u64, max_x as u64) as f64;
+    let y = random_in_range(min_y as u64, max_y as u64) as f64;
+    (x, y)
+}
+
 /// Gets the center position of a target element.
 /// Uses element.getBoundingClientRect() to find the element's position.
 ///

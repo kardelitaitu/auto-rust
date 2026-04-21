@@ -1,20 +1,22 @@
-# Rust
+# Rust build output
 /target
 # Keep Cargo.lock committed for reproducible binary builds
 
-# Config (contains live browser URLs)
+# Local config and secrets
 config.toml
-# IDE
+.env
+
+# IDE files
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs and generated reports
 *.log
 logs/
 auto-rust.log
@@ -26,15 +28,10 @@ run-summary.json
 # Migration steps
 .migration-steps/
 
-# Nodejs reference
+# Reference and analysis outputs
 .nodejs-reference
-
-# Graphify / analysis outputs
 .graphify_*.json
 graphify-out/
 
 # Qwen
 .qwen/
-
-
-.env

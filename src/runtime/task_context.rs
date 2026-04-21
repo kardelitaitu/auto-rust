@@ -206,17 +206,20 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Navigate with standard settle timing. Alias for `navigate()`.
+    /// Deprecated alias for `navigate()`.
+    #[deprecated(note = "Use navigate() directly.")]
     pub async fn navigate_to(&self, url: &str, timeout_ms: u64) -> Result<()> {
         self.navigate(url, timeout_ms).await
     }
 
-    /// Navigate with minimal pause for faster execution.
+    /// Deprecated alias for `navigate()`.
+    #[deprecated(note = "Use navigate() directly.")]
     pub async fn navigate_to_light(&self, url: &str, timeout_ms: u64) -> Result<()> {
         self.navigate(url, timeout_ms).await
     }
 
-    /// Raw navigation without timing adjustments.
+    /// Deprecated alias for `navigate()`.
+    #[deprecated(note = "Use navigate() directly.")]
     pub async fn navigate_to_raw(&self, url: &str, timeout_ms: u64) -> Result<()> {
         self.navigate(url, timeout_ms).await
     }
@@ -302,7 +305,8 @@ impl TaskContext {
     /// Move cursor to a random viewport position for human-like behavior.
     pub async fn randomcursor(&self) -> Result<RandomCursorOutcome> {
         let viewport = self.viewport().await?;
-        let (x, y) = page_size::random_position(&viewport, 12.0);
+        let edge_ratio = self.behavior_runtime.random_cursor_safe_edge_ratio.max(0.10);
+        let (x, y) = page_size::random_position_with_edge_ratio(&viewport, edge_ratio);
         let config = self.behavior_profile.cursor_movement_config();
         mouse::cursor_move_to_with_config(self.page(), x, y, &config).await?;
         self.post_interaction_pause().await;
@@ -416,6 +420,13 @@ impl TaskContext {
         {
             Ok(Ok(())) => {
                 info!("[task-api] click fallback '{}': click_at ok", selector);
+                let verified = self.verify_selector_hit(selector, focus.x, focus.y).await?;
+                if !verified {
+                    return Err(anyhow::anyhow!(
+                        "[task-api] fallback click target verification failed for '{}'",
+                        selector
+                    ));
+                }
                 Ok(ClickOutcome {
                     click: crate::utils::mouse::ClickStatus::Success,
                     x: focus.x,
@@ -740,7 +751,29 @@ impl TaskContext {
         self.press("Backspace").await
     }
 
+    async fn verify_selector_hit(&self, selector: &str, x: f64, y: f64) -> Result<bool> {
+        let selector_js = serde_json::to_string(selector)?;
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                const hit = document.elementFromPoint({x}, {y});
+                if (!hit) return false;
+                return el === hit || el.contains(hit) || hit.contains(el);
+            }})()"#
+        );
+        let eval = tokio::time::timeout(std::time::Duration::from_millis(500), self.page.evaluate(js))
+            .await
+            .map_err(|_| anyhow::anyhow!("fallback click verification timeout"))??;
+        Ok(eval.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    }
+
     async fn post_interaction_pause(&self) {
-        timing::uniform_pause(500, 40).await;
+        let action_delay = &self.behavior_runtime.action_delay;
+        let base_ms = action_delay.min_ms.clamp(120, 1_500);
+        let variance_pct = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
+        timing::uniform_pause(base_ms, variance_pct).await;
     }
 }

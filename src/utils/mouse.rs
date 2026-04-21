@@ -21,6 +21,7 @@ use chromiumoxide::cdp::browser_protocol::input::{
 };
 use chromiumoxide::Page;
 use log::debug;
+use once_cell::sync::Lazy;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -163,6 +164,17 @@ pub async fn wait_for_stable_element(
 }
 
 const OVERLAY_SYNC_INTERVAL_MS: u64 = 50;
+const DEFAULT_OVERLAY_SIZE_PX: f64 = 12.0;
+const MIN_OVERLAY_SIZE_PX: f64 = 4.0;
+const MAX_OVERLAY_SIZE_PX: f64 = 64.0;
+
+static OVERLAY_SIZE_PX: Lazy<f64> = Lazy::new(|| {
+    std::env::var("MOUSE_OVERLAY_SIZE_PX")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .map(|value| value.clamp(MIN_OVERLAY_SIZE_PX, MAX_OVERLAY_SIZE_PX))
+        .unwrap_or(DEFAULT_OVERLAY_SIZE_PX)
+});
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -486,8 +498,8 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
                 dot = document.createElement('div');
                 dot.id = '__auto_rust_mouse_overlay';
                 dot.style.position = 'fixed';
-                dot.style.width = '8px';
-                dot.style.height = '8px';
+                dot.style.width = '{}px';
+                dot.style.height = '{}px';
                 dot.style.background = '#00ff00';
                 dot.style.pointerEvents = 'none';
                 dot.style.zIndex = '2147483647';
@@ -496,8 +508,10 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
             dot.style.left = '{}px';
             dot.style.top = '{}px';
         }})();",
-        x - 4.0,
-        y - 4.0
+        *OVERLAY_SIZE_PX,
+        *OVERLAY_SIZE_PX,
+        x - (*OVERLAY_SIZE_PX / 2.0),
+        y - (*OVERLAY_SIZE_PX / 2.0)
     ));
 
     timeout(Duration::from_millis(500), eval)
@@ -746,9 +760,29 @@ pub async fn right_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
 }
 
 async fn dispatch_click(page: &Page, x: f64, y: f64, button: MouseButton) -> Result<()> {
+    // Fire pointer events around the click for better browser compatibility
+    // Real browsers fire these, but most automation tools skip them
+    let _ = dispatch_pointer_event(page, "pointerover", x, y, button).await;
+    let _ = dispatch_pointer_event(page, "pointerenter", x, y, button).await;
+    
+    // Small delay to simulate pointer capture
+    crate::utils::timing::human_pause(15, 30).await;
+    
+    // Fire pointermove at final position
+    let _ = dispatch_pointer_event(page, "pointermove", x, y, button).await;
+
+    // Mouse events (the actual click)
     let button_idx = button.as_button_index();
     dispatch_mouse_action(page, x, y, button_idx, "mousedown").await?;
+    
+    // Brief press duration - real humans don't release immediately
+    crate::utils::timing::human_pause(80, 25).await;
+    
     dispatch_mouse_action(page, x, y, button_idx, "mouseup").await?;
+    
+    // Fire pointerout after click (cleanup)
+    let _ = dispatch_pointer_event(page, "pointerout", x, y, button).await;
+    
     Ok(())
 }
 
@@ -833,6 +867,68 @@ fn mouse_button_mask(button_idx: u16) -> i64 {
         2 => 2, // Right
         _ => 0,
     }
+}
+
+/// Dispatch a pointer event for enhanced browser event coverage.
+/// Pointer events (pointerover, pointerenter, pointermove, etc.) are fired
+/// by real browsers but often skipped by automation tools.
+///
+/// # Arguments
+/// * `page` - Browser page
+/// * `event_type` - Pointer event type (pointerover, pointerenter, pointermove, pointerout, pointerleave)
+/// * `x` - X coordinate
+/// * `y` - Y coordinate
+/// * `button` - Mouse button being pressed
+async fn dispatch_pointer_event(
+    page: &Page,
+    event_type: &str,
+    x: f64,
+    y: f64,
+    button: MouseButton,
+) -> Result<()> {
+    let pointer_id = 1; // Standard mouse pointer ID
+    let button_idx = button.as_button_index();
+    let buttons = mouse_button_mask(button_idx);
+
+    let js = format!(
+        r#"(function() {{
+            const el = document.elementFromPoint({}, {});
+            if (!el) return false;
+            
+            const evt = new PointerEvent('{}', {{
+                bubbles: true,
+                cancelable: true,
+                clientX: {},
+                clientY: {},
+                pointerId: {},
+                width: 1,
+                height: 1,
+                pressure: 0.5,
+                tiltX: 0,
+                tiltY: 0,
+                pointerType: 'mouse',
+                isPrimary: true,
+                button: {},
+                buttons: {}
+            }});
+            
+            el.dispatchEvent(evt);
+            return true;
+        }})();"#,
+        x, y, event_type, x, y, pointer_id, button_idx, buttons
+    );
+
+    let result = timeout(Duration::from_secs(2), page.evaluate(js))
+        .await
+        .map_err(|_| anyhow::anyhow!("dispatch_pointer_event timed out"))??;
+
+    let did_dispatch = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+    if !did_dispatch {
+        // Non-fatal - some elements don't support pointer events
+        debug!("dispatch_pointer_event: no element at ({}, {})", x, y);
+    }
+
+    Ok(())
 }
 
 fn map_cdp_event_type(event_type: &str) -> Option<DispatchMouseEventType> {
@@ -923,6 +1019,80 @@ pub async fn middle_click_selector_human(
     .await
 }
 
+pub async fn hover_before_click(
+    page: &Page,
+    _selector: &str,
+    x: f64,
+    y: f64,
+    element_type: &str,
+) -> Result<()> {
+    // Different elements have different natural hover times based on human behavior
+    let base_hover_ms: u64 = match element_type {
+        "button" => random_in_range(80, 200),
+        "link" => random_in_range(100, 350),
+        "input" => random_in_range(50, 150),
+        "checkbox" => random_in_range(120, 280),
+        "radio" => random_in_range(100, 250),
+        "dropdown" | "select" => random_in_range(150, 400),
+        "menu" | "nav" => random_in_range(60, 180),
+        _ => random_in_range(60, 180),
+    };
+
+    // Fire pointerenter at hover start
+    let _ = dispatch_pointer_event(page, "pointerenter", x, y, MouseButton::Left).await;
+    
+    // Variable hover duration with variance
+    let variance = random_in_range(20, 40) as u32;
+    human_pause(base_hover_ms, variance).await;
+    
+    // Subtle position shift during hover (humans aren't perfectly still)
+    let hover_shift_x = gaussian(0.0, 1.5, -4.0, 4.0);
+    let hover_shift_y = gaussian(0.0, 1.5, -4.0, 4.0);
+    dispatch_mousemove(page, x + hover_shift_x, y + hover_shift_y).await?;
+    
+    // Fire pointerleave before click (to properly balance pointerenter)
+    let _ = dispatch_pointer_event(page, "pointerleave", x, y, MouseButton::Left).await;
+    
+    Ok(())
+}
+
+/// Detects element type from selector for hover duration customization.
+/// This is a heuristic-based detection.
+fn detect_element_type(selector: &str) -> String {
+    let sel_lower = selector.to_lowercase();
+    
+    // Input elements
+    if sel_lower.contains("input") {
+        if sel_lower.contains("checkbox") {
+            return "checkbox".to_string();
+        }
+        if sel_lower.contains("radio") {
+            return "radio".to_string();
+        }
+        return "input".to_string();
+    }
+    
+    // Form elements
+    if sel_lower.contains("button") || sel_lower.contains("submit") {
+        return "button".to_string();
+    }
+    if sel_lower.contains("select") || sel_lower.contains("dropdown") {
+        return "dropdown".to_string();
+    }
+    
+    // Navigation
+    if sel_lower.contains("nav") || sel_lower.contains("menu") || sel_lower.contains("a[") {
+        return "link".to_string();
+    }
+    
+    // Generic link
+    if sel_lower.starts_with("a ") || sel_lower.starts_with("a[") {
+        return "link".to_string();
+    }
+    
+    "default".to_string()
+}
+
 pub async fn click_selector_human(
     page: &Page,
     selector: &str,
@@ -958,7 +1128,11 @@ pub async fn click_selector_human(
         cursor_move_to_immediate(page, x, y),
     )
     .await;
-    human_pause(reaction_delay_ms, reaction_delay_variance_pct).await;
+    
+    // Add human-like hover before clicking
+    let element_type = detect_element_type(selector);
+    hover_before_click(page, selector, x, y, &element_type).await?;
+    
     timeout(
         Duration::from_secs(2),
         dispatch_click(page, x, y, MouseButton::Left),
@@ -1136,7 +1310,11 @@ async fn click_selector_with_button(
     let bbox = resolve_selector_bbox(page, selector).await?;
     let (x, y) = choose_click_point(&bbox, click_offset_px);
     cursor_move_to(page, x, y).await?;
-    human_pause(reaction_delay_ms, reaction_delay_variance_pct).await;
+    
+    // Add human-like hover before clicking
+    let element_type = detect_element_type(selector);
+    hover_before_click(page, selector, x, y, &element_type).await?;
+    
     dispatch_click(page, x, y, button).await?;
 
     let settle_ms = (reaction_delay_ms / 4).clamp(40, 200);

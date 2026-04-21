@@ -182,6 +182,7 @@ impl EngagementLimits {
     }
 
     /// Creates a new limits instance with custom values.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_limits(
         max_likes: u32,
         max_retweets: u32,

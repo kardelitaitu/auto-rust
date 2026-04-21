@@ -37,8 +37,8 @@ pub struct Session {
     pub id: String,
     /// Human-readable name for this session
     pub name: String,
-    /// Browser profile type (e.g., "chrome", "brave") (currently unused)
-    #[allow(dead_code)]
+    /// Browser profile type (e.g., "chrome", "brave")
+    /// Stored for logging/debugging purposes
     pub profile_type: String,
     /// Behavioral profile for human-like interactions (cursor, typing, etc.)
     pub behavior_profile: BrowserProfile,

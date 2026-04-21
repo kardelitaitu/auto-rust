@@ -35,6 +35,7 @@ mod config_tests {
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
                 cursor_overlay_ms: 0,
+                max_workers_per_session: 5,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 5,
@@ -75,6 +76,7 @@ mod config_tests {
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
                 cursor_overlay_ms: 0,
+                max_workers_per_session: 5,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 0,

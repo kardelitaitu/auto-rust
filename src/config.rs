@@ -27,12 +27,17 @@ pub struct Config {
 
 /// Configuration for browser connections and management.
 /// Defines how the orchestrator discovers, connects to, and manages browser instances.
+/// 
+/// # Future Use
+/// - `connectors`: Reserved for additional browser connector types beyond RoxyBrowser
+/// - `connection_timeout_ms`: Not currently used - chromiumoxide::Browser::connect has no timeout param
 #[derive(Debug, Deserialize, Clone)]
 pub struct BrowserConfig {
-    /// List of browser connector types to use (currently unused)
+    /// List of browser connector types to use
     #[allow(dead_code)]
     pub connectors: Vec<String>,
-    /// Timeout for establishing browser connections in milliseconds (currently unused)
+    /// Timeout for establishing browser connections in milliseconds
+    /// Note: Not currently applied - chromiumoxide::Browser::connect() has no timeout
     #[allow(dead_code)]
     pub connection_timeout_ms: u64,
     /// Maximum number of attempts to discover available browsers
@@ -55,6 +60,9 @@ pub struct BrowserConfig {
     /// Cursor overlay sync interval in milliseconds (0 = disabled)
     #[serde(default)]
     pub cursor_overlay_ms: u64,
+    /// Maximum concurrent pages/workers per session
+    #[serde(default = "default_max_workers_per_session")]
+    pub max_workers_per_session: usize,
 }
 
 /// Configuration for circuit breaker pattern implementation.
@@ -79,18 +87,15 @@ pub struct CircuitBreakerConfig {
 pub struct BrowserProfile {
     /// Human-readable name for this browser profile
     pub name: String,
-    /// Type of browser (e.g., "chrome", "brave", "firefox") (currently unused)
-    #[allow(dead_code)]
+    /// Type of browser (e.g., "chrome", "brave", "firefox")
     pub r#type: String,
-    /// WebSocket endpoint URL for connecting to the browser (currently unused)
-    #[allow(dead_code)]
+    /// WebSocket endpoint URL for connecting to the browser
     pub ws_endpoint: String,
 }
 
 /// Configuration for RoxyBrowser API integration.
 /// RoxyBrowser provides cloud-hosted browser instances for automation tasks.
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
 pub struct RoxybrowserConfig {
     /// Whether RoxyBrowser integration is enabled
     pub enabled: bool,
@@ -148,6 +153,48 @@ pub struct TwitterActivityConfig {
     pub llm: TwitterLLMConfig,
 }
 
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct TwitterLLMConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_llm_provider")]
+    pub provider: String,
+    #[serde(default = "default_llm_model")]
+    pub model: String,
+    #[serde(default = "default_llm_temperature")]
+    pub temperature: f64,
+    #[serde(default = "default_llm_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_llm_timeout")]
+    pub timeout_ms: u64,
+    #[serde(default = "default_reply_probability")]
+    pub reply_probability: f64,
+    #[serde(default = "default_quote_probability")]
+    pub quote_tweet_probability: f64,
+}
+
+fn default_llm_provider() -> String {
+    "ollama".to_string()
+}
+fn default_llm_model() -> String {
+    "llama3.2:latest".to_string()
+}
+fn default_llm_temperature() -> f64 {
+    0.7
+}
+fn default_llm_max_tokens() -> u32 {
+    100
+}
+fn default_llm_timeout() -> u64 {
+    30000
+}
+fn default_reply_probability() -> f64 {
+    0.05
+}
+fn default_quote_probability() -> f64 {
+    0.15
+}
+
 /// Engagement limits configuration for Twitter automation.
 /// Prevents rate limits and account restrictions by capping actions per session.
 #[derive(Debug, Deserialize, Clone)]
@@ -173,6 +220,20 @@ pub struct EngagementLimitsConfig {
     /// Maximum total engagement actions per session (default: 10)
     #[serde(default = "default_max_total_actions")]
     pub max_total_actions: u32,
+}
+
+impl Default for EngagementLimitsConfig {
+    fn default() -> Self {
+        Self {
+            max_likes: default_max_likes(),
+            max_retweets: default_max_retweets(),
+            max_follows: default_max_follows(),
+            max_replies: default_max_replies(),
+            max_thread_dives: default_max_thread_dives(),
+            max_bookmarks: default_max_bookmarks(),
+            max_total_actions: default_max_total_actions(),
+        }
+    }
 }
 
 fn default_max_likes() -> u32 {
@@ -203,97 +264,8 @@ fn default_max_total_actions() -> u32 {
     10
 }
 
-impl Default for EngagementLimitsConfig {
-    fn default() -> Self {
-        Self {
-            max_likes: default_max_likes(),
-            max_retweets: default_max_retweets(),
-            max_follows: default_max_follows(),
-            max_replies: default_max_replies(),
-            max_thread_dives: default_max_thread_dives(),
-            max_bookmarks: default_max_bookmarks(),
-            max_total_actions: default_max_total_actions(),
-        }
-    }
-}
-
-/// LLM configuration for Twitter V2 features.
-#[derive(Debug, Deserialize, Clone)]
-pub struct TwitterLLMConfig {
-    /// Enable LLM-powered features (replies, quote tweets)
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// LLM provider: "ollama" or "openrouter"
-    #[serde(default = "default_llm_provider")]
-    pub provider: String,
-
-    /// Model name (e.g., "llama3.2:latest")
-    #[serde(default = "default_llm_model")]
-    pub model: String,
-
-    /// Temperature for generation (0.0-1.0)
-    #[serde(default = "default_llm_temperature")]
-    pub temperature: f64,
-
-    /// Max tokens for replies
-    #[serde(default = "default_llm_max_tokens")]
-    pub max_tokens: u32,
-
-    /// Timeout in milliseconds
-    #[serde(default = "default_llm_timeout")]
-    pub timeout_ms: u64,
-
-    /// Probability of replying to eligible tweets (0.0-1.0)
-    #[serde(default = "default_reply_probability")]
-    pub reply_probability: f64,
-
-    /// Probability of quote tweeting instead of regular retweet (0.0-1.0)
-    #[serde(default = "default_quote_probability")]
-    pub quote_tweet_probability: f64,
-}
-
-fn default_llm_provider() -> String {
-    "ollama".to_string()
-}
-
-fn default_llm_model() -> String {
-    "llama3.2:latest".to_string()
-}
-
-fn default_llm_temperature() -> f64 {
-    0.7
-}
-
-fn default_llm_max_tokens() -> u32 {
-    100
-}
-
-fn default_llm_timeout() -> u64 {
-    30000
-}
-
-fn default_reply_probability() -> f64 {
-    0.05
-}
-
-fn default_quote_probability() -> f64 {
-    0.15
-}
-
-impl Default for TwitterLLMConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            provider: default_llm_provider(),
-            model: default_llm_model(),
-            temperature: default_llm_temperature(),
-            max_tokens: default_llm_max_tokens(),
-            timeout_ms: default_llm_timeout(),
-            reply_probability: default_reply_probability(),
-            quote_tweet_probability: default_quote_probability(),
-        }
-    }
+fn default_max_workers_per_session() -> usize {
+    5
 }
 
 fn default_feed_scan_duration() -> u64 {
@@ -333,6 +305,7 @@ impl Default for BrowserConfig {
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
+            max_workers_per_session: 5,
         }
     }
 }
@@ -528,6 +501,7 @@ fn load_code_config() -> Result<Config> {
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
+            max_workers_per_session: 5,
         },
         orchestrator: OrchestratorConfig {
             max_global_concurrency: 20,
@@ -789,6 +763,16 @@ impl ConfigValidationReport {
             warn!(
                 "discovery_retry_delay_ms ({}) is very high. This may cause long startup delays.",
                 config.discovery_retry_delay_ms
+            );
+        }
+
+        if config.max_workers_per_session == 0 {
+            bail!("max_workers_per_session must be > 0");
+        }
+        if config.max_workers_per_session > 20 {
+            warn!(
+                "max_workers_per_session ({}) is high. Each worker uses a page.",
+                config.max_workers_per_session
             );
         }
 

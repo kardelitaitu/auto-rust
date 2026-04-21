@@ -25,6 +25,12 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - `internal`: framework-only bridge layer for shared helpers
 - `utils`: low-level implementation details and helper modules
 
+### Human-Like Mouse Simulation
+- **Cursor Movement**: 6 path styles (Bezier, Arc, Zigzag, Overshoot, Stopped, Muscle) with Gaussian distribution
+- **Click Mechanics**: Pointer events (pointerenter, pointerleave, pointermove), element-aware hover phases, 80ms press duration
+- **Timing**: Clustered pauses with micro-movements for reduced detection patterns
+- **Element Detection**: Automatic element type detection (button, link, input, checkbox, dropdown) for behavior customization
+
 ### Future Browser Connectors
 - Current browser discovery covers configured Chromium profiles, Roxybrowser, and local Brave instances.
 - Planned next step is to add more connector backends behind the same runtime/session API.
@@ -97,6 +103,9 @@ pageview=www.reddit.com
 # Task with explicit URL parameter
 pageview=url=https://example.com
 
+# Task with legacy value alias
+pageview=value=https://example.com
+
 # Multiple tasks in same group (run in parallel)
 cookiebot pageview=reddit.com
 
@@ -106,6 +115,19 @@ cookiebot pageview=reddit.com then cookiebot
 # Task with .js extension (auto-stripped)
 cookiebot.js pageview.js
 ```
+
+### Parallel Fan-Out
+
+- Task groups are intentionally broadcast to every active browser session.
+- This keeps same-assigned tasks running in parallel across browsers.
+- Future task files should assume concurrent multi-session execution by default.
+- Partial failure is allowed when at least one session succeeds.
+
+### Execution Model
+
+- Validation and task execution share the same payload resolver.
+- `pageview` accepts both `url` and the legacy `value` alias.
+- Task code should stay thin and avoid re-implementing framework parsing rules.
 
 ## 📋 Available Tasks
 
@@ -142,6 +164,7 @@ cargo run pageview=url=https://example.com,scroll_read_amount=400,scroll_read_pa
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `url` | string | required | Target URL |
+| `value` | string | legacy alias | Alternate target URL input |
 | `duration_ms` | u64 | 120000 | Task duration |
 | `initial_pause_ms` | u64 | 1000 | Initial delay |
 | `selector_wait_ms` | u64 | 6000 | Wait for visible content |
@@ -518,6 +541,8 @@ All core orchestration features are implemented and tested:
 | 5 | Metrics collector, task history ring buffer, `run-summary.json` export, periodic health logging | ✅ |
 | 6 | JS fallback path, deterministic utility tests, integration tests | ✅ |
 
+Last verified on April 21, 2026.
+
 **Test coverage:** 68 tests passing (unit + integration + doc tests)  
 **Lint status:** `cargo clippy` clean (all targets, all features)  
 **Node.js parity:** Parser behavior verified across all edge cases
@@ -643,6 +668,13 @@ export MAX_GLOBAL_CONCURRENCY=10
 ### Task Authoring
 
 Create new tasks in `task/` directory:
+
+How to author a new task:
+- Use `TaskContext` only.
+- Read and normalize payload fields first.
+- Keep task logic small and deterministic.
+- Reuse `api.*` verbs instead of low-level helpers.
+- Add the task to `task/mod.rs`.
 
 ```rust
 use rust_orchestrator::prelude::*;

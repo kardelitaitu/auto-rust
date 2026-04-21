@@ -32,7 +32,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     mouse::set_overlay_enabled(SHOW_CURSOR_OVERLAY);
 
-    api.navigate_to(&config.url, 30_000).await?;
+    api.navigate(&config.url, 30_000).await?;
     if SHOW_CURSOR_OVERLAY {
         api.sync_cursor_overlay().await?;
     }

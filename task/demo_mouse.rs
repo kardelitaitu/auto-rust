@@ -12,7 +12,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let url = extract_url_from_payload(&payload)?;
     info!("Navigating to: {}", url);
 
-    api.navigate_to(&url, 30000).await?;
+    api.navigate(&url, 30000).await?;
 
     if let Err(e) = api.wait_for_load(10000).await {
         warn!("Wait for load warning: {}", e);

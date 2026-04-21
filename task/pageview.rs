@@ -1,5 +1,6 @@
 use crate::internal::profile::{CursorBehavior, ScrollBehavior};
 use crate::prelude::TaskContext;
+use crate::validation::task::resolve_pageview_target;
 use anyhow::Result;
 use log::info;
 use rand::Rng;
@@ -147,7 +148,7 @@ impl PageviewConfig {
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started");
 
-    let url = extract_url_from_payload(&payload)?;
+    let url = resolve_pageview_target(&payload)?;
     let profile = api.behavior_runtime();
     let config = PageviewConfig::from_payload(&payload, profile.cursor, profile.scroll)?;
     info!("Visiting URL: {}", url);
@@ -256,22 +257,6 @@ fn random_interval(min_ms: u64, max_ms: u64) -> Duration {
     };
     let ms = rand::thread_rng().gen_range(min_ms..=max_ms);
     Duration::from_millis(ms)
-}
-
-fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(url) = payload.get("url") {
-        if let Some(url_str) = url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    if let Some(value) = payload.get("value") {
-        if let Some(value_str) = value.as_str() {
-            return Ok(value_str.to_string());
-        }
-    }
-
-    Err(anyhow::anyhow!("No URL found in payload: {payload:?}"))
 }
 
 fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64> {

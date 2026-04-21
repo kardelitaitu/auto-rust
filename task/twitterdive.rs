@@ -25,21 +25,27 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         .unwrap_or(60_000);
 
     info!("[twitterdive] Task started");
-    info!("[twitterdive] Max scrolls: {}, Duration: {}ms", max_scrolls, duration_ms);
+    info!(
+        "[twitterdive] Max scrolls: {}, Duration: {}ms",
+        max_scrolls, duration_ms
+    );
 
     // Navigate to tweet
     info!("[twitterdive] Navigating to tweet...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
+        .await?;
     api.pause(2000).await;
 
     // Extract initial tweet info
-    let (author, text) = extract_tweet_info(api).await.unwrap_or_else(|_| ("unknown".to_string(), "N/A".to_string()));
+    let (author, text) = extract_tweet_info(api)
+        .await
+        .unwrap_or_else(|_| ("unknown".to_string(), "N/A".to_string()));
     info!("[twitterdive] Thread by @{}: {} chars", author, text.len());
 
     // Read thread with human-like behavior
     let deadline = Instant::now() + Duration::from_millis(duration_ms);
     let mut scrolls_done = 0u32;
-    let mut tweets_read = 1u32;  // Count initial tweet
+    let mut tweets_read = 1u32; // Count initial tweet
 
     info!("[twitterdive] Starting thread read...");
 
@@ -49,26 +55,26 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     while scrolls_done < max_scrolls && Instant::now() < deadline {
         // Scroll down to reveal more of thread
         info!("[twitterdive] Scroll {}/{}", scrolls_done + 1, max_scrolls);
-        
+
         let scroll_amount = random_in_range(400, 800);
         let js = format!("window.scrollBy(0, {});", scroll_amount);
         api.page().evaluate(js).await?;
-        
+
         scrolls_done += 1;
-        
+
         // Reading pause after scroll
         let read_pause = random_in_range(2000, 5000);
         human_pause(api, read_pause).await;
-        
+
         // Check if we've reached end of thread
         let at_end = check_end_of_thread(api).await?;
         if at_end {
             info!("[twitterdive] Reached end of thread");
             break;
         }
-        
+
         tweets_read += 1;
-        
+
         // Occasional micro-scroll back up (human behavior)
         if random_in_range(0, 100) < 20 {
             let back_scroll = random_in_range(100, 300);
@@ -80,9 +86,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Final summary
     info!("[twitterdive] Thread reading complete");
-    info!("[twitterdive] Scrolls: {}, Tweets read: {}, Duration: {:.1}s", 
-          scrolls_done, tweets_read, 
-          (Instant::now() - deadline).as_secs_f64() + (duration_ms as f64 / 1000.0));
+    info!(
+        "[twitterdive] Scrolls: {}, Tweets read: {}, Duration: {:.1}s",
+        scrolls_done,
+        tweets_read,
+        (Instant::now() - deadline).as_secs_f64() + (duration_ms as f64 / 1000.0)
+    );
 
     // Navigate back to home
     info!("[twitterdive] Returning to home feed...");

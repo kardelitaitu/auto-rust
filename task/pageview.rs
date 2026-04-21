@@ -4,6 +4,7 @@ use anyhow::Result;
 use log::info;
 use rand::Rng;
 use serde_json::Value;
+use std::env;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
@@ -19,6 +20,12 @@ const DEFAULT_SCROLL_READ_PAUSES: u32 = 2;
 const DEFAULT_SCROLL_READ_AMOUNT: i32 = 650;
 const DEFAULT_SCROLL_READ_VARIABLE_SPEED: bool = true;
 const DEFAULT_SCROLL_READ_BACK_SCROLL: bool = false;
+const DEFAULT_ENABLE_CURSOR: bool = true;
+const DEFAULT_ENABLE_SCROLL: bool = true;
+const DEFAULT_OVERLAY_TEST_MODE: bool = false;
+const OVERLAY_TEST_CURSOR_INTERVAL_MIN_MS: u64 = 120;
+const OVERLAY_TEST_CURSOR_INTERVAL_MAX_MS: u64 = 260;
+const OVERLAY_TEST_OVERLAY_SYNC_MS: u64 = 16;
 
 #[derive(Debug, Clone)]
 struct PageviewConfig {
@@ -34,6 +41,9 @@ struct PageviewConfig {
     scroll_read_amount: i32,
     scroll_read_variable_speed: bool,
     scroll_read_back_scroll: bool,
+    enable_cursor: bool,
+    enable_scroll: bool,
+    overlay_test_mode: bool,
 }
 
 impl Default for PageviewConfig {
@@ -51,6 +61,9 @@ impl Default for PageviewConfig {
             scroll_read_amount: DEFAULT_SCROLL_READ_AMOUNT,
             scroll_read_variable_speed: DEFAULT_SCROLL_READ_VARIABLE_SPEED,
             scroll_read_back_scroll: DEFAULT_SCROLL_READ_BACK_SCROLL,
+            enable_cursor: DEFAULT_ENABLE_CURSOR,
+            enable_scroll: DEFAULT_ENABLE_SCROLL,
+            overlay_test_mode: DEFAULT_OVERLAY_TEST_MODE,
         }
     }
 }
@@ -99,6 +112,18 @@ impl PageviewConfig {
             "scroll_read_back_scroll",
             scroll_behavior.back_scroll,
         )?;
+        config.enable_cursor = read_bool(payload, "enable_cursor", config.enable_cursor)?;
+        config.enable_scroll = read_bool(payload, "enable_scroll", config.enable_scroll)?;
+        config.overlay_test_mode =
+            read_bool(payload, "overlay_test_mode", config.overlay_test_mode)?;
+        config.overlay_test_mode =
+            read_env_bool("PAGEVIEW_OVERLAY_TEST_MODE").unwrap_or(config.overlay_test_mode);
+        if config.overlay_test_mode {
+            config.enable_cursor = true;
+            config.cursor_interval_min_ms = OVERLAY_TEST_CURSOR_INTERVAL_MIN_MS;
+            config.cursor_interval_max_ms = OVERLAY_TEST_CURSOR_INTERVAL_MAX_MS;
+            config.overlay_sync_ms = OVERLAY_TEST_OVERLAY_SYNC_MS;
+        }
         Ok(config)
     }
 
@@ -126,6 +151,14 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let profile = api.behavior_runtime();
     let config = PageviewConfig::from_payload(&payload, profile.cursor, profile.scroll)?;
     info!("Visiting URL: {}", url);
+    if config.overlay_test_mode {
+        crate::utils::mouse::set_overlay_enabled(true);
+        info!("overlay_test_mode enabled: forcing session overlay on");
+    }
+    info!(
+        "pageview config overlay_test_mode={} overlay_sync_ms={} enable_cursor={} enable_scroll={}",
+        config.overlay_test_mode, config.overlay_sync_ms, config.enable_cursor, config.enable_scroll
+    );
 
     api.pause(config.initial_pause_ms).await;
     let x_selectors = [
@@ -164,20 +197,21 @@ async fn perform_pageview_behavior(api: &TaskContext, config: &PageviewConfig) -
         let now = Instant::now();
         let mut progress = false;
 
-        if now >= next_cursor {
+        if config.enable_cursor && now >= next_cursor {
             let _ = api.randomcursor().await;
             next_cursor = now + cursor_interval;
             progress = true;
         }
 
-        if now >= next_scroll {
-            let _ = api.scroll_read(
-                config.scroll_read_pauses,
-                config.scroll_read_amount,
-                config.scroll_read_variable_speed,
-                config.scroll_read_back_scroll,
-            )
-            .await;
+        if config.enable_scroll && now >= next_scroll {
+            let _ = api
+                .scroll_read(
+                    config.scroll_read_pauses,
+                    config.scroll_read_amount,
+                    config.scroll_read_variable_speed,
+                    config.scroll_read_back_scroll,
+                )
+                .await;
             next_scroll = now + scroll_interval;
             progress = true;
         }
@@ -188,9 +222,23 @@ async fn perform_pageview_behavior(api: &TaskContext, config: &PageviewConfig) -
         }
 
         if !progress {
-            let next_cursor = next_cursor.saturating_duration_since(now).min(Duration::from_millis(100));
-            let next_scroll = next_scroll.saturating_duration_since(now).min(Duration::from_millis(100));
-            let next_overlay = next_overlay.saturating_duration_since(now).min(Duration::from_millis(100));
+            let next_cursor = if config.enable_cursor {
+                next_cursor
+                    .saturating_duration_since(now)
+                    .min(Duration::from_millis(100))
+            } else {
+                Duration::from_millis(100)
+            };
+            let next_scroll = if config.enable_scroll {
+                next_scroll
+                    .saturating_duration_since(now)
+                    .min(Duration::from_millis(100))
+            } else {
+                Duration::from_millis(100)
+            };
+            let next_overlay = next_overlay
+                .saturating_duration_since(now)
+                .min(Duration::from_millis(100));
             let next_tick = next_cursor.min(next_scroll).min(next_overlay);
             let until_deadline = deadline.saturating_duration_since(now);
             sleep(next_tick.min(until_deadline)).await;
@@ -287,6 +335,15 @@ fn read_bool(payload: &Value, key: &str, default: bool) -> Result<bool> {
     }
 }
 
+fn read_env_bool(key: &str) -> Option<bool> {
+    let raw = env::var(key).ok()?;
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
 fn read_numeric(payload: &Value, key: &str) -> Result<u64, NumericReadError> {
     let Some(value) = payload.get(key) else {
         return Err(NumericReadError::Missing);
@@ -359,7 +416,9 @@ mod tests {
             "scroll_read_pauses": "3",
             "scroll_read_amount": "450",
             "scroll_read_variable_speed": "false",
-            "scroll_read_back_scroll": "true"
+            "scroll_read_back_scroll": "true",
+            "enable_cursor": "false",
+            "enable_scroll": "false"
         });
         let cursor_behavior = CursorBehavior {
             interval_min_ms: 1_800,
@@ -383,5 +442,41 @@ mod tests {
         assert_eq!(config.scroll_read_amount, 450);
         assert!(!config.scroll_read_variable_speed);
         assert!(config.scroll_read_back_scroll);
+        assert!(!config.enable_cursor);
+        assert!(!config.enable_scroll);
+    }
+
+    #[test]
+    fn pageview_overlay_test_mode_forces_fast_cursor_sync() {
+        let payload = serde_json::json!({
+            "url": "https://example.com",
+            "overlay_test_mode": true,
+            "enable_cursor": false,
+            "overlay_sync_ms": 250
+        });
+        let cursor_behavior = CursorBehavior {
+            interval_min_ms: 1_800,
+            interval_max_ms: 2_700,
+        };
+        let scroll_behavior = ScrollBehavior {
+            amount: 650,
+            pause_ms: 1_800,
+            smooth: true,
+            back_scroll: false,
+        };
+        let config =
+            PageviewConfig::from_payload(&payload, cursor_behavior, scroll_behavior).unwrap();
+
+        assert!(config.overlay_test_mode);
+        assert!(config.enable_cursor);
+        assert_eq!(
+            config.cursor_interval_min_ms,
+            OVERLAY_TEST_CURSOR_INTERVAL_MIN_MS
+        );
+        assert_eq!(
+            config.cursor_interval_max_ms,
+            OVERLAY_TEST_CURSOR_INTERVAL_MAX_MS
+        );
+        assert_eq!(config.overlay_sync_ms, OVERLAY_TEST_OVERLAY_SYNC_MS);
     }
 }

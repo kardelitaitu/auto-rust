@@ -7,6 +7,7 @@
 //! - Graceful shutdown and cleanup
 
 use crate::internal::profile::{random_preset, randomize_profile, BrowserProfile, ProfileRuntime};
+use crate::state::{bind_page_overlay, unbind_page_overlay, SessionOverlayState};
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::{Browser, Handler};
 use dashmap::DashSet;
@@ -50,6 +51,10 @@ pub struct Session {
     handler_task: Option<tokio::task::JoinHandle<()>>,
     /// Cursor overlay sync interval (0 = disabled)
     pub cursor_overlay_ms: u64,
+    /// Session-owned cursor overlay state
+    overlay_state: Arc<SessionOverlayState>,
+    /// Background overlay synchronizer bound to this session
+    overlay_task: Option<tokio::task::JoinHandle<()>>,
 
     /// Semaphore controlling concurrent page access within this session
     worker_semaphore: Arc<Semaphore>,
@@ -104,6 +109,21 @@ impl Session {
 
         let behavior_profile = randomize_profile(&random_preset());
         let behavior_runtime = behavior_profile.runtime();
+        let overlay_state = Arc::new(SessionOverlayState::new(cursor_overlay_ms > 0));
+        let overlay_task = if cursor_overlay_ms > 0 {
+            let overlay_for_task = overlay_state.clone();
+            let session_id_for_overlay = id.clone();
+            Some(tokio::spawn(async move {
+                crate::utils::mouse::run_cursor_overlay_background(
+                    overlay_for_task,
+                    cursor_overlay_ms,
+                    session_id_for_overlay,
+                )
+                .await;
+            }))
+        } else {
+            None
+        };
 
         Self {
             id,
@@ -114,6 +134,8 @@ impl Session {
             browser,
             handler_task: Some(handler_task),
             cursor_overlay_ms,
+            overlay_state,
+            overlay_task,
             worker_semaphore: Arc::new(Semaphore::new(max_workers)),
             active_workers: std::sync::atomic::AtomicUsize::new(0),
             failure_count: std::sync::atomic::AtomicUsize::new(0),
@@ -231,6 +253,9 @@ impl Session {
         let page = self.browser.new_page("about:blank").await?;
         let page = Arc::new(page);
         self.register_page(page.target_id().clone());
+        let page_id = page.target_id().as_ref().to_string();
+        self.overlay_state.set_active_page(page.clone());
+        bind_page_overlay(page_id, self.overlay_state.clone());
         Ok(page)
     }
 
@@ -239,6 +264,9 @@ impl Session {
         let page = self.browser.new_page(url).await?;
         let page = Arc::new(page);
         self.register_page(page.target_id().clone());
+        let page_id = page.target_id().as_ref().to_string();
+        self.overlay_state.set_active_page(page.clone());
+        bind_page_overlay(page_id, self.overlay_state.clone());
         Ok(page)
     }
 
@@ -246,6 +274,9 @@ impl Session {
     /// Equivalent to Node.js `sessionManager.releasePage()`
     pub async fn release_page(&self, page: Arc<chromiumoxide::Page>) {
         let page_id = page.target_id().clone();
+        let page_id_text = page_id.as_ref().to_string();
+        self.overlay_state.clear_active_page_if(&page_id_text);
+        unbind_page_overlay(&page_id_text);
         let page_to_close = (*page).clone();
         if let Err(e) = page_to_close.close().await {
             warn!("[{}] Error closing page {:?}: {}", self.id, page_id, e);
@@ -265,6 +296,9 @@ impl Session {
         if let Ok(pages) = self.browser.pages().await {
             for page in pages {
                 let page_id = page.target_id().clone();
+                let page_id_text = page_id.as_ref().to_string();
+                self.overlay_state.clear_active_page_if(&page_id_text);
+                unbind_page_overlay(&page_id_text);
                 let page_to_close = page.clone();
                 if let Err(e) = page_to_close.close().await {
                     warn!(
@@ -279,6 +313,10 @@ impl Session {
         // Close the browser (use inner Arc)
         if let Err(e) = self.browser.close().await {
             warn!("[{}] Error closing browser: {}", self.id, e);
+        }
+
+        if let Some(task) = self.overlay_task.take() {
+            task.abort();
         }
 
         // Cancel handler task

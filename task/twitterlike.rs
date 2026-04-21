@@ -4,10 +4,8 @@
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
 use crate::utils::twitter::{
-    close_active_popup,
-    twitteractivity_feed::identify_engagement_candidates,
-    twitteractivity_humanized::human_pause,
-    twitteractivity_navigation::goto_home,
+    close_active_popup, twitteractivity_feed::identify_engagement_candidates,
+    twitteractivity_humanized::human_pause, twitteractivity_navigation::goto_home,
 };
 use anyhow::Result;
 use log::{info, warn};
@@ -28,7 +26,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         .unwrap_or(false);
 
     info!("[twitterlike] Task started");
-    info!("[twitterlike] Max likes: {}, From feed: {}", max_likes, from_feed);
+    info!(
+        "[twitterlike] Max likes: {}, From feed: {}",
+        max_likes, from_feed
+    );
 
     let mut likes_count = 0u32;
 
@@ -43,7 +44,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
         // Scan feed for tweets to like
         info!("[twitterlike] Scanning feed for tweets to like...");
-        
+
         while likes_count < max_likes {
             let candidates = identify_engagement_candidates(api).await?;
             let candidates_vec: Vec<Value> = candidates;
@@ -74,10 +75,14 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                     "#;
                     let result = api.page().evaluate(like_js.to_string()).await?;
                     if result.value().is_some() {
-                        info!("[twitterlike] Liked tweet {}/{}", likes_count + 1, max_likes);
+                        info!(
+                            "[twitterlike] Liked tweet {}/{}",
+                            likes_count + 1,
+                            max_likes
+                        );
                         likes_count += 1;
                         human_pause(api, random_in_range(1000, 2000)).await;
-                        
+
                         // Scroll a bit to find new tweets
                         api.scroll_to_bottom().await?;
                         api.pause(1000).await;
@@ -96,7 +101,8 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     } else {
         // Like specific tweet
         info!("[twitterlike] Navigating to tweet: {}", tweet_url);
-        api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+        api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
+            .await?;
         api.pause(2000).await;
 
         // Dismiss popups
@@ -105,7 +111,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         // Like the tweet up to max_likes times (for testing, usually just 1)
         for i in 0..max_likes {
             info!("[twitterlike] Liking tweet {}/{}", i + 1, max_likes);
-            
+
             let like_js = r#"
                 (function() {
                     var buttons = document.querySelectorAll('[data-testid="like"]');
@@ -121,7 +127,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
             "#;
             let result = api.page().evaluate(like_js.to_string()).await?;
             let clicked = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
-            
+
             if clicked {
                 info!("[twitterlike] Like clicked successfully");
                 likes_count += 1;
@@ -137,7 +143,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     }
 
     api.pause(POST_WAIT_MS).await;
-    info!("[twitterlike] Task completed - liked {} tweets", likes_count);
+    info!(
+        "[twitterlike] Task completed - liked {} tweets",
+        likes_count
+    );
     Ok(())
 }
 
@@ -164,7 +173,7 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
             }
         }
     }
-    Ok(String::new())  // Empty string means use feed
+    Ok(String::new()) // Empty string means use feed
 }
 
 #[cfg(test)]
@@ -190,6 +199,6 @@ mod tests {
     fn extract_url_from_payload_empty() {
         let payload = json!({});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert_eq!(result, "");  // Empty means use feed
+        assert_eq!(result, ""); // Empty means use feed
     }
 }

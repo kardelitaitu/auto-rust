@@ -28,7 +28,7 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
         })()
     "#;
     let result = api.page().evaluate(js).await?;
-    
+
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
             obj.get("x").and_then(|v| v.as_f64()),
@@ -65,7 +65,7 @@ pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
         })()
     "#;
     let result = api.page().evaluate(js).await?;
-    
+
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
             obj.get("x").and_then(|v| v.as_f64()),
@@ -92,7 +92,7 @@ pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
         })()
     "#;
     let result = api.page().evaluate(js).await?;
-    
+
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
             obj.get("x").and_then(|v| v.as_f64()),
@@ -137,7 +137,7 @@ pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
         })()
     "#;
     let result = api.page().evaluate(js).await?;
-    
+
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
             obj.get("x").and_then(|v| v.as_f64()),
@@ -223,7 +223,7 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
         })()
     "#;
     let result = api.page().evaluate(js).await?;
-    
+
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
             obj.get("x").and_then(|v| v.as_f64()),

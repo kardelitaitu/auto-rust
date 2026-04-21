@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use log::{info, warn};
 
-use crate::llm::{Llm, build_reply_messages, build_quote_messages};
+use crate::llm::{build_quote_messages, build_reply_messages, Llm};
 use crate::prelude::TaskContext;
 
 /// Generates a contextual reply to a tweet using LLM.
@@ -35,7 +35,10 @@ pub async fn generate_reply(
     let messages = build_reply_messages(
         tweet_author,
         tweet_text,
-        &top_replies.iter().map(|(a, t)| (a.as_str(), t.as_str())).collect::<Vec<_>>(),
+        &top_replies
+            .iter()
+            .map(|(a, t)| (a.as_str(), t.as_str()))
+            .collect::<Vec<_>>(),
     );
 
     // Generate with timeout
@@ -78,7 +81,10 @@ pub async fn generate_quote_commentary(
     let messages = build_quote_messages(
         tweet_author,
         tweet_text,
-        &top_replies.iter().map(|(a, t)| (a.as_str(), t.as_str())).collect::<Vec<_>>(),
+        &top_replies
+            .iter()
+            .map(|(a, t)| (a.as_str(), t.as_str()))
+            .collect::<Vec<_>>(),
     );
 
     let llm = Llm::new().context("Failed to initialize LLM client")?;
@@ -90,7 +96,11 @@ pub async fn generate_quote_commentary(
     .context("LLM generation timed out after 30s")??;
 
     let sanitized = validate_reply(&commentary)?;
-    info!("Generated commentary ({} chars): {}", sanitized.len(), sanitized);
+    info!(
+        "Generated commentary ({} chars): {}",
+        sanitized.len(),
+        sanitized
+    );
 
     Ok(sanitized)
 }
@@ -103,10 +113,7 @@ pub async fn generate_quote_commentary(
 ///
 /// # Returns
 /// true if quote tweet was successful
-pub async fn quote_tweet(
-    api: &TaskContext,
-    commentary: &str,
-) -> Result<bool> {
+pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     info!("Executing quote tweet with {} chars", commentary.len());
 
     // Click quote tweet button (different from retweet button)
@@ -157,7 +164,8 @@ pub async fn quote_tweet(
     api.pause(500).await;
 
     // Type the commentary
-    api.keyboard("[data-testid='tweetTextarea_0']", commentary).await?;
+    api.keyboard("[data-testid='tweetTextarea_0']", commentary)
+        .await?;
     api.pause(1000).await;
 
     // Click Tweet button
@@ -200,9 +208,7 @@ pub fn validate_reply(text: &str) -> Result<String> {
     let mut sanitized = text.trim().to_string();
 
     // Remove asterisk emphasis (**word** and *word*)
-    sanitized = sanitized
-        .replace("**", "")
-        .replace('*', "");
+    sanitized = sanitized.replace("**", "").replace('*', "");
 
     // Enforce character limit
     if sanitized.len() > 270 {
@@ -221,7 +227,10 @@ pub fn validate_reply(text: &str) -> Result<String> {
 
     // Check for banned AI words
     if let Some(banned_word) = check_banned_words(&sanitized) {
-        warn!("Reply contains banned AI word: '{}', but proceeding", banned_word);
+        warn!(
+            "Reply contains banned AI word: '{}', but proceeding",
+            banned_word
+        );
         // For V1, we'll just warn and continue
     }
 
@@ -241,9 +250,7 @@ fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
 
     // Find last space before max_length (leave room for "...")
     let truncate_limit = max_length.saturating_sub(3);
-    let truncate_at = text[..truncate_limit]
-        .rfind(' ')
-        .unwrap_or(truncate_limit);
+    let truncate_at = text[..truncate_limit].rfind(' ').unwrap_or(truncate_limit);
 
     format!("{}...", &text[..truncate_at])
 }
@@ -286,14 +293,50 @@ fn remove_emojis(text: &str) -> String {
 
 /// Banned AI-sounding words list.
 const BANNED_WORDS: &[&str] = &[
-    "tapestry", "testament", "symphony", "delve", "foster", "crucial",
-    "landscape", "game-changer", "underscore", "utilize", "enhance",
-    "spearhead", "resonate", "vibrant", "seamless", "robust", "dynamic",
-    "realm", "nuance", "harness", "leverage", "meticulous", "paradigm",
-    "synergy", "holistic", "integral", "pivotal", "noteworthy", "compelling",
-    "intriguing", "fascinating", "captivating", "enthralling", "empower",
-    "revolutionize", "deep dive", "unpack", "in conclusion", "moreover",
-    "furthermore", "it's important to note", "ah,", "i see", "as a",
+    "tapestry",
+    "testament",
+    "symphony",
+    "delve",
+    "foster",
+    "crucial",
+    "landscape",
+    "game-changer",
+    "underscore",
+    "utilize",
+    "enhance",
+    "spearhead",
+    "resonate",
+    "vibrant",
+    "seamless",
+    "robust",
+    "dynamic",
+    "realm",
+    "nuance",
+    "harness",
+    "leverage",
+    "meticulous",
+    "paradigm",
+    "synergy",
+    "holistic",
+    "integral",
+    "pivotal",
+    "noteworthy",
+    "compelling",
+    "intriguing",
+    "fascinating",
+    "captivating",
+    "enthralling",
+    "empower",
+    "revolutionize",
+    "deep dive",
+    "unpack",
+    "in conclusion",
+    "moreover",
+    "furthermore",
+    "it's important to note",
+    "ah,",
+    "i see",
+    "as a",
 ];
 
 /// Checks if text contains banned AI words.
@@ -344,29 +387,39 @@ pub async fn extract_tweet_context(
     "#;
 
     let result = api.page().evaluate(js.to_string()).await?;
-    let value = result.value()
-        .context("Failed to extract tweet context")?;
+    let value = result.value().context("Failed to extract tweet context")?;
 
     // Parse the result
     if let Some(obj) = value.as_object() {
-        let author = obj.get("author")
+        let author = obj
+            .get("author")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
-        
-        let text = obj.get("text")
+
+        let text = obj
+            .get("text")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        
-        let replies = obj.get("replies")
+
+        let replies = obj
+            .get("replies")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| {
                         item.as_array().and_then(|pair| {
-                            let author = pair.first().and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let text = pair.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let author = pair
+                                .first()
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let text = pair
+                                .get(1)
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
                             if !text.is_empty() {
                                 Some((author, text))
                             } else {
@@ -377,7 +430,7 @@ pub async fn extract_tweet_context(
                     .collect()
             })
             .unwrap_or_default();
-        
+
         Ok((author, text, replies))
     } else {
         anyhow::bail!("Invalid tweet context format")
@@ -465,7 +518,7 @@ mod tests {
                 };
             })()
         "#;
-        
+
         // Just verify JS is valid (can't actually execute without browser)
         assert!(js.contains("querySelector"));
         assert!(js.contains("data-testid"));

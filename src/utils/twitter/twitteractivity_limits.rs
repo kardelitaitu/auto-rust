@@ -211,8 +211,7 @@ impl EngagementLimits {
 
     /// Checks if a retweet action is allowed given current counters.
     pub fn can_retweet(&self, counters: &EngagementCounters) -> bool {
-        counters.retweets < self.max_retweets
-            && counters.total_actions() < self.max_total_actions
+        counters.retweets < self.max_retweets && counters.total_actions() < self.max_total_actions
     }
 
     /// Checks if a follow action is allowed given current counters.
@@ -233,8 +232,7 @@ impl EngagementLimits {
 
     /// Checks if a bookmark action is allowed given current counters.
     pub fn can_bookmark(&self, counters: &EngagementCounters) -> bool {
-        counters.bookmarks < self.max_bookmarks
-            && counters.total_actions() < self.max_total_actions
+        counters.bookmarks < self.max_bookmarks && counters.total_actions() < self.max_total_actions
     }
 
     /// Checks if a quote tweet action is allowed given current counters.
@@ -275,7 +273,10 @@ impl EngagementLimits {
     /// Returns a summary of remaining actions as a HashMap.
     pub fn remaining(&self, counters: &EngagementCounters) -> HashMap<String, u32> {
         let mut remaining = HashMap::new();
-        remaining.insert("likes".to_string(), self.max_likes.saturating_sub(counters.likes));
+        remaining.insert(
+            "likes".to_string(),
+            self.max_likes.saturating_sub(counters.likes),
+        );
         remaining.insert(
             "retweets".to_string(),
             self.max_retweets.saturating_sub(counters.retweets),
@@ -330,9 +331,7 @@ impl EngagementCheck {
     pub fn reason(&self) -> Option<String> {
         match self {
             EngagementCheck::Allowed => None,
-            EngagementCheck::LimitReached { action } => {
-                Some(format!("{} limit reached", action))
-            }
+            EngagementCheck::LimitReached { action } => Some(format!("{} limit reached", action)),
             EngagementCheck::SessionLimitReached => {
                 Some("Session engagement limit reached".to_string())
             }
@@ -470,7 +469,7 @@ mod tests {
         counters.increment_like();
         counters.increment_retweet();
         counters.increment_follow();
-        
+
         let summary = counters.to_summary();
         assert_eq!(summary.get("likes").copied().unwrap_or(0), 1);
         assert_eq!(summary.get("retweets").copied().unwrap_or(0), 1);

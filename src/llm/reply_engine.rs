@@ -1,5 +1,5 @@
 use crate::llm::models::ChatMessage;
-use crate::llm::reply_strategies::{StrategyContext, build_reply_prompt};
+use crate::llm::reply_strategies::{build_reply_prompt, StrategyContext};
 
 pub fn reply_engine_system_prompt() -> String {
     r#"You are a deeply opinionated, extremely online Twitter power user.
@@ -148,13 +148,13 @@ pub fn build_reply_messages(
     replies: &[(&str, &str)],
 ) -> Vec<ChatMessage> {
     let system = reply_engine_system_prompt();
-    
+
     // Convert replies to owned format
     let replies_owned: Vec<(String, String)> = replies
         .iter()
         .map(|(a, t)| (a.to_string(), t.to_string()))
         .collect();
-    
+
     // Use strategy-based prompt
     let context = StrategyContext::default();
     let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context);
@@ -168,13 +168,13 @@ pub fn build_quote_messages(
     replies: &[(&str, &str)],
 ) -> Vec<ChatMessage> {
     let system = quote_engine_system_prompt();
-    
+
     // Convert replies to owned format
     let replies_owned: Vec<(String, String)> = replies
         .iter()
         .map(|(a, t)| (a.to_string(), t.to_string()))
         .collect();
-    
+
     // Use strategy-based prompt for quote tweets too
     let context = StrategyContext::default();
     let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context);

@@ -34,7 +34,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         author,
         preview_chars(&tweet_text, 50)
     );
-    info!("[twitterquote] Extracted {} replies for context", replies.len());
+    info!(
+        "[twitterquote] Extracted {} replies for context",
+        replies.len()
+    );
 
     // Generate or use provided quote
     let quote_text = if let Some(text) = custom_quote {
@@ -55,7 +58,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     };
 
     let quote_text = truncate_with_ellipsis(&quote_text, 280);
-    info!("[twitterquote] Quote text: {}", preview_chars(&quote_text, 60));
+    info!(
+        "[twitterquote] Quote text: {}",
+        preview_chars(&quote_text, 60)
+    );
 
     // Click quote button
     info!("[twitterquote] Clicking quote button...");
@@ -110,7 +116,9 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
     Err(anyhow::anyhow!("No URL found in payload"))
 }
 
-async fn extract_tweet_context(api: &TaskContext) -> Result<(String, String, Vec<(String, String)>)> {
+async fn extract_tweet_context(
+    api: &TaskContext,
+) -> Result<(String, String, Vec<(String, String)>)> {
     let page = api.page();
 
     let result = page
@@ -254,11 +262,17 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
         match post_quote(api).await {
             Ok(true) => return Ok(true),
             Ok(false) => {
-                warn!("[twitterquote] Post failed (attempt {}/{})", attempt, max_retries);
+                warn!(
+                    "[twitterquote] Post failed (attempt {}/{})",
+                    attempt, max_retries
+                );
                 last_error = Some(anyhow::anyhow!("Post returned false"));
             }
             Err(e) => {
-                warn!("[twitterquote] Post error (attempt {}/{}): {}", attempt, max_retries, e);
+                warn!(
+                    "[twitterquote] Post error (attempt {}/{}): {}",
+                    attempt, max_retries, e
+                );
                 last_error = Some(e);
             }
         }

@@ -8,6 +8,7 @@ use log::{info, warn};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::env;
+use std::fs;
 use std::path::Path;
 
 /// Top-level configuration structure for the Rust Orchestrator.
@@ -222,31 +223,31 @@ pub struct TwitterLLMConfig {
     /// Enable LLM-powered features (replies, quote tweets)
     #[serde(default)]
     pub enabled: bool,
-    
+
     /// LLM provider: "ollama" or "openrouter"
     #[serde(default = "default_llm_provider")]
     pub provider: String,
-    
+
     /// Model name (e.g., "llama3.2:latest")
     #[serde(default = "default_llm_model")]
     pub model: String,
-    
+
     /// Temperature for generation (0.0-1.0)
     #[serde(default = "default_llm_temperature")]
     pub temperature: f64,
-    
+
     /// Max tokens for replies
     #[serde(default = "default_llm_max_tokens")]
     pub max_tokens: u32,
-    
+
     /// Timeout in milliseconds
     #[serde(default = "default_llm_timeout")]
     pub timeout_ms: u64,
-    
+
     /// Probability of replying to eligible tweets (0.0-1.0)
     #[serde(default = "default_reply_probability")]
     pub reply_probability: f64,
-    
+
     /// Probability of quote tweeting instead of regular retweet (0.0-1.0)
     #[serde(default = "default_quote_probability")]
     pub quote_tweet_probability: f64,
@@ -445,6 +446,8 @@ mod tests {
 /// # Returns
 /// A complete Config struct with all settings resolved
 pub fn load_config() -> Result<Config> {
+    load_dotenv_defaults();
+
     // Try to load from config/default.toml first
     let config_path = Path::new("config/default.toml");
 
@@ -459,6 +462,43 @@ pub fn load_config() -> Result<Config> {
 
     // Fall back to code-based config with env overrides
     apply_env_overrides(load_code_config()?)
+}
+
+fn load_dotenv_defaults() {
+    let dotenv_path = Path::new(".env");
+    if !dotenv_path.exists() {
+        return;
+    }
+
+    let Ok(content) = fs::read_to_string(dotenv_path) else {
+        return;
+    };
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let Some((key, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+
+        let key = key.trim();
+        if key.is_empty() || env::var_os(key).is_some() {
+            continue;
+        }
+
+        let mut value = raw_value.trim().to_string();
+        if value.len() >= 2
+            && ((value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\'')))
+        {
+            value = value[1..value.len() - 1].to_string();
+        }
+
+        env::set_var(key, value);
+    }
 }
 
 fn load_code_config() -> Result<Config> {
@@ -543,30 +583,36 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 
     // Twitter Activity engagement limits overrides
     if let Ok(max_likes) = env::var("TWITTER_MAX_LIKES") {
-        config.twitter_activity.engagement_limits.max_likes =
-            max_likes.parse().unwrap_or(config.twitter_activity.engagement_limits.max_likes);
+        config.twitter_activity.engagement_limits.max_likes = max_likes
+            .parse()
+            .unwrap_or(config.twitter_activity.engagement_limits.max_likes);
     }
     if let Ok(max_retweets) = env::var("TWITTER_MAX_RETWEETS") {
-        config.twitter_activity.engagement_limits.max_retweets =
-            max_retweets.parse().unwrap_or(config.twitter_activity.engagement_limits.max_retweets);
+        config.twitter_activity.engagement_limits.max_retweets = max_retweets
+            .parse()
+            .unwrap_or(config.twitter_activity.engagement_limits.max_retweets);
     }
     if let Ok(max_follows) = env::var("TWITTER_MAX_FOLLOWS") {
-        config.twitter_activity.engagement_limits.max_follows =
-            max_follows.parse().unwrap_or(config.twitter_activity.engagement_limits.max_follows);
+        config.twitter_activity.engagement_limits.max_follows = max_follows
+            .parse()
+            .unwrap_or(config.twitter_activity.engagement_limits.max_follows);
     }
     if let Ok(max_replies) = env::var("TWITTER_MAX_REPLIES") {
-        config.twitter_activity.engagement_limits.max_replies =
-            max_replies.parse().unwrap_or(config.twitter_activity.engagement_limits.max_replies);
+        config.twitter_activity.engagement_limits.max_replies = max_replies
+            .parse()
+            .unwrap_or(config.twitter_activity.engagement_limits.max_replies);
     }
     if let Ok(max_total) = env::var("TWITTER_MAX_TOTAL_ACTIONS") {
-        config.twitter_activity.engagement_limits.max_total_actions =
-            max_total.parse().unwrap_or(config.twitter_activity.engagement_limits.max_total_actions);
+        config.twitter_activity.engagement_limits.max_total_actions = max_total
+            .parse()
+            .unwrap_or(config.twitter_activity.engagement_limits.max_total_actions);
     }
 
     // Twitter LLM config overrides (V2)
     if let Ok(enabled) = env::var("TWITTER_LLM_ENABLED") {
-        config.twitter_activity.llm.enabled =
-            enabled.parse().unwrap_or(config.twitter_activity.llm.enabled);
+        config.twitter_activity.llm.enabled = enabled
+            .parse()
+            .unwrap_or(config.twitter_activity.llm.enabled);
     }
     if let Ok(provider) = env::var("TWITTER_LLM_PROVIDER") {
         config.twitter_activity.llm.provider = provider;
@@ -575,12 +621,14 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.twitter_activity.llm.model = model;
     }
     if let Ok(prob) = env::var("TWITTER_LLM_REPLY_PROBABILITY") {
-        config.twitter_activity.llm.reply_probability =
-            prob.parse().unwrap_or(config.twitter_activity.llm.reply_probability);
+        config.twitter_activity.llm.reply_probability = prob
+            .parse()
+            .unwrap_or(config.twitter_activity.llm.reply_probability);
     }
     if let Ok(prob) = env::var("TWITTER_LLM_QUOTE_PROBABILITY") {
-        config.twitter_activity.llm.quote_tweet_probability =
-            prob.parse().unwrap_or(config.twitter_activity.llm.quote_tweet_probability);
+        config.twitter_activity.llm.quote_tweet_probability = prob
+            .parse()
+            .unwrap_or(config.twitter_activity.llm.quote_tweet_probability);
     }
 
     Ok(config)
@@ -879,11 +927,11 @@ impl ConfigValidationReport {
 
         // Engagement limits validation
         let limits = &config.engagement_limits;
-        
+
         if limits.max_total_actions == 0 {
             bail!("twitter_activity.engagement_limits.max_total_actions must be > 0");
         }
-        
+
         if limits.max_total_actions > 50 {
             warn!(
                 "twitter_activity.engagement_limits.max_total_actions ({}) is very high. \

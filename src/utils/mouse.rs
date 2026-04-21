@@ -7,17 +7,20 @@
 //! - Configurable velocity and trajectory randomization
 //! - Utilities for human-computer interaction studies
 
+use crate::state::{
+    are_all_overlays_enabled, overlay_for_page, set_overlay_enabled_for_all, SessionOverlayState,
+};
 use crate::utils::geometry::BoundingBox;
-use chromiumoxide::Browser;
 use crate::utils::math::{gaussian, random_in_range};
 use crate::utils::page_size::get_viewport;
 use crate::utils::scroll;
 use crate::utils::timing::human_pause;
 use anyhow::Result;
+use chromiumoxide::cdp::browser_protocol::input::{
+    DispatchMouseEventParams, DispatchMouseEventType, MouseButton as CdpMouseButton,
+};
 use chromiumoxide::Page;
 use log::debug;
-use rand::Rng;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -159,11 +162,6 @@ pub async fn wait_for_stable_element(
     Ok(prev_box)
 }
 
-static MOUSE_OVERLAY_ENABLED: AtomicBool = AtomicBool::new(true);
-static CURSOR_INITIALIZED: AtomicBool = AtomicBool::new(false);
-static CURSOR_X: AtomicU64 = AtomicU64::new(0);
-static CURSOR_Y: AtomicU64 = AtomicU64::new(0);
-static LAST_OVERLAY_SYNC_MS: AtomicU64 = AtomicU64::new(0);
 const OVERLAY_SYNC_INTERVAL_MS: u64 = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -287,45 +285,20 @@ impl Point {
 }
 
 pub fn set_overlay_enabled(enabled: bool) {
-    MOUSE_OVERLAY_ENABLED.store(enabled, Ordering::Relaxed);
+    set_overlay_enabled_for_all(enabled);
 }
 
 pub fn is_overlay_enabled() -> bool {
-    MOUSE_OVERLAY_ENABLED.load(Ordering::Relaxed)
+    are_all_overlays_enabled()
 }
 
-fn set_cursor_position(x: f64, y: f64) {
-    CURSOR_X.store(x.to_bits(), Ordering::Relaxed);
-    CURSOR_Y.store(y.to_bits(), Ordering::Relaxed);
-    CURSOR_INITIALIZED.store(true, Ordering::Relaxed);
+fn overlay_state_for_page(page: &Page) -> Option<Arc<SessionOverlayState>> {
+    overlay_for_page(page.target_id().as_ref())
 }
 
-fn cursor_position() -> (f64, f64) {
-    (
-        f64::from_bits(CURSOR_X.load(Ordering::Relaxed)),
-        f64::from_bits(CURSOR_Y.load(Ordering::Relaxed)),
-    )
-}
-
-fn cursor_position_snapshot() -> Option<(f64, f64)> {
-    if CURSOR_INITIALIZED.load(Ordering::Relaxed) {
-        Some(cursor_position())
-    } else {
-        None
-    }
-}
-
-fn cursor_start_position(viewport: &crate::utils::page_size::Viewport) -> (f64, f64) {
-    if let Some((x, y)) = cursor_position_snapshot() {
-        if x.is_finite()
-            && y.is_finite()
-            && x >= 0.0
-            && y >= 0.0
-            && x <= viewport.width
-            && y <= viewport.height
-        {
-            return (x, y);
-        }
+fn cursor_start_position(page: &Page, viewport: &crate::utils::page_size::Viewport) -> (f64, f64) {
+    if let Some(overlay_state) = overlay_state_for_page(page) {
+        return overlay_state.cursor_start_position(viewport);
     }
 
     (viewport.width / 2.0, viewport.height / 2.0)
@@ -344,7 +317,7 @@ pub async fn cursor_move_to_with_config(
     let viewport = timeout(Duration::from_secs(2), get_viewport(page))
         .await
         .map_err(|_| anyhow::anyhow!("cursor_move_to_with_config viewport timeout"))??;
-    let (start_x, start_y) = cursor_start_position(&viewport);
+    let (start_x, start_y) = cursor_start_position(page, &viewport);
 
     // Degenerate path guard: if source and target are effectively identical,
     // dispatch one move event and return to avoid zero-range sampling.
@@ -400,7 +373,6 @@ pub async fn cursor_move_to_immediate(page: &Page, target_x: f64, target_y: f64)
 }
 
 async fn dispatch_mousemove(page: &Page, x: f64, y: f64) -> Result<()> {
-    set_cursor_position(x, y);
     dispatch_mousemove_dom(page, x, y).await?;
     sync_cursor_overlay(page).await.ok();
 
@@ -408,7 +380,18 @@ async fn dispatch_mousemove(page: &Page, x: f64, y: f64) -> Result<()> {
 }
 
 async fn dispatch_mousemove_dom(page: &Page, x: f64, y: f64) -> Result<()> {
-    set_cursor_position(x, y);
+    if let Some(overlay_state) = overlay_state_for_page(page) {
+        overlay_state.set_cursor_position(x, y);
+    }
+
+    if dispatch_mouse_event_cdp(page, DispatchMouseEventType::MouseMoved, x, y, None, None, None)
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    // Fallback path for environments where CDP mouse dispatch fails.
     let eval = page.evaluate(format!(
         r#"(function() {{
             const el = document.elementFromPoint({}, {});
@@ -438,24 +421,26 @@ pub async fn sync_cursor_overlay_force(page: &Page) -> Result<()> {
     sync_cursor_overlay_with_mode(page, true).await
 }
 
-pub async fn run_cursor_overlay_background(browser: Arc<Browser>, interval_ms: u64) {
+pub async fn run_cursor_overlay_background(
+    overlay_state: Arc<SessionOverlayState>,
+    interval_ms: u64,
+    session_id: String,
+) {
     let interval = Duration::from_millis(interval_ms);
 
     loop {
         tokio::time::sleep(interval).await;
 
-        let pages: Vec<Page> = match browser.pages().await {
-            Ok(p) => p,
-            Err(_) => continue,
+        if !overlay_state.is_enabled() {
+            continue;
+        }
+
+        let Some(active_page) = overlay_state.active_page() else {
+            continue;
         };
 
-        let active_page = match pages.first() {
-            Some(page) => page,
-            None => continue,
-        };
-
-        if let Err(e) = sync_cursor_overlay(active_page).await {
-            log::debug!("cursor overlay error: {}", e);
+        if let Err(e) = sync_cursor_overlay(&active_page).await {
+            log::debug!("[{}] cursor overlay error: {}", session_id, e);
         }
     }
 }
@@ -467,27 +452,16 @@ fn now_unix_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn claim_overlay_sync_slot(now_ms: u64, force: bool) -> bool {
-    loop {
-        let last = LAST_OVERLAY_SYNC_MS.load(Ordering::Relaxed);
-        if !force && now_ms.saturating_sub(last) < OVERLAY_SYNC_INTERVAL_MS {
-            return false;
-        }
-        if LAST_OVERLAY_SYNC_MS
-            .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-        {
-            return true;
-        }
-    }
-}
-
 async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
-    if !is_overlay_enabled() {
+    let Some(overlay_state) = overlay_state_for_page(page) else {
+        return Ok(());
+    };
+
+    if !overlay_state.is_enabled() {
         return Ok(());
     }
 
-    let (x, y) = if let Some((x, y)) = cursor_position_snapshot() {
+    let (x, y) = if let Some((x, y)) = overlay_state.cursor_position_snapshot() {
         (x, y)
     } else {
         // Initialize overlay position at viewport center so the cursor dot is visible
@@ -497,11 +471,11 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
             .map_err(|_| anyhow::anyhow!("sync_cursor_overlay viewport timeout"))??;
         let cx = viewport.width / 2.0;
         let cy = viewport.height / 2.0;
-        set_cursor_position(cx, cy);
+        overlay_state.set_cursor_position(cx, cy);
         (cx, cy)
     };
     let now_ms = now_unix_ms();
-    if !claim_overlay_sync_slot(now_ms, force) {
+    if !overlay_state.claim_sync_slot(now_ms, force, OVERLAY_SYNC_INTERVAL_MS) {
         return Ok(());
     }
 
@@ -775,7 +749,6 @@ async fn dispatch_click(page: &Page, x: f64, y: f64, button: MouseButton) -> Res
     let button_idx = button.as_button_index();
     dispatch_mouse_action(page, x, y, button_idx, "mousedown").await?;
     dispatch_mouse_action(page, x, y, button_idx, "mouseup").await?;
-    dispatch_mouse_action(page, x, y, button_idx, "click").await?;
     Ok(())
 }
 
@@ -786,6 +759,34 @@ async fn dispatch_mouse_action(
     button_idx: u16,
     event_type: &str,
 ) -> Result<()> {
+    if let Some(cdp_type) = map_cdp_event_type(event_type) {
+        let button = map_cdp_button(button_idx);
+        let buttons = match cdp_type {
+            DispatchMouseEventType::MousePressed => Some(mouse_button_mask(button_idx)),
+            DispatchMouseEventType::MouseReleased => Some(0),
+            DispatchMouseEventType::MouseMoved | DispatchMouseEventType::MouseWheel => None,
+        };
+        let click_count = if matches!(
+            cdp_type,
+            DispatchMouseEventType::MousePressed | DispatchMouseEventType::MouseReleased
+        ) {
+            Some(1)
+        } else {
+            None
+        };
+
+        if dispatch_mouse_event_cdp(page, cdp_type, x, y, button, buttons, click_count)
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+    } else if event_type == "click" {
+        // Native click is produced by mousePressed + mouseReleased.
+        return Ok(());
+    }
+
+    // Fallback path for environments where CDP mouse dispatch fails.
     let eval = page.evaluate(format!(
         "(function() {{
             const el = document.elementFromPoint({}, {});
@@ -813,6 +814,66 @@ async fn dispatch_mouse_action(
         anyhow::bail!("dispatch_mouse_action found no element at ({x:.1},{y:.1})");
     }
 
+    Ok(())
+}
+
+fn map_cdp_button(button_idx: u16) -> Option<CdpMouseButton> {
+    match button_idx {
+        0 => Some(CdpMouseButton::Left),
+        1 => Some(CdpMouseButton::Middle),
+        2 => Some(CdpMouseButton::Right),
+        _ => None,
+    }
+}
+
+fn mouse_button_mask(button_idx: u16) -> i64 {
+    match button_idx {
+        0 => 1, // Left
+        1 => 4, // Middle
+        2 => 2, // Right
+        _ => 0,
+    }
+}
+
+fn map_cdp_event_type(event_type: &str) -> Option<DispatchMouseEventType> {
+    match event_type {
+        "mousedown" => Some(DispatchMouseEventType::MousePressed),
+        "mouseup" => Some(DispatchMouseEventType::MouseReleased),
+        "mousemove" => Some(DispatchMouseEventType::MouseMoved),
+        _ => None,
+    }
+}
+
+async fn dispatch_mouse_event_cdp(
+    page: &Page,
+    event_type: DispatchMouseEventType,
+    x: f64,
+    y: f64,
+    button: Option<CdpMouseButton>,
+    buttons: Option<i64>,
+    click_count: Option<i64>,
+) -> Result<()> {
+    let params = DispatchMouseEventParams {
+        r#type: event_type,
+        x,
+        y,
+        modifiers: None,
+        timestamp: None,
+        button,
+        buttons,
+        click_count,
+        force: None,
+        tangential_pressure: None,
+        tilt_x: None,
+        tilt_y: None,
+        twist: None,
+        delta_x: None,
+        delta_y: None,
+        pointer_type: None,
+    };
+    timeout(Duration::from_secs(2), page.execute(params))
+        .await
+        .map_err(|_| anyhow::anyhow!("dispatch_mouse_event_cdp timed out"))??;
     Ok(())
 }
 
@@ -1127,343 +1188,6 @@ pub fn fitts_law_optimal_size(distance: f64, time: f64) -> f64 {
     2.0 * distance / (2.0_f64.powf(id))
 }
 
-// ============================================================================
-// GhostCursor — High-level human-like mouse controller with per-session state
-// ============================================================================
-
-/// GhostCursor provides high-level mouse operations that mimic human behavior,
-/// including stability checks, trajectory planning, retry logic, and fallbacks.
-/// It maintains per-instance cursor position state, avoiding global mutable state.
-///
-/// This mirrors the Node.js `GhostCursor` class from `api/utils/ghostCursor.js`.
-pub struct GhostCursor {
-    page: Arc<Page>,
-    previous_pos: (f64, f64),
-}
-
-impl GhostCursor {
-    /// Create a new GhostCursor with random initial cursor position.
-    pub fn new(page: Arc<Page>) -> Self {
-        let prev = (
-            random_in_range(50, 500) as f64,
-            random_in_range(50, 500) as f64,
-        );
-        Self {
-            page,
-            previous_pos: prev,
-        }
-    }
-
-    /// Get the current page reference.
-    pub fn page(&self) -> &Page {
-        &self.page
-    }
-
-    /// Get the current known cursor position (last set after move/click).
-    pub fn previous_pos(&self) -> (f64, f64) {
-        self.previous_pos
-    }
-
-    /// Set the cursor position state manually (rarely needed).
-    pub fn set_previous_pos(&mut self, x: f64, y: f64) {
-        self.previous_pos = (x, y);
-    }
-
-    /// Low-level movement along a cubic Bezier path with Gaussian tremor.
-    /// Mirrors Node's `performMove(start, end, durationMs)`.
-    async fn perform_move(
-        &mut self,
-        start: (f64, f64),
-        end: (f64, f64),
-        duration_ms: u64,
-    ) -> Result<()> {
-        let (start_x, start_y) = start;
-        let (end_x, end_y) = end;
-
-        // Guard against degenerate points
-        if !start_x.is_finite() || !start_y.is_finite() || !end_x.is_finite() || !end_y.is_finite()
-        {
-            return Ok(());
-        }
-
-        let dx = end_x - start_x;
-        let dy = end_y - start_y;
-        let distance = (dx * dx + dy * dy).sqrt();
-
-        // If distance is tiny, just move directly
-        if distance < 0.5 {
-            dispatch_mousemove(&self.page, end_x, end_y).await?;
-            self.previous_pos = end;
-            return Ok(());
-        }
-
-        // Arc amount for control point randomness (same as Node: 20..min(200, distance*0.5))
-        let max_arc = (distance * 0.5).min(200.0);
-        let arc_amount = if max_arc >= 20.0 {
-            rand::thread_rng().gen_range(20.0..max_arc)
-        } else {
-            max_arc // fallback
-        };
-
-        // Control points (Gaussian noise)
-        let p0 = Point::new(start_x, start_y);
-        let p3 = Point::new(end_x, end_y);
-
-        // p1: 30% along + gaussian(0, arc_amount)
-        let p1 = Point::new(
-            start_x + dx * 0.3 + gaussian(0.0, arc_amount, -arc_amount * 3.0, arc_amount * 3.0),
-            start_y + dy * 0.3 + gaussian(0.0, arc_amount, -arc_amount * 3.0, arc_amount * 3.0),
-        );
-
-        // p2: 70% along + gaussian(0, arc_amount*0.6)
-        let p2 = Point::new(
-            start_x
-                + dx * 0.7
-                + gaussian(0.0, arc_amount * 0.6, -arc_amount * 2.0, arc_amount * 2.0),
-            start_y
-                + dy * 0.7
-                + gaussian(0.0, arc_amount * 0.6, -arc_amount * 2.0, arc_amount * 2.0),
-        );
-
-        let start_time = std::time::Instant::now();
-        let mut loop_flag = true;
-
-        while loop_flag {
-            let elapsed = start_time.elapsed().as_millis() as f64;
-            let mut progress = elapsed / duration_ms as f64;
-            if progress >= 1.0 {
-                progress = 1.0;
-                loop_flag = false;
-            }
-
-            // EaseOutCubic
-            let eased_t = 1.0 - (1.0 - progress).powi(3);
-            let pos = bezier_point(p0, p1, p2, p3, eased_t);
-
-            // Tremor scale decreases as we approach target
-            let tremor_scale = (1.0 - eased_t) * 1.5;
-            let noisy_x = pos.x + (rand::thread_rng().gen::<f64>() - 0.5) * tremor_scale;
-            let noisy_y = pos.y + (rand::thread_rng().gen::<f64>() - 0.5) * tremor_scale;
-
-            dispatch_mousemove(&self.page, noisy_x, noisy_y).await?;
-
-            if loop_flag {
-                // Small random delay (0-8 ms) between moves
-                sleep(Duration::from_millis(rand::thread_rng().gen_range(0..8))).await;
-            }
-        }
-
-        self.previous_pos = end;
-        Ok(())
-    }
-
-    /// High-level move to target with distance-based duration and overshoot.
-    /// Mirrors `GhostCursor.move()` with Fitts's Law timing and probabilistic overshoot.
-    pub async fn move_to(&mut self, target_x: f64, target_y: f64) -> Result<()> {
-        let start = self.previous_pos;
-        let end = (target_x, target_y);
-        let dx = end.0 - start.0;
-        let dy = end.1 - start.1;
-        let distance = (dx * dx + dy * dy).sqrt();
-
-        // Target duration: 250ms + 0.4*dist ±50ms
-        let base_duration = 250.0 + distance * 0.4;
-        let jitter = rand::thread_rng().gen_range(-50.0..50.0);
-        let duration_ms = (base_duration + jitter).max(50.0) as u64; // min 50ms
-
-        // Overshoot for long moves (20% chance if distance > 500px)
-        let should_overshoot = distance > 500.0 && rand::thread_rng().gen_bool(0.2);
-        if should_overshoot {
-            let overshoot_scale = rand::thread_rng().gen_range(1.05..1.15);
-            let error_lateral = gaussian(0.0, 20.0, -60.0, 60.0);
-            let overshoot_x = start.0 + dx * overshoot_scale + error_lateral;
-            let overshoot_y = start.1 + dy * overshoot_scale + error_lateral;
-            // First leg to overshoot (use 80% of duration)
-            let first_leg_duration = (duration_ms as f64 * 0.8) as u64;
-            self.perform_move(start, (overshoot_x, overshoot_y), first_leg_duration)
-                .await?;
-            // Brief pause 80-300ms
-            sleep(Duration::from_millis(rand::thread_rng().gen_range(80..300))).await;
-            // Second leg to target with shorter duration
-            let second_leg_duration = rand::thread_rng().gen_range(150..300);
-            self.perform_move((overshoot_x, overshoot_y), end, second_leg_duration)
-                .await?;
-        } else {
-            self.perform_move(start, end, duration_ms).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Move to target with hesitation: for distance > 400px, split into two moves
-    /// with a 100-300ms pause at the 40% waypoint.
-    pub async fn move_with_hesitation(&mut self, target_x: f64, target_y: f64) -> Result<()> {
-        let start = self.previous_pos;
-        let dx = target_x - start.0;
-        let dy = target_y - start.1;
-        let distance = (dx * dx + dy * dy).sqrt();
-
-        if distance > 400.0 {
-            // Midpoint at 40% of path
-            let mid_x = start.0 + dx * 0.4;
-            let mid_y = start.1 + dy * 0.4;
-            // First leg to midpoint
-            self.move_to(mid_x, mid_y).await?;
-            // Hesitation pause
-            sleep(Duration::from_millis(
-                rand::thread_rng().gen_range(100..300),
-            ))
-            .await;
-            // Second leg to target
-            self.move_to(target_x, target_y).await?;
-        } else {
-            self.move_to(target_x, target_y).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Hover at a point with micro-drift noise for a variable duration.
-    /// Used to simulate human finger hovering before clicking.
-    pub async fn hover_with_drift(
-        &mut self,
-        x: f64,
-        y: f64,
-        min_ms: u64,
-        max_ms: u64,
-    ) -> Result<()> {
-        let duration = rand::thread_rng().gen_range(min_ms..=max_ms);
-        let start_time = std::time::Instant::now();
-        let drift_range = 1.0; // ±1px drift
-
-        while start_time.elapsed().as_millis() < duration as u128 {
-            let drift_x = (rand::thread_rng().gen::<f64>() - 0.5) * 2.0 * drift_range;
-            let drift_y = (rand::thread_rng().gen::<f64>() - 0.5) * 2.0 * drift_range;
-            dispatch_mousemove(&self.page, x + drift_x, y + drift_y).await?;
-
-            // Occasional longer pause
-            if rand::thread_rng().gen_bool(0.2) {
-                sleep(Duration::from_millis(rand::thread_rng().gen_range(50..150))).await;
-            }
-            sleep(Duration::from_millis(rand::thread_rng().gen_range(50..100))).await;
-        }
-
-        self.previous_pos = (x, y);
-        Ok(())
-    }
-    /// Click at absolute viewport coordinates using a default profile.
-    /// This is a convenience wrapper around `click_with_profile` but without a selector.
-    /// The caller should ensure the target is actionable.
-    pub async fn click_at(&mut self, x: f64, y: f64) -> Result<bool> {
-        let profile = ClickProfile::default();
-
-        // Move to target with hesitation
-        if let Err(_e) = self.move_with_hesitation(x, y).await {
-            return Ok(false);
-        }
-
-        // Hover with drift
-        if let Err(_e) = self
-            .hover_with_drift(x, y, profile.hover_min_ms, profile.hover_max_ms)
-            .await
-        {
-            return Ok(false);
-        }
-
-        if profile.hesitation {
-            sleep(Duration::from_millis(rand::thread_rng().gen_range(40..120))).await;
-        }
-
-        if profile.micro_move {
-            let micro_x = x + rand::thread_rng().gen_range(-2.0..2.0);
-            let micro_y = y + rand::thread_rng().gen_range(-2.0..2.0);
-            let _ = dispatch_mousemove(self.page(), micro_x, micro_y).await;
-            sleep(Duration::from_millis(rand::thread_rng().gen_range(20..50))).await;
-        }
-
-        let hold_ms = gaussian(60.0, 20.0, 20.0, 150.0) as u64;
-
-        // Mouse down
-        let down_js = format!(
-            r#"(function() {{
-                const el = document.elementFromPoint({}, {});
-                if (!el) return;
-                const evt = new MouseEvent('mousedown', {{
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: {},
-                    clientY: {},
-                    button: 0
-                }});
-                el.dispatchEvent(evt);
-            }})()"#,
-            x, y, x, y
-        );
-        let _ = self.page.evaluate(down_js).await;
-
-        sleep(Duration::from_millis(hold_ms)).await;
-
-        // Mouse up
-        let up_js = format!(
-            r#"(function() {{
-                const el = document.elementFromPoint({}, {});
-                if (!el) return;
-                const evt = new MouseEvent('mouseup', {{
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: {},
-                    clientY: {},
-                    button: 0
-                }});
-                el.dispatchEvent(evt);
-            }})()"#,
-            x, y, x, y
-        );
-        let _ = self.page.evaluate(up_js).await;
-
-        // Click event
-        let click_js = format!(
-            r#"(function() {{
-                const el = document.elementFromPoint({}, {});
-                if (!el) return;
-                const evt = new MouseEvent('click', {{
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: {},
-                    clientY: {},
-                    button: 0
-                }});
-                el.dispatchEvent(evt);
-            }})()"#,
-            x, y, x, y
-        );
-        let _ = self.page.evaluate(click_js).await;
-
-        Ok(true)
-    }
-}
-/// Click profile parameters (mirrors Node's profiles).
-#[derive(Debug, Clone, Copy)]
-pub struct ClickProfile {
-    pub hover_min_ms: u64,
-    pub hover_max_ms: u64,
-    pub hold_ms: u64,
-    pub hesitation: bool,
-    pub micro_move: bool,
-}
-
-impl Default for ClickProfile {
-    fn default() -> Self {
-        Self {
-            hover_min_ms: 200,
-            hover_max_ms: 800,
-            hold_ms: 80,
-            hesitation: false,
-            micro_move: false,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1540,30 +1264,6 @@ mod tests {
         let point = Point::new(100.0, 200.0);
         assert_eq!(point.x, 100.0);
         assert_eq!(point.y, 200.0);
-    }
-
-    #[test]
-    fn test_overlay_enabled_default() {
-        assert!(is_overlay_enabled());
-    }
-
-    #[test]
-    fn test_overlay_can_be_disabled() {
-        set_overlay_enabled(false);
-        assert!(!is_overlay_enabled());
-        set_overlay_enabled(true);
-    }
-
-    #[test]
-    fn test_cursor_position_start_at_zero() {
-        let (x, y) = cursor_position();
-        assert_eq!(x, 0.0);
-        assert_eq!(y, 0.0);
-    }
-
-    #[test]
-    fn test_cursor_position_snapshot_starts_empty() {
-        assert!(cursor_position_snapshot().is_none());
     }
 
     #[test]

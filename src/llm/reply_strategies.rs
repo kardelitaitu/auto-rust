@@ -9,127 +9,235 @@ use rand::Rng;
 /// Base weight 1 = equally likely by default. Context boosts multiply the weight.
 pub const STRATEGY_POOL: &[(&str, u32)] = &[
     // ── Positive ─────────────────────────────────────────────────────────
-    ("COMPLIMENT", 1),      // Genuine praise
-    ("HYPEMAN", 1),         // Wildly excited
-    ("HYPE_REPLY", 1),      // Celebrate specific thing
-    ("SIMP", 1),            // Over-the-top stan praise
-    ("WHOLEsome", 1),       // Kind and supportive
-    ("LOWKEY", 1),          // Understated agreement
-    
+    ("COMPLIMENT", 1), // Genuine praise
+    ("HYPEMAN", 1),    // Wildly excited
+    ("HYPE_REPLY", 1), // Celebrate specific thing
+    ("SIMP", 1),       // Over-the-top stan praise
+    ("WHOLEsome", 1),  // Kind and supportive
+    ("LOWKEY", 1),     // Understated agreement
     // ── Personal ─────────────────────────────────────────────────────────
-    ("NOSTALGIC", 1),       // Personal memory
-    ("RELATABLE", 1),       // "Same" sentiment
-    
+    ("NOSTALGIC", 1), // Personal memory
+    ("RELATABLE", 1), // "Same" sentiment
     // ── Humor ────────────────────────────────────────────────────────────
-    ("WITTY", 1),           // Playful observation
-    ("DRY_WIT", 1),         // Deadpan humor
-    ("SARCASTIC", 1),       // Biting sarcasm
-    ("TROLL", 1),           // Playful teasing
-    ("NITPICK", 1),         // Pedantic correction
-    ("UNHINGED", 1),        // Chaotic energy
-    
+    ("WITTY", 1),     // Playful observation
+    ("DRY_WIT", 1),   // Deadpan humor
+    ("SARCASTIC", 1), // Biting sarcasm
+    ("TROLL", 1),     // Playful teasing
+    ("NITPICK", 1),   // Pedantic correction
+    ("UNHINGED", 1),  // Chaotic energy
     // ── Skepticism ───────────────────────────────────────────────────────
-    ("CONTRARIAN", 1),      // Push back
-    ("CALLOUT", 1),         // Point out irony
-    ("DISMISSIVE", 1),      // Brush off claim
-    
+    ("CONTRARIAN", 1), // Push back
+    ("CALLOUT", 1),    // Point out irony
+    ("DISMISSIVE", 1), // Brush off claim
     // ── Expertise ────────────────────────────────────────────────────────
-    ("CLOUT", 1),           // Expert confidence
-    ("HOT_TAKE", 1),        // Provocative opinion
-    ("HELPFUL", 1),         // Share useful info
-    
+    ("CLOUT", 1),    // Expert confidence
+    ("HOT_TAKE", 1), // Provocative opinion
+    ("HELPFUL", 1),  // Share useful info
     // ── Observation ──────────────────────────────────────────────────────
-    ("OBSERVATION", 1),     // Hyper-specific detail
-    ("CURIOUS", 1),         // Casual curiosity
-    ("QUESTION", 1),        // Ask specific question
-    
+    ("OBSERVATION", 1), // Hyper-specific detail
+    ("CURIOUS", 1),     // Casual curiosity
+    ("QUESTION", 1),    // Ask specific question
     // ── Short/Minimal ────────────────────────────────────────────────────
-    ("MINIMALIST", 1),      // One word/phrase
-    ("SLANG", 1),           // Internet slang
-    ("REACTION", 1),        // Pure exclamation
-    ("CONFUSED", 1),        // Genuine bewilderment
-    
+    ("MINIMALIST", 1), // One word/phrase
+    ("SLANG", 1),      // Internet slang
+    ("REACTION", 1),   // Pure exclamation
+    ("CONFUSED", 1),   // Genuine bewilderment
     // ── Persona ──────────────────────────────────────────────────────────
-    ("GEN_Z", 1),           // TikTok energy
-    ("BOOMER", 1),          // Out-of-touch earnest
-    ("NPC", 1),             // Average person
-    ("ZEN", 1),             // Philosophical wisdom
-    ("SMUG", 1),            // Confident self-satisfaction
+    ("GEN_Z", 1),  // TikTok energy
+    ("BOOMER", 1), // Out-of-touch earnest
+    ("NPC", 1),    // Average person
+    ("ZEN", 1),    // Philosophical wisdom
+    ("SMUG", 1),   // Confident self-satisfaction
 ];
 
 /// Context → which strategies get a weight boost (multiply base by this value)
 pub const CONTEXT_BOOSTS: &[(&str, &[(&str, u32)])] = &[
-    ("humorous", &[
-        ("SLANG", 3), ("WITTY", 3), ("SARCASTIC", 3), ("TROLL", 2),
-        ("UNHINGED", 2), ("REACTION", 3), ("MINIMALIST", 2),
-    ]),
-    ("entertainment", &[
-        ("SLANG", 3), ("REACTION", 3), ("HYPEMAN", 2), ("WITTY", 2),
-        ("SIMP", 2), ("GEN_Z", 2),
-    ]),
-    ("news", &[
-        ("OBSERVATION", 3), ("CURIOUS", 3), ("HOT_TAKE", 2),
-        ("QUESTION", 2), ("CALLOUT", 2), ("HELPFUL", 2),
-    ]),
-    ("politics", &[
-        ("OBSERVATION", 3), ("CONTRARIAN", 3), ("CALLOUT", 2),
-        ("DRY_WIT", 2), ("NITPICK", 2), ("SARCASTIC", 2),
-    ]),
-    ("finance", &[
-        ("OBSERVATION", 2), ("HOT_TAKE", 2), ("CLOUT", 2),
-        ("HELPFUL", 2), ("CONTRARIAN", 2), ("CURIOUS", 2),
-    ]),
-    ("tech", &[
-        ("OBSERVATION", 2), ("CURIOUS", 3), ("HOT_TAKE", 2),
-        ("CLOUT", 2), ("NITPICK", 2), ("HELPFUL", 2),
-    ]),
-    ("science", &[
-        ("CURIOUS", 3), ("OBSERVATION", 2), ("HELPFUL", 3),
-        ("NITPICK", 2), ("ZEN", 2), ("QUESTION", 2),
-    ]),
-    ("emotional", &[
-        ("NOSTALGIC", 3), ("RELATABLE", 3), ("WHOLEsome", 2),
-        ("HYPE_REPLY", 2), ("COMPLIMENT", 2),
-    ]),
-    ("personal", &[
-        ("NOSTALGIC", 3), ("RELATABLE", 3), ("WHOLEsome", 2), ("COMPLIMENT", 2),
-    ]),
-    ("viral", &[
-        ("MINIMALIST", 3), ("REACTION", 3), ("SLANG", 2),
-        ("HYPEMAN", 2), ("GEN_Z", 2), ("UNHINGED", 2),
-    ]),
-    ("negative", &[
-        ("CONTRARIAN", 3), ("DISMISSIVE", 2), ("DRY_WIT", 2),
-        ("SARCASTIC", 2), ("QUESTION", 2), ("OBSERVATION", 2),
-    ]),
-    ("critical", &[
-        ("CALLOUT", 3), ("CONTRARIAN", 2), ("NITPICK", 2),
-        ("SARCASTIC", 2), ("DRY_WIT", 2),
-    ]),
-    ("wholesome", &[
-        ("WHOLEsome", 4), ("COMPLIMENT", 2), ("RELATABLE", 2), ("HYPE_REPLY", 2),
-    ]),
-    ("chaotic", &[
-        ("UNHINGED", 4), ("TROLL", 3), ("CONFUSED", 2), ("GEN_Z", 2), ("REACTION", 2),
-    ]),
-    ("debate", &[
-        ("CONTRARIAN", 3), ("CALLOUT", 2), ("HOT_TAKE", 2), ("NITPICK", 2),
-    ]),
-    ("gaming", &[
-        ("UNHINGED", 2), ("CLOUT", 2), ("HYPEMAN", 2), ("SIMP", 2), ("GEN_Z", 2),
-    ]),
-    ("food", &[
-        ("SIMP", 2), ("NITPICK", 2), ("RELATABLE", 2), ("WHOLEsome", 2), ("ZEN", 2),
-    ]),
-    ("informative", &[
-        ("HELPFUL", 4), ("OBSERVATION", 2), ("CURIOUS", 2),
-    ]),
-    ("sarcastic", &[
-        ("SARCASTIC", 4), ("DRY_WIT", 2), ("TROLL", 2),
-    ]),
-    ("smug", &[
-        ("SMUG", 4), ("CLOUT", 2), ("HOT_TAKE", 2),
-    ]),
+    (
+        "humorous",
+        &[
+            ("SLANG", 3),
+            ("WITTY", 3),
+            ("SARCASTIC", 3),
+            ("TROLL", 2),
+            ("UNHINGED", 2),
+            ("REACTION", 3),
+            ("MINIMALIST", 2),
+        ],
+    ),
+    (
+        "entertainment",
+        &[
+            ("SLANG", 3),
+            ("REACTION", 3),
+            ("HYPEMAN", 2),
+            ("WITTY", 2),
+            ("SIMP", 2),
+            ("GEN_Z", 2),
+        ],
+    ),
+    (
+        "news",
+        &[
+            ("OBSERVATION", 3),
+            ("CURIOUS", 3),
+            ("HOT_TAKE", 2),
+            ("QUESTION", 2),
+            ("CALLOUT", 2),
+            ("HELPFUL", 2),
+        ],
+    ),
+    (
+        "politics",
+        &[
+            ("OBSERVATION", 3),
+            ("CONTRARIAN", 3),
+            ("CALLOUT", 2),
+            ("DRY_WIT", 2),
+            ("NITPICK", 2),
+            ("SARCASTIC", 2),
+        ],
+    ),
+    (
+        "finance",
+        &[
+            ("OBSERVATION", 2),
+            ("HOT_TAKE", 2),
+            ("CLOUT", 2),
+            ("HELPFUL", 2),
+            ("CONTRARIAN", 2),
+            ("CURIOUS", 2),
+        ],
+    ),
+    (
+        "tech",
+        &[
+            ("OBSERVATION", 2),
+            ("CURIOUS", 3),
+            ("HOT_TAKE", 2),
+            ("CLOUT", 2),
+            ("NITPICK", 2),
+            ("HELPFUL", 2),
+        ],
+    ),
+    (
+        "science",
+        &[
+            ("CURIOUS", 3),
+            ("OBSERVATION", 2),
+            ("HELPFUL", 3),
+            ("NITPICK", 2),
+            ("ZEN", 2),
+            ("QUESTION", 2),
+        ],
+    ),
+    (
+        "emotional",
+        &[
+            ("NOSTALGIC", 3),
+            ("RELATABLE", 3),
+            ("WHOLEsome", 2),
+            ("HYPE_REPLY", 2),
+            ("COMPLIMENT", 2),
+        ],
+    ),
+    (
+        "personal",
+        &[
+            ("NOSTALGIC", 3),
+            ("RELATABLE", 3),
+            ("WHOLEsome", 2),
+            ("COMPLIMENT", 2),
+        ],
+    ),
+    (
+        "viral",
+        &[
+            ("MINIMALIST", 3),
+            ("REACTION", 3),
+            ("SLANG", 2),
+            ("HYPEMAN", 2),
+            ("GEN_Z", 2),
+            ("UNHINGED", 2),
+        ],
+    ),
+    (
+        "negative",
+        &[
+            ("CONTRARIAN", 3),
+            ("DISMISSIVE", 2),
+            ("DRY_WIT", 2),
+            ("SARCASTIC", 2),
+            ("QUESTION", 2),
+            ("OBSERVATION", 2),
+        ],
+    ),
+    (
+        "critical",
+        &[
+            ("CALLOUT", 3),
+            ("CONTRARIAN", 2),
+            ("NITPICK", 2),
+            ("SARCASTIC", 2),
+            ("DRY_WIT", 2),
+        ],
+    ),
+    (
+        "wholesome",
+        &[
+            ("WHOLEsome", 4),
+            ("COMPLIMENT", 2),
+            ("RELATABLE", 2),
+            ("HYPE_REPLY", 2),
+        ],
+    ),
+    (
+        "chaotic",
+        &[
+            ("UNHINGED", 4),
+            ("TROLL", 3),
+            ("CONFUSED", 2),
+            ("GEN_Z", 2),
+            ("REACTION", 2),
+        ],
+    ),
+    (
+        "debate",
+        &[
+            ("CONTRARIAN", 3),
+            ("CALLOUT", 2),
+            ("HOT_TAKE", 2),
+            ("NITPICK", 2),
+        ],
+    ),
+    (
+        "gaming",
+        &[
+            ("UNHINGED", 2),
+            ("CLOUT", 2),
+            ("HYPEMAN", 2),
+            ("SIMP", 2),
+            ("GEN_Z", 2),
+        ],
+    ),
+    (
+        "food",
+        &[
+            ("SIMP", 2),
+            ("NITPICK", 2),
+            ("RELATABLE", 2),
+            ("WHOLEsome", 2),
+            ("ZEN", 2),
+        ],
+    ),
+    (
+        "informative",
+        &[("HELPFUL", 4), ("OBSERVATION", 2), ("CURIOUS", 2)],
+    ),
+    (
+        "sarcastic",
+        &[("SARCASTIC", 4), ("DRY_WIT", 2), ("TROLL", 2)],
+    ),
+    ("smug", &[("SMUG", 4), ("CLOUT", 2), ("HOT_TAKE", 2)]),
 ];
 
 /// Strategy instructions - the CRITICAL INSTRUCTION for each strategy
@@ -186,9 +294,9 @@ pub const STRATEGY_INSTRUCTIONS: &[(&str, &str)] = &[
 /// Context for strategy selection
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StrategyContext {
-    pub sentiment: String,      // e.g., "humorous", "news", "emotional"
-    pub conversation_type: String,  // e.g., "tech", "politics", "gaming"
-    pub engagement_level: String,   // e.g., "high", "viral"
+    pub sentiment: String,         // e.g., "humorous", "news", "emotional"
+    pub conversation_type: String, // e.g., "tech", "politics", "gaming"
+    pub engagement_level: String,  // e.g., "high", "viral"
 }
 
 /// Pick a strategy using weighted random selection.
@@ -196,13 +304,13 @@ pub struct StrategyContext {
 pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
     // Build boost map from matching context keys
     let mut boost_map: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
-    
+
     let context_keys = [
         &context.sentiment,
         &context.conversation_type,
         &context.engagement_level,
     ];
-    
+
     for key in context_keys.iter() {
         for (ctx_key, boosts) in CONTEXT_BOOSTS.iter() {
             if ctx_key == key {
@@ -213,18 +321,18 @@ pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
             }
         }
     }
-    
+
     // Apply boosts to pool weights
     let weighted_pool: Vec<(&str, u32)> = STRATEGY_POOL
         .iter()
         .map(|(key, base)| (*key, base * boost_map.get(key).copied().unwrap_or(1)))
         .collect();
-    
+
     // Weighted random pick
     let total: u32 = weighted_pool.iter().map(|(_, w)| w).sum();
     let mut rng = rand::thread_rng();
     let mut r = rng.gen_range(0..total);
-    
+
     for (key, weight) in weighted_pool {
         if r < weight {
             return STRATEGY_INSTRUCTIONS
@@ -235,7 +343,7 @@ pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
         }
         r -= weight;
     }
-    
+
     // Fallback to last strategy
     STRATEGY_INSTRUCTIONS.last().map(|(_, i)| *i).unwrap_or("")
 }
@@ -252,15 +360,19 @@ pub fn build_reply_prompt(
     } else {
         tweet_text
     };
-    
+
     let mut prompt = String::new();
-    
+
     // Add strategy instruction
     prompt.push_str(get_strategy_instruction(context));
-    
+
     // Add tweet
-    prompt.push_str(&format!("\n\nTweet by @{}:\n{}", author, tweet_snippet.trim()));
-    
+    prompt.push_str(&format!(
+        "\n\nTweet by @{}:\n{}",
+        author,
+        tweet_snippet.trim()
+    ));
+
     // Add replies
     if !replies.is_empty() {
         prompt.push_str("\n\nReplies:\n");
@@ -276,17 +388,22 @@ pub fn build_reply_prompt(
                     !(0x1F680..=0x1F6FF).contains(&cp) &&  // Transport
                     !(0x1F1E0..=0x1F1FF).contains(&cp) &&  // Flags
                     !(0x2600..=0x26FF).contains(&cp) &&    // Misc symbols
-                    !(0x2700..=0x27BF).contains(&cp)       // Dingbats
+                    !(0x2700..=0x27BF).contains(&cp) // Dingbats
                 })
                 .collect::<String>()
                 .replace(|c: char| c == '#', "");
-            
-            prompt.push_str(&format!("{}. @{}: {}\n", i + 1, reply_author, clean_text.trim()));
+
+            prompt.push_str(&format!(
+                "{}. @{}: {}\n",
+                i + 1,
+                reply_author,
+                clean_text.trim()
+            ));
         }
     } else {
         prompt.push_str("\n\n(no other replies visible)\n");
     }
-    
+
     prompt.push_str("\n\nYour reply:");
     prompt
 }
@@ -325,7 +442,7 @@ mod tests {
             conversation_type: String::new(),
             engagement_level: String::new(),
         };
-        
+
         // Should boost SLANG, WITTY, SARCASTIC, etc.
         let instruction = get_strategy_instruction(&context);
         assert!(instruction.contains("CRITICAL INSTRUCTION"));
@@ -338,9 +455,9 @@ mod tests {
             ("user1".to_string(), "Great point!".to_string()),
             ("user2".to_string(), "I agree".to_string()),
         ];
-        
+
         let prompt = build_reply_prompt("Test tweet", "testuser", &replies, &context);
-        
+
         assert!(prompt.contains("Tweet by @testuser:"));
         assert!(prompt.contains("Test tweet"));
         assert!(prompt.contains("Replies:"));
@@ -352,9 +469,9 @@ mod tests {
     fn test_build_reply_prompt_truncates_tweet() {
         let context = StrategyContext::default();
         let long_tweet = "a".repeat(600);
-        
+
         let prompt = build_reply_prompt(&long_tweet, "user", &[], &context);
-        
+
         // Should be truncated to 500 chars
         assert!(prompt.contains(&"a".repeat(500)));
         assert!(!prompt.contains(&"a".repeat(600)));

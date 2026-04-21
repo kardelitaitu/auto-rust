@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::mouse::{CursorMovementConfig, PathStyle, Precision, Speed};
 
+const CURSOR_SPEED_BOOST_FACTOR: f64 = 2.5;
+const CURSOR_INTERVAL_MIN_FLOOR_MS: u64 = 80;
+
 /// A profile parameter with base value and deviation percentage.
 /// Allows randomized variation per session while maintaining profile characteristics.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -244,8 +247,8 @@ pub struct BrowserProfile {
 
 fn default_dive_probability() -> ProfileParam {
     ProfileParam {
-        base: 0.35,  // 35% base probability
-        deviation_pct: 20.0,  // ±20% variation
+        base: 0.35,          // 35% base probability
+        deviation_pct: 20.0, // ±20% variation
     }
 }
 
@@ -300,6 +303,10 @@ impl BrowserProfile {
         let mut interval_max_ms = (step_delay * (3.5 / speed.max(0.25))).round() as u64;
 
         interval_min_ms = interval_min_ms.clamp(200, 5_000);
+        interval_max_ms = interval_max_ms.clamp(interval_min_ms, 8_000);
+        interval_min_ms = ((interval_min_ms as f64) / CURSOR_SPEED_BOOST_FACTOR).round() as u64;
+        interval_max_ms = ((interval_max_ms as f64) / CURSOR_SPEED_BOOST_FACTOR).round() as u64;
+        interval_min_ms = interval_min_ms.clamp(CURSOR_INTERVAL_MIN_FLOOR_MS, 5_000);
         interval_max_ms = interval_max_ms.clamp(interval_min_ms, 8_000);
 
         CursorBehavior {
@@ -1125,7 +1132,7 @@ mod tests {
         let profile = BrowserProfile::average();
         let runtime = profile.runtime();
 
-        assert!(runtime.cursor.interval_min_ms >= 200);
+        assert!(runtime.cursor.interval_min_ms >= CURSOR_INTERVAL_MIN_FLOOR_MS);
         assert!(runtime.cursor.interval_max_ms >= runtime.cursor.interval_min_ms);
         assert!(runtime.scroll.amount > 0);
         assert!(runtime.scroll.pause_ms > 0);
@@ -1227,4 +1234,3 @@ mod tests {
         }
     }
 }
-

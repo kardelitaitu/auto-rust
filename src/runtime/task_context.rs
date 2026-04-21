@@ -164,7 +164,7 @@ impl TaskContext {
         &self.page
     }
 
-    /// Clone the `Arc<Page>` for sharing ownership (e.g., for GhostCursor).
+    /// Clone the `Arc<Page>` for sharing ownership with helper flows.
     pub fn page_arc(&self) -> Arc<Page> {
         self.page.clone()
     }

@@ -26,7 +26,8 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to tweet
     info!("[twitterretweet] Navigating to tweet...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
+        .await?;
     api.pause(2000).await;
 
     // Determine if we should quote or native retweet
@@ -41,12 +42,14 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
             info!("[twitterretweet] Generating LLM quote...");
             let (author, tweet_text) = extract_tweet_context(api).await?;
             info!("[twitterretweet] Tweet by @{}", author);
-            
+
             let llm = Llm::new()?;
             let messages = build_quote_messages(&author, &tweet_text);
-            
+
             match llm.chat(messages).await {
-                Ok(text) => validate_reply(&text).unwrap_or_else(|_| "Interesting take!".to_string()),
+                Ok(text) => {
+                    validate_reply(&text).unwrap_or_else(|_| "Interesting take!".to_string())
+                }
                 Err(e) => {
                     warn!("[twitterretweet] LLM failed: {}, using fallback", e);
                     "Interesting take!".to_string()
@@ -79,7 +82,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     } else {
         // Native retweet flow
         info!("[twitterretweet] Performing native retweet...");
-        
+
         let rt_js = r#"
             (function() {
                 var buttons = document.querySelectorAll('[data-testid="retweet"]');
@@ -90,12 +93,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 return false;
             })()
         "#;
-        
+
         let clicked = api.page().evaluate(rt_js.to_string()).await?;
         if clicked.value().and_then(|v| v.as_bool()).unwrap_or(false) {
             info!("[twitterretweet] Retweet menu opened");
             api.pause(1000).await;
-            
+
             // Confirm retweet
             info!("[twitterretweet] Confirming retweet...");
             let confirm_js = r#"
@@ -259,11 +262,17 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
         match post_quote(api).await {
             Ok(true) => return Ok(true),
             Ok(false) => {
-                warn!("[twitterretweet] Post failed (attempt {}/{})", attempt, max_retries);
+                warn!(
+                    "[twitterretweet] Post failed (attempt {}/{})",
+                    attempt, max_retries
+                );
                 last_error = Some(anyhow::anyhow!("Post returned false"));
             }
             Err(e) => {
-                warn!("[twitterretweet] Post error (attempt {}/{}): {}", attempt, max_retries, e);
+                warn!(
+                    "[twitterretweet] Post error (attempt {}/{}): {}",
+                    attempt, max_retries, e
+                );
                 last_error = Some(e);
             }
         }

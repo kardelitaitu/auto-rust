@@ -56,7 +56,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("[twittertest] Passed: {}", results.passed);
     info!("[twittertest] Failed: {}", results.failed);
     info!("[twittertest]");
-    
+
     for (test, result) in &results.results {
         let status = if result.0 { "✅ PASS" } else { "❌ FAIL" };
         info!("[twittertest] {}: {} - {}", status, test, result.1);
@@ -65,7 +65,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     if results.failed == 0 {
         info!("[twittertest] All tests passed! Ready for live deployment.");
     } else {
-        warn!("[twittertest] {} tests failed. Review before live deployment.", results.failed);
+        warn!(
+            "[twittertest] {} tests failed. Review before live deployment.",
+            results.failed
+        );
     }
 
     Ok(())
@@ -77,7 +80,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
 async fn test_like(api: &TaskContext, results: &mut TestResults) {
     info!("[twittertest] Running LIKE test...");
-    
+
     let like_js = r#"
         (function() {
             var buttons = document.querySelectorAll('[data-testid="like"]');
@@ -88,7 +91,7 @@ async fn test_like(api: &TaskContext, results: &mut TestResults) {
             return false;
         })()
     "#;
-    
+
     match api.page().evaluate(like_js.to_string()).await {
         Ok(result) => {
             if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -100,13 +103,13 @@ async fn test_like(api: &TaskContext, results: &mut TestResults) {
         }
         Err(e) => results.fail("like", &e.to_string()),
     }
-    
+
     human_pause(api, 1000).await;
 }
 
 async fn test_retweet(api: &TaskContext, results: &mut TestResults) {
     info!("[twittertest] Running RETWEET test...");
-    
+
     let rt_js = r#"
         (function() {
             var buttons = document.querySelectorAll('[data-testid="retweet"]');
@@ -117,13 +120,13 @@ async fn test_retweet(api: &TaskContext, results: &mut TestResults) {
             return false;
         })()
     "#;
-    
+
     match api.page().evaluate(rt_js.to_string()).await {
         Ok(result) => {
             if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
                 info!("[twittertest] RETWEET: Menu opened");
                 api.pause(1000).await;
-                
+
                 // Try to confirm
                 let confirm_js = r#"
                     (function() {
@@ -134,10 +137,14 @@ async fn test_retweet(api: &TaskContext, results: &mut TestResults) {
                         return false;
                     })()
                 "#;
-                
+
                 match api.page().evaluate(confirm_js.to_string()).await {
                     Ok(confirm_result) => {
-                        if confirm_result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+                        if confirm_result
+                            .value()
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
                             results.pass("retweet", "Retweet menu opened, confirm available");
                         } else {
                             results.fail("retweet", "Confirm button not found");
@@ -155,7 +162,7 @@ async fn test_retweet(api: &TaskContext, results: &mut TestResults) {
 
 async fn test_quote(api: &TaskContext, results: &mut TestResults) {
     info!("[twittertest] Running QUOTE test...");
-    
+
     // Same as retweet but checks for quote capability
     let quote_js = r#"
         (function() {
@@ -170,7 +177,7 @@ async fn test_quote(api: &TaskContext, results: &mut TestResults) {
             return false;
         })()
     "#;
-    
+
     match api.page().evaluate(quote_js.to_string()).await {
         Ok(result) => {
             if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -185,7 +192,7 @@ async fn test_quote(api: &TaskContext, results: &mut TestResults) {
 
 async fn test_follow(api: &TaskContext, results: &mut TestResults) {
     info!("[twittertest] Running FOLLOW test...");
-    
+
     let follow_js = r#"
         (function() {
             var buttons = document.querySelectorAll('[role="button"]');
@@ -199,7 +206,7 @@ async fn test_follow(api: &TaskContext, results: &mut TestResults) {
             return false;
         })()
     "#;
-    
+
     match api.page().evaluate(follow_js.to_string()).await {
         Ok(result) => {
             if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -214,7 +221,7 @@ async fn test_follow(api: &TaskContext, results: &mut TestResults) {
 
 async fn test_reply(api: &TaskContext, results: &mut TestResults) {
     info!("[twittertest] Running REPLY test...");
-    
+
     let reply_js = r#"
         (function() {
             var buttons = document.querySelectorAll('[data-testid="reply"]');
@@ -224,7 +231,7 @@ async fn test_reply(api: &TaskContext, results: &mut TestResults) {
             return false;
         })()
     "#;
-    
+
     match api.page().evaluate(reply_js.to_string()).await {
         Ok(result) => {
             if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -239,7 +246,7 @@ async fn test_reply(api: &TaskContext, results: &mut TestResults) {
 
 async fn test_dive(api: &TaskContext, results: &mut TestResults) {
     info!("[twittertest] Running DIVE test...");
-    
+
     // Check if thread/replies exist
     let dive_js = r#"
         (function() {
@@ -247,7 +254,7 @@ async fn test_dive(api: &TaskContext, results: &mut TestResults) {
             return articles.length > 1;
         })()
     "#;
-    
+
     match api.page().evaluate(dive_js.to_string()).await {
         Ok(result) => {
             if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -281,12 +288,14 @@ impl TestResults {
 
     fn pass(&mut self, test: &str, message: &str) {
         self.passed += 1;
-        self.results.insert(test.to_string(), (true, message.to_string()));
+        self.results
+            .insert(test.to_string(), (true, message.to_string()));
     }
 
     fn fail(&mut self, test: &str, message: &str) {
         self.failed += 1;
-        self.results.insert(test.to_string(), (false, message.to_string()));
+        self.results
+            .insert(test.to_string(), (false, message.to_string()));
     }
 }
 

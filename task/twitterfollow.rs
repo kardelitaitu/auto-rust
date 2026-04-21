@@ -535,19 +535,13 @@ mod tests {
 
     #[test]
     fn test_normalize_url_handles_www() {
-        assert_eq!(
-            normalize_url("www.twitter.com/foo"),
-            "https://x.com/foo"
-        );
+        assert_eq!(normalize_url("www.twitter.com/foo"), "https://x.com/foo");
         assert_eq!(normalize_url("www.x.com/foo"), "https://x.com/foo");
     }
 
     #[test]
     fn test_normalize_url_preserves_https() {
-        assert_eq!(
-            normalize_url("https://x.com/foo"),
-            "https://x.com/foo"
-        );
+        assert_eq!(normalize_url("https://x.com/foo"), "https://x.com/foo");
     }
 
     #[test]
@@ -568,10 +562,7 @@ mod tests {
             extract_username_from_tweet_url("x.com/anotheruser/status/456"),
             Some("anotheruser".to_string())
         );
-        assert_eq!(
-            extract_username_from_tweet_url("https://x.com/user"),
-            None
-        );
+        assert_eq!(extract_username_from_tweet_url("https://x.com/user"), None);
     }
 
     #[test]
@@ -583,7 +574,10 @@ mod tests {
     #[test]
     fn test_extract_username_from_payload_value() {
         let payload = json!({"value": "username123"});
-        assert_eq!(extract_username_from_payload(&payload).unwrap(), "username123");
+        assert_eq!(
+            extract_username_from_payload(&payload).unwrap(),
+            "username123"
+        );
     }
 
     #[test]
@@ -595,7 +589,10 @@ mod tests {
     #[test]
     fn test_extract_username_from_payload_fallback() {
         let payload = json!({"other_field": "fallback_user"});
-        assert_eq!(extract_username_from_payload(&payload).unwrap(), "fallback_user");
+        assert_eq!(
+            extract_username_from_payload(&payload).unwrap(),
+            "fallback_user"
+        );
     }
 
     #[test]

@@ -33,40 +33,105 @@ pub struct EngagementDecision {
 /// Controversial topics to avoid (politics, drama, conflict)
 const CONTROVERSIAL_TOPICS: &[&str] = &[
     // Politics
-    "election", "vote", "democrat", "republican", "congress", "senate",
-    "woke", "fascist", "liberal", "conservative", "biden", "trump",
-    "abortion", "gun control", "immigration", "taxes",
-    
+    "election",
+    "vote",
+    "democrat",
+    "republican",
+    "congress",
+    "senate",
+    "woke",
+    "fascist",
+    "liberal",
+    "conservative",
+    "biden",
+    "trump",
+    "abortion",
+    "gun control",
+    "immigration",
+    "taxes",
     // Drama/Conflict
-    "exposed", "cancelled", "drama", "beef", "feud",
-    "scandal", "controversy", "backlash", "callout",
-    
+    "exposed",
+    "cancelled",
+    "drama",
+    "beef",
+    "feud",
+    "scandal",
+    "controversy",
+    "backlash",
+    "callout",
     // NSFW
-    "nsfw", "onlyfans", "adult content", "xxx",
+    "nsfw",
+    "onlyfans",
+    "adult content",
+    "xxx",
 ];
 
 /// Spam indicators
 const SPAM_PATTERNS: &[&str] = &[
-    "follow for follow", "f4f", "l4l", "like4like", "follow4follow",
-    "check my bio", "link in bio", "dm me", "dm for",
-    "crypto", "giveaway", "win bitcoin", "free eth", "nft drop",
-    "make money fast", "work from home", "passive income",
+    "follow for follow",
+    "f4f",
+    "l4l",
+    "like4like",
+    "follow4follow",
+    "check my bio",
+    "link in bio",
+    "dm me",
+    "dm for",
+    "crypto",
+    "giveaway",
+    "win bitcoin",
+    "free eth",
+    "nft drop",
+    "make money fast",
+    "work from home",
+    "passive income",
 ];
 
 /// Negative sentiment words
 const NEGATIVE_WORDS: &[&str] = &[
-    "hate", "disgusting", "terrible", "awful", "worst",
-    "idiot", "stupid", "dumb", "moron", "idiot",
-    "cry", "die", "kill", "suicide", "death",
-    "sad", "angry", "upset", "disappointed", "frustrated",
+    "hate",
+    "disgusting",
+    "terrible",
+    "awful",
+    "worst",
+    "idiot",
+    "stupid",
+    "dumb",
+    "moron",
+    "idiot",
+    "cry",
+    "die",
+    "kill",
+    "suicide",
+    "death",
+    "sad",
+    "angry",
+    "upset",
+    "disappointed",
+    "frustrated",
 ];
 
 /// Positive sentiment words (quality boosters)
 const POSITIVE_WORDS: &[&str] = &[
-    "great", "amazing", "awesome", "excellent", "wonderful",
-    "love", "thanks", "thank you", "appreciate", "grateful",
-    "happy", "excited", "proud", "congrats", "congratulations",
-    "beautiful", "fantastic", "incredible", "inspiring",
+    "great",
+    "amazing",
+    "awesome",
+    "excellent",
+    "wonderful",
+    "love",
+    "thanks",
+    "thank you",
+    "appreciate",
+    "grateful",
+    "happy",
+    "excited",
+    "proud",
+    "congrats",
+    "congratulations",
+    "beautiful",
+    "fantastic",
+    "incredible",
+    "inspiring",
 ];
 
 // ============================================================================
@@ -81,12 +146,9 @@ const POSITIVE_WORDS: &[&str] = &[
 ///
 /// # Returns
 /// EngagementDecision with level, score, and reason
-pub fn decide_engagement(
-    tweet_text: &str,
-    replies: &[(String, String)],
-) -> EngagementDecision {
+pub fn decide_engagement(tweet_text: &str, replies: &[(String, String)]) -> EngagementDecision {
     let text_lower = tweet_text.to_lowercase();
-    
+
     // 1. Check hard blocklists (instant skip)
     if contains_any(&text_lower, CONTROVERSIAL_TOPICS) {
         return EngagementDecision {
@@ -95,7 +157,7 @@ pub fn decide_engagement(
             reason: "controversial topic",
         };
     }
-    
+
     if contains_any(&text_lower, SPAM_PATTERNS) {
         return EngagementDecision {
             level: EngagementLevel::None,
@@ -103,22 +165,22 @@ pub fn decide_engagement(
             reason: "spam content",
         };
     }
-    
+
     // 2. Calculate quality score
     let mut score = 0;
     score += calculate_quality_signals(&text_lower, tweet_text);
     score -= calculate_penalty_signals(&text_lower, tweet_text);
-    
+
     // 3. Analyze replies for community sentiment
     let reply_analysis = analyze_replies(replies);
-    
+
     if reply_analysis.negative_ratio > 0.5 {
-        score -= 30;  // Penalty for negative community response
+        score -= 30; // Penalty for negative community response
     }
     if reply_analysis.spam_ratio > 0.3 {
-        score -= 50;  // Penalty for spammy replies
+        score -= 50; // Penalty for spammy replies
     }
-    
+
     // 4. Determine engagement level based on score
     let (level, reason) = if score >= 60 {
         (EngagementLevel::Full, "high quality content")
@@ -129,7 +191,7 @@ pub fn decide_engagement(
     } else {
         (EngagementLevel::None, "skip: low score")
     };
-    
+
     EngagementDecision {
         level,
         score,
@@ -144,73 +206,76 @@ pub fn decide_engagement(
 /// Calculate positive quality signals.
 fn calculate_quality_signals(text_lower: &str, original_text: &str) -> i32 {
     let mut score = 0;
-    
+
     // Has image/video (+20)
     if original_text.contains("pic.twitter.com") || original_text.contains("t.co/") {
         score += 20;
     }
-    
+
     // Question asked (+15)
     if original_text.contains('?') {
         score += 15;
     }
-    
+
     // Thread indicator (+25)
     if original_text.contains("1/") || original_text.contains("🧵") {
         score += 25;
     }
-    
+
     // Multiple sentences (+10)
     let sentence_count = original_text.matches('.').count();
     if sentence_count >= 2 {
         score += 10;
     }
-    
+
     // Positive words (+20)
     if contains_any(text_lower, POSITIVE_WORDS) {
         score += 20;
     }
-    
+
     // Long form content (+15)
     if original_text.len() > 200 {
         score += 15;
     }
-    
+
     score
 }
 
 /// Calculate penalty signals.
 fn calculate_penalty_signals(text_lower: &str, original_text: &str) -> i32 {
     let mut penalty = 0;
-    
+
     // All caps (-30)
-    let alpha_chars: String = original_text.chars().filter(|c| c.is_alphabetic()).collect();
+    let alpha_chars: String = original_text
+        .chars()
+        .filter(|c| c.is_alphabetic())
+        .collect();
     if !alpha_chars.is_empty() && alpha_chars.chars().all(|c| c.is_uppercase()) {
         penalty += 30;
     }
-    
+
     // Excessive hashtags (-20)
     let hashtag_count = original_text.matches('#').count();
     if hashtag_count >= 3 {
         penalty += 20;
     }
-    
+
     // Excessive emojis (-15)
     let emoji_count = original_text.chars().filter(|c| is_emoji(*c)).count();
     if emoji_count >= 5 {
         penalty += 15;
     }
-    
+
     // Negative words (-40)
     if contains_any(text_lower, NEGATIVE_WORDS) {
         penalty += 40;
     }
-    
+
     // Very short tweet (-10)
     if original_text.len() < 20 {
         penalty += 10;
     }
-    
+
     penalty
 }
 
@@ -235,14 +300,14 @@ fn analyze_replies(replies: &[(String, String)]) -> ReplyAnalysis {
             spam_ratio: 0.0,
         };
     }
-    
+
     let mut positive_count = 0;
     let mut negative_count = 0;
     let mut spam_count = 0;
-    
+
     for (_, text) in replies {
         let text_lower = text.to_lowercase();
-        
+
         if contains_any(&text_lower, SPAM_PATTERNS) {
             spam_count += 1;
         } else if contains_any(&text_lower, POSITIVE_WORDS) {
@@ -251,9 +316,9 @@ fn analyze_replies(replies: &[(String, String)]) -> ReplyAnalysis {
             negative_count += 1;
         }
     }
-    
+
     let total = replies.len() as f64;
-    
+
     ReplyAnalysis {
         positive_ratio: positive_count as f64 / total,
         negative_ratio: negative_count as f64 / total,
@@ -279,7 +344,7 @@ fn is_emoji(c: char) -> bool {
     (0x1F680..=0x1F6FF).contains(&cp) ||  // Transport and Map
     (0x1F1E0..=0x1F1FF).contains(&cp) ||  // Flags
     (0x2600..=0x26FF).contains(&cp) ||    // Misc symbols
-    (0x2700..=0x27BF).contains(&cp)       // Dingbats
+    (0x2700..=0x27BF).contains(&cp) // Dingbats
 }
 
 // ============================================================================
@@ -309,10 +374,13 @@ mod tests {
     #[test]
     fn test_high_quality_tweet_full_engagement() {
         let tweet = "Just shipped my first project! Thanks to everyone who helped 🎉";
-        let decision = decide_engagement(tweet, &[
-            ("user1".to_string(), "Congratulations!".to_string()),
-            ("user2".to_string(), "This is amazing!".to_string()),
-        ]);
+        let decision = decide_engagement(
+            tweet,
+            &[
+                ("user1".to_string(), "Congratulations!".to_string()),
+                ("user2".to_string(), "This is amazing!".to_string()),
+            ],
+        );
         // Should have positive words bonus (+20) and positive replies
         assert!(decision.score >= 20);
         // At minimum should be Minimal engagement
@@ -332,11 +400,14 @@ mod tests {
     #[test]
     fn test_negative_replies_reduce_engagement() {
         let tweet = "Check out my new product";
-        let decision = decide_engagement(tweet, &[
-            ("user1".to_string(), "This is terrible".to_string()),
-            ("user2".to_string(), "Worst product ever".to_string()),
-            ("user3".to_string(), "Don't buy this".to_string()),
-        ]);
+        let decision = decide_engagement(
+            tweet,
+            &[
+                ("user1".to_string(), "This is terrible".to_string()),
+                ("user2".to_string(), "Worst product ever".to_string()),
+                ("user3".to_string(), "Don't buy this".to_string()),
+            ],
+        );
         assert_eq!(decision.level, EngagementLevel::None);
     }
 
@@ -344,42 +415,42 @@ mod tests {
     fn test_question_gets_bonus() {
         let tweet = "What do you think about the new features?";
         let decision = decide_engagement(tweet, &[]);
-        assert!(decision.score >= 15);  // Question bonus
+        assert!(decision.score >= 15); // Question bonus
     }
 
     #[test]
     fn test_thread_gets_bonus() {
         let tweet = "1/ Let me share my thoughts on this topic...";
         let decision = decide_engagement(tweet, &[]);
-        assert!(decision.score >= 25);  // Thread bonus
+        assert!(decision.score >= 25); // Thread bonus
     }
 
     #[test]
     fn test_all_caps_penalty() {
         let tweet = "THIS IS VERY IMPORTANT EVERYONE NEEDS TO SEE THIS";
         let decision = decide_engagement(tweet, &[]);
-        assert!(decision.score < 0);  // All caps penalty
+        assert!(decision.score < 0); // All caps penalty
     }
 
     #[test]
     fn test_excessive_hashtags_penalty() {
         let tweet = "Check this out #tech #startup #business #marketing #growth";
         let decision = decide_engagement(tweet, &[]);
-        assert!(decision.score < 0);  // Hashtag penalty
+        assert!(decision.score < 0); // Hashtag penalty
     }
 
     #[test]
     fn test_positive_words_bonus() {
         let tweet = "This is amazing and wonderful, I love it!";
         let decision = decide_engagement(tweet, &[]);
-        assert!(decision.score >= 20);  // Positive words bonus
+        assert!(decision.score >= 20); // Positive words bonus
     }
 
     #[test]
     fn test_negative_words_penalty() {
         let tweet = "This is terrible and awful, I hate it!";
         let decision = decide_engagement(tweet, &[]);
-        assert!(decision.score < 0);  // Negative words penalty
+        assert!(decision.score < 0); // Negative words penalty
     }
 
     #[test]

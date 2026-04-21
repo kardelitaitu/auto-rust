@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use crate::prelude::TaskContext;
 use crate::utils::twitter::{
-    twitteractivity_dive::*, twitteractivity_decision::*, twitteractivity_feed::*,
+    twitteractivity_decision::*, twitteractivity_dive::*, twitteractivity_feed::*,
     twitteractivity_humanized::*, twitteractivity_interact::*, twitteractivity_limits::*,
     twitteractivity_llm::*, twitteractivity_navigation::*, twitteractivity_persona::*,
     twitteractivity_popup::*, twitteractivity_sentiment::*,
@@ -63,14 +63,26 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let candidate_count = read_u32(&payload, "candidate_count", DEFAULT_CANDIDATES);
     let thread_depth = read_u32(&payload, "thread_depth", DEFAULT_THREAD_DEPTH);
     let weights = payload.get("weights");
-    
+
     // Parse LLM config (V2 feature)
-    let llm_enabled = payload.get("llm_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-    let llm_reply_probability = payload.get("llm_reply_probability").and_then(|v| v.as_f64()).unwrap_or(0.05);
-    let llm_quote_probability = payload.get("llm_quote_probability").and_then(|v| v.as_f64()).unwrap_or(0.15);
-    
+    let llm_enabled = payload
+        .get("llm_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let llm_reply_probability = payload
+        .get("llm_reply_probability")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.05);
+    let llm_quote_probability = payload
+        .get("llm_quote_probability")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.15);
+
     // Parse smart decision config (V3 feature - rule-based)
-    let smart_decision_enabled = payload.get("smart_decision_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let smart_decision_enabled = payload
+        .get("smart_decision_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     // Build persona weights
     let mut persona = select_persona_weights(weights);
@@ -92,13 +104,17 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     // Initialize engagement counters and limits
     let mut counters = EngagementCounters::new();
     let limits = EngagementLimits::default();
-    
+
     info!(
         "Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
-        counters.likes, limits.max_likes,
-        counters.retweets, limits.max_retweets,
-        counters.follows, limits.max_follows,
-        counters.total_actions(), limits.max_total_actions
+        counters.likes,
+        limits.max_likes,
+        counters.retweets,
+        limits.max_retweets,
+        counters.follows,
+        limits.max_follows,
+        counters.total_actions(),
+        limits.max_total_actions
     );
 
     // Phase 1: Navigation & authentication check
@@ -169,17 +185,20 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 // Smart decision check (V3 feature - rule-based)
                 let engagement_decision = if smart_decision_enabled {
                     let tweet_text = tweet.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                    let replies: Vec<(String, String)> = vec![];  // Would need to extract from DOM
+                    let replies: Vec<(String, String)> = vec![]; // Would need to extract from DOM
                     Some(decide_engagement(tweet_text, &replies))
                 } else {
                     None
                 };
-                
+
                 // Skip if smart decision says None
                 if let Some(ref decision) = engagement_decision {
                     if decision.level == EngagementLevel::None {
-                        info!("Skipping engagement: {} (score: {})", decision.reason, decision.score);
-                        continue;  // Skip to next tweet
+                        info!(
+                            "Skipping engagement: {} (score: {})",
+                            decision.reason, decision.score
+                        );
+                        continue; // Skip to next tweet
                     }
                 }
 
@@ -190,7 +209,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                         if decision.level == EngagementLevel::None {
                             // Already skipped above
                         } else if !limits.can_like(&counters) {
-                            info!("Skipping like: limit reached ({}/{})", counters.likes, limits.max_likes);
+                            info!(
+                                "Skipping like: limit reached ({}/{})",
+                                counters.likes, limits.max_likes
+                            );
                         } else if let Some(pos) = tweet
                             .get("x")
                             .and_then(|v| v.as_f64())
@@ -207,7 +229,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                             }
                         }
                     } else if !limits.can_like(&counters) {
-                        info!("Skipping like: limit reached ({}/{})", counters.likes, limits.max_likes);
+                        info!(
+                            "Skipping like: limit reached ({}/{})",
+                            counters.likes, limits.max_likes
+                        );
                     } else if let Some(pos) = tweet
                         .get("x")
                         .and_then(|v| v.as_f64())
@@ -229,20 +254,30 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 if should_retweet(&candidate_persona) {
                     // Check limits
                     if !limits.can_retweet(&counters) {
-                        info!("Skipping retweet: limit reached ({}/{})", counters.retweets, limits.max_retweets);
+                        info!(
+                            "Skipping retweet: limit reached ({}/{})",
+                            counters.retweets, limits.max_retweets
+                        );
                     } else {
                         // 15% chance to quote tweet instead of native retweet (V2 feature)
-                        let do_quote_tweet = llm_enabled && rand::random::<f64>() < llm_quote_probability && limits.can_quote_tweet(&counters);
-                        
+                        let do_quote_tweet = llm_enabled
+                            && rand::random::<f64>() < llm_quote_probability
+                            && limits.can_quote_tweet(&counters);
+
                         if do_quote_tweet {
                             // Generate quote tweet commentary
                             match extract_tweet_context(api).await {
                                 Ok((author, text, replies)) => {
-                                    match generate_quote_commentary(api, &author, &text, replies).await {
+                                    match generate_quote_commentary(api, &author, &text, replies)
+                                        .await
+                                    {
                                         Ok(commentary) => {
                                             match quote_tweet(api, &commentary).await {
                                                 Ok(true) => {
-                                                    info!("Quote tweeted with commentary: {}", commentary);
+                                                    info!(
+                                                        "Quote tweeted with commentary: {}",
+                                                        commentary
+                                                    );
                                                     counters.increment_quote_tweet();
                                                     actions_taken += 1;
                                                     human_pause(api, 2000).await;
@@ -289,7 +324,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 // Decision: Follow author?
                 if should_follow(&candidate_persona) {
                     if !limits.can_follow(&counters) {
-                        info!("Skipping follow: limit reached ({}/{})", counters.follows, limits.max_follows);
+                        info!(
+                            "Skipping follow: limit reached ({}/{})",
+                            counters.follows, limits.max_follows
+                        );
                     } else if follow_from_tweet(api).await? {
                         info!("Followed user");
                         counters.increment_follow();
@@ -301,10 +339,15 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 // Decision: Reply?
                 if should_reply(&candidate_persona) {
                     if !limits.can_reply(&counters) {
-                        info!("Skipping reply: limit reached ({}/{})", counters.replies, limits.max_replies);
+                        info!(
+                            "Skipping reply: limit reached ({}/{})",
+                            counters.replies, limits.max_replies
+                        );
                     } else {
                         // Try LLM-powered reply if enabled, fallback to template
-                        let reply_text = if llm_enabled && rand::random::<f64>() < llm_reply_probability {
+                        let reply_text = if llm_enabled
+                            && rand::random::<f64>() < llm_reply_probability
+                        {
                             // Extract tweet context for LLM
                             match extract_tweet_context(api).await {
                                 Ok((author, text, replies)) => {
@@ -314,7 +357,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                                             reply
                                         }
                                         Err(e) => {
-                                            warn!("LLM reply generation failed, using template: {}", e);
+                                            warn!(
+                                                "LLM reply generation failed, using template: {}",
+                                                e
+                                            );
                                             generate_reply_text(sentiment, counters.replies)
                                         }
                                     }
@@ -328,7 +374,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                             // Use template reply
                             generate_reply_text(sentiment, counters.replies)
                         };
-                        
+
                         if reply_to_tweet(api, &reply_text).await? {
                             info!("Replied with sentiment {:?}", sentiment);
                             counters.increment_reply();
@@ -341,7 +387,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 // Decision: Dive into thread?
                 if should_dive(&candidate_persona) {
                     if !limits.can_dive(&counters) {
-                        info!("Skipping thread dive: limit reached ({}/{})", counters.thread_dives, limits.max_thread_dives);
+                        info!(
+                            "Skipping thread dive: limit reached ({}/{})",
+                            counters.thread_dives, limits.max_thread_dives
+                        );
                     } else if let Some(pos) = tweet
                         .get("x")
                         .and_then(|v| v.as_f64())

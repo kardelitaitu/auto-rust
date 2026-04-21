@@ -10,6 +10,8 @@ pub enum TaskStatus {
     Failed(String),
     /// Task exceeded its allocated time limit and was cancelled
     Timeout,
+    /// Task was cancelled before completion
+    Cancelled,
 }
 
 /// Contains the complete result of a task execution, including status, retry information,
@@ -52,8 +54,25 @@ impl TaskResult {
     }
 
     pub fn failure(duration_ms: u64, error: String, error_kind: TaskErrorKind) -> Self {
+        let status = if matches!(error_kind, TaskErrorKind::Timeout) {
+            TaskStatus::Timeout
+        } else {
+            TaskStatus::Failed(error.clone())
+        };
+
         Self {
-            status: TaskStatus::Failed(error.clone()),
+            status,
+            attempt: 1,
+            max_retries: 0,
+            last_error: Some(error),
+            error_kind: Some(error_kind),
+            duration_ms,
+        }
+    }
+
+    pub fn cancelled(duration_ms: u64, error: String, error_kind: TaskErrorKind) -> Self {
+        Self {
+            status: TaskStatus::Cancelled,
             attempt: 1,
             max_retries: 0,
             last_error: Some(error),
@@ -175,6 +194,8 @@ pub struct RunSummary {
     pub failed: usize,
     /// Number of tasks that timed out
     pub timed_out: usize,
+    /// Number of tasks that were cancelled
+    pub cancelled: usize,
     /// Total duration of the entire run in milliseconds
     pub total_duration_ms: u64,
     /// Detailed results for each individual task
@@ -189,6 +210,7 @@ impl RunSummary {
             succeeded: 0,
             failed: 0,
             timed_out: 0,
+            cancelled: 0,
             total_duration_ms: 0,
             results: Vec::new(),
         }
@@ -203,6 +225,7 @@ impl RunSummary {
             TaskStatus::Success => self.succeeded += 1,
             TaskStatus::Failed(_) => self.failed += 1,
             TaskStatus::Timeout => self.timed_out += 1,
+            TaskStatus::Cancelled => self.cancelled += 1,
         }
 
         self.results.push(result);
@@ -242,6 +265,26 @@ mod tests {
         assert_eq!(result.duration_ms, 50);
         assert_eq!(result.last_error, Some("test error".to_string()));
         assert_eq!(result.error_kind, Some(TaskErrorKind::Browser));
+    }
+
+    #[test]
+    fn test_task_result_timeout_uses_timeout_status() {
+        let result = TaskResult::failure(50, "timed out".to_string(), TaskErrorKind::Timeout);
+        assert!(!result.is_success());
+        assert!(matches!(result.status, TaskStatus::Timeout));
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Timeout));
+    }
+
+    #[test]
+    fn test_task_result_cancelled_uses_cancelled_status() {
+        let result = TaskResult::cancelled(
+            50,
+            "cancelled during execution".to_string(),
+            TaskErrorKind::Timeout,
+        );
+        assert!(!result.is_success());
+        assert!(matches!(result.status, TaskStatus::Cancelled));
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Timeout));
     }
 
     #[test]
@@ -302,6 +345,7 @@ mod tests {
         let summary = RunSummary::new();
         assert_eq!(summary.total_tasks, 0);
         assert_eq!(summary.succeeded, 0);
+        assert_eq!(summary.cancelled, 0);
     }
 
     #[test]
@@ -324,6 +368,20 @@ mod tests {
         assert_eq!(summary.total_tasks, 1);
         assert_eq!(summary.succeeded, 0);
         assert_eq!(summary.failed, 1);
+    }
+
+    #[test]
+    fn test_run_summary_add_cancelled() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::cancelled(
+            25,
+            "cancelled".to_string(),
+            TaskErrorKind::Timeout,
+        ));
+        assert_eq!(summary.total_tasks, 1);
+        assert_eq!(summary.cancelled, 1);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.timed_out, 0);
     }
 
     #[test]

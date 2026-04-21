@@ -505,6 +505,7 @@ Automatic export to `run-summary.json`:
   "succeeded": 38,
   "failed": 3,
   "timed_out": 1,
+  "cancelled": 2,
   "success_rate": 90.48,
   "active_sessions": 6,
   "healthy_sessions": 5,
@@ -514,6 +515,8 @@ Automatic export to `run-summary.json`:
 ```
 
 The run summary also includes per-task and per-session outcome breakdowns, so you can see which task names or sessions are driving failures.
+
+`run-summary.json` now splits `timed_out` and `cancelled`, so shutdown-driven cancellations stay separate from real execution timeouts.
 
 ### Periodic Health Monitoring
 

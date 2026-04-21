@@ -326,7 +326,25 @@ async fn execute_task_with_retry(
         jitter: 0.3,
     };
 
-    // Acquire worker permit
+    let payload_json = serde_json::Value::Object(task_def.payload.clone().into_iter().collect());
+
+    if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
+        return TaskResult::failure(
+            start.elapsed().as_millis() as u64,
+            format!("Task {} validation failed: {}", task_def.name, e),
+            TaskErrorKind::Validation,
+        );
+    }
+
+    if !session.is_healthy() {
+        session.mark_unhealthy();
+        return TaskResult::failure(
+            start.elapsed().as_millis() as u64,
+            format!("Session {} is unhealthy, skipping task", session.id),
+            TaskErrorKind::Session,
+        );
+    }
+
     let permit = match tokio::select! {
         permit = session.acquire_worker(config.orchestrator.worker_wait_timeout_ms) => permit,
         _ = cancel_token.cancelled() => {
@@ -334,7 +352,7 @@ async fn execute_task_with_retry(
                 "task_cancel | task={} session={} stage=worker_acquisition",
                 task_def.name, session.id
             );
-            return TaskResult::failure(
+            return TaskResult::cancelled(
                 start.elapsed().as_millis() as u64,
                 format!("Task {} cancelled before worker acquisition", task_def.name),
                 TaskErrorKind::Timeout,
@@ -350,27 +368,6 @@ async fn execute_task_with_retry(
             );
         }
     };
-
-    if !session.is_healthy() {
-        session.mark_unhealthy();
-        drop(permit);
-        return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
-            format!("Session {} is unhealthy, skipping task", session.id),
-            TaskErrorKind::Session,
-        );
-    }
-
-    let payload_json = serde_json::Value::Object(task_def.payload.clone().into_iter().collect());
-
-    if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
-        drop(permit);
-        return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
-            format!("Task {} validation failed: {}", task_def.name, e),
-            TaskErrorKind::Validation,
-        );
-    }
 
     let page = if task_def.name == "pageview" {
         let target_url = match crate::validation::task::resolve_pageview_target(&payload_json) {
@@ -560,7 +557,7 @@ async fn execute_task_with_retry(
 
     let (msg, kind) = last_failure
         .unwrap_or_else(|| ("Unknown task failure".to_string(), TaskErrorKind::Unknown));
-    if kind == TaskErrorKind::Timeout && !was_cancelled {
+    if should_mark_session_unhealthy(kind, was_cancelled) {
         session.mark_unhealthy();
     }
 
@@ -572,12 +569,32 @@ async fn execute_task_with_retry(
         was_cancelled
     );
 
+    if was_cancelled {
+        return TaskResult::cancelled(
+            start.elapsed().as_millis() as u64,
+            format!("Task {} cancelled after retries: {}", task_def.name, msg),
+            kind,
+        )
+        .with_retry(attempt.max(1), max_retries, msg);
+    }
+
     TaskResult::failure(
         start.elapsed().as_millis() as u64,
         format!("Task {} failed after retries: {}", task_def.name, msg),
         kind,
     )
     .with_retry(attempt.max(1), max_retries, msg)
+}
+
+fn should_mark_session_unhealthy(kind: TaskErrorKind, was_cancelled: bool) -> bool {
+    !was_cancelled
+        && matches!(
+            kind,
+            TaskErrorKind::Timeout
+                | TaskErrorKind::Navigation
+                | TaskErrorKind::Session
+                | TaskErrorKind::Browser
+        )
 }
 
 #[cfg(test)]
@@ -611,5 +628,16 @@ mod tests {
         assert_eq!(format_duration(3660000), "1h 1min");
         assert_eq!(format_duration(7200000), "2h");
         assert_eq!(format_duration(7320000), "2h 2min");
+    }
+
+    #[test]
+    fn test_non_timeout_failure_marks_session_unhealthy() {
+        assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
+        assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            false
+        ));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
     }
 }

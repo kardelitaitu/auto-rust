@@ -89,6 +89,7 @@ pub enum TaskStatus {
     Success,
     Failed,
     Timeout,
+    Cancelled,
 }
 
 /// Counts outcomes for a task or session.
@@ -97,6 +98,7 @@ pub struct OutcomeBreakdown {
     pub succeeded: usize,
     pub failed: usize,
     pub timed_out: usize,
+    pub cancelled: usize,
 }
 
 impl OutcomeBreakdown {
@@ -105,11 +107,12 @@ impl OutcomeBreakdown {
             TaskStatus::Success => self.succeeded += 1,
             TaskStatus::Failed => self.failed += 1,
             TaskStatus::Timeout => self.timed_out += 1,
+            TaskStatus::Cancelled => self.cancelled += 1,
         }
     }
 
     fn failure_count(&self) -> usize {
-        self.failed + self.timed_out
+        self.failed + self.timed_out + self.cancelled
     }
 }
 
@@ -126,6 +129,8 @@ pub struct MetricsCollector {
     failed: Arc<AtomicUsize>,
     /// Number of tasks that timed out
     timed_out: Arc<AtomicUsize>,
+    /// Number of tasks that were cancelled
+    cancelled: Arc<AtomicUsize>,
     /// Total execution time across all tasks in milliseconds
     total_duration_ms: Arc<AtomicUsize>,
     /// Number of currently active tasks
@@ -157,6 +162,7 @@ impl MetricsCollector {
             succeeded: Arc::new(AtomicUsize::new(0)),
             failed: Arc::new(AtomicUsize::new(0)),
             timed_out: Arc::new(AtomicUsize::new(0)),
+            cancelled: Arc::new(AtomicUsize::new(0)),
             total_duration_ms: Arc::new(AtomicUsize::new(0)),
             active_tasks: Arc::new(AtomicUsize::new(0)),
             task_history: Arc::new(RwLock::new(VecDeque::new())),
@@ -211,6 +217,9 @@ impl MetricsCollector {
                 let mut breakdown = self.failure_breakdown.write();
                 *breakdown.entry(TaskErrorKind::Timeout).or_insert(0) += 1;
             }
+            TaskStatus::Cancelled => {
+                self.cancelled.fetch_add(1, Ordering::SeqCst);
+            }
         }
 
         let mut history = self.task_history.write();
@@ -230,6 +239,7 @@ impl MetricsCollector {
             crate::result::TaskStatus::Success => TaskStatus::Success,
             crate::result::TaskStatus::Failed(_) => TaskStatus::Failed,
             crate::result::TaskStatus::Timeout => TaskStatus::Timeout,
+            crate::result::TaskStatus::Cancelled => TaskStatus::Cancelled,
         };
 
         self.task_completed(TaskMetrics {
@@ -258,6 +268,7 @@ impl MetricsCollector {
             succeeded: self.succeeded.load(Ordering::SeqCst),
             failed: self.failed.load(Ordering::SeqCst),
             timed_out: self.timed_out.load(Ordering::SeqCst),
+            cancelled: self.cancelled.load(Ordering::SeqCst),
             active_tasks: self.active_tasks.load(Ordering::SeqCst),
             total_duration_ms: self.total_duration_ms.load(Ordering::SeqCst) as u64,
             failure_breakdown,
@@ -399,6 +410,8 @@ pub struct MetricsSnapshot {
     pub failed: usize,
     /// Number of tasks that timed out
     pub timed_out: usize,
+    /// Number of tasks that were cancelled
+    pub cancelled: usize,
     /// Number of tasks currently in progress
     pub active_tasks: usize,
     /// Total execution time across all completed tasks in milliseconds
@@ -432,6 +445,8 @@ pub struct RunSummary {
     pub failed: usize,
     /// Number of tasks that timed out
     pub timed_out: usize,
+    /// Number of tasks that were cancelled
+    pub cancelled: usize,
     /// Overall success rate as a percentage
     pub success_rate: f64,
     /// Number of browser sessions available during the run
@@ -477,6 +492,7 @@ impl MetricsCollector {
             succeeded: stats.succeeded,
             failed: stats.failed,
             timed_out: stats.timed_out,
+            cancelled: stats.cancelled,
             success_rate: self.success_rate(),
             active_sessions,
             healthy_sessions,
@@ -520,6 +536,7 @@ mod tests {
         let stats = collector.get_stats();
         assert_eq!(stats.total_tasks, 0);
         assert_eq!(stats.succeeded, 0);
+        assert_eq!(stats.cancelled, 0);
     }
 
     #[test]
@@ -580,6 +597,23 @@ mod tests {
         });
         let stats = collector.get_stats();
         assert_eq!(stats.timed_out, 1);
+    }
+
+    #[test]
+    fn test_task_completed_cancelled() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "test".to_string(),
+            status: TaskStatus::Cancelled,
+            duration_ms: 15,
+            session_id: "s1".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: Some("cancelled".to_string()),
+        });
+        let stats = collector.get_stats();
+        assert_eq!(stats.cancelled, 1);
     }
 
     #[test]
@@ -680,6 +714,17 @@ mod tests {
 
         collector.task_started();
         collector.task_completed(TaskMetrics {
+            task_name: "pageview".to_string(),
+            status: TaskStatus::Cancelled,
+            duration_ms: 10,
+            session_id: "brave-2".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: Some("cancelled".to_string()),
+        });
+
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
             task_name: "twitterreply".to_string(),
             status: TaskStatus::Failed,
             duration_ms: 60,
@@ -693,13 +738,14 @@ mod tests {
         let pageview = stats.task_breakdown.get("pageview").unwrap();
         assert_eq!(pageview.succeeded, 1);
         assert_eq!(pageview.timed_out, 1);
+        assert_eq!(pageview.cancelled, 1);
 
         let brave1 = stats.session_breakdown.get("brave-1").unwrap();
         assert_eq!(brave1.succeeded, 1);
         assert_eq!(brave1.timed_out, 1);
 
         let brave2 = stats.session_breakdown.get("brave-2").unwrap();
-        assert_eq!(brave2.failed, 1);
+        assert_eq!(brave2.cancelled, 1);
     }
 
     #[test]
@@ -735,6 +781,7 @@ mod tests {
         assert_eq!(summary["active_sessions"], 3);
         assert_eq!(summary["healthy_sessions"], 2);
         assert_eq!(summary["unhealthy_sessions"], 1);
+        assert_eq!(summary["cancelled"], 0);
         assert!(
             summary["task_breakdown"]["pageview"]["succeeded"]
                 .as_u64()

@@ -15,6 +15,7 @@ use futures::StreamExt;
 use log::{info, warn};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tokio::sync::SemaphorePermit;
 
 /// Represents the current operational state of a browser session.
 /// Used to track session health and availability for task assignment.
@@ -32,6 +33,18 @@ pub enum SessionState {
 /// Represents a browser session with connection management and health monitoring.
 /// A session encapsulates a browser instance and manages its lifecycle, worker allocation,
 /// and health status for reliable task execution.
+pub struct WorkerPermit<'a> {
+    _permit: SemaphorePermit<'a>,
+    active_workers: &'a std::sync::atomic::AtomicUsize,
+}
+
+impl<'a> Drop for WorkerPermit<'a> {
+    fn drop(&mut self) {
+        self.active_workers
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub struct Session {
     /// Unique identifier for this session
     pub id: String,
@@ -210,10 +223,7 @@ impl Session {
 
     /// Acquire a worker permit from the semaphore
     /// Equivalent to Node.js `sessionManager.acquireWorker()`
-    pub async fn acquire_worker(
-        &self,
-        timeout_ms: u64,
-    ) -> Option<tokio::sync::SemaphorePermit<'_>> {
+    pub async fn acquire_worker(&self, timeout_ms: u64) -> Option<WorkerPermit<'_>> {
         use tokio::time::{timeout, Duration};
 
         match timeout(
@@ -225,7 +235,10 @@ impl Session {
             Ok(Ok(permit)) => {
                 self.active_workers
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Some(permit)
+                Some(WorkerPermit {
+                    _permit: permit,
+                    active_workers: &self.active_workers,
+                })
             }
             Ok(Err(_)) => {
                 warn!("[{}] Semaphore closed, cannot acquire worker", self.id);
@@ -242,8 +255,8 @@ impl Session {
     }
 
     #[allow(dead_code)]
-    pub async fn release_worker(&self, _permit: tokio::sync::SemaphorePermit<'_>) {
-        // Worker released via permit drop
+    pub async fn release_worker(&self, _permit: WorkerPermit<'_>) {
+        // Worker released via guard drop
     }
 
     /// Acquire a page for task execution

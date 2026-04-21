@@ -3,7 +3,10 @@
 //! and cleans up resources gracefully.
 
 use rust_orchestrator::{
-    browser, cli, config, metrics::MetricsCollector, orchestrator::Orchestrator,
+    browser, cli, config,
+    metrics::MetricsCollector,
+    orchestrator::Orchestrator,
+    result::{TaskErrorKind, TaskResult},
 };
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -66,6 +69,40 @@ async fn test_metrics_through_shutdown() {
     let stats = metrics.get_stats();
     assert_eq!(stats.total_tasks, 1);
     assert_eq!(stats.active_tasks, 1);
+}
+
+/// Test that shutdown-driven cancellation is tracked separately from timeout.
+#[tokio::test]
+async fn test_shutdown_records_cancelled_outcome() {
+    let metrics = Arc::new(MetricsCollector::new(100));
+    let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
+
+    let shutdown_task = tokio::spawn(async move {
+        let _ = shutdown_rx.recv().await;
+        TaskResult::cancelled(
+            25,
+            "Task cancelled during group shutdown".to_string(),
+            TaskErrorKind::Timeout,
+        )
+    });
+
+    let _ = shutdown_tx.send(());
+    let result = shutdown_task.await.expect("shutdown task");
+
+    metrics.task_started();
+    metrics.task_completed_from_result("demo".to_string(), "session-1".to_string(), &result);
+
+    let stats = metrics.get_stats();
+    assert_eq!(stats.cancelled, 1);
+    assert_eq!(stats.timed_out, 0);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(
+        stats
+            .session_breakdown
+            .get("session-1")
+            .map(|s| s.cancelled),
+        Some(1)
+    );
 }
 
 /// Test empty task group execution

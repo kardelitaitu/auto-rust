@@ -3,9 +3,7 @@
 //! and cleans up resources gracefully.
 
 use rust_orchestrator::{
-    browser, cli, config,
-    metrics::MetricsCollector,
-    orchestrator::Orchestrator,
+    browser, cli, config, metrics::MetricsCollector, orchestrator::Orchestrator,
 };
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -24,10 +22,10 @@ async fn test_orchestrator_graceful_creation() {
 #[tokio::test]
 async fn test_shutdown_channel_signal() {
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
-    
+
     // Send shutdown signal
     let _ = shutdown_tx.send(());
-    
+
     // Receiver should get the signal immediately
     let result = shutdown_rx.try_recv();
     assert!(result.is_ok(), "Shutdown signal should be received");
@@ -37,15 +35,15 @@ async fn test_shutdown_channel_signal() {
 #[tokio::test]
 async fn test_shutdown_channel_multiple_listeners() {
     let (shutdown_tx, _shutdown_rx) = broadcast::channel::<()>(1);
-    
+
     // Create multiple subscribers
     let mut rx1 = shutdown_tx.subscribe();
     let mut rx2 = shutdown_tx.subscribe();
     let mut rx3 = shutdown_tx.subscribe();
-    
+
     // Send shutdown signal
     let _ = shutdown_tx.send(());
-    
+
     // All listeners should receive the signal
     assert!(rx1.try_recv().is_ok());
     assert!(rx2.try_recv().is_ok());
@@ -57,13 +55,13 @@ async fn test_shutdown_channel_multiple_listeners() {
 async fn test_metrics_through_shutdown() {
     let metrics = Arc::new(MetricsCollector::new(100));
     let (shutdown_tx, _shutdown_rx) = broadcast::channel::<()>(1);
-    
+
     // Simulate some work
     metrics.task_started();
-    
+
     // Send shutdown
     let _ = shutdown_tx.send(());
-    
+
     // Metrics should still be accessible
     let stats = metrics.get_stats();
     assert_eq!(stats.total_tasks, 1);
@@ -76,16 +74,18 @@ async fn test_orchestrator_empty_group() {
     if let Ok(config) = config::load_config() {
         let mut orchestrator = Orchestrator::new(config);
         let metrics = Arc::new(MetricsCollector::new(100));
-        
+
         // Create empty group
         let empty_group: Vec<cli::TaskDefinition> = vec![];
-        
+
         // Sessions will be empty in test environment
         let sessions: Vec<rust_orchestrator::session::Session> = vec![];
-        
+
         // Should handle gracefully
-        let result = orchestrator.execute_group(&empty_group, &sessions, metrics).await;
-        
+        let result = orchestrator
+            .execute_group(&empty_group, &sessions, metrics)
+            .await;
+
         // Should fail gracefully (no sessions) but not panic
         assert!(result.is_err());
     }
@@ -95,21 +95,21 @@ async fn test_orchestrator_empty_group() {
 #[tokio::test]
 async fn test_idle_shutdown_behavior() {
     let (shutdown_tx, _shutdown_rx) = broadcast::channel::<()>(1);
-    
+
     // Clone for use in spawned task
     let shutdown_tx_clone = shutdown_tx.clone();
-    
+
     // Simulate idle mode waiting for shutdown
     let shutdown_task = tokio::spawn(async move {
         let mut rx = shutdown_tx_clone.subscribe();
         let _ = rx.recv().await;
         true // Shutdown received
     });
-    
+
     // Send shutdown after brief delay
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     let _ = shutdown_tx.send(());
-    
+
     // Wait for shutdown task to complete
     let result = shutdown_task.await;
     assert!(result.is_ok());
@@ -122,7 +122,7 @@ async fn test_browser_discovery_empty() {
     if let Ok(config) = config::load_config() {
         // Discovery should complete without panicking
         let sessions = browser::discover_browsers(&config).await;
-        
+
         // In test environment, should return empty or error gracefully
         // Don't assert specific result as it depends on environment
         let _ = sessions;

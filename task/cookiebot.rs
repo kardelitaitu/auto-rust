@@ -1,11 +1,11 @@
+use crate::internal::blockmedia;
+use crate::prelude::TaskContext;
 use anyhow::Result;
+use log::{error, info, warn};
+use rand::seq::SliceRandom;
 use serde_json::Value;
-use log::{info, warn, error};
 use std::fs;
 use std::time::Instant;
-use crate::prelude::TaskContext;
-use crate::internal::blockmedia;
-use rand::seq::SliceRandom;
 
 pub async fn run(api: &TaskContext, _payload: Value) -> Result<()> {
     blockmedia::block_heavy_resources_for_cookiebot(api.page()).await?;
@@ -25,7 +25,7 @@ pub async fn run(api: &TaskContext, _payload: Value) -> Result<()> {
 
         // Phase 1: Navigation with timing (20s total limit)
         let nav_start = Instant::now();
-        
+
         // Step 1: Navigate to URL (max 15s)
         if let Err(e) = api.navigate_to(url, 15000).await {
             warn!("Failed to navigate to {}: {}", url, e);
@@ -35,15 +35,22 @@ pub async fn run(api: &TaskContext, _payload: Value) -> Result<()> {
         // Step 2: Wait for load (max 5s remaining from 20s budget)
         let elapsed_ms = nav_start.elapsed().as_millis() as u64;
         let remaining_time = 20000u64.saturating_sub(elapsed_ms);
-        
+
         if let Err(e) = api.wait_for_load(remaining_time).await {
-            warn!("Page load timeout after {}ms for {}: {}", remaining_time, url, e);
+            warn!(
+                "Page load timeout after {}ms for {}: {}",
+                remaining_time, url, e
+            );
             // Continue anyway - page might be partially loaded
         }
         let nav_duration = nav_start.elapsed();
 
-        info!("{} URL loaded {} (nav: {}ms)", 
-            i + 1, url, nav_duration.as_millis());
+        info!(
+            "{} URL loaded {} (nav: {}ms)",
+            i + 1,
+            url,
+            nav_duration.as_millis()
+        );
 
         // Phase 2: Browsing behavior with timing
         let browse_start = Instant::now();
@@ -52,12 +59,14 @@ pub async fn run(api: &TaskContext, _payload: Value) -> Result<()> {
         }
         let browse_duration = browse_start.elapsed();
 
-        info!("{} Completed {} (total: {}ms, nav: {}ms, browse: {}ms)", 
-            i + 1, 
+        info!(
+            "{} Completed {} (total: {}ms, nav: {}ms, browse: {}ms)",
+            i + 1,
             url,
             (nav_duration + browse_duration).as_millis(),
             nav_duration.as_millis(),
-            browse_duration.as_millis());
+            browse_duration.as_millis()
+        );
 
         // Phase 3: Pause between URLs
         api.pause(3000).await;
@@ -98,5 +107,3 @@ fn read_cookiebot_urls() -> Result<Vec<String>> {
 
     Ok(urls)
 }
-
-

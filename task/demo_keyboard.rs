@@ -1,9 +1,9 @@
+use crate::capabilities::keyboard;
+use crate::prelude::TaskContext;
 use anyhow::Result;
 use chromiumoxide::Page;
-use serde_json::Value;
 use log::{info, warn};
-use crate::prelude::TaskContext;
-use crate::capabilities::keyboard;
+use serde_json::Value;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started");
@@ -29,13 +29,18 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     Ok(())
 }
 
-async fn perform_keyboard_demos(api: &TaskContext, typing: &crate::internal::profile::TypingBehavior) -> Result<()> {
+async fn perform_keyboard_demos(
+    api: &TaskContext,
+    typing: &crate::internal::profile::TypingBehavior,
+) -> Result<()> {
     let page = api.page();
     let clipboard = api.clipboard();
     info!("Looking for textarea...");
 
     let exists = page
-        .evaluate("document.querySelector('textarea, input[type=text], [contenteditable]') !== null")
+        .evaluate(
+            "document.querySelector('textarea, input[type=text], [contenteditable]') !== null",
+        )
         .await?
         .value()
         .map(|v| v.as_bool().unwrap_or(false))
@@ -44,7 +49,7 @@ async fn perform_keyboard_demos(api: &TaskContext, typing: &crate::internal::pro
     if !exists {
         info!("No interactive element found, performing keyboard demos on page");
         demo_page_keyboard(api).await?;
-        return Ok(())
+        return Ok(());
     }
 
     info!("Clicking to focus...");
@@ -152,7 +157,8 @@ async fn demo_page_keyboard(api: &TaskContext) -> Result<()> {
 }
 
 async fn focus_element(page: &Page) -> Result<()> {
-    page.evaluate(r#"
+    page.evaluate(
+        r#"
         (function() {
             const el = document.querySelector('textarea, input[type=text], [contenteditable]');
             if (el) {
@@ -162,7 +168,9 @@ async fn focus_element(page: &Page) -> Result<()> {
             }
             return null;
         })()
-    "#).await?;
+    "#,
+    )
+    .await?;
     Ok(())
 }
 
@@ -200,8 +208,9 @@ async fn select_all_text(page: &Page) -> Result<()> {
                 sel.addRange(range);
             }
         })();
-        "#
-    ).await?;
+        "#,
+    )
+    .await?;
     Ok(())
 }
 
@@ -229,5 +238,3 @@ fn extract_typo_rate(payload: &Value) -> Option<f64> {
         .and_then(|v| v.as_f64())
         .map(|v| v.clamp(0.0, 1.0))
 }
-
-

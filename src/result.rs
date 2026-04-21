@@ -316,7 +316,11 @@ mod tests {
     #[test]
     fn test_run_summary_add_failure() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(
+            50,
+            "error".to_string(),
+            TaskErrorKind::Browser,
+        ));
         assert_eq!(summary.total_tasks, 1);
         assert_eq!(summary.succeeded, 0);
         assert_eq!(summary.failed, 1);
@@ -327,7 +331,11 @@ mod tests {
         let mut summary = RunSummary::new();
         summary.add(TaskResult::success(100));
         summary.add(TaskResult::success(100));
-        summary.add(TaskResult::failure(50, "e".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(
+            50,
+            "e".to_string(),
+            TaskErrorKind::Browser,
+        ));
         assert!((summary.success_rate() - 66.66).abs() < 0.1);
     }
 

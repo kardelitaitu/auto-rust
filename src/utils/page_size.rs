@@ -3,8 +3,8 @@
 //! Provides functions for querying browser viewport dimensions and
 //! calculating valid cursor positions for mouse interactions.
 
-use chromiumoxide::Page;
 use anyhow::Result;
+use chromiumoxide::Page;
 use serde::Deserialize;
 use serde_json;
 
@@ -26,10 +26,12 @@ pub struct Viewport {
 /// # Returns
 /// Ok(Viewport) with current dimensions, Err if evaluation fails
 pub async fn get_viewport(page: &Page) -> Result<Viewport> {
-    let result = page.evaluate(
-        "({width: window.innerWidth, height: window.innerHeight})"
-    ).await?;
-    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to get viewport value"))?;
+    let result = page
+        .evaluate("({width: window.innerWidth, height: window.innerHeight})")
+        .await?;
+    let value = result
+        .value()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get viewport value"))?;
     let viewport: Viewport = serde_json::from_value(value.clone())?;
     Ok(viewport)
 }
@@ -53,7 +55,9 @@ pub async fn get_document_size(page: &Page) -> Result<DocumentSize> {
     let result = page.evaluate(
         "({scroll_width: document.documentElement.scrollWidth, scroll_height: document.documentElement.scrollHeight})"
     ).await?;
-    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to get document size value"))?;
+    let value = result
+        .value()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get document size value"))?;
     let doc: DocumentSize = serde_json::from_value(value.clone())?;
     Ok(doc)
 }
@@ -102,7 +106,8 @@ pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
 /// Ok((x, y)) with center coordinates of the element, Err if element not found
 pub async fn get_element_center(page: &Page, selector: &str) -> Result<(f64, f64)> {
     let selector_js = serde_json::to_string(selector)?;
-    let js = format!("
+    let js = format!(
+        "
         (() => {{
             const el = document.querySelector({});
             if (!el) return null;
@@ -114,10 +119,14 @@ pub async fn get_element_center(page: &Page, selector: &str) -> Result<(f64, f64
                 height: rect.height
             }};
         }})()
-    ", selector_js);
-    
+    ",
+        selector_js
+    );
+
     let result = page.evaluate(js).await?;
-    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to get element center value"))?;
+    let value = result
+        .value()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get element center value"))?;
     let coords: ElementCoords = serde_json::from_value(value.clone())?;
 
     if !coords.is_valid() {
@@ -153,7 +162,8 @@ impl ElementCoords {
 #[allow(dead_code)]
 pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64, f64, f64)> {
     let selector_js = serde_json::to_string(selector)?;
-    let js = format!("
+    let js = format!(
+        "
         (() => {{
             const el = document.querySelector({});
             if (!el) return null;
@@ -165,15 +175,24 @@ pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64
                 height: rect.height
             }};
         }})()
-    ", selector_js);
-    
+    ",
+        selector_js
+    );
+
     let result = page.evaluate(js).await?;
-    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to get element bounds value"))?;
+    let value = result
+        .value()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get element bounds value"))?;
     let coords: ElementCoords = serde_json::from_value(value.clone())?;
 
     if !coords.is_valid() {
         anyhow::bail!("Element not found: {}", selector);
     }
 
-    Ok((coords.x, coords.y, coords.x + coords.width, coords.y + coords.height))
+    Ok((
+        coords.x,
+        coords.y,
+        coords.x + coords.width,
+        coords.y + coords.height,
+    ))
 }

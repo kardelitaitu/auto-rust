@@ -51,6 +51,9 @@ pub struct BrowserConfig {
     /// Optional extra HTTP headers applied to new pages
     #[serde(default)]
     pub extra_http_headers: BTreeMap<String, String>,
+    /// Cursor overlay sync interval in milliseconds (0 = disabled)
+    #[serde(default)]
+    pub cursor_overlay_ms: u64,
 }
 
 /// Configuration for circuit breaker pattern implementation.
@@ -328,6 +331,7 @@ impl Default for BrowserConfig {
             roxybrowser: RoxybrowserConfig::default(),
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
+            cursor_overlay_ms: 0,
         }
     }
 }
@@ -483,6 +487,7 @@ fn load_code_config() -> Result<Config> {
             },
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
+            cursor_overlay_ms: 0,
         },
         orchestrator: OrchestratorConfig {
             max_global_concurrency: 20,
@@ -529,6 +534,11 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             .filter_map(|pair| pair.split_once('='))
             .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
             .collect();
+    }
+    if let Ok(overlay_ms) = env::var("CURSOR_OVERLAY_MS") {
+        config.browser.cursor_overlay_ms = overlay_ms
+            .parse()
+            .unwrap_or(config.browser.cursor_overlay_ms);
     }
 
     // Twitter Activity engagement limits overrides

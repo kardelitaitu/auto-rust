@@ -5,7 +5,7 @@ use crate::prelude::TaskContext;
 use anyhow::Result;
 
 use super::twitteractivity_feed::get_scroll_progress;
-use super::{twitteractivity_selectors::*, twitteractivity_humanized::*};
+use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
 /// Clicks on a tweet to open it in the thread/detail view.
 /// Some Twitter UIs expand inline; this uses the "Show this thread" approach.
@@ -35,10 +35,7 @@ pub async fn dive_into_thread(api: &TaskContext, x: f64, y: f64) -> Result<()> {
 
 /// Reads the full thread by scrolling through it.
 /// Returns after `max_scrolls` iterations or end of thread reached.
-pub async fn read_full_thread(
-    api: &TaskContext,
-    max_scrolls: u32,
-) -> Result<()> {
+pub async fn read_full_thread(api: &TaskContext, max_scrolls: u32) -> Result<()> {
     for i in 0..max_scrolls {
         // Check if we've reached the end
         let progress: f64 = get_scroll_progress(api).await.unwrap_or(0.0);
@@ -48,8 +45,8 @@ pub async fn read_full_thread(
 
         // Scroll a small amount, mimicking reading
         api.scroll_read(
-            1, // single pause
-            300, // small incremental scroll
+            1,    // single pause
+            300,  // small incremental scroll
             true, // smooth
             false,
         )
@@ -76,5 +73,3 @@ pub async fn get_thread_depth(api: &TaskContext) -> Result<u32> {
         .unwrap_or(0);
     Ok(count)
 }
-
-

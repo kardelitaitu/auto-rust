@@ -6,9 +6,9 @@
 //! - Programmatic zoom level changes
 //! - Viewport scaling simulations
 
-use chromiumoxide::Page;
-use anyhow::Result;
 use crate::utils::timing::human_pause;
+use anyhow::Result;
+use chromiumoxide::Page;
 
 /// Performs a pinch-to-zoom gesture to zoom in or out.
 /// Simulates two fingers moving toward/away from each other.
@@ -39,23 +39,23 @@ pub async fn pinch_zoom(
     let finger_distance = 100.0; // Starting distance between fingers in pixels
     let initial_distance = finger_distance;
     let final_distance = finger_distance * scale_factor;
-    
+
     // Calculate finger positions
     let angle: f64 = 0.0; // Start with fingers horizontally aligned
-    
+
     let finger1_start_x = center_x - (initial_distance / 2.0) * angle.cos();
     let finger1_start_y = center_y - (initial_distance / 2.0) * angle.sin();
     let finger2_start_x = center_x + (initial_distance / 2.0) * angle.cos();
     let finger2_start_y = center_y + (initial_distance / 2.0) * angle.sin();
-    
+
     let finger1_end_x = center_x - (final_distance / 2.0) * angle.cos();
     let finger1_end_y = center_y - (final_distance / 2.0) * angle.sin();
     let finger2_end_x = center_x + (final_distance / 2.0) * angle.cos();
     let finger2_end_y = center_y + (final_distance / 2.0) * angle.sin();
-    
+
     // Simulate both fingers moving simultaneously
     // For simplicity, we'll animate one finger at a time with small delays
-    
+
     // Move first finger
     simulate_drag(
         page,
@@ -64,11 +64,12 @@ pub async fn pinch_zoom(
         finger1_end_x,
         finger1_end_y,
         duration_ms / 2,
-    ).await?;
-    
+    )
+    .await?;
+
     // Small delay between finger movements
     human_pause(50, 20).await;
-    
+
     // Move second finger
     simulate_drag(
         page,
@@ -77,8 +78,9 @@ pub async fn pinch_zoom(
         finger2_end_x,
         finger2_end_y,
         duration_ms / 2,
-    ).await?;
-    
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -103,7 +105,7 @@ async fn simulate_drag(
 ) -> Result<()> {
     // Use existing mouse movement utility for the drag path
     crate::utils::mouse::cursor_move_to(page, start_x, start_y).await?;
-    
+
     // Simulate press
     page.evaluate(format!(
         "if (!window.touch) {{ window.touch = {{}}}}; \
@@ -116,19 +118,21 @@ async fn simulate_drag(
          }}); \
          document.dispatchEvent(touchStart);",
         start_x, start_y
-    )).await?;
-    
+    ))
+    .await?;
+
     // Small pause to simulate press
     human_pause(10, 20).await;
-    
+
     // Move to end position
     crate::utils::mouse::cursor_move_to(page, end_x, end_y).await?;
-    
+
     // Small pause at end
     human_pause(10, 20).await;
-    
+
     // Simulate release
-    page.evaluate("if (window.touch) { \
+    page.evaluate(
+        "if (window.touch) { \
          const touchEnd = new TouchEvent('touchend', { \
            touches: [], \
            changedTouches: [window.touch], \
@@ -136,8 +140,11 @@ async fn simulate_drag(
          }); \
          window.touch = null; \
          document.dispatchEvent(touchEnd); \
-        }".to_string()).await?;
-    
+        }"
+        .to_string(),
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -152,12 +159,7 @@ async fn simulate_drag(
 /// # Returns
 /// Ok(()) if successful
 #[allow(dead_code)]
-pub async fn wheel_zoom(
-    page: &Page,
-    delta_y: f64,
-    x: f64,
-    y: f64,
-) -> Result<()> {
+pub async fn wheel_zoom(page: &Page, delta_y: f64, x: f64, y: f64) -> Result<()> {
     page.evaluate(format!(
         "const wheelEvent = new WheelEvent('wheel', {{ \
           deltaY: {}, \
@@ -167,8 +169,9 @@ pub async fn wheel_zoom(
         }}); \
         document.dispatchEvent(wheelEvent);",
         delta_y, x, y
-    )).await?;
-    
+    ))
+    .await?;
+
     Ok(())
 }
 
@@ -189,11 +192,12 @@ pub async fn set_zoom_level(page: &Page, scale: f64) -> Result<()> {
          document.body.style.transformOrigin = '0 0'; \
          document.body.style.transition = 'transform 0.3s ease';",
         scale
-    )).await?;
-    
+    ))
+    .await?;
+
     // Wait for the transition to complete
     human_pause(300, 50).await;
-    
+
     Ok(())
 }
 
@@ -219,18 +223,14 @@ pub async fn reset_zoom(page: &Page) -> Result<()> {
 /// # Returns
 /// Ok(()) if successful
 #[allow(dead_code)]
-pub async fn zoom_to(
-    page: &Page,
-    target_scale: f64,
-    duration_ms: u64,
-) -> Result<()> {
+pub async fn zoom_to(page: &Page, target_scale: f64, duration_ms: u64) -> Result<()> {
     // Get current zoom level (assuming we start at 1.0)
     let current_scale = 1.0;
-    
+
     // Animate by updating transform over time
     let steps = 20;
     let step_duration = duration_ms / steps;
-    
+
     for i in 0..=steps {
         let progress = i as f64 / steps as f64;
         // Ease-in-out curve
@@ -239,33 +239,33 @@ pub async fn zoom_to(
         } else {
             -1.0 + (4.0 - 2.0 * progress) * progress
         };
-        
+
         let current_scale = current_scale + (target_scale - current_scale) * eased_progress;
-        
+
         set_zoom_level(page, current_scale).await?;
-        
+
         if i < steps {
             human_pause(step_duration, 20).await;
         }
     }
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use crate::utils::math::gaussian;
-    
+
     #[test]
     fn test_zoom_calculations() {
         // Test that our zoom functions produce reasonable values
         let scale = 1.5;
         assert!(scale > 1.0);
-        
+
         let scale = 0.5;
         assert!(scale < 1.0 && scale > 0.0);
     }
-    
+
     #[test]
     fn test_random_zoom_amount() {
         // Test that random zoom amounts are in reasonable range

@@ -65,6 +65,7 @@ const KNOWN_TASKS: &[&str] = &[
     "demo-mouse",
     "demoqa",
     "twitterfollow",
+    "twitterquote",
     "twitterreply",
     "twitteractivity",
 ];

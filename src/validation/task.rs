@@ -46,6 +46,7 @@ impl TaskPayload {
             "cookiebot" => self.validate_cookiebot(),
             "pageview" => self.validate_pageview(),
             "twitterfollow" => self.validate_twitterfollow(),
+            "twitterquote" => self.validate_twitterquote(),
             "twitterreply" => self.validate_twitterreply(),
             "twitteractivity" => self.validate_twitteractivity(),
             "demoqa" => self.validate_demoqa(),
@@ -109,6 +110,44 @@ impl TaskPayload {
 
         if !(has_username || has_url || has_value) {
             bail!("twitterfollow payload requires username, url, or value");
+        }
+
+        Ok(())
+    }
+
+    fn validate_twitterquote(&self) -> Result<()> {
+        if !self.payload.is_object() {
+            bail!("twitterquote payload must be an object");
+        }
+
+        let has_url = self
+            .payload
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_value = self
+            .payload
+            .get("value")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_quote_text = self
+            .payload
+            .get("quote_text")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+
+        if !(has_url || has_value) {
+            bail!("twitterquote payload requires url or value");
+        }
+
+        if has_quote_text {
+            let text = self.payload.get("quote_text").unwrap().as_str().unwrap();
+            if text.len() > 280 {
+                bail!("twitterquote quote_text exceeds 280 characters");
+            }
         }
 
         Ok(())

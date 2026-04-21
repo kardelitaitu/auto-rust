@@ -100,7 +100,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         &config.permanent_address,
     )?;
 
-api.pause(5000).await;
+    api.pause(5000).await;
 
     info!("Task completed");
     Ok(())
@@ -120,7 +120,12 @@ async fn fill_text_field(api: &TaskContext, selector: &str, value: &str) -> Resu
 fn assert_contains(label: &str, actual: Option<String>, expected: &str) -> Result<()> {
     let actual = actual.unwrap_or_default();
     if !actual.contains(expected) {
-        bail!("DemoQA {} mismatch: expected '{}' in '{}';", label, expected, actual);
+        bail!(
+            "DemoQA {} mismatch: expected '{}' in '{}';",
+            label,
+            expected,
+            actual
+        );
     }
     info!("Verified {}: {}", label, actual);
     Ok(())

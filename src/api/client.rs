@@ -7,14 +7,14 @@
 //! - Exponential backoff with jitter for retries
 //! - JSON serialization/deserialization support
 
-use anyhow::{Result, anyhow, bail};
-use log::{warn, info};
+use anyhow::{anyhow, bail, Result};
+use log::{info, warn};
 use parking_lot::Mutex;
 use rand::Rng;
 use reqwest::{Client, Method, StatusCode};
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use std::time::Duration;
-use serde::de::DeserializeOwned;
 
 /// HTTP client for making API requests with consistent error handling.
 /// Provides a wrapper around reqwest with timeout and retry capabilities.
@@ -151,7 +151,8 @@ impl ApiClient {
     /// # Returns
     /// Deserialized response data or an error
     pub async fn get_with_key<T: DeserializeOwned>(&self, path: &str, api_key: &str) -> Result<T> {
-        self.request_json(Method::GET, path, Some(api_key.to_string())).await
+        self.request_json(Method::GET, path, Some(api_key.to_string()))
+            .await
     }
 
     async fn request_json<T: DeserializeOwned>(
@@ -200,7 +201,8 @@ impl ApiClient {
                         let status = response.status();
                         if !status.is_success() {
                             let text = response.text().await.unwrap_or_default();
-                            let message = format!("API request failed with status {status}: {text}");
+                            let message =
+                                format!("API request failed with status {status}: {text}");
                             let error = if is_retryable_status(status) {
                                 ApiCallError::retryable(message)
                             } else {
@@ -262,7 +264,9 @@ impl std::fmt::Display for ApiCallError {
 impl std::error::Error for ApiCallError {}
 
 fn is_retryable_status(status: StatusCode) -> bool {
-    status.is_server_error() || status == StatusCode::REQUEST_TIMEOUT || status == StatusCode::TOO_MANY_REQUESTS
+    status.is_server_error()
+        || status == StatusCode::REQUEST_TIMEOUT
+        || status == StatusCode::TOO_MANY_REQUESTS
 }
 
 /// States of a circuit breaker for fault tolerance.
@@ -310,7 +314,11 @@ impl CircuitBreaker {
     /// # Returns
     /// A new CircuitBreaker instance in Closed state
     #[allow(dead_code)]
-    pub const fn new(failure_threshold: u32, success_threshold: u32, half_open_timeout_ms: u64) -> Self {
+    pub const fn new(
+        failure_threshold: u32,
+        success_threshold: u32,
+        half_open_timeout_ms: u64,
+    ) -> Self {
         Self {
             failure_threshold,
             success_threshold,
@@ -353,7 +361,10 @@ impl CircuitBreaker {
             self.state = CircuitState::Closed;
             self.failures = 0;
             self.successes = 0;
-            info!("Circuit breaker closed after {} consecutive successes", self.success_threshold);
+            info!(
+                "Circuit breaker closed after {} consecutive successes",
+                self.success_threshold
+            );
         }
     }
 
@@ -365,7 +376,10 @@ impl CircuitBreaker {
             self.state = CircuitState::Open;
             self.failures = 0;
             self.successes = 0;
-            warn!("Circuit breaker opened after {} consecutive failures", self.failure_threshold);
+            warn!(
+                "Circuit breaker opened after {} consecutive failures",
+                self.failure_threshold
+            );
         }
     }
 
@@ -451,18 +465,18 @@ mod tests {
     #[test]
     fn test_circuit_breaker_opens_on_failures() {
         let mut cb = CircuitBreaker::new(3, 2, 30000);
-        
+
         assert!(cb.can_execute());
         assert!(cb.is_closed());
-        
+
         cb.record_failure();
         assert!(cb.can_execute());
         assert!(cb.is_closed());
-        
+
         cb.record_failure();
         assert!(cb.can_execute());
         assert!(cb.is_closed());
-        
+
         cb.record_failure();
         assert!(!cb.can_execute());
         assert!(cb.is_open());
@@ -471,20 +485,20 @@ mod tests {
     #[test]
     fn test_circuit_breaker_closes_on_successes() {
         let mut cb = CircuitBreaker::new(2, 2, 30000);
-        
+
         // Open the circuit
         cb.record_failure();
         cb.record_failure();
         assert!(cb.is_open());
         assert!(!cb.can_execute());
-        
+
         // Manually set to half-open (in real usage, this would happen after timeout)
         cb.state = CircuitState::HalfOpen;
-        
+
         // Record successes to close
         cb.record_success();
         assert!(!cb.is_closed()); // Still half-open
-        
+
         cb.record_success();
         assert!(cb.is_closed());
         assert!(cb.can_execute());
@@ -493,11 +507,11 @@ mod tests {
     #[test]
     fn test_circuit_breaker_reset() {
         let mut cb = CircuitBreaker::new(2, 2, 30000);
-        
+
         cb.record_failure();
         cb.record_failure();
         assert!(cb.is_open());
-        
+
         cb.reset();
         assert!(cb.is_closed());
         assert!(cb.can_execute());
@@ -551,8 +565,7 @@ impl RetryPolicy {
         if attempt == 0 {
             return Duration::ZERO;
         }
-        let exponential = self.initial_delay.as_millis() as f64
-            * self.factor.powi(attempt as i32);
+        let exponential = self.initial_delay.as_millis() as f64 * self.factor.powi(attempt as i32);
         let capped = exponential.min(self.max_delay.as_millis() as f64);
 
         let delay_ms = if self.jitter <= 0.0 {

@@ -274,12 +274,12 @@ fn contains_any(text: &str, patterns: &[&str]) -> bool {
 fn is_emoji(c: char) -> bool {
     let cp = c as u32;
     // Common emoji Unicode ranges
-    (cp >= 0x1F600 && cp <= 0x1F64F) ||  // Emoticons
-    (cp >= 0x1F300 && cp <= 0x1F5FF) ||  // Misc Symbols and Pictographs
-    (cp >= 0x1F680 && cp <= 0x1F6FF) ||  // Transport and Map
-    (cp >= 0x1F1E0 && cp <= 0x1F1FF) ||  // Flags
-    (cp >= 0x2600 && cp <= 0x26FF) ||    // Misc symbols
-    (cp >= 0x2700 && cp <= 0x27BF)       // Dingbats
+    (0x1F600..=0x1F64F).contains(&cp) ||  // Emoticons
+    (0x1F300..=0x1F5FF).contains(&cp) ||  // Misc Symbols and Pictographs
+    (0x1F680..=0x1F6FF).contains(&cp) ||  // Transport and Map
+    (0x1F1E0..=0x1F1FF).contains(&cp) ||  // Flags
+    (0x2600..=0x26FF).contains(&cp) ||    // Misc symbols
+    (0x2700..=0x27BF).contains(&cp)       // Dingbats
 }
 
 // ============================================================================

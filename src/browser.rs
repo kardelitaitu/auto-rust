@@ -8,10 +8,10 @@
 
 use crate::config::Config;
 use crate::session::Session;
-use anyhow::{Result, bail};
-use log::{info, debug, warn};
-use std::time::Duration;
+use anyhow::{bail, Result};
 use futures::stream::{self, StreamExt};
+use log::{debug, info, warn};
+use std::time::Duration;
 
 pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
     let mut sessions = Vec::new();
@@ -19,7 +19,10 @@ pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
     info!("Starting browser discovery...");
 
     for attempt in 1..=config.browser.max_discovery_retries {
-        info!("Discovery attempt {}/{}", attempt, config.browser.max_discovery_retries);
+        info!(
+            "Discovery attempt {}/{}",
+            attempt, config.browser.max_discovery_retries
+        );
 
         // Try configured profiles
         for profile in &config.browser.profiles {
@@ -53,27 +56,32 @@ pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
         }
 
         if attempt < config.browser.max_discovery_retries {
-            tokio::time::sleep(
-                std::time::Duration::from_millis(config.browser.discovery_retry_delay_ms)
-            ).await;
+            tokio::time::sleep(std::time::Duration::from_millis(
+                config.browser.discovery_retry_delay_ms,
+            ))
+            .await;
         }
     }
 
     Ok(sessions)
 }
 
-async fn connect_to_browser(profile: &crate::config::BrowserProfile, _config: &Config) -> Result<Session> {
+async fn connect_to_browser(
+    profile: &crate::config::BrowserProfile,
+    config: &Config,
+) -> Result<Session> {
     let ws_endpoint = &profile.ws_endpoint;
-    
+
     if ws_endpoint.is_empty() {
         bail!("Empty WebSocket endpoint for profile: {}", profile.name);
     }
-    
+
     info!("Connecting to configured browser: {}", profile.name);
-    
-    let (browser, handler) = chromiumoxide::Browser::connect(ws_endpoint).await
+
+    let (browser, handler) = chromiumoxide::Browser::connect(ws_endpoint)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to {}: {}", profile.name, e))?;
-    
+
     let session = Session::new(
         format!("config-{}", profile.name),
         profile.name.clone(),
@@ -81,8 +89,9 @@ async fn connect_to_browser(profile: &crate::config::BrowserProfile, _config: &C
         browser,
         handler,
         5, // max_workers
+        config.browser.cursor_overlay_ms,
     );
-    
+
     info!("Connected to configured browser: {}", profile.name);
     Ok(session)
 }
@@ -94,9 +103,7 @@ async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
     let ports: Vec<u16> = (9001..=9050).collect();
 
     let results: Vec<Option<Session>> = stream::iter(ports)
-        .map(|port| async move {
-            discover_brave_on_port(port, config).await.ok().flatten()
-        })
+        .map(|port| async move { discover_brave_on_port(port, config).await.ok().flatten() })
         .buffer_unordered(50)
         .collect()
         .await;
@@ -106,7 +113,7 @@ async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
 }
 
 /// Discover a Brave browser instance on a specific port
-async fn discover_brave_on_port(port: u16, _config: &Config) -> Result<Option<Session>> {
+async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Session>> {
     let cdp_url = format!("http://127.0.0.1:{port}/json/version");
 
     debug!("Checking Brave on port {port}");
@@ -136,6 +143,7 @@ async fn discover_brave_on_port(port: u16, _config: &Config) -> Result<Option<Se
                                     browser,
                                     handler,
                                     5, // max_workers
+                                    config.browser.cursor_overlay_ms,
                                 );
                                 return Ok(Some(session));
                             }
@@ -163,15 +171,17 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
     info!("Discovering Roxybrowser from: {api_url}");
 
     let client = crate::api::ApiClient::new(api_url.clone());
-    
+
     #[derive(serde::Deserialize)]
     struct RoxyResponse {
         code: i64,
         msg: Option<String>,
         data: Option<Vec<serde_json::Value>>,
     }
-    
-    let response: RoxyResponse = client.get_with_key("browser/connection_info", api_key).await?;
+
+    let response: RoxyResponse = client
+        .get_with_key("browser/connection_info", api_key)
+        .await?;
 
     if response.code != 0 {
         let msg = response.msg.as_deref().unwrap_or("unknown");
@@ -191,11 +201,13 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
     let mut sessions = Vec::new();
 
     for (i, profile) in profiles.iter().enumerate() {
-        let ws_url = profile.get("ws")
+        let ws_url = profile
+            .get("ws")
             .and_then(serde_json::Value::as_str)
             .map(str::to_string);
 
-        let http_url = profile.get("http")
+        let http_url = profile
+            .get("http")
             .and_then(serde_json::Value::as_str)
             .map(str::to_string);
 
@@ -209,12 +221,14 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
         };
 
         // Use windowName as ID (the profile name user set in Roxybrowser), prepend with "roxy-"
-        let profile_id = profile.get("windowName")
+        let profile_id = profile
+            .get("windowName")
             .and_then(|w| w.as_str())
             .map(|s| format!("roxy-{s}"))
             .unwrap_or_else(|| format!("roxy-{i}"));
 
-        let profile_name = profile.get("name")
+        let profile_name = profile
+            .get("name")
             .or_else(|| profile.get("windowName"))
             .and_then(|n| n.as_str())
             .map(|s| s.to_string())
@@ -231,6 +245,7 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
                     browser,
                     handler,
                     5,
+                    config.browser.cursor_overlay_ms,
                 );
                 sessions.push(session);
                 info!("Connected to Roxybrowser: {profile_name}");

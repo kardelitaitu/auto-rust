@@ -130,6 +130,7 @@ Need external app integration (GitHub, Slack)?
 - `TaskContext` is the task-api entry point; task code should stay thin and compose shared capabilities.
 - Use short task verbs in examples: `api.click(...)`, `api.pause(...)`, `api.focus(...)`, and `api.keyboard(...)` (with `api.r#type(...)` as the Rust-safe alias).
 - `api.pause(base_ms)` uses a uniform 20% deviation; high-level task-api verbs already add a post-action settle pause, so tasks should not duplicate it unless they need a special case.
+- `api.click(selector)` is the default interaction path; it runs the selector pipeline with scroll + move + click. Use coordinate clicks only when a task explicitly needs them.
 - Prefer task-api verbs that stay on the API surface: `api.click(...)`, `api.click_and_wait(...)`, `api.hover(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.keyboard(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
 - Keep shared UTF-8-safe text helpers in the internal/text utility layer instead of duplicating truncation logic in tasks.
 - Keep X/Twitter selectors scoped to the target container or captured node; avoid page-wide button scans when a task can bind a single element.

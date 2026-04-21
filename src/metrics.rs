@@ -7,6 +7,7 @@
 //! - Run summary export to JSON files
 //! - Memory usage monitoring
 
+use log::{info, warn};
 use parking_lot::RwLock;
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
@@ -14,7 +15,6 @@ use std::fs::File;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use log::{info, warn};
 
 use crate::result::TaskErrorKind;
 use crate::result::TaskResult;
@@ -72,7 +72,7 @@ pub struct MemoryThresholds {
 impl Default for MemoryThresholds {
     fn default() -> Self {
         Self {
-            warning_bytes: 500 * 1024 * 1024, // 500 MB
+            warning_bytes: 500 * 1024 * 1024,   // 500 MB
             critical_bytes: 1024 * 1024 * 1024, // 1 GB
             warning_active_tasks: 50,
             critical_active_tasks: 100,
@@ -256,7 +256,7 @@ impl MetricsCollector {
     /// Check memory and task thresholds, log warnings if exceeded
     pub fn check_thresholds(&self, thresholds: &MemoryThresholds, active_sessions: usize) {
         let snapshot = self.get_memory_snapshot(active_sessions, 0);
-        
+
         // Check active tasks
         if snapshot.active_workers >= thresholds.critical_active_tasks {
             warn!(
@@ -276,12 +276,12 @@ impl MetricsCollector {
         let snapshot = self.get_memory_snapshot(active_sessions, 0);
         let stats = self.get_stats();
         let failures = self.failure_breakdown.read();
-        
+
         let memory_str = match snapshot.allocated_bytes {
             Some(bytes) => format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0)),
             None => "N/A".to_string(),
         };
-        
+
         info!(
             "Metrics Report | Sessions: {} | Active tasks: {} | Total: {} | Success: {:.1}% | Memory: {}",
             active_sessions,
@@ -297,7 +297,10 @@ impl MetricsCollector {
                 .max_by_key(|(_, count)| **count)
                 .map(|(kind, count)| format!("{:?}={}", kind, count))
                 .unwrap_or_else(|| "none".to_string());
-            info!("Metrics failure breakdown | top={top_failure} | kinds={}", failures.len());
+            info!(
+                "Metrics failure breakdown | top={top_failure} | kinds={}",
+                failures.len()
+            );
         }
     }
 }

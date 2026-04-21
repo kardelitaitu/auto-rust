@@ -1,10 +1,10 @@
+use crate::prelude::TaskContext;
 use anyhow::Result;
-use serde_json::Value;
 use log::{info, warn};
+use serde_json::Value;
 use std::future::Future;
 use std::time::Duration;
 use tokio::time::timeout;
-use crate::prelude::TaskContext;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started");
@@ -23,14 +23,14 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     crate::capabilities::mouse::set_overlay_enabled(overlay_enabled);
-    info!(
-        "Mouse overlay in mouse.rs enabled={}",
-        overlay_enabled
-    );
+    info!("Mouse overlay in mouse.rs enabled={}", overlay_enabled);
     api.pause(500).await;
 
     let viewport = api.viewport().await?;
-    info!("Viewport: {}x{}", viewport.width as i32, viewport.height as i32);
+    info!(
+        "Viewport: {}x{}",
+        viewport.width as i32, viewport.height as i32
+    );
     let mut failed_steps = Vec::new();
 
     // Test 1: Move cursor
@@ -53,9 +53,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Test 3: Left click
     info!("Test 3: Left click at center...");
-    if !run_step_with_timeout("test3_left_click", api.left_click_fast(cx, cy))
-    .await
-    {
+    if !run_step_with_timeout("test3_left_click", api.left_click_fast(cx, cy)).await {
         failed_steps.push("test3_left_click".to_string());
     }
     info!("Done");
@@ -67,9 +65,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         failed_steps.push("test4_move".to_string());
     }
     api.pause(100).await;
-    if !run_step_with_timeout("test4_right_click", api.right_click_fast(400.0, 400.0))
-    .await
-    {
+    if !run_step_with_timeout("test4_right_click", api.right_click_fast(400.0, 400.0)).await {
         failed_steps.push("test4_right_click".to_string());
     }
     info!("Done");
@@ -91,9 +87,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
             failed_steps.push(format!("test6_move_{}", i + 1));
         }
         api.pause(200).await;
-        if !run_step_with_timeout("test6_left_click", api.left_click_fast(x, y))
-        .await
-        {
+        if !run_step_with_timeout("test6_left_click", api.left_click_fast(x, y)).await {
             failed_steps.push(format!("test6_left_click_{}", i + 1));
         }
         api.pause(300).await;
@@ -151,5 +145,3 @@ where
         }
     }
 }
-
-

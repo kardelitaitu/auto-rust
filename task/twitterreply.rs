@@ -1,10 +1,10 @@
+use crate::internal::text::{preview_chars, truncate_with_ellipsis};
+use crate::llm::{reply_engine_system_prompt, ChatMessage, Llm};
+use crate::prelude::TaskContext;
 use anyhow::Result;
-use serde_json::Value;
 use log::{info, warn};
 use rand::Rng;
-use crate::prelude::TaskContext;
-use crate::llm::{Llm, ChatMessage, reply_engine_system_prompt};
-use crate::internal::text::{preview_chars, truncate_with_ellipsis};
+use serde_json::Value;
 
 const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const CONTEXT_REPLIES: u32 = 5;
@@ -15,12 +15,13 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started - target: {}", tweet_url);
 
     info!("Trampoline navigation...");
-api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
+        .await?;
     api.pause(2000).await;
-    
+
     info!("Scrolling down (10-20s)...");
     scroll_down_random(api).await?;
-    
+
     info!("Scrolling up (5-10s)...");
     scroll_up_faster(api).await?;
 
@@ -34,7 +35,7 @@ api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
     info!("Generating AI reply...");
     let llm = Llm::new()?;
     let messages = build_reply_messages(&author, &tweet_text, &replies);
-    
+
     let reply_text = match llm.chat(messages).await {
         Ok(text) => sanitize_reply(&text),
         Err(e) => {
@@ -46,7 +47,7 @@ api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
     info!("AI Reply: {}", reply_text);
 
     info!("Clicking reply button...");
-click_reply_button(api).await?;
+    click_reply_button(api).await?;
 
     api.pause(1500).await;
 
@@ -80,7 +81,10 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
             return Ok(url_str.to_string());
         }
     }
-    for (key, val) in payload.as_object().ok_or_else(|| anyhow::anyhow!("payload not an object"))? {
+    for (key, val) in payload
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
+    {
         if key != "url" && key != "value" {
             if let Some(v) = val.as_str() {
                 if !v.is_empty() && v.contains("x.com") {
@@ -94,8 +98,10 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
 
 async fn extract_main_tweet(api: &TaskContext) -> Result<(String, String)> {
     let page = api.page();
-    
-    let result = page.evaluate(r#"
+
+    let result = page
+        .evaluate(
+            r#"
         (function() {
             var tweet = document.querySelector('article[data-testid="tweet"]');
             if (!tweet) return null;
@@ -107,24 +113,30 @@ async fn extract_main_tweet(api: &TaskContext) -> Result<(String, String)> {
             
             return { username: username, text: text };
         })()
-    "#).await?;
-    
+    "#,
+        )
+        .await?;
+
     let value = result.value();
     if let Some(v) = value {
         if let Some(obj) = v.as_object() {
-            let username = obj.get("username").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let username = obj
+                .get("username")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             let text = obj.get("text").and_then(|v| v.as_str()).unwrap_or("");
             return Ok((username.to_string(), text.to_string()));
         }
     }
-    
+
     Err(anyhow::anyhow!("Could not extract tweet"))
 }
 
 async fn extract_replies(api: &TaskContext, limit: u32) -> Result<Vec<(String, String)>> {
     let page = api.page();
-    
-    let js = format!(r#"
+
+    let js = format!(
+        r#"
         (function() {{
             var articles = document.querySelectorAll('article[data-testid="tweet"]');
             var replies = [];
@@ -138,13 +150,15 @@ async fn extract_replies(api: &TaskContext, limit: u32) -> Result<Vec<(String, S
             }}
             return replies;
         }})()
-"#, limit + 1);
-    
+"#,
+        limit + 1
+    );
+
     let result = page.evaluate(js).await?;
-    
+
     let value = result.value();
     let mut replies = Vec::new();
-    
+
     if let Some(v) = value {
         if let Some(arr) = v.as_array() {
             for item in arr {
@@ -158,7 +172,7 @@ async fn extract_replies(api: &TaskContext, limit: u32) -> Result<Vec<(String, S
             }
         }
     }
-    
+
     Ok(replies)
 }
 
@@ -170,16 +184,20 @@ async fn click_reply_button(api: &TaskContext) -> Result<()> {
 
 async fn type_reply(api: &TaskContext, text: &str) -> Result<()> {
     let page = api.page();
-    
-    let result = page.evaluate(r#"
+
+    let result = page
+        .evaluate(
+            r#"
         (function() {
             var composer = document.querySelector('[data-testid="tweetTextarea"]') || 
                         document.querySelector('[contenteditable="true"]');
             if (composer) return true;
             return false;
         })()
-    "#).await?;
-    
+    "#,
+        )
+        .await?;
+
     let value = result.value();
     if let Some(v) = value {
         if let Some(true) = v.as_bool() {
@@ -187,7 +205,7 @@ async fn type_reply(api: &TaskContext, text: &str) -> Result<()> {
             return Ok(());
         }
     }
-    
+
     Err(anyhow::anyhow!("Composer not found"))
 }
 
@@ -222,16 +240,16 @@ async fn post_reply_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
 
 fn sanitize_reply(text: &str) -> String {
     let mut result = text.trim().to_string();
-    
+
     result = result.trim_start_matches('"').to_string();
     result = result.trim_end_matches('"').to_string();
-    
+
     if result.ends_with('.') {
         result.pop();
     }
-    
+
     result = truncate_with_ellipsis(&result, 280);
-    
+
     result
 }
 
@@ -239,14 +257,14 @@ async fn scroll_down_random(api: &TaskContext) -> Result<()> {
     let duration_ms = rand::thread_rng().gen_range(10000..=20000);
     let page = api.page();
     let start = std::time::Instant::now();
-    
+
     while start.elapsed().as_millis() < duration_ms {
         let scroll_amount = rand::thread_rng().gen_range(200..=500);
         let js = format!("window.scrollBy(0, {})", scroll_amount);
-page.evaluate(js).await?;
+        page.evaluate(js).await?;
         api.pause(200).await;
     }
-    
+
     Ok(())
 }
 
@@ -254,14 +272,14 @@ async fn scroll_up_faster(api: &TaskContext) -> Result<()> {
     let duration_ms = rand::thread_rng().gen_range(5000..=10000);
     let page = api.page();
     let start = std::time::Instant::now();
-    
+
     while start.elapsed().as_millis() < duration_ms {
         let scroll_amount = rand::thread_rng().gen_range(400..=800);
         let js = format!("window.scrollBy(0, -{})", scroll_amount);
-page.evaluate(js).await?;
+        page.evaluate(js).await?;
         api.pause(100).await;
     }
-    
+
     Ok(())
 }
 
@@ -271,22 +289,19 @@ fn build_reply_messages(
     replies: &[(String, String)],
 ) -> Vec<ChatMessage> {
     let system = reply_engine_system_prompt();
-    
+
     let mut user = format!("Tweet by @{}:\n{}", tweet_author, tweet_text);
-    
+
     if !replies.is_empty() {
         user.push_str("\n\nReplies:\n");
         for (author, text) in replies {
             user.push_str(&format!("@{}: {}\n", author, text));
         }
     }
-    
+
     user.push_str("\n\nYour reply:");
-    
-    vec![
-        ChatMessage::system(system),
-        ChatMessage::user(user),
-    ]
+
+    vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
 
 #[cfg(test)]
@@ -307,5 +322,3 @@ mod tests {
         assert!(out.ends_with("..."));
     }
 }
-
-

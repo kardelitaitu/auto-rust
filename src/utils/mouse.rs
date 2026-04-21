@@ -7,19 +7,21 @@
 //! - Configurable velocity and trajectory randomization
 //! - Utilities for human-computer interaction studies
 
-use chromiumoxide::Page;
-use anyhow::Result;
 use crate::utils::geometry::BoundingBox;
-use crate::utils::math::{random_in_range, gaussian};
+use chromiumoxide::Browser;
+use crate::utils::math::{gaussian, random_in_range};
+use crate::utils::page_size::get_viewport;
 use crate::utils::scroll;
 use crate::utils::timing::human_pause;
-use crate::utils::page_size::get_viewport;
+use anyhow::Result;
+use chromiumoxide::Page;
 use log::debug;
+use rand::Rng;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use rand::Rng;
-use tokio::time::{timeout, Duration, sleep};
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
+use tokio::time::{sleep, timeout, Duration};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickStatus {
@@ -118,7 +120,12 @@ pub async fn wait_for_stable_element(
             let y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let width = obj.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let height = obj.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            BoundingBox { x, y, width, height }
+            BoundingBox {
+                x,
+                y,
+                width,
+                height,
+            }
         } else {
             prev_box = None;
             stable_count = 0;
@@ -152,13 +159,12 @@ pub async fn wait_for_stable_element(
     Ok(prev_box)
 }
 
-
 static MOUSE_OVERLAY_ENABLED: AtomicBool = AtomicBool::new(true);
 static CURSOR_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static CURSOR_X: AtomicU64 = AtomicU64::new(0);
 static CURSOR_Y: AtomicU64 = AtomicU64::new(0);
 static LAST_OVERLAY_SYNC_MS: AtomicU64 = AtomicU64::new(0);
-const OVERLAY_SYNC_INTERVAL_MS: u64 = 100;
+const OVERLAY_SYNC_INTERVAL_MS: u64 = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -173,7 +179,6 @@ pub enum PathStyle {
     Muscle,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
 #[derive(Default)]
@@ -183,7 +188,6 @@ pub enum Precision {
     Safe,
     Rough,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -195,16 +199,13 @@ pub enum Speed {
     Slow,
 }
 
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum MouseButton {
     #[default]
     Left,
     Right,
     Middle,
 }
-
 
 impl MouseButton {
     fn as_button_index(&self) -> u16 {
@@ -373,8 +374,12 @@ pub async fn cursor_move_to_with_config(
         dispatch_mousemove(page, point.x, point.y).await?;
 
         if use_human_path {
-            let delay = (config.min_step_delay_ms as f64 / config.speed_multiplier / move_multiplier) as u64;
-            let variance = (config.max_step_delay_variance_ms as f64 / config.speed_multiplier / move_multiplier) as u32;
+            let delay = (config.min_step_delay_ms as f64
+                / config.speed_multiplier
+                / move_multiplier) as u64;
+            let variance = (config.max_step_delay_variance_ms as f64
+                / config.speed_multiplier
+                / move_multiplier) as u32;
             human_pause(delay, variance).await;
 
             if random_in_range(0, 100) < 10 {
@@ -433,6 +438,28 @@ pub async fn sync_cursor_overlay_force(page: &Page) -> Result<()> {
     sync_cursor_overlay_with_mode(page, true).await
 }
 
+pub async fn run_cursor_overlay_background(browser: Arc<Browser>, interval_ms: u64) {
+    let interval = Duration::from_millis(interval_ms);
+
+    loop {
+        tokio::time::sleep(interval).await;
+
+        let pages: Vec<Page> = match browser.pages().await {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let active_page = match pages.first() {
+            Some(page) => page,
+            None => continue,
+        };
+
+        if let Err(e) = sync_cursor_overlay(active_page).await {
+            log::debug!("cursor overlay error: {}", e);
+        }
+    }
+}
+
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -485,22 +512,18 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
                 dot = document.createElement('div');
                 dot.id = '__auto_rust_mouse_overlay';
                 dot.style.position = 'fixed';
-                dot.style.width = '12px';
-                dot.style.height = '12px';
-                dot.style.borderRadius = '50%';
+                dot.style.width = '8px';
+                dot.style.height = '8px';
                 dot.style.background = '#00ff00';
-                dot.style.border = '1px solid #00cc00';
-                dot.style.boxShadow = '0 0 6px #00ff00';
                 dot.style.pointerEvents = 'none';
                 dot.style.zIndex = '2147483647';
                 document.body.appendChild(dot);
             }}
             dot.style.left = '{}px';
             dot.style.top = '{}px';
-            dot.style.display = 'block';
         }})();",
-        x - 6.0,
-        y - 6.0
+        x - 4.0,
+        y - 4.0
     ));
 
     timeout(Duration::from_millis(500), eval)
@@ -509,21 +532,47 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn generate_bezier_curve_with_config(start: &Point, end: &Point, config: &CursorMovementConfig) -> Vec<Point> {
+fn generate_bezier_curve_with_config(
+    start: &Point,
+    end: &Point,
+    config: &CursorMovementConfig,
+) -> Vec<Point> {
     let mut points = Vec::new();
 
     let spread = config.curve_spread;
     let cp1 = Point::new(
-        gaussian((start.x + end.x) / 2.0, spread, start.x.min(end.x), start.x.max(end.x)),
-        gaussian((start.y + end.y) / 2.0, spread, start.y.min(end.y), start.y.max(end.y))
+        gaussian(
+            (start.x + end.x) / 2.0,
+            spread,
+            start.x.min(end.x),
+            start.x.max(end.x),
+        ),
+        gaussian(
+            (start.y + end.y) / 2.0,
+            spread,
+            start.y.min(end.y),
+            start.y.max(end.y),
+        ),
     );
 
     let cp2 = Point::new(
-        gaussian((start.x + end.x) / 2.0, spread * 0.6, start.x.min(end.x), start.x.max(end.x)),
-        gaussian((start.y + end.y) / 2.0, spread * 0.6, start.y.min(end.y), start.y.max(end.y))
+        gaussian(
+            (start.x + end.x) / 2.0,
+            spread * 0.6,
+            start.x.min(end.x),
+            start.x.max(end.x),
+        ),
+        gaussian(
+            (start.y + end.y) / 2.0,
+            spread * 0.6,
+            start.y.min(end.y),
+            start.y.max(end.y),
+        ),
     );
 
-    let steps = config.steps.unwrap_or_else(|| random_in_range(10, 20) as u32);
+    let steps = config
+        .steps
+        .unwrap_or_else(|| random_in_range(10, 20) as u32);
     for i in 0..=steps {
         let t = i as f64 / steps as f64;
         let point = bezier_point(*start, cp1, cp2, *end, t);
@@ -534,21 +583,28 @@ fn generate_bezier_curve_with_config(start: &Point, end: &Point, config: &Cursor
 }
 
 fn bezier_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
-    let x = (1.0 - t).powi(3) * p0.x +
-            3.0 * (1.0 - t).powi(2) * t * p1.x +
-            3.0 * (1.0 - t) * t.powi(2) * p2.x +
-            t.powi(3) * p3.x;
-    let y = (1.0 - t).powi(3) * p0.y +
-            3.0 * (1.0 - t).powi(2) * t * p1.y +
-            3.0 * (1.0 - t) * t.powi(2) * p2.y +
-            t.powi(3) * p3.y;
+    let x = (1.0 - t).powi(3) * p0.x
+        + 3.0 * (1.0 - t).powi(2) * t * p1.x
+        + 3.0 * (1.0 - t) * t.powi(2) * p2.x
+        + t.powi(3) * p3.x;
+    let y = (1.0 - t).powi(3) * p0.y
+        + 3.0 * (1.0 - t).powi(2) * t * p1.y
+        + 3.0 * (1.0 - t) * t.powi(2) * p2.y
+        + t.powi(3) * p3.y;
     Point::new(x, y)
 }
 
 fn generate_arc_curve(start: &Point, end: &Point) -> Vec<Point> {
     let mid_x = (start.x + end.x) / 2.0;
     let distance = ((end.x - start.x).powi(2) + (end.y - start.y).powi(2)).sqrt();
-    let mid_y = (start.y + end.y) / 2.0 - distance * 0.3 * if random_in_range(0, 2) == 0 { 1.0 } else { -1.0 };
+    let mid_y = (start.y + end.y) / 2.0
+        - distance
+            * 0.3
+            * if random_in_range(0, 2) == 0 {
+                1.0
+            } else {
+                -1.0
+            };
 
     let control = Point::new(mid_x, mid_y);
     let mut points = Vec::new();
@@ -572,8 +628,10 @@ fn generate_zigzag_curve(start: &Point, end: &Point) -> Vec<Point> {
         let base_x = start.x + (end.x - start.x) * progress;
         let base_y = start.y + (end.y - start.y) * progress;
 
-        let perp_x = -(end.y - start.y) / distance * zigzag_amount * if i % 2 == 0 { 1.0 } else { -1.0 };
-        let perp_y = (end.x - start.x) / distance * zigzag_amount * if i % 2 == 0 { 1.0 } else { -1.0 };
+        let perp_x =
+            -(end.y - start.y) / distance * zigzag_amount * if i % 2 == 0 { 1.0 } else { -1.0 };
+        let perp_y =
+            (end.x - start.x) / distance * zigzag_amount * if i % 2 == 0 { 1.0 } else { -1.0 };
 
         points.push(Point::new(base_x + perp_x, base_y + perp_y));
     }
@@ -585,11 +643,7 @@ fn generate_overshoot_curve(start: &Point, end: &Point) -> Vec<Point> {
     let overshoot_x = start.x + (end.x - start.x) * overshoot_scale;
     let overshoot_y = start.y + (end.y - start.y) * overshoot_scale;
 
-    vec![
-        *start,
-        Point::new(overshoot_x, overshoot_y),
-        *end,
-    ]
+    vec![*start, Point::new(overshoot_x, overshoot_y), *end]
 }
 
 fn generate_stopped_curve(start: &Point, end: &Point) -> Vec<Point> {
@@ -660,7 +714,13 @@ pub async fn click_at_with_options(
     let viewport = get_viewport(page).await?;
 
     if x < 0.0 || x > viewport.width || y < 0.0 || y > viewport.height {
-        anyhow::bail!("Coordinates ({}, {}) outside viewport ({}x{})", x, y, viewport.width, viewport.height);
+        anyhow::bail!(
+            "Coordinates ({}, {}) outside viewport ({}x{})",
+            x,
+            y,
+            viewport.width,
+            viewport.height
+        );
     }
 
     let mut target_x = x;
@@ -758,7 +818,9 @@ async fn dispatch_mouse_action(
 
 #[allow(dead_code)]
 pub async fn click_selector(page: &Page, selector: &str) -> Result<()> {
-    click_selector_human(page, selector, 60, 25, 6).await.map(|_| ())
+    click_selector_human(page, selector, 60, 25, 6)
+        .await
+        .map(|_| ())
 }
 
 pub async fn hover_selector_human(
@@ -805,7 +867,7 @@ pub async fn click_selector_human(
     selector: &str,
     reaction_delay_ms: u64,
     reaction_delay_variance_pct: u32,
-click_offset_px: i32,
+    click_offset_px: i32,
 ) -> Result<ClickOutcome> {
     let selector_js = serde_json::to_string(selector)?;
     let native_scroll_js = format!(
@@ -820,16 +882,28 @@ click_offset_px: i32,
         .await
         .map_err(|_| anyhow::anyhow!("click native scroll timeout for selector={selector}"))??;
 
-    let bbox = timeout(Duration::from_secs(2), resolve_selector_bbox(page, selector))
-        .await
-        .map_err(|_| anyhow::anyhow!("click resolve_selector_bbox timeout for selector={selector}"))??;
+    let bbox = timeout(
+        Duration::from_secs(2),
+        resolve_selector_bbox(page, selector),
+    )
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!("click resolve_selector_bbox timeout for selector={selector}")
+    })??;
 
     let (x, y) = choose_click_point(&bbox, click_offset_px);
-    let _ = timeout(Duration::from_millis(1200), cursor_move_to_immediate(page, x, y)).await;
+    let _ = timeout(
+        Duration::from_millis(1200),
+        cursor_move_to_immediate(page, x, y),
+    )
+    .await;
     human_pause(reaction_delay_ms, reaction_delay_variance_pct).await;
-    timeout(Duration::from_secs(2), dispatch_click(page, x, y, MouseButton::Left))
-        .await
-        .map_err(|_| anyhow::anyhow!("click dispatch_click timeout for selector={selector}"))??;
+    timeout(
+        Duration::from_secs(2),
+        dispatch_click(page, x, y, MouseButton::Left),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("click dispatch_click timeout for selector={selector}"))??;
 
     let settle_ms = (reaction_delay_ms / 4).clamp(40, 200);
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
@@ -889,7 +963,9 @@ pub async fn double_click_selector_human(
     .await?;
 
     Ok(ClickOutcome {
-        click: if matches!(first.click, ClickStatus::Success) && matches!(second.click, ClickStatus::Success) {
+        click: if matches!(first.click, ClickStatus::Success)
+            && matches!(second.click, ClickStatus::Success)
+        {
             ClickStatus::Success
         } else {
             ClickStatus::Failed
@@ -1006,7 +1082,9 @@ async fn click_selector_with_button(
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
     human_pause(settle_ms, settle_variance).await;
 
-    let verified = verify_click_target(page, selector, x, y).await.unwrap_or(false);
+    let verified = verify_click_target(page, selector, x, y)
+        .await
+        .unwrap_or(false);
     if !verified {
         debug!("click target verification was inconclusive for selector={selector}");
     }
@@ -1070,7 +1148,10 @@ impl GhostCursor {
             random_in_range(50, 500) as f64,
             random_in_range(50, 500) as f64,
         );
-        Self { page, previous_pos: prev }
+        Self {
+            page,
+            previous_pos: prev,
+        }
     }
 
     /// Get the current page reference.
@@ -1090,12 +1171,18 @@ impl GhostCursor {
 
     /// Low-level movement along a cubic Bezier path with Gaussian tremor.
     /// Mirrors Node's `performMove(start, end, durationMs)`.
-    async fn perform_move(&mut self, start: (f64, f64), end: (f64, f64), duration_ms: u64) -> Result<()> {
+    async fn perform_move(
+        &mut self,
+        start: (f64, f64),
+        end: (f64, f64),
+        duration_ms: u64,
+    ) -> Result<()> {
         let (start_x, start_y) = start;
         let (end_x, end_y) = end;
 
         // Guard against degenerate points
-        if !start_x.is_finite() || !start_y.is_finite() || !end_x.is_finite() || !end_y.is_finite() {
+        if !start_x.is_finite() || !start_y.is_finite() || !end_x.is_finite() || !end_y.is_finite()
+        {
             return Ok(());
         }
 
@@ -1130,8 +1217,12 @@ impl GhostCursor {
 
         // p2: 70% along + gaussian(0, arc_amount*0.6)
         let p2 = Point::new(
-            start_x + dx * 0.7 + gaussian(0.0, arc_amount * 0.6, -arc_amount * 2.0, arc_amount * 2.0),
-            start_y + dy * 0.7 + gaussian(0.0, arc_amount * 0.6, -arc_amount * 2.0, arc_amount * 2.0),
+            start_x
+                + dx * 0.7
+                + gaussian(0.0, arc_amount * 0.6, -arc_amount * 2.0, arc_amount * 2.0),
+            start_y
+                + dy * 0.7
+                + gaussian(0.0, arc_amount * 0.6, -arc_amount * 2.0, arc_amount * 2.0),
         );
 
         let start_time = std::time::Instant::now();
@@ -1189,12 +1280,14 @@ impl GhostCursor {
             let overshoot_y = start.1 + dy * overshoot_scale + error_lateral;
             // First leg to overshoot (use 80% of duration)
             let first_leg_duration = (duration_ms as f64 * 0.8) as u64;
-            self.perform_move(start, (overshoot_x, overshoot_y), first_leg_duration).await?;
+            self.perform_move(start, (overshoot_x, overshoot_y), first_leg_duration)
+                .await?;
             // Brief pause 80-300ms
             sleep(Duration::from_millis(rand::thread_rng().gen_range(80..300))).await;
             // Second leg to target with shorter duration
             let second_leg_duration = rand::thread_rng().gen_range(150..300);
-            self.perform_move((overshoot_x, overshoot_y), end, second_leg_duration).await?;
+            self.perform_move((overshoot_x, overshoot_y), end, second_leg_duration)
+                .await?;
         } else {
             self.perform_move(start, end, duration_ms).await?;
         }
@@ -1217,7 +1310,10 @@ impl GhostCursor {
             // First leg to midpoint
             self.move_to(mid_x, mid_y).await?;
             // Hesitation pause
-            sleep(Duration::from_millis(rand::thread_rng().gen_range(100..300))).await;
+            sleep(Duration::from_millis(
+                rand::thread_rng().gen_range(100..300),
+            ))
+            .await;
             // Second leg to target
             self.move_to(target_x, target_y).await?;
         } else {
@@ -1229,7 +1325,13 @@ impl GhostCursor {
 
     /// Hover at a point with micro-drift noise for a variable duration.
     /// Used to simulate human finger hovering before clicking.
-    pub async fn hover_with_drift(&mut self, x: f64, y: f64, min_ms: u64, max_ms: u64) -> Result<()> {
+    pub async fn hover_with_drift(
+        &mut self,
+        x: f64,
+        y: f64,
+        min_ms: u64,
+        max_ms: u64,
+    ) -> Result<()> {
         let duration = rand::thread_rng().gen_range(min_ms..=max_ms);
         let start_time = std::time::Instant::now();
         let drift_range = 1.0; // ±1px drift
@@ -1261,7 +1363,10 @@ impl GhostCursor {
         }
 
         // Hover with drift
-        if let Err(_e) = self.hover_with_drift(x, y, profile.hover_min_ms, profile.hover_max_ms).await {
+        if let Err(_e) = self
+            .hover_with_drift(x, y, profile.hover_min_ms, profile.hover_max_ms)
+            .await
+        {
             return Ok(false);
         }
 
@@ -1334,9 +1439,9 @@ impl GhostCursor {
         );
         let _ = self.page.evaluate(click_js).await;
 
-         Ok(true)
-     }
- }
+        Ok(true)
+    }
+}
 /// Click profile parameters (mirrors Node's profiles).
 #[derive(Debug, Clone, Copy)]
 pub struct ClickProfile {
@@ -1358,7 +1463,6 @@ impl Default for ClickProfile {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1553,4 +1657,3 @@ mod tests {
         assert!((mid.y - 50.0).abs() < 0.1);
     }
 }
-

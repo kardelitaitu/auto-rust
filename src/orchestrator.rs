@@ -8,13 +8,13 @@
 //! - Resource allocation and distribution
 
 use crate::api::RetryPolicy;
-use crate::config::Config;
-use crate::metrics::{MetricsCollector};
-use crate::session::Session;
 use crate::cli::TaskDefinition;
-use crate::logger::{LogContext, set_log_context};
+use crate::config::Config;
+use crate::logger::{set_log_context, LogContext};
+use crate::metrics::MetricsCollector;
 use crate::result::{TaskErrorKind, TaskResult};
-use anyhow::{Result, bail};
+use crate::session::Session;
+use anyhow::{bail, Result};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -112,32 +112,27 @@ impl Orchestrator {
         let group_timeout = Duration::from_millis(self.config.orchestrator.group_timeout_ms);
 
         let task_futures: Vec<_> = group
-        .iter()
-        .map(|task_def| {
-            let global_active = self.global_active_tasks.clone();
-            let global_sem = self.global_semaphore.clone();
-            let config = self.config.clone();
-            let metrics = metrics.clone();
+            .iter()
+            .map(|task_def| {
+                let global_active = self.global_active_tasks.clone();
+                let global_sem = self.global_semaphore.clone();
+                let config = self.config.clone();
+                let metrics = metrics.clone();
 
-            async move {
+                async move {
                     // Global concurrency throttling
                     let _permit = global_sem.acquire().await?;
                     global_active.fetch_add(1, Ordering::SeqCst);
 
                     // Stagger task starts to prevent network spikes
                     tokio::time::sleep(Duration::from_millis(
-                        config.orchestrator.task_stagger_delay_ms
+                        config.orchestrator.task_stagger_delay_ms,
                     ))
                     .await;
 
                     // Find an available session and execute the task
-                    let result = execute_task_on_session(
-                        task_def,
-                        sessions,
-                        &config,
-                        metrics.clone(),
-                    )
-                    .await;
+                    let result =
+                        execute_task_on_session(task_def, sessions, &config, metrics.clone()).await;
 
                     global_active.fetch_sub(1, Ordering::SeqCst);
                     result
@@ -218,11 +213,7 @@ async fn execute_task_on_session(
     let mut failed_sessions = Vec::new();
 
     for (session_id, task_result) in results {
-        metrics.task_completed_from_result(
-            task_def.name.clone(),
-            session_id.clone(),
-            &task_result,
-        );
+        metrics.task_completed_from_result(task_def.name.clone(), session_id.clone(), &task_result);
 
         if task_result.is_success() {
             info!("[{}][{}] Completed", session_id, task_def.name);
@@ -291,7 +282,10 @@ async fn execute_task_with_retry(
     };
 
     // Acquire worker permit
-    let permit = match session.acquire_worker(config.orchestrator.worker_wait_timeout_ms).await {
+    let permit = match session
+        .acquire_worker(config.orchestrator.worker_wait_timeout_ms)
+        .await
+    {
         Some(permit) => permit,
         None => {
             return TaskResult::failure(
@@ -427,7 +421,10 @@ async fn execute_task_with_retry(
             }
             Err(_) => {
                 last_failure = Some((
-                    format!("Task timed out after {}ms", config.orchestrator.task_timeout_ms),
+                    format!(
+                        "Task timed out after {}ms",
+                        config.orchestrator.task_timeout_ms
+                    ),
                     TaskErrorKind::Timeout,
                 ));
             }
@@ -453,12 +450,8 @@ async fn execute_task_with_retry(
     drop(permit);
     session.increment_failure();
 
-    let (msg, kind) = last_failure.unwrap_or_else(|| {
-        (
-            "Unknown task failure".to_string(),
-            TaskErrorKind::Unknown,
-        )
-    });
+    let (msg, kind) = last_failure
+        .unwrap_or_else(|| ("Unknown task failure".to_string(), TaskErrorKind::Unknown));
     if kind == TaskErrorKind::Timeout {
         session.mark_unhealthy();
     }

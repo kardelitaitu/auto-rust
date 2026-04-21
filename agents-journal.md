@@ -7,6 +7,7 @@
 #### Task-API Timing Contract
 - `api.pause(base_ms)` now uses a uniform 20% deviation band.
 - High-level task-api verbs now add a built-in post-action settle pause after interaction.
+- `api.click(selector)` is the default click path; coordinate clicks are escape hatches, not the preferred flow.
 
 #### New Tasks Created
 - `twitterfollow.rs` - Follow a Twitter user

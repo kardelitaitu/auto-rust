@@ -6,7 +6,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use super::twitteractivity_navigation::is_login_flow;
-use super::{twitteractivity_selectors::*, twitteractivity_humanized::*};
+use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
 /// Checks if any known popup/overlay/modal is present on the page.
 /// Returns a description of the popup type or `None` if none detected.
@@ -160,5 +160,3 @@ pub async fn dismiss_signup_nag(api: &TaskContext) -> Result<bool> {
     }
     Ok(false)
 }
-
-

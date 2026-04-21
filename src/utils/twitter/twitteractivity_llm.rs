@@ -191,12 +191,18 @@ pub async fn quote_tweet(
 /// - No @mentions
 /// - No #hashtags
 /// - No emojis
+/// - No asterisks (emphasis)
 /// - No banned AI-sounding words
 ///
 /// # Returns
 /// Sanitized text or error if invalid
-fn validate_reply(text: &str) -> Result<String> {
+pub fn validate_reply(text: &str) -> Result<String> {
     let mut sanitized = text.trim().to_string();
+
+    // Remove asterisk emphasis (**word** and *word*)
+    sanitized = sanitized
+        .replace("**", "")
+        .replace('*', "");
 
     // Enforce character limit
     if sanitized.len() > 270 {
@@ -215,9 +221,8 @@ fn validate_reply(text: &str) -> Result<String> {
 
     // Check for banned AI words
     if let Some(banned_word) = check_banned_words(&sanitized) {
-        warn!("Reply contains banned AI word: '{}', regenerating...", banned_word);
+        warn!("Reply contains banned AI word: '{}', but proceeding", banned_word);
         // For V1, we'll just warn and continue
-        // In production, you might want to regenerate
     }
 
     // Ensure non-empty

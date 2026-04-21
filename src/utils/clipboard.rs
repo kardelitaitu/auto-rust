@@ -111,8 +111,9 @@ pub async fn paste_from_clipboard(session_id: &str, page: &Page) -> Result<Strin
 }
 
 async fn read_selection_text(page: &Page) -> Result<String> {
-    let result = page.evaluate(
-        r#"
+    let result = page
+        .evaluate(
+            r#"
         (function() {
             const el = document.activeElement;
             if (!el) return "";
@@ -129,8 +130,9 @@ async fn read_selection_text(page: &Page) -> Result<String> {
 
             return "";
         })();
-        "#
-    ).await?;
+        "#,
+        )
+        .await?;
 
     let value = result.value().cloned().unwrap_or(Value::Null);
     Ok(value.as_str().unwrap_or("").to_string())
@@ -158,7 +160,8 @@ async fn replace_selection(page: &Page, replacement: &str) -> Result<()> {
             }}
         }})();
         "#
-    )).await?;
+    ))
+    .await?;
     Ok(())
 }
 
@@ -184,6 +187,7 @@ async fn insert_text(page: &Page, text: &str) -> Result<()> {
             }}
         }})();
         "#
-    )).await?;
+    ))
+    .await?;
     Ok(())
 }

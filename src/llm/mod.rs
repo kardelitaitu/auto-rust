@@ -1,10 +1,12 @@
-pub mod models;
 pub mod client;
+pub mod models;
 pub mod reply_engine;
+pub mod reply_strategies;
 
-pub use models::*;
 pub use client::*;
+pub use models::*;
 pub use reply_engine::*;
+pub use reply_strategies::*;
 
 use log::info;
 
@@ -16,9 +18,9 @@ impl Llm {
     pub fn new() -> anyhow::Result<Self> {
         let config = client::create_llm_client_from_config()?;
         let client = LlmClient::new(config);
-        
+
         info!("LLM client initialized");
-        
+
         Ok(Self { client })
     }
 
@@ -34,6 +36,10 @@ impl Llm {
 
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> anyhow::Result<String> {
         self.client.chat(messages).await
+    }
+
+    pub async fn chat_with_fallback(&self, messages: Vec<ChatMessage>) -> anyhow::Result<String> {
+        self.client.chat_with_fallback(messages).await
     }
 
     pub async fn health_check(&self) -> bool {

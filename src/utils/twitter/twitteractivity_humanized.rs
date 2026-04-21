@@ -13,8 +13,7 @@ use super::twitteractivity_selectors::*;
 /// Human pause with variance based on profile action delay behavior.
 pub async fn human_pause(api: &TaskContext, base_ms: u64) {
     let runtime = api.behavior_runtime();
-    api
-        .pause_with_variance(base_ms, runtime.action_delay.variance_pct.round() as u32)
+    api.pause_with_variance(base_ms, runtime.action_delay.variance_pct.round() as u32)
         .await;
 }
 
@@ -123,6 +122,3 @@ pub async fn attempt_close_popup(api: &TaskContext) -> Result<bool, anyhow::Erro
 
     Ok(false)
 }
-
-
-

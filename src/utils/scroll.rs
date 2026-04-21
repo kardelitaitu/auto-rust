@@ -51,8 +51,17 @@ pub async fn read(
         } else {
             scroll_amount
         };
-        let direction = if random_in_range(0, 100) < 88 { 1.0 } else { -1.0 };
-        human_scroll(page, if direction > 0.0 { "down" } else { "up" }, amplitude.abs()).await?;
+        let direction = if random_in_range(0, 100) < 88 {
+            1.0
+        } else {
+            -1.0
+        };
+        human_scroll(
+            page,
+            if direction > 0.0 { "down" } else { "up" },
+            amplitude.abs(),
+        )
+        .await?;
 
         if i + 1 < pauses {
             human_pause(random_in_range(500, 1100), 45).await;
@@ -91,7 +100,9 @@ pub async fn scroll_into_view(page: &Page, selector: &str) -> Result<()> {
     scroll_into_view_native(page, selector).await?;
     human_pause(random_in_range(40, 90), 25).await;
 
-    let still_offscreen = target_still_offscreen(page, selector).await.unwrap_or(false);
+    let still_offscreen = target_still_offscreen(page, selector)
+        .await
+        .unwrap_or(false);
     if still_offscreen {
         human_scroll_into_view(page, selector).await?;
         human_pause(random_in_range(50, 120), 30).await;
@@ -120,9 +131,7 @@ pub async fn scroll_to_top(page: &Page) -> Result<()> {
 
 pub async fn scroll_to_bottom(page: &Page) -> Result<()> {
     let bottom = page
-        .evaluate(
-            "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)",
-        )
+        .evaluate("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)")
         .await?
         .value()
         .and_then(|v| v.as_f64())

@@ -5,14 +5,52 @@ use chromiumoxide::cdp::browser_protocol::network;
 fn blocked_patterns() -> Vec<String> {
     vec![
         // Images
-        "*.png", "*.png*", "*.jpg", "*.jpg*", "*.jpeg", "*.jpeg*", "*.gif", "*.gif*",
-        "*.webp", "*.webp*", "*.svg", "*.svg*", "*.bmp", "*.bmp*", "*.ico", "*.ico*",
+        "*.png",
+        "*.png*",
+        "*.jpg",
+        "*.jpg*",
+        "*.jpeg",
+        "*.jpeg*",
+        "*.gif",
+        "*.gif*",
+        "*.webp",
+        "*.webp*",
+        "*.svg",
+        "*.svg*",
+        "*.bmp",
+        "*.bmp*",
+        "*.ico",
+        "*.ico*",
         "data:image/*",
         // Video/Audio
-        "*.mp4", "*.mp4*", "*.webm", "*.webm*", "*.m3u8", "*.m3u8*", "*.ts", "*.ts*",
-        "*.mkv", "*.mkv*", "*.avi", "*.avi*", "*.mov", "*.mov*", "*.flv", "*.flv*",
-        "*.mp3", "*.mp3*", "*.wav", "*.wav*", "*.aac", "*.aac*", "*.ogg", "*.ogg*",
-        "*.opus", "*.opus*", "*.mpd", "*.mpd*",
+        "*.mp4",
+        "*.mp4*",
+        "*.webm",
+        "*.webm*",
+        "*.m3u8",
+        "*.m3u8*",
+        "*.ts",
+        "*.ts*",
+        "*.mkv",
+        "*.mkv*",
+        "*.avi",
+        "*.avi*",
+        "*.mov",
+        "*.mov*",
+        "*.flv",
+        "*.flv*",
+        "*.mp3",
+        "*.mp3*",
+        "*.wav",
+        "*.wav*",
+        "*.aac",
+        "*.aac*",
+        "*.ogg",
+        "*.ogg*",
+        "*.opus",
+        "*.opus*",
+        "*.mpd",
+        "*.mpd*",
     ]
     .into_iter()
     .map(String::from)
@@ -102,7 +140,8 @@ fn cookiebot_block_js() -> &'static str {
 pub async fn block_heavy_resources(page: &chromiumoxide::Page) -> Result<()> {
     // Network-level blocking is the primary bandwidth/resource saver.
     page.execute(network::EnableParams::default()).await?;
-    page.execute(network::SetBlockedUrLsParams::new(blocked_patterns())).await?;
+    page.execute(network::SetBlockedUrLsParams::new(blocked_patterns()))
+        .await?;
 
     // DOM cleanup is a fallback for already-present media elements.
     page.evaluate(dom_cleanup_js()).await?;
@@ -114,7 +153,8 @@ pub async fn block_heavy_resources(page: &chromiumoxide::Page) -> Result<()> {
 pub async fn block_heavy_resources_for_cookiebot(page: &chromiumoxide::Page) -> Result<()> {
     // Network-level blocking (same as general)
     page.execute(network::EnableParams::default()).await?;
-    page.execute(network::SetBlockedUrLsParams::new(blocked_patterns())).await?;
+    page.execute(network::SetBlockedUrLsParams::new(blocked_patterns()))
+        .await?;
 
     // DOM cleanup PLUS fetch/XHR override (separated by semicolon to avoid invocation)
     let script = format!("{};\n{}", dom_cleanup_js(), cookiebot_block_js());

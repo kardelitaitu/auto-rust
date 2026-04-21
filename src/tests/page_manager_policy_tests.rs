@@ -7,8 +7,9 @@ mod tests {
     fn page_manager_is_not_reexported_from_public_surface() {
         let lib = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
             .expect("read lib.rs");
-        let runtime = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime/mod.rs"))
-            .expect("read runtime/mod.rs");
+        let runtime =
+            fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime/mod.rs"))
+                .expect("read runtime/mod.rs");
 
         assert!(!lib.contains("pub mod page_manager;"));
         assert!(!runtime.contains("pub mod page_manager"));

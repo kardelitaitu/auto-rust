@@ -1,7 +1,7 @@
 use anyhow::Result;
+use log::{error, info, warn};
 use reqwest::Client;
 use std::time::Duration;
-use log::{info, warn, error};
 use toml;
 
 use crate::llm::models::*;
@@ -28,35 +28,27 @@ impl LlmClient {
 
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
         match self.config.provider {
-            LlmProvider::Ollama => {
-                self.ollama_chat(messages).await
-            }
-            LlmProvider::OpenRouter => {
-                self.openrouter_chat(messages).await
-            }
+            LlmProvider::Ollama => self.ollama_chat(messages).await,
+            LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
         }
     }
 
     pub async fn chat_with_fallback(&self, messages: Vec<ChatMessage>) -> Result<String> {
         match self.config.provider {
-            LlmProvider::Ollama => {
-                match self.ollama_chat(messages.clone()).await {
-                    Ok(response) => Ok(response),
-                    Err(e) => {
-                        warn!("Ollama failed: {}, trying fallback...", e);
-                        if let Some(ref fallback) = self.fallback_config {
-                            if fallback.provider == LlmProvider::OpenRouter {
-                                let fallback_client = LlmClient::new(fallback.clone());
-                                return fallback_client.openrouter_chat(messages).await;
-                            }
+            LlmProvider::Ollama => match self.ollama_chat(messages.clone()).await {
+                Ok(response) => Ok(response),
+                Err(e) => {
+                    warn!("Ollama failed: {}, trying fallback...", e);
+                    if let Some(ref fallback) = self.fallback_config {
+                        if fallback.provider == LlmProvider::OpenRouter {
+                            let fallback_client = LlmClient::new(fallback.clone());
+                            return fallback_client.openrouter_chat(messages).await;
                         }
-                        Err(e)
                     }
+                    Err(e)
                 }
-            }
-            LlmProvider::OpenRouter => {
-                self.openrouter_chat(messages).await
-            }
+            },
+            LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
         }
     }
 
@@ -72,7 +64,8 @@ impl LlmClient {
 
         info!("Calling Ollama: {}...", self.config.ollama.model);
 
-        let response = self.http
+        let response = self
+            .http
             .post(&url)
             .json(&request)
             .timeout(Duration::from_millis(self.config.ollama.timeout_ms))
@@ -92,9 +85,7 @@ impl LlmClient {
             anyhow::bail!("Ollama error: {}", err);
         }
 
-        let content = chat_response.message
-            .map(|m| m.content)
-            .unwrap_or_default();
+        let content = chat_response.message.map(|m| m.content).unwrap_or_default();
 
         Ok(content)
     }
@@ -110,9 +101,13 @@ impl LlmClient {
 
         info!("Calling OpenRouter: {}", self.config.openrouter.model);
 
-        let response = self.http
+        let response = self
+            .http
             .post(&url)
-            .header("Authorization", format!("Bearer {}", self.config.openrouter.api_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.openrouter.api_key),
+            )
             .header("Content-Type", "application/json")
             .json(&request)
             .timeout(Duration::from_millis(self.config.openrouter.timeout_ms))
@@ -132,7 +127,8 @@ impl LlmClient {
             anyhow::bail!("OpenRouter error: {}", err.message);
         }
 
-        let content = openrouter_response.choices
+        let content = openrouter_response
+            .choices
             .and_then(|choices| choices.into_iter().next())
             .map(|choice| match choice {
                 ChatChoice::WithMessage { message } => message.content,
@@ -153,8 +149,9 @@ impl LlmClient {
 
     async fn ollama_health(&self) -> Result<bool> {
         let url = format!("{}/api/tags", self.config.ollama.base_url);
-        
-        let response = self.http
+
+        let response = self
+            .http
             .get(&url)
             .timeout(Duration::from_secs(5))
             .send()
@@ -165,10 +162,14 @@ impl LlmClient {
 
     async fn openrouter_health(&self) -> Result<bool> {
         let url = "https://openrouter.ai/api/v1/models";
-        
-        let response = self.http
+
+        let response = self
+            .http
             .get(url)
-            .header("Authorization", format!("Bearer {}", self.config.openrouter.api_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.openrouter.api_key),
+            )
             .timeout(Duration::from_secs(5))
             .send()
             .await?;
@@ -179,14 +180,14 @@ impl LlmClient {
 
 pub fn create_llm_client_from_config() -> Result<LlmConfig> {
     let config_path = std::path::Path::new("config/llm.toml");
-    
+
     let mut config = if config_path.exists() {
         let content = std::fs::read_to_string(config_path)?;
         toml::from_str(&content)?
     } else {
         LlmConfig::default()
     };
-    
+
     // Apply environment variable overrides
     if let Ok(provider) = std::env::var("LLM_PROVIDER") {
         if provider == "openrouter" {
@@ -195,19 +196,19 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
             config.provider = LlmProvider::Ollama;
         }
     }
-    
+
     if let Ok(url) = std::env::var("OLLAMA_URL") {
         config.ollama.base_url = url;
     }
-    
+
     if let Ok(model) = std::env::var("OLLAMA_MODEL") {
         config.ollama.model = model;
     }
-    
+
     if let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") {
         config.openrouter.api_key = api_key;
     }
-    
+
     if let Ok(model) = std::env::var("OPENROUTER_MODEL") {
         config.openrouter.model = model;
     }

@@ -6,14 +6,14 @@
 //! - Health monitoring and failure tracking
 //! - Graceful shutdown and cleanup
 
-use chromiumoxide::{Browser, Handler};
+use crate::internal::profile::{random_preset, randomize_profile, BrowserProfile, ProfileRuntime};
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
+use chromiumoxide::{Browser, Handler};
+use dashmap::DashSet;
+use futures::StreamExt;
+use log::{info, warn};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use log::{info, warn};
-use futures::StreamExt;
-use dashmap::DashSet;
-use crate::internal::profile::{BrowserProfile, ProfileRuntime, random_preset, randomize_profile};
 
 /// Represents the current operational state of a browser session.
 /// Used to track session health and availability for task assignment.
@@ -48,6 +48,8 @@ pub struct Session {
     /// Background task handle for event handling (internal use)
     #[allow(dead_code)]
     handler_task: Option<tokio::task::JoinHandle<()>>,
+    /// Cursor overlay sync interval (0 = disabled)
+    pub cursor_overlay_ms: u64,
 
     /// Semaphore controlling concurrent page access within this session
     worker_semaphore: Arc<Semaphore>,
@@ -76,9 +78,10 @@ impl Session {
         browser: Browser,
         handler: Handler,
         max_workers: usize,
+        cursor_overlay_ms: u64,
     ) -> Self {
         let id_clone = id.clone();
-        
+
         // Spawn handler polling task - keep it alive for the lifetime of the session
         let handler_task = tokio::spawn(async move {
             let mut handler = handler;
@@ -110,6 +113,7 @@ impl Session {
             behavior_runtime,
             browser,
             handler_task: Some(handler_task),
+            cursor_overlay_ms,
             worker_semaphore: Arc::new(Semaphore::new(max_workers)),
             active_workers: std::sync::atomic::AtomicUsize::new(0),
             failure_count: std::sync::atomic::AtomicUsize::new(0),
@@ -163,15 +167,18 @@ impl Session {
     }
 
     pub fn mark_healthy(&self) {
-        self.is_healthy.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.is_healthy
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn mark_unhealthy(&self) {
-        self.is_healthy.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.is_healthy
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn increment_failure(&self) {
-        self.failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.failure_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     #[allow(dead_code)]
@@ -181,7 +188,10 @@ impl Session {
 
     /// Acquire a worker permit from the semaphore
     /// Equivalent to Node.js `sessionManager.acquireWorker()`
-    pub async fn acquire_worker(&self, timeout_ms: u64) -> Option<tokio::sync::SemaphorePermit<'_>> {
+    pub async fn acquire_worker(
+        &self,
+        timeout_ms: u64,
+    ) -> Option<tokio::sync::SemaphorePermit<'_>> {
         use tokio::time::{timeout, Duration};
 
         match timeout(
@@ -191,7 +201,8 @@ impl Session {
         .await
         {
             Ok(Ok(permit)) => {
-                self.active_workers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.active_workers
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Some(permit)
             }
             Ok(Err(_)) => {
@@ -246,7 +257,7 @@ impl Session {
     #[allow(dead_code)]
     pub async fn graceful_shutdown(&mut self) -> anyhow::Result<()> {
         info!("[{}] Starting graceful shutdown", self.id);
-        
+
         // Mark as failed to stop new tasks
         self.set_state(SessionState::Failed);
 
@@ -256,22 +267,25 @@ impl Session {
                 let page_id = page.target_id().clone();
                 let page_to_close = page.clone();
                 if let Err(e) = page_to_close.close().await {
-                    warn!("[{}] Error closing page {:?} during shutdown: {}", self.id, page_id, e);
+                    warn!(
+                        "[{}] Error closing page {:?} during shutdown: {}",
+                        self.id, page_id, e
+                    );
                 }
                 self.unregister_page(page_id.as_ref());
             }
         }
-        
-        // Close the browser
+
+        // Close the browser (use inner Arc)
         if let Err(e) = self.browser.close().await {
             warn!("[{}] Error closing browser: {}", self.id, e);
         }
-        
-         // Cancel handler task
-         if let Some(task) = self.handler_task.take() {
-             task.abort();
-         }
-        
+
+        // Cancel handler task
+        if let Some(task) = self.handler_task.take() {
+            task.abort();
+        }
+
         info!("[{}] Shutdown complete", self.id);
         Ok(())
     }

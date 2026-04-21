@@ -5,8 +5,8 @@
 //! - Human-like pauses with Gaussian or uniform distribution
 //! - Utilities for simulating realistic timing in automated tasks
 
+use crate::utils::math::{gaussian, random_in_range};
 use tokio::time::{sleep, Duration};
-use crate::utils::math::{random_in_range, gaussian};
 
 /// Pauses execution for a random duration within the specified range.
 /// Useful for simulating human-like timing variations in automated tasks.

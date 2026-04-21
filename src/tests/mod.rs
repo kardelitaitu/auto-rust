@@ -1,8 +1,8 @@
 mod blockmedia_policy_tests;
 mod click_policy_tests;
 mod page_manager_policy_tests;
-mod task_registry_policy_tests;
 mod result_tests;
+mod task_registry_policy_tests;
 
 #[cfg(test)]
 mod config_tests {
@@ -34,6 +34,7 @@ mod config_tests {
                 },
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
+                cursor_overlay_ms: 0,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 5,
@@ -73,6 +74,7 @@ mod config_tests {
                 },
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
+                cursor_overlay_ms: 0,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 0,

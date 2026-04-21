@@ -5,7 +5,7 @@ use crate::prelude::TaskContext;
 use anyhow::Result;
 use serde_json::Value;
 
-use super::{twitteractivity_selectors::*, twitteractivity_humanized::*};
+use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
 /// Navigates to Twitter/X home timeline.
 /// URL varies by user region/login state; tries known working URLs.
@@ -47,7 +47,8 @@ pub async fn goto_notifications(api: &TaskContext) -> Result<()> {
         ],
         15_000,
     )
-    .await.ok();
+    .await
+    .ok();
     after_navigation_pause(api).await;
     Ok(())
 }
@@ -96,4 +97,3 @@ pub async fn wait_for_page_ready(
         .await?;
     Ok(ready)
 }
-

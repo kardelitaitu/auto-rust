@@ -43,8 +43,7 @@ pub async fn goto_light(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
 
 pub async fn goto_raw(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
     timeout(Duration::from_millis(timeout_ms), async {
-        let js_url = serde_json::to_string(url)?;
-        page.evaluate(format!("window.location.href = {js_url};")).await?;
+        page.goto(url).await?;
         Ok::<(), anyhow::Error>(())
     })
     .await??;
@@ -53,7 +52,8 @@ pub async fn goto_raw(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
 }
 
 pub async fn set_user_agent(page: &Page, user_agent: &str) -> Result<()> {
-    page.execute(SetUserAgentOverrideParams::new(user_agent)).await?;
+    page.execute(SetUserAgentOverrideParams::new(user_agent))
+        .await?;
     Ok(())
 }
 
@@ -211,7 +211,11 @@ pub async fn wait_for_selector(page: &Page, selector: &str, timeout_ms: u64) -> 
     .await?
 }
 
-pub async fn wait_for_visible_selector(page: &Page, selector: &str, timeout_ms: u64) -> Result<bool> {
+pub async fn wait_for_visible_selector(
+    page: &Page,
+    selector: &str,
+    timeout_ms: u64,
+) -> Result<bool> {
     timeout(Duration::from_millis(timeout_ms), async {
         let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
         loop {
@@ -231,19 +235,26 @@ pub async fn wait_for_visible_selector(page: &Page, selector: &str, timeout_ms: 
 
 pub async fn page_url(page: &Page) -> Result<String> {
     let result = page.evaluate("window.location.href").await?;
-    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to read page URL"))?;
+    let value = result
+        .value()
+        .ok_or_else(|| anyhow::anyhow!("Failed to read page URL"))?;
     Ok(value.as_str().unwrap_or("").to_string())
 }
 
 pub async fn page_title(page: &Page) -> Result<String> {
     let result = page.evaluate("document.title").await?;
-    let value = result.value().ok_or_else(|| anyhow::anyhow!("Failed to read page title"))?;
+    let value = result
+        .value()
+        .ok_or_else(|| anyhow::anyhow!("Failed to read page title"))?;
     Ok(value.as_str().unwrap_or("").to_string())
 }
 
 pub async fn wait_for_load(page: &Page, timeout_ms: u64) -> Result<()> {
-    timeout(Duration::from_millis(timeout_ms), wait_for_page_settle(page))
-        .await??;
+    timeout(
+        Duration::from_millis(timeout_ms),
+        wait_for_page_settle(page),
+    )
+    .await??;
     Ok(())
 }
 

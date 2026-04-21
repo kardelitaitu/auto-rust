@@ -88,7 +88,6 @@ async fn run_async() -> Result<()> {
     let mut group_index = 0;
 
     for (i, group) in groups.iter().enumerate() {
-        // Check for shutdown before starting each group
         if shutdown_rx.try_recv().is_ok() {
             info!("Shutdown requested, stopping before group {}", i + 1);
             break;
@@ -97,13 +96,20 @@ async fn run_async() -> Result<()> {
         info!("Executing group {}/{}", i + 1, groups.len());
         group_index = i + 1;
 
-        match orchestrator.execute_group(group, &sessions, metrics.clone()).await {
-            Ok(()) => {
-                info!("Group {} complete", i + 1);
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                info!("Shutdown requested, stopping during group {}", i + 1);
+                break;
             }
-            Err(e) => {
-                warn!("Group {} failed: {}", i + 1, e);
-                // Continue with next group unless shutdown requested
+            result = orchestrator.execute_group(group, &sessions, metrics.clone()) => {
+                match result {
+                    Ok(()) => {
+                        info!("Group {} complete", i + 1);
+                    }
+                    Err(e) => {
+                        warn!("Group {} failed: {}", i + 1, e);
+                    }
+                }
             }
         }
     }
@@ -121,7 +127,11 @@ async fn run_async() -> Result<()> {
         info!("Shutdown requested during execution");
     }
 
-    info!("Tasks done (completed {}/{} groups) - browser kept open", group_index, groups.len());
+    info!(
+        "Tasks done (completed {}/{} groups) - browser kept open",
+        group_index,
+        groups.len()
+    );
     Ok(())
 }
 

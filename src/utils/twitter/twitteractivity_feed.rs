@@ -5,7 +5,7 @@ use crate::prelude::TaskContext;
 use anyhow::Result;
 use serde_json::Value;
 
-use super::{twitteractivity_selectors::*, twitteractivity_humanized::*};
+use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
 /// Performs a series of scroll actions through the feed.
 /// Mimics a user slowly reading their timeline.
@@ -68,13 +68,19 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
                 // Basic filter: tweet must have an id and be within viewport reasonably
                 if obj.get("id").is_some() {
                     let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
-                    let height = obj.get("height").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
+                    let height = obj
+                        .get("height")
+                        .and_then(|v: &Value| v.as_f64())
+                        .unwrap_or(0.0);
                     // Consider near top half of viewport as "candidate"
                     let viewport = match api.viewport().await {
                         Ok(vp) => vp,
                         Err(_) => {
                             // Fallback default viewport if query fails
-                            crate::utils::page_size::Viewport { width: 1920.0, height: 1080.0 }
+                            crate::utils::page_size::Viewport {
+                                width: 1920.0,
+                                height: 1080.0,
+                            }
                         }
                     };
                     if y < (viewport.height as f64 * 0.7) && height > 50.0 {
@@ -143,4 +149,3 @@ pub async fn scroll_to_bottom_feed(api: &TaskContext) -> Result<()> {
     human_pause(api, 2000).await;
     Ok(())
 }
-

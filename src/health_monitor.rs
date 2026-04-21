@@ -8,8 +8,8 @@
 
 use log::{info, warn};
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Health state of a session or component
@@ -105,7 +105,7 @@ impl HealthMonitor {
     /// Get current health state
     pub fn state(&self) -> HealthState {
         let consecutive = self.consecutive_failures.load(Ordering::SeqCst);
-        
+
         if consecutive >= self.unhealthy_threshold {
             HealthState::Unhealthy
         } else if consecutive >= self.degraded_threshold {
@@ -150,7 +150,7 @@ impl HealthMonitor {
                 .as_millis() as u64,
             Ordering::SeqCst,
         );
-        
+
         let consecutive = self.consecutive_failures.load(Ordering::SeqCst);
         if consecutive >= self.unhealthy_threshold {
             warn!(
@@ -176,7 +176,7 @@ impl HealthMonitor {
     }
 
     /// Calculate health score (0-100)
-    /// 
+    ///
     /// Formula:
     /// - Start at 100
     /// - Subtract 10 points per consecutive failure (max 50 point deduction)
@@ -186,23 +186,23 @@ impl HealthMonitor {
         let consecutive = self.consecutive_failures.load(Ordering::SeqCst);
         let total_failures = self.total_failures.load(Ordering::SeqCst);
         let total_successes = self.total_successes.load(Ordering::SeqCst);
-        
+
         let mut score = 100i16;
-        
+
         // Deduct for consecutive failures (max 50 points)
         let consecutive_penalty = (consecutive as i16 * 10).min(50);
         score -= consecutive_penalty;
-        
+
         // Deduct for total failures (max 30 points)
         let total_penalty = ((total_failures / 10) as i16).min(30);
         score -= total_penalty;
-        
+
         // Bonus for recent successes (max 20 points)
         if total_successes > 0 {
             let success_bonus = (total_successes as i16).min(20);
             score = (score + success_bonus).min(100);
         }
-        
+
         score.max(0) as u8
     }
 
@@ -210,15 +210,23 @@ impl HealthMonitor {
     pub fn get_stats(&self) -> HealthStats {
         let last_failure = self.last_failure_at.load(Ordering::SeqCst);
         let last_success = self.last_success_at.load(Ordering::SeqCst);
-        
+
         HealthStats {
             state: self.state(),
             health_score: self.health_score(),
             consecutive_failures: self.consecutive_failures.load(Ordering::SeqCst),
             total_failures: self.total_failures.load(Ordering::SeqCst),
             total_successes: self.total_successes.load(Ordering::SeqCst),
-            last_failure_at: if last_failure > 0 { Some(last_failure) } else { None },
-            last_success_at: if last_success > 0 { Some(last_success) } else { None },
+            last_failure_at: if last_failure > 0 {
+                Some(last_failure)
+            } else {
+                None
+            },
+            last_success_at: if last_success > 0 {
+                Some(last_success)
+            } else {
+                None
+            },
             uptime_ms: self.created_at.elapsed().as_millis() as u64,
         }
     }
@@ -241,7 +249,7 @@ impl HealthMonitor {
             HealthState::Degraded => "DEGRADED",
             HealthState::Unhealthy => "UNHEALTHY",
         };
-        
+
         info!(
             "[{}] Health: {} | Score: {}/100 | Failures: {} ({} consecutive) | Successes: {}",
             self.session_id,
@@ -287,24 +295,27 @@ impl HealthLogger {
     pub fn start(&self) -> tokio::task::JoinHandle<()> {
         let monitors = Arc::clone(&self.monitors);
         let interval = Duration::from_millis(self.log_interval_ms);
-        
+
         tokio::spawn(async move {
             let mut interval_timer = tokio::time::interval(interval);
-            
+
             loop {
                 interval_timer.tick().await;
-                
+
                 let monitors_guard = monitors.lock();
                 if monitors_guard.is_empty() {
                     continue;
                 }
-                
-                info!("=== Health Status Report ({} monitors) ===", monitors_guard.len());
-                
+
+                info!(
+                    "=== Health Status Report ({} monitors) ===",
+                    monitors_guard.len()
+                );
+
                 let mut healthy_count = 0;
                 let mut degraded_count = 0;
                 let mut unhealthy_count = 0;
-                
+
                 for monitor in monitors_guard.iter() {
                     let stats = monitor.get_stats();
                     match stats.state {
@@ -312,7 +323,7 @@ impl HealthLogger {
                         HealthState::Degraded => degraded_count += 1,
                         HealthState::Unhealthy => unhealthy_count += 1,
                     }
-                    
+
                     // Log warning for degraded/unhealthy monitors
                     if stats.state != HealthState::Healthy {
                         warn!(
@@ -324,7 +335,7 @@ impl HealthLogger {
                         );
                     }
                 }
-                
+
                 info!(
                     "Summary: {} healthy, {} degraded, {} unhealthy",
                     healthy_count, degraded_count, unhealthy_count
@@ -342,7 +353,7 @@ impl HealthLogger {
     pub fn log_all_now(&self) {
         let monitors = self.monitors.lock();
         info!("=== Immediate Health Status Report ===");
-        
+
         for monitor in monitors.iter() {
             monitor.log_status();
         }
@@ -377,11 +388,11 @@ mod tests {
     #[test]
     fn test_health_monitor_unhealthy_state() {
         let monitor = HealthMonitor::with_thresholds("test".to_string(), 2, 4);
-        
+
         for _ in 0..4 {
             monitor.record_failure();
         }
-        
+
         assert_eq!(monitor.state(), HealthState::Unhealthy);
         assert!(!monitor.is_healthy());
     }
@@ -389,10 +400,10 @@ mod tests {
     #[test]
     fn test_health_score_calculation() {
         let monitor = HealthMonitor::new("test".to_string());
-        
+
         // Fresh monitor should have 100 score
         assert_eq!(monitor.health_score(), 100);
-        
+
         // After consecutive failures, score should drop
         for _ in 0..3 {
             monitor.record_failure();
@@ -404,15 +415,15 @@ mod tests {
     #[test]
     fn test_health_monitor_reset() {
         let monitor = HealthMonitor::new("test".to_string());
-        
+
         for _ in 0..5 {
             monitor.record_failure();
         }
-        
+
         assert_eq!(monitor.state(), HealthState::Unhealthy);
-        
+
         monitor.reset();
-        
+
         assert_eq!(monitor.state(), HealthState::Healthy);
         assert_eq!(monitor.health_score(), 100);
         assert_eq!(monitor.failure_count(), 0);

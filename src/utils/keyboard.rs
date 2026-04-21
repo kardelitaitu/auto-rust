@@ -1,8 +1,8 @@
-use anyhow::Result;
-use chromiumoxide::Page;
 use crate::internal::profile::TypingBehavior;
 use crate::utils::math::{gaussian, random_in_range};
 use crate::utils::timing::human_pause;
+use anyhow::Result;
+use chromiumoxide::Page;
 
 #[derive(Debug, Clone)]
 pub struct PressOptions {

@@ -1,8 +1,8 @@
 //! Sentiment analysis utilities for tweet content.
 //! Lightweight word-based sentiment scoring (no ML model required).
 
-use serde_json::Value;
 use crate::internal::text::truncate_chars;
+use serde_json::Value;
 
 /// Simple sentiment polarity.
 #[derive(Debug, Clone, Copy, PartialEq)]

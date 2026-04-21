@@ -10,17 +10,23 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 use crate::prelude::TaskContext;
+use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 
 pub mod cookiebot;
-pub mod pageview;
 pub mod demo_keyboard;
 pub mod demo_mouse;
 pub mod demoqa;
-pub mod twitterfollow;
-pub mod twitterreply;
+pub mod pageview;
+pub mod task_example;
 pub mod twitteractivity;
+pub mod twitterdive;
+pub mod twitterfollow;
+pub mod twitterlike;
+pub mod twitterquote;
+pub mod twitterreply;
+pub mod twitterretweet;
+pub mod twittertest;
 
 pub async fn perform_task(
     api: &TaskContext,
@@ -70,21 +76,22 @@ pub async fn perform_task(
     })
 }
 
-async fn execute_single_attempt(
-    api: &TaskContext,
-    name: &str,
-    payload: &Value,
-) -> Result<()> {
+async fn execute_single_attempt(api: &TaskContext, name: &str, payload: &Value) -> Result<()> {
     match name {
         "cookiebot" => cookiebot::run(api, payload.clone()).await,
         "pageview" => pageview::run(api, payload.clone()).await,
         "demo-keyboard" => demo_keyboard::run(api, payload.clone()).await,
         "demo-mouse" => demo_mouse::run(api, payload.clone()).await,
         "demoqa" => demoqa::run(api, payload.clone()).await,
-        "twitterfollow" => twitterfollow::run(api, payload.clone()).await,
-        "twitterreply" => twitterreply::run(api, payload.clone()).await,
+        "task-example" => task_example::run(api, payload.clone()).await,
         "twitteractivity" => twitteractivity::run(api, payload.clone()).await,
+        "twitterdive" => twitterdive::run(api, payload.clone()).await,
+        "twitterfollow" => twitterfollow::run(api, payload.clone()).await,
+        "twitterlike" => twitterlike::run(api, payload.clone()).await,
+        "twitterquote" => twitterquote::run(api, payload.clone()).await,
+        "twitterreply" => twitterreply::run(api, payload.clone()).await,
+        "twitterretweet" => twitterretweet::run(api, payload.clone()).await,
+        "twittertest" => twittertest::run(api, payload.clone()).await,
         _ => Err(anyhow::anyhow!("Unknown task: {name}")),
     }
 }
-

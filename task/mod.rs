@@ -66,9 +66,7 @@ pub async fn perform_task(
     let result = execute_single_attempt(api, clean_name, &payload).await;
 
     match result {
-        Ok(()) => {
-            Ok(TaskResult::success(start.elapsed().as_millis() as u64))
-        }
+        Ok(()) => Ok(TaskResult::success(start.elapsed().as_millis() as u64)),
         Err(e) => {
             let error_msg = e.to_string();
             let error_kind = TaskErrorKind::classify(&error_msg);

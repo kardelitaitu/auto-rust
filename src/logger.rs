@@ -64,6 +64,21 @@ pub fn clear_log_context() {
     LOG_CONTEXT.with(|c| c.replace(LogContext::default()));
 }
 
+/// Scoped logging context guard that clears thread-local context on drop.
+pub struct LogContextGuard;
+
+impl Drop for LogContextGuard {
+    fn drop(&mut self) {
+        clear_log_context();
+    }
+}
+
+/// Sets the logging context for the current scope and clears it automatically.
+pub fn scoped_log_context(ctx: LogContext) -> LogContextGuard {
+    set_log_context(ctx);
+    LogContextGuard
+}
+
 /// Logger implementation that writes log messages to both stdout and a file.
 /// Provides thread-safe logging with configurable log levels.
 pub struct FileLogger {
@@ -128,5 +143,28 @@ impl Log for FileLogger {
         if let Ok(mut file) = self.file.lock() {
             let _ = file.flush();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scoped_log_context_clears_on_drop() {
+        {
+            let _guard = scoped_log_context(LogContext {
+                session_id: Some("s1".to_string()),
+                profile_name: Some("brave".to_string()),
+                task_name: Some("pageview".to_string()),
+            });
+            let ctx = get_log_context();
+            assert_eq!(ctx.session_id.as_deref(), Some("s1"));
+        }
+
+        let ctx = get_log_context();
+        assert!(ctx.session_id.is_none());
+        assert!(ctx.profile_name.is_none());
+        assert!(ctx.task_name.is_none());
     }
 }

@@ -9,6 +9,8 @@
 - Added `pageview` payload alias guidance so `url` and legacy `value` stay aligned.
 - Added a short task-authoring checklist near the API example.
 - Softened the README status block by adding a last-verified date.
+- Documented the new run-summary session-health fields and per-task/per-session breakdowns.
+- Added the live warning rule for degraded healthy-session coverage.
 
 #### Human-Like Mouse Simulation Features
 - **Clustered pauses** (`clustered_pause()` in timing.rs): Adds micro-movements between pauses to reduce detection patterns
@@ -27,6 +29,8 @@
 - Fixed orchestrator.rs timeout error handling (moved drop(task_ctx) after match)
 - Added shared `pageview` target resolver for validation + task execution
 - Added cooperative group timeout cancellation so cleanup can complete
+- Added scoped log context cleanup and richer task/session outcome metrics
+- Added run-summary export fields for active, healthy, and unhealthy sessions
 
 #### LLM Integration
 - Full OpenRouter support with automatic Ollama→OpenRouter fallback

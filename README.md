@@ -506,9 +506,14 @@ Automatic export to `run-summary.json`:
   "failed": 3,
   "timed_out": 1,
   "success_rate": 90.48,
+  "active_sessions": 6,
+  "healthy_sessions": 5,
+  "unhealthy_sessions": 1,
   "total_duration_ms": 1234567
 }
 ```
+
+The run summary also includes per-task and per-session outcome breakdowns, so you can see which task names or sessions are driving failures.
 
 ### Periodic Health Monitoring
 
@@ -686,7 +691,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> anyhow::Result<()> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing url"))?;
     
-    api.navigate_to(url, 30000).await?;
+    api.navigate(url, 30000).await?;
     
     // Human-like behavior
     api.focus("input, textarea").await?;

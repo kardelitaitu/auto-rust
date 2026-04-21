@@ -134,6 +134,8 @@ Need external app integration (GitHub, Slack)?
 - Task groups are intentionally broadcast to every active browser session; parallel fan-out is the default execution model.
 - Validation and task execution should share one payload resolver for alias handling and normalization.
 - Keep task-specific parsing out of orchestrator code when a shared validation helper can own it.
+- Run summaries should include active, healthy, and unhealthy session counts plus per-task/per-session breakdowns.
+- If healthy sessions drop below the operational threshold, emit a warning so batch degradation is visible in logs.
 - Prefer task-api verbs that stay on the API surface: `api.click(...)`, `api.click_and_wait(...)`, `api.hover(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.keyboard(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
 - Keep shared UTF-8-safe text helpers in the internal/text utility layer instead of duplicating truncation logic in tasks.
 - Keep X/Twitter selectors scoped to the target container or captured node; avoid page-wide button scans when a task can bind a single element.

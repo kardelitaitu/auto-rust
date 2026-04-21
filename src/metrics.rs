@@ -13,6 +13,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::File;
 use std::io::Write;
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -90,6 +91,28 @@ pub enum TaskStatus {
     Timeout,
 }
 
+/// Counts outcomes for a task or session.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct OutcomeBreakdown {
+    pub succeeded: usize,
+    pub failed: usize,
+    pub timed_out: usize,
+}
+
+impl OutcomeBreakdown {
+    fn record(&mut self, status: TaskStatus) {
+        match status {
+            TaskStatus::Success => self.succeeded += 1,
+            TaskStatus::Failed => self.failed += 1,
+            TaskStatus::Timeout => self.timed_out += 1,
+        }
+    }
+
+    fn failure_count(&self) -> usize {
+        self.failed + self.timed_out
+    }
+}
+
 /// Collects and aggregates performance metrics across all task executions.
 /// Provides real-time statistics and historical data for monitoring system health
 /// and performance. Thread-safe for concurrent access.
@@ -111,6 +134,10 @@ pub struct MetricsCollector {
     task_history: Arc<RwLock<VecDeque<TaskMetrics>>>,
     /// Breakdown of failures by error kind
     failure_breakdown: Arc<RwLock<BTreeMap<TaskErrorKind, usize>>>,
+    /// Outcome breakdown by task name
+    task_breakdown: Arc<RwLock<BTreeMap<String, OutcomeBreakdown>>>,
+    /// Outcome breakdown by session id
+    session_breakdown: Arc<RwLock<BTreeMap<String, OutcomeBreakdown>>>,
     /// Maximum number of historical records to keep
     max_history: usize,
 }
@@ -134,6 +161,8 @@ impl MetricsCollector {
             active_tasks: Arc::new(AtomicUsize::new(0)),
             task_history: Arc::new(RwLock::new(VecDeque::new())),
             failure_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
+            task_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
+            session_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
             max_history,
         }
     }
@@ -149,6 +178,22 @@ impl MetricsCollector {
         self.active_tasks.fetch_sub(1, Ordering::SeqCst);
         self.total_duration_ms
             .fetch_add(metrics.duration_ms as usize, Ordering::SeqCst);
+
+        {
+            let mut task_breakdown = self.task_breakdown.write();
+            task_breakdown
+                .entry(metrics.task_name.clone())
+                .or_default()
+                .record(metrics.status);
+        }
+
+        {
+            let mut session_breakdown = self.session_breakdown.write();
+            session_breakdown
+                .entry(metrics.session_id.clone())
+                .or_default()
+                .record(metrics.status);
+        }
 
         match metrics.status {
             TaskStatus::Success => {
@@ -205,6 +250,8 @@ impl MetricsCollector {
             .iter()
             .map(|(kind, count)| (format!("{:?}", kind), *count))
             .collect();
+        let task_breakdown = self.task_breakdown.read().clone();
+        let session_breakdown = self.session_breakdown.read().clone();
 
         MetricsSnapshot {
             total_tasks: self.total_tasks.load(Ordering::SeqCst),
@@ -214,6 +261,8 @@ impl MetricsCollector {
             active_tasks: self.active_tasks.load(Ordering::SeqCst),
             total_duration_ms: self.total_duration_ms.load(Ordering::SeqCst) as u64,
             failure_breakdown,
+            task_breakdown,
+            session_breakdown,
         }
     }
 
@@ -286,6 +335,14 @@ impl MetricsCollector {
             memory_str
         );
 
+        if let Some(top_task) = top_breakdown(&stats.task_breakdown) {
+            info!("Metrics task breakdown | top={top_task}");
+        }
+
+        if let Some(top_session) = top_breakdown(&stats.session_breakdown) {
+            info!("Metrics session breakdown | top={top_session}");
+        }
+
         if !failures.is_empty() {
             let top_failure = failures
                 .iter()
@@ -348,6 +405,10 @@ pub struct MetricsSnapshot {
     pub total_duration_ms: u64,
     /// Failure counts grouped by error kind
     pub failure_breakdown: BTreeMap<String, usize>,
+    /// Outcome counts grouped by task name
+    pub task_breakdown: BTreeMap<String, OutcomeBreakdown>,
+    /// Outcome counts grouped by session id
+    pub session_breakdown: BTreeMap<String, OutcomeBreakdown>,
 }
 
 impl Default for MetricsCollector {
@@ -373,17 +434,42 @@ pub struct RunSummary {
     pub timed_out: usize,
     /// Overall success rate as a percentage
     pub success_rate: f64,
+    /// Number of browser sessions available during the run
+    pub active_sessions: usize,
+    /// Number of healthy browser sessions during the run
+    pub healthy_sessions: usize,
+    /// Number of unhealthy browser sessions during the run
+    pub unhealthy_sessions: usize,
     /// Total execution time for the entire run in milliseconds
     pub total_duration_ms: u64,
     /// Failure counts grouped by error kind
     pub failure_breakdown: BTreeMap<String, usize>,
+    /// Outcome counts grouped by task name
+    pub task_breakdown: BTreeMap<String, OutcomeBreakdown>,
+    /// Outcome counts grouped by session id
+    pub session_breakdown: BTreeMap<String, OutcomeBreakdown>,
 }
 
 impl MetricsCollector {
-    pub fn export_summary(&self) -> Result<(), std::io::Error> {
+    pub fn export_summary(
+        &self,
+        active_sessions: usize,
+        healthy_sessions: usize,
+    ) -> Result<(), std::io::Error> {
+        self.export_summary_to("run-summary.json", active_sessions, healthy_sessions)
+    }
+
+    pub fn export_summary_to<P: AsRef<Path>>(
+        &self,
+        path: P,
+        active_sessions: usize,
+        healthy_sessions: usize,
+    ) -> Result<(), std::io::Error> {
+        let path_display = path.as_ref().display().to_string();
         let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
         let stats = self.get_stats();
+        let unhealthy_sessions = active_sessions.saturating_sub(healthy_sessions);
 
         let summary = RunSummary {
             timestamp: now,
@@ -392,17 +478,36 @@ impl MetricsCollector {
             failed: stats.failed,
             timed_out: stats.timed_out,
             success_rate: self.success_rate(),
+            active_sessions,
+            healthy_sessions,
+            unhealthy_sessions,
             total_duration_ms: stats.total_duration_ms,
             failure_breakdown: stats.failure_breakdown,
+            task_breakdown: stats.task_breakdown,
+            session_breakdown: stats.session_breakdown,
         };
 
         let json = serde_json::to_string_pretty(&summary)?;
-        let mut file = File::create("run-summary.json")?;
+        let mut file = File::create(path)?;
         file.write_all(json.as_bytes())?;
 
-        log::info!("Exported run-summary.json");
+        log::info!("Exported {path_display}");
         Ok(())
     }
+}
+
+fn top_breakdown(items: &BTreeMap<String, OutcomeBreakdown>) -> Option<String> {
+    items
+        .iter()
+        .max_by_key(|(_, outcome)| outcome.failure_count())
+        .and_then(|(name, outcome)| {
+            let failures = outcome.failure_count();
+            if failures == 0 {
+                None
+            } else {
+                Some(format!("{name}={failures}"))
+            }
+        })
 }
 
 #[cfg(test)]
@@ -545,5 +650,98 @@ mod tests {
         });
         let stats = collector.get_stats();
         assert_eq!(stats.failure_breakdown.get("Timeout"), Some(&2));
+    }
+
+    #[test]
+    fn test_task_and_session_breakdown_tracks_outcomes() {
+        let collector = MetricsCollector::new(100);
+
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "pageview".to_string(),
+            status: TaskStatus::Success,
+            duration_ms: 20,
+            session_id: "brave-1".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: None,
+        });
+
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "pageview".to_string(),
+            status: TaskStatus::Timeout,
+            duration_ms: 40,
+            session_id: "brave-1".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: Some("timeout".to_string()),
+        });
+
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "twitterreply".to_string(),
+            status: TaskStatus::Failed,
+            duration_ms: 60,
+            session_id: "brave-2".to_string(),
+            attempt: 1,
+            error_kind: Some(TaskErrorKind::Browser),
+            last_error: Some("browser".to_string()),
+        });
+
+        let stats = collector.get_stats();
+        let pageview = stats.task_breakdown.get("pageview").unwrap();
+        assert_eq!(pageview.succeeded, 1);
+        assert_eq!(pageview.timed_out, 1);
+
+        let brave1 = stats.session_breakdown.get("brave-1").unwrap();
+        assert_eq!(brave1.succeeded, 1);
+        assert_eq!(brave1.timed_out, 1);
+
+        let brave2 = stats.session_breakdown.get("brave-2").unwrap();
+        assert_eq!(brave2.failed, 1);
+    }
+
+    #[test]
+    fn test_export_summary_includes_session_health() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+        collector.task_completed(TaskMetrics {
+            task_name: "pageview".to_string(),
+            status: TaskStatus::Success,
+            duration_ms: 20,
+            session_id: "brave-1".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: None,
+        });
+
+        let unique = format!(
+            "run-summary-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+
+        collector
+            .export_summary_to(&path, 3, 2)
+            .expect("export summary");
+
+        let json = std::fs::read_to_string(&path).expect("read summary");
+        let summary: serde_json::Value = serde_json::from_str(&json).expect("parse summary");
+        assert_eq!(summary["active_sessions"], 3);
+        assert_eq!(summary["healthy_sessions"], 2);
+        assert_eq!(summary["unhealthy_sessions"], 1);
+        assert!(
+            summary["task_breakdown"]["pageview"]["succeeded"]
+                .as_u64()
+                .unwrap()
+                >= 1
+        );
+
+        let _ = std::fs::remove_file(&path);
     }
 }

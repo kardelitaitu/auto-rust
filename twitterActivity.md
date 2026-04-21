@@ -1007,7 +1007,7 @@ pub async fn select_entry_point(config: &TwitterConfig) -> Result<String> {
 
 /// Navigate to URL with 20s total timeout (15s nav + 5s wait_for_load)
 #[allow(dead_code)]
-pub async fn navigate_to(page: &Page, url: &str) -> Result<()> {
+pub async fn navigate(page: &Page, url: &str) -> Result<()> {
     let nav_start = std::time::Instant::now();
     
     // Step 1: GOTO (max 15s)
@@ -1989,7 +1989,7 @@ These parameters are configurable via TOML and env vars for tuning once live.
 - [ ] Implement `weighted_pick()` utility
 - [ ] Define `ENTRY_POINTS` constant with weights per spec
 - [ ] Implement `select_entry_point()` (category → concrete URL)
-- [ ] Implement `navigate_to()` with 20s timeout budget
+- [ ] Implement `navigate()` with 20s timeout budget
 - [ ] Add unit test: `select_entry_point()` returns valid URL for all categories
 - [ ] Integration: `TwitterAgent::run_cycle()` Phase 1–2 logs entry URL
 

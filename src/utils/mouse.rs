@@ -396,9 +396,17 @@ async fn dispatch_mousemove_dom(page: &Page, x: f64, y: f64) -> Result<()> {
         overlay_state.set_cursor_position(x, y);
     }
 
-    if dispatch_mouse_event_cdp(page, DispatchMouseEventType::MouseMoved, x, y, None, None, None)
-        .await
-        .is_ok()
+    if dispatch_mouse_event_cdp(
+        page,
+        DispatchMouseEventType::MouseMoved,
+        x,
+        y,
+        None,
+        None,
+        None,
+    )
+    .await
+    .is_ok()
     {
         return Ok(());
     }
@@ -764,25 +772,25 @@ async fn dispatch_click(page: &Page, x: f64, y: f64, button: MouseButton) -> Res
     // Real browsers fire these, but most automation tools skip them
     let _ = dispatch_pointer_event(page, "pointerover", x, y, button).await;
     let _ = dispatch_pointer_event(page, "pointerenter", x, y, button).await;
-    
+
     // Small delay to simulate pointer capture
     crate::utils::timing::human_pause(15, 30).await;
-    
+
     // Fire pointermove at final position
     let _ = dispatch_pointer_event(page, "pointermove", x, y, button).await;
 
     // Mouse events (the actual click)
     let button_idx = button.as_button_index();
     dispatch_mouse_action(page, x, y, button_idx, "mousedown").await?;
-    
+
     // Brief press duration - real humans don't release immediately
     crate::utils::timing::human_pause(80, 25).await;
-    
+
     dispatch_mouse_action(page, x, y, button_idx, "mouseup").await?;
-    
+
     // Fire pointerout after click (cleanup)
     let _ = dispatch_pointer_event(page, "pointerout", x, y, button).await;
-    
+
     Ok(())
 }
 
@@ -1040,19 +1048,19 @@ pub async fn hover_before_click(
 
     // Fire pointerenter at hover start
     let _ = dispatch_pointer_event(page, "pointerenter", x, y, MouseButton::Left).await;
-    
+
     // Variable hover duration with variance
     let variance = random_in_range(20, 40) as u32;
     human_pause(base_hover_ms, variance).await;
-    
+
     // Subtle position shift during hover (humans aren't perfectly still)
     let hover_shift_x = gaussian(0.0, 1.5, -4.0, 4.0);
     let hover_shift_y = gaussian(0.0, 1.5, -4.0, 4.0);
     dispatch_mousemove(page, x + hover_shift_x, y + hover_shift_y).await?;
-    
+
     // Fire pointerleave before click (to properly balance pointerenter)
     let _ = dispatch_pointer_event(page, "pointerleave", x, y, MouseButton::Left).await;
-    
+
     Ok(())
 }
 
@@ -1060,7 +1068,7 @@ pub async fn hover_before_click(
 /// This is a heuristic-based detection.
 fn detect_element_type(selector: &str) -> String {
     let sel_lower = selector.to_lowercase();
-    
+
     // Input elements
     if sel_lower.contains("input") {
         if sel_lower.contains("checkbox") {
@@ -1071,7 +1079,7 @@ fn detect_element_type(selector: &str) -> String {
         }
         return "input".to_string();
     }
-    
+
     // Form elements
     if sel_lower.contains("button") || sel_lower.contains("submit") {
         return "button".to_string();
@@ -1079,17 +1087,17 @@ fn detect_element_type(selector: &str) -> String {
     if sel_lower.contains("select") || sel_lower.contains("dropdown") {
         return "dropdown".to_string();
     }
-    
+
     // Navigation
     if sel_lower.contains("nav") || sel_lower.contains("menu") || sel_lower.contains("a[") {
         return "link".to_string();
     }
-    
+
     // Generic link
     if sel_lower.starts_with("a ") || sel_lower.starts_with("a[") {
         return "link".to_string();
     }
-    
+
     "default".to_string()
 }
 
@@ -1128,11 +1136,11 @@ pub async fn click_selector_human(
         cursor_move_to_immediate(page, x, y),
     )
     .await;
-    
+
     // Add human-like hover before clicking
     let element_type = detect_element_type(selector);
     hover_before_click(page, selector, x, y, &element_type).await?;
-    
+
     timeout(
         Duration::from_secs(2),
         dispatch_click(page, x, y, MouseButton::Left),
@@ -1310,11 +1318,11 @@ async fn click_selector_with_button(
     let bbox = resolve_selector_bbox(page, selector).await?;
     let (x, y) = choose_click_point(&bbox, click_offset_px);
     cursor_move_to(page, x, y).await?;
-    
+
     // Add human-like hover before clicking
     let element_type = detect_element_type(selector);
     hover_before_click(page, selector, x, y, &element_type).await?;
-    
+
     dispatch_click(page, x, y, button).await?;
 
     let settle_ms = (reaction_delay_ms / 4).clamp(40, 200);

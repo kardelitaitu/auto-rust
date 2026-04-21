@@ -249,11 +249,11 @@ pub const STRATEGY_INSTRUCTIONS: &[(&str, &str)] = &[
     ("SIMP", "\n**CRITICAL INSTRUCTION**: You MUST over-the-top praise one specific detail in the tweet. Sound like a genuine stan. NEVER write \"Okay\" or \"Yes\". Keep it to 1 sentence. No mentions. No Emoji."),
     ("WHOLEsome", "\n**CRITICAL INSTRUCTION**: You MUST be genuinely kind and supportive. No sarcasm. Just pure wholesome energy. NEVER write \"Okay\" or \"Yes\". Keep it short. No mentions. No Emoji."),
     ("LOWKEY", "\n**CRITICAL INSTRUCTION**: You MUST react with highly understated, deadpan agreement. NEVER write \"Okay\" or \"Yes\". Very short phrase only. No mentions. No Emoji."),
-    
+
     // ── Personal ─────────────────────────────────────────────────────────
     ("NOSTALGIC", "\n**CRITICAL INSTRUCTION**: You MUST share a brief personal memory related to the tweet. NEVER write \"Okay\" or \"Yes\". Keep it to 1 sentence, around 15 words or less. No mentions. No Emoji."),
     ("RELATABLE", "\n**CRITICAL INSTRUCTION**: You MUST fiercely validate the tweet with a \"same\" or \"relatable\" one-sentence personal angle. NEVER write \"Okay\" or \"Yes\". Keep it short. No mentions. No Emoji."),
-    
+
     // ── Humor ────────────────────────────────────────────────────────────
     ("WITTY", "\n**CRITICAL INSTRUCTION**: You MUST make a witty, playful observation about the tweet. NEVER write \"Okay\" or \"Yes\". Keep it to 1 punchy sentence. No mentions. No Emoji."),
     ("DRY_WIT", "\n**CRITICAL INSTRUCTION**: You MUST use deadpan dry humor about the tweet topic. No exclamation marks. NEVER write \"Okay\" or \"Yes\". 1 short sentence. No mentions. No Emoji."),
@@ -261,28 +261,28 @@ pub const STRATEGY_INSTRUCTIONS: &[(&str, &str)] = &[
     ("TROLL", "\n**CRITICAL INSTRUCTION**: You MUST playful tease or gently roast the tweet without being mean. Light trolling only. NEVER write \"Okay\" or \"Yes\". Keep it to 1 short sentence. No mentions. No Emoji."),
     ("NITPICK", "\n**CRITICAL INSTRUCTION**: You MUST pedantically but funnily correct or nitpick a tiny detail in the tweet. Be the ackshually person. NEVER write \"Okay\" or \"Yes\". Keep it to 1 sentence. No mentions. No Emoji."),
     ("UNHINGED", "\n**CRITICAL INSTRUCTION**: You MUST go fully unhinged — chaotic energy, absurd comparison, or wildly random take. Embrace the chaos. NEVER write \"Okay\" or \"Yes\". Keep it short. lowercase preferred. No mentions. No Emoji."),
-    
+
     // ── Skepticism ───────────────────────────────────────────────────────
     ("CONTRARIAN", "\n**CRITICAL INSTRUCTION**: You MUST respectfully push back or flip the take. Offer a different angle without being hostile. NEVER write \"Okay\" or \"Yes\". Keep it to 1 short sentence. No mentions. No Emoji."),
     ("CALLOUT", "\n**CRITICAL INSTRUCTION**: You MUST point out an irony or obvious contradiction in the tweet in one short sentence. NEVER write \"Okay\" or \"Yes\". Keep it short. No mentions. No Emoji."),
     ("DISMISSIVE", "\n**CRITICAL INSTRUCTION**: You MUST brush off the tweet's claim with confident indifference. Never hostile, just unimpressed. NEVER write \"Okay\" or \"Yes\". Keep it short. No mentions. No Emoji."),
-    
+
     // ── Expertise ────────────────────────────────────────────────────────
     ("CLOUT", "\n**CRITICAL INSTRUCTION**: You MUST write one short, highly confident line, acting as if you are an expert on this tweet's topic. NEVER write \"Okay\" or \"Yes\". Keep it short. No mentions. No Emoji."),
     ("HOT_TAKE", "\n**CRITICAL INSTRUCTION**: You MUST give a confident short opinion that sounds slightly provocative or surprising regarding the tweet. NEVER write \"Okay\" or \"Yes\". 1 short sentence. No mentions. No Emoji."),
     ("HELPFUL", "\n**CRITICAL INSTRUCTION**: You MUST share a genuinely useful fact, tip, or resource related to the tweet. Sound helpful not preachy. NEVER write \"Okay\" or \"Yes\". Keep it to 1 short sentence. No mentions. No Emoji."),
-    
+
     // ── Observation ──────────────────────────────────────────────────────
     ("OBSERVATION", "\n**CRITICAL INSTRUCTION**: You MUST make a hyper-specific, casual observation about the tweet content. Avoid formal grammar. NEVER write \"Okay\" or \"Yes\". Keep it up to 12 words. No mentions. No Emoji."),
     ("CURIOUS", "\n**CRITICAL INSTRUCTION**: You MUST express casual, specific curiosity about a detail in the tweet. NEVER write \"Okay\" or \"Yes\". Keep it short. No mentions. No Emoji."),
     ("QUESTION", "\n**CRITICAL INSTRUCTION**: You MUST ask a specific, highly relevant question about the tweet. NEVER write \"Okay\" or \"Yes\". Keep it to 1 short sentence. No mentions. No Emoji."),
-    
+
     // ── Short/Minimal ────────────────────────────────────────────────────
     ("MINIMALIST", "\n**CRITICAL INSTRUCTION**: React with exactly ONE highly positive expressive word or extremely short phrase (2-4 words). lowercase. NEVER write \"Okay\" or \"Yes\". No mentions. No Emoji."),
     ("SLANG", "\n**CRITICAL INSTRUCTION**: You MUST use casual internet slang. lowercase ONLY. NEVER write \"Okay\" or \"Yes\". Keep it very brief, under 10 words. No mentions. No Emoji."),
     ("REACTION", "\n**CRITICAL INSTRUCTION**: You MUST provide pure unfiltered reaction — one punchy exclamation sentence. lowercase. NEVER write \"Okay\" or \"Yes\". Under 5 words. No mentions. No Emoji."),
     ("CONFUSED", "\n**CRITICAL INSTRUCTION**: You MUST express genuine confusion or bewilderment about the tweet's claim. NOT sarcastic — real confusion. NEVER write \"Okay\" or \"Yes\". Keep it short. No mentions. No Emoji."),
-    
+
     // ── Persona ──────────────────────────────────────────────────────────
     ("GEN_Z", "\n**CRITICAL INSTRUCTION**: You MUST use very online Gen Z slang and energy. Think TikTok comments section. NEVER write \"Okay\" or \"Yes\". Keep it brief, lowercase only. No mentions. No Emoji."),
     ("BOOMER", "\n**CRITICAL INSTRUCTION**: You MUST respond like a slightly out-of-touch older person trying to relate. Maybe slightly confused but earnest. NEVER write \"Okay\" or \"Yes\". Keep it to 1 sentence. No mentions. No Emoji."),

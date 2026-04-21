@@ -10,7 +10,7 @@
 use crate::api::RetryPolicy;
 use crate::cli::TaskDefinition;
 use crate::config::Config;
-use crate::logger::{set_log_context, LogContext};
+use crate::logger::{scoped_log_context, LogContext};
 use crate::metrics::MetricsCollector;
 use crate::result::{TaskErrorKind, TaskResult};
 use crate::session::Session;
@@ -236,14 +236,9 @@ async fn execute_task_on_session(
             let metrics = metrics.clone();
             let cancel_token = cancel_token.clone();
             async move {
-                let result = execute_task_with_retry(
-                    &task_def,
-                    session,
-                    &config,
-                    metrics,
-                    cancel_token,
-                )
-                .await;
+                let result =
+                    execute_task_with_retry(&task_def, session, &config, metrics, cancel_token)
+                        .await;
                 (session.id.clone(), result)
             }
         })
@@ -335,6 +330,10 @@ async fn execute_task_with_retry(
     let permit = match tokio::select! {
         permit = session.acquire_worker(config.orchestrator.worker_wait_timeout_ms) => permit,
         _ = cancel_token.cancelled() => {
+            warn!(
+                "task_cancel | task={} session={} stage=worker_acquisition",
+                task_def.name, session.id
+            );
             return TaskResult::failure(
                 start.elapsed().as_millis() as u64,
                 format!("Task {} cancelled before worker acquisition", task_def.name),
@@ -416,12 +415,12 @@ async fn execute_task_with_retry(
         profile_name: Some(profile_name),
         task_name: Some(task_def.name.clone()),
     };
-    set_log_context(ctx);
+    let _log_ctx_guard = scoped_log_context(ctx);
 
     let timeout_display = format_duration(config.orchestrator.task_timeout_ms);
     info!(
-        "Executing task (timeout: {}, retries: {})...",
-        timeout_display, max_retries
+        "task_start | task={} session={} timeout={} retries={}",
+        task_def.name, session.id, timeout_display, max_retries
     );
 
     let mut last_failure: Option<(String, TaskErrorKind)> = None;
@@ -429,6 +428,10 @@ async fn execute_task_with_retry(
 
     for current_attempt in 1..=retry_policy.max_retries + 1 {
         if cancel_token.is_cancelled() {
+            warn!(
+                "task_cancel | task={} session={} stage=pre_attempt attempt={}",
+                task_def.name, session.id, current_attempt
+            );
             last_failure = Some((
                 format!("Task {} cancelled during group shutdown", task_def.name),
                 TaskErrorKind::Timeout,
@@ -448,6 +451,10 @@ async fn execute_task_with_retry(
         let task_result = tokio::select! {
             _ = cancel_token.cancelled() => {
                 drop(task_ctx);
+                warn!(
+                    "task_cancel | task={} session={} stage=execution attempt={}",
+                    task_def.name, session.id, current_attempt
+                );
                 last_failure = Some((
                     format!("Task {} cancelled during execution", task_def.name),
                     TaskErrorKind::Timeout,
@@ -466,6 +473,10 @@ async fn execute_task_with_retry(
                 session.release_page(page).await;
                 drop(permit);
                 session.mark_healthy();
+                info!(
+                    "task_cleanup | task={} session={} status=success attempt={}",
+                    task_def.name, session.id, current_attempt
+                );
                 return task_result.with_attempt(current_attempt, max_retries);
             }
             Ok(Ok(task_result)) => {
@@ -509,8 +520,23 @@ async fn execute_task_with_retry(
         }
 
         let delay = retry_policy.delay_for_attempt(current_attempt);
+        warn!(
+            "task_retry | task={} session={} attempt={} next_delay_ms={} kind={:?}",
+            task_def.name,
+            session.id,
+            current_attempt,
+            delay.as_millis(),
+            last_failure
+                .as_ref()
+                .map(|(_, kind)| *kind)
+                .unwrap_or(TaskErrorKind::Unknown)
+        );
         tokio::select! {
             _ = cancel_token.cancelled() => {
+                warn!(
+                    "task_cancel | task={} session={} stage=backoff attempt={}",
+                    task_def.name, session.id, current_attempt
+                );
                 last_failure = Some((
                     format!("Task {} cancelled during retry backoff", task_def.name),
                     TaskErrorKind::Timeout,
@@ -537,6 +563,14 @@ async fn execute_task_with_retry(
     if kind == TaskErrorKind::Timeout && !was_cancelled {
         session.mark_unhealthy();
     }
+
+    info!(
+        "task_cleanup | task={} session={} status=failed attempt={} cancelled={}",
+        task_def.name,
+        session.id,
+        attempt.max(1),
+        was_cancelled
+    );
 
     TaskResult::failure(
         start.elapsed().as_millis() as u64,

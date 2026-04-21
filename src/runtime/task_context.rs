@@ -59,20 +59,30 @@ impl RandomCursorOutcome {
 pub struct ClickAndWaitOutcome {
     pub click: ClickOutcome,
     pub next_selector: String,
-    pub next_visible: bool,
+    pub next_visible: WaitForVisibleStatus,
     pub timeout_ms: u64,
 }
 
 impl ClickAndWaitOutcome {
     pub fn summary(&self) -> String {
+        let next_visible = match self.next_visible {
+            WaitForVisibleStatus::Visible => "visible",
+            WaitForVisibleStatus::Timeout => "timeout",
+        };
         format!(
             "{} wait_for:{} visible:{} timeout:{}ms",
             self.click.summary(),
             self.next_selector,
-            self.next_visible,
+            next_visible,
             self.timeout_ms
         )
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitForVisibleStatus {
+    Visible,
+    Timeout,
 }
 
 #[cfg(test)]
@@ -119,12 +129,30 @@ mod tests {
                 y: 2.0,
             },
             next_selector: ".next".into(),
-            next_visible: true,
+            next_visible: WaitForVisibleStatus::Visible,
             timeout_ms: 500,
         };
         assert_eq!(
             outcome.summary(),
-            "Clicked (1.0,2.0) wait_for:.next visible:true timeout:500ms"
+            "Clicked (1.0,2.0) wait_for:.next visible:visible timeout:500ms"
+        );
+    }
+
+    #[test]
+    fn test_click_and_wait_timeout_summary_format() {
+        let outcome = ClickAndWaitOutcome {
+            click: ClickOutcome {
+                click: crate::utils::mouse::ClickStatus::Success,
+                x: 1.0,
+                y: 2.0,
+            },
+            next_selector: ".next".into(),
+            next_visible: WaitForVisibleStatus::Timeout,
+            timeout_ms: 500,
+        };
+        assert_eq!(
+            outcome.summary(),
+            "Clicked (1.0,2.0) wait_for:.next visible:timeout timeout:500ms"
         );
     }
 }
@@ -160,13 +188,8 @@ impl TaskContext {
         &self.session_id
     }
 
-    pub fn page(&self) -> &Page {
+    pub(crate) fn page(&self) -> &Page {
         &self.page
-    }
-
-    /// Clone the `Arc<Page>` for sharing ownership with helper flows.
-    pub fn page_arc(&self) -> Arc<Page> {
-        self.page.clone()
     }
 
     pub fn clipboard(&self) -> &ClipboardState {
@@ -204,24 +227,6 @@ impl TaskContext {
         self.post_interaction_pause().await;
 
         Ok(())
-    }
-
-    /// Deprecated alias for `navigate()`.
-    #[deprecated(note = "Use navigate() directly.")]
-    pub async fn navigate_to(&self, url: &str, timeout_ms: u64) -> Result<()> {
-        self.navigate(url, timeout_ms).await
-    }
-
-    /// Deprecated alias for `navigate()`.
-    #[deprecated(note = "Use navigate() directly.")]
-    pub async fn navigate_to_light(&self, url: &str, timeout_ms: u64) -> Result<()> {
-        self.navigate(url, timeout_ms).await
-    }
-
-    /// Deprecated alias for `navigate()`.
-    #[deprecated(note = "Use navigate() directly.")]
-    pub async fn navigate_to_raw(&self, url: &str, timeout_ms: u64) -> Result<()> {
-        self.navigate(url, timeout_ms).await
     }
 
     /// Set custom user agent string for subsequent navigations.
@@ -267,12 +272,13 @@ impl TaskContext {
     pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
         scroll::scroll_into_view(self.page(), selector).await?;
         let (x, y) = page_size::get_element_center(self.page(), selector).await?;
-        let focus = match navigation::focus(self.page(), selector).await {
-            Ok(()) => FocusStatus::Success,
-            Err(_) => FocusStatus::Failed,
-        };
+        navigation::focus(self.page(), selector).await?;
         self.post_interaction_pause().await;
-        Ok(FocusOutcome { focus, x, y })
+        Ok(FocusOutcome {
+            focus: FocusStatus::Success,
+            x,
+            y,
+        })
     }
 
     /// Human-like hover with configurable delay, variance, and offset.
@@ -305,7 +311,10 @@ impl TaskContext {
     /// Move cursor to a random viewport position for human-like behavior.
     pub async fn randomcursor(&self) -> Result<RandomCursorOutcome> {
         let viewport = self.viewport().await?;
-        let edge_ratio = self.behavior_runtime.random_cursor_safe_edge_ratio.max(0.10);
+        let edge_ratio = self
+            .behavior_runtime
+            .random_cursor_safe_edge_ratio
+            .max(0.10);
         let (x, y) = page_size::random_position_with_edge_ratio(&viewport, edge_ratio);
         let config = self.behavior_profile.cursor_movement_config();
         mouse::cursor_move_to_with_config(self.page(), x, y, &config).await?;
@@ -453,10 +462,16 @@ impl TaskContext {
         timeout_ms: u64,
     ) -> Result<ClickAndWaitOutcome> {
         let click = self.click(selector).await?;
-        let next_visible = self
-            .wait_for_visible(next_selector, timeout_ms)
-            .await
-            .unwrap_or(false);
+        let next_visible =
+            self.wait_for_visible(next_selector, timeout_ms)
+                .await
+                .map(|visible| {
+                    if visible {
+                        WaitForVisibleStatus::Visible
+                    } else {
+                        WaitForVisibleStatus::Timeout
+                    }
+                })?;
         Ok(ClickAndWaitOutcome {
             click,
             next_selector: next_selector.to_string(),
@@ -764,9 +779,12 @@ impl TaskContext {
                 return el === hit || el.contains(hit) || hit.contains(el);
             }})()"#
         );
-        let eval = tokio::time::timeout(std::time::Duration::from_millis(500), self.page.evaluate(js))
-            .await
-            .map_err(|_| anyhow::anyhow!("fallback click verification timeout"))??;
+        let eval = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            self.page.evaluate(js),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("fallback click verification timeout"))??;
         Ok(eval.value().and_then(|v| v.as_bool()).unwrap_or(false))
     }
 

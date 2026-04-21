@@ -118,7 +118,19 @@ async fn run_async() -> Result<()> {
     health_logger.stop();
     let _ = _health_handle.await;
 
-    if let Err(e) = metrics.export_summary() {
+    let healthy_sessions = sessions
+        .iter()
+        .filter(|session| session.is_healthy())
+        .count();
+    if !sessions.is_empty() && healthy_sessions * 100 < sessions.len() * 80 {
+        warn!(
+            "Session health degraded: {}/{} healthy sessions remaining",
+            healthy_sessions,
+            sessions.len()
+        );
+    }
+
+    if let Err(e) = metrics.export_summary(sessions.len(), healthy_sessions) {
         warn!("Failed to export run summary: {e}");
     }
 

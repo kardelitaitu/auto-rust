@@ -27,7 +27,7 @@ pub struct Config {
 
 /// Configuration for browser connections and management.
 /// Defines how the orchestrator discovers, connects to, and manages browser instances.
-/// 
+///
 /// # Future Use
 /// - `connectors`: Reserved for additional browser connector types beyond RoxyBrowser
 /// - `connection_timeout_ms`: Not currently used - chromiumoxide::Browser::connect has no timeout param
@@ -44,7 +44,8 @@ pub struct BrowserConfig {
     pub max_discovery_retries: u32,
     /// Delay between browser discovery attempts in milliseconds
     pub discovery_retry_delay_ms: u64,
-    /// Circuit breaker configuration for fault tolerance (currently unused)
+    /// Circuit breaker configuration for fault tolerance.
+    /// Note: Validated but not yet wired to ApiClient. Future use for API fault tolerance.
     #[allow(dead_code)]
     pub circuit_breaker: CircuitBreakerConfig,
     /// List of browser profiles available for task execution

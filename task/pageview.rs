@@ -158,7 +158,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     }
     info!(
         "pageview config overlay_test_mode={} overlay_sync_ms={} enable_cursor={} enable_scroll={}",
-        config.overlay_test_mode, config.overlay_sync_ms, config.enable_cursor, config.enable_scroll
+        config.overlay_test_mode,
+        config.overlay_sync_ms,
+        config.enable_cursor,
+        config.enable_scroll
     );
 
     api.pause(config.initial_pause_ms).await;

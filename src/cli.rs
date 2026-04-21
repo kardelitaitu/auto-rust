@@ -9,9 +9,9 @@
 
 use clap::Parser;
 use log::warn;
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use serde_json::Value;
 
 #[derive(Parser, Debug)]
 #[command(name = "rust-orchestrator")]
@@ -192,8 +192,13 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                         if let Some(eq_pos) = value.find('=') {
                             let param_key = &value[..eq_pos];
                             let param_value = &value[eq_pos + 1..];
-                            let formatted_value = if param_key == "url" { format_url(param_value) } else { param_value.to_string() };
-                            current_payload.insert("url".to_string(), Value::String(formatted_value));
+                            let formatted_value = if param_key == "url" {
+                                format_url(param_value)
+                            } else {
+                                param_value.to_string()
+                            };
+                            current_payload
+                                .insert("url".to_string(), Value::String(formatted_value));
                         }
                     } else {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
@@ -215,8 +220,13 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                         if let Some(eq_pos) = value.find('=') {
                             let param_key = &value[..eq_pos];
                             let param_value = &value[eq_pos + 1..];
-                            let formatted_value = if param_key == "url" { format_url(param_value) } else { param_value.to_string() };
-                            current_payload.insert("url".to_string(), Value::String(formatted_value));
+                            let formatted_value = if param_key == "url" {
+                                format_url(param_value)
+                            } else {
+                                param_value.to_string()
+                            };
+                            current_payload
+                                .insert("url".to_string(), Value::String(formatted_value));
                         }
                     } else {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));

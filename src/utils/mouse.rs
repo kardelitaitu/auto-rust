@@ -496,9 +496,11 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
     };
     let now_ms = now_unix_ms();
     if !overlay_state.claim_sync_slot(now_ms, force, OVERLAY_SYNC_INTERVAL_MS) {
+        log::debug!("Overlay sync skipped (throttled)");
         return Ok(());
     }
 
+    log::debug!("Syncing cursor overlay to ({}, {})", x, y);
     let eval = page.evaluate(format!(
         "(function() {{
             let dot = document.getElementById('__auto_rust_mouse_overlay');

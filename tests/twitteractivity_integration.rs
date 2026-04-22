@@ -274,3 +274,215 @@ fn twitteractivity_engagement_limits_remaining_calculation() {
         "remaining likes should be max minus current"
     );
 }
+
+/// Tests that engagement limits work for all action types.
+#[test]
+fn twitteractivity_engagement_limits_all_action_types() {
+    use rust_orchestrator::utils::twitter::twitteractivity_limits::{
+        EngagementCounters, EngagementLimits,
+    };
+
+    let limits = EngagementLimits::default();
+    let mut counters = EngagementCounters::new();
+
+    // Test each action type limit
+    assert!(limits.can_like(&counters), "should allow like initially");
+    assert!(
+        limits.can_retweet(&counters),
+        "should allow retweet initially"
+    );
+    assert!(
+        limits.can_follow(&counters),
+        "should allow follow initially"
+    );
+    assert!(limits.can_reply(&counters), "should allow reply initially");
+    assert!(limits.can_dive(&counters), "should allow dive initially");
+
+    // Increment all counters to their limits
+    for _ in 0..limits.max_likes {
+        counters.increment_like();
+    }
+    for _ in 0..limits.max_retweets {
+        counters.increment_retweet();
+    }
+    for _ in 0..limits.max_follows {
+        counters.increment_follow();
+    }
+    for _ in 0..limits.max_replies {
+        counters.increment_reply();
+    }
+    for _ in 0..limits.max_thread_dives {
+        counters.increment_thread_dive();
+    }
+
+    // All should now be blocked
+    assert!(
+        !limits.can_like(&counters),
+        "should not allow like when limit reached"
+    );
+    assert!(
+        !limits.can_retweet(&counters),
+        "should not allow retweet when limit reached"
+    );
+    assert!(
+        !limits.can_follow(&counters),
+        "should not allow follow when limit reached"
+    );
+    assert!(
+        !limits.can_reply(&counters),
+        "should not allow reply when limit reached"
+    );
+    assert!(
+        !limits.can_dive(&counters),
+        "should not allow dive when limit reached"
+    );
+}
+
+/// Tests that persona weights can be overridden via payload.
+#[test]
+fn twitteractivity_persona_weights_override() {
+    // Default weights
+    let default_weights = select_persona_weights(None);
+
+    // Override weights
+    let custom_weights = json!({
+        "like_prob": 0.9,
+        "retweet_prob": 0.1,
+        "follow_prob": 0.05,
+        "reply_prob": 0.02,
+        "thread_dive_prob": 0.3
+    });
+
+    let override_weights = select_persona_weights(Some(&custom_weights));
+
+    // Override should use custom values
+    assert_eq!(
+        override_weights.like_prob, 0.9,
+        "like_prob should be overridden"
+    );
+    assert_eq!(
+        override_weights.retweet_prob, 0.1,
+        "retweet_prob should be overridden"
+    );
+    assert_eq!(
+        override_weights.follow_prob, 0.05,
+        "follow_prob should be overridden"
+    );
+    assert_eq!(
+        override_weights.reply_prob, 0.02,
+        "reply_prob should be overridden"
+    );
+    assert_eq!(
+        override_weights.thread_dive_prob, 0.3,
+        "thread_dive_prob should be overridden"
+    );
+
+    // Default should be different
+    assert_ne!(
+        default_weights.like_prob, 0.9,
+        "default should differ from override"
+    );
+}
+
+/// Tests that TweetActionTracker handles multiple tweets correctly.
+#[test]
+fn twitteractivity_action_chaining_multiple_tweets() {
+    let mut tracker = TweetActionTracker::new();
+    let tweet_ids = vec!["tweet_1", "tweet_2", "tweet_3"];
+
+    // Record actions on different tweets
+    for tweet_id in &tweet_ids {
+        tracker.record_action(tweet_id.to_string(), "like");
+    }
+
+    // Each tweet should be blocked for its own action type
+    for tweet_id in &tweet_ids {
+        assert!(
+            !tracker.can_perform_action(tweet_id, "retweet"),
+            "tweet should be blocked after like"
+        );
+    }
+
+    // Wait for cooldown
+    std::thread::sleep(Duration::from_millis(3100));
+
+    // All tweets should now be unblocked
+    for tweet_id in &tweet_ids {
+        assert!(
+            tracker.can_perform_action(tweet_id, "retweet"),
+            "tweet should be unblocked after cooldown"
+        );
+    }
+}
+
+/// Tests that TweetActionTracker overwrites previous actions correctly.
+#[test]
+fn twitteractivity_action_chaining_overwrites_previous() {
+    let mut tracker = TweetActionTracker::new();
+    let tweet_id = "test_tweet_overwrite";
+
+    // Record first action
+    tracker.record_action(tweet_id.to_string(), "like");
+    assert!(!tracker.can_perform_action(tweet_id, "retweet"));
+
+    // Wait for cooldown
+    std::thread::sleep(Duration::from_millis(3100));
+
+    // Record second action
+    tracker.record_action(tweet_id.to_string(), "retweet");
+    assert!(!tracker.can_perform_action(tweet_id, "follow"));
+}
+
+/// Tests that entry point selection has expected distribution.
+#[test]
+fn twitteractivity_entry_point_selection_distribution() {
+    use rust_orchestrator::task::twitteractivity::select_entry_point;
+
+    // Sample many times to check distribution
+    let mut counts = std::collections::HashMap::new();
+    for _ in 0..1000 {
+        let entry_url = select_entry_point();
+        *counts.entry(entry_url).or_insert(0) += 1;
+    }
+
+    // Home should be the most common (59% weight)
+    let home_count = counts.get("https://x.com/").unwrap_or(&0);
+    assert!(
+        *home_count > 500,
+        "home should appear in >50% of samples (got {})",
+        home_count
+    );
+
+    // At least some other entry points should appear
+    assert!(
+        counts.len() > 1,
+        "should have multiple different entry points"
+    );
+}
+
+/// Tests that sentiment analysis handles empty text.
+#[test]
+fn twitteractivity_sentiment_empty_text() {
+    let empty_tweet = json!({ "text": "" });
+    let result = analyze_tweet_sentiment(&empty_tweet);
+
+    // Empty text should be classified as neutral
+    assert!(
+        matches!(result, Sentiment::Neutral),
+        "empty text should be neutral"
+    );
+}
+
+/// Tests that sentiment analysis handles very long text.
+#[test]
+fn twitteractivity_sentiment_long_text() {
+    let long_text = "This is absolutely amazing and wonderful! I love it so much, it's the best thing ever. Truly fantastic and incredible! ";
+    let long_tweet = json!({ "text": long_text });
+    let result = analyze_tweet_sentiment(&long_tweet);
+
+    // Long positive text should still be classified as positive
+    assert!(
+        matches!(result, Sentiment::Positive),
+        "long positive text should be positive"
+    );
+}

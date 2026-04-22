@@ -149,8 +149,23 @@ impl TaskErrorKind {
             TaskErrorKind::Timeout
         } else if e.contains("validation") || e.contains("invalid") || e.contains("schema") {
             TaskErrorKind::Validation
+        } else if e.contains("target.detached")
+            || e.contains("detachedfromtarget")
+            || e.contains("target closed")
+            || e.contains("browser disconnected")
+            || e.contains("websocket")
+            || e.contains("connection reset")
+            || e.contains("connection closed")
+            || e.contains("protocol error")
+        {
+            TaskErrorKind::Browser
         } else if e.contains("navigat") || e.contains("goto") || e.contains("load") {
             TaskErrorKind::Navigation
+        } else if e.contains("receiver is gone")
+            || e.contains("channel closed")
+            || e.contains("send failed")
+        {
+            TaskErrorKind::Session
         } else if e.contains("session") || e.contains("worker") || e.contains("page") {
             TaskErrorKind::Session
         } else if e.contains("browser") || e.contains("chromium") || e.contains("brave") {
@@ -322,6 +337,20 @@ mod tests {
     fn test_task_error_kind_classify_unknown() {
         let kind = TaskErrorKind::classify("Something went wrong");
         assert_eq!(kind, TaskErrorKind::Unknown);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_target_detached() {
+        let kind = TaskErrorKind::classify(
+            "Protocol error (Target.detachedFromTarget): Target closed during click",
+        );
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_receiver_gone() {
+        let kind = TaskErrorKind::classify("send failed because receiver is gone");
+        assert_eq!(kind, TaskErrorKind::Session);
     }
 
     #[test]

@@ -13,6 +13,7 @@ use chromiumoxide::{Browser, Handler};
 use dashmap::DashSet;
 use futures::StreamExt;
 use log::{info, warn};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -188,25 +189,38 @@ impl Session {
         circuit_breaker_config: Option<crate::config::CircuitBreakerConfig>,
     ) -> Self {
         let id_clone = id.clone();
+        const HANDLER_TIMEOUT_WARN_EVERY: usize = 6;
 
         // Spawn handler polling task - keep it alive for the lifetime of the session
         let handler_task = tokio::spawn(async move {
             let mut handler = handler;
+            let mut consecutive_handler_timeouts = 0usize;
             loop {
                 match tokio::time::timeout(Duration::from_secs(5), handler.next()).await {
                     Ok(Some(Ok(_))) => {
-                        // Event received, continue
+                        consecutive_handler_timeouts = 0;
                     }
                     Ok(Some(Err(_))) => {
-                        // Ignore errors and continue - keep handler alive
+                        consecutive_handler_timeouts = 0;
                     }
                     Ok(None) => {
                         // Handler stream ended
                         break;
                     }
                     Err(_) => {
-                        // Handler timeout - log and continue
-                        log::warn!("Handler task timeout for session {id_clone}, continuing");
+                        consecutive_handler_timeouts += 1;
+                        // Idle sessions can naturally have sparse events, so warn only on prolonged streaks.
+                        if consecutive_handler_timeouts % HANDLER_TIMEOUT_WARN_EVERY == 0 {
+                            log::warn!(
+                                "Handler task timeout for session {id_clone}, continuing ({} consecutive timeouts)",
+                                consecutive_handler_timeouts
+                            );
+                        } else {
+                            log::debug!(
+                                "Handler task timeout for session {id_clone}, continuing ({} consecutive timeouts)",
+                                consecutive_handler_timeouts
+                            );
+                        }
                     }
                 }
             }
@@ -692,6 +706,56 @@ impl Session {
             warn!("[{}] Error closing page {:?}: {}", self.id, page_id, e);
         }
         self.unregister_page(page_id.as_ref());
+    }
+
+    /// Closes only pages created and tracked by this orchestrator session.
+    ///
+    /// Unlike `graceful_shutdown`, this keeps the browser process running and
+    /// only closes tabs that were acquired through `acquire_page`/`acquire_page_at`.
+    ///
+    /// # Returns
+    ///
+    /// Number of managed pages successfully closed.
+    pub async fn cleanup_managed_pages(&self) -> anyhow::Result<usize> {
+        let tracked_ids: Vec<String> = self
+            .active_pages
+            .iter()
+            .map(|id| id.as_ref().to_string())
+            .collect();
+        if tracked_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let tracked_set: HashSet<String> = tracked_ids.iter().cloned().collect();
+        let pages = self.browser.pages().await?;
+        let mut closed = 0usize;
+
+        for page in pages {
+            let page_id = page.target_id().clone();
+            let page_id_text = page_id.as_ref().to_string();
+            if !tracked_set.contains(&page_id_text) {
+                continue;
+            }
+
+            self.overlay_state.clear_active_page_if(&page_id_text);
+            unbind_page_overlay(&page_id_text);
+            let page_to_close = page.clone();
+            if let Err(e) = page_to_close.close().await {
+                warn!(
+                    "[{}] Error closing managed page {:?}: {}",
+                    self.id, page_id, e
+                );
+            } else {
+                closed += 1;
+            }
+            self.unregister_page(page_id.as_ref());
+        }
+
+        for page_id in tracked_ids {
+            self.unregister_page(&page_id);
+        }
+
+        Ok(closed)
     }
 
     /// Performs a graceful shutdown of the session, cleaning up all resources.

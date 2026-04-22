@@ -65,15 +65,14 @@ async fn run_async() -> Result<()> {
         cli::validate_task_groups_strict(&groups)?;
     }
 
-    let mut sessions = browser::discover_browsers_with_filters(&config, &browser_filters).await?;
+    let sessions = browser::discover_browsers_with_filters(&config, &browser_filters).await?;
     info!("Connected to {} browser(s)", sessions.len());
 
     if args.tasks.is_empty() {
         info!("No tasks specified. System initialized in idle mode.");
         // Wait for shutdown signal in idle mode
         wait_for_shutdown(shutdown_tx.subscribe()).await;
-        info!("Shutdown signal received. Closing browsers...");
-        shutdown_sessions(&mut sessions).await;
+        info!("Shutdown signal received. Script stopped, browser left unchanged.");
         return Ok(());
     }
 
@@ -93,7 +92,7 @@ async fn run_async() -> Result<()> {
         metrics: metrics.clone(),
         total_groups: groups.len(),
     };
-    let group_index =
+    let group_outcome =
         execute_task_groups_with_shutdown(&groups, &mut shutdown_rx, &mut group_runner).await;
 
     // Stop health logger and wait for it to finish
@@ -116,11 +115,20 @@ async fn run_async() -> Result<()> {
         warn!("Failed to export run summary: {e}");
     }
 
-    shutdown_sessions(&mut sessions).await;
+    if group_outcome.shutdown_requested {
+        info!(
+            "Tasks stopped by shutdown signal (completed {}/{}) - script stopped, browser left unchanged",
+            group_outcome.completed_groups,
+            groups.len()
+        );
+        return Ok(());
+    }
+
+    cleanup_managed_tabs(&sessions).await;
 
     info!(
-        "Tasks done (completed {}/{} groups) - browsers closed",
-        group_index,
+        "Tasks done (completed {}/{} groups) - browser kept open",
+        group_outcome.completed_groups,
         groups.len()
     );
     Ok(())
@@ -163,19 +171,27 @@ impl TaskGroupRunner for RuntimeGroupRunner<'_> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct GroupExecutionOutcome {
+    completed_groups: usize,
+    shutdown_requested: bool,
+}
+
 async fn execute_task_groups_with_shutdown<R>(
     groups: &[Vec<cli::TaskDefinition>],
     shutdown_rx: &mut broadcast::Receiver<()>,
     runner: &mut R,
-) -> usize
+) -> GroupExecutionOutcome
 where
     R: TaskGroupRunner + ?Sized,
 {
     let mut group_index = 0;
+    let mut shutdown_requested = false;
 
     for (i, group) in groups.iter().enumerate() {
         if shutdown_rx.try_recv().is_ok() {
             info!("Shutdown requested, stopping before group {}", i + 1);
+            shutdown_requested = true;
             break;
         }
 
@@ -183,20 +199,26 @@ where
         tokio::select! {
             _ = shutdown_rx.recv() => {
                 info!("Shutdown requested, stopping during group {}", i + 1);
+                shutdown_requested = true;
                 break;
             }
             _ = runner.run_group(i, group) => {}
         }
     }
 
-    group_index
+    GroupExecutionOutcome {
+        completed_groups: group_index,
+        shutdown_requested,
+    }
 }
 
+#[cfg(test)]
 #[async_trait]
 trait ShutdownSession {
     async fn shutdown(&mut self) -> anyhow::Result<()>;
 }
 
+#[cfg(test)]
 #[async_trait]
 impl ShutdownSession for Session {
     async fn shutdown(&mut self) -> anyhow::Result<()> {
@@ -204,11 +226,26 @@ impl ShutdownSession for Session {
     }
 }
 
+#[cfg(test)]
 async fn shutdown_sessions<T: ShutdownSession>(sessions: &mut [T]) {
     for session in sessions.iter_mut() {
         if let Err(e) = session.shutdown().await {
             warn!("Failed to shut down session: {e}");
         }
+    }
+}
+
+async fn cleanup_managed_tabs(sessions: &[Session]) {
+    let mut total_closed = 0usize;
+    for session in sessions {
+        match session.cleanup_managed_pages().await {
+            Ok(closed) => total_closed += closed,
+            Err(e) => warn!("Failed to clean up managed tabs for {}: {e}", session.id),
+        }
+    }
+
+    if total_closed > 0 {
+        info!("Closed {} managed tab(s) before exit", total_closed);
     }
 }
 
@@ -295,9 +332,10 @@ mod tests {
             finished: finished.clone(),
             delay_ms: 1,
         };
-        let completed = execute_task_groups_with_shutdown(&groups, &mut rx, &mut runner).await;
+        let outcome = execute_task_groups_with_shutdown(&groups, &mut rx, &mut runner).await;
 
-        assert_eq!(completed, 2);
+        assert_eq!(outcome.completed_groups, 2);
+        assert!(!outcome.shutdown_requested);
         assert_eq!(finished.load(Ordering::SeqCst), 2);
     }
 
@@ -328,10 +366,11 @@ mod tests {
             let _ = tx.send(());
         });
 
-        let completed = execute_task_groups_with_shutdown(&groups, &mut rx, &mut runner).await;
+        let outcome = execute_task_groups_with_shutdown(&groups, &mut rx, &mut runner).await;
 
         sender_task.await.expect("sender task should finish");
-        assert_eq!(completed, 1);
+        assert_eq!(outcome.completed_groups, 1);
+        assert!(outcome.shutdown_requested);
         assert_eq!(finished.load(Ordering::SeqCst), 0);
     }
 }

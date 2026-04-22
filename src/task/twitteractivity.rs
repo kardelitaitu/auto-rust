@@ -30,6 +30,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::metrics::{
+    RUN_COUNTER_BUTTON_MISSING, RUN_COUNTER_CANDIDATE_SCANNED, RUN_COUNTER_CLICK_VERIFY_FAILED,
+    RUN_COUNTER_DIVE_TARGET_FALLBACK_USED,
+};
 use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
 use crate::utils::twitter::{
@@ -49,6 +53,8 @@ const DEFAULT_THREAD_DEPTH: u32 = 5;
 const MIN_ACTION_CHAIN_DELAY_MS: u64 = 3000;
 /// Minimum delay between feed candidate scans (ms)
 const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;
+/// Maximum number of successful actions allowed per candidate scan iteration.
+const DEFAULT_MAX_ACTIONS_PER_SCAN: u32 = 3;
 
 /// Entry point for navigation (URL and weight)
 struct EntryPoint {
@@ -175,16 +181,6 @@ impl TweetActionTracker {
     }
 }
 
-/// Verifies we're on the home feed and navigates back if not.
-async fn ensure_home_context(api: &TaskContext) -> Result<()> {
-    if !is_on_home_feed(api).await.unwrap_or(false) {
-        warn!("Not on home feed, navigating back to home");
-        goto_home(api).await?;
-        human_pause(api, 500).await;
-    }
-    Ok(())
-}
-
 /// Navigate to weighted entry point and simulate reading if not on home.
 /// Following Node.js navigateAndRead pattern.
 async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()> {
@@ -200,7 +196,7 @@ async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()> {
     info!("🎲 Rolled entry point: {} → {}", entry_name, entry_url);
 
     // Navigate to entry point
-    api.navigate(entry_url, 30000).await?;
+    api.navigate(entry_url, 60000).await?;
     human_pause(api, 2000).await;
 
     // Check if on home feed
@@ -253,6 +249,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = read_u64(&payload, "duration_ms", DEFAULT_DURATION_MS);
     let candidate_count = read_u32(&payload, "candidate_count", DEFAULT_CANDIDATES);
     let thread_depth = read_u32(&payload, "thread_depth", DEFAULT_THREAD_DEPTH);
+    let max_actions_per_scan = read_u32(
+        &payload,
+        "max_actions_per_scan",
+        DEFAULT_MAX_ACTIONS_PER_SCAN,
+    )
+    .max(1);
     let weights = payload.get("weights");
 
     // Parse LLM config (V2 feature)
@@ -301,6 +303,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         limits.max_follows,
         counters.total_actions(),
         limits.max_total_actions
+    );
+    info!(
+        "Per-scan action budget: {} successful actions",
+        max_actions_per_scan
     );
 
     // Phase 1: Navigation & authentication check
@@ -372,14 +378,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
             warn!("Feed appears empty after scroll");
         }
 
-        // Identify candidate tweets and cache engagement button positions
+        // Identify candidate tweets
         let scan_started = Instant::now();
         let candidates = identify_engagement_candidates(api).await?;
-        let buttons = if !candidates.is_empty() {
-            get_tweet_engagement_buttons(api).await?
-        } else {
-            serde_json::Value::Null
-        };
+        api.increment_run_counter(RUN_COUNTER_CANDIDATE_SCANNED, candidates.len());
         info!(
             "candidate_scan | candidates={} duration_ms={}",
             candidates.len(),
@@ -392,8 +394,17 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 .iter()
                 .take(candidate_count as usize)
                 .collect::<Vec<_>>();
+            let mut actions_this_scan = 0u32;
 
             for tweet in to_consider {
+                if actions_this_scan >= max_actions_per_scan {
+                    info!(
+                        "Per-scan action budget reached ({}/{}), deferring remaining candidates",
+                        actions_this_scan, max_actions_per_scan
+                    );
+                    break;
+                }
+
                 // Analyze sentiment (lightweight)
                 let sentiment = analyze_tweet_sentiment(tweet);
                 let mut candidate_persona = persona.clone();
@@ -453,7 +464,56 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                     }
                 }
 
+                // Decision: Dive into thread?
+                let mut did_dive = false;
+                if actions_this_scan >= max_actions_per_scan {
+                    break;
+                }
+                if should_dive(&candidate_persona) {
+                    // Check action chaining prevention
+                    let tweet_id = tweet
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    if !action_tracker.can_perform_action(tweet_id, "dive") {
+                        info!(
+                            "Skipping dive on tweet {}: action chain cooldown active",
+                            tweet_id
+                        );
+                    }
+                    // Check limits
+                    else if !limits.can_dive(&counters) {
+                        info!(
+                            "Skipping thread dive: limit reached ({}/{})",
+                            counters.thread_dives, limits.max_thread_dives
+                        );
+                    } else if let Some(status_url) = tweet.get("status_url").and_then(|v| v.as_str()) {
+                        let dive_outcome = dive_into_thread(api, status_url).await?;
+                        if dive_outcome.used_fallback_target {
+                            api.increment_run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, 1);
+                        }
+                        if !dive_outcome.opened {
+                            info!("Thread dive skipped: no valid target resolved");
+                        } else {
+                            read_full_thread(api, thread_depth).await?;
+                            scroll_pause(api).await;
+                            counters.increment_thread_dive();
+                            _actions_taken += 1;
+                            actions_this_scan += 1;
+                            // Record action for chain prevention
+                            action_tracker.record_action(tweet_id.to_string(), "dive");
+                            did_dive = true;
+                        }
+                    }
+                }
+
+                // Engagement actions (like, retweet, quote, follow, reply, bookmark)
+                // These happen after dive (if dove) or directly on feed (if no dive)
+                // Dive is a pre-engagement step, not counted as engagement
                 // Decision: Like?
+                if actions_this_scan >= max_actions_per_scan {
+                    break;
+                }
                 if should_like(&candidate_persona) {
                     // Check action chaining prevention
                     let tweet_id = tweet
@@ -472,29 +532,33 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                             "Skipping like: limit reached ({}/{})",
                             counters.likes, limits.max_likes
                         );
-                    } else if let Some(pos) = tweet
-                        .get("x")
-                        .and_then(|v| v.as_f64())
-                        .zip(tweet.get("y").and_then(|v| v.as_f64()))
-                    {
-                        // Move to tweet center and click like button (using cached buttons)
-                        if let Some(btn_pos) = find_like_button_near(&buttons, pos.0, pos.1)? {
-                            if like_at_position(api, btn_pos.0, btn_pos.1).await? {
-                                info!("Liked tweet");
-                                counters.increment_like();
-                                _actions_taken += 1;
-                                // Record action for chain prevention
-                                action_tracker.record_action(tweet_id.to_string(), "like");
-                                // Use clustered pause for micro-movements between actions
-                                clustered_engagement_pause(api).await;
-                            }
+                    } else if let Some(btn_pos) = extract_tweet_button_position(tweet, "like") {
+                        if like_at_position(api, btn_pos.0, btn_pos.1).await? {
+                            info!("Liked tweet");
+                            counters.increment_like();
+                            _actions_taken += 1;
+                            actions_this_scan += 1;
+                            // Record action for chain prevention
+                            action_tracker.record_action(tweet_id.to_string(), "like");
+                            // Use clustered pause for micro-movements between actions
+                            clustered_engagement_pause(api).await;
                         } else {
-                            warn!("Like button not found near ({}, {})", pos.0, pos.1);
+                            api.increment_run_counter(RUN_COUNTER_CLICK_VERIFY_FAILED, 1);
+                            warn!(
+                                "Like click verification failed for tweet {} at ({:.1}, {:.1})",
+                                tweet_id, btn_pos.0, btn_pos.1
+                            );
                         }
+                    } else {
+                        warn!("Like button not found in tweet payload for {}", tweet_id);
+                        api.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 1);
                     }
                 }
 
-                // Decision: Retweet or Quote Tweet?
+                // Decision: Retweet?
+                if actions_this_scan >= max_actions_per_scan {
+                    break;
+                }
                 if should_retweet(&candidate_persona) {
                     // Check action chaining prevention
                     let tweet_id = tweet
@@ -513,85 +577,87 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                             "Skipping retweet: limit reached ({}/{})",
                             counters.retweets, limits.max_retweets
                         );
-                    } else {
-                        // 15% chance to quote tweet instead of native retweet (V2 feature)
-                        let do_quote_tweet = llm_enabled
-                            && rand::random::<f64>() < llm_quote_probability
-                            && limits.can_quote_tweet(&counters);
+                    } else if retweet_tweet(api).await? {
+                        info!("Retweeted");
+                        counters.increment_retweet();
+                        _actions_taken += 1;
+                        actions_this_scan += 1;
+                        // Record action for chain prevention
+                        action_tracker.record_action(tweet_id.to_string(), "retweet");
+                        // Use clustered pause for micro-movements
+                        clustered_engagement_pause(api).await;
+                    }
+                }
 
-                        if do_quote_tweet {
-                            // Generate quote tweet commentary
-                            match extract_tweet_context(api).await {
-                                Ok((author, text, replies)) => {
-                                    match generate_quote_commentary(api, &author, &text, replies)
-                                        .await
-                                    {
-                                        Ok(commentary) => {
-                                            match quote_tweet(api, &commentary).await {
-                                                Ok(true) => {
-                                                    info!(
-                                                        "Quote tweeted with commentary: {}",
-                                                        commentary
-                                                    );
-                                                    counters.increment_quote_tweet();
-                                                    _actions_taken += 1;
-                                                    // Record action for chain prevention
-                                                    action_tracker.record_action(
-                                                        tweet_id.to_string(),
-                                                        "quote_tweet",
-                                                    );
-                                                    // Use clustered reply pause for quote tweets (thinking time)
-                                                    clustered_reply_pause(api).await;
-                                                }
-                                                Ok(false) => {
-                                                    warn!("Quote tweet failed");
-                                                }
-                                                Err(e) => {
-                                                    warn!("Quote tweet error: {}", e);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            warn!("Failed to generate quote commentary, falling back to retweet: {}", e);
-                                            if retweet_tweet(api).await? {
-                                                info!("Retweeted (fallback)");
-                                                counters.increment_retweet();
+                // Decision: Quote Tweet?
+                if actions_this_scan >= max_actions_per_scan {
+                    break;
+                }
+                if should_quote(&candidate_persona) {
+                    // Check action chaining prevention
+                    let tweet_id = tweet
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    if !action_tracker.can_perform_action(tweet_id, "quote_tweet") {
+                        info!(
+                            "Skipping quote tweet on tweet {}: action chain cooldown active",
+                            tweet_id
+                        );
+                    }
+                    // Check limits
+                    else if !limits.can_quote_tweet(&counters) {
+                        info!(
+                            "Skipping quote tweet: limit reached ({}/{})",
+                            counters.quote_tweets, limits.max_quote_tweets
+                        );
+                    } else if llm_enabled {
+                        // Generate quote tweet commentary
+                        match extract_tweet_context(api).await {
+                            Ok((author, text, replies)) => {
+                                match generate_quote_commentary(api, &author, &text, replies).await {
+                                    Ok(commentary) => {
+                                        match quote_tweet(api, &commentary).await {
+                                            Ok(true) => {
+                                                info!(
+                                                    "Quote tweeted with commentary: {}",
+                                                    commentary
+                                                );
+                                                counters.increment_quote_tweet();
                                                 _actions_taken += 1;
+                                                actions_this_scan += 1;
                                                 // Record action for chain prevention
-                                                action_tracker
-                                                    .record_action(tweet_id.to_string(), "retweet");
-                                                // Use clustered pause for micro-movements
-                                                clustered_engagement_pause(api).await;
+                                                action_tracker.record_action(
+                                                    tweet_id.to_string(),
+                                                    "quote_tweet",
+                                                );
+                                                // Use clustered reply pause for quote tweets (thinking time)
+                                                clustered_reply_pause(api).await;
+                                            }
+                                            Ok(false) => {
+                                                warn!("Quote tweet failed");
+                                            }
+                                            Err(e) => {
+                                                warn!("Quote tweet error: {}", e);
                                             }
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    warn!("Failed to extract tweet context for quote: {}", e);
-                                    if retweet_tweet(api).await? {
-                                        info!("Retweeted (fallback)");
-                                        counters.increment_retweet();
-                                        _actions_taken += 1;
-                                        engagement_pause(api).await;
+                                    Err(e) => {
+                                        warn!("Failed to generate quote commentary: {}", e);
                                     }
                                 }
                             }
-                        } else {
-                            // Native retweet
-                            if retweet_tweet(api).await? {
-                                info!("Retweeted");
-                                counters.increment_retweet();
-                                _actions_taken += 1;
-                                // Record action for chain prevention
-                                action_tracker.record_action(tweet_id.to_string(), "retweet");
-                                // Use clustered pause for micro-movements
-                                clustered_engagement_pause(api).await;
+                            Err(e) => {
+                                warn!("Failed to extract tweet context for quote: {}", e);
                             }
                         }
                     }
                 }
 
                 // Decision: Follow author?
+                if actions_this_scan >= max_actions_per_scan {
+                    break;
+                }
                 if should_follow(&candidate_persona) {
                     // Check action chaining prevention
                     let tweet_id = tweet
@@ -614,6 +680,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                         info!("Followed user");
                         counters.increment_follow();
                         _actions_taken += 1;
+                        actions_this_scan += 1;
                         // Record action for chain prevention
                         action_tracker.record_action(tweet_id.to_string(), "follow");
                         // Use clustered pause for micro-movements
@@ -622,6 +689,9 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                 }
 
                 // Decision: Reply?
+                if actions_this_scan >= max_actions_per_scan {
+                    break;
+                }
                 if should_reply(&candidate_persona) {
                     // Check action chaining prevention
                     let tweet_id = tweet
@@ -676,6 +746,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                             info!("Replied with sentiment {:?}", sentiment);
                             counters.increment_reply();
                             _actions_taken += 1;
+                            actions_this_scan += 1;
                             // Record action for chain prevention
                             action_tracker.record_action(tweet_id.to_string(), "reply");
                             // Use clustered reply pause for thinking time after composing
@@ -684,42 +755,45 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                     }
                 }
 
-                // Decision: Dive into thread?
-                if should_dive(&candidate_persona) {
+                // Decision: Bookmark?
+                if actions_this_scan >= max_actions_per_scan {
+                    break;
+                }
+                if should_bookmark(&candidate_persona) {
                     // Check action chaining prevention
                     let tweet_id = tweet
                         .get("id")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "dive") {
+                    if !action_tracker.can_perform_action(tweet_id, "bookmark") {
                         info!(
-                            "Skipping dive on tweet {}: action chain cooldown active",
+                            "Skipping bookmark on tweet {}: action chain cooldown active",
                             tweet_id
                         );
                     }
                     // Check limits
-                    else if !limits.can_dive(&counters) {
+                    else if !limits.can_bookmark(&counters) {
                         info!(
-                            "Skipping thread dive: limit reached ({}/{})",
-                            counters.thread_dives, limits.max_thread_dives
+                            "Skipping bookmark: limit reached ({}/{})",
+                            counters.bookmarks, limits.max_bookmarks
                         );
-                    } else if let Some(pos) = tweet
-                        .get("x")
-                        .and_then(|v| v.as_f64())
-                        .zip(tweet.get("y").and_then(|v| v.as_f64()))
-                    {
-                        dive_into_thread(api, pos.0, pos.1).await?;
-                        read_full_thread(api, thread_depth).await?;
-                        scroll_pause(api).await;
-                        counters.increment_thread_dive();
+                    } else if bookmark_tweet(api).await? {
+                        info!("Bookmarked tweet");
+                        counters.increment_bookmark();
                         _actions_taken += 1;
+                        actions_this_scan += 1;
                         // Record action for chain prevention
-                        action_tracker.record_action(tweet_id.to_string(), "dive");
-                        // Navigate back to home feed
-                        info!("Navigating back to home after thread dive");
-                        goto_home(api).await?;
-                        scroll_pause(api).await;
+                        action_tracker.record_action(tweet_id.to_string(), "bookmark");
+                        // Use clustered pause for micro-movements
+                        clustered_engagement_pause(api).await;
                     }
+                }
+
+                // Navigate back to home after engagement if we dove into thread
+                if did_dive {
+                    info!("Navigating back to home after thread dive and engagement");
+                    goto_home(api).await?;
+                    scroll_pause(api).await;
                 }
             }
         }
@@ -763,26 +837,17 @@ fn read_u32(payload: &Value, key: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
-// Helper: find the like button near a given tweet center coordinate
-// Uses cached buttons to avoid repeated DOM queries
-fn find_like_button_near(
-    buttons: &serde_json::Value,
-    tweet_x: f64,
-    tweet_y: f64,
-) -> Result<Option<(f64, f64)>> {
-    if let Some(like_obj) = buttons.get("like").and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            like_obj.get("x").and_then(|v| v.as_f64()),
-            like_obj.get("y").and_then(|v| v.as_f64()),
-        ) {
-            let dx = (x - tweet_x).abs();
-            let dy = (y - tweet_y).abs();
-            if dx < 400.0 && dy < 600.0 {
-                return Ok(Some((x, y)));
-            }
-        }
-    }
-    Ok(None)
+// Helper: extract a per-tweet button center from candidate payload.
+fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64, f64)> {
+    let button_obj = tweet
+        .get("buttons")
+        .and_then(|v| v.as_object())
+        .and_then(|buttons| buttons.get(button))
+        .and_then(|v| v.as_object())?;
+
+    let x = button_obj.get("x").and_then(|v| v.as_f64())?;
+    let y = button_obj.get("y").and_then(|v| v.as_f64())?;
+    Some((x, y))
 }
 
 // Helper: click like at a specific coordinate with profile-aware timing and hover
@@ -795,16 +860,44 @@ async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
     click_post_pause(api).await;
 
     // Verify like was registered by checking if button state changed
-    let result = page.evaluate(r#"
-        (function() {
-            var btn = document.querySelector('[data-testid="like"]');
-            if (!btn) return false;
-            var svg = btn.querySelector('svg');
+    let verify_js = format!(
+        r#"
+        (function() {{
+            var x = {x};
+            var y = {y};
+            var controls = document.querySelectorAll('button[data-testid], a[data-testid]');
+            var nearest = null;
+            var best = Number.POSITIVE_INFINITY;
+            for (var i = 0; i < controls.length; i++) {{
+                var el = controls[i];
+                var testId = (el.getAttribute('data-testid') || '').toLowerCase();
+                if (!(testId.includes('like') || testId.includes('unlike'))) continue;
+                var rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                var cx = rect.x + rect.width / 2;
+                var cy = rect.y + rect.height / 2;
+                var dist = Math.hypot(cx - x, cy - y);
+                if (dist < best) {{
+                    best = dist;
+                    nearest = el;
+                }}
+            }}
+
+            if (!nearest || best > 120) return false;
+            var nearestId = (nearest.getAttribute('data-testid') || '').toLowerCase();
+            if (nearestId.includes('unlike')) return true;
+
+            var svg = nearest.querySelector('svg');
             if (!svg) return false;
-            var color = svg.getAttribute('color') || svg.getAttribute('fill') || '';
-            return color.includes(' rgb') || color.includes('#') || svg.parentElement?.getAttribute('data-testid')?.includes('unlike');
-        })()
-    "#).await?;
+            var color = (svg.getAttribute('color') || svg.getAttribute('fill') || '').toLowerCase();
+            return color.includes('rgb') || color.includes('#');
+        }})()
+        "#,
+        x = x,
+        y = y
+    );
+
+    let result = page.evaluate(verify_js).await?;
 
     let value = result.value();
     if let Some(v) = value {
@@ -819,7 +912,6 @@ async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
 // Helper: generate a short reply string based on sentiment
 // Uses reply count as index for deterministic selection
 fn generate_reply_text(sentiment: Sentiment, reply_idx: u32) -> String {
-    let idx = (reply_idx as usize) % 5;
     const POSITIVE: &[&str] = &[
         "Great point!",
         "Absolutely agree.",
@@ -835,9 +927,9 @@ fn generate_reply_text(sentiment: Sentiment, reply_idx: u32) -> String {
         "Respectfully, I have to differ.",
     ];
     match sentiment {
-        Sentiment::Positive => POSITIVE[idx],
-        Sentiment::Neutral => NEUTRAL[idx],
-        Sentiment::Negative => NEGATIVE[idx],
+        Sentiment::Positive => POSITIVE[(reply_idx as usize) % POSITIVE.len()],
+        Sentiment::Neutral => NEUTRAL[(reply_idx as usize) % NEUTRAL.len()],
+        Sentiment::Negative => NEGATIVE[(reply_idx as usize) % NEGATIVE.len()],
     }
     .to_string()
 }
@@ -913,5 +1005,29 @@ mod tests {
             "Respectfully, I have to differ.",
         ];
         assert!(negative_phrases.contains(&&*reply));
+    }
+
+    #[test]
+    fn test_generate_reply_text_negative_wraps_without_panic() {
+        // reply_idx=9 previously panicked because NEGATIVE had 4 entries and idx used mod 5.
+        let reply = generate_reply_text(Sentiment::Negative, 9);
+        let negative_phrases = &[
+            "I disagree, but good discussion.",
+            "Different perspective, but thanks.",
+            "I see your point, though I think otherwise.",
+            "Respectfully, I have to differ.",
+        ];
+        assert!(negative_phrases.contains(&&*reply));
+    }
+
+    #[test]
+    fn test_extract_tweet_button_position() {
+        let tweet = json!({
+            "buttons": {
+                "like": { "x": 10.5, "y": 20.25 }
+            }
+        });
+        let pos = extract_tweet_button_position(&tweet, "like");
+        assert_eq!(pos, Some((10.5, 20.25)));
     }
 }

@@ -20,6 +20,8 @@ pub struct PersonaWeights {
     pub follow_prob: f64,
     /// Likelihood to reply to a tweet (0.0–1.0)
     pub reply_prob: f64,
+    /// Likelihood to bookmark a tweet (0.0–1.0)
+    pub bookmark_prob: f64,
     /// Likelihood to dive into a thread (0.0–1.0)
     pub thread_dive_prob: f64,
     /// Base interest multiplier (modulates sentiment response)
@@ -34,6 +36,7 @@ impl Default for PersonaWeights {
             quote_prob: 0.05,
             follow_prob: 0.05,
             reply_prob: 0.02,
+            bookmark_prob: 0.0,
             thread_dive_prob: 0.2,
             interest_multiplier: 1.0,
         }
@@ -70,6 +73,7 @@ impl PersonaWeights {
         self.quote_prob = perturb!(self.quote_prob);
         self.follow_prob = perturb!(self.follow_prob);
         self.reply_prob = perturb!(self.reply_prob);
+        self.bookmark_prob = perturb!(self.bookmark_prob);
         self.thread_dive_prob = perturb!(self.thread_dive_prob);
 
         self
@@ -87,6 +91,7 @@ impl PersonaWeights {
         self.quote_prob = clamp!(self.quote_prob);
         self.follow_prob = clamp!(self.follow_prob);
         self.reply_prob = clamp!(self.reply_prob);
+        self.bookmark_prob = clamp!(self.bookmark_prob);
         self.thread_dive_prob = clamp!(self.thread_dive_prob);
         self
     }
@@ -114,6 +119,9 @@ pub fn select_persona_weights(weights: Option<&Value>) -> PersonaWeights {
         }
         if let Some(v) = w.get("reply_prob").and_then(|v: &Value| v.as_f64()) {
             persona.reply_prob = v;
+        }
+        if let Some(v) = w.get("bookmark_prob").and_then(|v: &Value| v.as_f64()) {
+            persona.bookmark_prob = v;
         }
         if let Some(v) = w.get("thread_dive_prob").and_then(|v: &Value| v.as_f64()) {
             persona.thread_dive_prob = v;
@@ -174,6 +182,12 @@ pub fn should_reply(persona: &PersonaWeights) -> bool {
     rng.gen_bool(persona.reply_prob.clamp(0.0, 1.0))
 }
 
+/// Decides whether to bookmark a tweet.
+pub fn should_bookmark(persona: &PersonaWeights) -> bool {
+    let mut rng = rand::thread_rng();
+    rng.gen_bool(persona.bookmark_prob.clamp(0.0, 1.0))
+}
+
 /// Decides whether to dive into the thread.
 pub fn should_dive(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
@@ -196,6 +210,7 @@ pub fn build_persona_config(
             "quote_prob": weights.quote_prob,
             "follow_prob": weights.follow_prob,
             "reply_prob": weights.reply_prob,
+            "bookmark_prob": weights.bookmark_prob,
             "thread_dive_prob": weights.thread_dive_prob,
             "interest_multiplier": weights.interest_multiplier,
         },

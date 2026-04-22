@@ -585,11 +585,12 @@ async fn execute_task_with_retry(
 
         attempt = current_attempt;
 
-        let task_ctx = crate::runtime::task_context::TaskContext::new(
+        let task_ctx = crate::runtime::task_context::TaskContext::new_with_metrics(
             session.id.clone(),
             page.clone(),
             session.behavior_profile.clone(),
             session.behavior_runtime,
+            metrics.clone(),
         );
 
         let task_result = tokio::select! {

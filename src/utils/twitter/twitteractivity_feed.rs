@@ -102,8 +102,14 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
                         }
                     }
                     
+                    // Extract the status URL from the time element for reliable diving
+                    var timeEl = el.querySelector('a[href*="/status/"]');
+                    var statusUrl = timeEl ? timeEl.getAttribute('href') : null;
+                    
                     var tweetObj = {
                         id: tweetId,
+                        status_url: statusUrl,
+                        index: i,
                         text: tweetText,
                         x: rect.x + rect.width/2,
                         y: rect.y + rect.height/2,
@@ -146,6 +152,16 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
     let mut filtered_no_id = 0;
     let mut filtered_viewport = 0;
     let mut filtered_height = 0;
+    let viewport = match api.viewport().await {
+        Ok(vp) => vp,
+        Err(_) => {
+            // Fallback default viewport if query fails
+            crate::utils::page_size::Viewport {
+                width: 1920.0,
+                height: 1080.0,
+            }
+        }
+    };
 
     if let Some(arr) = value.and_then(|v: &serde_json::Value| v.as_array()) {
         total_found = arr.len();
@@ -175,17 +191,6 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
                 }
 
                 // Consider tweets in viewport as "candidate" (relaxed from 70% to 90%)
-                let viewport = match api.viewport().await {
-                    Ok(vp) => vp,
-                    Err(_) => {
-                        // Fallback default viewport if query fails
-                        crate::utils::page_size::Viewport {
-                            width: 1920.0,
-                            height: 1080.0,
-                        }
-                    }
-                };
-
                 if y >= (viewport.height as f64 * 0.9) {
                     filtered_viewport += 1;
                     continue;

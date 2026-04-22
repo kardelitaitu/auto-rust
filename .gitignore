@@ -11,7 +11,7 @@ config.toml
 .vscode/
 *.swp
 *.swo
-
+nul
 # OS files
 .DS_Store
 Thumbs.db

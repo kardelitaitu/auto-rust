@@ -20,6 +20,11 @@ use std::sync::Arc;
 use crate::result::TaskErrorKind;
 use crate::result::TaskResult;
 
+pub const RUN_COUNTER_CANDIDATE_SCANNED: &str = "candidate_scanned";
+pub const RUN_COUNTER_BUTTON_MISSING: &str = "button_missing";
+pub const RUN_COUNTER_CLICK_VERIFY_FAILED: &str = "click_verify_failed";
+pub const RUN_COUNTER_DIVE_TARGET_FALLBACK_USED: &str = "dive_target_fallback_used";
+
 /// Records detailed metrics for a single task execution.
 /// Captures timing, outcome, and execution context for performance analysis
 /// and debugging purposes.
@@ -141,6 +146,8 @@ pub struct MetricsCollector {
     task_breakdown: Arc<RwLock<BTreeMap<String, OutcomeBreakdown>>>,
     /// Outcome breakdown by session id
     session_breakdown: Arc<RwLock<BTreeMap<String, OutcomeBreakdown>>>,
+    /// Structured run counters emitted by tasks during execution
+    run_counters: Arc<RwLock<BTreeMap<String, usize>>>,
     /// Maximum number of historical records to keep
     max_history: usize,
 }
@@ -166,8 +173,21 @@ impl MetricsCollector {
             failure_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
             task_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
             session_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
+            run_counters: Arc::new(RwLock::new(BTreeMap::new())),
             max_history,
         }
+    }
+
+    pub fn increment_run_counter(&self, name: &str, amount: usize) {
+        if amount == 0 {
+            return;
+        }
+        let mut counters = self.run_counters.write();
+        *counters.entry(name.to_string()).or_insert(0) += amount;
+    }
+
+    pub fn run_counter(&self, name: &str) -> usize {
+        *self.run_counters.read().get(name).unwrap_or(&0)
     }
 
     pub fn task_started(&self) {
@@ -363,6 +383,14 @@ impl MetricsCollector {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TwitterActivityRunCounters {
+    pub candidate_scanned: usize,
+    pub button_missing: usize,
+    pub click_verify_failed: usize,
+    pub dive_target_fallback_used: usize,
+}
+
 /// Get current allocated memory (platform-specific)
 #[cfg(target_os = "linux")]
 fn get_allocated_memory() -> Option<usize> {
@@ -458,6 +486,8 @@ pub struct RunSummary {
     pub task_breakdown: BTreeMap<String, OutcomeBreakdown>,
     /// Outcome counts grouped by session id
     pub session_breakdown: BTreeMap<String, OutcomeBreakdown>,
+    /// Structured counters emitted from twitteractivity task execution
+    pub twitteractivity_counters: TwitterActivityRunCounters,
 }
 
 impl MetricsCollector {
@@ -480,6 +510,19 @@ impl MetricsCollector {
 
         let stats = self.get_stats();
         let unhealthy_sessions = active_sessions.saturating_sub(healthy_sessions);
+        let run_counters = self.run_counters.read();
+        let twitteractivity_counters = TwitterActivityRunCounters {
+            candidate_scanned: *run_counters
+                .get(RUN_COUNTER_CANDIDATE_SCANNED)
+                .unwrap_or(&0),
+            button_missing: *run_counters.get(RUN_COUNTER_BUTTON_MISSING).unwrap_or(&0),
+            click_verify_failed: *run_counters
+                .get(RUN_COUNTER_CLICK_VERIFY_FAILED)
+                .unwrap_or(&0),
+            dive_target_fallback_used: *run_counters
+                .get(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED)
+                .unwrap_or(&0),
+        };
 
         let summary = RunSummary {
             timestamp: now,
@@ -496,6 +539,7 @@ impl MetricsCollector {
             failure_breakdown: stats.failure_breakdown,
             task_breakdown: stats.task_breakdown,
             session_breakdown: stats.session_breakdown,
+            twitteractivity_counters,
         };
 
         let json = serde_json::to_string_pretty(&summary)?;
@@ -777,6 +821,10 @@ mod tests {
         assert_eq!(summary["healthy_sessions"], 2);
         assert_eq!(summary["unhealthy_sessions"], 1);
         assert_eq!(summary["cancelled"], 0);
+        assert_eq!(
+            summary["twitteractivity_counters"]["candidate_scanned"],
+            serde_json::json!(0)
+        );
         assert!(
             summary["task_breakdown"]["pageview"]["succeeded"]
                 .as_u64()
@@ -785,5 +833,22 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_run_counter_increments_are_exported() {
+        let collector = MetricsCollector::new(100);
+        collector.increment_run_counter(RUN_COUNTER_CANDIDATE_SCANNED, 7);
+        collector.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 2);
+        collector.increment_run_counter(RUN_COUNTER_CLICK_VERIFY_FAILED, 1);
+        collector.increment_run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, 3);
+
+        assert_eq!(collector.run_counter(RUN_COUNTER_CANDIDATE_SCANNED), 7);
+        assert_eq!(collector.run_counter(RUN_COUNTER_BUTTON_MISSING), 2);
+        assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_VERIFY_FAILED), 1);
+        assert_eq!(
+            collector.run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED),
+            3
+        );
     }
 }

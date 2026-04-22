@@ -3,47 +3,89 @@
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
+use std::time::Duration;
 use tracing::instrument;
 
 use super::twitteractivity_feed::get_scroll_progress;
 use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DiveIntoThreadOutcome {
+    pub opened: bool,
+    pub used_fallback_target: bool,
+}
+
 /// Clicks on a tweet to open it in the thread/detail view.
-/// Uses selector-based clicking on the tweet text for reliability.
+/// Uses status URL to find the element, then clicks with cursor overlay tracking.
 #[instrument(skip(api))]
-pub async fn dive_into_thread(api: &TaskContext, _x: f64, _y: f64) -> Result<()> {
-    // Find the first visible tweet and click on its text to open thread view
-    let js = r#"
-        (function() {
-            var tweets = document.querySelectorAll('article[data-testid="tweet"]');
-            for (var i = 0; i < tweets.length; i++) {
-                var el = tweets[i];
-                var rect = el.getBoundingClientRect();
-                // Find a visible tweet in the viewport
-                if (rect.height > 0 && rect.width > 0 && rect.y >= 0 && rect.y < window.innerHeight) {
-                    // Click on the tweet text to open thread
-                    var textEl = el.querySelector('[data-testid="tweetText"]');
-                    if (textEl) {
-                        textEl.click();
-                        return { success: true };
-                    }
-                }
-            }
-            return { success: false };
-        })()
-    "#;
-
-    let result = api.page().evaluate(js).await?;
-    let success = result
-        .value()
-        .and_then(|v| v.as_object())
-        .and_then(|obj| obj.get("success").and_then(|v| v.as_bool()))
-        .unwrap_or(false);
-
-    if !success {
-        return Ok(()); // No visible tweet found, skip dive
+pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<DiveIntoThreadOutcome> {
+    if status_url.is_empty() {
+        return Ok(DiveIntoThreadOutcome {
+            opened: false,
+            used_fallback_target: false,
+        });
     }
 
+    // Find the tweet element by its status URL and scroll it into view
+    let js = format!(
+        r#"
+        (function() {{
+            var links = document.querySelectorAll('a[href*="/status/"]');
+            for (var i = 0; i < links.length; i++) {{
+                var href = links[i].getAttribute('href');
+                if (href === '{}' || href.endsWith('{}')) {{
+                    // Get coordinates for clicking (skip scrollIntoView to avoid hanging)
+                    var rect = links[i].getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {{
+                        return {{ 
+                            success: true, 
+                            x: rect.x + rect.width / 2, 
+                            y: rect.y + rect.height / 2 
+                        }};
+                    }}
+                }}
+            }}
+            return {{ success: false, x: 0, y: 0 }};
+        }})()
+        "#,
+        status_url, status_url
+    );
+
+    let result = match tokio::time::timeout(
+        Duration::from_secs(5),
+        api.page().evaluate(js.as_str())
+    ).await {
+        Ok(r) => r,
+        Err(_) => {
+            return Ok(DiveIntoThreadOutcome {
+                opened: false,
+                used_fallback_target: false,
+            });
+        }
+    }?;
+    let (success, click_x, click_y) = if let Some(obj) = result.value().and_then(|v| v.as_object()) {
+        let success = obj.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        let click_x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let click_y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        (success, click_x, click_y)
+    } else {
+        (false, 0.0, 0.0)
+    };
+
+    if !success {
+        return Ok(DiveIntoThreadOutcome {
+            opened: false,
+            used_fallback_target: false,
+        });
+    }
+
+    // No pause needed since we're not scrolling
+    // human_pause(api, 500).await;
+
+    // Use Rust API for cursor movement and click (enables cursor overlay tracking)
+    api.move_mouse_to(click_x, click_y).await?;
+    human_pause(api, 250).await;
+    api.click_at(click_x, click_y).await?;
     human_pause(api, 800).await;
 
     // Wait for thread view to open (look for thread-specific indicators)
@@ -57,7 +99,10 @@ pub async fn dive_into_thread(api: &TaskContext, _x: f64, _y: f64) -> Result<()>
         .await
         .ok();
 
-    Ok(())
+    Ok(DiveIntoThreadOutcome {
+        opened: true,
+        used_fallback_target: false,
+    })
 }
 
 /// Reads the full thread by scrolling through it.

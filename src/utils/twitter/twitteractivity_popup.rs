@@ -135,35 +135,7 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
 
 /// Closes any "sign up to join the conversation" nag screens.
 /// Returns true if a signup nag was dismissed.
-#[instrument(skip(api))]
-pub async fn dismiss_signup_nag(api: &TaskContext) -> Result<bool> {
-    let js = r#"
-        (function() {
-            var nag = document.querySelector('div[data-testid="sidebarColumn"]') ||
-                      document.querySelector('div[aria-label="Sign up"]');
-            if (nag) {
-                var closeBtn = nag.querySelector('button[aria-label="Close"]');
-                if (closeBtn) {
-                    var r = closeBtn.getBoundingClientRect();
-                    return { x: r.x + r.width/2, y: r.y + r.height/2 };
-                }
-            }
-            return null;
-        })()
-    "#;
-    let result = api.page().evaluate(js.to_string()).await?;
-    let value = result.value();
-    if let Some(obj) = value.and_then(|v: &Value| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v: &Value| v.as_f64()),
-            obj.get("y").and_then(|v: &Value| v.as_f64()),
-        ) {
-            api.move_mouse_to(x, y).await?;
-            human_pause(api, 200).await;
-            api.click_at(x, y).await?;
-            human_pause(api, 500).await;
-            return Ok(true);
-        }
-    }
+/// DISABLED: Causing hangs, skip for now.
+pub async fn dismiss_signup_nag(_api: &TaskContext) -> Result<bool> {
     Ok(false)
 }

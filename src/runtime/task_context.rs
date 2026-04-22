@@ -43,6 +43,7 @@ use log::info;
 use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
 use crate::internal::page_size::{self, Viewport};
 use crate::internal::profile::{BrowserProfile, ProfileRuntime};
+use crate::metrics::MetricsCollector;
 use crate::state::ClipboardState;
 use crate::utils::mouse::{ClickOutcome, CursorMovementConfig, HoverOutcome};
 
@@ -223,6 +224,7 @@ pub struct TaskContext {
     clipboard: ClipboardState,
     behavior_profile: BrowserProfile,
     behavior_runtime: ProfileRuntime,
+    metrics: Option<Arc<MetricsCollector>>,
 }
 
 impl TaskContext {
@@ -264,7 +266,20 @@ impl TaskContext {
             clipboard,
             behavior_profile,
             behavior_runtime,
+            metrics: None,
         }
+    }
+
+    pub fn new_with_metrics(
+        session_id: impl Into<String>,
+        page: Arc<Page>,
+        behavior_profile: BrowserProfile,
+        behavior_runtime: ProfileRuntime,
+        metrics: Arc<MetricsCollector>,
+    ) -> Self {
+        let mut ctx = Self::new(session_id, page, behavior_profile, behavior_runtime);
+        ctx.metrics = Some(metrics);
+        ctx
     }
 
     pub fn session_id(&self) -> &str {
@@ -285,6 +300,12 @@ impl TaskContext {
 
     pub fn behavior_runtime(&self) -> &ProfileRuntime {
         &self.behavior_runtime
+    }
+
+    pub fn increment_run_counter(&self, name: &str, amount: usize) {
+        if let Some(metrics) = &self.metrics {
+            metrics.increment_run_counter(name, amount);
+        }
     }
 
     /// Navigates to a URL with human-like delays and settle pauses.

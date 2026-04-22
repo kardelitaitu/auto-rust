@@ -4,6 +4,7 @@
 use crate::prelude::TaskContext;
 use anyhow::Result;
 use serde_json::Value;
+use tracing::instrument;
 
 use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
@@ -14,6 +15,7 @@ use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 /// * `api` - Task context
 /// * `scroll_count` - Number of scroll actions to perform
 /// * `use_native_scroll` - If true, uses `api.scroll_to_bottom()`-style actions; else evaluate JS
+#[instrument(skip(api))]
 pub async fn scroll_feed(
     api: &TaskContext,
     scroll_count: u32,
@@ -54,9 +56,56 @@ pub async fn scroll_feed(
 }
 
 /// Scans the current viewport for tweet articles that are good engagement candidates.
-/// Returns an array of tweet objects with id and position info.
+/// Returns an array of tweet objects with id, position info, text content, and reply data.
 pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Value>> {
-    let js = selector_all_tweets();
+    let js = r#"
+        (function() {
+            var tweets = [];
+            var elements = document.querySelectorAll('article[data-testid="tweet"]');
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                var rect = el.getBoundingClientRect();
+                if (rect.height > 0 && rect.width > 0) {
+                    // Extract tweet text content
+                    var tweetTextEl = el.querySelector('[data-testid="tweetText"]');
+                    var tweetText = tweetTextEl ? tweetTextEl.textContent.trim() : '';
+                    
+                    // Extract basic tweet info
+                    var tweetObj = {
+                        id: el.dataset.tweetId || '',
+                        text: tweetText,
+                        x: rect.x + rect.width/2,
+                        y: rect.y + rect.height/2,
+                        height: rect.height,
+                        width: rect.width
+                    };
+
+                    // Extract reply information for smart decision
+                    var replies = [];
+                    var replyElements = el.querySelectorAll('[data-testid="tweetReply"]');
+                    for (var j = 0; j < Math.min(replyElements.length, 3); j++) { // Limit to top 3 replies
+                        var replyEl = replyElements[j];
+                        var authorEl = replyEl.querySelector('[dir="auto"] span:first-child');
+                        var textEl = replyEl.querySelector('[data-testid="tweetText"]');
+                        if (authorEl && textEl) {
+                            replies.push({
+                                author: authorEl.textContent.trim(),
+                                text: textEl.textContent.trim()
+                            });
+                        }
+                    }
+
+                    if (replies.length > 0) {
+                        tweetObj.replies = replies;
+                    }
+
+                    tweets.push(tweetObj);
+                }
+            }
+            return tweets;
+        })()
+    "#;
+
     let result = api.page().evaluate(js.to_string()).await?;
     let value = result.value();
 
@@ -66,7 +115,7 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
         for tweet_val in arr {
             if let Some(obj) = tweet_val.as_object() {
                 // Basic filter: tweet must have an id and be within viewport reasonably
-                if obj.get("id").is_some() {
+                if obj.get("id").is_some() && obj.get("id").unwrap().as_str().unwrap_or("") != "" {
                     let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
                     let height = obj
                         .get("height")

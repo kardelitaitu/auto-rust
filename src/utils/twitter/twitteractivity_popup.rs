@@ -3,13 +3,16 @@
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
+use log::info;
 use serde_json::Value;
+use tracing::instrument;
 
 use super::twitteractivity_navigation::is_login_flow;
 use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
 /// Checks if any known popup/overlay/modal is present on the page.
 /// Returns a description of the popup type or `None` if none detected.
+#[instrument(skip(api))]
 pub async fn detect_popup(api: &TaskContext) -> Result<Option<String>> {
     // Check for overlay/modal
     let js = selector_popup_overlay();
@@ -37,6 +40,7 @@ pub async fn detect_popup(api: &TaskContext) -> Result<Option<String>> {
 
 /// Attempts to close the currently active popup by clicking its close button.
 /// Returns true if a popup was found and closed.
+#[instrument(skip(api))]
 pub async fn close_active_popup(api: &TaskContext) -> Result<bool> {
     if let Some(popup_type) = detect_popup(api).await? {
         match popup_type.as_str() {
@@ -79,11 +83,13 @@ pub async fn close_active_popup(api: &TaskContext) -> Result<bool> {
         }
     }
 
+    info!("No popup found");
     Ok(false)
 }
 
 /// Dismisses cookie banners using known selector patterns.
 /// Returns true if a cookie banner was found and dismissed.
+#[instrument(skip(api))]
 pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
     // Try known cookie banner selectors
     let cookie_selectors = [
@@ -129,6 +135,7 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
 
 /// Closes any "sign up to join the conversation" nag screens.
 /// Returns true if a signup nag was dismissed.
+#[instrument(skip(api))]
 pub async fn dismiss_signup_nag(api: &TaskContext) -> Result<bool> {
     let js = r#"
         (function() {

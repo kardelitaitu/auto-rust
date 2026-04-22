@@ -142,8 +142,11 @@ pub fn selector_login_flow() -> &'static str {
             if (document.querySelector('form[action*="/i/flow/login"]')) return 'onboarding';
             if (document.querySelector('input[autocomplete="username"]')) return 'onboarding';
             // "Sign in to X" heading/signals
-            if (document.querySelector('h1:contains("Sign in to X")') ||
-                document.querySelector('h1:contains("Log in to X")')) return 'login';
+            var h1Elements = document.querySelectorAll('h1');
+            for (var i = 0; i < h1Elements.length; i++) {
+                var text = (h1Elements[i].textContent || '').toLowerCase();
+                if (text.includes('sign in to x') || text.includes('log in to x')) return 'login';
+            }
             return null;
         })()
     "#
@@ -260,6 +263,56 @@ pub fn selector_tweet_user_avatar() -> &'static str {
                 return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
             }
             return null;
+        })()
+    "#
+}
+
+/// Returns JS to perform a quick health check on critical selectors.
+/// Returns an object with health status of each selector type.
+pub fn selector_health_check() -> &'static str {
+    r#"
+        (function() {
+            var results = {
+                feed_visible: false,
+                tweets_found: false,
+                engagement_buttons: false,
+                follow_button: false
+            };
+
+            // Check feed visibility
+            if (document.querySelector('[data-testid="primaryColumn"]') ||
+                document.querySelector('main[role="main"]') ||
+                document.querySelector('article[data-testid="tweet"]')) {
+                results.feed_visible = true;
+            }
+
+            // Check for tweets
+            var articles = document.querySelectorAll('article[data-testid="tweet"]');
+            if (articles.length > 0 || document.querySelectorAll('article').length > 0) {
+                results.tweets_found = true;
+            }
+
+            // Check for engagement buttons
+            var buttons = document.querySelectorAll('button[data-testid], a[data-testid]');
+            for (var i = 0; i < buttons.length; i++) {
+                var testId = (buttons[i].getAttribute('data-testid') || '').toLowerCase();
+                if (testId.includes('like') || testId.includes('retweet') || testId.includes('reply')) {
+                    results.engagement_buttons = true;
+                    break;
+                }
+            }
+
+            // Check for follow button
+            var allButtons = document.querySelectorAll('[role="button"]');
+            for (var i = 0; i < allButtons.length; i++) {
+                var label = (allButtons[i].getAttribute('aria-label') || '').toLowerCase();
+                if (label.includes('follow')) {
+                    results.follow_button = true;
+                    break;
+                }
+            }
+
+            return results;
         })()
     "#
 }

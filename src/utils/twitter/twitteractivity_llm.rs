@@ -5,6 +5,7 @@
 
 use anyhow::{Context, Result};
 use log::{info, warn};
+use tracing::instrument;
 
 use crate::llm::{build_quote_messages, build_reply_messages, Llm};
 use crate::prelude::TaskContext;
@@ -19,6 +20,7 @@ use crate::prelude::TaskContext;
 ///
 /// # Returns
 /// Generated reply text (guaranteed to be <280 chars)
+#[instrument(skip(_api, top_replies))]
 pub async fn generate_reply(
     _api: &TaskContext,
     tweet_author: &str,
@@ -67,6 +69,7 @@ pub async fn generate_reply(
 ///
 /// # Returns
 /// Generated quote tweet commentary (<280 chars)
+#[instrument(skip(_api, top_replies))]
 pub async fn generate_quote_commentary(
     _api: &TaskContext,
     tweet_author: &str,
@@ -113,10 +116,11 @@ pub async fn generate_quote_commentary(
 ///
 /// # Returns
 /// true if quote tweet was successful
+#[instrument(skip(api))]
 pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     info!("Executing quote tweet with {} chars", commentary.len());
 
-    // Click quote tweet button (different from retweet button)
+    // Find quote tweet button coordinates
     let quote_btn_js = r#"
         (function() {
             var buttons = document.querySelectorAll('[role="button"]');
@@ -126,19 +130,36 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
                 if (ariaLabel.toLowerCase().includes('quote')) {
                     var rect = btn.getBoundingClientRect();
                     if (rect.width > 0 && rect.height > 0) {
-                        btn.click();
-                        return true;
+                        return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
                     }
                 }
             }
-            return false;
+            return null;
         })()
     "#;
 
-    let clicked = api.page().evaluate(quote_btn_js.to_string()).await?;
-    if !clicked.value().and_then(|v| v.as_bool()).unwrap_or(false) {
-        anyhow::bail!("Quote tweet button not found");
-    }
+    let result = api.page().evaluate(quote_btn_js.to_string()).await?;
+    let coords = result.value().and_then(|v| v.as_object());
+
+    let (x, y) = if let Some(obj) = coords {
+        (
+            obj.get("x").and_then(|v| v.as_f64()),
+            obj.get("y").and_then(|v| v.as_f64()),
+        )
+    } else {
+        (None, None)
+    };
+
+    let (x, y) = match (x, y) {
+        (Some(x), Some(y)) => (x, y),
+        _ => anyhow::bail!("Quote tweet button not found"),
+    };
+
+    // Human-like cursor movement then click
+    api.move_mouse_to(x, y).await?;
+    super::twitteractivity_humanized::human_pause(api, 300).await;
+    api.click_at(x, y).await?;
+    super::twitteractivity_humanized::human_pause(api, 600).await;
 
     // Wait for composer to appear
     api.pause(1000).await;
@@ -168,22 +189,39 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         .await?;
     api.pause(1000).await;
 
-    // Click Tweet button
+    // Find Tweet button coordinates
     let tweet_btn_js = r#"
         (function() {
             var buttons = document.querySelectorAll('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
             if (buttons.length > 0) {
-                buttons[0].click();
-                return true;
+                var rect = buttons[0].getBoundingClientRect();
+                return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
             }
-            return false;
+            return null;
         })()
     "#;
 
-    let submitted = api.page().evaluate(tweet_btn_js.to_string()).await?;
-    if !submitted.value().and_then(|v| v.as_bool()).unwrap_or(false) {
-        anyhow::bail!("Tweet button not found");
-    }
+    let result = api.page().evaluate(tweet_btn_js.to_string()).await?;
+    let coords = result.value().and_then(|v| v.as_object());
+
+    let (tx, ty) = if let Some(obj) = coords {
+        (
+            obj.get("x").and_then(|v| v.as_f64()),
+            obj.get("y").and_then(|v| v.as_f64()),
+        )
+    } else {
+        (None, None)
+    };
+
+    let (tx, ty) = match (tx, ty) {
+        (Some(tx), Some(ty)) => (tx, ty),
+        _ => anyhow::bail!("Tweet button not found"),
+    };
+
+    // Human-like cursor movement then click
+    api.move_mouse_to(tx, ty).await?;
+    super::twitteractivity_humanized::human_pause(api, 300).await;
+    api.click_at(tx, ty).await?;
 
     // Wait for post to complete
     api.pause(2000).await;
@@ -258,14 +296,14 @@ fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
 /// Removes @mentions from text.
 fn remove_mentions(text: &str) -> String {
     // Remove @username patterns but keep the word
-    let re = regex::Regex::new(r"@\w+").unwrap();
+    let re = regex::Regex::new(r"@\w+").expect("Failed to compile mentions regex");
     re.replace_all(text, "").to_string()
 }
 
 /// Removes #hashtags from text.
 fn remove_hashtags(text: &str) -> String {
     // Remove #tag patterns but keep the word
-    let re = regex::Regex::new(r"#(\w+)").unwrap();
+    let re = regex::Regex::new(r"#(\w+)").expect("Failed to compile hashtags regex");
     re.replace_all(text, "$1").to_string()
 }
 

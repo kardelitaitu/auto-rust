@@ -7,28 +7,105 @@
 //! - Integration with RoxyBrowser API for cloud-hosted browsers
 
 use crate::config::Config;
+use crate::error::{BrowserError, OrchestratorError, Result};
 use crate::session::Session;
-use anyhow::{bail, Result};
 use futures::stream::{self, StreamExt};
 use log::{debug, info, warn};
 use std::time::Duration;
 
+fn normalize_browser_token(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+fn matches_browser_filters(candidate: &str, filters: &[String]) -> bool {
+    if filters.is_empty() {
+        return true;
+    }
+
+    let candidate_lower = candidate.to_lowercase();
+    let candidate_norm = normalize_browser_token(candidate);
+
+    filters.iter().any(|filter| {
+        let filter_lower = filter.to_lowercase();
+        let filter_norm = normalize_browser_token(filter);
+
+        !filter_norm.is_empty()
+            && (candidate_lower.contains(&filter_lower)
+                || candidate_norm.contains(&filter_norm)
+                || candidate_norm == filter_norm)
+    })
+}
+
+fn profile_matches_filters(profile: &crate::config::BrowserProfile, filters: &[String]) -> bool {
+    matches_browser_filters(&profile.name, filters)
+        || matches_browser_filters(&profile.r#type, filters)
+}
+
+fn session_matches_filters(session: &Session, filters: &[String]) -> bool {
+    matches_browser_filters(&session.name, filters)
+        || matches_browser_filters(&session.profile_type, filters)
+        || matches_browser_filters(&session.id, filters)
+}
+
+/// Discovers and connects to browser instances based on configuration.
+///
+/// This function attempts to connect to browsers through multiple channels:
+/// 1. Configured browser profiles (local Brave, Chrome, etc.)
+/// 2. RoxyBrowser cloud-hosted browsers (if enabled)
+/// 3. Auto-discovery of local browser instances
+///
+/// # Arguments
+///
+/// * `config` - The orchestrator configuration containing browser settings
+///
+/// # Returns
+///
+/// A vector of successfully connected `Session` instances.
+///
+/// # Errors
+///
+/// Returns an error if no browsers can be discovered after all retry attempts.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use rust_orchestrator::browser::discover_browsers;
+/// # use rust_orchestrator::config::Config;
+/// # async fn example(config: &Config) -> anyhow::Result<()> {
+/// let sessions = discover_browsers(config).await?;
+/// println!("Discovered {} browsers", sessions.len());
+/// # Ok(())
+/// # }
+/// ```
 pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
+    discover_browsers_with_filters(config, &[]).await
+}
+
+/// Discovers browser sessions and optionally filters them by browser name/type tokens.
+pub async fn discover_browsers_with_filters(
+    config: &Config,
+    browser_filters: &[String],
+) -> Result<Vec<Session>> {
     let mut sessions = Vec::new();
 
-    info!("Starting browser discovery...");
+    if !browser_filters.is_empty() {
+        info!("Browser filters active: {}", browser_filters.join(", "));
+    }
 
     for attempt in 1..=config.browser.max_discovery_retries {
-        info!(
-            "Discovery attempt {}/{}",
-            attempt, config.browser.max_discovery_retries
-        );
-
         // Try configured profiles
         for profile in &config.browser.profiles {
+            if !profile_matches_filters(profile, browser_filters) {
+                debug!("Skipping profile {} due to browser filters", profile.name);
+                continue;
+            }
+
             match connect_to_browser(profile, config).await {
                 Ok(session) => {
-                    info!("Connected to configured browser: {}", profile.name);
                     sessions.push(session);
                 }
                 Err(e) => {
@@ -39,15 +116,19 @@ pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
 
         // Try Roxybrowser discovery (always enabled)
         let roxy_sessions = discover_roxybrowser(config).await?;
-        for session in roxy_sessions {
-            info!("Discovered Roxybrowser: {}", session.name);
+        for session in roxy_sessions
+            .into_iter()
+            .filter(|session| session_matches_filters(session, browser_filters))
+        {
             sessions.push(session);
         }
 
         // Try auto-discovery for local browsers
         let discovered_sessions = discover_local_browsers(config).await?;
-        for session in discovered_sessions {
-            info!("Auto-discovered browser: {}", session.name);
+        for session in discovered_sessions
+            .into_iter()
+            .filter(|session| session_matches_filters(session, browser_filters))
+        {
             sessions.push(session);
         }
 
@@ -63,9 +144,38 @@ pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
         }
     }
 
+    // Log discovery summary
+    if sessions.is_empty() {
+        warn!("No browsers discovered");
+    } else {
+        let names: Vec<_> = sessions.iter().map(|s| s.name.as_str()).collect();
+        info!(
+            "Discovered {} browser(s): {}",
+            sessions.len(),
+            names.join(", ")
+        );
+    }
+
     Ok(sessions)
 }
 
+/// Connects to a browser instance using the specified profile configuration.
+///
+/// # Arguments
+///
+/// * `profile` - The browser profile containing connection details
+/// * `config` - The orchestrator configuration
+///
+/// # Returns
+///
+/// A `Session` instance representing the connected browser.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The WebSocket endpoint is empty
+/// - The connection to the browser fails
+/// - Session initialization fails
 async fn connect_to_browser(
     profile: &crate::config::BrowserProfile,
     config: &Config,
@@ -73,14 +183,19 @@ async fn connect_to_browser(
     let ws_endpoint = &profile.ws_endpoint;
 
     if ws_endpoint.is_empty() {
-        bail!("Empty WebSocket endpoint for profile: {}", profile.name);
+        return Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+            format!("Empty WebSocket endpoint for profile: {}", profile.name),
+        )));
     }
-
-    info!("Connecting to configured browser: {}", profile.name);
 
     let (browser, handler) = chromiumoxide::Browser::connect(ws_endpoint)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to {}: {}", profile.name, e))?;
+        .map_err(|e| {
+            OrchestratorError::Browser(BrowserError::ConnectionFailed(format!(
+                "Failed to connect to {}: {}",
+                profile.name, e
+            )))
+        })?;
 
     let session = Session::new(
         format!("config-{}", profile.name),
@@ -90,16 +205,25 @@ async fn connect_to_browser(
         handler,
         config.browser.max_workers_per_session,
         config.browser.cursor_overlay_ms,
+        Some(config.browser.circuit_breaker.clone()),
     );
 
-    info!("Connected to configured browser: {}", profile.name);
     Ok(session)
 }
 
-/// Auto-discover local browsers (Brave, Chrome, etc.)
+/// Auto-discovers local browser instances (Brave, Chrome, etc.).
+///
+/// Scans common CDP (Chrome DevTools Protocol) ports (9001-9050) for local
+/// browser instances that are running with remote debugging enabled.
+///
+/// # Arguments
+///
+/// * `config` - The orchestrator configuration
+///
+/// # Returns
+///
+/// A vector of successfully connected `Session` instances.
 async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
-    info!("Scanning for local Brave browsers...");
-
     let ports: Vec<u16> = (9001..=9050).collect();
 
     let results: Vec<Option<Session>> = stream::iter(ports)
@@ -112,7 +236,20 @@ async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
     Ok(sessions)
 }
 
-/// Discover a Brave browser instance on a specific port
+/// Attempts to discover a Brave browser instance on a specific port.
+///
+/// Checks if a browser is running with remote debugging enabled on the
+/// specified port by querying the CDP version endpoint.
+///
+/// # Arguments
+///
+/// * `port` - The port to check for a browser instance
+/// * `config` - The orchestrator configuration
+///
+/// # Returns
+///
+/// * `Some(Session)` - If a browser is found and connected
+/// * `None` - If no browser is found on this port
 async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Session>> {
     let cdp_url = format!("http://127.0.0.1:{port}/json/version");
 
@@ -144,6 +281,7 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                                     handler,
                                     config.browser.max_workers_per_session,
                                     config.browser.cursor_overlay_ms,
+                                    Some(config.browser.circuit_breaker.clone()),
                                 );
                                 return Ok(Some(session));
                             }
@@ -163,7 +301,18 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
     Ok(None)
 }
 
-/// Discover Roxybrowser instances via API
+/// Discovers RoxyBrowser cloud-hosted browser instances via API.
+///
+/// Queries the RoxyBrowser API to retrieve available browser instances
+/// and creates sessions for them.
+///
+/// # Arguments
+///
+/// * `config` - The orchestrator configuration containing RoxyBrowser API settings
+///
+/// # Returns
+///
+/// A vector of successfully connected `Session` instances from RoxyBrowser.
 async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
     let api_url = &config.browser.roxybrowser.api_url;
     let api_key = &config.browser.roxybrowser.api_key;
@@ -246,6 +395,7 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
                     handler,
                     config.browser.max_workers_per_session,
                     config.browser.cursor_overlay_ms,
+                    Some(config.browser.circuit_breaker.clone()),
                 );
                 sessions.push(session);
                 info!("Connected to Roxybrowser: {profile_name}");
@@ -257,4 +407,18 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
     }
 
     Ok(sessions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_browser_filter_matching() {
+        let filters = vec!["brave".to_string(), "roxybrowser".to_string()];
+
+        assert!(matches_browser_filters("Brave on port 9001", &filters));
+        assert!(matches_browser_filters("roxy-browser", &filters));
+        assert!(!matches_browser_filters("Safari", &filters));
+    }
 }

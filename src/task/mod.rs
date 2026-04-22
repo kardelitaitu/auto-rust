@@ -90,7 +90,9 @@ pub async fn perform_task(
 
 async fn execute_single_attempt(api: &TaskContext, name: &str, payload: &Value) -> Result<()> {
     match name {
-        "cookiebot" => cookiebot::run(api, payload.clone()).await,
+        "cookiebot" => cookiebot::run(api, payload.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!(e)),
         "pageview" => pageview::run(api, payload.clone()).await,
         "demo-keyboard" => demo_keyboard::run(api, payload.clone()).await,
         "demo-mouse" => demo_mouse::run(api, payload.clone()).await,

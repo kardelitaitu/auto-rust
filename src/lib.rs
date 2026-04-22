@@ -16,6 +16,7 @@ pub mod browser;
 pub mod capabilities;
 pub mod cli;
 pub mod config;
+pub mod error;
 pub mod health_logger;
 pub mod health_monitor;
 pub mod internal;
@@ -28,10 +29,10 @@ pub mod runtime;
 pub mod session;
 pub mod state;
 pub mod tests;
+pub mod tracing;
 pub mod utils;
 pub mod validation;
 
-#[path = "../task/mod.rs"]
 pub mod task;
 
 pub use llm::{ChatMessage, Llm, LlmClient, LlmProvider};

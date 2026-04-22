@@ -10,20 +10,44 @@
 use crate::api::RetryPolicy;
 use crate::cli::TaskDefinition;
 use crate::config::Config;
+use crate::error::{OrchestratorError, Result, SessionError, TaskError};
 use crate::logger::{scoped_log_context, LogContext};
 use crate::metrics::MetricsCollector;
 use crate::result::{TaskErrorKind, TaskResult};
 use crate::session::Session;
-use anyhow::{bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{timeout, Duration};
 use tokio_util::sync::CancellationToken;
 
 /// Formats milliseconds into a human-readable duration string.
+///
+/// Converts a duration in milliseconds to a concise, human-readable format:
+/// - < 1000ms: "500ms"
+/// - < 60s: "30s"
+/// - < 1h: "5min" or "5min 30s"
+/// - >= 1h: "2h" or "2h 15min"
+///
+/// # Arguments
+///
+/// * `ms` - Duration in milliseconds
+///
+/// # Returns
+///
+/// A human-readable duration string.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Internal helper example:
+/// // assert_eq!(format_duration(500), "500ms");
+/// // assert_eq!(format_duration(5000), "5s");
+/// // assert_eq!(format_duration(90000), "1min 30s");
+/// // assert_eq!(format_duration(3600000), "1h");
+/// ```
 fn format_duration(ms: u64) -> String {
     if ms < 1000 {
         format!("{}ms", ms)
@@ -49,9 +73,83 @@ fn format_duration(ms: u64) -> String {
     }
 }
 
+fn broadcast_execution_count(task_count: usize, session_count: usize) -> usize {
+    task_count.saturating_mul(session_count)
+}
+
+struct GlobalExecutionSlot {
+    active_counter: Arc<AtomicUsize>,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl GlobalExecutionSlot {
+    fn new(active_counter: Arc<AtomicUsize>, permit: OwnedSemaphorePermit) -> Self {
+        active_counter.fetch_add(1, Ordering::SeqCst);
+        Self {
+            active_counter,
+            _permit: permit,
+        }
+    }
+}
+
+impl Drop for GlobalExecutionSlot {
+    fn drop(&mut self) {
+        self.active_counter.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+async fn acquire_global_execution_slot(
+    task_name: &str,
+    session_id: &str,
+    queue_start: std::time::Instant,
+    global_active_tasks: Arc<AtomicUsize>,
+    global_semaphore: Arc<Semaphore>,
+    cancel_token: CancellationToken,
+) -> std::result::Result<GlobalExecutionSlot, TaskResult> {
+    let permit = tokio::select! {
+        permit = global_semaphore.acquire_owned() => permit,
+        _ = cancel_token.cancelled() => {
+            return Err(TaskResult::cancelled(
+                queue_start.elapsed().as_millis() as u64,
+                format!(
+                    "Task {task_name} cancelled before acquiring global execution slot for session {session_id}"
+                ),
+                TaskErrorKind::Timeout,
+            ));
+        }
+    };
+
+    match permit {
+        Ok(permit) => Ok(GlobalExecutionSlot::new(global_active_tasks, permit)),
+        Err(_) => Err(TaskResult::failure(
+            queue_start.elapsed().as_millis() as u64,
+            format!(
+                "Task {task_name} failed to acquire global execution slot for session {session_id}"
+            ),
+            TaskErrorKind::Session,
+        )),
+    }
+}
+
 /// Central coordinator for task execution across multiple browser sessions.
-/// Manages global concurrency limits, session allocation, and task distribution.
-/// Ensures efficient resource utilization and fault tolerance.
+///
+/// The `Orchestrator` manages:
+/// - Global concurrency limits across all sessions
+/// - Session allocation and task distribution
+/// - Retry logic with exponential backoff
+/// - Error handling and load balancing
+/// - Resource allocation and distribution
+///
+/// # Examples
+///
+/// ```no_run
+/// # use rust_orchestrator::orchestrator::Orchestrator;
+/// # use rust_orchestrator::config::Config;
+/// # async fn example(config: Config) {
+/// let mut orchestrator = Orchestrator::new(config);
+/// // Execute task groups across sessions
+/// # }
+/// ```
 pub struct Orchestrator {
     /// Configuration settings for orchestration behavior
     config: Config,
@@ -63,13 +161,27 @@ pub struct Orchestrator {
 
 impl Orchestrator {
     /// Creates a new orchestrator with the given configuration.
+    ///
     /// Initializes global concurrency controls and prepares for task execution.
+    /// The orchestrator respects the configured `max_global_concurrency` limit
+    /// to prevent resource exhaustion.
     ///
     /// # Arguments
+    ///
     /// * `config` - Configuration settings for orchestration behavior
     ///
     /// # Returns
-    /// A new Orchestrator instance ready for task execution
+    ///
+    /// A new `Orchestrator` instance ready for task execution.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::orchestrator::Orchestrator;
+    /// # use rust_orchestrator::config::Config;
+    /// # let config: Config = todo!();
+    /// let orchestrator = Orchestrator::new(config);
+    /// ```
     pub fn new(config: Config) -> Self {
         Self {
             global_active_tasks: Arc::new(AtomicUsize::new(0)),
@@ -79,15 +191,28 @@ impl Orchestrator {
     }
 
     /// Executes a group of tasks across available browser sessions.
+    ///
     /// Tasks within a group run in parallel across different sessions,
-    /// respecting global concurrency limits.
+    /// respecting global concurrency limits. Each task is broadcast to all
+    /// healthy sessions, with partial failure allowed if at least one session succeeds.
+    ///
+    /// # Execution Model
+    ///
+    /// - Tasks run in parallel across sessions
+    /// - Global semaphore limits total concurrent task-session executions
+    /// - Retry logic with exponential backoff
+    /// - Health scoring and session selection
     ///
     /// # Arguments
+    ///
     /// * `group` - Slice of task definitions to execute
     /// * `sessions` - Available browser sessions for task execution
+    /// * `metrics` - Metrics collector for tracking execution statistics
     ///
     /// # Returns
-    /// Vector of task results, one for each task in the group
+    ///
+    /// `Ok(())` if the group completes successfully (allowing partial failures)
+    /// `Err(OrchestratorError)` if all sessions fail for all tasks
     pub async fn execute_group(
         &mut self,
         group: &[TaskDefinition],
@@ -95,7 +220,9 @@ impl Orchestrator {
         metrics: Arc<MetricsCollector>,
     ) -> Result<()> {
         if sessions.is_empty() {
-            bail!("No active sessions available");
+            return Err(OrchestratorError::Session(
+                SessionError::InitializationFailed("No active sessions available".to_string()),
+            ));
         }
 
         if group.is_empty() {
@@ -105,9 +232,10 @@ impl Orchestrator {
 
         let group_start = std::time::Instant::now();
         info!(
-            "Executing group with {} task(s) across {} session(s)",
+            "Broadcast fan-out: {} task(s) x {} session(s) = {} execution(s)",
             group.len(),
-            sessions.len()
+            sessions.len(),
+            broadcast_execution_count(group.len(), sessions.len())
         );
 
         // Apply group timeout
@@ -117,19 +245,14 @@ impl Orchestrator {
         let mut task_futures: FuturesUnordered<_> = group
             .iter()
             .map(|task_def| {
-                let global_active = self.global_active_tasks.clone();
-                let global_sem = self.global_semaphore.clone();
                 let config = self.config.clone();
                 let metrics = metrics.clone();
                 let cancel_token = group_cancel.clone();
+                let global_active = self.global_active_tasks.clone();
+                let global_sem = self.global_semaphore.clone();
 
                 async move {
-                    // Global concurrency throttling
-                    let _permit = global_sem.acquire().await?;
-                    global_active.fetch_add(1, Ordering::SeqCst);
-
                     if cancel_token.is_cancelled() {
-                        global_active.fetch_sub(1, Ordering::SeqCst);
                         return Ok(());
                     }
 
@@ -151,10 +274,10 @@ impl Orchestrator {
                         &config,
                         metrics.clone(),
                         cancel_token,
+                        global_active,
+                        global_sem,
                     )
                     .await;
-
-                    global_active.fetch_sub(1, Ordering::SeqCst);
                     result
                 }
             })
@@ -184,10 +307,10 @@ impl Orchestrator {
         }
 
         if timed_out {
-            bail!(
-                "Group timeout exceeded ({}ms)",
-                self.config.orchestrator.group_timeout_ms
-            );
+            return Err(OrchestratorError::Task(TaskError::Timeout {
+                task_name: "task group".to_string(),
+                timeout_ms: self.config.orchestrator.group_timeout_ms,
+            }));
         }
 
         let success_count = results.iter().filter(|r| r.is_ok()).count();
@@ -208,24 +331,38 @@ impl Orchestrator {
     }
 }
 
-/// Execute a single task on ALL sessions in parallel
-/// Wait for ALL sessions to complete (each runs independently)
+/// Executes a single task on all available sessions in parallel.
+///
+/// This function broadcasts a task to all sessions, waits for all to complete,
+/// and returns success if at least one session succeeds. Each session runs
+/// the task independently with its own retry logic.
+///
+/// # Arguments
+///
+/// * `task_def` - The task definition to execute
+/// * `sessions` - Available browser sessions
+/// * `config` - The orchestrator configuration
+/// * `metrics` - Metrics collector for tracking
+/// * `cancel_token` - Cancellation token for graceful shutdown
+///
+/// # Returns
+///
+/// `Ok(())` if at least one session succeeds
+/// `Err(OrchestratorError)` if all sessions fail
 async fn execute_task_on_session(
     task_def: &TaskDefinition,
     sessions: &[Session],
     config: &Config,
     metrics: Arc<MetricsCollector>,
     cancel_token: CancellationToken,
+    global_active_tasks: Arc<AtomicUsize>,
+    global_semaphore: Arc<Semaphore>,
 ) -> Result<()> {
     if sessions.is_empty() {
-        bail!("No sessions available");
+        return Err(OrchestratorError::Session(
+            SessionError::InitializationFailed("No sessions available".to_string()),
+        ));
     }
-
-    info!(
-        "[{}] Starting task on {} sessions",
-        task_def.name,
-        sessions.len()
-    );
 
     // Create parallel tasks for each session
     let session_futures: Vec<_> = sessions
@@ -235,7 +372,24 @@ async fn execute_task_on_session(
             let config = config.clone();
             let metrics = metrics.clone();
             let cancel_token = cancel_token.clone();
+            let global_active_tasks = global_active_tasks.clone();
+            let global_semaphore = global_semaphore.clone();
             async move {
+                let queue_start = std::time::Instant::now();
+                let _slot = match acquire_global_execution_slot(
+                    &task_def.name,
+                    &session.id,
+                    queue_start,
+                    global_active_tasks,
+                    global_semaphore,
+                    cancel_token.clone(),
+                )
+                .await
+                {
+                    Ok(slot) => slot,
+                    Err(task_result) => return (session.id.clone(), task_result),
+                };
+
                 let result =
                     execute_task_with_retry(&task_def, session, &config, metrics, cancel_token)
                         .await;
@@ -254,7 +408,6 @@ async fn execute_task_on_session(
         metrics.task_completed_from_result(task_def.name.clone(), session_id.clone(), &task_result);
 
         if task_result.is_success() {
-            info!("[{}][{}] Completed", session_id, task_def.name);
             success_count += 1;
         } else {
             warn!(
@@ -271,11 +424,6 @@ async fn execute_task_on_session(
     }
 
     if failed_sessions.is_empty() {
-        info!(
-            "[{}] All {} sessions completed successfully",
-            task_def.name,
-            sessions.len()
-        );
         Ok(())
     } else {
         warn!(
@@ -295,11 +443,10 @@ async fn execute_task_on_session(
             );
             Ok(())
         } else {
-            bail!(
-                "Task {} failed on all {} sessions",
-                task_def.name,
-                sessions.len()
-            )
+            return Err(OrchestratorError::Task(TaskError::ExecutionFailed {
+                task_name: task_def.name.clone(),
+                reason: format!("failed on all {} sessions", sessions.len()),
+            }));
         }
     }
 }
@@ -470,10 +617,6 @@ async fn execute_task_with_retry(
                 session.release_page(page).await;
                 drop(permit);
                 session.mark_healthy();
-                info!(
-                    "task_cleanup | task={} session={} status=success attempt={}",
-                    task_def.name, session.id, current_attempt
-                );
                 return task_result.with_attempt(current_attempt, max_retries);
             }
             Ok(Ok(task_result)) => {
@@ -600,6 +743,9 @@ fn should_mark_session_unhealthy(kind: TaskErrorKind, was_cancelled: bool) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::result::TaskStatus;
+    use futures::stream::FuturesUnordered;
+    use tokio::time::sleep;
 
     #[test]
     fn test_format_duration_milliseconds() {
@@ -631,6 +777,12 @@ mod tests {
     }
 
     #[test]
+    fn test_broadcast_execution_count() {
+        assert_eq!(broadcast_execution_count(0, 5), 0);
+        assert_eq!(broadcast_execution_count(3, 4), 12);
+    }
+
+    #[test]
     fn test_non_timeout_failure_marks_session_unhealthy() {
         assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
@@ -639,5 +791,102 @@ mod tests {
             false
         ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
+    }
+
+    #[tokio::test]
+    async fn test_global_execution_slot_enforces_hard_concurrency_bound() {
+        let global_semaphore = Arc::new(Semaphore::new(2));
+        let global_active = Arc::new(AtomicUsize::new(0));
+        let peak_active = Arc::new(AtomicUsize::new(0));
+        let cancel_token = CancellationToken::new();
+        let mut executions = FuturesUnordered::new();
+
+        for i in 0..8 {
+            let global_semaphore = global_semaphore.clone();
+            let global_active = global_active.clone();
+            let peak_active = peak_active.clone();
+            let cancel_token = cancel_token.clone();
+            executions.push(tokio::spawn(async move {
+                let _slot = acquire_global_execution_slot(
+                    "pageview",
+                    &format!("session-{i}"),
+                    std::time::Instant::now(),
+                    global_active.clone(),
+                    global_semaphore,
+                    cancel_token,
+                )
+                .await
+                .expect("slot should be acquired");
+
+                let current = global_active.load(Ordering::SeqCst);
+                loop {
+                    let prev_peak = peak_active.load(Ordering::SeqCst);
+                    if current <= prev_peak {
+                        break;
+                    }
+                    if peak_active
+                        .compare_exchange(prev_peak, current, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
+                        break;
+                    }
+                }
+
+                sleep(Duration::from_millis(25)).await;
+            }));
+        }
+
+        while let Some(result) = executions.next().await {
+            result.expect("execution task should complete");
+        }
+
+        assert_eq!(global_active.load(Ordering::SeqCst), 0);
+        assert!(
+            peak_active.load(Ordering::SeqCst) <= 2,
+            "peak active executions exceeded configured global concurrency"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_global_execution_slot_cancels_while_waiting_for_permit() {
+        let global_semaphore = Arc::new(Semaphore::new(1));
+        let global_active = Arc::new(AtomicUsize::new(0));
+        let cancel_token = CancellationToken::new();
+
+        let held_slot = acquire_global_execution_slot(
+            "cookiebot",
+            "session-1",
+            std::time::Instant::now(),
+            global_active.clone(),
+            global_semaphore.clone(),
+            cancel_token.clone(),
+        )
+        .await
+        .expect("first slot should be acquired");
+
+        let waiting_cancel = cancel_token.clone();
+        let waiting = tokio::spawn(async move {
+            acquire_global_execution_slot(
+                "cookiebot",
+                "session-2",
+                std::time::Instant::now(),
+                global_active,
+                global_semaphore,
+                waiting_cancel,
+            )
+            .await
+        });
+
+        sleep(Duration::from_millis(10)).await;
+        cancel_token.cancel();
+
+        let waiting_result = waiting.await.expect("waiting task should join");
+        let task_result = match waiting_result {
+            Ok(_) => panic!("second slot should be cancelled"),
+            Err(task_result) => task_result,
+        };
+        assert_eq!(task_result.status, TaskStatus::Cancelled);
+
+        drop(held_slot);
     }
 }

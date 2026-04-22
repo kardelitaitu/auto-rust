@@ -16,8 +16,8 @@ use crate::metrics::MetricsCollector;
 pub struct HealthLoggerConfig {
     /// How often to log health metrics (e.g., 60 seconds)
     pub interval: Duration,
-    /// Memory usage threshold in bytes; warnings emitted if exceeded
-    pub memory_warning_threshold_bytes: u64,
+    /// Memory usage threshold as percentage (0-100); warnings emitted if exceeded
+    pub memory_warning_percentage: f64,
     /// Whether to include detailed memory info in logs
     pub verbose: bool,
 }
@@ -26,7 +26,7 @@ impl Default for HealthLoggerConfig {
     fn default() -> Self {
         Self {
             interval: Duration::from_secs(60),
-            memory_warning_threshold_bytes: 1024 * 1024 * 1024, // 1 GiB
+            memory_warning_percentage: 86.0, // 86%
             verbose: false,
         }
     }
@@ -107,11 +107,12 @@ impl HealthLogger {
                     }
 
                     // Threshold warning
-                    if mem > config.memory_warning_threshold_bytes {
+                    if mem_pct > config.memory_warning_percentage {
                         warn!(
-                            "[health] Memory usage {:.1} MiB exceeds threshold {:.1} MiB",
+                            "[health] Memory usage {:.1}% ({:.1} MiB) exceeds threshold {:.1}%",
+                            mem_pct,
                             mem as f64 / 1024.0 / 1024.0,
-                            config.memory_warning_threshold_bytes as f64 / 1024.0 / 1024.0
+                            config.memory_warning_percentage
                         );
                     }
 

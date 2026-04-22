@@ -6,7 +6,7 @@
 //! - Provides detailed error messages for invalid inputs
 //! - Delegates to task-specific validation functions
 
-use anyhow::{bail, Result};
+use crate::error::{OrchestratorError, Result, TaskError};
 use log::info;
 use serde_json::Value;
 
@@ -66,7 +66,10 @@ impl TaskPayload {
 
     fn validate_object_payload(&self, task_name: &str) -> Result<()> {
         if !self.payload.is_object() {
-            bail!("{task_name} payload must be an object");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: task_name.to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
         }
         Ok(())
     }
@@ -75,7 +78,10 @@ impl TaskPayload {
         // cookiebot doesn't require specific payload keys
         // Just verify it's a valid JSON object
         if !self.payload.is_object() {
-            bail!("cookiebot payload must be an object");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "cookiebot".to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
         }
         Ok(())
     }
@@ -86,7 +92,10 @@ impl TaskPayload {
 
     fn validate_twitterfollow(&self) -> Result<()> {
         if !self.payload.is_object() {
-            bail!("twitterfollow payload must be an object");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "twitterfollow".to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
         }
 
         let has_username = self
@@ -109,7 +118,10 @@ impl TaskPayload {
             .unwrap_or(false);
 
         if !(has_username || has_url || has_value) {
-            bail!("twitterfollow payload requires username, url, or value");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "twitterfollow".to_string(),
+                reason: "requires username, url, or value".to_string(),
+            }));
         }
 
         Ok(())
@@ -117,7 +129,10 @@ impl TaskPayload {
 
     fn validate_twitterquote(&self) -> Result<()> {
         if !self.payload.is_object() {
-            bail!("twitterquote payload must be an object");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "twitterquote".to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
         }
 
         let has_url = self
@@ -140,13 +155,19 @@ impl TaskPayload {
             .unwrap_or(false);
 
         if !(has_url || has_value) {
-            bail!("twitterquote payload requires url or value");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "twitterquote".to_string(),
+                reason: "requires url or value".to_string(),
+            }));
         }
 
         if has_quote_text {
             let text = self.payload.get("quote_text").unwrap().as_str().unwrap();
             if text.len() > 280 {
-                bail!("twitterquote quote_text exceeds 280 characters");
+                return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                    task_name: "twitterquote".to_string(),
+                    reason: "quote_text exceeds 280 characters".to_string(),
+                }));
             }
         }
 
@@ -155,7 +176,10 @@ impl TaskPayload {
 
     fn validate_twitterreply(&self) -> Result<()> {
         if !self.payload.is_object() {
-            bail!("twitterreply payload must be an object");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "twitterreply".to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
         }
 
         let has_url = self
@@ -172,7 +196,10 @@ impl TaskPayload {
             .unwrap_or(false);
 
         if !(has_url || has_value) {
-            bail!("twitterreply payload requires url or value");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "twitterreply".to_string(),
+                reason: "requires url or value".to_string(),
+            }));
         }
 
         Ok(())
@@ -180,14 +207,20 @@ impl TaskPayload {
 
     fn validate_twitteractivity(&self) -> Result<()> {
         if !self.payload.is_object() {
-            bail!("twitteractivity payload must be an object");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "twitteractivity".to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
         }
         Ok(())
     }
 
     fn validate_demoqa(&self) -> Result<()> {
         if !self.payload.is_object() {
-            bail!("demoqa payload must be an object");
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "demoqa".to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
         }
         Ok(())
     }
@@ -203,7 +236,10 @@ pub fn validate_task(name: &str, payload: Value) -> Result<()> {
 /// execution stay in sync.
 pub fn resolve_pageview_target(payload: &Value) -> Result<String> {
     if !payload.is_object() {
-        bail!("pageview payload must be an object");
+        return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+            task_name: "pageview".to_string(),
+            reason: "payload must be an object".to_string(),
+        }));
     }
 
     for key in ["url", "value"] {
@@ -214,7 +250,10 @@ pub fn resolve_pageview_target(payload: &Value) -> Result<String> {
         }
     }
 
-    bail!("pageview payload requires 'url' or 'value'");
+    Err(OrchestratorError::Task(TaskError::ValidationFailed {
+        task_name: "pageview".to_string(),
+        reason: "requires 'url' or 'value'".to_string(),
+    }))
 }
 
 #[cfg(test)]
@@ -252,5 +291,20 @@ mod tests {
             resolve_pageview_target(&json!({"value":"https://example.com"})).unwrap(),
             "https://example.com"
         );
+    }
+
+    #[test]
+    fn task_example_requires_object() {
+        assert!(validate_task("task-example", json!([])).is_err());
+        assert!(validate_task("task-example", json!({})).is_ok());
+    }
+
+    #[test]
+    fn unknown_task_accepts_any_payload() {
+        // Unknown tasks should pass validation with any payload (just logs info)
+        assert!(validate_task("unknown-task", json!({})).is_ok());
+        assert!(validate_task("unknown-task", json!({"any":"value"})).is_ok());
+        assert!(validate_task("unknown-task", json!([])).is_ok());
+        assert!(validate_task("unknown-task", json!(null)).is_ok());
     }
 }

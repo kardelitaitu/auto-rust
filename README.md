@@ -671,6 +671,31 @@ export MAX_GLOBAL_CONCURRENCY=10
 3. Inspect health logs for session issues
 4. Verify configuration with `config::validate_config()`
 
+## 📚 Documentation
+
+### API Documentation
+
+Generate and view the Rust API documentation locally:
+
+```bash
+# Generate HTML documentation
+cargo doc --all-features
+
+# Open in default browser
+cargo doc --open
+```
+
+The generated documentation is saved to `target/doc/` and includes:
+- Detailed API documentation for all public modules and functions
+- Examples for common operations
+- Type information and trait implementations
+- Cross-references between related items
+
+### User Guides
+
+- [Task Authoring Guide](docs/TASK_AUTHORING_GUIDE.md) - How to author browser automation tasks
+- [Documentation Summary](docs/SUMMARY.md) - Overview of available documentation
+
 ## 📚 API Reference
 
 ### Task Authoring

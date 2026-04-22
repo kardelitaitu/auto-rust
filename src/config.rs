@@ -3,7 +3,7 @@
 //! Handles loading, validating, and applying configuration settings for the orchestrator.
 //! Supports TOML configuration files with environment variable overrides.
 
-use anyhow::{bail, Result};
+use crate::error::{ConfigError, OrchestratorError, Result};
 use log::{info, warn};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -23,6 +23,9 @@ pub struct Config {
     /// Twitter activity task configuration
     #[serde(default)]
     pub twitter_activity: TwitterActivityConfig,
+    /// OpenTelemetry tracing configuration
+    #[serde(default)]
+    pub tracing: TracingConfig,
 }
 
 /// Configuration for browser connections and management.
@@ -194,6 +197,28 @@ fn default_reply_probability() -> f64 {
 }
 fn default_quote_probability() -> f64 {
     0.15
+}
+
+/// OpenTelemetry tracing configuration.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct TracingConfig {
+    /// Whether OpenTelemetry tracing is enabled
+    #[serde(default)]
+    pub enabled: bool,
+    /// OTLP endpoint URL (e.g., "http://localhost:4317")
+    #[serde(default = "default_otlp_endpoint")]
+    pub otlp_endpoint: String,
+    /// Service name for tracing
+    #[serde(default = "default_service_name")]
+    pub service_name: String,
+}
+
+fn default_otlp_endpoint() -> String {
+    "http://localhost:4317".to_string()
+}
+
+fn default_service_name() -> String {
+    "rust-orchestrator".to_string()
 }
 
 /// Engagement limits configuration for Twitter automation.
@@ -515,6 +540,7 @@ fn load_code_config() -> Result<Config> {
             retry_delay_ms: 500,
         },
         twitter_activity: TwitterActivityConfig::default(),
+        tracing: TracingConfig::default(),
     })
 }
 
@@ -636,6 +662,12 @@ pub fn validate_config(config: &Config) -> Result<()> {
     // Validate Twitter Activity config
     report.validate_twitter_activity_config(&config.twitter_activity)?;
 
+    // Validate LLM config
+    report.validate_llm_config(&config.twitter_activity.llm)?;
+
+    // Validate tracing config
+    report.validate_tracing_config(&config.tracing)?;
+
     info!("Config validation passed");
     Ok(())
 }
@@ -659,14 +691,18 @@ impl ConfigValidationReport {
     pub fn validate_orchestrator_config(&self, config: &OrchestratorConfig) -> Result<()> {
         // Concurrency validation (1-100 range)
         if config.max_global_concurrency == 0 {
-            bail!("max_global_concurrency must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "max_global_concurrency".to_string(),
+                value: config.max_global_concurrency.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.max_global_concurrency > 100 {
-            bail!(
-                "max_global_concurrency ({}) exceeds maximum recommended value (100). \
-                 Values this high may cause resource exhaustion.",
-                config.max_global_concurrency
-            );
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "max_global_concurrency".to_string(),
+                value: config.max_global_concurrency.to_string(),
+                reason: "exceeds maximum recommended value (100). Values this high may cause resource exhaustion.".to_string(),
+            }));
         }
         if config.max_global_concurrency > 50 {
             warn!(
@@ -678,7 +714,11 @@ impl ConfigValidationReport {
 
         // Timeout validations
         if config.task_timeout_ms == 0 {
-            bail!("task_timeout_ms must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "task_timeout_ms".to_string(),
+                value: config.task_timeout_ms.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.task_timeout_ms < 5_000 {
             warn!(
@@ -694,7 +734,11 @@ impl ConfigValidationReport {
         }
 
         if config.group_timeout_ms == 0 {
-            bail!("group_timeout_ms must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "group_timeout_ms".to_string(),
+                value: config.group_timeout_ms.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.group_timeout_ms < config.task_timeout_ms {
             warn!(
@@ -706,7 +750,11 @@ impl ConfigValidationReport {
 
         // Worker timeout validation
         if config.worker_wait_timeout_ms == 0 {
-            bail!("worker_wait_timeout_ms must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "worker_wait_timeout_ms".to_string(),
+                value: config.worker_wait_timeout_ms.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.worker_wait_timeout_ms < 1_000 {
             warn!(
@@ -733,6 +781,16 @@ impl ConfigValidationReport {
             );
         }
 
+        // Cross-field validation: total retry time should not exceed task timeout
+        let total_retry_time = config.retry_delay_ms * config.max_retries as u64;
+        if total_retry_time > config.task_timeout_ms {
+            warn!(
+                "Total retry time ({}ms) exceeds task_timeout_ms ({}ms). \
+                 Tasks may timeout before all retries are attempted.",
+                total_retry_time, config.task_timeout_ms
+            );
+        }
+
         // Stagger delay validation
         if config.task_stagger_delay_ms > 10_000 {
             warn!(
@@ -748,7 +806,11 @@ impl ConfigValidationReport {
     pub fn validate_browser_config(&self, config: &BrowserConfig) -> Result<()> {
         // Discovery retry validation
         if config.max_discovery_retries == 0 {
-            bail!("max_discovery_retries must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "max_discovery_retries".to_string(),
+                value: config.max_discovery_retries.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.max_discovery_retries > 10 {
             warn!(
@@ -768,7 +830,11 @@ impl ConfigValidationReport {
         }
 
         if config.max_workers_per_session == 0 {
-            bail!("max_workers_per_session must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "max_workers_per_session".to_string(),
+                value: config.max_workers_per_session.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.max_workers_per_session > 20 {
             warn!(
@@ -781,15 +847,19 @@ impl ConfigValidationReport {
         let mut seen_names = std::collections::HashSet::new();
         for profile in &config.profiles {
             if !seen_names.insert(&profile.name) {
-                bail!(
-                    "Duplicate browser profile name: '{}'. Profile names must be unique.",
-                    profile.name
-                );
+                return Err(OrchestratorError::Config(ConfigError::ValidationFailed(
+                    format!(
+                        "Duplicate browser profile name: '{}'. Profile names must be unique.",
+                        profile.name
+                    ),
+                )));
             }
 
             // Validate profile name is not empty
             if profile.name.trim().is_empty() {
-                bail!("Browser profile name cannot be empty");
+                return Err(OrchestratorError::Config(ConfigError::ValidationFailed(
+                    "Browser profile name cannot be empty".to_string(),
+                )));
             }
         }
 
@@ -797,10 +867,19 @@ impl ConfigValidationReport {
         if !config.roxybrowser.api_url.is_empty() {
             let url = &config.roxybrowser.api_url;
             if !url.starts_with("http://") && !url.starts_with("https://") {
-                bail!(
-                    "RoxyBrowser API URL must start with http:// or https://. Got: {}",
-                    url
-                );
+                return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                    field: "roxybrowser.api_url".to_string(),
+                    value: url.clone(),
+                    reason: "must start with http:// or https://".to_string(),
+                }));
+            }
+            // Validate URL format
+            if let Err(_) = url.parse::<reqwest::Url>() {
+                return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                    field: "roxybrowser.api_url".to_string(),
+                    value: url.clone(),
+                    reason: "invalid URL format".to_string(),
+                }));
             }
             if !url.ends_with('/') {
                 warn!(
@@ -825,7 +904,11 @@ impl ConfigValidationReport {
         }
 
         if config.failure_threshold == 0 {
-            bail!("circuit_breaker.failure_threshold must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "circuit_breaker.failure_threshold".to_string(),
+                value: config.failure_threshold.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.failure_threshold > 20 {
             warn!(
@@ -835,7 +918,11 @@ impl ConfigValidationReport {
         }
 
         if config.success_threshold == 0 {
-            bail!("circuit_breaker.success_threshold must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "circuit_breaker.success_threshold".to_string(),
+                value: config.success_threshold.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.success_threshold > 10 {
             warn!(
@@ -871,16 +958,21 @@ impl ConfigValidationReport {
             );
         }
         if config.feed_scan_duration_ms > 1_800_000 {
-            bail!(
-                "twitter_activity.feed_scan_duration_ms ({}) exceeds maximum (30min). \
-                 Consider breaking into multiple shorter scans.",
-                config.feed_scan_duration_ms
-            );
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.feed_scan_duration_ms".to_string(),
+                value: config.feed_scan_duration_ms.to_string(),
+                reason: "exceeds maximum (30min). Consider breaking into multiple shorter scans."
+                    .to_string(),
+            }));
         }
 
         // Feed scroll count validation
         if config.feed_scroll_count == 0 {
-            bail!("twitter_activity.feed_scroll_count must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.feed_scroll_count".to_string(),
+                value: config.feed_scroll_count.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.feed_scroll_count > 100 {
             warn!(
@@ -891,7 +983,11 @@ impl ConfigValidationReport {
 
         // Engagement candidate count validation
         if config.engagement_candidate_count == 0 {
-            bail!("twitter_activity.engagement_candidate_count must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.engagement_candidate_count".to_string(),
+                value: config.engagement_candidate_count.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
         if config.engagement_candidate_count > 20 {
             warn!(
@@ -914,9 +1010,12 @@ impl ConfigValidationReport {
         let limits = &config.engagement_limits;
 
         if limits.max_total_actions == 0 {
-            bail!("twitter_activity.engagement_limits.max_total_actions must be > 0");
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.engagement_limits.max_total_actions".to_string(),
+                value: limits.max_total_actions.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
         }
-
         if limits.max_total_actions > 50 {
             warn!(
                 "twitter_activity.engagement_limits.max_total_actions ({}) is very high. \
@@ -967,6 +1066,128 @@ impl ConfigValidationReport {
                  Twitter may flag this as automated behavior. Recommended: ≤2",
                 limits.max_follows
             );
+        }
+
+        Ok(())
+    }
+
+    /// Validate LLM configuration
+    pub fn validate_llm_config(&self, config: &TwitterLLMConfig) -> Result<()> {
+        if !config.enabled {
+            return Ok(());
+        }
+
+        // Temperature validation (should be 0.0 - 2.0 for most models)
+        if config.temperature < 0.0 {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.llm.temperature".to_string(),
+                value: config.temperature.to_string(),
+                reason: "must be non-negative".to_string(),
+            }));
+        }
+        if config.temperature > 2.0 {
+            warn!(
+                "twitter_activity.llm.temperature ({}) is high (>2.0). This may produce less coherent responses.",
+                config.temperature
+            );
+        }
+
+        // Max tokens validation
+        if config.max_tokens == 0 {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.llm.max_tokens".to_string(),
+                value: config.max_tokens.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
+        }
+        if config.max_tokens > 4096 {
+            warn!(
+                "twitter_activity.llm.max_tokens ({}) is high. Consider using smaller values for faster responses.",
+                config.max_tokens
+            );
+        }
+
+        // Timeout validation
+        if config.timeout_ms == 0 {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.llm.timeout_ms".to_string(),
+                value: config.timeout_ms.to_string(),
+                reason: "must be > 0".to_string(),
+            }));
+        }
+        if config.timeout_ms > 60000 {
+            warn!(
+                "twitter_activity.llm.timeout_ms ({}) is high (>2min). LLM requests may take long to timeout.",
+                config.timeout_ms
+            );
+        }
+
+        // Probability validation (should be 0.0 - 1.0)
+        if config.reply_probability < 0.0 || config.reply_probability > 1.0 {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.llm.reply_probability".to_string(),
+                value: config.reply_probability.to_string(),
+                reason: "must be between 0.0 and 1.0".to_string(),
+            }));
+        }
+        if config.quote_tweet_probability < 0.0 || config.quote_tweet_probability > 1.0 {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.llm.quote_tweet_probability".to_string(),
+                value: config.quote_tweet_probability.to_string(),
+                reason: "must be between 0.0 and 1.0".to_string(),
+            }));
+        }
+
+        // Provider validation
+        if config.provider.is_empty() {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.llm.provider".to_string(),
+                value: config.provider.clone(),
+                reason: "must not be empty".to_string(),
+            }));
+        }
+        if config.model.is_empty() {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "twitter_activity.llm.model".to_string(),
+                value: config.model.clone(),
+                reason: "must not be empty".to_string(),
+            }));
+        }
+
+        Ok(())
+    }
+
+    /// Validate tracing configuration
+    pub fn validate_tracing_config(&self, config: &TracingConfig) -> Result<()> {
+        if !config.enabled {
+            return Ok(());
+        }
+
+        // Validate OTLP endpoint
+        if config.otlp_endpoint.is_empty() {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "tracing.otlp_endpoint".to_string(),
+                value: config.otlp_endpoint.clone(),
+                reason: "must not be empty when tracing is enabled".to_string(),
+            }));
+        }
+
+        // Validate service name
+        if config.service_name.is_empty() {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "tracing.service_name".to_string(),
+                value: config.service_name.clone(),
+                reason: "must not be empty".to_string(),
+            }));
+        }
+
+        // Validate URL format for OTLP endpoint
+        if let Err(_) = config.otlp_endpoint.parse::<reqwest::Url>() {
+            return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                field: "tracing.otlp_endpoint".to_string(),
+                value: config.otlp_endpoint.clone(),
+                reason: "invalid URL format".to_string(),
+            }));
         }
 
         Ok(())

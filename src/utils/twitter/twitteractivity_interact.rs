@@ -3,12 +3,58 @@
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
+use tracing::instrument;
 
 use super::twitteractivity_humanized::*;
+
+/// Gets the current page URL.
+#[instrument(skip(api))]
+pub async fn get_current_url(api: &TaskContext) -> Result<String> {
+    let js = r#"
+        (function() {
+            return window.location.href;
+        })()
+    "#;
+    let result = api.page().evaluate(js).await?;
+    result
+        .value()
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow::anyhow!("Failed to get current URL"))
+}
+
+/// Checks if we're on the home feed.
+#[instrument(skip(api))]
+pub async fn is_on_home_feed(api: &TaskContext) -> Result<bool> {
+    let url = get_current_url(api).await?;
+    Ok(url.contains("x.com/home") || url.contains("twitter.com/home"))
+}
+
+/// Checks if we're on a tweet detail page.
+#[instrument(skip(api))]
+pub async fn is_on_tweet_page(api: &TaskContext) -> Result<bool> {
+    let url = get_current_url(api).await?;
+    Ok(url.contains("/status/") || url.contains("x.com/") && url.contains("/status/"))
+}
+
+/// Navigates to tweet by moving mouse to it and clicking.
+/// Simplified to avoid scroll-related hanging issues.
+#[instrument(skip(api))]
+pub async fn navigate_to_tweet(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
+    // Just move mouse and click - no scrolling
+    // The tweet should already be in viewport from the scan
+    api.move_mouse_to(x, y).await?;
+    human_pause(api, 200).await;
+    api.click_at(x, y).await?;
+    human_pause(api, 400).await;
+
+    Ok(true)
+}
 
 /// Clicks the "like" (heart) button on the current tweet.
 /// Uses proper filtering then Coords + api.click_at.
 /// Returns true if the like action appears to have been successful.
+#[instrument(skip(api))]
 pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
     // Find like button with proper filtering, return coords
     let js = r#"
@@ -109,6 +155,7 @@ pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
 }
 
 /// Full retweet action: click retweet then confirm.
+#[instrument(skip(api))]
 pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
     if click_retweet_button(api).await? {
         human_pause(api, 500).await;
@@ -191,6 +238,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 }
 
 /// Full reply flow: open composer, type text, send.
+#[instrument(skip(api))]
 pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<bool> {
     if !click_reply_button(api).await? {
         return Ok(false);
@@ -199,6 +247,7 @@ pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<bool>
 }
 
 /// Clicks the "follow" button with proper filtering + Coords + api.click_at.
+#[instrument(skip(api))]
 pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     let js = r#"
         (function() {

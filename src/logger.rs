@@ -28,7 +28,7 @@ pub struct LogContext {
 }
 
 impl LogContext {
-    /// Returns formatted context string like "[brave-9002][Teen][pageview]"
+    /// Returns formatted context string like "\[brave-9002\]\[Teen\]\[pageview\]"
     pub fn format(&self) -> String {
         let mut parts = Vec::new();
 
@@ -111,6 +111,12 @@ impl Log for FileLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            // Filter out chromiumoxide WebSocket deserialization errors
+            if record.target().starts_with("chromiumoxide") {
+                // Suppress chromiumoxide logs to reduce noise
+                return;
+            }
+
             let timestamp = Local::now().format("%H:%M:%S").to_string();
 
             // Get logging context

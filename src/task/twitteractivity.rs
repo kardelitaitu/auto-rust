@@ -50,20 +50,109 @@ const MIN_ACTION_CHAIN_DELAY_MS: u64 = 3000;
 /// Minimum delay between feed candidate scans (ms)
 const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;
 
+/// Entry point for navigation (URL and weight)
+struct EntryPoint {
+    url: &'static str,
+    weight: u32,
+}
+
+/// Weighted entry points matching Node.js implementation
+const ENTRY_POINTS: [EntryPoint; 15] = [
+    // Primary Entry (59%)
+    EntryPoint {
+        url: "https://x.com/",
+        weight: 59,
+    },
+    // 4% Weight Group (32% total)
+    EntryPoint {
+        url: "https://x.com/i/jf/global-trending/home",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/explore",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/for-you",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/trending",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/i/bookmarks",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/notifications",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/notifications/mentions",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/i/chat/",
+        weight: 4,
+    },
+    // 2% Weight Group (4% total)
+    EntryPoint {
+        url: "https://x.com/i/connect_people?show_topics=false",
+        weight: 2,
+    },
+    EntryPoint {
+        url: "https://x.com/i/connect_people?is_creator_only=true",
+        weight: 2,
+    },
+    // Legacy/Supplementary Exploratory Points (5% total)
+    EntryPoint {
+        url: "https://x.com/explore/tabs/news",
+        weight: 1,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/sports",
+        weight: 1,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/entertainment",
+        weight: 1,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/for_you",
+        weight: 1,
+    },
+];
+
+/// Select a weighted entry point randomly
+pub fn select_entry_point() -> &'static str {
+    let total_weight: u32 = ENTRY_POINTS.iter().map(|ep| ep.weight).sum();
+    let mut random = rand::random::<u32>() % total_weight;
+
+    for entry in ENTRY_POINTS.iter() {
+        if random < entry.weight {
+            return entry.url;
+        }
+        random -= entry.weight;
+    }
+
+    ENTRY_POINTS[0].url // fallback to home
+}
+
 /// Tracks the last action type and timestamp for each tweet to prevent unrealistic action chains.
 #[derive(Debug, Clone, Default)]
-struct TweetActionTracker {
+pub struct TweetActionTracker {
     /// Maps tweet ID to (last_action_type, timestamp)
     last_action: HashMap<String, (&'static str, Instant)>,
 }
 
 impl TweetActionTracker {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
     /// Check if an action is allowed on this tweet (prevents rapid action chains).
-    fn can_perform_action(&self, tweet_id: &str, _action_type: &str) -> bool {
+    pub fn can_perform_action(&self, tweet_id: &str, _action_type: &str) -> bool {
         if let Some((_, last_time)) = self.last_action.get(tweet_id) {
             let elapsed = last_time.elapsed();
             // Enforce minimum delay between different action types on same tweet
@@ -75,7 +164,7 @@ impl TweetActionTracker {
     }
 
     /// Record that an action was performed on a tweet.
-    fn record_action(&mut self, tweet_id: String, action_type: &'static str) {
+    pub fn record_action(&mut self, tweet_id: String, action_type: &'static str) {
         let tweet_id_for_log = tweet_id.clone();
         self.last_action
             .insert(tweet_id, (action_type, Instant::now()));
@@ -84,6 +173,69 @@ impl TweetActionTracker {
             action_type, tweet_id_for_log, MIN_ACTION_CHAIN_DELAY_MS
         );
     }
+}
+
+/// Verifies we're on the home feed and navigates back if not.
+async fn ensure_home_context(api: &TaskContext) -> Result<()> {
+    if !is_on_home_feed(api).await.unwrap_or(false) {
+        warn!("Not on home feed, navigating back to home");
+        goto_home(api).await?;
+        human_pause(api, 500).await;
+    }
+    Ok(())
+}
+
+/// Navigate to weighted entry point and simulate reading if not on home.
+/// Following Node.js navigateAndRead pattern.
+async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()> {
+    let entry_name = entry_url
+        .replace("https://x.com/", "")
+        .replace("https://x.com", "");
+    let entry_name = if entry_name.is_empty() {
+        "home"
+    } else {
+        &entry_name
+    };
+
+    info!("🎲 Rolled entry point: {} → {}", entry_name, entry_url);
+
+    // Navigate to entry point
+    api.navigate(entry_url, 30000).await?;
+    human_pause(api, 2000).await;
+
+    // Check if on home feed
+    let on_home = is_on_home_feed(api).await.unwrap_or(false);
+
+    if !on_home {
+        // Simulate reading on non-home page
+        let scroll_duration = rand::random::<u64>() % 10000 + 10000; // 10-20s
+        info!(
+            "📖 Simulating reading on {} for {}s",
+            entry_name,
+            scroll_duration / 1000
+        );
+
+        let scroll_start = Instant::now();
+        let profile = api.behavior_runtime();
+        while scroll_start.elapsed().as_millis() < scroll_duration as u128 {
+            let scroll_amount = (rand::random::<u64>() % 400 + 200) as i32;
+            let _ = api
+                .scroll_read(
+                    1,
+                    scroll_amount,
+                    profile.scroll.smooth,
+                    profile.scroll.back_scroll,
+                )
+                .await;
+            human_pause(api, rand::random::<u64>() % 300 + 200).await;
+        }
+
+        info!("✅ Finished reading, navigating to home...");
+        goto_home(api).await?;
+        human_pause(api, 500).await;
+    }
+
+    Ok(())
 }
 
 /// Task entry point called by orchestrator.
@@ -131,10 +283,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     info!(
         "Persona weights: like={:.2}, rt={:.2}, follow={:.2}, reply={:.2}",
-        persona.like_prob,
-        persona.retweet_prob,
-        persona.follow_prob,
-        persona.reply_prob
+        persona.like_prob, persona.retweet_prob, persona.follow_prob, persona.reply_prob
     );
 
     // Initialize engagement counters and limits
@@ -155,8 +304,9 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     );
 
     // Phase 1: Navigation & authentication check
-    info!("Phase 1: Navigation to home feed");
-    goto_home(api).await?;
+    info!("Phase 1: Navigation to entry point");
+    let entry_url = select_entry_point();
+    navigate_and_read(api, entry_url).await?;
 
     if verify_login(api).await? {
         info!("User is logged in - proceeding");
@@ -195,6 +345,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let mut next_scroll = Instant::now();
     let mut next_candidate_scan = Instant::now();
 
+    // Session-level error recovery (following Node.js pattern)
     while Instant::now() < deadline {
         let now = Instant::now();
 
@@ -535,7 +686,19 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
                 // Decision: Dive into thread?
                 if should_dive(&candidate_persona) {
-                    if !limits.can_dive(&counters) {
+                    // Check action chaining prevention
+                    let tweet_id = tweet
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    if !action_tracker.can_perform_action(tweet_id, "dive") {
+                        info!(
+                            "Skipping dive on tweet {}: action chain cooldown active",
+                            tweet_id
+                        );
+                    }
+                    // Check limits
+                    else if !limits.can_dive(&counters) {
                         info!(
                             "Skipping thread dive: limit reached ({}/{})",
                             counters.thread_dives, limits.max_thread_dives
@@ -550,7 +713,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                         scroll_pause(api).await;
                         counters.increment_thread_dive();
                         _actions_taken += 1;
+                        // Record action for chain prevention
+                        action_tracker.record_action(tweet_id.to_string(), "dive");
                         // Navigate back to home feed
+                        info!("Navigating back to home after thread dive");
                         goto_home(api).await?;
                         scroll_pause(api).await;
                     }

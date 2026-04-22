@@ -13,6 +13,8 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use crate::error::{ConfigError, Result};
+
 #[derive(Parser, Debug)]
 #[command(name = "rust-orchestrator")]
 #[command(about = "Multi-browser automation orchestrator")]
@@ -26,7 +28,7 @@ pub struct Args {
     #[arg(required = false)]
     pub tasks: Vec<String>,
 
-    /// Comma-separated list of browser types to connect to
+    /// Comma-separated list of browser names or types to connect to
     #[arg(long)]
     pub browsers: Option<String>,
 }
@@ -66,14 +68,14 @@ pub fn is_known_task(task_name: &str) -> bool {
 pub fn task_file_exists(task_name: &str) -> bool {
     let clean_name = task_name.strip_suffix(".js").unwrap_or(task_name);
 
-    // Check for .rs file in task/ directory
-    let task_path = Path::new("task").join(format!("{}.rs", clean_name));
+    // Check for .rs file in src/task/ directory
+    let task_path = Path::new("src/task").join(format!("{}.rs", clean_name));
     if task_path.exists() {
         return true;
     }
 
     // Also check for .js fallback (for compatibility)
-    let js_path = Path::new("task").join(format!("{}.js", clean_name));
+    let js_path = Path::new("src/task").join(format!("{}.js", clean_name));
     js_path.exists()
 }
 
@@ -130,6 +132,37 @@ pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidatio
     }
 
     results
+}
+
+/// Validate task groups and fail fast on any warning.
+pub fn validate_task_groups_strict(groups: &[Vec<TaskDefinition>]) -> Result<()> {
+    let results = validate_task_groups(groups);
+    let mut errors = Vec::new();
+
+    for result in results {
+        if !result.warnings.is_empty() {
+            errors.extend(result.warnings);
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(ConfigError::ValidationFailed(errors.join(" | ")).into())
+    }
+}
+
+/// Parse the `--browsers` CLI filter into normalized tokens.
+pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
+    let mut seen = HashSet::new();
+
+    value
+        .unwrap_or("")
+        .split(',')
+        .map(|item| item.trim().to_lowercase())
+        .filter(|item| !item.is_empty())
+        .filter(|item| seen.insert(item.clone()))
+        .collect()
 }
 
 /// Parse CLI args into task groups for sequential execution
@@ -547,6 +580,35 @@ mod tests {
         assert!(!result.is_known);
         assert!(!result.warnings.is_empty());
         assert!(result.warnings[0].contains("Unknown task name"));
+    }
+
+    #[test]
+    fn test_validate_task_groups_strict_known_tasks() {
+        let groups = vec![vec![TaskDefinition {
+            name: "cookiebot".to_string(),
+            payload: HashMap::new(),
+        }]];
+
+        assert!(validate_task_groups_strict(&groups).is_ok());
+    }
+
+    #[test]
+    fn test_validate_task_groups_strict_unknown_task() {
+        let groups = vec![vec![TaskDefinition {
+            name: "unknown_task".to_string(),
+            payload: HashMap::new(),
+        }]];
+
+        assert!(validate_task_groups_strict(&groups).is_err());
+    }
+
+    #[test]
+    fn test_parse_browser_filters() {
+        let filters = parse_browser_filters(Some(" Brave , roxybrowser, brave "));
+        assert_eq!(
+            filters,
+            vec!["brave".to_string(), "roxybrowser".to_string()]
+        );
     }
 
     #[test]

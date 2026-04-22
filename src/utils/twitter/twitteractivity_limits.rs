@@ -1,10 +1,9 @@
 //! Engagement limits and counters for Twitter automation.
-//!
-//! Prevents rate limits and bans by tracking actions taken during a session
-//! and enforcing configurable limits per action type.
+//! Enforces rate limits to prevent bans and realistic behavior.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::instrument;
 
 /// Tracks the number of actions taken during a Twitter session.
 /// Used to enforce rate limits and prevent account restrictions.
@@ -28,11 +27,13 @@ pub struct EngagementCounters {
 
 impl EngagementCounters {
     /// Creates a new counters instance with all counts at zero.
+    #[instrument]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns total number of engagement actions taken.
+    #[instrument]
     pub fn total_actions(&self) -> u32 {
         self.likes
             + self.retweets
@@ -44,41 +45,49 @@ impl EngagementCounters {
     }
 
     /// Increments the like counter.
+    #[instrument]
     pub fn increment_like(&mut self) {
         self.likes += 1;
     }
 
     /// Increments the retweet counter.
+    #[instrument]
     pub fn increment_retweet(&mut self) {
         self.retweets += 1;
     }
 
     /// Increments the follow counter.
+    #[instrument]
     pub fn increment_follow(&mut self) {
         self.follows += 1;
     }
 
     /// Increments the reply counter.
+    #[instrument]
     pub fn increment_reply(&mut self) {
         self.replies += 1;
     }
 
     /// Increments the thread dive counter.
+    #[instrument]
     pub fn increment_thread_dive(&mut self) {
         self.thread_dives += 1;
     }
 
     /// Increments the bookmark counter.
+    #[instrument]
     pub fn increment_bookmark(&mut self) {
         self.bookmarks += 1;
     }
 
     /// Increments the quote tweet counter.
+    #[instrument]
     pub fn increment_quote_tweet(&mut self) {
         self.quote_tweets += 1;
     }
 
     /// Returns a summary of all counters as a HashMap.
+    #[instrument]
     pub fn to_summary(&self) -> HashMap<String, u32> {
         let mut summary = HashMap::new();
         summary.insert("likes".to_string(), self.likes);
@@ -87,6 +96,7 @@ impl EngagementCounters {
         summary.insert("replies".to_string(), self.replies);
         summary.insert("thread_dives".to_string(), self.thread_dives);
         summary.insert("bookmarks".to_string(), self.bookmarks);
+        summary.insert("quote_tweets".to_string(), self.quote_tweets);
         summary
     }
 }
@@ -177,11 +187,13 @@ impl Default for EngagementLimits {
 
 impl EngagementLimits {
     /// Creates a new limits instance with conservative defaults.
+    #[instrument]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Creates a new limits instance with custom values.
+    #[instrument]
     #[allow(clippy::too_many_arguments)]
     pub fn with_limits(
         max_likes: u32,
@@ -205,38 +217,45 @@ impl EngagementLimits {
         }
     }
 
-    /// Checks if a like action is allowed given current counters.
+    /// Returns true if a like action is still allowed.
+    #[instrument(skip(counters))]
     pub fn can_like(&self, counters: &EngagementCounters) -> bool {
         counters.likes < self.max_likes && counters.total_actions() < self.max_total_actions
     }
 
-    /// Checks if a retweet action is allowed given current counters.
+    /// Returns true if a retweet action is still allowed.
+    #[instrument(skip(counters))]
     pub fn can_retweet(&self, counters: &EngagementCounters) -> bool {
         counters.retweets < self.max_retweets && counters.total_actions() < self.max_total_actions
     }
 
-    /// Checks if a follow action is allowed given current counters.
+    /// Returns true if a follow action is still allowed.
+    #[instrument(skip(counters))]
     pub fn can_follow(&self, counters: &EngagementCounters) -> bool {
         counters.follows < self.max_follows && counters.total_actions() < self.max_total_actions
     }
 
-    /// Checks if a reply action is allowed given current counters.
+    /// Returns true if a reply action is still allowed.
+    #[instrument(skip(counters))]
     pub fn can_reply(&self, counters: &EngagementCounters) -> bool {
         counters.replies < self.max_replies && counters.total_actions() < self.max_total_actions
     }
 
-    /// Checks if a thread dive is allowed given current counters.
+    /// Returns true if a thread dive is still allowed.
+    #[instrument(skip(counters))]
     pub fn can_dive(&self, counters: &EngagementCounters) -> bool {
         counters.thread_dives < self.max_thread_dives
             && counters.total_actions() < self.max_total_actions
     }
 
-    /// Checks if a bookmark action is allowed given current counters.
+    /// Returns true if a bookmark action is still allowed.
+    #[instrument(skip(counters))]
     pub fn can_bookmark(&self, counters: &EngagementCounters) -> bool {
         counters.bookmarks < self.max_bookmarks && counters.total_actions() < self.max_total_actions
     }
 
-    /// Checks if a quote tweet action is allowed given current counters.
+    /// Returns true if a quote tweet action is still allowed.
+    #[instrument(skip(counters))]
     pub fn can_quote_tweet(&self, counters: &EngagementCounters) -> bool {
         counters.quote_tweets < self.max_quote_tweets
             && counters.total_actions() < self.max_total_actions
@@ -470,10 +489,12 @@ mod tests {
         counters.increment_like();
         counters.increment_retweet();
         counters.increment_follow();
+        counters.increment_quote_tweet();
 
         let summary = counters.to_summary();
         assert_eq!(summary.get("likes").copied().unwrap_or(0), 1);
         assert_eq!(summary.get("retweets").copied().unwrap_or(0), 1);
         assert_eq!(summary.get("follows").copied().unwrap_or(0), 1);
+        assert_eq!(summary.get("quote_tweets").copied().unwrap_or(0), 1);
     }
 }

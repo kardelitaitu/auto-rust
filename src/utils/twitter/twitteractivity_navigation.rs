@@ -4,11 +4,18 @@
 use crate::prelude::TaskContext;
 use anyhow::Result;
 use serde_json::Value;
+use tracing::instrument;
 
 use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
+/// Default timeout for navigation operations in milliseconds
+const DEFAULT_NAVIGATION_TIMEOUT_MS: u64 = 30_000;
+/// Default timeout for wait operations in milliseconds
+const DEFAULT_WAIT_TIMEOUT_MS: u64 = 15_000;
+
 /// Navigates to Twitter/X home timeline.
 /// URL varies by user region/login state; tries known working URLs.
+#[instrument(skip(api))]
 pub async fn goto_home(api: &TaskContext) -> Result<()> {
     let urls = [
         "https://x.com/home",
@@ -16,7 +23,7 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
         "https://x.com/",
         "https://twitter.com/",
     ];
-    let timeout_ms = 30_000;
+    let timeout_ms = DEFAULT_NAVIGATION_TIMEOUT_MS;
 
     for url in &urls {
         api.navigate(url, timeout_ms).await?;
@@ -37,7 +44,7 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
 /// Typically https://x.com/notifications or similar.
 pub async fn goto_notifications(api: &TaskContext) -> Result<()> {
     let url = "https://x.com/notifications";
-    api.navigate(url, 30_000).await?;
+    api.navigate(url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
     // Wait for either the notifications column or fallback signals
     api.wait_for_any_visible_selector(
         &[
@@ -45,7 +52,7 @@ pub async fn goto_notifications(api: &TaskContext) -> Result<()> {
             "main[role='main']",
             "a[aria-label='Notifications']",
         ],
-        15_000,
+        DEFAULT_WAIT_TIMEOUT_MS,
     )
     .await
     .ok();
@@ -74,6 +81,7 @@ pub async fn is_login_flow(api: &TaskContext) -> Result<bool> {
 
 /// Verifies that the user is logged in by checking absence of login indicators.
 /// Returns `true` if the page looks like a logged-in timeline.
+#[instrument(skip(api))]
 pub async fn verify_login(api: &TaskContext) -> Result<bool> {
     // First verify feed is visible
     let feed_visible = is_feed_visible(api).await?;
@@ -96,4 +104,43 @@ pub async fn wait_for_page_ready(
         .wait_for_any_visible_selector(selectors, timeout_ms)
         .await?;
     Ok(ready)
+}
+
+/// Performs a quick health check on critical Twitter selectors.
+/// Logs warnings if selectors are failing (indicates DOM changes).
+pub async fn check_selector_health(api: &TaskContext) -> Result<()> {
+    let js = selector_health_check();
+    let result = api.page().evaluate(js.to_string()).await?;
+    let value = result.value();
+
+    if let Some(obj) = value.and_then(|v| v.as_object()) {
+        let feed_ok = obj
+            .get("feed_visible")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let tweets_ok = obj
+            .get("tweets_found")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let buttons_ok = obj
+            .get("engagement_buttons")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if !feed_ok {
+            log::warn!("Selector health check: feed selector failing");
+        }
+        if !tweets_ok {
+            log::warn!("Selector health check: tweet selector failing");
+        }
+        if !buttons_ok {
+            log::warn!("Selector health check: engagement button selector failing");
+        }
+
+        if feed_ok && tweets_ok && buttons_ok {
+            log::info!("Selector health check: all critical selectors OK");
+        }
+    }
+
+    Ok(())
 }

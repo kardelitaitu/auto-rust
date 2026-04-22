@@ -24,7 +24,6 @@ use crate::result::TaskResult;
 /// Captures timing, outcome, and execution context for performance analysis
 /// and debugging purposes.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct TaskMetrics {
     /// Name of the task that was executed
     pub task_name: String,
@@ -119,7 +118,6 @@ impl OutcomeBreakdown {
 /// Collects and aggregates performance metrics across all task executions.
 /// Provides real-time statistics and historical data for monitoring system health
 /// and performance. Thread-safe for concurrent access.
-#[allow(dead_code)]
 pub struct MetricsCollector {
     /// Total number of tasks executed
     total_tasks: Arc<AtomicUsize>,
@@ -155,7 +153,6 @@ impl MetricsCollector {
     ///
     /// # Returns
     /// A new MetricsCollector instance ready for recording metrics
-    #[allow(dead_code)]
     pub fn new(max_history: usize) -> Self {
         Self {
             total_tasks: Arc::new(AtomicUsize::new(0)),
@@ -173,13 +170,11 @@ impl MetricsCollector {
         }
     }
 
-    #[allow(dead_code)]
     pub fn task_started(&self) {
         self.active_tasks.fetch_add(1, Ordering::SeqCst);
         self.total_tasks.fetch_add(1, Ordering::SeqCst);
     }
 
-    #[allow(dead_code)]
     pub fn task_completed(&self, metrics: TaskMetrics) {
         self.active_tasks.fetch_sub(1, Ordering::SeqCst);
         self.total_duration_ms

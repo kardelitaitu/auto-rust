@@ -1,5 +1,77 @@
 # Agents Journal
 
+## 2026-04-22 - Documentation Improvements
+
+### Accomplished This Session
+
+#### Rust Documentation Enhancements
+- **Cargo.toml metadata**: Added documentation metadata (authors, description, license, repository, keywords, categories)
+- **session.rs**: Added comprehensive rustdoc comments for Session struct and core methods:
+  - `Session` struct with lifecycle management documentation
+  - `new()`, `acquire_worker()`, `acquire_page()`, `acquire_page_at()`, `release_page()`, `graceful_shutdown()`
+  - Health monitoring methods (`is_healthy()`, `mark_healthy()`, `mark_unhealthy()`, `increment_failure()`)
+  - State management methods (`state()`, `set_state()`, `is_idle()`, `is_busy()`)
+  - Page registry methods (`register_page()`, `unregister_page()`, `active_page_count()`)
+- **browser.rs**: Added rustdoc comments for browser discovery functions:
+  - `discover_browsers()`, `connect_to_browser()`, `discover_local_browsers()`
+  - `discover_brave_on_port()`, `discover_roxybrowser()`
+- **orchestrator.rs**: Added rustdoc comments for orchestration functions:
+  - `Orchestrator` struct with coordination documentation
+  - `new()`, `execute_group()`, `execute_task_on_session()`, `format_duration()`
+- **task_context.rs**: Added comprehensive API documentation:
+  - Module-level documentation with Task API verb overview
+  - `TaskContext` struct with feature documentation
+  - `new()`, `navigate()`, `focus()`, `hover()`, `click()`, `keyboard()`, `r#type()`
+  - Examples for common operations
+
+#### Markdown Documentation Structure
+- Created `docs/SUMMARY.md` for better documentation organization
+- Added "Documentation" section to README with:
+  - Instructions for generating API docs with `cargo doc`
+  - Link to HTML docs location (`target/doc/`)
+  - Links to user guides (Task Authoring Guide, Documentation Summary)
+- Updated AGENTS.md with rustdoc generation commands
+
+#### Documentation Generation
+- Tested `cargo doc --all-features` - builds successfully with only minor lint warnings
+- Documentation is now comprehensive, easy to read, and requires no external hosting
+
+#### Log Noise Reduction
+- Fixed rustdoc warnings by escaping brackets in logger.rs and twitteractivity_persona.rs
+- Suppressed chromiumoxide WebSocket deserialization errors in FileLogger
+- Added filter to ignore all chromiumoxide logs to reduce noise
+
+#### Health Monitoring Improvements
+- Changed memory warning from fixed bytes (1 GiB) to percentage-based threshold (86%)
+- Updated HealthLoggerConfig to use `memory_warning_percentage` instead of `memory_warning_threshold_bytes`
+- Warning now shows both percentage and actual MiB usage
+
+#### Log Noise Reduction & Consolidation
+- Suppressed chromiumoxide WebSocket deserialization errors in FileLogger
+- Added filter to ignore all chromiumoxide logs to reduce noise
+- Removed debug markers (#[instrument] attributes) from orchestration functions:
+  - discover_browsers, execute_group, execute_task_on_session, execute_task_with_retry
+  - perform_pageview_behavior and all task run functions
+- Combined orchestration logs to reduce redundancy:
+  - Merged "Processing X task(s)" + "Executing group Y/Z" into single line
+  - Removed redundant "Executing group with X task(s) across Y session(s)"
+  - Removed "[pageview] Starting task on N sessions" and "[session][task] Completed"
+  - Removed verbose task_cleanup logs
+- Reduced discovery verbosity:
+  - Removed "Starting browser discovery..." and "Discovery attempt X/Y"
+  - Removed individual connection logs ("Connected to configured browser", "Discovered Roxybrowser")
+  - Removed "Scanning for local Brave browsers..."
+  - Added single summary log showing discovered browsers
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass |
+| Tests | ✅ 68 passed |
+| cargo clippy | ✅ Clean |
+| Documentation | ✅ Enhanced |
+
 ## 2026-04-21 - Session Progress
 
 ### Accomplished This Session
@@ -77,3 +149,46 @@ cookiebot, pageview, demo-keyboard, demo-mouse, demoqa, twitterfollow, twitterre
 
 ### Phase 6 - Utility Hardening
 - [x] JS fallback path, deterministic utility tests, integration tests
+
+## 2026-04-22 - Next 8-Phase Reliability Agenda (Task List)
+
+### Phase 1 - Fan-Out Concurrency Bounding
+- [x] Enforce global concurrency using `tasks x sessions` execution tokens (not per-task-only throttling).
+- [x] Add tests proving hard upper bound under broadcast fan-out.
+
+### Phase 2 - Session Supervisor Loop
+- [ ] Add supervisor loop that enforces `Idle/Busy/Failed` state transitions for scheduling.
+- [ ] Prevent task dispatch to non-idle or failed sessions by policy, not convention.
+
+### Phase 3 - Zero-Match Browser Filter Hard Fail
+- [ ] Treat `--browsers` filter with zero matched sessions as startup error.
+- [ ] Add startup test coverage for valid/invalid filter scenarios.
+
+### Phase 4 - Structured Run Report Upgrades
+- [ ] Add run summary fields for planned vs executed fan-out.
+- [ ] Add structured cancellation-cause breakdown (shutdown, timeout, worker wait, etc.).
+
+### Phase 5 - Chaos Testing
+- [ ] Add chaos tests for browser disconnect mid-task.
+- [ ] Add chaos tests for page creation failures and timeout storms.
+
+### Phase 6 - Deterministic Shutdown SLO Checks
+- [ ] Add shutdown SLO assertions: pages closed, handler tasks aborted, no zombie process leftovers.
+- [ ] Add deterministic tests for graceful completion and forced interruption paths.
+
+### Phase 7 - CI Quality Gates
+- [ ] Add CI gates for `cargo fmt --all -- --check`.
+- [ ] Add CI gates for `cargo clippy --all-targets --all-features -D warnings`.
+- [ ] Add CI gates for full test suite, doctests, and smoke run.
+
+### Phase 8 - Node Parity Contract Tests
+- [ ] Add compatibility contract tests against `.nodejs-reference` behavior for key orchestrator flows.
+- [ ] Track parity drift in assertions for task parsing, dispatch, retry, and summary outputs.
+
+### 2026-04-22 - Phase 1 Completion Notes
+- Moved global semaphore gating from per-task entry to per task-session execution slot acquisition.
+- Added cancellation-aware global slot acquisition so waiting fan-out units cancel immediately on group shutdown.
+- Added regression tests:
+  - `test_global_execution_slot_enforces_hard_concurrency_bound`
+  - `test_global_execution_slot_cancels_while_waiting_for_permit`
+- Validation: `cargo test --quiet` full suite passed after patch.

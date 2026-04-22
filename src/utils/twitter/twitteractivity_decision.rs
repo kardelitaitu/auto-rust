@@ -4,6 +4,7 @@
 //! and determine appropriate engagement levels. No LLM required.
 
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 /// Engagement level determines which actions are allowed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,6 +147,7 @@ const POSITIVE_WORDS: &[&str] = &[
 ///
 /// # Returns
 /// EngagementDecision with level, score, and reason
+#[instrument(skip(replies))]
 pub fn decide_engagement(tweet_text: &str, replies: &[(String, String)]) -> EngagementDecision {
     let text_lower = tweet_text.to_lowercase();
 

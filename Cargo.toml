@@ -3,6 +3,12 @@ name = "rust-orchestrator"
 version = "0.1.0"
 edition = "2021"
 autobins = false
+authors = ["Auto-Rust Team"]
+description = "High-performance multi-browser automation framework built in Rust"
+license = "MIT"
+repository = "https://github.com/your-org/rust-orchestrator"
+keywords = ["automation", "browser", "orchestration", "testing"]
+categories = ["development-tools", "web-programming"]
 
 [[bin]]
 name = "auto"
@@ -29,6 +35,13 @@ url = "2"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "chrono"] }
+
+# OpenTelemetry Tracing
+opentelemetry = "0.23"
+opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic", "http-proto", "reqwest-client"] }
+opentelemetry-semantic-conventions = "0.16"
+tracing-opentelemetry = "0.24"
 
 # Error Handling
 anyhow = "1"
@@ -60,15 +73,17 @@ regex = "1"
 
 # Lazy Static / Once Cell
 once_cell = "1"
+lazy_static = "1.4"
 log = "0.4.29"
+do-over = "0.1.0"
 
 [dev-dependencies]
 env_logger = "0.11"
 
 [[example]]
 name = "demo-interaction-keyboard"
-path = "task/demo-interaction-keyboard.rs"
+path = "src/task/demo-interaction-keyboard.rs"
 
 [[example]]
 name = "demo-interaction-mouse"
-path = "task/demo-interaction-mouse.rs"
+path = "src/task/demo-interaction-mouse.rs"

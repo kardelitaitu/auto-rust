@@ -27,11 +27,17 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
             return Ok(normalize_url(url_str));
         }
     }
+    // Check for default_url in payload
+    if let Some(default_url) = payload.get("default_url") {
+        if let Some(url_str) = default_url.as_str() {
+            return Ok(normalize_url(url_str));
+        }
+    }
     for (key, val) in payload
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
     {
-        if key != "url" && key != "value" {
+        if key != "url" && key != "value" && key != "default_url" {
             if let Some(v) = val.as_str() {
                 if !v.is_empty() && (v.contains("x.com") || v.contains("twitter.com")) {
                     return Ok(normalize_url(v));

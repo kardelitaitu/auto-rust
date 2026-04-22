@@ -8,7 +8,7 @@ mod task_registry_policy_tests;
 mod config_tests {
     use crate::config::{
         validate_config, BrowserConfig, CircuitBreakerConfig, Config, OrchestratorConfig,
-        RoxybrowserConfig, TwitterActivityConfig,
+        RoxybrowserConfig, TracingConfig, TwitterActivityConfig,
     };
     use std::collections::BTreeMap;
 
@@ -48,6 +48,7 @@ mod config_tests {
                 retry_delay_ms: 500,
             },
             twitter_activity: TwitterActivityConfig::default(),
+            tracing: TracingConfig::default(),
         };
 
         assert!(validate_config(&config).is_ok());
@@ -89,6 +90,7 @@ mod config_tests {
                 retry_delay_ms: 500,
             },
             twitter_activity: TwitterActivityConfig::default(),
+            tracing: TracingConfig::default(),
         };
 
         assert!(validate_config(&config).is_err());

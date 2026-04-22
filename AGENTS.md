@@ -204,6 +204,8 @@ This tasklist is a historical roadmap unless explicitly updated.
 - Test: `cargo test`
 - Clippy lint: `cargo clippy --all-targets --all-features > rust-analyzer-problems.log 2>&1`
 - Build: `cargo build --all-features`
+- Generate documentation: `cargo doc --all-features`
+- View documentation: `cargo doc --open`
 
 ### Delivery Tracks
 - [x] Fast track: complete Phases 0-2 first (production stability)

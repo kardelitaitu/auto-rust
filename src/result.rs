@@ -118,7 +118,6 @@ impl TaskResult {
 /// This enum helps with error handling, logging, and debugging by classifying
 /// errors into specific categories for appropriate handling.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[allow(dead_code)]
 pub enum TaskErrorKind {
     /// Task execution exceeded the configured timeout limit
     Timeout,
@@ -144,7 +143,6 @@ impl TaskErrorKind {
     ///
     /// # Returns
     /// The most appropriate TaskErrorKind for the given error message
-    #[allow(dead_code)]
     pub fn classify(error: &str) -> Self {
         let e = error.to_lowercase();
         if e.contains("timeout") || e.contains("deadline") {
@@ -177,14 +175,12 @@ impl TaskErrorKind {
 /// A boxed function that returns a TaskResult when executed.
 /// Used for deferred task execution and retry mechanisms.
 /// The function must be Send and Sync for use in async contexts.
-#[allow(dead_code)]
 pub type TaskResultFn = Box<dyn Fn() -> TaskResult + Send + Sync>;
 
 /// Aggregates statistics and results from a complete orchestration run.
 /// Provides a comprehensive summary of all tasks executed, including success rates,
 /// timing information, and individual task results for analysis and reporting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct RunSummary {
     /// Total number of tasks that were attempted
     pub total_tasks: usize,
@@ -203,7 +199,6 @@ pub struct RunSummary {
 }
 
 impl RunSummary {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             total_tasks: 0,
@@ -216,7 +211,6 @@ impl RunSummary {
         }
     }
 
-    #[allow(dead_code)]
     pub fn add(&mut self, result: TaskResult) {
         self.total_tasks += 1;
         self.total_duration_ms += result.duration_ms;
@@ -231,7 +225,6 @@ impl RunSummary {
         self.results.push(result);
     }
 
-    #[allow(dead_code)]
     pub fn success_rate(&self) -> f64 {
         if self.total_tasks == 0 {
             return 0.0;

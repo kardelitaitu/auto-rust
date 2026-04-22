@@ -1,16 +1,23 @@
+use crate::error::{OrchestratorError, Result, TaskError};
 use crate::internal::blockmedia;
 use crate::prelude::TaskContext;
-use anyhow::Result;
 use log::{error, info, warn};
 use rand::seq::SliceRandom;
 use serde_json::Value;
 use std::fs;
 use std::time::Instant;
 
-pub async fn run(api: &TaskContext, _payload: Value) -> Result<()> {
+pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     blockmedia::block_heavy_resources_for_cookiebot(api.page()).await?;
-    // Read URLs from data/cookiebot.txt
-    let mut urls = read_cookiebot_urls()?;
+
+    // Get data file path from payload, default to data/cookiebot.txt
+    let data_file = payload
+        .get("data_file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("data/cookiebot.txt");
+
+    // Read URLs from data file
+    let mut urls = read_cookiebot_urls(data_file)?;
     if urls.is_empty() {
         warn!("No URLs found in data/cookiebot.txt");
         return Ok(());
@@ -95,9 +102,13 @@ async fn perform_browsing_behavior(api: &TaskContext) -> Result<()> {
     Ok(())
 }
 
-fn read_cookiebot_urls() -> Result<Vec<String>> {
-    let content = fs::read_to_string("data/cookiebot.txt")
-        .map_err(|e| anyhow::anyhow!("Failed to read data/cookiebot.txt: {e}"))?;
+fn read_cookiebot_urls(data_file: &str) -> Result<Vec<String>> {
+    let content = fs::read_to_string(data_file).map_err(|e| {
+        OrchestratorError::Task(TaskError::ExecutionFailed {
+            task_name: "cookiebot".to_string(),
+            reason: format!("Failed to read {}: {e}", data_file),
+        })
+    })?;
 
     let urls: Vec<String> = content
         .lines()

@@ -24,7 +24,7 @@ mod tests {
             root.join("src/main.rs"),
             root.join("src/orchestrator.rs"),
             root.join("src/session.rs"),
-            root.join("task/mod.rs"),
+            root.join("src/task/mod.rs"),
         ] {
             let content = fs::read_to_string(&path).expect("read source");
             assert!(

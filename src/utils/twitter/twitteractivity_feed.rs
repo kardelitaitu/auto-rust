@@ -71,13 +71,45 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
                     var tweetText = tweetTextEl ? tweetTextEl.textContent.trim() : '';
                     
                     // Extract basic tweet info
+                    // Twitter may not have a tweet ID attribute, so generate one from position
+                    var tweetId = el.dataset.tweetId || 
+                                  el.getAttribute('data-item-id') || 
+                                  el.getAttribute('data-tweet-id') || 
+                                  'tweet_' + Math.floor(rect.x) + '_' + Math.floor(rect.y);
+                    
+                    // Find engagement buttons within this tweet element
+                    var likeBtn = el.querySelector('[data-testid="like"]');
+                    var retweetBtn = el.querySelector('[data-testid="retweet"]');
+                    var replyBtn = el.querySelector('[data-testid="reply"]');
+                    
+                    var buttonPositions = {};
+                    if (likeBtn) {
+                        var likeRect = likeBtn.getBoundingClientRect();
+                        if (likeRect.width > 0 && likeRect.height > 0) {
+                            buttonPositions.like = { x: likeRect.x + likeRect.width/2, y: likeRect.y + likeRect.height/2 };
+                        }
+                    }
+                    if (retweetBtn) {
+                        var retweetRect = retweetBtn.getBoundingClientRect();
+                        if (retweetRect.width > 0 && retweetRect.height > 0) {
+                            buttonPositions.retweet = { x: retweetRect.x + retweetRect.width/2, y: retweetRect.y + retweetRect.height/2 };
+                        }
+                    }
+                    if (replyBtn) {
+                        var replyRect = replyBtn.getBoundingClientRect();
+                        if (replyRect.width > 0 && replyRect.height > 0) {
+                            buttonPositions.reply = { x: replyRect.x + replyRect.width/2, y: replyRect.y + replyRect.height/2 };
+                        }
+                    }
+                    
                     var tweetObj = {
-                        id: el.dataset.tweetId || '',
+                        id: tweetId,
                         text: tweetText,
                         x: rect.x + rect.width/2,
                         y: rect.y + rect.height/2,
                         height: rect.height,
-                        width: rect.width
+                        width: rect.width,
+                        buttons: buttonPositions
                     };
 
                     // Extract reply information for smart decision
@@ -110,34 +142,70 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
     let value = result.value();
 
     let mut candidates = Vec::new();
+    let mut total_found = 0;
+    let mut filtered_no_id = 0;
+    let mut filtered_viewport = 0;
+    let mut filtered_height = 0;
 
     if let Some(arr) = value.and_then(|v: &serde_json::Value| v.as_array()) {
+        total_found = arr.len();
         for tweet_val in arr {
             if let Some(obj) = tweet_val.as_object() {
                 // Basic filter: tweet must have an id and be within viewport reasonably
-                if obj.get("id").is_some() && obj.get("id").unwrap().as_str().unwrap_or("") != "" {
-                    let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
-                    let height = obj
-                        .get("height")
-                        .and_then(|v: &Value| v.as_f64())
-                        .unwrap_or(0.0);
-                    // Consider near top half of viewport as "candidate"
-                    let viewport = match api.viewport().await {
-                        Ok(vp) => vp,
-                        Err(_) => {
-                            // Fallback default viewport if query fails
-                            crate::utils::page_size::Viewport {
-                                width: 1920.0,
-                                height: 1080.0,
-                            }
-                        }
-                    };
-                    if y < (viewport.height as f64 * 0.7) && height > 50.0 {
-                        candidates.push(tweet_val.clone());
-                    }
+                let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                if id.is_empty() {
+                    filtered_no_id += 1;
+                    continue;
                 }
+
+                let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
+                let height = obj
+                    .get("height")
+                    .and_then(|v: &Value| v.as_f64())
+                    .unwrap_or(0.0);
+
+                // Filter out tweets above viewport (negative y) or too small
+                if y < 0.0 || height <= 50.0 {
+                    if y < 0.0 {
+                        filtered_viewport += 1;
+                    } else {
+                        filtered_height += 1;
+                    }
+                    continue;
+                }
+
+                // Consider tweets in viewport as "candidate" (relaxed from 70% to 90%)
+                let viewport = match api.viewport().await {
+                    Ok(vp) => vp,
+                    Err(_) => {
+                        // Fallback default viewport if query fails
+                        crate::utils::page_size::Viewport {
+                            width: 1920.0,
+                            height: 1080.0,
+                        }
+                    }
+                };
+
+                if y >= (viewport.height as f64 * 0.9) {
+                    filtered_viewport += 1;
+                    continue;
+                }
+
+                candidates.push(tweet_val.clone());
             }
         }
+    }
+
+    if total_found == 0 {
+        log::warn!("[candidate_scan] No tweet elements found in DOM");
+    } else if candidates.is_empty() {
+        log::warn!(
+            "[candidate_scan] Found {} tweets but filtered: no_id={}, viewport={}, height={}",
+            total_found,
+            filtered_no_id,
+            filtered_viewport,
+            filtered_height
+        );
     }
 
     Ok(candidates)

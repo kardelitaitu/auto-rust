@@ -16,6 +16,10 @@ pub mod twitteractivity_persona;
 pub mod twitteractivity_popup;
 pub mod twitteractivity_selectors;
 pub mod twitteractivity_sentiment;
+pub mod twitteractivity_sentiment_context;
+pub mod twitteractivity_sentiment_domains;
+pub mod twitteractivity_sentiment_emoji;
+pub mod twitteractivity_sentiment_llm;
 
 #[allow(unused_imports)]
 pub use twitteractivity_decision::*;
@@ -41,3 +45,11 @@ pub use twitteractivity_popup::*;
 pub use twitteractivity_selectors::*;
 #[allow(unused_imports)]
 pub use twitteractivity_sentiment::*;
+#[allow(unused_imports)]
+pub use twitteractivity_sentiment_context::*;
+#[allow(unused_imports)]
+pub use twitteractivity_sentiment_domains::*;
+#[allow(unused_imports)]
+pub use twitteractivity_sentiment_emoji::*;
+#[allow(unused_imports)]
+pub use twitteractivity_sentiment_llm::*;

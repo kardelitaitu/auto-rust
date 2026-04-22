@@ -126,6 +126,13 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
         }
     }
 
+    // Check for default_url in payload
+    if let Some(default_url) = payload.get("default_url") {
+        if let Some(url_str) = default_url.as_str() {
+            return Ok(url_str.to_string());
+        }
+    }
+
     Ok("https://uvi.gg/keyboard-tester/".to_string())
 }
 

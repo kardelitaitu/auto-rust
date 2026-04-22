@@ -1,10 +1,24 @@
 //! Sentiment analysis utilities for tweet content.
-//! Lightweight word-based sentiment scoring (no ML model required).
+//! Enhanced with contextual analysis (negation, sarcasm, intensifiers), emoji sentiment,
+//! and domain-specific keyword detection (Tech, Crypto, Gaming, Sports, Entertainment).
+//!
+//! ## Features
+//! - Keyword-based sentiment with contextual modifiers
+//! - Negation detection ("not good" → negative)
+//! - Sarcasm markers ("oh great" → negative)
+//! - Intensifier handling ("very bad" → stronger negative)
+//! - Comprehensive emoji sentiment (300+ emojis)
+//! - Domain-specific keywords (Tech, Crypto, Gaming, Sports, Entertainment)
 
 use crate::internal::text::truncate_chars;
+use crate::utils::twitter::{
+    twitteractivity_sentiment_context, twitteractivity_sentiment_domains,
+    twitteractivity_sentiment_emoji,
+};
 use serde_json::Value;
+use tracing::instrument;
 
-/// Simple sentiment polarity.
+/// Simple sentiment polarity with enhanced scoring.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Sentiment {
     Positive,
@@ -12,24 +26,61 @@ pub enum Sentiment {
     Negative,
 }
 
-/// Analyzes the sentiment of a tweet's text content using keyword matching.
-/// This is a lightweight approach suitable for task routing decisions.
+/// Analyzes the sentiment of a tweet's text content using enhanced keyword matching
+/// with contextual analysis (negation, intensifiers, sarcasm), emoji sentiment, and
+/// domain-specific keywords.
 ///
 /// # Arguments
 /// * `text` - The tweet text to analyze
 ///
 /// # Returns
 /// A `Sentiment` enum with the determined polarity
+#[instrument]
 pub fn analyze_sentiment(text: &str) -> Sentiment {
     let lower = text.to_ascii_lowercase();
 
-    // Count positive vs negative keywords
-    let positive_count = POSITIVE_WORDS.iter().filter(|&w| lower.contains(w)).count();
-    let negative_count = NEGATIVE_WORDS.iter().filter(|&w| lower.contains(w)).count();
+    // Check for sarcasm first (overrides other signals)
+    if twitteractivity_sentiment_context::has_sarcasm_markers(&lower) {
+        return Sentiment::Negative;
+    }
 
-    if positive_count > negative_count {
+    // Get emoji sentiment contribution
+    let emoji_score = twitteractivity_sentiment_emoji::analyze_emoji_sentiment(text);
+
+    // Detect domain and get domain-specific contribution
+    let domain = twitteractivity_sentiment_domains::detect_domain(text);
+    let domain_score = twitteractivity_sentiment_domains::analyze_domain_sentiment(text, domain);
+
+    // Initialize score with emoji and domain contributions
+    let mut score: f32 = emoji_score + (domain_score / 10.0); // Normalize domain contribution
+
+    // Count positive vs negative with context
+    for &word in POSITIVE_WORDS {
+        if lower.contains(word) {
+            // Calculate contextual score (handles negation and intensifiers)
+            let contextual_score =
+                twitteractivity_sentiment_context::calculate_contextual_score(&lower, 1.0, word);
+            score += contextual_score;
+        }
+    }
+
+    for &word in NEGATIVE_WORDS {
+        if lower.contains(word) {
+            // Calculate contextual score (handles negation and intensifiers)
+            let contextual_score =
+                twitteractivity_sentiment_context::calculate_contextual_score(&lower, -1.0, word);
+            score += contextual_score;
+        }
+    }
+
+    // Apply contextual modifiers (sarcasm, excessive punctuation)
+    let context_modifier = twitteractivity_sentiment_context::analyze_contextual_modifiers(&lower);
+    score += context_modifier;
+
+    // Classify based on score with hysteresis to avoid borderline flips
+    if score > 1.0 {
         Sentiment::Positive
-    } else if negative_count > positive_count {
+    } else if score < -1.0 {
         Sentiment::Negative
     } else {
         Sentiment::Neutral

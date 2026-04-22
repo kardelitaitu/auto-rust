@@ -508,7 +508,8 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
                 dot.style.position = 'fixed';
                 dot.style.width = '{}px';
                 dot.style.height = '{}px';
-                dot.style.background = '#00ff00';
+                dot.style.background = '#ffffff';
+                dot.style.border = '4px solid #ff6600';
                 dot.style.pointerEvents = 'none';
                 dot.style.zIndex = '2147483647';
                 document.body.appendChild(dot);

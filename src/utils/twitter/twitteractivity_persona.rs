@@ -4,6 +4,7 @@
 use crate::utils::profile::{BrowserProfile, ProfilePreset};
 use rand::Rng;
 use serde_json::{json, Value};
+use tracing::instrument;
 
 /// Persona weights that influence task decision-making.
 /// These are multiplied against base probabilities to produce final actions.
@@ -13,6 +14,8 @@ pub struct PersonaWeights {
     pub like_prob: f64,
     /// Likelihood to retweet (0.0–1.0)
     pub retweet_prob: f64,
+    /// Likelihood to quote tweet with commentary (0.0–1.0)
+    pub quote_prob: f64,
     /// Likelihood to follow a user from a tweet (0.0–1.0)
     pub follow_prob: f64,
     /// Likelihood to reply to a tweet (0.0–1.0)
@@ -28,6 +31,7 @@ impl Default for PersonaWeights {
         Self {
             like_prob: 0.3,
             retweet_prob: 0.1,
+            quote_prob: 0.05,
             follow_prob: 0.05,
             reply_prob: 0.02,
             thread_dive_prob: 0.2,
@@ -63,6 +67,7 @@ impl PersonaWeights {
 
         self.like_prob = perturb!(self.like_prob);
         self.retweet_prob = perturb!(self.retweet_prob);
+        self.quote_prob = perturb!(self.quote_prob);
         self.follow_prob = perturb!(self.follow_prob);
         self.reply_prob = perturb!(self.reply_prob);
         self.thread_dive_prob = perturb!(self.thread_dive_prob);
@@ -70,7 +75,7 @@ impl PersonaWeights {
         self
     }
 
-    /// Clamps all probabilities to ensure they are within [0,1].
+    /// Clamps all probabilities to ensure they are within \[0,1\].
     pub fn normalized(mut self) -> Self {
         macro_rules! clamp {
             ($field:expr) => {
@@ -79,6 +84,7 @@ impl PersonaWeights {
         }
         self.like_prob = clamp!(self.like_prob);
         self.retweet_prob = clamp!(self.retweet_prob);
+        self.quote_prob = clamp!(self.quote_prob);
         self.follow_prob = clamp!(self.follow_prob);
         self.reply_prob = clamp!(self.reply_prob);
         self.thread_dive_prob = clamp!(self.thread_dive_prob);
@@ -87,8 +93,9 @@ impl PersonaWeights {
 }
 
 /// Selects a PersonaWeights configuration based on the provided weights dictionary.
-/// The `weights` JSON may include any of: `like_prob`, `retweet_prob`, `follow_prob`, `reply_prob`, `thread_dive_prob`, `interest_multiplier`.
+/// The `weights` JSON may include any of: `like_prob`, `retweet_prob`, `quote_prob`, `follow_prob`, `reply_prob`, `thread_dive_prob`, `interest_multiplier`.
 /// Any missing weights default to neutral probabilities.
+#[instrument]
 pub fn select_persona_weights(weights: Option<&Value>) -> PersonaWeights {
     let mut persona = PersonaWeights::default();
 
@@ -98,6 +105,9 @@ pub fn select_persona_weights(weights: Option<&Value>) -> PersonaWeights {
         }
         if let Some(v) = w.get("retweet_prob").and_then(|v: &Value| v.as_f64()) {
             persona.retweet_prob = v;
+        }
+        if let Some(v) = w.get("quote_prob").and_then(|v: &Value| v.as_f64()) {
+            persona.quote_prob = v;
         }
         if let Some(v) = w.get("follow_prob").and_then(|v: &Value| v.as_f64()) {
             persona.follow_prob = v;
@@ -121,6 +131,7 @@ pub fn select_persona_weights(weights: Option<&Value>) -> PersonaWeights {
 
 /// Applies the behavior profile's sentiment modulation and variance to the base persona.
 /// This is the integrated machine: weights ← profile characteristics + feed sentiment.
+#[instrument]
 pub fn apply_behavior_profile(
     persona: PersonaWeights,
     profile: &BrowserProfile,
@@ -143,6 +154,12 @@ pub fn should_like(persona: &PersonaWeights) -> bool {
 pub fn should_retweet(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
     rng.gen_bool(persona.retweet_prob.clamp(0.0, 1.0))
+}
+
+/// Decides whether to quote tweet.
+pub fn should_quote(persona: &PersonaWeights) -> bool {
+    let mut rng = rand::thread_rng();
+    rng.gen_bool(persona.quote_prob.clamp(0.0, 1.0))
 }
 
 /// Decides whether to follow the author.
@@ -176,6 +193,7 @@ pub fn build_persona_config(
         "weights": {
             "like_prob": weights.like_prob,
             "retweet_prob": weights.retweet_prob,
+            "quote_prob": weights.quote_prob,
             "follow_prob": weights.follow_prob,
             "reply_prob": weights.reply_prob,
             "thread_dive_prob": weights.thread_dive_prob,

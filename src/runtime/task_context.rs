@@ -1,3 +1,38 @@
+//! Task API context for browser automation.
+//!
+//! The `TaskContext` provides a high-level, task-facing API for browser automation.
+//! Tasks should use this API exclusively rather than accessing internal utilities directly.
+//!
+//! # Task API Verbs
+//!
+//! The TaskContext provides short, readable verbs for common actions:
+//! - `click()` - Click an element with human-like cursor movement
+//! - `keyboard()` or `r#type()` - Type text with human-like timing
+//! - `hover()` - Hover over an element
+//! - `focus()` - Focus an element
+//! - `navigate()` - Navigate to a URL
+//! - `scroll()` - Scroll the page
+//! - `wait_for()` - Wait for an element to appear
+//! - `exists()` - Check if an element exists
+//! - `visible()` - Check if an element is visible
+//! - `text()` - Get element text
+//! - `html()` - Get element HTML
+//! - `attr()` - Get element attribute
+//! - `pause()` - Pause for a duration
+//!
+//! # Examples
+//!
+//! ```no_run
+//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+//! api.navigate("https://example.com", 30_000).await?;
+//! api.click("#submit-button").await?;
+//! api.keyboard("input", "Hello World").await?;
+//! api.pause(1000).await;
+//! # Ok(())
+//! # }
+//! ```
+
 use chromiumoxide::Page;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -157,6 +192,30 @@ mod tests {
     }
 }
 
+/// High-level API context for browser automation tasks.
+///
+/// `TaskContext` provides a task-facing API with human-like interaction patterns.
+/// Tasks should use this API exclusively rather than accessing internal utilities.
+///
+/// # Features
+///
+/// - Human-like mouse movement with configurable paths and timing
+/// - Keyboard typing with realistic delays
+/// - Clipboard state management
+/// - Behavior profiles for consistent interaction patterns
+///
+/// # Examples
+///
+/// ```no_run
+/// # use rust_orchestrator::runtime::task_context::TaskContext;
+/// # use chromiumoxide::Page;
+/// # use std::sync::Arc;
+/// # use rust_orchestrator::internal::profile::{BrowserProfile, ProfileRuntime};
+/// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
+/// let api = TaskContext::new("session-1", page, profile, runtime);
+/// // Use the API for browser automation
+/// # }
+/// ```
 #[derive(Clone)]
 pub struct TaskContext {
     session_id: String,
@@ -167,6 +226,30 @@ pub struct TaskContext {
 }
 
 impl TaskContext {
+    /// Creates a new TaskContext for browser automation.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `page` - The browser page to automate
+    /// * `behavior_profile` - The behavior profile for human-like interactions
+    /// * `behavior_runtime` - The runtime behavior configuration
+    ///
+    /// # Returns
+    ///
+    /// A new `TaskContext` instance ready for task execution.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use chromiumoxide::Page;
+    /// # use std::sync::Arc;
+    /// # use rust_orchestrator::internal::profile::{BrowserProfile, ProfileRuntime};
+    /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
+    /// let api = TaskContext::new("session-1", page, profile, runtime);
+    /// # }
+    /// ```
     pub fn new(
         session_id: impl Into<String>,
         page: Arc<Page>,
@@ -204,7 +287,31 @@ impl TaskContext {
         &self.behavior_runtime
     }
 
-    /// Navigate to URL with full settle pause. Adds human-like delays before/during navigation.
+    /// Navigates to a URL with human-like delays and settle pauses.
+    ///
+    /// This method performs navigation with realistic timing:
+    /// - Pre-navigation action delay
+    /// - Post-navigation settle pause
+    /// - Wait for page load completion
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL to navigate to
+    /// * `timeout_ms` - Maximum time to wait for navigation to complete
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if navigation fails or times out.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+    /// api.navigate("https://example.com", 30000).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn navigate(&self, url: &str, timeout_ms: u64) -> Result<()> {
         navigation::goto(self.page(), url, timeout_ms).await?;
 
@@ -268,7 +375,35 @@ impl TaskContext {
         navigation::wait_for_any_visible_selector(self.page(), selectors, timeout_ms).await
     }
 
-    /// Scroll element into view, focus it, and return center coordinates + focus status.
+    /// Scrolls an element into view, focuses it, and returns the focus outcome.
+    ///
+    /// This method:
+    /// - Scrolls the element into view if needed
+    /// - Focuses the element
+    /// - Returns the center coordinates and focus status
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - CSS selector for the element to focus
+    ///
+    /// # Returns
+    ///
+    /// A `FocusOutcome` containing the focus status and element coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the element cannot be found or focused.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+    /// let outcome = api.focus("#input-field").await?;
+    /// println!("Focus status: {:?}", outcome.focus);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
         scroll::scroll_into_view(self.page(), selector).await?;
         let (x, y) = page_size::get_element_center(self.page(), selector).await?;
@@ -281,7 +416,35 @@ impl TaskContext {
         })
     }
 
-    /// Human-like hover with configurable delay, variance, and offset.
+    /// Performs a human-like hover over an element with configurable timing.
+    ///
+    /// This method simulates realistic mouse movement with:
+    /// - Configurable reaction delay
+    /// - Timing variance for natural behavior
+    /// - Offset from element center
+    /// - Post-interaction pause
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - CSS selector for the element to hover over
+    ///
+    /// # Returns
+    ///
+    /// A `HoverOutcome` containing the hover status and coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the element cannot be found or hovered.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+    /// api.hover("#menu-item").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn hover(&self, selector: &str) -> Result<HoverOutcome> {
         let click = &self.behavior_runtime.click;
         let outcome = mouse::hover_selector_human(
@@ -350,7 +513,35 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Primary click method. Runs selector pipeline with 8s timeout, falls back to coordinate click on failure.
+    /// Primary click method with selector pipeline and fallback to coordinate click.
+    ///
+    /// This method:
+    /// - Runs the full selector pipeline (scroll, move, click)
+    /// - Uses human-like cursor movement and timing
+    /// - Falls back to coordinate click if selector fails
+    /// - Includes post-interaction pause
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - CSS selector for the element to click
+    ///
+    /// # Returns
+    ///
+    /// A `ClickOutcome` containing the click status and coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if both selector and coordinate clicks fail.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+    /// api.click("#submit-button").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn click(&self, selector: &str) -> Result<ClickOutcome> {
         const CLICK_TOTAL_TIMEOUT_SECS: u64 = 8;
         const CLICK_PRIMARY_TIMEOUT_SECS: u64 = 4;
@@ -570,7 +761,32 @@ impl TaskContext {
         keyboard::press_with_modifiers(self.page(), key, modifiers).await
     }
 
-    /// Type text into focused element with human-like keystroke timing.
+    /// Types text into a focused element with human-like keystroke timing.
+    ///
+    /// This method:
+    /// - Focuses the element first
+    /// - Types text with realistic keystroke delays
+    /// - Uses the configured typing profile
+    /// - Includes post-interaction pause
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - CSS selector for the element to type into
+    /// * `text` - The text to type
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the element cannot be found or focused.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+    /// api.r#type("#input-field", "Hello World").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn r#type(&self, selector: &str, text: &str) -> Result<()> {
         info!("[task-api] keyboard {} -> {}", selector, text);
         let _ = self.focus(selector).await?;
@@ -580,7 +796,29 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Type text into element. Alias for `r#type()`.
+    /// Types text into an element. Alias for `r#type()`.
+    ///
+    /// This is the preferred method name for typing text, as it's more readable
+    /// than the Rust-keyword-safe `r#type()` alias.
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - CSS selector for the element to type into
+    /// * `text` - The text to type
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the element cannot be found or focused.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+    /// api.keyboard("#input-field", "Hello World").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn keyboard(&self, selector: &str, text: &str) -> Result<()> {
         self.r#type(selector, text).await
     }

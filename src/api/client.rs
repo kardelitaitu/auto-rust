@@ -77,7 +77,6 @@ impl ApiClient {
     }
 
     /// Creates a new API client with a custom retry policy.
-    #[allow(dead_code)]
     pub fn with_retry_policy(base_url: String, retry_policy: RetryPolicy) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
@@ -93,7 +92,6 @@ impl ApiClient {
     }
 
     /// Creates a new API client with both circuit breaker and custom retry policy.
-    #[allow(dead_code)]
     pub fn with_circuit_breaker_and_retry_policy(
         base_url: String,
         circuit_breaker: CircuitBreaker,
@@ -132,7 +130,6 @@ impl ApiClient {
     ///
     /// # Returns
     /// Deserialized response data or an error
-    #[allow(dead_code)]
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.request_json(Method::GET, path, None).await
     }
@@ -273,7 +270,6 @@ fn is_retryable_status(status: StatusCode) -> bool {
 /// Circuit breakers prevent cascading failures by temporarily stopping
 /// requests to services that are failing repeatedly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum CircuitState {
     /// Circuit is closed - requests are allowed through normally
     Closed,
@@ -286,13 +282,13 @@ pub enum CircuitState {
 /// Implements circuit breaker pattern for fault-tolerant API calls.
 /// Monitors request success/failure rates and temporarily blocks requests
 /// to failing services to prevent cascading failures.
-#[allow(dead_code)]
 pub struct CircuitBreaker {
     /// Number of consecutive failures before opening the circuit
     failure_threshold: u32,
     /// Number of consecutive successes needed to close the circuit
     success_threshold: u32,
     /// Time to wait before trying to close the circuit again (milliseconds)
+    #[allow(dead_code)]
     half_open_timeout_ms: u64,
     /// Current count of consecutive failures
     failures: u32,
@@ -313,7 +309,6 @@ impl CircuitBreaker {
     ///
     /// # Returns
     /// A new CircuitBreaker instance in Closed state
-    #[allow(dead_code)]
     pub const fn new(
         failure_threshold: u32,
         success_threshold: u32,
@@ -338,22 +333,18 @@ impl CircuitBreaker {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_closed(&self) -> bool {
         self.state == CircuitState::Closed
     }
 
-    #[allow(dead_code)]
     pub fn is_open(&self) -> bool {
         self.state == CircuitState::Open
     }
 
-    #[allow(dead_code)]
     pub fn state(&self) -> CircuitState {
         self.state
     }
 
-    #[allow(dead_code)]
     pub fn record_success(&mut self) {
         self.successes += 1;
 
@@ -368,7 +359,6 @@ impl CircuitBreaker {
         }
     }
 
-    #[allow(dead_code)]
     pub fn record_failure(&mut self) {
         self.failures += 1;
 
@@ -384,7 +374,6 @@ impl CircuitBreaker {
     }
 
     /// Reset the circuit breaker to closed state
-    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.failures = 0;
         self.successes = 0;

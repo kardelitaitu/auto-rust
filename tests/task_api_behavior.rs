@@ -86,6 +86,7 @@ async fn connect_test_session() -> Result<Option<Session>> {
         handler,
         1,
         0,
+        None,
     );
     Ok(Some(session))
 }

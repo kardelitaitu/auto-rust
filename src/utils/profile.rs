@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::mouse::{CursorMovementConfig, PathStyle, Precision, Speed};
 
-const CURSOR_SPEED_BOOST_FACTOR: f64 = 4.0;
+const CURSOR_SPEED_BOOST_FACTOR: f64 = 6.0;
 const CURSOR_INTERVAL_MIN_FLOOR_MS: u64 = 80;
 
 /// A profile parameter with base value and deviation percentage.

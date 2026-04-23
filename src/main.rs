@@ -111,7 +111,21 @@ async fn run_async() -> Result<()> {
         );
     }
 
-    if let Err(e) = metrics.export_summary(sessions.len(), healthy_sessions) {
+    // Calculate fan-out metrics for Phase 4
+    let planned_groups = groups.len();
+    let completed_groups = group_outcome.completed_groups;
+    let planned_executions = groups.iter().map(|g| g.len()).sum::<usize>() * sessions.len();
+    let actual_executions = metrics.get_stats().total_tasks;
+
+    if let Err(e) = metrics.export_summary_to(
+        "run-summary.json",
+        sessions.len(),
+        healthy_sessions,
+        planned_groups,
+        completed_groups,
+        planned_executions,
+        actual_executions,
+    ) {
         warn!("Failed to export run summary: {e}");
     }
 

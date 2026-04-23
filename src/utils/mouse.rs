@@ -3399,8 +3399,8 @@ mod tests {
         };
 
         let (x, y) = native_click_random_center_point(&bbox, 0);
-        assert!(x >= 156.0 && x <= 164.0);
-        assert!(y >= 226.0 && y <= 234.0);
+        assert!((156.0..=164.0).contains(&x));
+        assert!((226.0..=234.0).contains(&y));
         assert!(x >= bbox.x && x <= bbox.x + bbox.width);
         assert!(y >= bbox.y && y <= bbox.y + bbox.height);
     }

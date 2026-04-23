@@ -29,6 +29,20 @@ pub const RUN_COUNTER_CLICK_ATTEMPTED: &str = "click_attempted";
 pub const RUN_COUNTER_CLICK_SUCCESS: &str = "click_success";
 pub const RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED: &str = "click_strict_verify_failed";
 pub const RUN_COUNTER_CLICK_FALLBACK_HIT: &str = "click_fallback_hit";
+pub const RUN_COUNTER_LIKE_SUCCESS: &str = "like_success";
+pub const RUN_COUNTER_LIKE_FAILURE: &str = "like_failure";
+pub const RUN_COUNTER_RETWEET_SUCCESS: &str = "retweet_success";
+pub const RUN_COUNTER_RETWEET_FAILURE: &str = "retweet_failure";
+pub const RUN_COUNTER_FOLLOW_SUCCESS: &str = "follow_success";
+pub const RUN_COUNTER_FOLLOW_FAILURE: &str = "follow_failure";
+pub const RUN_COUNTER_REPLY_SUCCESS: &str = "reply_success";
+pub const RUN_COUNTER_REPLY_FAILURE: &str = "reply_failure";
+pub const RUN_COUNTER_BOOKMARK_SUCCESS: &str = "bookmark_success";
+pub const RUN_COUNTER_BOOKMARK_FAILURE: &str = "bookmark_failure";
+pub const RUN_COUNTER_QUOTE_SUCCESS: &str = "quote_success";
+pub const RUN_COUNTER_QUOTE_FAILURE: &str = "quote_failure";
+pub const RUN_COUNTER_DIVE_SUCCESS: &str = "dive_success";
+pub const RUN_COUNTER_DIVE_FAILURE: &str = "dive_failure";
 
 /// Records detailed metrics for a single task execution.
 /// Captures timing, outcome, and execution context for performance analysis
@@ -394,6 +408,20 @@ pub struct TwitterActivityRunCounters {
     pub button_missing: usize,
     pub click_verify_failed: usize,
     pub dive_target_fallback_used: usize,
+    pub like_success: usize,
+    pub like_failure: usize,
+    pub retweet_success: usize,
+    pub retweet_failure: usize,
+    pub follow_success: usize,
+    pub follow_failure: usize,
+    pub reply_success: usize,
+    pub reply_failure: usize,
+    pub bookmark_success: usize,
+    pub bookmark_failure: usize,
+    pub quote_success: usize,
+    pub quote_failure: usize,
+    pub dive_success: usize,
+    pub dive_failure: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -504,7 +532,7 @@ pub struct RunSummary {
     /// Number of unhealthy browser sessions during the run
     pub unhealthy_sessions: usize,
     /// Total execution time for the entire run in milliseconds
-    pub total_duration_ms: u64,
+    pub total_duration_ms: usize,
     /// Failure counts grouped by error kind
     pub failure_breakdown: BTreeMap<String, usize>,
     /// Outcome counts grouped by task name
@@ -517,6 +545,23 @@ pub struct RunSummary {
     pub click_learning_counters: ClickLearningRunCounters,
     /// Native-input lock contention and timing metrics
     pub native_input_lock_metrics: NativeInputLockRunMetrics,
+    /// Phase 4: Planned vs executed fan-out metrics
+    pub fan_out_metrics: FanOutMetrics,
+}
+
+/// Metrics tracking planned vs actual parallel execution (fan-out).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct FanOutMetrics {
+    /// Total number of task groups planned for execution
+    pub planned_groups: usize,
+    /// Number of task groups actually completed
+    pub completed_groups: usize,
+    /// Total planned task executions (groups × sessions × tasks_per_group)
+    pub planned_executions: usize,
+    /// Total actual task executions completed
+    pub actual_executions: usize,
+    /// Fan-out efficiency: actual / planned as percentage
+    pub fan_out_efficiency: f64,
 }
 
 impl MetricsCollector {
@@ -525,7 +570,7 @@ impl MetricsCollector {
         active_sessions: usize,
         healthy_sessions: usize,
     ) -> Result<(), std::io::Error> {
-        self.export_summary_to("run-summary.json", active_sessions, healthy_sessions)
+        self.export_summary_to("run-summary.json", active_sessions, healthy_sessions, 0, 0, 0, 0)
     }
 
     pub fn export_summary_to<P: AsRef<Path>>(
@@ -533,6 +578,10 @@ impl MetricsCollector {
         path: P,
         active_sessions: usize,
         healthy_sessions: usize,
+        planned_groups: usize,
+        completed_groups: usize,
+        planned_executions: usize,
+        actual_executions: usize,
     ) -> Result<(), std::io::Error> {
         let path_display = path.as_ref().display().to_string();
         let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
@@ -551,11 +600,23 @@ impl MetricsCollector {
             dive_target_fallback_used: *run_counters
                 .get(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED)
                 .unwrap_or(&0),
+            like_success: *run_counters.get(RUN_COUNTER_LIKE_SUCCESS).unwrap_or(&0),
+            like_failure: *run_counters.get(RUN_COUNTER_LIKE_FAILURE).unwrap_or(&0),
+            retweet_success: *run_counters.get(RUN_COUNTER_RETWEET_SUCCESS).unwrap_or(&0),
+            retweet_failure: *run_counters.get(RUN_COUNTER_RETWEET_FAILURE).unwrap_or(&0),
+            follow_success: *run_counters.get(RUN_COUNTER_FOLLOW_SUCCESS).unwrap_or(&0),
+            follow_failure: *run_counters.get(RUN_COUNTER_FOLLOW_FAILURE).unwrap_or(&0),
+            reply_success: *run_counters.get(RUN_COUNTER_REPLY_SUCCESS).unwrap_or(&0),
+            reply_failure: *run_counters.get(RUN_COUNTER_REPLY_FAILURE).unwrap_or(&0),
+            bookmark_success: *run_counters.get(RUN_COUNTER_BOOKMARK_SUCCESS).unwrap_or(&0),
+            bookmark_failure: *run_counters.get(RUN_COUNTER_BOOKMARK_FAILURE).unwrap_or(&0),
+            quote_success: *run_counters.get(RUN_COUNTER_QUOTE_SUCCESS).unwrap_or(&0),
+            quote_failure: *run_counters.get(RUN_COUNTER_QUOTE_FAILURE).unwrap_or(&0),
+            dive_success: *run_counters.get(RUN_COUNTER_DIVE_SUCCESS).unwrap_or(&0),
+            dive_failure: *run_counters.get(RUN_COUNTER_DIVE_FAILURE).unwrap_or(&0),
         };
         let click_learning_counters = ClickLearningRunCounters {
-            attempted: *run_counters
-                .get(RUN_COUNTER_CLICK_ATTEMPTED)
-                .unwrap_or(&0),
+            attempted: *run_counters.get(RUN_COUNTER_CLICK_ATTEMPTED).unwrap_or(&0),
             success: *run_counters.get(RUN_COUNTER_CLICK_SUCCESS).unwrap_or(&0),
             strict_verify_failed: *run_counters
                 .get(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED)
@@ -576,6 +637,21 @@ impl MetricsCollector {
             avg_hold_ms: native_lock.avg_hold_ms,
         };
 
+        // Calculate fan-out efficiency
+        let fan_out_efficiency = if planned_executions > 0 {
+            (actual_executions as f64 / planned_executions as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        let fan_out_metrics = FanOutMetrics {
+            planned_groups,
+            completed_groups,
+            planned_executions,
+            actual_executions,
+            fan_out_efficiency,
+        };
+
         let summary = RunSummary {
             timestamp: now,
             total_tasks: stats.total_tasks,
@@ -587,13 +663,14 @@ impl MetricsCollector {
             active_sessions,
             healthy_sessions,
             unhealthy_sessions,
-            total_duration_ms: stats.total_duration_ms,
+            total_duration_ms: stats.total_duration_ms as usize,
             failure_breakdown: stats.failure_breakdown,
             task_breakdown: stats.task_breakdown,
             session_breakdown: stats.session_breakdown,
             twitteractivity_counters,
             click_learning_counters,
             native_input_lock_metrics,
+            fan_out_metrics,
         };
 
         let json = serde_json::to_string_pretty(&summary)?;
@@ -866,7 +943,7 @@ mod tests {
         let path = std::env::temp_dir().join(unique);
 
         collector
-            .export_summary_to(&path, 3, 2)
+            .export_summary_to(&path, 3, 2, 5, 5, 10, 10)
             .expect("export summary");
 
         let json = std::fs::read_to_string(&path).expect("read summary");
@@ -879,8 +956,14 @@ mod tests {
             summary["twitteractivity_counters"]["candidate_scanned"],
             serde_json::json!(0)
         );
-        assert_eq!(summary["click_learning_counters"]["attempted"], serde_json::json!(0));
-        assert_eq!(summary["click_learning_counters"]["success"], serde_json::json!(0));
+        assert_eq!(
+            summary["click_learning_counters"]["attempted"],
+            serde_json::json!(0)
+        );
+        assert_eq!(
+            summary["click_learning_counters"]["success"],
+            serde_json::json!(0)
+        );
         assert_eq!(
             summary["native_input_lock_metrics"]["acquisitions"],
             serde_json::json!(0)
@@ -920,7 +1003,10 @@ mod tests {
         );
         assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_ATTEMPTED), 5);
         assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_SUCCESS), 4);
-        assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED), 1);
+        assert_eq!(
+            collector.run_counter(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED),
+            1
+        );
         assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT), 2);
     }
 }

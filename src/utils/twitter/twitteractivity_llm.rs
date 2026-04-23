@@ -104,6 +104,12 @@ pub async fn generate_reply(
 
     // Validate and sanitize output
     let sanitized = validate_reply(&reply)?;
+    
+    // Ensure non-empty after sanitization
+    if sanitized.is_empty() {
+        anyhow::bail!("Generated reply is empty after sanitization");
+    }
+    
     info!("Generated reply ({} chars): {}", sanitized.len(), sanitized);
 
     Ok(sanitized)
@@ -149,12 +155,15 @@ pub async fn generate_quote_commentary(
     .await
     .context("LLM generation timed out after 30s")??;
 
+    // Validate and sanitize output
     let sanitized = validate_reply(&commentary)?;
-    info!(
-        "Generated commentary ({} chars): {}",
-        sanitized.len(),
-        sanitized
-    );
+    
+    // Ensure non-empty after sanitization
+    if sanitized.is_empty() {
+        anyhow::bail!("Generated quote commentary is empty after sanitization");
+    }
+    
+    info!("Generated quote commentary ({} chars): {}", sanitized.len(), sanitized);
 
     Ok(sanitized)
 }

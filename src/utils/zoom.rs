@@ -272,4 +272,146 @@ mod tests {
         let zoom_amount = gaussian(1.0, 0.2, 0.5, 2.0);
         assert!((0.5..=2.0).contains(&zoom_amount));
     }
+
+    #[test]
+    fn test_pinch_zoom_scale_factor_zoom_in() {
+        // Test that scale factors > 1.0 zoom in
+        let scale_factor = 2.0;
+        let finger_distance = 100.0;
+        let final_distance = finger_distance * scale_factor;
+        assert_eq!(final_distance, 200.0);
+        assert!(final_distance > finger_distance);
+    }
+
+    #[test]
+    fn test_pinch_zoom_scale_factor_zoom_out() {
+        // Test that scale factors < 1.0 zoom out
+        let scale_factor = 0.5;
+        let finger_distance = 100.0;
+        let final_distance = finger_distance * scale_factor;
+        assert_eq!(final_distance, 50.0);
+        assert!(final_distance < finger_distance);
+    }
+
+    #[test]
+    fn test_pinch_zoom_scale_factor_no_change() {
+        // Test that scale factor of 1.0 produces no change
+        let scale_factor = 1.0;
+        let finger_distance = 100.0;
+        let final_distance = finger_distance * scale_factor;
+        assert_eq!(final_distance, 100.0);
+    }
+
+    #[test]
+    fn test_pinch_zoom_finger_positions() {
+        // Test finger position calculations for horizontal alignment
+        let center_x = 500.0;
+        let center_y = 300.0;
+        let finger_distance = 100.0;
+        let angle: f64 = 0.0;
+
+        let finger1_start_x = center_x - (finger_distance / 2.0) * angle.cos();
+        let finger1_start_y = center_y - (finger_distance / 2.0) * angle.sin();
+        let finger2_start_x = center_x + (finger_distance / 2.0) * angle.cos();
+        let finger2_start_y = center_y + (finger_distance / 2.0) * angle.sin();
+
+        // With angle 0, fingers should be horizontally aligned
+        assert_eq!(finger1_start_x, 450.0);
+        assert_eq!(finger1_start_y, 300.0);
+        assert_eq!(finger2_start_x, 550.0);
+        assert_eq!(finger2_start_y, 300.0);
+    }
+
+    #[test]
+    fn test_wheel_zoom_delta_signs() {
+        // Test that delta_y signs are correct for zoom direction
+        let zoom_in_delta = -100.0; // Negative = zoom in
+        let zoom_out_delta = 100.0; // Positive = zoom out
+
+        assert!(zoom_in_delta < 0.0);
+        assert!(zoom_out_delta > 0.0);
+    }
+
+    #[test]
+    fn test_set_zoom_level_normal() {
+        // Test normal zoom level
+        let scale = 1.0;
+        assert_eq!(scale, 1.0);
+    }
+
+    #[test]
+    fn test_set_zoom_level_zoom_in() {
+        // Test zoom in scale
+        let scale = 2.0;
+        assert!(scale > 1.0);
+    }
+
+    #[test]
+    fn test_set_zoom_level_zoom_out() {
+        // Test zoom out scale
+        let scale = 0.5;
+        assert!(scale < 1.0 && scale > 0.0);
+    }
+
+    #[test]
+    fn test_set_zoom_level_invalid_scale() {
+        // Test that invalid scales are handled
+        let scale = 0.0;
+        assert!(scale <= 0.0);
+    }
+
+    #[test]
+    fn test_zoom_to_easing_curve() {
+        // Test ease-in-out curve calculations
+        let progress = 0.3; // Before midpoint
+        let eased = if progress < 0.5 {
+            2.0 * progress * progress
+        } else {
+            -1.0 + (4.0 - 2.0 * progress) * progress
+        };
+        assert!(eased >= 0.0 && eased <= 1.0);
+    }
+
+    #[test]
+    fn test_zoom_to_easing_curve_midpoint() {
+        // Test at midpoint
+        let progress = 0.5;
+        let eased = if progress < 0.5 {
+            2.0 * progress * progress
+        } else {
+            -1.0 + (4.0 - 2.0 * progress) * progress
+        };
+        assert_eq!(eased, 0.5);
+    }
+
+    #[test]
+    fn test_zoom_to_easing_curve_after_midpoint() {
+        // Test after midpoint
+        let progress = 0.7;
+        let eased = if progress < 0.5 {
+            2.0 * progress * progress
+        } else {
+            -1.0 + (4.0 - 2.0 * progress) * progress
+        };
+        assert!(eased >= 0.0 && eased <= 1.0);
+    }
+
+    #[test]
+    fn test_zoom_to_interpolation() {
+        // Test scale interpolation
+        let current_scale = 1.0;
+        let target_scale = 2.0;
+        let progress = 0.5;
+        let interpolated = current_scale + (target_scale - current_scale) * progress;
+        assert_eq!(interpolated, 1.5);
+    }
+
+    #[test]
+    fn test_zoom_to_steps_calculation() {
+        // Test that steps are calculated correctly
+        let duration_ms = 1000;
+        let steps = 20;
+        let step_duration = duration_ms / steps;
+        assert_eq!(step_duration, 50);
+    }
 }

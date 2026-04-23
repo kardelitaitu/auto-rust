@@ -1,6 +1,6 @@
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::llm::{reply_engine_system_prompt, ChatMessage, Llm};
 use crate::prelude::TaskContext;
+use crate::llm::unified_processor::UnifiedLLMProcessor;
 use anyhow::Result;
 use log::{info, warn};
 use rand::Rng;
@@ -32,16 +32,29 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let replies = extract_replies(api, CONTEXT_REPLIES).await?;
     info!("Extracted {} replies for context", replies.len());
 
-    info!("Generating AI reply...");
-    let llm = Llm::new()?;
-    let messages = build_reply_messages(&author, &tweet_text, &replies);
+    info!("Generating AI reply using unified batch processor...");
+    let processor = UnifiedLLMProcessor::new();
+    
+    // Convert replies to format expected by unified processor
+    let reply_tuples: Vec<(&str, &str)> = replies
+        .iter()
+        .map(|(a, t)| (a.as_str(), t.as_str()))
+        .collect();
 
-    let reply_text = match llm.chat(messages).await {
-        Ok(text) => sanitize_reply(&text),
-        Err(e) => {
-            warn!("LLM failed: {}, using fallback", e);
-            "Interesting perspective! Thanks for sharing.".to_string()
-        }
+    let reply_texts: Vec<crate::llm::unified_processor::UnifiedReplyResponse> = processor
+        .process_replies_batch(&tweet_text, &author, &reply_tuples)
+        .await
+        .map_err(|e| {
+            warn!("Unified processor failed: {}, using fallback", e);
+            e
+        })?;
+
+    // Use first reply (most relevant to the tweet)
+    let reply_text = if let Some(first_reply) = reply_texts.first() {
+        sanitize_reply(&first_reply.content)
+    } else {
+        warn!("No replies generated, using fallback");
+        "Interesting perspective! Thanks for sharing.".to_string()
     };
 
     info!("AI Reply: {}", reply_text);
@@ -287,27 +300,6 @@ async fn scroll_up_faster(api: &TaskContext) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn build_reply_messages(
-    tweet_author: &str,
-    tweet_text: &str,
-    replies: &[(String, String)],
-) -> Vec<ChatMessage> {
-    let system = reply_engine_system_prompt();
-
-    let mut user = format!("Tweet by @{}:\n{}", tweet_author, tweet_text);
-
-    if !replies.is_empty() {
-        user.push_str("\n\nReplies:\n");
-        for (author, text) in replies {
-            user.push_str(&format!("@{}: {}\n", author, text));
-        }
-    }
-
-    user.push_str("\n\nYour reply:");
-
-    vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
 
 #[cfg(test)]

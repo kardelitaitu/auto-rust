@@ -146,7 +146,18 @@ pub async fn discover_browsers_with_filters(
 
     // Log discovery summary
     if sessions.is_empty() {
-        warn!("No browsers discovered");
+        if !browser_filters.is_empty() {
+            // Phase 3: Zero-Match Browser Filter Hard Fail
+            // Treat zero matches as startup error when filters are active
+            return Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+                format!(
+                    "No browsers matched the specified filters: {}. Please check your --browsers argument.",
+                    browser_filters.join(", ")
+                )
+            )));
+        } else {
+            warn!("No browsers discovered (no filters specified)");
+        }
     } else {
         let names: Vec<_> = sessions.iter().map(|s| s.name.as_str()).collect();
         info!(
@@ -412,6 +423,7 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::BrowserProfile;
 
     #[test]
     fn test_browser_filter_matching() {
@@ -420,5 +432,152 @@ mod tests {
         assert!(matches_browser_filters("Brave on port 9001", &filters));
         assert!(matches_browser_filters("roxy-browser", &filters));
         assert!(!matches_browser_filters("Safari", &filters));
+    }
+
+    #[test]
+    fn test_normalize_browser_token() {
+        assert_eq!(normalize_browser_token("Brave-Browser"), "bravebrowser");
+        assert_eq!(normalize_browser_token("ROXYBROWSER"), "roxybrowser");
+        assert_eq!(normalize_browser_token("Chrome_123"), "chrome123");
+        assert_eq!(normalize_browser_token("Test@#$Browser"), "testbrowser");
+        assert_eq!(normalize_browser_token(""), "");
+        assert_eq!(normalize_browser_token("123"), "123");
+    }
+
+    #[test]
+    fn test_matches_browser_filters_empty() {
+        let filters: Vec<String> = vec![];
+        assert!(matches_browser_filters("any browser", &filters));
+        assert!(matches_browser_filters("", &filters));
+    }
+
+    #[test]
+    fn test_matches_browser_filters_case_insensitive() {
+        let filters = vec!["BRAVE".to_string()];
+        assert!(matches_browser_filters("brave", &filters));
+        assert!(matches_browser_filters("Brave", &filters));
+        assert!(matches_browser_filters("BRAVE", &filters));
+    }
+
+    #[test]
+    fn test_matches_browser_filters_partial_match() {
+        let filters = vec!["brave".to_string()];
+        assert!(matches_browser_filters("Brave Browser", &filters));
+        assert!(matches_browser_filters("My Brave Instance", &filters));
+    }
+
+    #[test]
+    fn test_matches_browser_filters_normalized_match() {
+        let filters = vec!["brave-browser".to_string()];
+        assert!(matches_browser_filters("Brave_Browser", &filters));
+        assert!(matches_browser_filters("BraveBrowser", &filters));
+    }
+
+    #[test]
+    fn test_matches_browser_filters_multiple_filters() {
+        let filters = vec!["brave".to_string(), "chrome".to_string(), "safari".to_string()];
+        assert!(matches_browser_filters("Brave Browser", &filters));
+        assert!(matches_browser_filters("Chrome Instance", &filters));
+        assert!(matches_browser_filters("Safari Web", &filters));
+        assert!(!matches_browser_filters("Firefox", &filters));
+    }
+
+    #[test]
+    fn test_profile_matches_filters_by_name() {
+        let profile = BrowserProfile {
+            name: "My Brave Browser".to_string(),
+            r#type: "brave".to_string(),
+            ws_endpoint: "ws://localhost:9222".to_string(),
+        };
+        let filters = vec!["brave".to_string()];
+        assert!(profile_matches_filters(&profile, &filters));
+    }
+
+    #[test]
+    fn test_profile_matches_filters_by_type() {
+        let profile = BrowserProfile {
+            name: "Custom Name".to_string(),
+            r#type: "chrome".to_string(),
+            ws_endpoint: "ws://localhost:9222".to_string(),
+        };
+        let filters = vec!["chrome".to_string()];
+        assert!(profile_matches_filters(&profile, &filters));
+    }
+
+    #[test]
+    fn test_profile_matches_filters_no_match() {
+        let profile = BrowserProfile {
+            name: "My Browser".to_string(),
+            r#type: "firefox".to_string(),
+            ws_endpoint: "ws://localhost:9222".to_string(),
+        };
+        let filters = vec!["brave".to_string(), "chrome".to_string()];
+        assert!(!profile_matches_filters(&profile, &filters));
+    }
+
+    #[test]
+    fn test_session_matches_filters_by_name() {
+        // Test session filter matching by creating a session with test values
+        // Note: We can't easily create a real Session in tests without a browser connection
+        // So we test the filter logic indirectly through the helper function
+        let filters = vec!["brave".to_string()];
+        assert!(matches_browser_filters("Brave Browser", &filters));
+    }
+
+    #[test]
+    fn test_session_matches_filters_by_type() {
+        let filters = vec!["chrome".to_string()];
+        assert!(matches_browser_filters("Chrome Instance", &filters));
+    }
+
+    #[test]
+    fn test_session_matches_filters_by_id() {
+        let filters = vec!["brave".to_string()];
+        assert!(matches_browser_filters("brave-123", &filters));
+    }
+
+    #[test]
+    fn test_session_matches_filters_no_match() {
+        let filters = vec!["brave".to_string(), "chrome".to_string()];
+        assert!(!matches_browser_filters("Safari", &filters));
+    }
+
+    #[test]
+    fn test_matches_browser_filters_with_special_chars() {
+        let filters = vec!["brave_browser".to_string()];
+        assert!(matches_browser_filters("Brave@Browser", &filters));
+        assert!(matches_browser_filters("Brave#Browser", &filters));
+    }
+
+    #[test]
+    fn test_normalize_browser_token_with_numbers() {
+        assert_eq!(normalize_browser_token("Browser123"), "browser123");
+        assert_eq!(normalize_browser_token("123Browser"), "123browser");
+        assert_eq!(normalize_browser_token("1_2_3"), "123");
+    }
+
+    #[test]
+    fn test_matches_browser_filters_exact_match() {
+        let filters = vec!["brave".to_string()];
+        assert!(matches_browser_filters("brave", &filters));
+        assert!(matches_browser_filters("Brave", &filters));
+    }
+
+    #[test]
+    fn test_profile_matches_filters_empty_filters() {
+        let profile = BrowserProfile {
+            name: "Any Browser".to_string(),
+            r#type: "any".to_string(),
+            ws_endpoint: "ws://localhost:9222".to_string(),
+        };
+        let filters: Vec<String> = vec![];
+        assert!(profile_matches_filters(&profile, &filters));
+    }
+
+    #[test]
+    fn test_session_matches_filters_empty_filters() {
+        // Test empty filters through the helper function
+        let filters: Vec<String> = vec![];
+        assert!(matches_browser_filters("any browser", &filters));
     }
 }

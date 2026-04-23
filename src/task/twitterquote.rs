@@ -2,8 +2,8 @@
 //! Quotes a tweet with LLM-generated commentary.
 
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::llm::{reply_engine_system_prompt, ChatMessage, Llm};
 use crate::prelude::TaskContext;
+use crate::llm::unified_processor::UnifiedLLMProcessor;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -44,17 +44,25 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         info!("[twitterquote] Using provided quote text");
         text
     } else {
-        info!("[twitterquote] Generating LLM quote...");
-        let llm = Llm::new()?;
-        let messages = build_quote_messages(&author, &tweet_text, &replies);
+        info!("[twitterquote] Generating LLM quote using unified batch processor...");
+        let processor = UnifiedLLMProcessor::new();
+        
+        // Convert replies to format expected by unified processor
+        let reply_tuples: Vec<(&str, &str)> = replies
+            .iter()
+            .map(|(a, t)| (a.as_str(), t.as_str()))
+            .collect();
 
-        match llm.chat(messages).await {
-            Ok(text) => validate_reply(&text),
-            Err(e) => {
-                warn!("[twitterquote] LLM failed: {}, using fallback", e);
-                "Interesting take!".to_string()
-            }
-        }
+        let reply_texts: crate::llm::unified_processor::UnifiedQuoteResponse = processor
+            .process_quote_with_sentiment(&tweet_text, &reply_tuples)
+            .await
+            .map_err(|e| {
+                warn!("[twitterquote] Unified processor failed: {}, using fallback", e);
+                e
+            })?;
+
+        // Use the quote content
+        reply_texts.content
     };
 
     let quote_text = truncate_with_ellipsis(&quote_text, 280);
@@ -300,27 +308,6 @@ fn validate_reply(text: &str) -> String {
     }
 
     result
-}
-
-fn build_quote_messages(
-    tweet_author: &str,
-    tweet_text: &str,
-    replies: &[(String, String)],
-) -> Vec<ChatMessage> {
-    let system = reply_engine_system_prompt();
-
-    let mut user = format!("Quote this tweet by @{}:\n{}", tweet_author, tweet_text);
-
-    if !replies.is_empty() {
-        user.push_str("\n\nTop replies for context:\n");
-        for (author, text) in replies.iter().take(3) {
-            user.push_str(&format!("@{}: {}\n", author, text));
-        }
-    }
-
-    user.push_str("\n\nGenerate a short, engaging quote commentary (max 280 chars):");
-
-    vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
 
 #[cfg(test)]

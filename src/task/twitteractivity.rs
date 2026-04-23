@@ -30,6 +30,20 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+// Element selectors configuration
+pub const HOME_LOGO_SELECTOR: &str = r#"a[aria-label="X"]"#;
+pub const TWEET_LINK_SELECTOR: &str = r#"a[href*="/status/"]"#;
+pub const TWEET_DETAIL_SELECTOR: &str = r#"div[role="dialog"]"#;
+pub const TWEET_DETAIL_FALLBACK1: &str = r#"div[data-testid="tweetDetail"]"#;
+pub const TWEET_DETAIL_FALLBACK2: &str = r#"div[data-testid="tweetThread"]"#;
+pub const TWEET_DETAIL_FALLBACK3: &str = r#"[aria-label="Timeline: Thread"]"#;
+pub const TWEET_DETAIL_FALLBACK4: &str = r#"article[data-testid="tweet"]"#;
+pub const RETWEET_BUTTON_SELECTOR: &str = r#"button[data-testid="retweet"]"#;
+pub const RETWEET_CONFIRM_SELECTOR: &str = r#"div[data-testid="retweetConfirm"]"#;
+pub const LIKE_BUTTON_SELECTOR: &str = r#"button[data-testid*="like"]"#;
+pub const FOLLOW_BUTTON_SELECTOR: &str = r#"button[data-testid$="-follow"]"#;
+pub const BOOKMARK_BUTTON_SELECTOR: &str = r#"button[data-testid="bookmark"]"#;
+
 use crate::metrics::{
     RUN_COUNTER_BUTTON_MISSING, RUN_COUNTER_CANDIDATE_SCANNED, RUN_COUNTER_CLICK_VERIFY_FAILED,
     RUN_COUNTER_DIVE_TARGET_FALLBACK_USED,
@@ -43,8 +57,10 @@ use crate::utils::twitter::{
     twitteractivity_popup::*, twitteractivity_sentiment::*,
 };
 
-/// Default feed scan duration (ms): 2 minutes
-const DEFAULT_DURATION_MS: u64 = 120_000;
+/// Default feed scan duration range (ms): 5-9 minutes (300-540 seconds)
+fn default_duration_ms() -> u64 {
+    rand::random::<u64>() % (540_000 - 300_000) + 300_000 // 300-540 seconds
+}
 /// Default number of engagement candidates to consider
 const DEFAULT_CANDIDATES: u32 = 5;
 /// Default thread depth when diving
@@ -239,14 +255,15 @@ async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()> {
 /// # Arguments
 /// * `api` - Task context with page, profile, clipboard
 /// * `payload` - JSON task configuration (see module docs)
+/// * `config` - Application configuration for default probabilities
 ///
 /// # Returns
 /// Result<()> - Ok if completed successfully, Err on failure
-pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Config) -> Result<()> {
     info!("Task started");
 
     // Parse task configuration from payload
-    let duration_ms = read_u64(&payload, "duration_ms", DEFAULT_DURATION_MS);
+    let duration_ms = read_u64(&payload, "duration_ms", default_duration_ms());
     let candidate_count = read_u32(&payload, "candidate_count", DEFAULT_CANDIDATES);
     let thread_depth = read_u32(&payload, "thread_depth", DEFAULT_THREAD_DEPTH);
     let max_actions_per_scan = read_u32(
@@ -262,14 +279,6 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         .get("llm_enabled")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let llm_reply_probability = payload
-        .get("llm_reply_probability")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.05);
-    let llm_quote_probability = payload
-        .get("llm_quote_probability")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.15);
 
     // Parse smart decision config (V3 feature - rule-based)
     let smart_decision_enabled = payload
@@ -278,7 +287,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         .unwrap_or(false);
 
     // Build persona weights
-    let mut persona = select_persona_weights(weights);
+    let mut persona = select_persona_weights(weights, &config.twitter_activity.probabilities);
     let profile = api.behavior_profile();
 
     persona = apply_behavior_profile(persona, profile, 0.0);
@@ -343,11 +352,19 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Continuous scrolling like pageview
     let profile = api.behavior_runtime();
-    let scroll_amount = profile.scroll.amount;
+    let scroll_amount = if config.twitter_activity.scroll_amount_pixels > 0 {
+        config.twitter_activity.scroll_amount_pixels
+    } else {
+        profile.scroll.amount
+    };
     let scroll_pause_ms = profile.scroll.pause_ms;
     let smooth = profile.scroll.smooth;
     let scroll_interval = Duration::from_millis(scroll_pause_ms);
-    let candidate_scan_interval = Duration::from_millis(MIN_CANDIDATE_SCAN_INTERVAL_MS);
+    let candidate_scan_interval = if config.twitter_activity.candidate_scan_interval_ms > 0 {
+        Duration::from_millis(config.twitter_activity.candidate_scan_interval_ms)
+    } else {
+        Duration::from_millis(MIN_CANDIDATE_SCAN_INTERVAL_MS)
+    };
     let mut next_scroll = Instant::now();
     let mut next_candidate_scan = Instant::now();
 
@@ -464,336 +481,320 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
                     }
                 }
 
-                // Decision: Dive into thread?
-                let mut did_dive = false;
-                if actions_this_scan >= max_actions_per_scan {
-                    break;
+                // Determine actions to perform on this tweet
+                let mut actions_to_do: Vec<&str> = Vec::new();
+                let tweet_id = tweet
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+
+                // Check each action type, respecting limits and chaining
+                if should_like(&candidate_persona)
+                    && action_tracker.can_perform_action(tweet_id, "like")
+                    && limits.can_like(&counters)
+                {
+                    actions_to_do.push("like");
                 }
-                if should_dive(&candidate_persona) {
-                    // Check action chaining prevention
-                    let tweet_id = tweet
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "dive") {
-                        info!(
-                            "Skipping dive on tweet {}: action chain cooldown active",
-                            tweet_id
-                        );
+                if should_retweet(&candidate_persona)
+                    && action_tracker.can_perform_action(tweet_id, "retweet")
+                    && limits.can_retweet(&counters)
+                {
+                    actions_to_do.push("retweet");
+                }
+                if should_quote(&candidate_persona)
+                    && action_tracker.can_perform_action(tweet_id, "quote_tweet")
+                    && limits.can_quote_tweet(&counters)
+                {
+                    actions_to_do.push("quote");
+                }
+                if should_follow(&candidate_persona)
+                    && action_tracker.can_perform_action(tweet_id, "follow")
+                    && limits.can_follow(&counters)
+                {
+                    actions_to_do.push("follow");
+                }
+                if should_reply(&candidate_persona)
+                    && action_tracker.can_perform_action(tweet_id, "reply")
+                    && limits.can_reply(&counters)
+                {
+                    actions_to_do.push("reply");
+                }
+                if should_bookmark(&candidate_persona)
+                    && action_tracker.can_perform_action(tweet_id, "bookmark")
+                    && limits.can_bookmark(&counters)
+                {
+                    actions_to_do.push("bookmark");
+                }
+
+                // Determine if we need to dive (retweet, quote, reply, follow, bookmark require dive; like does not)
+                let need_dive = actions_to_do.iter().any(|&action| action != "like");
+                let mut did_dive = false;
+
+                if need_dive {
+                    // Dive into thread for non-like actions
+                    if actions_this_scan >= max_actions_per_scan {
+                        break;
                     }
-                    // Check limits
-                    else if !limits.can_dive(&counters) {
+                    if !limits.can_dive(&counters) {
                         info!(
-                            "Skipping thread dive: limit reached ({}/{})",
+                            "Skipping dive: limit reached ({}/{})",
                             counters.thread_dives, limits.max_thread_dives
                         );
                     } else if let Some(status_url) = tweet.get("status_url").and_then(|v| v.as_str()) {
+                        // Pause continuous scrolling before diving to avoid interference
+                        let original_next_scroll = next_scroll;
+                        next_scroll = Instant::now() + Duration::from_secs(300); // Pause for 5 minutes during dive
+                        info!("Paused continuous scrolling for thread dive");
+
                         let dive_outcome = dive_into_thread(api, status_url).await?;
                         if dive_outcome.used_fallback_target {
                             api.increment_run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, 1);
                         }
                         if !dive_outcome.opened {
-                            info!("Thread dive skipped: no valid target resolved");
+                            info!("Thread dive failed: no valid target resolved");
+                            // Resume scrolling if dive failed
+                            next_scroll = original_next_scroll;
                         } else {
                             read_full_thread(api, thread_depth).await?;
                             scroll_pause(api).await;
                             counters.increment_thread_dive();
                             _actions_taken += 1;
                             actions_this_scan += 1;
-                            // Record action for chain prevention
+                            // Record dive action
                             action_tracker.record_action(tweet_id.to_string(), "dive");
                             did_dive = true;
                         }
                     }
                 }
 
-                // Engagement actions (like, retweet, quote, follow, reply, bookmark)
-                // These happen after dive (if dove) or directly on feed (if no dive)
-                // Dive is a pre-engagement step, not counted as engagement
-                // Decision: Like?
-                if actions_this_scan >= max_actions_per_scan {
-                    break;
-                }
-                if should_like(&candidate_persona) {
-                    // Check action chaining prevention
-                    let tweet_id = tweet
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "like") {
-                        info!(
-                            "Skipping like on tweet {}: action chain cooldown active",
-                            tweet_id
-                        );
-                    }
-                    // Check limits
-                    else if !limits.can_like(&counters) {
-                        info!(
-                            "Skipping like: limit reached ({}/{})",
-                            counters.likes, limits.max_likes
-                        );
-                    } else if let Some(btn_pos) = extract_tweet_button_position(tweet, "like") {
-                        if like_at_position(api, btn_pos.0, btn_pos.1).await? {
-                            info!("Liked tweet");
-                            counters.increment_like();
-                            _actions_taken += 1;
-                            actions_this_scan += 1;
-                            // Record action for chain prevention
-                            action_tracker.record_action(tweet_id.to_string(), "like");
-                            // Use clustered pause for micro-movements between actions
-                            clustered_engagement_pause(api).await;
-                        } else {
-                            api.increment_run_counter(RUN_COUNTER_CLICK_VERIFY_FAILED, 1);
-                            warn!(
-                                "Like click verification failed for tweet {} at ({:.1}, {:.1})",
-                                tweet_id, btn_pos.0, btn_pos.1
-                            );
+                // Perform actions (only 1 per dive)
+                for &action in actions_to_do.iter().take(1) {
+                    let success = match action {
+                        "like" => {
+                            // Like can be done on feed or in detail
+                            if did_dive {
+                                // In detail view, use general like function
+                                like_tweet(api).await?
+                            } else {
+                                // On feed, use position from tweet data
+                                if let Some(btn_pos) = extract_tweet_button_position(tweet, "like") {
+                                    like_at_position(api, btn_pos.0, btn_pos.1).await?
+                                } else {
+                                    warn!("Like button not found in tweet payload for {}", tweet_id);
+                                    api.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 1);
+                                    false
+                                }
+                            }
                         }
-                    } else {
-                        warn!("Like button not found in tweet payload for {}", tweet_id);
-                        api.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 1);
-                    }
-                }
-
-                // Decision: Retweet?
-                if actions_this_scan >= max_actions_per_scan {
-                    break;
-                }
-                if should_retweet(&candidate_persona) {
-                    // Check action chaining prevention
-                    let tweet_id = tweet
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "retweet") {
-                        info!(
-                            "Skipping retweet on tweet {}: action chain cooldown active",
-                            tweet_id
-                        );
-                    }
-                    // Check limits
-                    else if !limits.can_retweet(&counters) {
-                        info!(
-                            "Skipping retweet: limit reached ({}/{})",
-                            counters.retweets, limits.max_retweets
-                        );
-                    } else if retweet_tweet(api).await? {
-                        info!("Retweeted");
-                        counters.increment_retweet();
-                        _actions_taken += 1;
-                        actions_this_scan += 1;
-                        // Record action for chain prevention
-                        action_tracker.record_action(tweet_id.to_string(), "retweet");
-                        // Use clustered pause for micro-movements
-                        clustered_engagement_pause(api).await;
-                    }
-                }
-
-                // Decision: Quote Tweet?
-                if actions_this_scan >= max_actions_per_scan {
-                    break;
-                }
-                if should_quote(&candidate_persona) {
-                    // Check action chaining prevention
-                    let tweet_id = tweet
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "quote_tweet") {
-                        info!(
-                            "Skipping quote tweet on tweet {}: action chain cooldown active",
-                            tweet_id
-                        );
-                    }
-                    // Check limits
-                    else if !limits.can_quote_tweet(&counters) {
-                        info!(
-                            "Skipping quote tweet: limit reached ({}/{})",
-                            counters.quote_tweets, limits.max_quote_tweets
-                        );
-                    } else if llm_enabled {
-                        // Generate quote tweet commentary
-                        match extract_tweet_context(api).await {
-                            Ok((author, text, replies)) => {
-                                match generate_quote_commentary(api, &author, &text, replies).await {
-                                    Ok(commentary) => {
-                                        match quote_tweet(api, &commentary).await {
-                                            Ok(true) => {
-                                                info!(
-                                                    "Quote tweeted with commentary: {}",
-                                                    commentary
-                                                );
-                                                counters.increment_quote_tweet();
-                                                _actions_taken += 1;
-                                                actions_this_scan += 1;
-                                                // Record action for chain prevention
-                                                action_tracker.record_action(
-                                                    tweet_id.to_string(),
-                                                    "quote_tweet",
-                                                );
-                                                // Use clustered reply pause for quote tweets (thinking time)
-                                                clustered_reply_pause(api).await;
-                                            }
-                                            Ok(false) => {
-                                                warn!("Quote tweet failed");
-                                            }
-                                            Err(e) => {
-                                                warn!("Quote tweet error: {}", e);
-                                            }
-                                        }
+                        "retweet" => {
+                            // Validate we're in thread detail view before retweeting
+                            if !did_dive {
+                                warn!("Skipping retweet: not in thread detail view for tweet {}", tweet_id);
+                                false
+                            } else {
+                                match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                                    Ok(true) => retweet_tweet(api).await?,
+                                    Ok(false) => {
+                                        warn!("Skipping retweet: not on tweet page for tweet {}", tweet_id);
+                                        false
                                     }
                                     Err(e) => {
-                                        warn!("Failed to generate quote commentary: {}", e);
+                                        warn!("Failed to validate tweet page context for retweet: {}", e);
+                                        false
                                     }
                                 }
                             }
-                            Err(e) => {
-                                warn!("Failed to extract tweet context for quote: {}", e);
+                        }
+                        "quote" => {
+                            // Validate we're in thread detail view before quoting
+                            if !did_dive {
+                                warn!("Skipping quote: not in thread detail view for tweet {}", tweet_id);
+                                false
+                            } else {
+                                match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                                    Ok(true) => {
+                                        if llm_enabled {
+                                            match extract_tweet_context(api).await {
+                                                Ok((author, text, replies)) => {
+                                                    match generate_quote_commentary(api, &author, &text, replies).await {
+                                                        Ok(commentary) => {
+                                                            match quote_tweet(api, &commentary).await {
+                                                                Ok(success) => {
+                                                                    if success {
+                                                                        info!("Quote tweeted with commentary: {}", commentary);
+                                                                    }
+                                                                    success
+                                                                }
+                                                                Err(e) => {
+                                                                    warn!("Quote tweet error: {}", e);
+                                                                    false
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            warn!("Failed to generate quote commentary: {}", e);
+                                                            false
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    warn!("Failed to extract tweet context for quote: {}", e);
+                                                    false
+                                                }
+                                            }
+                                        } else {
+                                            false // Skip if no LLM
+                                        }
+                                    }
+                                    Ok(false) => {
+                                        warn!("Skipping quote: not on tweet page for tweet {}", tweet_id);
+                                        false
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to validate tweet page context for quote: {}", e);
+                                        false
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-
-                // Decision: Follow author?
-                if actions_this_scan >= max_actions_per_scan {
-                    break;
-                }
-                if should_follow(&candidate_persona) {
-                    // Check action chaining prevention
-                    let tweet_id = tweet
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "follow") {
-                        info!(
-                            "Skipping follow on tweet {}: action chain cooldown active",
-                            tweet_id
-                        );
-                    }
-                    // Check limits
-                    else if !limits.can_follow(&counters) {
-                        info!(
-                            "Skipping follow: limit reached ({}/{})",
-                            counters.follows, limits.max_follows
-                        );
-                    } else if follow_from_tweet(api).await? {
-                        info!("Followed user");
-                        counters.increment_follow();
-                        _actions_taken += 1;
-                        actions_this_scan += 1;
-                        // Record action for chain prevention
-                        action_tracker.record_action(tweet_id.to_string(), "follow");
-                        // Use clustered pause for micro-movements
-                        clustered_engagement_pause(api).await;
-                    }
-                }
-
-                // Decision: Reply?
-                if actions_this_scan >= max_actions_per_scan {
-                    break;
-                }
-                if should_reply(&candidate_persona) {
-                    // Check action chaining prevention
-                    let tweet_id = tweet
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "reply") {
-                        info!(
-                            "Skipping reply on tweet {}: action chain cooldown active",
-                            tweet_id
-                        );
-                    }
-                    // Check limits
-                    else if !limits.can_reply(&counters) {
-                        info!(
-                            "Skipping reply: limit reached ({}/{})",
-                            counters.replies, limits.max_replies
-                        );
-                    } else {
-                        // Try LLM-powered reply if enabled, fallback to template
-                        let reply_text = if llm_enabled
-                            && rand::random::<f64>() < llm_reply_probability
-                        {
-                            // Extract tweet context for LLM
-                            match extract_tweet_context(api).await {
-                                Ok((author, text, replies)) => {
-                                    match generate_reply(api, &author, &text, replies).await {
-                                        Ok(reply) => {
-                                            info!("Generated LLM reply: {}", reply);
-                                            reply
-                                        }
-                                        Err(e) => {
-                                            warn!(
-                                                "LLM reply generation failed, using template: {}",
-                                                e
-                                            );
+                        "follow" => {
+                            // Validate we're in thread detail view before following
+                            if !did_dive {
+                                warn!("Skipping follow: not in thread detail view for tweet {}", tweet_id);
+                                false
+                            } else {
+                                match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                                    Ok(true) => follow_from_tweet(api).await?,
+                                    Ok(false) => {
+                                        warn!("Skipping follow: not on tweet page for tweet {}", tweet_id);
+                                        false
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to validate tweet page context for follow: {}", e);
+                                        false
+                                    }
+                                }
+                            }
+                        }
+                        "reply" => {
+                            // Validate we're in thread detail view before replying
+                            if !did_dive {
+                                warn!("Skipping reply: not in thread detail view for tweet {}", tweet_id);
+                                false
+                            } else {
+                                match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                                    Ok(true) => {
+                                        let reply_text = if llm_enabled {
+                                            match extract_tweet_context(api).await {
+                                                Ok((author, text, replies)) => {
+                                                    match generate_reply(api, &author, &text, replies).await {
+                                                        Ok(reply) => {
+                                                            info!("Generated LLM reply: {}", reply);
+                                                            reply
+                                                        }
+                                                        Err(e) => {
+                                                            warn!("LLM reply failed, using template: {}", e);
+                                                            generate_reply_text(sentiment, counters.replies)
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    warn!("Failed to extract context, using template: {}", e);
+                                                    generate_reply_text(sentiment, counters.replies)
+                                                }
+                                            }
+                                        } else {
                                             generate_reply_text(sentiment, counters.replies)
-                                        }
+                                        };
+                                        reply_to_tweet(api, &reply_text).await?
+                                    }
+                                    Ok(false) => {
+                                        warn!("Skipping reply: not on tweet page for tweet {}", tweet_id);
+                                        false
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to validate tweet page context for reply: {}", e);
+                                        false
                                     }
                                 }
-                                Err(e) => {
-                                    warn!("Failed to extract tweet context, using template: {}", e);
-                                    generate_reply_text(sentiment, counters.replies)
+                            }
+                        }
+                        "bookmark" => {
+                            // Validate we're in thread detail view before bookmarking
+                            if !did_dive {
+                                warn!("Skipping bookmark: not in thread detail view for tweet {}", tweet_id);
+                                false
+                            } else {
+                                match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                                    Ok(true) => bookmark_tweet(api).await?,
+                                    Ok(false) => {
+                                        warn!("Skipping bookmark: not on tweet page for tweet {}", tweet_id);
+                                        false
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to validate tweet page context for bookmark: {}", e);
+                                        false
+                                    }
                                 }
                             }
-                        } else {
-                            // Use template reply
-                            generate_reply_text(sentiment, counters.replies)
-                        };
+                        }
+                        _ => false,
+                    };
 
-                        if reply_to_tweet(api, &reply_text).await? {
-                            info!("Replied with sentiment {:?}", sentiment);
-                            counters.increment_reply();
-                            _actions_taken += 1;
-                            actions_this_scan += 1;
-                            // Record action for chain prevention
-                            action_tracker.record_action(tweet_id.to_string(), "reply");
-                            // Use clustered reply pause for thinking time after composing
+                    if success {
+                        // Update counters and record action
+                        match action {
+                            "like" => {
+                                info!("Liked tweet");
+                                counters.increment_like();
+                            }
+                            "retweet" => {
+                                info!("Retweeted");
+                                counters.increment_retweet();
+                            }
+                            "quote" => counters.increment_quote_tweet(),
+                            "follow" => {
+                                info!("Followed user");
+                                counters.increment_follow();
+                            }
+                            "reply" => {
+                                info!("Replied with sentiment {:?}", sentiment);
+                                counters.increment_reply();
+                            }
+                            "bookmark" => {
+                                info!("Bookmarked tweet");
+                                counters.increment_bookmark();
+                            }
+                            _ => {}
+                        }
+                        _actions_taken += 1;
+                        actions_this_scan += 1;
+                        action_tracker.record_action(tweet_id.to_string(), action);
+
+                        // Use appropriate pause
+                        if action == "reply" || action == "quote" {
                             clustered_reply_pause(api).await;
+                        } else {
+                            clustered_engagement_pause(api).await;
+                        }
+                    } else {
+                        if action == "like" {
+                            api.increment_run_counter(RUN_COUNTER_CLICK_VERIFY_FAILED, 1);
                         }
                     }
                 }
 
-                // Decision: Bookmark?
-                if actions_this_scan >= max_actions_per_scan {
-                    break;
-                }
-                if should_bookmark(&candidate_persona) {
-                    // Check action chaining prevention
-                    let tweet_id = tweet
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    if !action_tracker.can_perform_action(tweet_id, "bookmark") {
-                        info!(
-                            "Skipping bookmark on tweet {}: action chain cooldown active",
-                            tweet_id
-                        );
-                    }
-                    // Check limits
-                    else if !limits.can_bookmark(&counters) {
-                        info!(
-                            "Skipping bookmark: limit reached ({}/{})",
-                            counters.bookmarks, limits.max_bookmarks
-                        );
-                    } else if bookmark_tweet(api).await? {
-                        info!("Bookmarked tweet");
-                        counters.increment_bookmark();
-                        _actions_taken += 1;
-                        actions_this_scan += 1;
-                        // Record action for chain prevention
-                        action_tracker.record_action(tweet_id.to_string(), "bookmark");
-                        // Use clustered pause for micro-movements
-                        clustered_engagement_pause(api).await;
-                    }
-                }
-
-                // Navigate back to home after engagement if we dove into thread
+                // Navigate back to home after dive
                 if did_dive {
+                    // Wait 3-5s after engagement before going home
+                    let home_wait_ms = rand::random::<u64>() % 2000 + 3000; // 3-5s
+                    human_pause(api, home_wait_ms).await;
                     info!("Navigating back to home after thread dive and engagement");
                     goto_home(api).await?;
                     scroll_pause(api).await;
+                    // Resume continuous scrolling now that we're back on home feed
+                    next_scroll = Instant::now() + scroll_interval;
+                    info!("Resumed continuous scrolling after thread dive");
                 }
             }
         }

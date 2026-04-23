@@ -1,0 +1,28 @@
+{
+  "interaction_count": 4,
+  "total_attempts": 4,
+  "total_successes": 2,
+  "recent_results": [
+    true,
+    false,
+    false,
+    true
+  ],
+  "selectors": {
+    "a[aria-label=\"X\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/Rainmaker1973/status/2046877434184667496']": {
+      "attempts": 2,
+      "successes": 0,
+      "consecutive_failures": 2
+    },
+    "a[href='/_3emeOeil/status/2047014237277421710']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    }
+  }
+}

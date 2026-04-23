@@ -99,42 +99,72 @@ impl PersonaWeights {
 
 /// Selects a PersonaWeights configuration based on the provided weights dictionary.
 /// The `weights` JSON may include any of: `like_prob`, `retweet_prob`, `quote_prob`, `follow_prob`, `reply_prob`, `thread_dive_prob`, `interest_multiplier`.
-/// Any missing weights default to neutral probabilities.
+/// Any missing weights default to the provided config probabilities.
 #[instrument]
-pub fn select_persona_weights(weights: Option<&Value>) -> PersonaWeights {
-    let mut persona = PersonaWeights::default();
+pub fn select_persona_weights(
+    weights: Option<&Value>,
+    config_probs: &crate::config::TwitterProbabilitiesConfig,
+) -> PersonaWeights {
+    let mut persona = PersonaWeights {
+        like_prob: config_probs.like_probability,
+        retweet_prob: config_probs.retweet_probability,
+        quote_prob: config_probs.quote_probability,
+        follow_prob: config_probs.follow_probability,
+        reply_prob: config_probs.reply_probability,
+        bookmark_prob: config_probs.bookmark_probability,
+        thread_dive_prob: config_probs.thread_dive_probability,
+        interest_multiplier: 1.0,
+    };
+
+    log::info!("Persona probabilities from config: like={:.3}, retweet={:.3}, quote={:.3}, follow={:.3}, reply={:.3}, bookmark={:.3}, dive={:.3}",
+        persona.like_prob, persona.retweet_prob, persona.quote_prob, persona.follow_prob, persona.reply_prob, persona.bookmark_prob, persona.thread_dive_prob);
 
     if let Some(w) = weights {
+        let mut overrides = Vec::new();
         if let Some(v) = w.get("like_prob").and_then(|v: &Value| v.as_f64()) {
             persona.like_prob = v;
+            overrides.push(format!("like={:.3}", v));
         }
         if let Some(v) = w.get("retweet_prob").and_then(|v: &Value| v.as_f64()) {
             persona.retweet_prob = v;
+            overrides.push(format!("retweet={:.3}", v));
         }
         if let Some(v) = w.get("quote_prob").and_then(|v: &Value| v.as_f64()) {
             persona.quote_prob = v;
+            overrides.push(format!("quote={:.3}", v));
         }
         if let Some(v) = w.get("follow_prob").and_then(|v: &Value| v.as_f64()) {
             persona.follow_prob = v;
+            overrides.push(format!("follow={:.3}", v));
         }
         if let Some(v) = w.get("reply_prob").and_then(|v: &Value| v.as_f64()) {
             persona.reply_prob = v;
+            overrides.push(format!("reply={:.3}", v));
         }
         if let Some(v) = w.get("bookmark_prob").and_then(|v: &Value| v.as_f64()) {
             persona.bookmark_prob = v;
+            overrides.push(format!("bookmark={:.3}", v));
         }
         if let Some(v) = w.get("thread_dive_prob").and_then(|v: &Value| v.as_f64()) {
             persona.thread_dive_prob = v;
+            overrides.push(format!("dive={:.3}", v));
         }
         if let Some(v) = w
             .get("interest_multiplier")
             .and_then(|v: &Value| v.as_f64())
         {
             persona.interest_multiplier = v;
+            overrides.push(format!("interest_multiplier={:.3}", v));
+        }
+        if !overrides.is_empty() {
+            log::info!("Persona overrides from payload: {}", overrides.join(", "));
         }
     }
 
-    persona.normalized()
+    let final_persona = persona.normalized();
+    log::info!("Final persona probabilities: like={:.3}, retweet={:.3}, quote={:.3}, follow={:.3}, reply={:.3}, bookmark={:.3}, dive={:.3}",
+        final_persona.like_prob, final_persona.retweet_prob, final_persona.quote_prob, final_persona.follow_prob, final_persona.reply_prob, final_persona.bookmark_prob, final_persona.thread_dive_prob);
+    final_persona
 }
 
 /// Applies the behavior profile's sentiment modulation and variance to the base persona.
@@ -154,8 +184,11 @@ pub fn apply_behavior_profile(
 /// Decides whether to like a tweet given the persona weights.
 /// Returns `true` if the randomized chance was met.
 pub fn should_like(persona: &PersonaWeights) -> bool {
+    let prob = persona.like_prob.clamp(0.0, 1.0);
     let mut rng = rand::thread_rng();
-    rng.gen_bool(persona.like_prob.clamp(0.0, 1.0))
+    let result = rng.gen_bool(prob);
+    log::debug!("should_like: prob={:.3}, result={}", prob, result);
+    result
 }
 
 /// Decides whether to retweet.

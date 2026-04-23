@@ -159,7 +159,7 @@ fn default_max_thread_dives() -> u32 {
 }
 
 fn default_max_bookmarks() -> u32 {
-    0
+    2
 }
 
 fn default_max_quote_tweets() -> u32 {
@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(limits.max_follows, 2);
         assert_eq!(limits.max_replies, 1);
         assert_eq!(limits.max_thread_dives, 3);
-        assert_eq!(limits.max_bookmarks, 0);
+        assert_eq!(limits.max_bookmarks, 2);
         assert_eq!(limits.max_total_actions, 10);
     }
 

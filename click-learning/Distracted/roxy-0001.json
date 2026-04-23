@@ -1,0 +1,60 @@
+{
+  "interaction_count": 11,
+  "total_attempts": 11,
+  "total_successes": 10,
+  "recent_results": [
+    true,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "selectors": {
+    "button[data-testid$=\"-follow\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/words_salad/status/2046992180217053521']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[aria-label=\"X\"]": {
+      "attempts": 4,
+      "successes": 4,
+      "consecutive_failures": 0
+    },
+    "a[href='/FantasyWorldW1/status/2046886921301885059']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "button[data-testid=\"retweet\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "div[data-testid=\"retweetConfirm\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/vxeno2/status/2046764502947885160']": {
+      "attempts": 1,
+      "successes": 0,
+      "consecutive_failures": 1
+    },
+    "a[href='/cryptorover/status/2046973185904566477']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    }
+  }
+}

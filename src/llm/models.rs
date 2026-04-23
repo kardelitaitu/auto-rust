@@ -105,7 +105,7 @@ impl Default for OllamaConfig {
     fn default() -> Self {
         Self {
             base_url: "http://localhost:11434".into(),
-            model: "llama3.2:latest".into(),
+            model: "llama3.2:3b".into(),
             timeout_ms: 120000,
         }
     }
@@ -175,7 +175,7 @@ mod tests {
     fn test_ollama_config_defaults() {
         let config = OllamaConfig::default();
         assert_eq!(config.base_url, "http://localhost:11434");
-        assert_eq!(config.model, "llama3.2:latest");
+        assert_eq!(config.model, "llama3.2:3b");
         assert_eq!(config.timeout_ms, 120000);
     }
 

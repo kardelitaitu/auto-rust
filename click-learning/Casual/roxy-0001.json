@@ -1,0 +1,41 @@
+{
+  "interaction_count": 7,
+  "total_attempts": 7,
+  "total_successes": 6,
+  "recent_results": [
+    true,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "selectors": {
+    "button[data-testid=\"retweet\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/notallsorosie/status/2046799019461296517']": {
+      "attempts": 1,
+      "successes": 0,
+      "consecutive_failures": 1
+    },
+    "div[data-testid=\"retweetConfirm\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[aria-label=\"X\"]": {
+      "attempts": 2,
+      "successes": 2,
+      "consecutive_failures": 0
+    },
+    "a[href='/TheCinesthetic/status/2046901550774444106']": {
+      "attempts": 2,
+      "successes": 2,
+      "consecutive_failures": 0
+    }
+  }
+}

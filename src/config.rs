@@ -144,9 +144,19 @@ pub struct TwitterActivityConfig {
     /// Number of tweets to consider for engagement per scan (default: 5)
     #[serde(default = "default_engagement_candidate_count")]
     pub engagement_candidate_count: u32,
+    /// Scroll amount override for Twitter activity (pixels, 0 = use profile default)
+    #[serde(default = "default_twitter_scroll_amount")]
+    pub scroll_amount_pixels: i32,
+    /// Candidate scan interval override (ms, 0 = use default 2500ms)
+    #[serde(default = "default_candidate_scan_interval_ms")]
+    pub candidate_scan_interval_ms: u64,
     /// Path to persona file (optional)
     #[serde(default)]
     pub persona_file_path: Option<String>,
+
+    /// Default engagement probabilities (can be overridden by task payload)
+    #[serde(default)]
+    pub probabilities: TwitterProbabilitiesConfig,
 
     /// Engagement limits for rate limit protection
     #[serde(default)]
@@ -155,6 +165,38 @@ pub struct TwitterActivityConfig {
     /// LLM configuration for V2 features
     #[serde(default)]
     pub llm: TwitterLLMConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TwitterProbabilitiesConfig {
+    #[serde(default = "default_like_probability")]
+    pub like_probability: f64,
+    #[serde(default = "default_retweet_probability")]
+    pub retweet_probability: f64,
+    #[serde(default = "default_quote_probability")]
+    pub quote_probability: f64,
+    #[serde(default = "default_follow_probability")]
+    pub follow_probability: f64,
+    #[serde(default = "default_reply_probability")]
+    pub reply_probability: f64,
+    #[serde(default = "default_bookmark_probability")]
+    pub bookmark_probability: f64,
+    #[serde(default = "default_thread_dive_probability")]
+    pub thread_dive_probability: f64,
+}
+
+impl Default for TwitterProbabilitiesConfig {
+    fn default() -> Self {
+        Self {
+            like_probability: default_like_probability(),
+            retweet_probability: default_retweet_probability(),
+            quote_probability: default_quote_probability(),
+            follow_probability: default_follow_probability(),
+            reply_probability: default_reply_probability(),
+            bookmark_probability: default_bookmark_probability(),
+            thread_dive_probability: default_thread_dive_probability(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -191,6 +233,23 @@ fn default_llm_max_tokens() -> u32 {
 }
 fn default_llm_timeout() -> u64 {
     30000
+}
+
+// Default engagement probabilities
+fn default_like_probability() -> f64 {
+    0.4
+}
+fn default_retweet_probability() -> f64 {
+    0.15
+}
+fn default_follow_probability() -> f64 {
+    0.05
+}
+fn default_bookmark_probability() -> f64 {
+    0.02
+}
+fn default_thread_dive_probability() -> f64 {
+    0.25
 }
 fn default_reply_probability() -> f64 {
     0.05
@@ -283,7 +342,7 @@ fn default_max_thread_dives() -> u32 {
 }
 
 fn default_max_bookmarks() -> u32 {
-    0
+    2
 }
 
 fn default_max_total_actions() -> u32 {
@@ -303,6 +362,12 @@ fn default_feed_scroll_count() -> u32 {
 fn default_engagement_candidate_count() -> u32 {
     5
 }
+fn default_twitter_scroll_amount() -> i32 {
+    0 // 0 means use profile default
+}
+fn default_candidate_scan_interval_ms() -> u64 {
+    0 // 0 means use default 2500ms
+}
 
 impl Default for TwitterActivityConfig {
     fn default() -> Self {
@@ -310,7 +375,10 @@ impl Default for TwitterActivityConfig {
             feed_scan_duration_ms: default_feed_scan_duration(),
             feed_scroll_count: default_feed_scroll_count(),
             engagement_candidate_count: default_engagement_candidate_count(),
+            scroll_amount_pixels: default_twitter_scroll_amount(),
+            candidate_scan_interval_ms: default_candidate_scan_interval_ms(),
             persona_file_path: None,
+            probabilities: TwitterProbabilitiesConfig::default(),
             engagement_limits: EngagementLimitsConfig::default(),
             llm: TwitterLLMConfig::default(),
         }
@@ -609,6 +677,84 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             .unwrap_or(config.twitter_activity.engagement_limits.max_total_actions);
     }
 
+    // Helper function to parse float from env var, stripping comments
+    fn parse_env_float(var_name: &str, _default: f64, config: &mut f64) {
+        if let Ok(prob_str) = env::var(var_name) {
+            // Strip comments (everything after #)
+            let clean_prob = prob_str.split('#').next().unwrap_or(&prob_str).trim();
+            match clean_prob.parse::<f64>() {
+                Ok(val) => {
+                    log::info!("Loaded {} from env: '{}' -> {:.3}", var_name, prob_str, val);
+                    *config = val;
+                }
+                Err(e) => log::warn!(
+                    "Failed to parse {} '{}' (cleaned: '{}'): {}",
+                    var_name,
+                    prob_str,
+                    clean_prob,
+                    e
+                ),
+            }
+        } else {
+            log::debug!("{} not set in environment", var_name);
+        }
+    }
+
+    // Twitter engagement probabilities overrides
+    parse_env_float(
+        "TWITTER_LIKE_PROBABILITY",
+        config.twitter_activity.probabilities.like_probability,
+        &mut config.twitter_activity.probabilities.like_probability,
+    );
+    parse_env_float(
+        "TWITTER_RETWEET_PROBABILITY",
+        config.twitter_activity.probabilities.retweet_probability,
+        &mut config.twitter_activity.probabilities.retweet_probability,
+    );
+    parse_env_float(
+        "TWITTER_QUOTE_PROBABILITY",
+        config.twitter_activity.probabilities.quote_probability,
+        &mut config.twitter_activity.probabilities.quote_probability,
+    );
+    parse_env_float(
+        "TWITTER_FOLLOW_PROBABILITY",
+        config.twitter_activity.probabilities.follow_probability,
+        &mut config.twitter_activity.probabilities.follow_probability,
+    );
+    parse_env_float(
+        "TWITTER_REPLY_PROBABILITY",
+        config.twitter_activity.probabilities.reply_probability,
+        &mut config.twitter_activity.probabilities.reply_probability,
+    );
+    parse_env_float(
+        "TWITTER_BOOKMARK_PROBABILITY",
+        config.twitter_activity.probabilities.bookmark_probability,
+        &mut config.twitter_activity.probabilities.bookmark_probability,
+    );
+    parse_env_float(
+        "TWITTER_THREAD_DIVE_PROBABILITY",
+        config
+            .twitter_activity
+            .probabilities
+            .thread_dive_probability,
+        &mut config
+            .twitter_activity
+            .probabilities
+            .thread_dive_probability,
+    );
+
+    // Twitter scroll behavior override
+    if let Ok(amount) = env::var("TWITTER_SCROLL_AMOUNT_PIXELS") {
+        config.twitter_activity.scroll_amount_pixels = amount
+            .parse()
+            .unwrap_or(config.twitter_activity.scroll_amount_pixels);
+    }
+    if let Ok(interval) = env::var("TWITTER_CANDIDATE_SCAN_INTERVAL_MS") {
+        config.twitter_activity.candidate_scan_interval_ms = interval
+            .parse()
+            .unwrap_or(config.twitter_activity.candidate_scan_interval_ms);
+    }
+
     // Twitter LLM config overrides (V2)
     if let Ok(enabled) = env::var("TWITTER_LLM_ENABLED") {
         config.twitter_activity.llm.enabled = enabled
@@ -631,6 +777,15 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             .parse()
             .unwrap_or(config.twitter_activity.llm.quote_tweet_probability);
     }
+
+    log::info!("Final Twitter probabilities in config: like={:.3}, retweet={:.3}, quote={:.3}, follow={:.3}, reply={:.3}, bookmark={:.3}, dive={:.3}",
+        config.twitter_activity.probabilities.like_probability,
+        config.twitter_activity.probabilities.retweet_probability,
+        config.twitter_activity.probabilities.quote_probability,
+        config.twitter_activity.probabilities.follow_probability,
+        config.twitter_activity.probabilities.reply_probability,
+        config.twitter_activity.probabilities.bookmark_probability,
+        config.twitter_activity.probabilities.thread_dive_probability);
 
     Ok(config)
 }

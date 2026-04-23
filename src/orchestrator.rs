@@ -3,7 +3,7 @@
 //! The orchestrator manages:
 //! - Parallel execution of task groups across sessions
 //! - Global concurrency control via semaphores
-//! - Retry logic with exponential backoff
+//! - Single-attempt execution with fail-fast behavior
 //! - Error handling and load balancing
 //! - Resource allocation and distribution
 
@@ -460,7 +460,7 @@ async fn execute_task_with_retry(
     cancel_token: CancellationToken,
 ) -> TaskResult {
     let start = std::time::Instant::now();
-    let max_retries = config.orchestrator.max_retries;
+    let max_retries = 0;
     let task_timeout = Duration::from_millis(config.orchestrator.task_timeout_ms);
     metrics.task_started();
 
@@ -608,7 +608,7 @@ async fn execute_task_with_retry(
             }
             task_result = timeout(
                 task_timeout,
-                crate::task::perform_task(&task_ctx, &task_def.name, payload_json.clone(), max_retries),
+                crate::task::perform_task(&task_ctx, &task_def.name, payload_json.clone(), max_retries, config),
             ) => task_result,
         };
 

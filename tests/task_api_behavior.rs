@@ -1,9 +1,12 @@
 use anyhow::Result;
 use chromiumoxide::Browser;
+use rust_orchestrator::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
 use rust_orchestrator::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
 use rust_orchestrator::session::Session;
 use rust_orchestrator::{result::TaskErrorKind, result::TaskResult};
 use std::env;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -98,6 +101,72 @@ fn build_task_context(session: &Session, page: Arc<chromiumoxide::Page>) -> Task
         session.behavior_profile.clone(),
         session.behavior_runtime,
     )
+}
+
+fn build_task_context_with_metrics(
+    session: &Session,
+    page: Arc<chromiumoxide::Page>,
+    metrics: Arc<MetricsCollector>,
+) -> TaskContext {
+    TaskContext::new_with_metrics(
+        session.id.clone(),
+        page,
+        session.behavior_profile.clone(),
+        session.behavior_runtime,
+        metrics,
+    )
+}
+
+fn sanitize_component(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' })
+        .collect();
+    let trimmed = cleaned.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "default".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn click_learning_path(profile_name: &str, session_id: &str) -> PathBuf {
+    std::env::current_dir()
+        .expect("current dir")
+        .join("click-learning")
+        .join(sanitize_component(profile_name))
+        .join(format!("{}.json", sanitize_component(session_id)))
+}
+
+fn seed_click_learning(
+    profile_name: &str,
+    session_id: &str,
+    selector: &str,
+    attempts: u32,
+    successes: u32,
+    consecutive_failures: u32,
+) -> Result<PathBuf> {
+    let path = click_learning_path(profile_name, session_id);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let json = serde_json::json!({
+        "interaction_count": attempts,
+        "total_attempts": attempts,
+        "total_successes": successes,
+        "recent_results": vec![false; attempts as usize],
+        "selectors": {
+            selector: {
+                "attempts": attempts,
+                "successes": successes,
+                "consecutive_failures": consecutive_failures,
+            }
+        }
+    });
+
+    fs::write(&path, serde_json::to_string_pretty(&json)?)?;
+    Ok(path)
 }
 
 #[tokio::test]
@@ -273,6 +342,94 @@ async fn cancelled_run_releases_page_for_reuse() -> Result<()> {
 
     server.shutdown().await;
     session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn click_retries_and_fallback_when_target_detaches_mid_action() -> Result<()> {
+    let Some(mut session) = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Detach</title></head><body><button id=\"target\" onmouseover=\"this.remove(); document.body.setAttribute('data-hover', 'removed')\">Detach</button></body></html>",
+    )
+    .await?;
+
+    let learning_path = seed_click_learning(
+        &session.behavior_profile.name,
+        &session.id,
+        "#target",
+        4,
+        0,
+        3,
+    )?;
+
+    let page = session.acquire_page_at(server.url()).await?;
+    let metrics = Arc::new(MetricsCollector::new(100));
+    let api = build_task_context_with_metrics(&session, page.clone(), metrics.clone());
+
+    let result = api.click("#target").await;
+    assert!(result.is_err(), "detached target should fail cleanly");
+    assert!(metrics.run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT) >= 1);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    let _ = fs::remove_file(&learning_path);
+    if let Some(parent) = learning_path.parent() {
+        let _ = fs::remove_dir(parent);
+        if let Some(grand) = parent.parent() {
+            let _ = fs::remove_dir(grand);
+        }
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn click_timeout_storm_hits_fallback_without_panicking() -> Result<()> {
+    let Some(mut session) = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Storm</title></head><body><button id=\"target\" style=\"position:relative; left:0px; top:0px\">Storm</button><script>let d=1; setInterval(()=>{ const t=document.getElementById('target'); if (!t) return; t.style.left = (d*20)+'px'; d = d * -1; }, 30);</script></body></html>",
+    )
+    .await?;
+
+    let learning_path = seed_click_learning(
+        &session.behavior_profile.name,
+        &session.id,
+        "#target",
+        6,
+        0,
+        5,
+    )?;
+
+    let page = session.acquire_page_at(server.url()).await?;
+    let metrics = Arc::new(MetricsCollector::new(100));
+    let api = build_task_context_with_metrics(&session, page.clone(), metrics.clone());
+
+    let result = api.click("#target").await;
+    assert!(result.is_err(), "timeout storm should fail cleanly");
+    assert!(metrics.run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT) >= 1);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    let _ = fs::remove_file(&learning_path);
+    if let Some(parent) = learning_path.parent() {
+        let _ = fs::remove_dir(parent);
+        if let Some(grand) = parent.parent() {
+            let _ = fs::remove_dir(grand);
+        }
+    }
 
     Ok(())
 }

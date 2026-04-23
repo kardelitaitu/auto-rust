@@ -51,6 +51,11 @@ pub async fn goto_raw(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
     Ok(())
 }
 
+pub async fn go_back(page: &Page) -> Result<()> {
+    page.evaluate("window.history.back()").await?;
+    Ok(())
+}
+
 pub async fn set_user_agent(page: &Page, user_agent: &str) -> Result<()> {
     page.execute(SetUserAgentOverrideParams::new(user_agent))
         .await?;

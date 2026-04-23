@@ -1,0 +1,27 @@
+{
+  "interaction_count": 3,
+  "total_attempts": 3,
+  "total_successes": 2,
+  "recent_results": [
+    true,
+    false,
+    true
+  ],
+  "selectors": {
+    "button[data-testid$=\"-follow\"]": {
+      "attempts": 1,
+      "successes": 0,
+      "consecutive_failures": 1
+    },
+    "a[href='/sciencegirl/status/2046926682838163824']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[aria-label=\"X\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    }
+  }
+}

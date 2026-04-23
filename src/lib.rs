@@ -3,6 +3,7 @@
 //! Task-api verbs live on `TaskContext` and follow the short `api.*`
 //! style:
 //! - `click`, `double_click`, `right_click`, `hover`
+//! - `nativeclick` for OS-level mouse input
 //! - `focus`, `keyboard`, `randomcursor`
 //! - `clear`, `select_all`
 //! - `exists`, `visible`, `text`, `wait_for`, `wait_for_visible`

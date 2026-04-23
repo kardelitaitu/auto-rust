@@ -103,8 +103,19 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
                     }
                     
                     // Extract the status URL from the time element for reliable diving
-                    var timeEl = el.querySelector('a[href*="/status/"]');
-                    var statusUrl = timeEl ? timeEl.getAttribute('href') : null;
+                    // Look for the main tweet permalink (not analytics, shares, etc.)
+                    var links = el.querySelectorAll('a[href*="/status/"]');
+                    var statusUrl = null;
+                    for (var j = 0; j < links.length; j++) {
+                        var href = links[j].getAttribute('href');
+                        // Match pattern: /username/status/tweetId (exactly 4 segments)
+                        // Exclude analytics, shares, and other extended paths
+                        var parts = href.split('/').filter(function(p) { return p.length > 0; });
+                        if (parts.length === 3 && parts[1] === 'status' && !isNaN(parts[2])) {
+                            statusUrl = href;
+                            break; // Take the first matching permalink
+                        }
+                    }
                     
                     var tweetObj = {
                         id: tweetId,

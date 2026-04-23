@@ -516,6 +516,8 @@ async fn click_tweet_avatar(api: &TaskContext) -> Result<ClickOutcome> {
                 click: ClickStatus::Success,
                 x,
                 y,
+                screen_x: None,
+                screen_y: None,
             });
         }
     }

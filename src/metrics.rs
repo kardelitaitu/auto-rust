@@ -24,6 +24,10 @@ pub const RUN_COUNTER_CANDIDATE_SCANNED: &str = "candidate_scanned";
 pub const RUN_COUNTER_BUTTON_MISSING: &str = "button_missing";
 pub const RUN_COUNTER_CLICK_VERIFY_FAILED: &str = "click_verify_failed";
 pub const RUN_COUNTER_DIVE_TARGET_FALLBACK_USED: &str = "dive_target_fallback_used";
+pub const RUN_COUNTER_CLICK_ATTEMPTED: &str = "click_attempted";
+pub const RUN_COUNTER_CLICK_SUCCESS: &str = "click_success";
+pub const RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED: &str = "click_strict_verify_failed";
+pub const RUN_COUNTER_CLICK_FALLBACK_HIT: &str = "click_fallback_hit";
 
 /// Records detailed metrics for a single task execution.
 /// Captures timing, outcome, and execution context for performance analysis
@@ -391,6 +395,14 @@ pub struct TwitterActivityRunCounters {
     pub dive_target_fallback_used: usize,
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClickLearningRunCounters {
+    pub attempted: usize,
+    pub success: usize,
+    pub strict_verify_failed: usize,
+    pub fallback_hit: usize,
+}
+
 /// Get current allocated memory (platform-specific)
 #[cfg(target_os = "linux")]
 fn get_allocated_memory() -> Option<usize> {
@@ -488,6 +500,8 @@ pub struct RunSummary {
     pub session_breakdown: BTreeMap<String, OutcomeBreakdown>,
     /// Structured counters emitted from twitteractivity task execution
     pub twitteractivity_counters: TwitterActivityRunCounters,
+    /// Structured counters emitted from task-api click learning
+    pub click_learning_counters: ClickLearningRunCounters,
 }
 
 impl MetricsCollector {
@@ -523,6 +537,18 @@ impl MetricsCollector {
                 .get(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED)
                 .unwrap_or(&0),
         };
+        let click_learning_counters = ClickLearningRunCounters {
+            attempted: *run_counters
+                .get(RUN_COUNTER_CLICK_ATTEMPTED)
+                .unwrap_or(&0),
+            success: *run_counters.get(RUN_COUNTER_CLICK_SUCCESS).unwrap_or(&0),
+            strict_verify_failed: *run_counters
+                .get(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED)
+                .unwrap_or(&0),
+            fallback_hit: *run_counters
+                .get(RUN_COUNTER_CLICK_FALLBACK_HIT)
+                .unwrap_or(&0),
+        };
 
         let summary = RunSummary {
             timestamp: now,
@@ -540,6 +566,7 @@ impl MetricsCollector {
             task_breakdown: stats.task_breakdown,
             session_breakdown: stats.session_breakdown,
             twitteractivity_counters,
+            click_learning_counters,
         };
 
         let json = serde_json::to_string_pretty(&summary)?;
@@ -825,6 +852,8 @@ mod tests {
             summary["twitteractivity_counters"]["candidate_scanned"],
             serde_json::json!(0)
         );
+        assert_eq!(summary["click_learning_counters"]["attempted"], serde_json::json!(0));
+        assert_eq!(summary["click_learning_counters"]["success"], serde_json::json!(0));
         assert!(
             summary["task_breakdown"]["pageview"]["succeeded"]
                 .as_u64()
@@ -842,6 +871,10 @@ mod tests {
         collector.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 2);
         collector.increment_run_counter(RUN_COUNTER_CLICK_VERIFY_FAILED, 1);
         collector.increment_run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, 3);
+        collector.increment_run_counter(RUN_COUNTER_CLICK_ATTEMPTED, 5);
+        collector.increment_run_counter(RUN_COUNTER_CLICK_SUCCESS, 4);
+        collector.increment_run_counter(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, 1);
+        collector.increment_run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT, 2);
 
         assert_eq!(collector.run_counter(RUN_COUNTER_CANDIDATE_SCANNED), 7);
         assert_eq!(collector.run_counter(RUN_COUNTER_BUTTON_MISSING), 2);
@@ -850,5 +883,9 @@ mod tests {
             collector.run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED),
             3
         );
+        assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_ATTEMPTED), 5);
+        assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_SUCCESS), 4);
+        assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED), 1);
+        assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT), 2);
     }
 }

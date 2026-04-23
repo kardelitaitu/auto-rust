@@ -42,7 +42,8 @@ fn twitteractivity_config_has_valid_defaults() {
 /// Checks that persona selection returns weights within allowed ranges.
 #[test]
 fn twitteractivity_persona_weights_in_range() {
-    let weights = select_persona_weights(None);
+    let config_probs = rust_orchestrator::config::TwitterProbabilitiesConfig::default();
+    let weights = select_persona_weights(None, &config_probs);
     assert!((0.0..=1.0).contains(&weights.like_prob));
     assert!((0.0..=1.0).contains(&weights.retweet_prob));
     assert!((0.0..=1.0).contains(&weights.follow_prob));
@@ -341,8 +342,10 @@ fn twitteractivity_engagement_limits_all_action_types() {
 /// Tests that persona weights can be overridden via payload.
 #[test]
 fn twitteractivity_persona_weights_override() {
+    let config_probs = rust_orchestrator::config::TwitterProbabilitiesConfig::default();
+
     // Default weights
-    let default_weights = select_persona_weights(None);
+    let default_weights = select_persona_weights(None, &config_probs);
 
     // Override weights
     let custom_weights = json!({
@@ -353,7 +356,7 @@ fn twitteractivity_persona_weights_override() {
         "thread_dive_prob": 0.3
     });
 
-    let override_weights = select_persona_weights(Some(&custom_weights));
+    let override_weights = select_persona_weights(Some(&custom_weights), &config_probs);
 
     // Override should use custom values
     assert_eq!(

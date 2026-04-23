@@ -59,11 +59,12 @@ pub async fn perform_task(
     name: &str,
     payload: Value,
     _max_retries: u32,
+    config: &crate::config::Config,
 ) -> Result<TaskResult> {
     let start = std::time::Instant::now();
     let clean_name = name.strip_suffix(".js").unwrap_or(name);
 
-    let result = execute_single_attempt(api, clean_name, &payload).await;
+    let result = execute_single_attempt(api, clean_name, &payload, config).await;
 
     match result {
         Ok(()) => Ok(TaskResult::success(start.elapsed().as_millis() as u64)),
@@ -88,7 +89,7 @@ pub async fn perform_task(
     }
 }
 
-async fn execute_single_attempt(api: &TaskContext, name: &str, payload: &Value) -> Result<()> {
+async fn execute_single_attempt(api: &TaskContext, name: &str, payload: &Value, config: &crate::config::Config) -> Result<()> {
     match name {
         "cookiebot" => cookiebot::run(api, payload.clone())
             .await
@@ -98,7 +99,7 @@ async fn execute_single_attempt(api: &TaskContext, name: &str, payload: &Value) 
         "demo-mouse" => demo_mouse::run(api, payload.clone()).await,
         "demoqa" => demoqa::run(api, payload.clone()).await,
         "task-example" => task_example::run(api, payload.clone()).await,
-        "twitteractivity" => twitteractivity::run(api, payload.clone()).await,
+        "twitteractivity" => twitteractivity::run(api, payload.clone(), config).await,
         "twitterdive" => twitterdive::run(api, payload.clone()).await,
         "twitterfollow" => twitterfollow::run(api, payload.clone()).await,
         "twitterlike" => twitterlike::run(api, payload.clone()).await,

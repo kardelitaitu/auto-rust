@@ -7,6 +7,7 @@
 //!
 //! The TaskContext provides short, readable verbs for common actions:
 //! - `click()` - Click an element with human-like cursor movement
+//! - `nativeclick()` - Click an element using native OS input
 //! - `keyboard()` or `r#type()` - Type text with human-like timing
 //! - `hover()` - Hover over an element
 //! - `focus()` - Focus an element
@@ -34,18 +35,375 @@
 //! ```
 
 use chromiumoxide::Page;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::fs;
 use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
+use crate::logger::scoped_log_context;
 use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
 use crate::internal::page_size::{self, Viewport};
 use crate::internal::profile::{BrowserProfile, ProfileRuntime};
-use crate::metrics::MetricsCollector;
+use crate::metrics::{
+    MetricsCollector, RUN_COUNTER_CLICK_ATTEMPTED, RUN_COUNTER_CLICK_FALLBACK_HIT,
+    RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, RUN_COUNTER_CLICK_SUCCESS,
+};
 use crate::state::ClipboardState;
 use crate::utils::mouse::{ClickOutcome, CursorMovementConfig, HoverOutcome};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum ClickPageContext {
+    Home,
+    Form,
+    Social,
+    Content,
+    Commerce,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum ClickElementPriority {
+    Critical,
+    Normal,
+    Optional,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum ClickFatigueLevel {
+    Rested,
+    Normal,
+    Tired,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct ClickTimingContext {
+    page: ClickPageContext,
+    priority: ClickElementPriority,
+    fatigue: ClickFatigueLevel,
+    recent_success_rate: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct ClickTimingProfile {
+    reaction_delay_ms: u64,
+    reaction_variance_pct: u32,
+    click_offset_px: i32,
+    attention_pause_ms: u64,
+    post_click_pause_ms: u64,
+    primary_timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct ClickAdaptation {
+    extra_stability_wait_ms: u64,
+    reaction_delay_multiplier: f64,
+    reaction_variance_boost_pct: u32,
+    click_offset_adjustment_px: i32,
+    require_strict_verification: bool,
+    prefer_coordinate_fallback: bool,
+}
+
+impl Default for ClickAdaptation {
+    fn default() -> Self {
+        Self {
+            extra_stability_wait_ms: 0,
+            reaction_delay_multiplier: 1.0,
+            reaction_variance_boost_pct: 0,
+            click_offset_adjustment_px: 0,
+            require_strict_verification: false,
+            prefer_coordinate_fallback: false,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct SelectorLearningStats {
+    attempts: u32,
+    successes: u32,
+    consecutive_failures: u32,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct ClickLearningState {
+    interaction_count: u64,
+    total_attempts: u64,
+    total_successes: u64,
+    recent_results: VecDeque<bool>,
+    selectors: HashMap<String, SelectorLearningStats>,
+}
+
+impl ClickLearningState {
+    const RECENT_WINDOW: usize = 32;
+
+    fn recent_success_rate(&self) -> f64 {
+        if self.recent_results.is_empty() {
+            return 1.0;
+        }
+        let success_count = self.recent_results.iter().filter(|v| **v).count();
+        success_count as f64 / self.recent_results.len() as f64
+    }
+
+    fn record(&mut self, selector: &str, success: bool) {
+        self.interaction_count = self.interaction_count.saturating_add(1);
+        self.total_attempts = self.total_attempts.saturating_add(1);
+        if success {
+            self.total_successes = self.total_successes.saturating_add(1);
+        }
+
+        self.recent_results.push_back(success);
+        if self.recent_results.len() > Self::RECENT_WINDOW {
+            let _ = self.recent_results.pop_front();
+        }
+
+        let entry = self.selectors.entry(selector.to_string()).or_default();
+        entry.attempts = entry.attempts.saturating_add(1);
+        if success {
+            entry.successes = entry.successes.saturating_add(1);
+            entry.consecutive_failures = 0;
+        } else {
+            entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
+        }
+    }
+
+    fn selector_stats(&self, selector: &str) -> SelectorLearningStats {
+        self.selectors.get(selector).cloned().unwrap_or_default()
+    }
+
+    fn adaptation_for(&self, selector: &str, context: &ClickTimingContext) -> ClickAdaptation {
+        let mut adaptation = ClickAdaptation::default();
+        let selector_stats = self.selector_stats(selector);
+
+        let selector_complexity = selector.len() > 45
+            || selector.contains(":nth-child")
+            || selector.contains('>')
+            || selector.contains("data-testid");
+        if selector_complexity {
+            adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(120);
+            adaptation.reaction_delay_multiplier *= 1.08;
+            adaptation.click_offset_adjustment_px += 1;
+        }
+
+        if selector_stats.attempts >= 3 {
+            let selector_success_rate =
+                selector_stats.successes as f64 / selector_stats.attempts as f64;
+            if selector_success_rate < 0.75 {
+                adaptation.extra_stability_wait_ms =
+                    adaptation.extra_stability_wait_ms.max(250);
+                adaptation.reaction_delay_multiplier *= 1.20;
+                adaptation.reaction_variance_boost_pct += 8;
+                adaptation.require_strict_verification = true;
+                adaptation.prefer_coordinate_fallback = true;
+            }
+        }
+
+        if selector_stats.consecutive_failures >= 2 {
+            adaptation.extra_stability_wait_ms =
+                adaptation.extra_stability_wait_ms.max(380);
+            adaptation.reaction_delay_multiplier *= 1.22;
+            adaptation.reaction_variance_boost_pct += 10;
+            adaptation.click_offset_adjustment_px += 2;
+            adaptation.require_strict_verification = true;
+            adaptation.prefer_coordinate_fallback = true;
+        }
+
+        if context.fatigue == ClickFatigueLevel::Tired {
+            adaptation.reaction_delay_multiplier *= 1.15;
+            adaptation.reaction_variance_boost_pct += 6;
+            adaptation.extra_stability_wait_ms =
+                adaptation.extra_stability_wait_ms.max(140);
+        }
+
+        adaptation
+    }
+}
+
+fn sanitize_path_component(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' })
+        .collect();
+    let trimmed = cleaned.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "default".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn click_learning_path(session_id: &str, behavior_profile: &BrowserProfile) -> Option<PathBuf> {
+    let base_dir = std::env::current_dir().ok()?.join("click-learning");
+    let profile_component = sanitize_path_component(&behavior_profile.name);
+    let session_component = sanitize_path_component(session_id);
+    Some(base_dir.join(profile_component).join(format!("{session_component}.json")))
+}
+
+fn load_click_learning(path: &Path) -> Option<ClickLearningState> {
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn save_click_learning(path: &Path, state: &ClickLearningState) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(state)?;
+    fs::write(path, json)?;
+    Ok(())
+}
+
+impl ClickTimingContext {
+    fn classify_page(url: &str) -> ClickPageContext {
+        if url.contains("x.com") || url.contains("twitter.com") {
+            ClickPageContext::Social
+        } else if url.contains("login") || url.contains("signup") || url.contains("form") {
+            ClickPageContext::Form
+        } else if url.contains("shop") || url.contains("cart") || url.contains("checkout") {
+            ClickPageContext::Commerce
+        } else if url.contains("article") || url.contains("news") || url.contains("blog") {
+            ClickPageContext::Content
+        } else if url.trim_end_matches('/').matches('/').count() <= 2 {
+            ClickPageContext::Home
+        } else {
+            ClickPageContext::Other
+        }
+    }
+
+    fn classify_priority(selector: &str) -> ClickElementPriority {
+        if selector.contains("submit")
+            || selector.contains("confirm")
+            || selector.contains("primary")
+            || selector.contains("cta")
+        {
+            ClickElementPriority::Critical
+        } else if selector.contains("ad")
+            || selector.contains("promo")
+            || selector.contains("secondary")
+        {
+            ClickElementPriority::Optional
+        } else {
+            ClickElementPriority::Normal
+        }
+    }
+
+    fn classify_fatigue(interaction_count: u64) -> ClickFatigueLevel {
+        if interaction_count < 15 {
+            ClickFatigueLevel::Rested
+        } else if interaction_count < 50 {
+            ClickFatigueLevel::Normal
+        } else {
+            ClickFatigueLevel::Tired
+        }
+    }
+
+    fn from_observation(
+        url: &str,
+        selector: &str,
+        interaction_count: u64,
+        recent_success_rate: f64,
+    ) -> Self {
+        Self {
+            page: Self::classify_page(url),
+            priority: Self::classify_priority(selector),
+            fatigue: Self::classify_fatigue(interaction_count),
+            recent_success_rate,
+        }
+    }
+
+    fn timing_profile(
+        &self,
+        base_reaction_delay_ms: u64,
+        base_variance_pct: u32,
+        base_offset_px: i32,
+        adaptation: &ClickAdaptation,
+    ) -> ClickTimingProfile {
+        let page_multiplier = match self.page {
+            ClickPageContext::Home => 0.95,
+            ClickPageContext::Form => 1.20,
+            ClickPageContext::Social => 1.10,
+            ClickPageContext::Content => 1.00,
+            ClickPageContext::Commerce => 1.15,
+            ClickPageContext::Other => 1.00,
+        };
+        let priority_multiplier = match self.priority {
+            ClickElementPriority::Critical => 1.18,
+            ClickElementPriority::Normal => 1.00,
+            ClickElementPriority::Optional => 0.92,
+        };
+        let fatigue_multiplier = match self.fatigue {
+            ClickFatigueLevel::Rested => 0.95,
+            ClickFatigueLevel::Normal => 1.00,
+            ClickFatigueLevel::Tired => 1.22,
+        };
+        let quality_multiplier = if self.recent_success_rate < 0.75 {
+            1.0 + (0.75 - self.recent_success_rate) * 0.50
+        } else {
+            1.0
+        };
+
+        let reaction_multiplier = page_multiplier
+            * priority_multiplier
+            * fatigue_multiplier
+            * quality_multiplier
+            * adaptation.reaction_delay_multiplier;
+        let reaction_delay_ms = (base_reaction_delay_ms as f64 * reaction_multiplier)
+            .round()
+            .clamp(70.0, 6_000.0) as u64;
+
+        let fatigue_variance_boost = match self.fatigue {
+            ClickFatigueLevel::Rested => 0,
+            ClickFatigueLevel::Normal => 4,
+            ClickFatigueLevel::Tired => 10,
+        };
+        let reaction_variance_pct = base_variance_pct
+            .saturating_add(adaptation.reaction_variance_boost_pct)
+            .saturating_add(fatigue_variance_boost)
+            .clamp(8, 80);
+
+        let click_offset_px = (base_offset_px + adaptation.click_offset_adjustment_px).clamp(2, 24);
+
+        let mut attention_pause_ms: u64 = match self.fatigue {
+            ClickFatigueLevel::Rested => 60,
+            ClickFatigueLevel::Normal => 120,
+            ClickFatigueLevel::Tired => 230,
+        };
+        if self.priority == ClickElementPriority::Critical {
+            attention_pause_ms += 80;
+        }
+        attention_pause_ms = attention_pause_ms
+            .saturating_add(adaptation.extra_stability_wait_ms / 3)
+            .clamp(40, 800);
+
+        let mut post_click_pause_ms = match self.page {
+            ClickPageContext::Form => 320,
+            ClickPageContext::Commerce => 280,
+            ClickPageContext::Social => 220,
+            _ => 180,
+        };
+        if self.fatigue == ClickFatigueLevel::Tired {
+            post_click_pause_ms += 80;
+        }
+        post_click_pause_ms = post_click_pause_ms.clamp(120, 900);
+
+        let primary_timeout_ms = (4_000u64)
+            .saturating_add(adaptation.extra_stability_wait_ms)
+            .clamp(3_200, 7_500);
+
+        ClickTimingProfile {
+            reaction_delay_ms,
+            reaction_variance_pct,
+            click_offset_px,
+            attention_pause_ms,
+            post_click_pause_ms,
+            primary_timeout_ms,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum FocusStatus {
@@ -163,6 +521,8 @@ mod tests {
                 click: crate::utils::mouse::ClickStatus::Success,
                 x: 1.0,
                 y: 2.0,
+                screen_x: None,
+                screen_y: None,
             },
             next_selector: ".next".into(),
             next_visible: WaitForVisibleStatus::Visible,
@@ -181,6 +541,8 @@ mod tests {
                 click: crate::utils::mouse::ClickStatus::Success,
                 x: 1.0,
                 y: 2.0,
+                screen_x: None,
+                screen_y: None,
             },
             next_selector: ".next".into(),
             next_visible: WaitForVisibleStatus::Timeout,
@@ -190,6 +552,98 @@ mod tests {
             outcome.summary(),
             "Clicked (1.0,2.0) wait_for:.next visible:timeout timeout:500ms"
         );
+    }
+
+    #[test]
+    fn test_click_context_classification() {
+        assert_eq!(
+            ClickTimingContext::classify_page("https://x.com/home"),
+            ClickPageContext::Social
+        );
+        assert_eq!(
+            ClickTimingContext::classify_priority("button[data-testid='submit']"),
+            ClickElementPriority::Critical
+        );
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(80),
+            ClickFatigueLevel::Tired
+        );
+    }
+
+    #[test]
+    fn test_learning_adaptation_increases_after_failures() {
+        let mut learning = ClickLearningState::default();
+        for _ in 0..4 {
+            learning.record("button[data-testid='retweet']", false);
+        }
+        let context = ClickTimingContext::from_observation(
+            "https://x.com/home",
+            "button[data-testid='retweet']",
+            learning.interaction_count,
+            learning.recent_success_rate(),
+        );
+        let adaptation = learning.adaptation_for("button[data-testid='retweet']", &context);
+        assert!(adaptation.reaction_delay_multiplier > 1.0);
+        assert!(adaptation.extra_stability_wait_ms >= 250);
+        assert!(adaptation.require_strict_verification);
+    }
+
+    #[test]
+    fn test_timing_profile_scales_with_low_success_rate() {
+        let context = ClickTimingContext::from_observation(
+            "https://x.com/home",
+            "button[data-testid='like']",
+            60,
+            0.55,
+        );
+        let profile = context.timing_profile(250, 20, 8, &ClickAdaptation::default());
+        assert!(profile.reaction_delay_ms >= 250);
+        assert!(profile.attention_pause_ms >= 200);
+    }
+
+    #[test]
+    fn test_learning_window_caps_recent_results() {
+        let mut learning = ClickLearningState::default();
+        for i in 0..80 {
+            learning.record("a[href='/x']", i % 2 == 0);
+        }
+        assert_eq!(learning.recent_results.len(), ClickLearningState::RECENT_WINDOW);
+    }
+
+    #[test]
+    fn test_click_learning_persistence_roundtrip() {
+        let mut learning = ClickLearningState::default();
+        learning.record("button[data-testid='like']", true);
+        learning.record("button[data-testid='like']", false);
+        learning.record("button[data-testid='retweet']", false);
+
+        let unique = format!(
+            "click-learning-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+
+        save_click_learning(&path, &learning).expect("save click learning");
+        let loaded = load_click_learning(&path).expect("load click learning");
+
+        assert_eq!(loaded.interaction_count, learning.interaction_count);
+        assert_eq!(loaded.total_attempts, learning.total_attempts);
+        assert_eq!(loaded.total_successes, learning.total_successes);
+        assert_eq!(loaded.recent_results.len(), learning.recent_results.len());
+        assert_eq!(
+            loaded.selector_stats("button[data-testid='like']").attempts,
+            2
+        );
+        assert_eq!(
+            loaded.selector_stats("button[data-testid='like']").successes,
+            1
+        );
+
+        let _ = std::fs::remove_file(&path);
     }
 }
 
@@ -225,6 +679,8 @@ pub struct TaskContext {
     behavior_profile: BrowserProfile,
     behavior_runtime: ProfileRuntime,
     metrics: Option<Arc<MetricsCollector>>,
+    click_learning: Arc<Mutex<ClickLearningState>>,
+    click_learning_path: Option<PathBuf>,
 }
 
 impl TaskContext {
@@ -260,6 +716,11 @@ impl TaskContext {
     ) -> Self {
         let session_id = session_id.into();
         let clipboard = ClipboardState::new(session_id.clone());
+        let click_learning_path = click_learning_path(&session_id, &behavior_profile);
+        let click_learning = click_learning_path
+            .as_deref()
+            .and_then(load_click_learning)
+            .unwrap_or_default();
         Self {
             session_id,
             page,
@@ -267,6 +728,8 @@ impl TaskContext {
             behavior_profile,
             behavior_runtime,
             metrics: None,
+            click_learning: Arc::new(Mutex::new(click_learning)),
+            click_learning_path,
         }
     }
 
@@ -306,6 +769,24 @@ impl TaskContext {
         if let Some(metrics) = &self.metrics {
             metrics.increment_run_counter(name, amount);
         }
+    }
+
+    fn click_learning_path(&self) -> Option<&Path> {
+        self.click_learning_path.as_deref()
+    }
+
+    async fn record_click_learning(&self, selector: &str, success: bool) -> Result<()> {
+        let snapshot = {
+            let mut learning = self.click_learning.lock().await;
+            learning.record(selector, success);
+            learning.clone()
+        };
+
+        if let Some(path) = self.click_learning_path() {
+            save_click_learning(path, &snapshot)?;
+        }
+
+        Ok(())
     }
 
     /// Navigates to a URL with human-like delays and settle pauses.
@@ -564,50 +1045,211 @@ impl TaskContext {
     /// # }
     /// ```
     pub async fn click(&self, selector: &str) -> Result<ClickOutcome> {
-        const CLICK_TOTAL_TIMEOUT_SECS: u64 = 8;
-        const CLICK_PRIMARY_TIMEOUT_SECS: u64 = 4;
+        const CLICK_TOTAL_TIMEOUT_SECS: u64 = 12;
+        const CLICK_MAX_ATTEMPTS: u32 = 3;
         let click = &self.behavior_runtime.click;
+        self.increment_run_counter(RUN_COUNTER_CLICK_ATTEMPTED, 1);
+        let default_url = String::new();
+        let observed_url = self.url().await.unwrap_or(default_url);
+        let base_variance = self.behavior_runtime.action_delay.variance_pct.round() as u32;
+
+        let (timing_profile, adaptation, fatigue, recent_success_rate) = {
+            let learning = self.click_learning.lock().await;
+            let timing_context = ClickTimingContext::from_observation(
+                &observed_url,
+                selector,
+                learning.interaction_count,
+                learning.recent_success_rate(),
+            );
+            let adaptation = learning.adaptation_for(selector, &timing_context);
+            let timing_profile = timing_context.timing_profile(
+                click.reaction_delay_ms,
+                base_variance,
+                click.offset_px,
+                &adaptation,
+            );
+            (
+                timing_profile,
+                adaptation,
+                timing_context.fatigue,
+                timing_context.recent_success_rate,
+            )
+        };
+
+        timing::human_pause(
+            timing_profile.attention_pause_ms,
+            timing_profile.reaction_variance_pct.min(45),
+        )
+        .await;
 
         let click_future = async {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(CLICK_PRIMARY_TIMEOUT_SECS),
-                mouse::click_selector_human(
-                    self.page(),
-                    selector,
-                    click.reaction_delay_ms,
-                    self.behavior_runtime.action_delay.variance_pct.round() as u32,
-                    click.offset_px,
-                ),
-            )
-            .await
-            {
-                Ok(Ok(outcome)) => Ok(outcome),
-                Ok(Err(_)) => self.fallback_click(selector).await,
-                Err(_) => self.fallback_click(selector).await,
+            let mut last_error: Option<anyhow::Error> = None;
+
+            for attempt in 1..=CLICK_MAX_ATTEMPTS {
+                let attempt_delay = (timing_profile.reaction_delay_ms as f64
+                    * (1.0 + ((attempt.saturating_sub(1)) as f64 * 0.18)))
+                    .round() as u64;
+                let attempt_offset = timing_profile.click_offset_px + (attempt as i32 - 1);
+
+                match self
+                    .execute_primary_click_attempt(
+                        selector,
+                        attempt_delay,
+                        timing_profile.reaction_variance_pct,
+                        attempt_offset,
+                        timing_profile.primary_timeout_ms,
+                    )
+                    .await
+                {
+                    Ok(outcome) => return Ok(outcome),
+                    Err(err) => {
+                        last_error = Some(err);
+                        if attempt < CLICK_MAX_ATTEMPTS {
+                            let backoff_ms = (150 + (attempt as u64 * 180))
+                                .saturating_add(adaptation.extra_stability_wait_ms / 2)
+                                .clamp(100, 1_000);
+                            timing::uniform_pause(backoff_ms, 30).await;
+                        }
+                    }
+                }
+            }
+
+            if adaptation.prefer_coordinate_fallback {
+                warn!(
+                    "[task-api] click '{}' entering coordinate fallback after retry exhaustion",
+                    selector
+                );
+            }
+            self.increment_run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT, 1);
+
+            match self.fallback_click_with_adaptation(selector, &adaptation).await {
+                Ok(outcome) => Ok(outcome),
+                Err(fallback_err) => Err(last_error.unwrap_or(fallback_err)),
             }
         };
 
         let outcome = match tokio::time::timeout(
-            std::time::Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS),
+            Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS),
             click_future,
         )
         .await
         {
             Ok(Ok(outcome)) => outcome,
-            Ok(Err(err)) => return Err(err),
-            Err(_) => return Err(anyhow::anyhow!("click timed out for '{}'", selector)),
+            Ok(Err(err)) => {
+                if let Err(persist_err) = self.record_click_learning(selector, false).await {
+                    warn!("[task-api] click learning persistence failed: {}", persist_err);
+                }
+                return Err(err);
+            }
+            Err(_) => {
+                if let Err(persist_err) = self.record_click_learning(selector, false).await {
+                    warn!("[task-api] click learning persistence failed: {}", persist_err);
+                }
+                return Err(anyhow::anyhow!("click timed out for '{}'", selector));
+            }
         };
 
-        self.post_interaction_pause().await;
+        if adaptation.require_strict_verification {
+            let verified = self
+                .verify_selector_hit(selector, outcome.x, outcome.y)
+                .await
+                .unwrap_or(false);
+            if !verified {
+                self.increment_run_counter(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, 1);
+                if let Err(persist_err) = self.record_click_learning(selector, false).await {
+                    warn!("[task-api] click learning persistence failed: {}", persist_err);
+                }
+                self.increment_run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT, 1);
+                match self.fallback_click_with_adaptation(selector, &adaptation).await {
+                    Ok(fallback_outcome) => {
+                        if let Err(persist_err) = self.record_click_learning(selector, true).await
+                        {
+                            warn!(
+                                "[task-api] click learning persistence failed: {}",
+                                persist_err
+                            );
+                        }
+                        self.increment_run_counter(RUN_COUNTER_CLICK_SUCCESS, 1);
+                        self.post_interaction_pause_with_budget(timing_profile.post_click_pause_ms)
+                            .await;
+                        return Ok(fallback_outcome);
+                    }
+                    Err(err) => {
+                        return Err(anyhow::anyhow!(
+                            "[task-api] strict click verification failed for '{}': {}",
+                            selector,
+                            err
+                        ));
+                    }
+                }
+            }
+        }
+
+        {
+            if let Err(persist_err) = self.record_click_learning(selector, true).await {
+                warn!("[task-api] click learning persistence failed: {}", persist_err);
+            }
+        }
+        self.increment_run_counter(RUN_COUNTER_CLICK_SUCCESS, 1);
+
+        info!(
+            "[task-api] click '{}' tuned delay={}ms variance={} fatigue={:?} recent_success={:.2}",
+            selector,
+            timing_profile.reaction_delay_ms,
+            timing_profile.reaction_variance_pct,
+            fatigue,
+            recent_success_rate
+        );
+
+        self.post_interaction_pause_with_budget(timing_profile.post_click_pause_ms)
+            .await;
         Ok(outcome)
     }
 
-    async fn fallback_click(&self, selector: &str) -> Result<ClickOutcome> {
+    async fn execute_primary_click_attempt(
+        &self,
+        selector: &str,
+        reaction_delay_ms: u64,
+        reaction_delay_variance_pct: u32,
+        click_offset_px: i32,
+        timeout_ms: u64,
+    ) -> Result<ClickOutcome> {
+        match tokio::time::timeout(
+            Duration::from_millis(timeout_ms),
+            mouse::click_selector_human(
+                self.page(),
+                selector,
+                reaction_delay_ms,
+                reaction_delay_variance_pct,
+                click_offset_px,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(outcome)) => Ok(outcome),
+            Ok(Err(err)) => Err(err),
+            Err(_) => Err(anyhow::anyhow!(
+                "[task-api] primary click attempt timed out for '{}'",
+                selector
+            )),
+        }
+    }
+
+    async fn fallback_click_with_adaptation(
+        &self,
+        selector: &str,
+        adaptation: &ClickAdaptation,
+    ) -> Result<ClickOutcome> {
         const FALLBACK_FOCUS_TIMEOUT_SECS: u64 = 2;
         const FALLBACK_CLICK_TIMEOUT_SECS: u64 = 2;
+
+        if adaptation.extra_stability_wait_ms > 0 {
+            timing::uniform_pause(adaptation.extra_stability_wait_ms.min(700), 25).await;
+        }
+
         info!("[task-api] click fallback '{}': focus begin", selector);
         let focus = match tokio::time::timeout(
-            std::time::Duration::from_secs(FALLBACK_FOCUS_TIMEOUT_SECS),
+            Duration::from_secs(FALLBACK_FOCUS_TIMEOUT_SECS),
             self.focus(selector),
         )
         .await
@@ -634,7 +1276,7 @@ impl TaskContext {
 
         info!("[task-api] click fallback '{}': click_at begin", selector);
         match tokio::time::timeout(
-            std::time::Duration::from_secs(FALLBACK_CLICK_TIMEOUT_SECS),
+            Duration::from_secs(FALLBACK_CLICK_TIMEOUT_SECS),
             self.click_at(focus.x, focus.y),
         )
         .await
@@ -642,16 +1284,24 @@ impl TaskContext {
             Ok(Ok(())) => {
                 info!("[task-api] click fallback '{}': click_at ok", selector);
                 let verified = self.verify_selector_hit(selector, focus.x, focus.y).await?;
-                if !verified {
+                if adaptation.require_strict_verification && !verified {
                     return Err(anyhow::anyhow!(
                         "[task-api] fallback click target verification failed for '{}'",
                         selector
                     ));
                 }
+                if !verified {
+                    warn!(
+                        "[task-api] fallback click verification inconclusive for '{}'",
+                        selector
+                    );
+                }
                 Ok(ClickOutcome {
                     click: crate::utils::mouse::ClickStatus::Success,
                     x: focus.x,
                     y: focus.y,
+                    screen_x: None,
+                    screen_y: None,
                 })
             }
             Ok(Err(err)) => Err(anyhow::anyhow!(
@@ -725,6 +1375,41 @@ impl TaskContext {
     /// Left-click at absolute coordinates with cursor animation.
     pub async fn left_click(&self, x: f64, y: f64) -> Result<()> {
         mouse::left_click_at(self.page(), x, y).await
+    }
+
+    /// Native OS-level click on selector using the host mouse backend.
+    pub async fn nativeclick(&self, selector: &str) -> Result<ClickOutcome> {
+        let session_id = self.session_id().to_string();
+        let click = &self.behavior_runtime.click;
+        let outcome = mouse::native_click_selector_human(
+            self.page(),
+            &session_id,
+            selector,
+            click.reaction_delay_ms,
+            self.behavior_runtime.action_delay.variance_pct.round() as u32,
+            click.offset_px,
+        )
+        .await?;
+        {
+            let mut ctx = crate::logger::get_log_context();
+            ctx.session_id = Some(session_id.clone());
+            let _guard = scoped_log_context(ctx);
+            let screen_point = match (outcome.screen_x, outcome.screen_y) {
+                (Some(x), Some(y)) => format!(" screen_point=({}, {})", x, y),
+                _ => String::new(),
+            };
+            info!(
+                "[task-api] nativeclick session={} selector={} point=({:.1},{:.1}){} {}",
+                session_id,
+                selector,
+                outcome.x,
+                outcome.y,
+                screen_point,
+                outcome.summary()
+            );
+        }
+        self.post_interaction_pause().await;
+        Ok(outcome)
     }
 
     /// Immediate left-click at coordinates without cursor animation.
@@ -1048,8 +1733,12 @@ impl TaskContext {
     }
 
     async fn post_interaction_pause(&self) {
+        self.post_interaction_pause_with_budget(0).await;
+    }
+
+    async fn post_interaction_pause_with_budget(&self, min_budget_ms: u64) {
         let action_delay = &self.behavior_runtime.action_delay;
-        let base_ms = action_delay.min_ms.clamp(120, 1_500);
+        let base_ms = action_delay.min_ms.clamp(120, 1_500).max(min_budget_ms);
         let variance_pct = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
         timing::uniform_pause(base_ms, variance_pct).await;
     }

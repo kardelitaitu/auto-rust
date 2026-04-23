@@ -3,6 +3,7 @@
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
+use log::info;
 use serde_json::Value;
 use tracing::instrument;
 
@@ -14,9 +15,68 @@ const DEFAULT_NAVIGATION_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_WAIT_TIMEOUT_MS: u64 = 15_000;
 
 /// Navigates to Twitter/X home timeline.
-/// URL varies by user region/login state; tries known working URLs.
+/// Uses mouse click on home logo element instead of URL navigation.
 #[instrument(skip(api))]
 pub async fn goto_home(api: &TaskContext) -> Result<()> {
+    let selector = r#"a[aria-label="X"]"#;
+    let timeout_ms = DEFAULT_WAIT_TIMEOUT_MS;
+
+    // Wait for home logo to be visible
+    if !api.wait_for_any_visible_selector(&[selector], timeout_ms).await? {
+        log::warn!("Home logo not found, falling back to URL navigation");
+        return goto_home_fallback(api).await;
+    }
+
+    // Get position of home logo for logging
+    if let Some((x, y)) = get_element_center(api, selector).await? {
+        info!("Navigated to home ({:.1}, {:.1})", x, y);
+    }
+
+    // Click the home logo
+    api.click(selector).await?;
+    after_navigation_pause(api).await;
+
+    // Verify the feed is actually visible after navigation
+    if is_feed_visible(api).await? {
+        after_navigation_pause(api).await;
+        return Ok(());
+    }
+
+    // If feed not visible, fallback to URL navigation
+    log::warn!("Feed not visible after home logo click, falling back to URL navigation");
+    goto_home_fallback(api).await
+}
+
+/// Gets the center coordinates of an element matching the selector.
+/// Returns None if element not found or rect invalid.
+async fn get_element_center(api: &TaskContext, selector: &str) -> Result<Option<(f64, f64)>> {
+    let js = format!(
+        r#"
+        (function() {{
+            var el = document.querySelector('{}');
+            if (!el) return null;
+            var rect = el.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return null;
+            return {{
+                x: rect.x + rect.width / 2,
+                y: rect.y + rect.height / 2
+            }};
+        }})()
+        "#,
+        selector
+    );
+
+    let result = api.page().evaluate(js).await?;
+    if let Some(obj) = result.value().and_then(|v| v.as_object()) {
+        if let (Some(x), Some(y)) = (obj.get("x").and_then(|v| v.as_f64()), obj.get("y").and_then(|v| v.as_f64())) {
+            return Ok(Some((x, y)));
+        }
+    }
+    Ok(None)
+}
+
+/// Fallback navigation using URLs (original implementation)
+async fn goto_home_fallback(api: &TaskContext) -> Result<()> {
     let urls = [
         "https://x.com/home",
         "https://twitter.com/home",

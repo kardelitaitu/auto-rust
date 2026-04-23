@@ -64,19 +64,22 @@ pub fn clear_log_context() {
     LOG_CONTEXT.with(|c| c.replace(LogContext::default()));
 }
 
-/// Scoped logging context guard that clears thread-local context on drop.
-pub struct LogContextGuard;
+/// Scoped logging context guard that restores the previous thread-local context on drop.
+pub struct LogContextGuard {
+    previous: LogContext,
+}
 
 impl Drop for LogContextGuard {
     fn drop(&mut self) {
-        clear_log_context();
+        set_log_context(self.previous.clone());
     }
 }
 
-/// Sets the logging context for the current scope and clears it automatically.
+/// Sets the logging context for the current scope and restores the previous context automatically.
 pub fn scoped_log_context(ctx: LogContext) -> LogContextGuard {
+    let previous = get_log_context();
     set_log_context(ctx);
-    LogContextGuard
+    LogContextGuard { previous }
 }
 
 /// Logger implementation that writes log messages to both stdout and a file.
@@ -157,7 +160,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scoped_log_context_clears_on_drop() {
+    fn scoped_log_context_restores_previous_context_on_drop() {
         {
             let _guard = scoped_log_context(LogContext {
                 session_id: Some("s1".to_string()),
@@ -172,5 +175,31 @@ mod tests {
         assert!(ctx.session_id.is_none());
         assert!(ctx.profile_name.is_none());
         assert!(ctx.task_name.is_none());
+    }
+
+    #[test]
+    fn scoped_log_context_restores_outer_scope_when_nested() {
+        let _outer = scoped_log_context(LogContext {
+            session_id: Some("outer".to_string()),
+            profile_name: Some("brave".to_string()),
+            task_name: Some("demoqa".to_string()),
+        });
+
+        {
+            let _inner = scoped_log_context(LogContext {
+                session_id: Some("inner".to_string()),
+                profile_name: Some("roxy".to_string()),
+                task_name: Some("nativeclick".to_string()),
+            });
+            let ctx = get_log_context();
+            assert_eq!(ctx.session_id.as_deref(), Some("inner"));
+            assert_eq!(ctx.profile_name.as_deref(), Some("roxy"));
+            assert_eq!(ctx.task_name.as_deref(), Some("nativeclick"));
+        }
+
+        let ctx = get_log_context();
+        assert_eq!(ctx.session_id.as_deref(), Some("outer"));
+        assert_eq!(ctx.profile_name.as_deref(), Some("brave"));
+        assert_eq!(ctx.task_name.as_deref(), Some("demoqa"));
     }
 }

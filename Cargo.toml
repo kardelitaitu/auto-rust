@@ -50,6 +50,7 @@ thiserror = "1"
 # Async Utilities
 futures = "0.3"
 async-trait = "0.1"
+enigo = "0.6.1"
 
 # Random & Probability
 rand = "0.8"

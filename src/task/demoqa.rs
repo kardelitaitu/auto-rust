@@ -9,6 +9,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 use crate::capabilities::mouse;
+use crate::logger::scoped_log_context;
 use crate::prelude::TaskContext;
 
 const DEMO_URL: &str = "https://demoqa.com/text-box";
@@ -28,7 +29,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("- Email: {}", config.email);
     info!("- Current Address: {}", config.current_address);
     info!("- Permanent Address: {}", config.permanent_address);
-    info!("Task API demo: focus -> keyboard -> click_and_wait -> inspect");
+    info!("Task API demo: focus -> keyboard -> nativeclick -> inspect");
 
     mouse::set_overlay_enabled(SHOW_CURSOR_OVERLAY);
 
@@ -60,7 +61,18 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("permanentAddress value: {}", permanent_address);
 
     info!("Clicking submit button");
-    let submit_click = match timeout(Duration::from_secs(12), api.click("#submit")).await {
+    let session_id = api.session_id().to_string();
+    {
+        let mut ctx = crate::logger::get_log_context();
+        ctx.session_id = Some(session_id.clone());
+        let _guard = scoped_log_context(ctx);
+        info!(
+            "[task-api] submit nativeclick session={} selector=#submit phase=before",
+            session_id
+        );
+    }
+    info!("Submit nativeclick phase=before selector=#submit");
+    let submit_click = match timeout(Duration::from_secs(12), api.nativeclick("#submit")).await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(e)) => {
             warn!("Submit click failed: {}", e);
@@ -72,10 +84,43 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
             return Err(e);
         }
     };
+    if let (Some(screen_x), Some(screen_y)) = (submit_click.screen_x, submit_click.screen_y) {
+        info!(
+            "Submit nativeclick screen point: ({}, {}) phase=after",
+            screen_x, screen_y
+        );
+    }
+    {
+        let mut ctx = crate::logger::get_log_context();
+        ctx.session_id = Some(session_id.clone());
+        let _guard = scoped_log_context(ctx);
+        info!(
+            "[task-api] submit nativeclick session={} selector=#submit point=({:.1},{:.1}) phase=after",
+            session_id,
+            submit_click.x,
+            submit_click.y
+        );
+    }
     info!("{}", submit_click.summary());
 
+    api.pause(7500).await;
+    let output_exists_before_wait = api.exists("#output").await?;
+    info!(
+        "Output precheck before wait: exists={}",
+        output_exists_before_wait
+    );
     info!("Waiting for output panel");
-    if !api.wait_for_visible("#output", 10_000).await? {
+    if !api.wait_for_visible("#output", 15_000).await? {
+        let output_exists_after_wait = api.exists("#output").await?;
+        let output_visible_after_wait = api.visible("#output").await?;
+        warn!(
+            "DemoQA output wait failed: exists={} visible={}",
+            output_exists_after_wait,
+            output_visible_after_wait
+        );
+        if !output_exists_after_wait {
+            bail!("DemoQA output element did not exist after submit");
+        }
         bail!("DemoQA output did not become visible after submit");
     }
 
@@ -100,14 +145,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         &config.permanent_address,
     )?;
 
-    api.pause(5000).await;
-
     info!("Task completed");
     Ok(())
 }
 
 async fn fill_text_field(api: &TaskContext, selector: &str, value: &str) -> Result<()> {
-    let click = api.click(selector).await?;
+    let click = api.nativeclick(selector).await?;
     info!("{}", click.summary());
     if SHOW_CURSOR_OVERLAY {
         api.sync_cursor_overlay().await?;

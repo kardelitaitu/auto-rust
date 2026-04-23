@@ -1,0 +1,85 @@
+{
+  "interaction_count": 21,
+  "total_attempts": 21,
+  "total_successes": 16,
+  "recent_results": [
+    true,
+    false,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    true,
+    false,
+    true,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "selectors": {
+    "a[href='/Eng_china5/status/2046996631724404953']": {
+      "attempts": 1,
+      "successes": 0,
+      "consecutive_failures": 1
+    },
+    "button[data-testid*=\"like\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/WatcherGuru/status/2047033614823567401']": {
+      "attempts": 2,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "button[data-testid$=\"-follow\"]": {
+      "attempts": 1,
+      "successes": 0,
+      "consecutive_failures": 1
+    },
+    "a[href='/SuiNetwork/status/2029325707747483985/analytics']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/ScalaHosting/status/1721905349878599911/analytics']": {
+      "attempts": 2,
+      "successes": 2,
+      "consecutive_failures": 0
+    },
+    "div[data-testid=\"retweetConfirm\"]": {
+      "attempts": 3,
+      "successes": 3,
+      "consecutive_failures": 0
+    },
+    "a[aria-label=\"X\"]": {
+      "attempts": 5,
+      "successes": 5,
+      "consecutive_failures": 0
+    },
+    "a[href='/FemenineFrames/status/2046907183372132722']": {
+      "attempts": 1,
+      "successes": 0,
+      "consecutive_failures": 1
+    },
+    "button[data-testid=\"retweet\"]": {
+      "attempts": 3,
+      "successes": 3,
+      "consecutive_failures": 0
+    },
+    "a[href='/sekansnews/status/2046953805384671374']": {
+      "attempts": 1,
+      "successes": 0,
+      "consecutive_failures": 1
+    }
+  }
+}

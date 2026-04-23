@@ -1,0 +1,62 @@
+{
+  "interaction_count": 13,
+  "total_attempts": 13,
+  "total_successes": 10,
+  "recent_results": [
+    false,
+    false,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "selectors": {
+    "a[href='/sciencegirl/status/2046975808086946184']": {
+      "attempts": 2,
+      "successes": 0,
+      "consecutive_failures": 2
+    },
+    "button[data-testid*=\"like\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "div[data-testid=\"retweetConfirm\"]": {
+      "attempts": 2,
+      "successes": 2,
+      "consecutive_failures": 0
+    },
+    "a[aria-label=\"X\"]": {
+      "attempts": 2,
+      "successes": 2,
+      "consecutive_failures": 0
+    },
+    "a[href='/TheCinesthetic/status/2046798145540215269']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/Rainmaker1973/status/2046931176971960439']": {
+      "attempts": 2,
+      "successes": 1,
+      "consecutive_failures": 1
+    },
+    "button[data-testid=\"retweet\"]": {
+      "attempts": 2,
+      "successes": 2,
+      "consecutive_failures": 0
+    },
+    "a[href='/ATRightMovies/status/2046720174452027619']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    }
+  }
+}

@@ -3,7 +3,7 @@
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
-use std::time::Duration;
+use log::info;
 use tracing::instrument;
 
 use super::twitteractivity_feed::get_scroll_progress;
@@ -20,87 +20,48 @@ pub struct DiveIntoThreadOutcome {
 #[instrument(skip(api))]
 pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<DiveIntoThreadOutcome> {
     if status_url.is_empty() {
+        info!("Dive skipped: empty status_url");
         return Ok(DiveIntoThreadOutcome {
             opened: false,
             used_fallback_target: false,
         });
     }
 
-    // Find the tweet element by its status URL and scroll it into view
-    let js = format!(
-        r#"
-        (function() {{
-            var links = document.querySelectorAll('a[href*="/status/"]');
-            for (var i = 0; i < links.length; i++) {{
-                var href = links[i].getAttribute('href');
-                if (href === '{}' || href.endsWith('{}')) {{
-                    // Get coordinates for clicking (skip scrollIntoView to avoid hanging)
-                    var rect = links[i].getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {{
-                        return {{ 
-                            success: true, 
-                            x: rect.x + rect.width / 2, 
-                            y: rect.y + rect.height / 2 
-                        }};
-                    }}
-                }}
-            }}
-            return {{ success: false, x: 0, y: 0 }};
-        }})()
-        "#,
-        status_url, status_url
-    );
+    info!("Attempting to dive into thread: {}", status_url);
 
-    let result = match tokio::time::timeout(
-        Duration::from_secs(5),
-        api.page().evaluate(js.as_str())
-    ).await {
-        Ok(r) => r,
-        Err(_) => {
-            return Ok(DiveIntoThreadOutcome {
-                opened: false,
-                used_fallback_target: false,
-            });
-        }
-    }?;
-    let (success, click_x, click_y) = if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-        let success = obj.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-        let click_x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let click_y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        (success, click_x, click_y)
-    } else {
-        (false, 0.0, 0.0)
-    };
-
-    if !success {
+    // Click the tweet link using the high-level API (handles scrolling, movement, clicking)
+    let link_selector = format!("a[href='{}']", status_url);
+    info!("Clicking tweet link selector: {}", link_selector);
+    if let Err(e) = api.click(&link_selector).await {
+        info!("Dive failed: click on link failed: {}", e);
         return Ok(DiveIntoThreadOutcome {
             opened: false,
             used_fallback_target: false,
         });
     }
+    info!("Clicked tweet link, waiting for thread view...");
 
-    // No pause needed since we're not scrolling
-    // human_pause(api, 500).await;
-
-    // Use Rust API for cursor movement and click (enables cursor overlay tracking)
-    api.move_mouse_to(click_x, click_y).await?;
-    human_pause(api, 250).await;
-    api.click_at(click_x, click_y).await?;
-    human_pause(api, 800).await;
-
-    // Wait for thread view to open (look for thread-specific indicators)
+    // Wait for thread/modal view to open (tweet detail or thread)
     let selectors = [
-        "div[data-testid='tweetDetail']",  // Thread detail view
-        "div[data-testid='tweetThread']",  // Thread view
-        "[aria-label='Timeline: Thread']", // Thread timeline
+        r#"div[role="dialog"]"#,                    // Modal dialog (common for tweet details)
+        r#"div[data-testid="tweetDetail"]"#,        // Thread detail view
+        r#"div[data-testid="tweetThread"]"#,        // Thread view
+        r#"[aria-label="Timeline: Thread"]"#,       // Thread timeline
+        r#"article[data-testid="tweet"]"#,          // Tweet in detail view
     ];
-    let _ = api
+    let thread_opened = api
         .wait_for_any_visible_selector(&selectors, 5_000)
         .await
-        .ok();
+        .unwrap_or(false);
+
+    if thread_opened {
+        info!("Thread view opened successfully");
+    } else {
+        info!("Thread view did not open within timeout");
+    }
 
     Ok(DiveIntoThreadOutcome {
-        opened: true,
+        opened: thread_opened,
         used_fallback_target: false,
     })
 }

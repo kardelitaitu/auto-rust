@@ -189,7 +189,7 @@ async fn human_scroll_into_view(page: &Page, selector: &str) -> Result<()> {
             if (Math.abs(delta) < 2) return true;
 
             const distance = Math.abs(delta);
-            const duration = Math.max(240, Math.min(950, distance / 2.5));
+            const duration = Math.max(2000, Math.min(4000, distance * 4));
             const startTime = performance.now();
 
             return new Promise((resolve) => {{
@@ -378,5 +378,77 @@ mod tests {
     fn test_smooth_scroll_js_has_easing() {
         let js = r#"(function ease(progress) { return 1 - Math.pow(1 - progress, 3); })"#;
         assert!(js.contains("Math.pow"));
+    }
+
+    #[test]
+    fn test_scroll_distance_calculation_window_scroller() {
+        // Test case: element at rect.top = 100, height = 50, window height = 400
+        // currentScrollTop = 0
+        // Should center element: element center at 125, viewport center at 200
+        // Need to scroll to: 125 - 200 = -75, but clamped to 0 = 0
+        let rect_top = 100.0;
+        let rect_height = 50.0;
+        let container_height = 400.0;
+        let container_top = 0.0;
+        let current_scroll_top = 0.0;
+        let max_scroll_top = 1000.0;
+
+        let scroll_calc: f64 = current_scroll_top + (rect_top - container_top) + rect_height / 2.0 - container_height / 2.0;
+        let target_scroll_top = scroll_calc.max(0.0_f64).min(max_scroll_top);
+
+        // Element center at 125, viewport center at 200, delta = -75, clamped to 0
+        assert_eq!(target_scroll_top, 0.0);
+    }
+
+    #[test]
+    fn test_scroll_distance_calculation_element_below_viewport() {
+        // Test case: element at rect.top = 500, height = 50, window height = 400
+        // currentScrollTop = 0
+        // Element center at 525, viewport center at 200
+        // Need to scroll to: 525 - 200 = 325
+        let rect_top = 500.0;
+        let rect_height = 50.0;
+        let container_height = 400.0;
+        let container_top = 0.0;
+        let current_scroll_top = 0.0;
+        let max_scroll_top = 1000.0;
+
+        let scroll_calc: f64 = current_scroll_top + (rect_top - container_top) + rect_height / 2.0 - container_height / 2.0;
+        let target_scroll_top = scroll_calc.max(0.0_f64).min(max_scroll_top);
+
+        assert_eq!(target_scroll_top, 325.0);
+    }
+
+    #[test]
+    fn test_scroll_distance_calculation_element_above_viewport() {
+        // Test case: element at rect.top = -100, height = 50, window height = 400
+        // currentScrollTop = 200
+        // Element center at -75, viewport center at 200 (absolute)
+        // Need to scroll to: 200 + (-100 - 0) + 25 - 200 = 200 -100 +25 -200 = -75, clamped to 0
+        let rect_top = -100.0;
+        let rect_height = 50.0;
+        let container_height = 400.0;
+        let container_top = 0.0;
+        let current_scroll_top = 200.0;
+        let max_scroll_top = 1000.0;
+
+        let scroll_calc: f64 = current_scroll_top + (rect_top - container_top) + rect_height / 2.0 - container_height / 2.0;
+        let target_scroll_top = scroll_calc.max(0.0_f64).min(max_scroll_top);
+
+        assert_eq!(target_scroll_top, 0.0);
+    }
+
+    #[test]
+    fn test_scroll_duration_calculation() {
+        // Test duration calculation: max(2000, min(4000, distance * 4))
+        assert_eq!(calculate_scroll_duration(0.0), 2000); // min duration
+        assert_eq!(calculate_scroll_duration(100.0), 2000); // 100 * 4 = 400 < 2000
+        assert_eq!(calculate_scroll_duration(500.0), 2000); // 500 * 4 = 2000
+        assert_eq!(calculate_scroll_duration(600.0), 2400); // 600 * 4 = 2400
+        assert_eq!(calculate_scroll_duration(1000.0), 4000); // 1000 * 4 = 4000, max
+    }
+
+    fn calculate_scroll_duration(distance: f64) -> u64 {
+        (2000.0_f64.max(4000.0_f64.min(distance * 4.0))) as u64
     }
 }

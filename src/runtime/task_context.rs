@@ -26,6 +26,7 @@
 //!
 //! ```no_run
 //! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! # use rust_orchestrator::config::NativeInteractionConfig;
 //! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //! api.navigate("https://example.com", 30_000).await?;
 //! api.click("#submit-button").await?;
@@ -48,6 +49,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::logger::scoped_log_context;
+use crate::config::NativeInteractionConfig;
 use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
 use crate::internal::page_size::{self, Viewport};
 use crate::internal::profile::{BrowserProfile, ProfileRuntime};
@@ -667,8 +669,9 @@ mod tests {
 /// # use chromiumoxide::Page;
 /// # use std::sync::Arc;
 /// # use rust_orchestrator::internal::profile::{BrowserProfile, ProfileRuntime};
+/// # use rust_orchestrator::config::NativeInteractionConfig;
 /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-/// let api = TaskContext::new("session-1", page, profile, runtime);
+/// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default());
 /// // Use the API for browser automation
 /// # }
 /// ```
@@ -679,6 +682,7 @@ pub struct TaskContext {
     clipboard: ClipboardState,
     behavior_profile: BrowserProfile,
     behavior_runtime: ProfileRuntime,
+    native_interaction: NativeInteractionConfig,
     metrics: Option<Arc<MetricsCollector>>,
     click_learning: Arc<Mutex<ClickLearningState>>,
     click_learning_path: Option<PathBuf>,
@@ -693,6 +697,7 @@ impl TaskContext {
     /// * `page` - The browser page to automate
     /// * `behavior_profile` - The behavior profile for human-like interactions
     /// * `behavior_runtime` - The runtime behavior configuration
+    /// * `native_interaction` - Native OS input calibration and timing settings
     ///
     /// # Returns
     ///
@@ -705,8 +710,9 @@ impl TaskContext {
     /// # use chromiumoxide::Page;
     /// # use std::sync::Arc;
     /// # use rust_orchestrator::internal::profile::{BrowserProfile, ProfileRuntime};
+    /// # use rust_orchestrator::config::NativeInteractionConfig;
     /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-    /// let api = TaskContext::new("session-1", page, profile, runtime);
+    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default());
     /// # }
     /// ```
     pub fn new(
@@ -714,6 +720,7 @@ impl TaskContext {
         page: Arc<Page>,
         behavior_profile: BrowserProfile,
         behavior_runtime: ProfileRuntime,
+        native_interaction: NativeInteractionConfig,
     ) -> Self {
         let session_id = session_id.into();
         let clipboard = ClipboardState::new(session_id.clone());
@@ -728,6 +735,7 @@ impl TaskContext {
             clipboard,
             behavior_profile,
             behavior_runtime,
+            native_interaction,
             metrics: None,
             click_learning: Arc::new(Mutex::new(click_learning)),
             click_learning_path,
@@ -739,9 +747,16 @@ impl TaskContext {
         page: Arc<Page>,
         behavior_profile: BrowserProfile,
         behavior_runtime: ProfileRuntime,
+        native_interaction: NativeInteractionConfig,
         metrics: Arc<MetricsCollector>,
     ) -> Self {
-        let mut ctx = Self::new(session_id, page, behavior_profile, behavior_runtime);
+        let mut ctx = Self::new(
+            session_id,
+            page,
+            behavior_profile,
+            behavior_runtime,
+            native_interaction,
+        );
         ctx.metrics = Some(metrics);
         ctx
     }
@@ -764,6 +779,10 @@ impl TaskContext {
 
     pub fn behavior_runtime(&self) -> &ProfileRuntime {
         &self.behavior_runtime
+    }
+
+    pub fn native_interaction(&self) -> &NativeInteractionConfig {
+        &self.native_interaction
     }
 
     pub fn increment_run_counter(&self, name: &str, amount: usize) {
@@ -1389,6 +1408,7 @@ impl TaskContext {
             click.reaction_delay_ms,
             self.behavior_runtime.action_delay.variance_pct.round() as u32,
             click.offset_px,
+            self.native_interaction(),
         )
         .await?;
         {
@@ -1768,6 +1788,7 @@ impl TaskContext {
             query,
             click.reaction_delay_ms,
             self.behavior_runtime.action_delay.variance_pct.round() as u32,
+            self.native_interaction(),
         )
         .await?;
         {

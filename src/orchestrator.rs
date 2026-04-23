@@ -590,6 +590,7 @@ async fn execute_task_with_retry(
             page.clone(),
             session.behavior_profile.clone(),
             session.behavior_runtime,
+            config.browser.native_interaction.clone(),
             metrics.clone(),
         );
 

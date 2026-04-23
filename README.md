@@ -31,11 +31,20 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - **Timing**: Clustered pauses with micro-movements for reduced detection patterns
 - **Element Detection**: Automatic element type detection (button, link, input, checkbox, dropdown) for behavior customization
 
-### Future Browser Connectors
-- Current browser discovery covers configured Chromium profiles, Roxybrowser, and local Brave instances.
-- Planned next step is to add more connector backends behind the same runtime/session API.
-- Goal: keep task code unchanged while expanding support for additional Chromium-compatible browsers and connector styles.
-- Other Chromium-compatible browsers are planned as future connectors, not current default support.
+### Browser Support
+**Currently Supported:**
+- **Brave**: Local instances with remote debugging enabled
+- **RoxyBrowser**: Via API integration
+
+**Future Support:**
+- Additional Chromium-compatible browsers are planned as future connectors
+- The runtime/session API is designed to support multiple connector backends
+- Goal: Keep task code unchanged while expanding browser support
+
+**To Enable Brave:**
+```bash
+brave.exe --remote-debugging-port=9001
+```
 
 ### Production Hardening
 - **Graceful Shutdown**: Ctrl+C signal handling with clean task cancellation
@@ -208,9 +217,10 @@ cargo run 'twitteractivity,weights={"like_prob":0.4,"retweet_prob":0.15,"follow_
 - ❤️ **Like Tweets**: Human-like cursor movement and timing
 - 🔁 **Retweet**: Native retweets with modal confirmation
 - 👤 **Follow Users**: From tweet context or profile pages
-- 💬 **Reply**: Context-aware reply composition (V2: LLM-powered)
-- 🧵 **Thread Dives**: Read full conversation threads
+- 💬 **Reply**: Context-aware reply composition with LLM-powered generation
+- 🧵 **Thread Dives**: Read full conversation threads with incremental caching
 - 🔖 **Bookmark**: Save tweets (disabled in V1, config-driven)
+- 🤖 **LLM Integration**: AI-generated replies and quote tweets with context extraction
 
 **Engagement Limits (Default):**
 | Action | Limit | Configurable |
@@ -238,10 +248,10 @@ max_thread_dives = 3
 max_bookmarks = 0                  # Disabled in V1
 max_total_actions = 10
 
-# LLM Configuration (V2 - for smart replies & quote tweets)
+# LLM Configuration (for smart replies & quote tweets)
 [twitter_activity.llm]
-enabled = false                    # Set true for V2 features
-provider = "ollama"
+enabled = false                    # Set true for AI-powered features
+provider = "ollama"                # Options: ollama, openrouter
 model = "llama3.2:latest"
 ```
 
@@ -293,7 +303,7 @@ cargo run 'twitterfollow={"username":"username"}'
 ---
 
 ### Twitter Reply (`twitterreply`)
-Extract tweet context and compose human-like replies.
+Extract tweet context and compose human-like replies with optional LLM integration.
 
 ```bash
 # Reply to specific tweet
@@ -301,18 +311,26 @@ cargo run twitterreply=url=https://x.com/user/status/123
 ```
 
 **Features:**
-- 📝 **Context Extraction**: Reads tweet + top replies
+- 📝 **Context Extraction**: Reads tweet + top replies from DOM
 - 🎯 **Sentiment Analysis**: Matches reply tone to context
 - ⚡ **Quick Generation**: Fast, template-based replies
-- 🔜 **V2: LLM-Powered**: Contextual AI-generated replies
+- 🤖 **LLM-Powered**: Contextual AI-generated replies (when enabled)
+- 🔧 **Content Validation**: Sanitizes output for Twitter compliance
 
-**V2 (Planned):**
-- LLM-powered contextual replies
-- Multi-turn conversation tracking
-- Language matching (reply in tweet's language)
-- Smart engagement decisions (skip low-quality tweets)
+**LLM Integration:**
+When LLM is enabled in config, replies are generated using:
+- Tweet author and text as context
+- Up to 5 top replies for conversation understanding
+- Configurable provider (Ollama or OpenRouter)
+- Automatic fallback to template on LLM failure
 
-See `V2_ROADMAP.md` for implementation timeline.
+**Content Validation:**
+LLM output is validated to ensure:
+- Maximum 280 characters
+- No @mentions (unless in original tweet)
+- No #hashtags
+- No emojis
+- No banned AI-sounding words
 
 ## ⚙️ Configuration
 
@@ -549,7 +567,7 @@ All core orchestration features are implemented and tested:
 | 5 | Metrics collector, task history ring buffer, `run-summary.json` export, periodic health logging | ✅ |
 | 6 | JS fallback path, deterministic utility tests, integration tests | ✅ |
 
-Last verified on April 21, 2026.
+Last verified on April 23, 2026.
 
 **Test coverage:** 68 tests passing (unit + integration + doc tests)  
 **Lint status:** `cargo clippy` clean (all targets, all features)  
@@ -690,6 +708,16 @@ The generated documentation is saved to `target/doc/` and includes:
 - Examples for common operations
 - Type information and trait implementations
 - Cross-references between related items
+
+**Twitter Utility Modules Documentation:**
+The Twitter automation utilities now have comprehensive rustdoc documentation:
+- `twitteractivity_dive.rs`: Thread diving, reading, and incremental caching
+- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark)
+- `twitteractivity_llm.rs`: LLM-powered reply/quote generation with context extraction
+- `twitteractivity_feed.rs`: Feed scrolling and candidate identification
+- `twitteractivity_navigation.rs`: Page navigation and login state checks
+
+All functions include detailed documentation with Arguments, Returns, Errors, Behavior, and Selectors sections.
 
 ### User Guides
 

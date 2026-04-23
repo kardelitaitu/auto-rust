@@ -1,5 +1,39 @@
-//! Thread dive and deep-read helpers.
-//! Expands tweet threads and scrolls through them for full context.
+//! Thread dive and deep-read helpers for Twitter automation.
+//!
+//! This module provides functionality for navigating into tweet threads and reading
+//! their full content by scrolling through replies. It also includes a caching mechanism
+//! to capture thread data (author, text, replies) for later LLM processing.
+//!
+//! ## Key Components
+//!
+//! - **Thread Diving**: Click into tweet threads to open detailed view
+//! - **Thread Reading**: Scroll through threads with human-like pauses
+//! - **Thread Caching**: Incrementally capture replies during scrolling
+//!
+//! ## Key Functions
+//!
+//! - [`dive_into_thread()`]: Click a tweet link to open thread detail view
+//! - [`read_full_thread()`]: Scroll through a thread with optional caching
+//! - [`extract_initial_thread_data()`]: Capture root tweet author and text
+//! - [`extract_visible_replies()`]: Extract replies visible in current view
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use rust_orchestrator::utils::twitter::twitteractivity_dive::*;
+//!
+//! // Dive into a thread and read it with caching
+//! let outcome = dive_into_thread(api, status_url).await?;
+//! let mut cache = outcome.cache.unwrap_or_default();
+//! read_full_thread(api, 10, &mut cache).await?;
+//! ```
+//!
+//! ## Thread Caching
+//!
+//! The [`ThreadCache`] struct captures thread data incrementally:
+//! - Initial tweet data (author, text) captured after thread opens
+//! - Replies extracted before each scroll (up to 20 total)
+//! - Cache can be used for LLM reply/quote generation
 
 use crate::prelude::TaskContext;
 use anyhow::{Context, Result};
@@ -40,7 +74,43 @@ pub struct DiveIntoThreadOutcome {
 }
 
 /// Clicks on a tweet to open it in the thread/detail view.
-/// Uses status URL to find the element, then clicks with cursor overlay tracking.
+///
+/// This function navigates into a tweet's thread by clicking on a tweet link
+/// identified by its status URL. It waits for the thread view to open and
+/// optionally captures initial thread data for caching.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+/// * `status_url` - The status URL of the tweet (e.g., "/username/status/123456")
+///
+/// # Returns
+///
+/// Returns `DiveIntoThreadOutcome` containing:
+/// - `opened`: Whether the thread view opened successfully
+/// - `used_fallback_target`: Whether a fallback selector was used
+/// - `cache`: Optional thread cache with initial tweet data
+///
+/// # Errors
+///
+/// Returns error if the click operation fails unexpectedly.
+///
+/// # Behavior
+///
+/// - Returns early with `opened: false` if `status_url` is empty
+/// - Constructs a link selector from the status URL
+/// - Clicks the link and waits for thread view to appear
+/// - Uses multiple selector strategies to detect thread view opening
+/// - Extracts initial thread data (author, text) if thread opens successfully
+///
+/// # Selectors Used
+///
+/// The function waits for any of these selectors to become visible:
+/// - `div[role="dialog"]` - Modal dialog
+/// - `div[data-testid="tweetDetail"]` - Thread detail view
+/// - `div[data-testid="tweetThread"]` - Thread view
+/// - `[aria-label="Timeline: Thread"]` - Thread timeline
+/// - `article[data-testid="tweet"]` - Tweet in detail view
 #[instrument(skip(api))]
 pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<DiveIntoThreadOutcome> {
     if status_url.is_empty() {
@@ -105,9 +175,45 @@ pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<Div
     })
 }
 
-/// Reads the full thread by scrolling through it.
-/// Returns after `max_scrolls` iterations or end of thread reached.
-/// Incrementally extracts replies into the provided cache.
+/// Reads the full thread by scrolling through it with incremental reply extraction.
+///
+/// This function simulates human-like reading of a Twitter thread by scrolling
+/// incrementally and extracting replies visible at each scroll position. Replies
+/// are added to the provided cache for later LLM processing.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+/// * `max_scrolls` - Maximum number of scroll iterations to perform
+/// * `cache` - Mutable thread cache to populate with extracted replies
+///
+/// # Returns
+///
+/// Returns `Ok(())` on completion. Errors are logged but don't stop execution.
+///
+/// # Behavior
+///
+/// - Extracts visible replies before each scroll
+/// - Scrolls in small increments (300px) to simulate reading
+/// - Adds human-like pauses between scrolls (500-1500ms)
+/// - Stops early if scroll progress reaches 95% (end of thread)
+/// - Limits cached replies to 20 total
+/// - Every 3rd scroll includes a longer pause (1500ms) to simulate reading
+///
+/// # Scroll Progress
+///
+/// The function monitors scroll progress and stops when:
+/// - `max_scrolls` iterations completed
+/// - Scroll progress reaches 95% (end of thread)
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use rust_orchestrator::utils::twitter::twitteractivity_dive::*;
+///
+/// let mut cache = ThreadCache::default();
+/// read_full_thread(api, 10, &mut cache).await?;
+/// ```
 #[instrument(skip(api, cache))]
 pub async fn read_full_thread(api: &TaskContext, max_scrolls: u32, cache: &mut ThreadCache) -> Result<()> {
     for i in 0..max_scrolls {
@@ -156,6 +262,18 @@ pub async fn read_full_thread(api: &TaskContext, max_scrolls: u32, cache: &mut T
 }
 
 /// Returns the current thread depth (number of visible tweets in thread view).
+///
+/// Counts the number of tweet elements currently visible in the thread view.
+/// Useful for determining how much of the thread has loaded.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns the count of visible tweet elements in the thread view.
+#[instrument(skip(api))]
 pub async fn get_thread_depth(api: &TaskContext) -> Result<u32> {
     let js = selector_all_tweets();
     let result = api.page().evaluate(js.to_string()).await?;
@@ -167,7 +285,38 @@ pub async fn get_thread_depth(api: &TaskContext) -> Result<u32> {
 }
 
 /// Extracts initial tweet data (author and text) from the current thread view.
-/// Called immediately after thread opens to capture the root tweet.
+///
+/// This function extracts the root tweet's author and text immediately after a thread
+/// opens. It uses DOM queries to find the tweet elements and returns a ThreadCache
+/// with the extracted data.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `ThreadCache` containing:
+/// - `tweet_author`: The username of the tweet author
+/// - `tweet_text`: The text content of the tweet
+/// - `replies`: Empty vector (replies are added incrementally during scrolling)
+///
+/// # Errors
+///
+/// Returns error if DOM evaluation fails or data extraction fails.
+///
+/// # Behavior
+///
+/// - Queries for the first tweet in thread view
+/// - Extracts author from `[data-testid="tweet"] [dir="auto"]`
+/// - Extracts text from `[data-testid="tweetText"]`
+/// - Returns "unknown" for author if not found
+/// - Returns empty string for text if not found
+///
+/// # Selectors Used
+///
+/// - Author: `[data-testid="tweet"] [dir="auto"]`
+/// - Text: `[data-testid="tweetText"]`
 #[instrument(skip(api))]
 pub async fn extract_initial_thread_data(api: &TaskContext) -> Result<ThreadCache> {
     let js = r#"
@@ -215,7 +364,38 @@ pub async fn extract_initial_thread_data(api: &TaskContext) -> Result<ThreadCach
 }
 
 /// Extracts visible replies from the current thread view and adds them to the cache.
-/// Returns the number of new replies extracted.
+///
+/// This function queries the DOM for all reply tweets in the current view and
+/// extracts their author and text. Replies are deduplicated and added to the
+/// provided cache up to a maximum of 20 total replies.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+/// * `cache` - Mutable thread cache to populate with extracted replies
+///
+/// # Returns
+///
+/// Returns the number of new replies added to the cache.
+///
+/// # Errors
+///
+/// Returns error if DOM evaluation fails or data extraction fails.
+///
+/// # Behavior
+///
+/// - Queries for all tweet elements in thread view
+/// - Skips the first element (root tweet)
+/// - Extracts author and text from each reply
+/// - Deduplicates replies by author+text combination
+/// - Limits total cached replies to 20
+/// - Only adds replies with non-empty text
+///
+/// # Selectors Used
+///
+/// - Tweets: `article[data-testid="tweet"]`
+/// - Author: `[dir="auto"]` within tweet
+/// - Text: `[data-testid="tweetText"]` within tweet
 #[instrument(skip(api, cache))]
 pub async fn extract_visible_replies(api: &TaskContext, cache: &mut ThreadCache) -> Result<u32> {
     let js = r#"

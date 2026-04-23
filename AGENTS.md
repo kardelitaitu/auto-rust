@@ -144,6 +144,28 @@ Need external app integration (GitHub, Slack)?
 - Keep task names canonical and consistent across `task/mod.rs`, `src/cli.rs`, validation, and README.
 - Current supported browsers are Brave and Roxybrowser; other Chromium browsers are future connectors only.
 
+### Twitter Utility Modules
+The Twitter automation utilities are located in `src/utils/twitter/` and have comprehensive rustdoc documentation:
+
+**Core Modules:**
+- `twitteractivity_dive.rs`: Thread diving, reading, and incremental caching for LLM context
+- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark)
+- `twitteractivity_llm.rs`: LLM-powered reply/quote generation with context extraction and validation
+- `twitteractivity_feed.rs`: Feed scrolling, candidate identification, and progress tracking
+- `twitteractivity_navigation.rs`: Page navigation and login state checks
+
+**Supporting Modules:**
+- `twitteractivity_sentiment*.rs`: Sentiment analysis (emoji, context, domains, LLM)
+- `twitteractivity_humanized.rs`: Human-like timing and cursor movements
+- `twitteractivity_selectors.rs`: Twitter-specific DOM selectors
+- `twitteractivity_decision.rs`: Engagement decision logic
+- `twitteractivity_limits.rs`: Engagement limit tracking
+- `twitteractivity_persona.rs`: Persona-based behavior profiles
+- `twitteractivity_popup.rs`: Popup/modal handling
+
+**Documentation:**
+All functions include detailed rustdoc with Arguments, Returns, Errors, Behavior, and Selectors sections. Generate with `cargo doc --all-features`.
+
 ### Known environment caveats (verified):
 - `filesystem` MCP - Full functionality working
 - `context-mode` `ctx_execute` - Working correctly
@@ -155,58 +177,28 @@ Need external app integration (GitHub, Slack)?
 - `tavily_map`, `tavily_crawl` - May return invalid start URL errors
   - **Fallback:** Use `tavily_search` + `tavily_extract` combination
 
-## Development Tasklist (Rust vs `.nodejs-reference`)
+## Development Status
 
-This tasklist is a historical roadmap unless explicitly updated.
+All core orchestration features have been implemented and are production-ready:
 
-### Phase 0 - Foundations
-- [x] Create `src/result.rs` for unified task result contract: `success | failed | timeout`
-- [x] Refactor `task::perform_task` and orchestrator execution path to return structured result
-- [x] Add consistent error typing (`timeout`, `validation`, `navigation`, `session`)
+### Completed Features
+- ✅ Unified result types and error typing
+- ✅ Per-task timeout and group timeout with cancellation
+- ✅ Retry policy with exponential backoff and jitter
+- ✅ Session lifecycle management with health scoring
+- ✅ Config loader (TOML + environment variables)
+- ✅ Task parser parity with Node.js reference
+- ✅ HTTP client with retry and circuit breaker
+- ✅ Metrics collector and run-summary export
+- ✅ Periodic health and memory monitoring
+- ✅ Integration tests for core tasks
 
-### Phase 1 - Orchestrator Reliability
-- [x] Add per-task timeout (`task_timeout_ms`) with cancellation propagation
-- [x] Add group timeout hard-stop (`group_timeout_ms`) for batch execution
-- [x] Add retry policy with attempt metadata (`attempt`, `max_retries`, `last_error`)
-- [x] Add worker/page health checks and stale-task cleanup
-
-### Phase 2 - Session Lifecycle
-- [x] Implement full `connect_to_browser` for configured profiles (currently TODO)
-- [x] Add session state tracking (`idle`, `busy`, `failed`) and failure score
-- [x] Add managed page registry and guaranteed release on all code paths
-- [x] Add graceful shutdown flow (cancel active tasks -> close pages -> close browsers)
-
-### Phase 3 - Config + Validation
-- [x] Add file-backed config loader (`config/*.toml`) with env override precedence
-- [x] Add task payload schema validator mirroring `task-validator.js`
-- [x] Add task parser parity with `.nodejs-reference/api/utils/task-parser.js` (behaviorally identical)
-- [x] Add startup config validation and fail-fast diagnostics
-
-### Phase 4 - API Utility Layer
-- [x] Create `src/api/client.rs` for HTTP requests with shared headers
-- [x] Add retry with jitter/backoff (`retries`, `factor`, `max_delay`)
-- [x] Add optional circuit-breaker module (feature-flagged)
-- [ ] Add provider fallback strategy hooks (optional — FreeApiRouter parity pending)
-
-### Phase 5 - Observability
-- [x] Create metrics collector: task counts, durations, session stats, API stats
-- [x] Add task history ring buffer and per-task breakdown
-- [x] Export `run-summary.json` at shutdown
-- [x] Add periodic health/memory logs with threshold warnings
-
-### Phase 6 - Utility Hardening
-- [x] Keep JS fallback path for unsupported browser contexts
-- [x] Add deterministic utility tests for navigation/scroll/timing behavior
-- [x] Add integration tests for `cookiebot` and `pageview` (unit tests added)
+### Optional Features (Not Required)
+- ⏸️ Provider fallback strategy (OpenRouter multi-model + API key rotation)
 
 ### Commands
-
 - Test: `cargo test`
 - Clippy lint: `cargo clippy --all-targets --all-features > rust-analyzer-problems.log 2>&1`
 - Build: `cargo build --all-features`
 - Generate documentation: `cargo doc --all-features`
 - View documentation: `cargo doc --open`
-
-### Delivery Tracks
-- [x] Fast track: complete Phases 0-2 first (production stability)
-- [x] Full parity: complete Phases 0-6 (feature parity with Node reference)

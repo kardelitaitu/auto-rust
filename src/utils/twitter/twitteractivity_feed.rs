@@ -1,5 +1,45 @@
-//! Feed and timeline interaction helpers.
-//! Scrolling through the home feed, identifying tweets for engagement.
+//! Feed and timeline interaction helpers for Twitter automation.
+//!
+//! This module provides functionality for navigating and scrolling through Twitter's
+//! home feed, identifying engagement candidates, and tracking scroll progress. It
+//! implements human-like reading patterns to avoid detection.
+//!
+//! ## Key Components
+//!
+//! - **Feed Scrolling**: Natural scrolling with randomized pauses
+//! - **Candidate Identification**: Find tweets suitable for engagement
+//! - **Scroll Progress Tracking**: Monitor how far through the feed
+//! - **Human-like Reading**: Simulate reading behavior with pauses
+//!
+//! ## Key Functions
+//!
+//! - [`scroll_through_feed()`]: Perform human-like scroll through timeline
+//! - [`identify_engagement_candidates()`]: Find engagement-ready tweets
+//! - [`get_scroll_progress()`]: Calculate current scroll position (0.0-1.0)
+//! - [`scroll_read()`]: Single scroll with reading pause
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use rust_orchestrator::utils::twitter::twitteractivity_feed::*;
+//!
+//! // Scroll through feed with reading pauses
+//! scroll_through_feed(api, 10, 300, true).await?;
+//!
+//! // Identify tweets for engagement
+//! let candidates = identify_engagement_candidates(api, 5).await?;
+//!
+//! // Check scroll progress
+//! let progress = get_scroll_progress(api).await?;
+//! ```
+//!
+//! ## Scroll Behavior
+//!
+//! The module implements human-like scrolling:
+//! - Small incremental scrolls (200-500px)
+//! - Reading pauses between scrolls (500-2000ms)
+//! - Random variation to avoid patterns
+//! - Progress tracking to detect feed end
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
@@ -8,13 +48,39 @@ use tracing::instrument;
 
 use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
-/// Performs a series of scroll actions through the feed.
-/// Mimics a user slowly reading their timeline.
+/// Performs a series of scroll actions through the feed with human-like behavior.
+///
+/// This function scrolls through the Twitter feed using either native scroll
+/// or JavaScript-based scrolling. It adds occasional back-scrolls and pauses to
+/// simulate human reading behavior.
 ///
 /// # Arguments
-/// * `api` - Task context
+///
+/// * `api` - Task context with page and browser automation capabilities
 /// * `scroll_count` - Number of scroll actions to perform
-/// * `use_native_scroll` - If true, uses `api.scroll_to_bottom()`-style actions; else evaluate JS
+/// * `use_native_scroll` - If true, uses native scroll; otherwise uses JS scroll
+///
+/// # Returns
+///
+/// Returns `Ok(())` on completion.
+///
+/// # Errors
+///
+/// Returns error if scroll operations fail.
+///
+/// # Behavior
+///
+/// - Uses profile-derived scroll amount and pause duration
+/// - Optionally uses smooth scrolling with back-scrolls
+/// - Occasionally scrolls back up slightly (25% of scroll amount) on later iterations
+/// - Adds human-like pauses between scrolls
+///
+/// # Profile Parameters
+///
+/// - `scroll.amount`: Pixels to scroll per action
+/// - `scroll.pause_ms`: Milliseconds to pause between scrolls
+/// - `scroll.smooth`: Whether to use smooth scrolling
+/// - `scroll.back_scroll`: Whether to include back-scrolls
 #[instrument(skip(api))]
 pub async fn scroll_feed(
     api: &TaskContext,
@@ -56,7 +122,43 @@ pub async fn scroll_feed(
 }
 
 /// Scans the current viewport for tweet articles that are good engagement candidates.
-/// Returns an array of tweet objects with id, position info, text content, and reply data.
+///
+/// This function queries the DOM for all visible tweets and extracts their metadata
+/// including position, text content, and engagement button positions. The returned
+/// data can be used to select tweets for engagement actions.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns a vector of tweet objects containing:
+/// - `id`: Tweet identifier (generated from position if not available)
+/// - `position`: {x, y, width, height} of tweet element
+/// - `text`: Tweet text content
+/// - `buttonPositions`: Coordinates of like, retweet, and reply buttons
+///
+/// # Errors
+///
+/// Returns error if DOM evaluation fails.
+///
+/// # Behavior
+///
+/// - Queries for all `article[data-testid="tweet"]` elements
+/// - Filters for visible elements (width > 0 and height > 0)
+/// - Extracts tweet text from `[data-testid="tweetText"]`
+/// - Finds engagement button positions within each tweet
+/// - Generates tweet ID from position if not available in DOM
+///
+/// # Selectors Used
+///
+/// - Tweets: `article[data-testid="tweet"]`
+/// - Text: `[data-testid="tweetText"]`
+/// - Like button: `[data-testid="like"]`
+/// - Retweet button: `[data-testid="retweet"]`
+/// - Reply button: `[data-testid="reply"]`
+#[instrument(skip(api))]
 pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Value>> {
     let js = r#"
         (function() {
@@ -248,7 +350,32 @@ pub async fn is_following_user_at_position(api: &TaskContext, _x: f64, _y: f64) 
 }
 
 /// Gets the current scroll position as percentage of total page height.
-/// Returns 0.0–1.0 (0 = top, 1 = bottom)
+///
+/// Calculates how far through the feed the user has scrolled, returning a
+/// value between 0.0 (top) and 1.0 (bottom). Useful for detecting when the
+/// feed end has been reached.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns scroll progress as a float between 0.0 and 1.0:
+/// - 0.0: At the top of the page
+/// - 1.0: At the bottom of the page (or scrolled past)
+///
+/// # Errors
+///
+/// Returns error if DOM evaluation fails (defaults to 0.0 in that case).
+///
+/// # Behavior
+///
+/// - Calculates scroll position as: scrollY / (scrollHeight - innerHeight)
+/// - Returns 1.0 if scrolled past the bottom
+/// - Clamps result to 0.0-1.0 range
+/// - Returns 0.0 if evaluation fails
+#[instrument(skip(api))]
 pub async fn get_scroll_progress(api: &TaskContext) -> Result<f64> {
     let result = api
         .page()
@@ -263,7 +390,33 @@ pub async fn get_scroll_progress(api: &TaskContext) -> Result<f64> {
 }
 
 /// Ensures the feed has at least one tweet/article visible.
-/// Returns true if feed appears populated.
+///
+/// This function checks if the feed is populated with at least one tweet.
+/// It can be used to verify that content has loaded before attempting engagement.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if at least one tweet is visible.
+/// Returns `Ok(false)` if no tweets are visible.
+///
+/// # Errors
+///
+/// Returns error if DOM evaluation fails.
+///
+/// # Behavior
+///
+/// - Queries for `article[data-testid="tweet"]` elements
+/// - Checks if any elements are found
+/// - Returns true if at least one tweet exists
+///
+/// # Selector Used
+///
+/// - Tweets: `article[data-testid="tweet"]`
+#[instrument(skip(api))]
 pub async fn ensure_feed_populated(api: &TaskContext) -> Result<bool> {
     let js = selector_all_tweets();
     let result = api.page().evaluate(js.to_string()).await?;

@@ -10,6 +10,7 @@
 use crate::state::{
     are_all_overlays_enabled, overlay_for_page, set_overlay_enabled_for_all, SessionOverlayState,
 };
+use crate::config::{NativeClickCalibrationMode, NativeInteractionConfig};
 use crate::logger::scoped_log_context;
 use crate::utils::geometry::BoundingBox;
 use crate::utils::math::{gaussian, random_in_range};
@@ -27,7 +28,6 @@ use rand::Rng;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::env;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
@@ -193,10 +193,6 @@ const DEFAULT_OVERLAY_SIZE_PX: f64 = 12.0;
 const MIN_OVERLAY_SIZE_PX: f64 = 4.0;
 const MAX_OVERLAY_SIZE_PX: f64 = 64.0;
 
-const DEFAULT_NATIVE_INTERACTION_STABILITY_WAIT_MS: u64 = 5_000;
-const DEFAULT_NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS: u64 = 2_000;
-const DEFAULT_NATIVE_INTERACTION_SETTLE_MS: u64 = 0;
-
 static OVERLAY_SIZE_PX: Lazy<f64> = Lazy::new(|| {
     std::env::var("MOUSE_OVERLAY_SIZE_PX")
         .ok()
@@ -205,76 +201,17 @@ static OVERLAY_SIZE_PX: Lazy<f64> = Lazy::new(|| {
         .unwrap_or(DEFAULT_OVERLAY_SIZE_PX)
 });
 
-static NATIVE_INTERACTION_STABILITY_WAIT_MS: Lazy<u64> = Lazy::new(|| {
-    env_u64(
-        "NATIVE_INTERACTION_STABILITY_WAIT_MS",
-        DEFAULT_NATIVE_INTERACTION_STABILITY_WAIT_MS,
-    )
-    .clamp(1_000, 30_000)
-});
-
-static NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS: Lazy<u64> = Lazy::new(|| {
-    env_u64(
-        "NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS",
-        DEFAULT_NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS,
-    )
-    .clamp(250, 30_000)
-});
-
-static NATIVE_INTERACTION_SETTLE_MS: Lazy<u64> = Lazy::new(|| {
-    env_u64(
-        "NATIVE_INTERACTION_SETTLE_MS",
-        DEFAULT_NATIVE_INTERACTION_SETTLE_MS,
-    )
-    .clamp(0, 5_000)
-});
-
 static NATIVE_CLICK_LOCK: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
 static NATIVE_CLICK_CALIBRATION_CACHE: Lazy<
     std::sync::Mutex<HashMap<String, NativeClickCalibrationEntry>>,
 > = Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
 static NATIVE_CLICK_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum NativeClickCalibrationMode {
-    Windows,
-    Mac,
-    Linux,
-}
-
-impl NativeClickCalibrationMode {
-    fn from_env() -> Self {
-        let value = std::env::var("native_click_calibration")
-            .or_else(|_| std::env::var("NATIVE_CLICK_CALIBRATION"))
-            .unwrap_or_else(|_| "windows".to_string());
-        match value.trim().to_ascii_lowercase().as_str() {
-            "mac" | "darwin" | "osx" => Self::Mac,
-            "linux" => Self::Linux,
-            _ => Self::Windows,
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Windows => "windows",
-            Self::Mac => "mac",
-            Self::Linux => "linux",
-        }
-    }
-}
-
 fn with_nativeclick_log_context(session_id: &str, f: impl FnOnce()) {
     let mut ctx = crate::logger::get_log_context();
     ctx.session_id = Some(session_id.to_string());
     let _guard = scoped_log_context(ctx);
     f();
-}
-
-fn env_u64(name: &str, default: u64) -> u64 {
-    env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .unwrap_or(default)
 }
 
 fn next_nativeclick_trace_id() -> u64 {
@@ -1171,11 +1108,12 @@ pub async fn native_move_cursor_human(
     query: Option<&str>,
     reaction_delay_ms: u64,
     reaction_delay_variance_pct: u32,
+    native_interaction: &NativeInteractionConfig,
 ) -> Result<NativeCursorOutcome> {
     let trace_id = next_nativeclick_trace_id();
     let settle_ms = (reaction_delay_ms / 4)
         .clamp(40, 200)
-        .max(*NATIVE_INTERACTION_SETTLE_MS);
+        .max(native_interaction.settle_ms);
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
     let attention_pause_ms = (reaction_delay_ms / 4).clamp(40, 200);
 
@@ -1189,10 +1127,17 @@ pub async fn native_move_cursor_human(
         ))?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
 
-    let candidate = resolve_native_cursor_candidate(page, trace_id, query).await?;
-    let point = content_point_to_screen_point(page, session_id, trace_id, candidate.x, candidate.y)
-        .await
-        .map_err(|err| anyhow::anyhow!("trace={} nativecursor mapping failed: {}", trace_id, err))?;
+    let candidate = resolve_native_cursor_candidate(page, trace_id, native_interaction, query).await?;
+    let point = content_point_to_screen_point(
+        page,
+        session_id,
+        trace_id,
+        candidate.x,
+        candidate.y,
+        native_interaction,
+    )
+    .await
+    .map_err(|err| anyhow::anyhow!("trace={} nativecursor mapping failed: {}", trace_id, err))?;
     sync_native_overlay_position(page, candidate.x, candidate.y).await;
 
     page.bring_to_front()
@@ -1793,9 +1738,10 @@ pub async fn native_click_selector_human(
     reaction_delay_ms: u64,
     reaction_delay_variance_pct: u32,
     click_offset_px: i32,
+    native_interaction: &NativeInteractionConfig,
 ) -> Result<ClickOutcome> {
     let trace_id = next_nativeclick_trace_id();
-    let stability_wait_ms = *NATIVE_INTERACTION_STABILITY_WAIT_MS;
+    let stability_wait_ms = native_interaction.stability_wait_ms.clamp(1_000, 30_000);
     if !wait_for_element_stability(page, selector, stability_wait_ms).await? {
         return Err(anyhow::anyhow!(
             "trace={} nativeclick element '{}' not stable within {}ms",
@@ -1815,7 +1761,7 @@ pub async fn native_click_selector_human(
 
     let settle_ms = (reaction_delay_ms / 4)
         .clamp(40, 200)
-        .max(*NATIVE_INTERACTION_SETTLE_MS);
+        .max(native_interaction.settle_ms);
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
     let attention_pause_ms = (reaction_delay_ms / 4).clamp(40, 200);
 
@@ -1833,7 +1779,7 @@ pub async fn native_click_selector_human(
     scroll::scroll_into_view(page, selector).await?;
 
     let bbox = timeout(
-        Duration::from_millis(*NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS),
+        Duration::from_millis(native_interaction.resolve_timeout_ms.clamp(250, 30_000)),
         resolve_selector_bbox(page, selector),
     )
     .await
@@ -1857,9 +1803,16 @@ pub async fn native_click_selector_human(
     let (content_x, content_y) =
         resolve_native_click_point(page, session_id, trace_id, selector, click_offset_px, &bbox)
             .await?;
-    let point = content_point_to_screen_point(page, session_id, trace_id, content_x, content_y)
-        .await
-        .map_err(|err| anyhow::anyhow!("trace={} nativeclick mapping failed: {}", trace_id, err))?;
+    let point = content_point_to_screen_point(
+        page,
+        session_id,
+        trace_id,
+        content_x,
+        content_y,
+        native_interaction,
+    )
+    .await
+    .map_err(|err| anyhow::anyhow!("trace={} nativeclick mapping failed: {}", trace_id, err))?;
     sync_native_overlay_position(page, content_x, content_y).await;
     page.bring_to_front()
         .await
@@ -2113,6 +2066,7 @@ async fn resolve_native_click_point(
 async fn resolve_native_cursor_candidate(
     page: &Page,
     trace_id: u64,
+    native_interaction: &NativeInteractionConfig,
     query: Option<&str>,
 ) -> Result<NativeCursorCandidate> {
     let scope = query.unwrap_or("*");
@@ -2185,7 +2139,7 @@ async fn resolve_native_cursor_candidate(
     );
 
     let result = timeout(
-        Duration::from_millis(*NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS),
+        Duration::from_millis(native_interaction.resolve_timeout_ms.clamp(250, 30_000)),
         page.evaluate(js),
     )
         .await
@@ -2723,8 +2677,9 @@ async fn calibrate_native_click(
     session_id: &str,
     trace_id: u64,
     metrics: &BrowserWindowMetrics,
+    native_interaction: &NativeInteractionConfig,
 ) -> Result<NativeClickCalibration> {
-    let mode = NativeClickCalibrationMode::from_env();
+    let mode = native_interaction.calibration_mode;
     let fingerprint = native_click_fingerprint(metrics, mode);
     let cache_key = format!("{}::{}", session_id, page.target_id().as_ref());
 
@@ -2889,9 +2844,11 @@ async fn content_point_to_screen_point(
     trace_id: u64,
     x: f64,
     y: f64,
+    native_interaction: &NativeInteractionConfig,
 ) -> Result<ScreenPoint> {
     let metrics = browser_window_metrics(page).await?;
-    let calibration = calibrate_native_click(page, session_id, trace_id, &metrics).await?;
+    let calibration = calibrate_native_click(page, session_id, trace_id, &metrics, native_interaction)
+        .await?;
     Ok(screen_point_from_calibration(&metrics, &calibration, x, y))
 }
 

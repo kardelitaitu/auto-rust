@@ -1,5 +1,47 @@
 //! Interaction helpers for Twitter/X automation.
-//! Like, retweet, follow, and reply operations with human-like timing.
+//!
+//! This module provides functions for performing common Twitter engagement actions
+//! including liking, retweeting, following, replying, and bookmarking tweets. All
+//! interactions use human-like timing and cursor movements to avoid detection.
+//!
+//! ## Key Components
+//!
+//! - **Engagement Actions**: Like, retweet, follow, reply, bookmark
+//! - **Human-like Timing**: Randomized pauses and cursor movements
+//! - **Reply/Quote**: Compose and send replies with text input
+//!
+//! ## Key Functions
+//!
+//! - [`click_like_button()`]: Like a tweet
+//! - [`click_retweet_button()`]: Open retweet menu
+//! - [`confirm_retweet()`]: Confirm retweet from modal
+//! - [`retweet_tweet()`]: Complete retweet action
+//! - [`follow_from_tweet()`]: Follow a tweet author
+//! - [`reply_to_tweet()`]: Reply to a tweet
+//! - [`quote_tweet()`]: Quote a tweet (in twitteractivity_llm module)
+//! - [`bookmark_tweet()`]: Bookmark a tweet
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use rust_orchestrator::utils::twitter::twitteractivity_interact::*;
+//!
+//! // Like a tweet
+//! click_like_button(api).await?;
+//!
+//! // Retweet with confirmation
+//! retweet_tweet(api).await?;
+//!
+//! // Reply to a tweet
+//! reply_to_tweet(api, "Great point!").await?;
+//! ```
+//!
+//! ## Timing and Humanization
+//!
+//! All functions use randomized pauses to simulate human behavior:
+//! - 200-500ms pauses before/after clicks
+//! - 1-2s pauses for confirmation actions
+//! - Random variation in timing to avoid patterns
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
@@ -54,8 +96,33 @@ pub async fn navigate_to_tweet(api: &TaskContext, x: f64, y: f64) -> Result<bool
 }
 
 /// Clicks the "like" (heart) button on the current tweet.
-/// Uses api.click() with selector for reliability.
-/// Returns true if the click succeeds.
+///
+/// This function scrolls the like button into view and clicks it to like a tweet.
+/// It uses the selector-based approach for reliability and adds a human-like pause
+/// after the interaction.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the like button was clicked successfully.
+/// Returns `Ok(false)` if scrolling or clicking fails.
+///
+/// # Errors
+///
+/// Returns error if the scroll or click operation fails unexpectedly.
+///
+/// # Behavior
+///
+/// - Scrolls the like button into view
+/// - Clicks the button using selector
+/// - Adds 500ms human-like pause after clicking
+///
+/// # Selector Used
+///
+/// - Like button: `LIKE_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
 pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
     use crate::task::twitteractivity::LIKE_BUTTON_SELECTOR;
@@ -74,9 +141,38 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
     Ok(true)
 }
 
-/// Clicks the "retweet" button on the current tweet.
-/// Uses proper filtering then Coords + api.click_at.
-/// Note: Does not confirm the retweet in the modal; just opens the retweet menu.
+/// Clicks the "retweet" button on the current tweet to open the retweet menu.
+///
+/// This function finds the retweet button by filtering for elements with
+/// data-testid containing "retweet" (but not "unretweet"), then clicks it.
+/// It does not confirm the retweet - that's handled by `confirm_retweet()`.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the retweet button was clicked successfully.
+/// Returns `Ok(false)` if the button is not found or click fails.
+///
+/// # Errors
+///
+/// Returns error if the DOM evaluation or click operation fails unexpectedly.
+///
+/// # Behavior
+///
+/// - Searches for buttons with data-testid containing "retweet"
+/// - Excludes buttons containing "unretweet" (already retweeted)
+/// - Validates button has visible dimensions
+/// - Moves mouse to button and clicks
+/// - Adds 250ms pause before click, 600ms after click
+///
+/// # Selector Strategy
+///
+/// Uses broad search: `button[data-testid], a[data-testid]`
+/// Filters for: data-testid includes "retweet" but not "unretweet"
+#[instrument(skip(api))]
 pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
     let js = r#"
         (function() {
@@ -115,6 +211,35 @@ pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
 }
 
 /// Confirms a retweet from the retweet modal.
+///
+/// This function clicks the "Retweet" confirm button in the modal that appears
+/// after clicking the retweet button. It scrolls the button into view first for
+/// reliability.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the confirm button was clicked successfully.
+/// Returns `Ok(false)` if the button is not found or click fails.
+///
+/// # Errors
+///
+/// Returns error if the DOM evaluation or click operation fails unexpectedly.
+///
+/// # Behavior
+///
+/// - Finds the retweet confirm button by data-testid
+/// - Scrolls the button into view
+/// - Moves mouse to button and clicks
+/// - Adds 200ms pause before click, 800ms after click
+///
+/// # Selector Used
+///
+/// - Confirm button: `button[data-testid="retweetConfirm"]`
+#[instrument(skip(api))]
 pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
     let js = r#"
         (function() {
@@ -144,7 +269,30 @@ pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
     Ok(false)
 }
 
-/// Full retweet action: click retweet then confirm.
+/// Full retweet action: click retweet button then confirm in modal.
+///
+/// This is a convenience function that combines clicking the retweet button and
+/// confirming the retweet in the modal. It handles scrolling and timing for both steps.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if both steps (click and confirm) succeed.
+/// Returns `Ok(false)` if either step fails.
+///
+/// # Errors
+///
+/// Returns error if the scroll or click operations fail unexpectedly.
+///
+/// # Behavior
+///
+/// - Scrolls retweet button into view and clicks
+/// - Waits 1-2s (randomized) before confirming
+/// - Scrolls confirm button into view and clicks
+/// - Waits 800ms after confirmation
 #[instrument(skip(api))]
 pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
     use crate::task::twitteractivity::RETWEET_BUTTON_SELECTOR;
@@ -184,8 +332,36 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
     Ok(true)
 }
 
-/// Clicks the "reply" button on the current tweet.
-/// Uses proper filtering then Coords + api.click_at.
+/// Clicks the "reply" button on the current tweet to open the reply composer.
+///
+/// This function finds the reply button by filtering for elements with data-testid
+/// containing "reply" or "comment", then clicks it to open the reply composer.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the reply button was clicked successfully.
+/// Returns `Ok(false)` if the button is not found or click fails.
+///
+/// # Errors
+///
+/// Returns error if the DOM evaluation or click operation fails unexpectedly.
+///
+/// # Behavior
+///
+/// - Searches for buttons with data-testid containing "reply" or "comment"
+/// - Validates button has visible dimensions
+/// - Moves mouse to button and clicks
+/// - Adds 250ms pause before click, 500ms after click
+///
+/// # Selector Strategy
+///
+/// Uses broad search: `button[data-testid], a[data-testid]`
+/// Filters for: data-testid includes "reply" or "comment"
+#[instrument(skip(api))]
 pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
     let js = r#"
         (function() {
@@ -221,6 +397,43 @@ pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
 }
 
 /// Types text into the currently focused reply composer and sends it.
+///
+/// This function focuses the reply textarea, types the provided text, and clicks
+/// the reply button to send. All operations have timeouts to prevent hanging.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+/// * `reply_text` - The text to type into the reply composer
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the reply was sent successfully.
+/// Returns `Ok(false)` if any step (focus, type, or send) fails.
+///
+/// # Errors
+///
+/// Returns error if the operations fail unexpectedly.
+///
+/// # Behavior
+///
+/// - Focuses the reply textarea with 5s timeout
+/// - Types the reply text with 10s timeout
+/// - Finds and clicks the reply button with 5s timeout
+/// - Adds human-like pauses (300-400ms) between steps
+///
+/// # Selectors Used
+///
+/// - Textarea: `[data-testid="tweetTextarea_0"]`
+/// - Reply button: `[data-testid="tweetButtonInline"]`
+///
+/// # Timeouts
+///
+/// - Focus: 5 seconds
+/// - Typing: 10 seconds
+/// - Button find: 5 seconds
+/// - Mouse move: 5 seconds
+/// - Button click: 5 seconds
 pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     use std::time::Duration;
     use tokio::time::timeout;
@@ -326,6 +539,29 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 }
 
 /// Full reply flow: open composer, type text, send.
+///
+/// This is a convenience function that combines clicking the reply button and
+/// sending the reply text. It handles the complete reply interaction.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+/// * `reply_text` - The text to send as a reply
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the reply was sent successfully.
+/// Returns `Ok(false)` if either step (click reply or send) fails.
+///
+/// # Errors
+///
+/// Returns error if the operations fail unexpectedly.
+///
+/// # Behavior
+///
+/// - Clicks the reply button to open composer
+/// - Types the reply text into the textarea
+/// - Clicks the send button to post the reply
 #[instrument(skip(api))]
 pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<bool> {
     if !click_reply_button(api).await? {
@@ -335,7 +571,37 @@ pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<bool>
 }
 
 /// Clicks the "follow" button after simulating reading replies and scrolling up.
-/// Checks for subscribe button first to detect if already following.
+///
+/// This function simulates human-like behavior by scrolling down to read replies,
+/// then scrolling back up to access the follow button. It checks if the user is
+/// already following by looking for a subscribe button.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the follow button was clicked successfully.
+/// Returns `Ok(false)` if already following or button not found/click fails.
+///
+/// # Errors
+///
+/// Returns error if the scroll or click operations fail unexpectedly.
+///
+/// # Behavior
+///
+/// - Scrolls down 200px to simulate reading replies
+/// - Pauses 2s to "read"
+/// - Scrolls to top to access follow button
+/// - Checks for subscribe button (indicates already following)
+/// - Clicks follow button if not already following
+/// - Waits 1s after clicking
+///
+/// # Selectors Used
+///
+/// - Follow button: `FOLLOW_BUTTON_SELECTOR` (defined in twitteractivity.rs)
+/// - Subscribe check: `button[data-testid*="-subscribe"]` with aria-label
 #[instrument(skip(api))]
 pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     use crate::task::twitteractivity::FOLLOW_BUTTON_SELECTOR;
@@ -387,8 +653,32 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
 }
 
 /// Clicks the "bookmark" button on the current tweet.
-/// Uses api.click() with selector for reliability.
-/// Returns true if the click succeeds.
+///
+/// This function scrolls the bookmark button into view and clicks it to bookmark
+/// a tweet. It uses the selector-based approach for reliability.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the bookmark button was clicked successfully.
+/// Returns `Ok(false)` if scrolling or clicking fails.
+///
+/// # Errors
+///
+/// Returns error if the scroll or click operation fails unexpectedly.
+///
+/// # Behavior
+///
+/// - Scrolls the bookmark button into view
+/// - Clicks the button using selector
+/// - Adds 500ms human-like pause after clicking
+///
+/// # Selector Used
+///
+/// - Bookmark button: `BOOKMARK_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
 pub async fn bookmark_tweet(api: &TaskContext) -> Result<bool> {
     use crate::task::twitteractivity::BOOKMARK_BUTTON_SELECTOR;

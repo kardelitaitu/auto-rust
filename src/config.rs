@@ -64,9 +64,76 @@ pub struct BrowserConfig {
     /// Cursor overlay sync interval in milliseconds (0 = disabled)
     #[serde(default)]
     pub cursor_overlay_ms: u64,
+    /// Native input interaction settings for OS-level cursor actions
+    #[serde(default)]
+    pub native_interaction: NativeInteractionConfig,
     /// Maximum concurrent pages/workers per session
     #[serde(default = "default_max_workers_per_session")]
     pub max_workers_per_session: usize,
+}
+
+/// Calibration mode for native cursor and click coordinate mapping.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeClickCalibrationMode {
+    Windows,
+    Mac,
+    Linux,
+}
+
+impl NativeClickCalibrationMode {
+    pub fn from_env_value(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "mac" | "darwin" | "osx" => Self::Mac,
+            "linux" => Self::Linux,
+            "windows" => Self::Windows,
+            other => {
+                warn!(
+                    "Invalid native click calibration mode '{}', falling back to windows",
+                    other
+                );
+                Self::Windows
+            }
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Windows => "windows",
+            Self::Mac => "mac",
+            Self::Linux => "linux",
+        }
+    }
+}
+
+impl Default for NativeClickCalibrationMode {
+    fn default() -> Self {
+        Self::Windows
+    }
+}
+
+/// Configuration for native input interactions.
+#[derive(Debug, Deserialize, Clone)]
+pub struct NativeInteractionConfig {
+    #[serde(default)]
+    pub calibration_mode: NativeClickCalibrationMode,
+    #[serde(default = "default_native_interaction_stability_wait_ms")]
+    pub stability_wait_ms: u64,
+    #[serde(default = "default_native_interaction_resolve_timeout_ms")]
+    pub resolve_timeout_ms: u64,
+    #[serde(default = "default_native_interaction_settle_ms")]
+    pub settle_ms: u64,
+}
+
+impl Default for NativeInteractionConfig {
+    fn default() -> Self {
+        Self {
+            calibration_mode: NativeClickCalibrationMode::default(),
+            stability_wait_ms: default_native_interaction_stability_wait_ms(),
+            resolve_timeout_ms: default_native_interaction_resolve_timeout_ms(),
+            settle_ms: default_native_interaction_settle_ms(),
+        }
+    }
 }
 
 /// Configuration for circuit breaker pattern implementation.
@@ -353,6 +420,18 @@ fn default_max_workers_per_session() -> usize {
     5
 }
 
+fn default_native_interaction_stability_wait_ms() -> u64 {
+    5_000
+}
+
+fn default_native_interaction_resolve_timeout_ms() -> u64 {
+    2_000
+}
+
+fn default_native_interaction_settle_ms() -> u64 {
+    0
+}
+
 fn default_feed_scan_duration() -> u64 {
     60_000
 }
@@ -399,6 +478,7 @@ impl Default for BrowserConfig {
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
+            native_interaction: NativeInteractionConfig::default(),
             max_workers_per_session: 5,
         }
     }
@@ -464,6 +544,13 @@ mod tests {
         assert_eq!(config.max_discovery_retries, 3);
         assert_eq!(config.discovery_retry_delay_ms, 500);
         assert!(config.profiles.is_empty());
+        assert_eq!(
+            config.native_interaction.calibration_mode,
+            NativeClickCalibrationMode::Windows
+        );
+        assert_eq!(config.native_interaction.stability_wait_ms, 5000);
+        assert_eq!(config.native_interaction.resolve_timeout_ms, 2000);
+        assert_eq!(config.native_interaction.settle_ms, 0);
     }
 
     #[test]
@@ -595,6 +682,7 @@ fn load_code_config() -> Result<Config> {
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
+            native_interaction: NativeInteractionConfig::default(),
             max_workers_per_session: 5,
         },
         orchestrator: OrchestratorConfig {
@@ -648,6 +736,28 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.browser.cursor_overlay_ms = overlay_ms
             .parse()
             .unwrap_or(config.browser.cursor_overlay_ms);
+    }
+    if let Ok(mode) = env::var("native_click_calibration") {
+        config.browser.native_interaction.calibration_mode =
+            NativeClickCalibrationMode::from_env_value(&mode);
+    } else if let Ok(mode) = env::var("NATIVE_CLICK_CALIBRATION") {
+        config.browser.native_interaction.calibration_mode =
+            NativeClickCalibrationMode::from_env_value(&mode);
+    }
+    if let Ok(stability_wait_ms) = env::var("NATIVE_INTERACTION_STABILITY_WAIT_MS") {
+        config.browser.native_interaction.stability_wait_ms = stability_wait_ms
+            .parse()
+            .unwrap_or(config.browser.native_interaction.stability_wait_ms);
+    }
+    if let Ok(resolve_timeout_ms) = env::var("NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS") {
+        config.browser.native_interaction.resolve_timeout_ms = resolve_timeout_ms
+            .parse()
+            .unwrap_or(config.browser.native_interaction.resolve_timeout_ms);
+    }
+    if let Ok(settle_ms) = env::var("NATIVE_INTERACTION_SETTLE_MS") {
+        config.browser.native_interaction.settle_ms = settle_ms
+            .parse()
+            .unwrap_or(config.browser.native_interaction.settle_ms);
     }
 
     // Twitter Activity engagement limits overrides

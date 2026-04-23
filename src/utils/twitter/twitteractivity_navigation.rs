@@ -1,5 +1,47 @@
 //! Navigation helpers for Twitter/X pages.
-//! Handles going to home timeline, notifications, and login state checks.
+//!
+//! This module provides functions for navigating to various Twitter pages and
+//! checking the current page state. It handles navigation to home timeline,
+//! notifications, and verifies login/auth status.
+//!
+//! ## Key Components
+//!
+//! - **Page Navigation**: Navigate to home, notifications, and other pages
+//! - **Login State Checks**: Verify if user is authenticated
+//! - **Page Detection**: Identify current page type (home, notifications, etc.)
+//! - **URL Management**: Handle URL normalization and validation
+//!
+//! ## Key Functions
+//!
+//! - [`navigate_to_home()`]: Navigate to home timeline
+//! - [`navigate_to_notifications()`]: Navigate to notifications page
+//! - [`is_logged_in()`]: Check if user is authenticated
+//! - [`get_current_url()`]: Get current page URL
+//! - [`wait_for_navigation()`]: Wait for page navigation to complete
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use rust_orchestrator::utils::twitter::twitteractivity_navigation::*;
+//!
+//! // Navigate to home timeline
+//! navigate_to_home(api).await?;
+//!
+//! // Check login status
+//! if is_logged_in(api).await? {
+//!     // User is authenticated
+//! }
+//!
+//! // Get current URL
+//! let url = get_current_url(api).await?;
+//! ```
+//!
+//! ## Navigation Timeouts
+//!
+//! Navigation operations have configurable timeouts:
+//! - Default navigation timeout: 30 seconds
+//! - Default wait timeout: 15 seconds
+//! - These can be adjusted per operation if needed
 
 use crate::prelude::TaskContext;
 use anyhow::Result;

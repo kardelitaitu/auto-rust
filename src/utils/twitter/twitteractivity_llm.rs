@@ -1,7 +1,55 @@
 //! LLM-powered engagement for Twitter automation.
 //!
-//! Provides AI-generated replies and quote tweets using configured LLM provider.
-//! Supports Ollama (local) and OpenRouter (cloud) with automatic fallback.
+//! This module provides AI-generated content for Twitter engagement including
+//! contextual replies and quote tweet commentary. It integrates with configurable
+//! LLM providers (Ollama for local, OpenRouter for cloud) with automatic fallback.
+//!
+//! ## Key Components
+//!
+//! - **Reply Generation**: Contextual replies based on tweet content and replies
+//! - **Quote Commentary**: AI-generated commentary for quote tweets
+//! - **Content Validation**: Sanitization to ensure Twitter-compliant output
+//! - **Context Extraction**: DOM-based tweet context extraction for LLM input
+//!
+//! ## Key Functions
+//!
+//! - [`generate_reply()`]: Generate contextual reply using LLM
+//! - [`generate_quote_commentary()`]: Generate quote commentary using LLM
+//! - [`validate_reply()`]: Sanitize and validate LLM output
+//! - [`extract_tweet_context()`]: Extract tweet data from DOM
+//! - [`quote_tweet()`]: Execute quote tweet with commentary
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use rust_orchestrator::utils::twitter::twitteractivity_llm::*;
+//!
+//! // Generate a contextual reply
+//! let reply = generate_reply(api, "author", "tweet text", replies).await?;
+//!
+//! // Generate quote commentary
+//! let commentary = generate_quote_commentary(api, "author", "tweet text", replies).await?;
+//!
+//! // Validate output before posting
+//! let sanitized = validate_reply(&reply)?;
+//! ```
+//!
+//! ## LLM Providers
+//!
+//! The module supports multiple LLM providers with automatic fallback:
+//! - **Ollama**: Local LLM server (default)
+//! - **OpenRouter**: Cloud API with multiple models
+//!
+//! Configure provider in application settings.
+//!
+//! ## Content Validation
+//!
+//! LLM output is validated to ensure Twitter compliance:
+//! - Maximum 280 characters
+//! - No @mentions (unless in original tweet)
+//! - No #hashtags
+//! - No emojis
+//! - No banned AI-sounding words
 
 use anyhow::{Context, Result};
 use log::{info, warn};
@@ -112,12 +160,49 @@ pub async fn generate_quote_commentary(
 
 /// Performs a quote tweet with AI-generated commentary.
 ///
+/// This function finds the quote tweet button, clicks it, types the provided
+/// commentary into the composer, and submits the quote tweet. All operations have
+/// timeouts to prevent hanging.
+///
 /// # Arguments
+///
 /// * `api` - Task context for browser automation
-/// * `commentary` - AI-generated quote tweet text
+/// * `commentary` - AI-generated quote tweet text to type
 ///
 /// # Returns
-/// true if quote tweet was successful
+///
+/// Returns `Ok(true)` if quote tweet was posted successfully.
+/// Returns `Ok(false)` if any step fails (button find, focus, type, or submit).
+///
+/// # Errors
+///
+/// Returns error if operations fail unexpectedly.
+///
+/// # Behavior
+///
+/// - Finds quote button using ARIA-label with 5s timeout
+/// - Moves mouse and clicks with human-like pauses
+/// - Waits 1s for composer to appear
+/// - Focuses composer textarea with 5s timeout
+/// - Types commentary with 10s timeout
+/// - Finds tweet button with 5s timeout
+/// - Moves mouse and clicks with human-like pauses
+/// - Waits 2s for post to complete
+///
+/// # Selectors Used
+///
+/// - Quote button: `[role="button"]` with aria-label containing "quote"
+/// - Textarea: `[data-testid="tweetTextarea_0"]` or `[role="textbox"]`
+/// - Tweet button: `[data-testid="tweetButton"]` or `[data-testid="tweetButtonInline"]`
+///
+/// # Timeouts
+///
+/// - Quote button find: 5 seconds
+/// - Composer focus: 5 seconds
+/// - Typing: 10 seconds
+/// - Tweet button find: 5 seconds
+/// - Mouse move: 5 seconds
+/// - Button click: 5 seconds
 #[instrument(skip(api))]
 pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     info!("Executing quote tweet with {} chars", commentary.len());
@@ -432,10 +517,41 @@ fn check_banned_words(text: &str) -> Option<String> {
     None
 }
 
-/// Extracts tweet context from the current page.
+/// Extracts tweet context from the current page for LLM processing.
+///
+/// This function queries the DOM to extract the current tweet's author, text,
+/// and up to 5 top replies. The extracted data is used as context for LLM
+/// reply/quote generation.
+///
+/// # Arguments
+///
+/// * `api` - Task context with page and browser automation capabilities
 ///
 /// # Returns
-/// Tuple of (author, text, Vec<(reply_author, reply_text)>)
+///
+/// Returns tuple of (author, text, replies):
+/// - `author`: Username of the tweet author
+/// - `text`: Full text content of the tweet
+/// - `replies`: Vector of (reply_author, reply_text) tuples (up to 5)
+///
+/// # Errors
+///
+/// Returns error if DOM evaluation fails or data extraction fails.
+///
+/// # Behavior
+///
+/// - Extracts author from `[data-testid="tweet"] [dir="auto"]`
+/// - Extracts tweet text from `[data-testid="tweetText"]`
+/// - Extracts up to 5 replies from article elements
+/// - Skips the first reply element (likely the root tweet)
+/// - Returns "unknown" for author if not found
+/// - Returns empty string for text if not found
+///
+/// # Selectors Used
+///
+/// - Author: `[data-testid="tweet"] [dir="auto"]`
+/// - Text: `[data-testid="tweetText"]`
+/// - Replies: `article [data-testid="tweet"] [dir="auto"]`
 pub async fn extract_tweet_context(
     api: &TaskContext,
 ) -> Result<(String, String, Vec<(String, String)>)> {

@@ -27,6 +27,7 @@ use rand::Rng;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::env;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
@@ -192,12 +193,40 @@ const DEFAULT_OVERLAY_SIZE_PX: f64 = 12.0;
 const MIN_OVERLAY_SIZE_PX: f64 = 4.0;
 const MAX_OVERLAY_SIZE_PX: f64 = 64.0;
 
+const DEFAULT_NATIVE_INTERACTION_STABILITY_WAIT_MS: u64 = 5_000;
+const DEFAULT_NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS: u64 = 2_000;
+const DEFAULT_NATIVE_INTERACTION_SETTLE_MS: u64 = 0;
+
 static OVERLAY_SIZE_PX: Lazy<f64> = Lazy::new(|| {
     std::env::var("MOUSE_OVERLAY_SIZE_PX")
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
         .map(|value| value.clamp(MIN_OVERLAY_SIZE_PX, MAX_OVERLAY_SIZE_PX))
         .unwrap_or(DEFAULT_OVERLAY_SIZE_PX)
+});
+
+static NATIVE_INTERACTION_STABILITY_WAIT_MS: Lazy<u64> = Lazy::new(|| {
+    env_u64(
+        "NATIVE_INTERACTION_STABILITY_WAIT_MS",
+        DEFAULT_NATIVE_INTERACTION_STABILITY_WAIT_MS,
+    )
+    .clamp(1_000, 30_000)
+});
+
+static NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS: Lazy<u64> = Lazy::new(|| {
+    env_u64(
+        "NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS",
+        DEFAULT_NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS,
+    )
+    .clamp(250, 30_000)
+});
+
+static NATIVE_INTERACTION_SETTLE_MS: Lazy<u64> = Lazy::new(|| {
+    env_u64(
+        "NATIVE_INTERACTION_SETTLE_MS",
+        DEFAULT_NATIVE_INTERACTION_SETTLE_MS,
+    )
+    .clamp(0, 5_000)
 });
 
 static NATIVE_CLICK_LOCK: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
@@ -239,6 +268,13 @@ fn with_nativeclick_log_context(session_id: &str, f: impl FnOnce()) {
     ctx.session_id = Some(session_id.to_string());
     let _guard = scoped_log_context(ctx);
     f();
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(default)
 }
 
 fn next_nativeclick_trace_id() -> u64 {
@@ -1137,20 +1173,37 @@ pub async fn native_move_cursor_human(
     reaction_delay_variance_pct: u32,
 ) -> Result<NativeCursorOutcome> {
     let trace_id = next_nativeclick_trace_id();
-    let settle_ms = (reaction_delay_ms / 4).clamp(40, 200);
+    let settle_ms = (reaction_delay_ms / 4)
+        .clamp(40, 200)
+        .max(*NATIVE_INTERACTION_SETTLE_MS);
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
     let attention_pause_ms = (reaction_delay_ms / 4).clamp(40, 200);
 
     let _native_click_guard = NATIVE_CLICK_LOCK.lock().await;
-    page.bring_to_front().await?;
+    page.bring_to_front()
+        .await
+        .map_err(|err| anyhow::anyhow!(
+            "trace={} nativecursor bring_to_front failed: {}",
+            trace_id,
+            err
+        ))?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
 
-    let candidate = resolve_native_cursor_candidate(page, query).await?;
-    let point = content_point_to_screen_point(page, session_id, trace_id, candidate.x, candidate.y).await?;
+    let candidate = resolve_native_cursor_candidate(page, trace_id, query).await?;
+    let point = content_point_to_screen_point(page, session_id, trace_id, candidate.x, candidate.y)
+        .await
+        .map_err(|err| anyhow::anyhow!("trace={} nativecursor mapping failed: {}", trace_id, err))?;
     sync_native_overlay_position(page, candidate.x, candidate.y).await;
 
-    page.bring_to_front().await?;
+    page.bring_to_front()
+        .await
+        .map_err(|err| anyhow::anyhow!(
+            "trace={} nativecursor bring_to_front failed: {}",
+            trace_id,
+            err
+        ))?;
     native_move_to_point(
+        trace_id,
         point.x,
         point.y,
         reaction_delay_ms,
@@ -1608,8 +1661,8 @@ async fn simulate_attention_drift(page: &Page, target_x: f64, target_y: f64) -> 
     let drift_y = target_y + drift_distance * drift_angle.sin();
 
     // Ensure drift stays within reasonable bounds
-    let clamped_drift_x = drift_x.max(0.0).min(1920.0); // Assume 1920px viewport
-    let clamped_drift_y = drift_y.max(0.0).min(1080.0);
+    let clamped_drift_x = drift_x.clamp(0.0, 1920.0); // Assume 1920px viewport
+    let clamped_drift_y = drift_y.clamp(0.0, 1080.0);
 
     // Move to drift position
     dispatch_mousemove(page, clamped_drift_x, clamped_drift_y).await?;
@@ -1739,35 +1792,56 @@ pub async fn native_click_selector_human(
     selector: &str,
     reaction_delay_ms: u64,
     reaction_delay_variance_pct: u32,
-    _click_offset_px: i32,
+    click_offset_px: i32,
 ) -> Result<ClickOutcome> {
     let trace_id = next_nativeclick_trace_id();
-    if !wait_for_element_stability(page, selector, 5000).await? {
-        return Err(anyhow::anyhow!("Element '{}' not stable within 5s", selector));
+    let stability_wait_ms = *NATIVE_INTERACTION_STABILITY_WAIT_MS;
+    if !wait_for_element_stability(page, selector, stability_wait_ms).await? {
+        return Err(anyhow::anyhow!(
+            "trace={} nativeclick element '{}' not stable within {}ms",
+            trace_id,
+            selector,
+            stability_wait_ms
+        ));
     }
 
     if !is_element_clickable(page, selector).await? {
-        return Err(anyhow::anyhow!("Element '{}' not clickable", selector));
+        return Err(anyhow::anyhow!(
+            "trace={} nativeclick element '{}' not clickable",
+            trace_id,
+            selector
+        ));
     }
 
-    let settle_ms = (reaction_delay_ms / 4).clamp(40, 200);
+    let settle_ms = (reaction_delay_ms / 4)
+        .clamp(40, 200)
+        .max(*NATIVE_INTERACTION_SETTLE_MS);
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
     let attention_pause_ms = (reaction_delay_ms / 4).clamp(40, 200);
 
     // Serialize the full native-click sequence so concurrent browser sessions
     // do not fight over the single global cursor or foreground focus.
     let _native_click_guard = NATIVE_CLICK_LOCK.lock().await;
-    page.bring_to_front().await?;
+    page.bring_to_front()
+        .await
+        .map_err(|err| anyhow::anyhow!(
+            "trace={} nativeclick bring_to_front failed: {}",
+            trace_id,
+            err
+        ))?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
     scroll::scroll_into_view(page, selector).await?;
 
     let bbox = timeout(
-        Duration::from_secs(2),
+        Duration::from_millis(*NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS),
         resolve_selector_bbox(page, selector),
     )
     .await
     .map_err(|_| {
-        anyhow::anyhow!("nativeclick resolve_selector_bbox timeout for selector={selector}")
+        anyhow::anyhow!(
+            "trace={} nativeclick resolve_selector_bbox timeout for selector={selector}",
+            trace_id
+        )
     })??;
     nativeclick_debug(
         session_id,
@@ -1781,11 +1855,21 @@ pub async fn native_click_selector_human(
     );
 
     let (content_x, content_y) =
-        resolve_native_click_point(page, session_id, trace_id, selector, &bbox).await?;
-    let point = content_point_to_screen_point(page, session_id, trace_id, content_x, content_y).await?;
+        resolve_native_click_point(page, session_id, trace_id, selector, click_offset_px, &bbox)
+            .await?;
+    let point = content_point_to_screen_point(page, session_id, trace_id, content_x, content_y)
+        .await
+        .map_err(|err| anyhow::anyhow!("trace={} nativeclick mapping failed: {}", trace_id, err))?;
     sync_native_overlay_position(page, content_x, content_y).await;
-    page.bring_to_front().await?;
+    page.bring_to_front()
+        .await
+        .map_err(|err| anyhow::anyhow!(
+            "trace={} nativeclick bring_to_front failed: {}",
+            trace_id,
+            err
+        ))?;
     native_move_and_click_point(
+        trace_id,
         point.x,
         point.y,
         reaction_delay_ms,
@@ -1794,13 +1878,23 @@ pub async fn native_click_selector_human(
         settle_variance,
     )
     .await
-    .map_err(|err| anyhow::anyhow!("nativeclick dispatch failed for '{}': {}", selector, err))?;
+    .map_err(|err| {
+        anyhow::anyhow!(
+            "trace={} nativeclick dispatch failed for '{}': {}",
+            trace_id,
+            selector,
+            err
+        )
+    })?;
 
-    let verified = verify_click_target(page, selector, content_x, content_y).await?;
+    let verified = verify_click_target(page, selector, content_x, content_y).await.map_err(|err| {
+        anyhow::anyhow!("trace={} nativeclick verification check failed: {}", trace_id, err)
+    })?;
     sync_native_overlay_position(page, content_x, content_y).await;
     if !verified {
         return Err(anyhow::anyhow!(
-            "nativeclick verification failed for '{}'",
+            "trace={} nativeclick verification failed for '{}'",
+            trace_id,
             selector
         ));
     }
@@ -1921,13 +2015,17 @@ fn choose_click_point(bbox: &BoundingBox, click_offset_px: i32) -> (f64, f64) {
     (x, y)
 }
 
-fn native_click_center_bounds(bbox: &BoundingBox) -> Option<(i32, i32, i32, i32)> {
+fn native_click_center_bounds(
+    bbox: &BoundingBox,
+    click_offset_px: i32,
+) -> Option<(i32, i32, i32, i32)> {
     let center_x = bbox.x + bbox.width / 2.0;
     let center_y = bbox.y + bbox.height / 2.0;
-    let min_x = ((center_x - 4.0).ceil()).max((bbox.x + 1.0).ceil());
-    let max_x = ((center_x + 4.0).floor()).min((bbox.x + bbox.width - 1.0).floor());
-    let min_y = ((center_y - 4.0).ceil()).max((bbox.y + 1.0).ceil());
-    let max_y = ((center_y + 4.0).floor()).min((bbox.y + bbox.height - 1.0).floor());
+    let spread = (click_offset_px.abs() as f64).max(4.0);
+    let min_x = ((center_x - spread).ceil()).max((bbox.x + 1.0).ceil());
+    let max_x = ((center_x + spread).floor()).min((bbox.x + bbox.width - 1.0).floor());
+    let min_y = ((center_y - spread).ceil()).max((bbox.y + 1.0).ceil());
+    let max_y = ((center_y + spread).floor()).min((bbox.y + bbox.height - 1.0).floor());
 
     if min_x > max_x || min_y > max_y {
         return None;
@@ -1936,8 +2034,8 @@ fn native_click_center_bounds(bbox: &BoundingBox) -> Option<(i32, i32, i32, i32)
     Some((min_x as i32, max_x as i32, min_y as i32, max_y as i32))
 }
 
-fn native_click_random_center_point(bbox: &BoundingBox) -> (f64, f64) {
-    if let Some((min_x, max_x, min_y, max_y)) = native_click_center_bounds(bbox) {
+fn native_click_random_center_point(bbox: &BoundingBox, click_offset_px: i32) -> (f64, f64) {
+    if let Some((min_x, max_x, min_y, max_y)) = native_click_center_bounds(bbox, click_offset_px) {
         let x = random_in_range(min_x as u64, max_x as u64) as f64;
         let y = random_in_range(min_y as u64, max_y as u64) as f64;
         return (x, y);
@@ -1951,7 +2049,13 @@ fn native_click_random_center_point(bbox: &BoundingBox) -> (f64, f64) {
     )
 }
 
-async fn point_hits_selector(page: &Page, selector: &str, x: f64, y: f64) -> Result<bool> {
+async fn point_hits_selector(
+    page: &Page,
+    trace_id: u64,
+    selector: &str,
+    x: f64,
+    y: f64,
+) -> Result<bool> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
         r#"(() => {{
@@ -1965,7 +2069,12 @@ async fn point_hits_selector(page: &Page, selector: &str, x: f64, y: f64) -> Res
 
     let result = timeout(Duration::from_millis(400), page.evaluate(js))
         .await
-        .map_err(|_| anyhow::anyhow!("nativeclick point hit-test timeout for selector={selector}"))??;
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "trace={} nativeclick point hit-test timeout for selector={selector}",
+                trace_id
+            )
+        })??;
 
     Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
@@ -1975,11 +2084,15 @@ async fn resolve_native_click_point(
     session_id: &str,
     trace_id: u64,
     selector: &str,
+    click_offset_px: i32,
     bbox: &BoundingBox,
 ) -> Result<(f64, f64)> {
     for _ in 0..6 {
-        let (x, y) = native_click_random_center_point(bbox);
-        if point_hits_selector(page, selector, x, y).await.unwrap_or(false) {
+        let (x, y) = native_click_random_center_point(bbox, click_offset_px);
+        if point_hits_selector(page, trace_id, selector, x, y)
+            .await
+            .unwrap_or(false)
+        {
             nativeclick_debug(
                 session_id,
                 trace_id,
@@ -1992,12 +2105,14 @@ async fn resolve_native_click_point(
     }
 
     anyhow::bail!(
-        "nativeclick could not resolve a verified point for selector={selector}"
+        "trace={} nativeclick could not resolve a verified point for selector={selector}",
+        trace_id
     );
 }
 
 async fn resolve_native_cursor_candidate(
     page: &Page,
+    trace_id: u64,
     query: Option<&str>,
 ) -> Result<NativeCursorCandidate> {
     let scope = query.unwrap_or("*");
@@ -2011,14 +2126,7 @@ async fn resolve_native_cursor_candidate(
             const root = document.body || document.documentElement;
             if (!root) return null;
 
-            const buildLabel = (el) => {{
-                const tag = (el.tagName || 'element').toLowerCase();
-                const id = el.id ? `#${{el.id}}` : '';
-                const classes = Array.from(el.classList || []).slice(0, 2).map((name) => `.${{name}}`).join('');
-                return `${{tag}}${{id}}${{classes}}`;
-            }};
-
-            const samplePoint = (rect) => {{
+            const pickPoint = (rect) => {{
                 const centerX = Math.round(rect.left + rect.width / 2);
                 const centerY = Math.round(rect.top + rect.height / 2);
                 const minX = Math.max(Math.ceil(rect.left + 1), centerX - 4);
@@ -2026,73 +2134,92 @@ async fn resolve_native_cursor_candidate(
                 const minY = Math.max(Math.ceil(rect.top + 1), centerY - 4);
                 const maxY = Math.min(Math.floor(rect.bottom - 1), centerY + 4);
                 if (minX > maxX || minY > maxY) return null;
-                const x = minX + Math.floor(Math.random() * (maxX - minX + 1));
-                const y = minY + Math.floor(Math.random() * (maxY - minY + 1));
-                return {{ x, y }};
-            }};
-
-            const toCandidate = (el) => {{
-                if (!(el instanceof Element)) return null;
-                const rect = el.getBoundingClientRect();
-                if (rect.width < 8 || rect.height < 8) return null;
-                if (rect.bottom <= 0 || rect.right <= 0) return null;
-                if (rect.top >= window.innerHeight || rect.left >= window.innerWidth) return null;
-                const style = window.getComputedStyle(el);
-                if (!style) return null;
-                if (style.display === 'none' || style.visibility === 'hidden') return null;
-                if (Number.parseFloat(style.opacity || '1') === 0) return null;
-                if (el.getAttribute('aria-hidden') === 'true') return null;
-                if (el.id === '__auto_rust_mouse_overlay' || el.id === '__auto_rust_nativeclick_probe') return null;
-
-                const point = samplePoint(rect);
-                if (!point) return null;
-                const hit = document.elementFromPoint(point.x, point.y);
-                if (!hit) return null;
-                if (!(el === hit || el.contains(hit) || hit.contains(el))) return null;
-
                 return {{
-                    label: buildLabel(el),
-                    x: point.x,
-                    y: point.y,
+                    x: minX + Math.floor(Math.random() * (maxX - minX + 1)),
+                    y: minY + Math.floor(Math.random() * (maxY - minY + 1)),
                 }};
             }};
 
-            let nodes;
+            const labelFor = (el) => {{
+                const tag = (el.tagName || 'element').toLowerCase();
+                return el.id ? `${{tag}}#${{el.id}}` : tag;
+            }};
+
+            const matches = [];
+            let nodes = [];
             try {{
                 nodes = query ? Array.from(document.querySelectorAll(query)) : Array.from(root.querySelectorAll('*'));
             }} catch (err) {{
                 return {{ error: String(err && err.message ? err.message : err) }};
             }}
 
-            let chosen = null;
-            let seen = 0;
             for (const el of nodes) {{
-                const candidate = toCandidate(el);
-                if (!candidate) continue;
-                seen += 1;
-                if (Math.random() * seen < 1) {{
-                    chosen = candidate;
-                }}
+                if (!(el instanceof Element)) continue;
+                if (el.id === '__auto_rust_mouse_overlay' || el.id === '__auto_rust_nativeclick_probe') continue;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 8 || rect.height < 8) continue;
+                if (rect.bottom <= 0 || rect.right <= 0) continue;
+                if (rect.top >= window.innerHeight || rect.left >= window.innerWidth) continue;
+                const style = window.getComputedStyle(el);
+                if (!style) continue;
+                if (style.display === 'none' || style.visibility === 'hidden') continue;
+                if (Number.parseFloat(style.opacity || '1') === 0) continue;
+                if (el.getAttribute('aria-hidden') === 'true') continue;
+
+                const point = pickPoint(rect);
+                if (!point) continue;
+                const hit = document.elementFromPoint(point.x, point.y);
+                if (!hit) continue;
+                if (!(el === hit || el.contains(hit) || hit.contains(el))) continue;
+
+                matches.push({{
+                    label: labelFor(el),
+                    x: point.x,
+                    y: point.y,
+                }});
             }}
 
-            return chosen;
+            if (!matches.length) return null;
+            return matches[Math.floor(Math.random() * matches.length)];
         }})()"#,
     );
 
-    let result = timeout(Duration::from_secs(2), page.evaluate(js))
+    let result = timeout(
+        Duration::from_millis(*NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS),
+        page.evaluate(js),
+    )
         .await
-        .map_err(|_| anyhow::anyhow!("nativecursor candidate lookup timed out"))??;
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "trace={} nativecursor candidate lookup timed out for '{}'",
+                trace_id,
+                scope
+            )
+        })??;
     let value = result
         .value()
         .cloned()
-        .ok_or_else(|| anyhow::anyhow!("nativecursor found no visible candidates for '{scope}'"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "trace={} nativecursor found no visible candidates for '{scope}'",
+                trace_id
+            )
+        })?;
 
     if value.is_null() {
-        anyhow::bail!("nativecursor found no visible candidates for '{scope}'");
+        anyhow::bail!(
+            "trace={} nativecursor found no visible candidates for '{scope}'",
+            trace_id
+        );
     }
 
     if let Some(error) = value.get("error").and_then(|v| v.as_str()) {
-        anyhow::bail!("nativecursor invalid selector '{}': {}", query.unwrap_or(""), error);
+        anyhow::bail!(
+            "trace={} nativecursor invalid selector '{}': {}",
+            trace_id,
+            query.unwrap_or(""),
+            error
+        );
     }
 
     Ok(serde_json::from_value(value)?)
@@ -2471,6 +2598,7 @@ struct NativeClickProbeSample {
 
 async fn measure_native_click_probe(
     page: &Page,
+    trace_id: u64,
     candidate: &NativeClickCalibration,
     metrics: &BrowserWindowMetrics,
     desired_x: f64,
@@ -2479,7 +2607,7 @@ async fn measure_native_click_probe(
     inject_native_click_probe_at(page, desired_x - 24.0, desired_y - 24.0).await?;
     sync_native_overlay_position(page, desired_x, desired_y).await;
     let probe_point = screen_point_from_calibration(metrics, candidate, desired_x, desired_y);
-    native_move_and_click_point(probe_point.x, probe_point.y, 10, 5, 5, 5).await?;
+    native_move_and_click_point(trace_id, probe_point.x, probe_point.y, 10, 5, 5, 5).await?;
     if !native_click_probe_hit(page).await.unwrap_or(false) {
         return Ok(None);
     }
@@ -2643,6 +2771,7 @@ async fn calibrate_native_click(
         };
         let first = match measure_native_click_probe(
             page,
+            trace_id,
             &candidate,
             metrics,
             probe_first_x,
@@ -2659,6 +2788,7 @@ async fn calibrate_native_click(
         };
         let second = match measure_native_click_probe(
             page,
+            trace_id,
             &candidate,
             metrics,
             probe_second_x,
@@ -2782,6 +2912,7 @@ fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
 }
 
 async fn native_move_and_click_point(
+    trace_id: u64,
     x: i32,
     y: i32,
     reaction_delay_ms: u64,
@@ -2801,10 +2932,11 @@ async fn native_move_and_click_point(
         )
     })
     .await
-    .map_err(|err| anyhow::anyhow!("nativeclick join error: {err}"))?
+    .map_err(|err| anyhow::anyhow!("trace={} nativeclick join error: {err}", trace_id))?
 }
 
 async fn native_move_to_point(
+    trace_id: u64,
     x: i32,
     y: i32,
     reaction_delay_ms: u64,
@@ -2827,7 +2959,7 @@ async fn native_move_to_point(
         )
     })
     .await
-    .map_err(|err| anyhow::anyhow!("nativecursor join error: {err}"))?
+    .map_err(|err| anyhow::anyhow!("trace={} nativecursor join error: {err}", trace_id))?
 }
 
 fn native_move_and_click_point_blocking(
@@ -3165,7 +3297,7 @@ mod tests {
             height: 60.0,
         };
 
-        let bounds = native_click_center_bounds(&bbox).unwrap();
+        let bounds = native_click_center_bounds(&bbox, 0).unwrap();
         assert_eq!(bounds, (156, 164, 226, 234));
     }
 
@@ -3178,7 +3310,7 @@ mod tests {
             height: 60.0,
         };
 
-        let (x, y) = native_click_random_center_point(&bbox);
+        let (x, y) = native_click_random_center_point(&bbox, 0);
         assert!(x >= 156.0 && x <= 164.0);
         assert!(y >= 226.0 && y <= 234.0);
         assert!(x >= bbox.x && x <= bbox.x + bbox.width);

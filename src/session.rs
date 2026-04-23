@@ -178,6 +178,7 @@ impl Session {
     ///     Some(config),
     /// );
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         name: String,
@@ -210,7 +211,7 @@ impl Session {
                     Err(_) => {
                         consecutive_handler_timeouts += 1;
                         // Idle sessions can naturally have sparse events, so warn only on prolonged streaks.
-                        if consecutive_handler_timeouts % HANDLER_TIMEOUT_WARN_EVERY == 0 {
+                        if consecutive_handler_timeouts.is_multiple_of(HANDLER_TIMEOUT_WARN_EVERY) {
                             log::warn!(
                                 "Handler task timeout for session {id_clone}, continuing ({} consecutive timeouts)",
                                 consecutive_handler_timeouts

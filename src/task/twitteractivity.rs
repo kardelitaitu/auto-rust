@@ -64,7 +64,7 @@ fn default_duration_ms() -> u64 {
 /// Default number of engagement candidates to consider
 const DEFAULT_CANDIDATES: u32 = 5;
 /// Default thread depth when diving
-const DEFAULT_THREAD_DEPTH: u32 = 5;
+const DEFAULT_THREAD_DEPTH: u32 = 10;
 /// Minimum delay between different action types on same tweet (ms)
 const MIN_ACTION_CHAIN_DELAY_MS: u64 = 3000;
 /// Minimum delay between feed candidate scans (ms)
@@ -301,6 +301,7 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
     let mut counters = EngagementCounters::new();
     let limits = EngagementLimits::default();
     let mut action_tracker = TweetActionTracker::new();
+    let mut current_thread_cache: Option<crate::utils::twitter::twitteractivity_dive::ThreadCache> = None;
 
     info!(
         "Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
@@ -555,7 +556,9 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
                             // Resume scrolling if dive failed
                             next_scroll = original_next_scroll;
                         } else {
-                            read_full_thread(api, thread_depth).await?;
+                            // Use cache from dive outcome, initialize empty if none
+                            let mut thread_cache = dive_outcome.cache.unwrap_or_default();
+                            read_full_thread(api, thread_depth, &mut thread_cache).await?;
                             scroll_pause(api).await;
                             counters.increment_thread_dive();
                             _actions_taken += 1;
@@ -563,6 +566,8 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
                             // Record dive action
                             action_tracker.record_action(tweet_id.to_string(), "dive");
                             did_dive = true;
+                            // Store cache for later LLM use
+                            current_thread_cache = Some(thread_cache);
                         }
                     }
                 }
@@ -613,37 +618,54 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
                             } else {
                                 match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
                                     Ok(true) => {
-                                        if llm_enabled {
-                                            match extract_tweet_context(api).await {
-                                                Ok((author, text, replies)) => {
-                                                    match generate_quote_commentary(api, &author, &text, replies).await {
-                                                        Ok(commentary) => {
-                                                            match quote_tweet(api, &commentary).await {
-                                                                Ok(success) => {
-                                                                    if success {
-                                                                        info!("Quote tweeted with commentary: {}", commentary);
-                                                                    }
-                                                                    success
-                                                                }
-                                                                Err(e) => {
-                                                                    warn!("Quote tweet error: {}", e);
-                                                                    false
-                                                                }
-                                                            }
-                                                        }
+                                        let quote_text = if llm_enabled {
+                                            // Use cached data if available, fallback to extraction
+                                            let (author, text, replies) = if let Some(ref cache) = current_thread_cache {
+                                                if cache.is_valid() {
+                                                    info!("Using cached thread data for quote ({} replies)", cache.replies.len());
+                                                    (cache.tweet_author.clone(), cache.tweet_text.clone(), cache.replies.clone())
+                                                } else {
+                                                    match extract_tweet_context(api).await {
+                                                        Ok(data) => data,
                                                         Err(e) => {
-                                                            warn!("Failed to generate quote commentary: {}", e);
-                                                            false
+                                                            warn!("Failed to extract tweet context for quote: {}", e);
+                                                            ("unknown".to_string(), String::new(), Vec::new())
                                                         }
                                                     }
                                                 }
+                                            } else {
+                                                match extract_tweet_context(api).await {
+                                                    Ok(data) => data,
+                                                    Err(e) => {
+                                                        warn!("Failed to extract tweet context for quote: {}", e);
+                                                        ("unknown".to_string(), String::new(), Vec::new())
+                                                    }
+                                                }
+                                            };
+                                            match generate_quote_commentary(api, &author, &text, replies).await {
+                                                Ok(commentary) => {
+                                                    info!("Generated LLM quote: {}", commentary);
+                                                    commentary
+                                                }
                                                 Err(e) => {
-                                                    warn!("Failed to extract tweet context for quote: {}", e);
-                                                    false
+                                                    warn!("LLM quote failed, using template: {}", e);
+                                                    generate_quote_text(sentiment, counters.quote_tweets)
                                                 }
                                             }
                                         } else {
-                                            false // Skip if no LLM
+                                            generate_quote_text(sentiment, counters.quote_tweets)
+                                        };
+                                        match quote_tweet(api, &quote_text).await {
+                                            Ok(success) => {
+                                                if success {
+                                                    info!("Quote tweeted with commentary: {}", quote_text);
+                                                }
+                                                success
+                                            }
+                                            Err(e) => {
+                                                warn!("Quote tweet error: {}", e);
+                                                false
+                                            }
                                         }
                                     }
                                     Ok(false) => {
@@ -685,21 +707,36 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
                                 match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
                                     Ok(true) => {
                                         let reply_text = if llm_enabled {
-                                            match extract_tweet_context(api).await {
-                                                Ok((author, text, replies)) => {
-                                                    match generate_reply(api, &author, &text, replies).await {
-                                                        Ok(reply) => {
-                                                            info!("Generated LLM reply: {}", reply);
-                                                            reply
-                                                        }
+                                            // Use cached data if available, fallback to extraction
+                                            let (author, text, replies) = if let Some(ref cache) = current_thread_cache {
+                                                if cache.is_valid() {
+                                                    info!("Using cached thread data for reply ({} replies)", cache.replies.len());
+                                                    (cache.tweet_author.clone(), cache.tweet_text.clone(), cache.replies.clone())
+                                                } else {
+                                                    match extract_tweet_context(api).await {
+                                                        Ok(data) => data,
                                                         Err(e) => {
-                                                            warn!("LLM reply failed, using template: {}", e);
-                                                            generate_reply_text(sentiment, counters.replies)
+                                                            warn!("Failed to extract tweet context for reply: {}", e);
+                                                            ("unknown".to_string(), String::new(), Vec::new())
                                                         }
                                                     }
                                                 }
+                                            } else {
+                                                match extract_tweet_context(api).await {
+                                                    Ok(data) => data,
+                                                    Err(e) => {
+                                                        warn!("Failed to extract tweet context for reply: {}", e);
+                                                        ("unknown".to_string(), String::new(), Vec::new())
+                                                    }
+                                                }
+                                            };
+                                            match generate_reply(api, &author, &text, replies).await {
+                                                Ok(reply) => {
+                                                    info!("Generated LLM reply: {}", reply);
+                                                    reply
+                                                }
                                                 Err(e) => {
-                                                    warn!("Failed to extract context, using template: {}", e);
+                                                    warn!("LLM reply failed, using template: {}", e);
                                                     generate_reply_text(sentiment, counters.replies)
                                                 }
                                             }
@@ -931,6 +968,38 @@ fn generate_reply_text(sentiment: Sentiment, reply_idx: u32) -> String {
         Sentiment::Positive => POSITIVE[(reply_idx as usize) % POSITIVE.len()],
         Sentiment::Neutral => NEUTRAL[(reply_idx as usize) % NEUTRAL.len()],
         Sentiment::Negative => NEGATIVE[(reply_idx as usize) % NEGATIVE.len()],
+    }
+    .to_string()
+}
+
+// Helper: generate a short quote commentary string based on sentiment
+// Uses quote count as index for deterministic selection
+fn generate_quote_text(sentiment: Sentiment, quote_idx: u32) -> String {
+    const POSITIVE: &[&str] = &[
+        "This is worth sharing.",
+        "Great perspective here.",
+        "Agreed with this take.",
+        "Important point worth highlighting.",
+        "This resonates.",
+    ];
+    const NEUTRAL: &[&str] = &[
+        "Worth a read.",
+        "Interesting take.",
+        "Good point here.",
+        "Noting this one.",
+        "Thoughts on this.",
+    ];
+    const NEGATIVE: &[&str] = &[
+        "Different perspective worth considering.",
+        "This raises important questions.",
+        "Worth discussing further.",
+        "Challenging viewpoint here.",
+        "Food for thought.",
+    ];
+    match sentiment {
+        Sentiment::Positive => POSITIVE[(quote_idx as usize) % POSITIVE.len()],
+        Sentiment::Neutral => NEUTRAL[(quote_idx as usize) % NEUTRAL.len()],
+        Sentiment::Negative => NEGATIVE[(quote_idx as usize) % NEGATIVE.len()],
     }
     .to_string()
 }

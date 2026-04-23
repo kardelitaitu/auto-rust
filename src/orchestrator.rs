@@ -443,10 +443,10 @@ async fn execute_task_on_session(
             );
             Ok(())
         } else {
-            return Err(OrchestratorError::Task(TaskError::ExecutionFailed {
+            Err(OrchestratorError::Task(TaskError::ExecutionFailed {
                 task_name: task_def.name.clone(),
                 reason: format!("failed on all {} sessions", sessions.len()),
-            }));
+            }))
         }
     }
 }

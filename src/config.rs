@@ -1029,7 +1029,7 @@ impl ConfigValidationReport {
                 }));
             }
             // Validate URL format
-            if let Err(_) = url.parse::<reqwest::Url>() {
+            if url.parse::<reqwest::Url>().is_err() {
                 return Err(OrchestratorError::Config(ConfigError::InvalidValue {
                     field: "roxybrowser.api_url".to_string(),
                     value: url.clone(),
@@ -1337,7 +1337,7 @@ impl ConfigValidationReport {
         }
 
         // Validate URL format for OTLP endpoint
-        if let Err(_) = config.otlp_endpoint.parse::<reqwest::Url>() {
+        if config.otlp_endpoint.parse::<reqwest::Url>().is_err() {
             return Err(OrchestratorError::Config(ConfigError::InvalidValue {
                 field: "tracing.otlp_endpoint".to_string(),
                 value: config.otlp_endpoint.clone(),

@@ -164,9 +164,10 @@ impl TaskErrorKind {
         } else if e.contains("receiver is gone")
             || e.contains("channel closed")
             || e.contains("send failed")
+            || e.contains("session")
+            || e.contains("worker")
+            || e.contains("page")
         {
-            TaskErrorKind::Session
-        } else if e.contains("session") || e.contains("worker") || e.contains("page") {
             TaskErrorKind::Session
         } else if e.contains("browser") || e.contains("chromium") || e.contains("brave") {
             TaskErrorKind::Browser

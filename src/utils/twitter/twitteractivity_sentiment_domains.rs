@@ -803,7 +803,7 @@ pub fn detect_domain(text: &str) -> SentimentDomain {
         .count();
 
     // Find highest scoring domain
-    let mut scores = vec![
+    let mut scores = [
         (SentimentDomain::Crypto, crypto_score),
         (SentimentDomain::Tech, tech_score),
         (SentimentDomain::Gaming, gaming_score),

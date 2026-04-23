@@ -282,10 +282,8 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     let button_result = match timeout(Duration::from_secs(5), api.page().evaluate(reply_button_js)).await {
         Ok(result) => result?,
         Err(_) => {
-            info!("Timeout finding reply button, using Enter fallback");
-            let _ = api.press("Enter").await;
-            human_pause(api, 1000).await;
-            return Ok(true);
+            info!("Timeout finding reply button");
+            return Ok(false);
         }
     };
 
@@ -303,23 +301,23 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
                             info!("Clicked Reply button successfully");
                         }
                         Err(_) => {
-                            info!("Timeout clicking reply button, using Enter fallback");
-                            let _ = api.press("Enter").await;
+                            info!("Timeout clicking reply button");
+                            return Ok(false);
                         }
                     }
                 }
                 Err(_) => {
-                    info!("Timeout moving mouse to reply button, using Enter fallback");
-                    let _ = api.press("Enter").await;
+                    info!("Timeout moving mouse to reply button");
+                    return Ok(false);
                 }
             }
         } else {
-            info!("Reply button coordinates not found, using Enter fallback");
-            let _ = api.press("Enter").await;
+            info!("Reply button coordinates not found");
+            return Ok(false);
         }
     } else {
-        info!("Reply button not found, using Enter fallback");
-        let _ = api.press("Enter").await;
+        info!("Reply button not found");
+        return Ok(false);
     }
 
     human_pause(api, 1000).await;

@@ -5,6 +5,8 @@
 
 use anyhow::{Context, Result};
 use log::{info, warn};
+use std::time::Duration;
+use tokio::time::timeout;
 use tracing::instrument;
 
 use crate::llm::{build_quote_messages, build_reply_messages, Llm};
@@ -138,7 +140,13 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         })()
     "#;
 
-    let result = api.page().evaluate(quote_btn_js.to_string()).await?;
+    let result = match timeout(Duration::from_secs(5), api.page().evaluate(quote_btn_js.to_string())).await {
+        Ok(r) => r?,
+        Err(_) => {
+            warn!("Timeout finding quote tweet button");
+            return Ok(false);
+        }
+    };
     let coords = result.value().and_then(|v| v.as_object());
 
     let (x, y) = if let Some(obj) = coords {
@@ -152,7 +160,10 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
 
     let (x, y) = match (x, y) {
         (Some(x), Some(y)) => (x, y),
-        _ => anyhow::bail!("Quote tweet button not found"),
+        _ => {
+            warn!("Quote tweet button not found");
+            return Ok(false);
+        }
     };
 
     // Human-like cursor movement then click
@@ -177,16 +188,28 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         })()
     "#;
 
-    let focused = api.page().evaluate(composer_js.to_string()).await?;
+    let focused = match timeout(Duration::from_secs(5), api.page().evaluate(composer_js.to_string())).await {
+        Ok(r) => r?,
+        Err(_) => {
+            warn!("Timeout focusing composer textarea");
+            return Ok(false);
+        }
+    };
     if !focused.value().and_then(|v| v.as_bool()).unwrap_or(false) {
-        anyhow::bail!("Composer textarea not found");
+        warn!("Composer textarea not found");
+        return Ok(false);
     }
 
     api.pause(500).await;
 
     // Type the commentary
-    api.keyboard("[data-testid='tweetTextarea_0']", commentary)
-        .await?;
+    match timeout(Duration::from_secs(10), api.keyboard("[data-testid='tweetTextarea_0']", commentary)).await {
+        Ok(r) => r?,
+        Err(_) => {
+            warn!("Timeout typing commentary");
+            return Ok(false);
+        }
+    }
     api.pause(1000).await;
 
     // Find Tweet button coordinates
@@ -201,8 +224,14 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         })()
     "#;
 
-    let result = api.page().evaluate(tweet_btn_js.to_string()).await?;
-    let coords = result.value().and_then(|v| v.as_object());
+    let button_result = match timeout(Duration::from_secs(5), api.page().evaluate(tweet_btn_js.to_string())).await {
+        Ok(r) => r?,
+        Err(_) => {
+            warn!("Timeout finding tweet button");
+            return Ok(false);
+        }
+    };
+    let coords = button_result.value().and_then(|v| v.as_object());
 
     let (tx, ty) = if let Some(obj) = coords {
         (
@@ -215,13 +244,28 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
 
     let (tx, ty) = match (tx, ty) {
         (Some(tx), Some(ty)) => (tx, ty),
-        _ => anyhow::bail!("Tweet button not found"),
+        _ => {
+            warn!("Tweet button not found");
+            return Ok(false);
+        }
     };
 
     // Human-like cursor movement then click
-    api.move_mouse_to(tx, ty).await?;
+    match timeout(Duration::from_secs(5), api.move_mouse_to(tx, ty)).await {
+        Ok(_) => {}
+        Err(_) => {
+            warn!("Timeout moving mouse to tweet button");
+            return Ok(false);
+        }
+    }
     super::twitteractivity_humanized::human_pause(api, 300).await;
-    api.click_at(tx, ty).await?;
+    match timeout(Duration::from_secs(5), api.click_at(tx, ty)).await {
+        Ok(_) => {}
+        Err(_) => {
+            warn!("Timeout clicking tweet button");
+            return Ok(false);
+        }
+    }
 
     // Wait for post to complete
     api.pause(2000).await;

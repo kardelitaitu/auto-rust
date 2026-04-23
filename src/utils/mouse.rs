@@ -207,6 +207,11 @@ static NATIVE_CLICK_LOCK: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()
 static NATIVE_CLICK_CALIBRATION_CACHE: Lazy<
     std::sync::Mutex<HashMap<String, NativeClickCalibrationEntry>>,
 > = Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+static FORCED_NATIVECLICK_CALIBRATION: Lazy<
+    std::sync::Mutex<HashMap<String, NativeClickCalibration>>,
+> = Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+static NATIVECLICK_TRACE_HOOKS: Lazy<std::sync::Mutex<HashMap<String, Vec<String>>>> =
+    Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
 static NATIVE_CLICK_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 static NATIVE_LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
 static NATIVE_LOCK_CONTENTIONS: AtomicU64 = AtomicU64::new(0);
@@ -320,12 +325,69 @@ fn nativeclick_debug(
     phase: &str,
     message: impl std::fmt::Display,
 ) {
+    record_nativeclick_trace_phase(session_id, phase);
     with_nativeclick_log_context(session_id, || {
         debug!(
             "nativeclick trace={} session={} selector={} phase={} {}",
             trace_id, session_id, selector, phase, message
         );
     });
+}
+
+fn record_nativeclick_trace_phase(session_id: &str, phase: &str) {
+    if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
+        hooks.entry(session_id.to_string())
+            .or_default()
+            .push(phase.to_string());
+    }
+}
+
+/// Clears captured nativeclick trace phases for the session.
+/// Used by integration tests to assert pipeline ordering.
+pub fn clear_nativeclick_trace_hooks(session_id: &str) {
+    if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
+        hooks.remove(session_id);
+    }
+}
+
+/// Returns and clears captured nativeclick trace phases for the session.
+/// Used by integration tests to assert pipeline ordering.
+pub fn take_nativeclick_trace_hooks(session_id: &str) -> Vec<String> {
+    if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
+        return hooks.remove(session_id).unwrap_or_default();
+    }
+    Vec::new()
+}
+
+/// Sets a forced calibration override for integration tests.
+/// This is intended for test harnesses that need deterministic error-path coverage.
+pub fn set_nativeclick_forced_calibration_for_tests(
+    session_id: &str,
+    scale_x: f64,
+    scale_y: f64,
+    origin_adjust_x: f64,
+    origin_adjust_y: f64,
+    mode: NativeClickCalibrationMode,
+) {
+    if let Ok(mut map) = FORCED_NATIVECLICK_CALIBRATION.lock() {
+        map.insert(
+            session_id.to_string(),
+            NativeClickCalibration {
+                scale_x,
+                scale_y,
+                origin_adjust_x,
+                origin_adjust_y,
+                mode,
+            },
+        );
+    }
+}
+
+/// Clears the forced calibration override used by integration tests.
+pub fn clear_nativeclick_forced_calibration_for_tests(session_id: &str) {
+    if let Ok(mut map) = FORCED_NATIVECLICK_CALIBRATION.lock() {
+        map.remove(session_id);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1874,6 +1936,13 @@ pub async fn native_click_selector_human(
             err
         ))?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
+    nativeclick_debug(
+        session_id,
+        trace_id,
+        selector,
+        "scroll-into-view",
+        "start",
+    );
     scroll::scroll_into_view(page, selector).await?;
 
     let bbox = timeout(
@@ -1919,6 +1988,13 @@ pub async fn native_click_selector_human(
             trace_id,
             err
         ))?;
+    nativeclick_debug(
+        session_id,
+        trace_id,
+        selector,
+        "dispatch",
+        format!("screen=({}, {})", point.x, point.y),
+    );
     native_move_and_click_point(
         trace_id,
         point.x,
@@ -2962,9 +3038,33 @@ async fn content_point_to_screen_point(
     native_interaction: &NativeInteractionConfig,
 ) -> Result<ScreenPoint> {
     let metrics = browser_window_metrics(page).await?;
-    let calibration = calibrate_native_click(page, session_id, trace_id, &metrics, native_interaction)
-        .await?;
+    let mut calibration =
+        calibrate_native_click(page, session_id, trace_id, &metrics, native_interaction).await?;
+    if let Ok(map) = FORCED_NATIVECLICK_CALIBRATION.lock() {
+        if let Some(forced) = map.get(session_id).copied() {
+            calibration = forced;
+        }
+    }
+    validate_native_calibration(&calibration)
+        .map_err(|err| anyhow::anyhow!("nativeclick calibration invalid: {}", err))?;
     Ok(screen_point_from_calibration(&metrics, &calibration, x, y))
+}
+
+fn validate_native_calibration(calibration: &NativeClickCalibration) -> Result<()> {
+    let finite = calibration.scale_x.is_finite()
+        && calibration.scale_y.is_finite()
+        && calibration.origin_adjust_x.is_finite()
+        && calibration.origin_adjust_y.is_finite();
+    if !finite {
+        anyhow::bail!("non-finite calibration value");
+    }
+    if calibration.scale_x <= 0.0 || calibration.scale_y <= 0.0 {
+        anyhow::bail!("scale must be > 0");
+    }
+    if calibration.scale_x > 8.0 || calibration.scale_y > 8.0 {
+        anyhow::bail!("scale exceeds max bound");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

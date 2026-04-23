@@ -774,8 +774,27 @@ Note: `TaskContext` is the task-api. `keyboard(...)` is the preferred typing ver
 
 High-level task-api verbs already include a short settle pause after the action. `api.pause(base_ms)` is the explicit uniform wait helper and uses a 20% deviation band.
 `api.click(selector)` is the default click mechanism: selector pipeline with scroll + move + click. Use coordinate clicks only when you already have coordinates or the selector path is not appropriate.
+`api.nativeclick(selector)` is the native OS click mechanism: human-like scroll into view, native move+click through the configured backend, and a public log line in the format `clicked (<selector>) at x,y`. Keep `NATIVE_INPUT_BACKEND=enigo` for now; `sendinput`/`rdev` currently fall back to `enigo` until implemented.
 
-Common task-api verbs now include `api.click(...)`, `api.click_and_wait(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.hover(...)`, `api.keyboard(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
+Nativeclick failure semantics:
+- `stable` failure: target did not stabilize before timeout.
+- `clickable` failure: target exists but is not currently clickable (hidden/disabled/obscured).
+- `mapping` failure: content-point to screen-point mapping/calibration failed.
+- `verify` failure: native click dispatched but post-click target verification failed.
+- Behavior: nativeclick fails fast on these errors and does not silently downgrade to browser click.
+
+Recommended retry strategy:
+- `stable`: retry once after increasing `NATIVE_INTERACTION_STABILITY_WAIT_MS`.
+- `clickable`: retry once after waiting for overlay/loader dismissal, then fail.
+- `mapping`: do not blind-retry; recalibrate (or reopen tab/session) before retry.
+- `verify`: retry once only if the page is known to mutate on click; otherwise treat as hard failure.
+
+When to use `api.click` vs `api.nativeclick` (nativeclick priority):
+- Default: use `api.nativeclick(selector)` for reliable OS-level interaction and consistent task-api observability.
+- Use `api.click(selector)` only when native input is unavailable in the environment or a page explicitly blocks native-path assumptions during debugging.
+- For critical actions, keep one interaction path per task; do not silently switch between click types in the same step.
+
+Common task-api verbs now include `api.click(...)`, `api.nativeclick(...)`, `api.nativecursor(...)`, `api.nativecursor_query(...)`, `api.nativecursor_selector(...)`, `api.click_and_wait(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.hover(...)`, `api.keyboard(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
 
 ## 🤝 Contributing
 

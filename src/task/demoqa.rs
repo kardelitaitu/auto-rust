@@ -3,7 +3,7 @@
 //! Writes a fixed sample record to the DemoQA text box page and verifies the rendered output.
 
 use anyhow::{bail, Result};
-use log::{info, warn};
+use log::{debug, info, warn};
 use serde_json::Value;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -103,8 +103,6 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
             submit_click.y
         );
     }
-    info!("{}", submit_click.summary());
-
     api.pause(7500).await;
     let output_exists_before_wait = api.exists("#output").await?;
     info!(
@@ -153,8 +151,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
 async fn fill_text_field(api: &TaskContext, selector: &str, value: &str) -> Result<()> {
     warm_nativecursor(api).await?;
-    let click = api.nativeclick(selector).await?;
-    info!("{}", click.summary());
+    let _click = api.nativeclick(selector).await?;
     if SHOW_CURSOR_OVERLAY {
         api.sync_cursor_overlay().await?;
     }
@@ -164,17 +161,16 @@ async fn fill_text_field(api: &TaskContext, selector: &str, value: &str) -> Resu
 }
 
 async fn warm_nativecursor(api: &TaskContext) -> Result<()> {
-    let cursor = match api.nativecursor_query("button").await {
+    let _cursor = match api.nativecursor_query("button").await {
         Ok(outcome) => outcome,
         Err(err) => {
-            warn!(
+            debug!(
                 "nativecursor button warm-up unavailable, falling back to any visible element: {}",
                 err
             );
             api.nativecursor().await?
         }
     };
-    info!("{}", cursor.summary());
     Ok(())
 }
 

@@ -190,38 +190,19 @@ impl Session {
         circuit_breaker_config: Option<crate::config::CircuitBreakerConfig>,
     ) -> Self {
         let id_clone = id.clone();
-        const HANDLER_TIMEOUT_WARN_EVERY: usize = 6;
-
         // Spawn handler polling task - keep it alive for the lifetime of the session
         let handler_task = tokio::spawn(async move {
             let mut handler = handler;
-            let mut consecutive_handler_timeouts = 0usize;
             loop {
                 match tokio::time::timeout(Duration::from_secs(5), handler.next()).await {
-                    Ok(Some(Ok(_))) => {
-                        consecutive_handler_timeouts = 0;
-                    }
-                    Ok(Some(Err(_))) => {
-                        consecutive_handler_timeouts = 0;
-                    }
+                    Ok(Some(Ok(_))) => {}
+                    Ok(Some(Err(_))) => {}
                     Ok(None) => {
                         // Handler stream ended
                         break;
                     }
                     Err(_) => {
-                        consecutive_handler_timeouts += 1;
-                        // Idle sessions can naturally have sparse events, so warn only on prolonged streaks.
-                        if consecutive_handler_timeouts.is_multiple_of(HANDLER_TIMEOUT_WARN_EVERY) {
-                            log::warn!(
-                                "Handler task timeout for session {id_clone}, continuing ({} consecutive timeouts)",
-                                consecutive_handler_timeouts
-                            );
-                        } else {
-                            log::debug!(
-                                "Handler task timeout for session {id_clone}, continuing ({} consecutive timeouts)",
-                                consecutive_handler_timeouts
-                            );
-                        }
+                        // Non-fatal handler timeouts are expected on idle sessions and are suppressed.
                     }
                 }
             }

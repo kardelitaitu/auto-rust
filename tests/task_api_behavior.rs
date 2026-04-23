@@ -4,6 +4,10 @@ use rust_orchestrator::config::NativeInteractionConfig;
 use rust_orchestrator::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
 use rust_orchestrator::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
 use rust_orchestrator::session::Session;
+use rust_orchestrator::utils::mouse::{
+    clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
+    set_nativeclick_forced_calibration_for_tests, take_nativeclick_trace_hooks,
+};
 use rust_orchestrator::{result::TaskErrorKind, result::TaskResult};
 use std::env;
 use std::fs;
@@ -434,5 +438,127 @@ async fn click_timeout_storm_hits_fallback_without_panicking() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn nativeclick_pipeline_orders_scroll_before_dispatch() -> Result<()> {
+    let Some(mut session) = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Native Order</title></head><body style=\"height:2400px;\"><div style=\"height:1800px\"></div><button id=\"target\" onclick=\"document.body.setAttribute('data-native-clicked','yes')\">Click</button></body></html>",
+    )
+    .await?;
+
+    let page = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+    clear_nativeclick_trace_hooks(&session.id);
+
+    let outcome = api.nativeclick("#target").await?;
+    assert!(matches!(
+        outcome.click,
+        rust_orchestrator::utils::mouse::ClickStatus::Success
+    ));
+    assert_eq!(
+        api.attr("body", "data-native-clicked").await?,
+        Some("yes".to_string())
+    );
+
+    let phases = take_nativeclick_trace_hooks(&session.id);
+    let scroll_idx = phases
+        .iter()
+        .position(|phase| phase == "scroll-into-view")
+        .expect("scroll-into-view phase missing");
+    let dispatch_idx = phases
+        .iter()
+        .position(|phase| phase == "dispatch")
+        .expect("dispatch phase missing");
+    assert!(
+        scroll_idx < dispatch_idx,
+        "expected scroll before dispatch, got phases={:?}",
+        phases
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn nativeclick_verify_failure_returns_expected_error_class() -> Result<()> {
+    let Some(mut session) = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Native Verify Fail</title></head><body><button id=\"target\" onclick=\"this.style.display='none'; const o=document.createElement('div'); o.id='cover'; o.style.position='fixed'; o.style.left='0'; o.style.top='0'; o.style.width='100vw'; o.style.height='100vh'; o.style.zIndex='2147483647'; document.body.appendChild(o);\">Click</button></body></html>",
+    )
+    .await?;
+
+    let page = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    let err = api
+        .nativeclick("#target")
+        .await
+        .expect_err("expected nativeclick verification failure");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("nativeclick verification failed"),
+        "unexpected error class: {}",
+        msg
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn nativeclick_mapping_failure_returns_expected_error_class() -> Result<()> {
+    let Some(mut session) = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Native Mapping Fail</title></head><body><button id=\"target\">Click</button></body></html>",
+    )
+    .await?;
+
+    let page = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    // Force invalid calibration input to assert mapping error class deterministically.
+    set_nativeclick_forced_calibration_for_tests(
+        &session.id,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        rust_orchestrator::config::NativeClickCalibrationMode::Windows,
+    );
+
+    let err = api
+        .nativeclick("#target")
+        .await
+        .expect_err("expected nativeclick mapping failure");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("nativeclick mapping failed"),
+        "unexpected error class: {}",
+        msg
+    );
+
+    clear_nativeclick_forced_calibration_for_tests(&session.id);
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
     Ok(())
 }

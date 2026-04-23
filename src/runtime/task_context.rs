@@ -44,7 +44,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
-use log::{info, warn};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -452,6 +452,10 @@ impl RandomCursorOutcome {
     }
 }
 
+fn nativeclick_public_log_line(selector: &str, x: f64, y: f64) -> String {
+    format!("[task-api] clicked ({selector}) at {x:.1},{y:.1}")
+}
+
 #[derive(Debug, Clone)]
 pub struct ClickAndWaitOutcome {
     pub click: ClickOutcome,
@@ -555,6 +559,12 @@ mod tests {
             outcome.summary(),
             "Clicked (1.0,2.0) wait_for:.next visible:timeout timeout:500ms"
         );
+    }
+
+    #[test]
+    fn test_nativeclick_public_log_format() {
+        let line = nativeclick_public_log_line("#submit", 708.04, 335.19);
+        assert_eq!(line, "[task-api] clicked (#submit) at 708.0,335.2");
     }
 
     #[test]
@@ -1397,11 +1407,14 @@ impl TaskContext {
         mouse::left_click_at(self.page(), x, y).await
     }
 
-    /// Native OS-level click on selector using the host mouse backend.
+    /// Native OS-level click pipeline:
+    /// 1) human-like scroll to selector,
+    /// 2) native move + click via backend,
+    /// 3) public task log with clicked selector and point.
     pub async fn nativeclick(&self, selector: &str) -> Result<ClickOutcome> {
         let session_id = self.session_id().to_string();
         let click = &self.behavior_runtime.click;
-        let outcome = mouse::native_click_selector_human(
+        let outcome = match mouse::native_click_selector_human(
             self.page(),
             &session_id,
             selector,
@@ -1410,22 +1423,44 @@ impl TaskContext {
             click.offset_px,
             self.native_interaction(),
         )
-        .await?;
+        .await
+        {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                let mut ctx = crate::logger::get_log_context();
+                ctx.session_id = Some(session_id.clone());
+                let _guard = scoped_log_context(ctx);
+                warn!(
+                    "[task-api] nativeclick failed selector={} error={}",
+                    selector, err
+                );
+                return Err(err);
+            }
+        };
         {
             let mut ctx = crate::logger::get_log_context();
             ctx.session_id = Some(session_id.clone());
             let _guard = scoped_log_context(ctx);
-            let screen_point = match (outcome.screen_x, outcome.screen_y) {
-                (Some(x), Some(y)) => format!(" screen_point=({}, {})", x, y),
-                _ => String::new(),
-            };
-            info!(
-                "[task-api] nativeclick session={} selector={} point=({:.1},{:.1}){} {}",
+            info!("{}", nativeclick_public_log_line(selector, outcome.x, outcome.y));
+            if let (Some(screen_x), Some(screen_y)) = (outcome.screen_x, outcome.screen_y) {
+                debug!(
+                    "[task-api] nativeclick session={} selector={} screen_point=({}, {})",
+                    session_id,
+                    selector,
+                    screen_x,
+                    screen_y
+                );
+            } else {
+                debug!(
+                    "[task-api] nativeclick session={} selector={} screen_point=(unknown)",
+                    session_id,
+                    selector
+                );
+            }
+            debug!(
+                "[task-api] nativeclick session={} selector={} summary={}",
                 session_id,
                 selector,
-                outcome.x,
-                outcome.y,
-                screen_point,
                 outcome.summary()
             );
         }
@@ -1796,17 +1831,17 @@ impl TaskContext {
             ctx.session_id = Some(session_id.clone());
             let _guard = scoped_log_context(ctx);
             let screen_point = match (outcome.screen_x, outcome.screen_y) {
-                (Some(x), Some(y)) => format!(" screen_point=({}, {})", x, y),
-                _ => String::new(),
+                (Some(x), Some(y)) => format!("({}, {})", x, y),
+                _ => "unknown".to_string(),
             };
             info!(
-                "[task-api] nativecursor session={} target={} point=({:.1},{:.1}){} {}",
-                session_id,
+                "[task-api] t={} ({:.1},{:.1}) p=({:.1},{:.1}) s={}",
                 outcome.target,
                 outcome.x,
                 outcome.y,
-                screen_point,
-                outcome.summary()
+                outcome.x,
+                outcome.y,
+                screen_point
             );
         }
         self.post_interaction_pause().await;

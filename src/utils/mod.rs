@@ -4,6 +4,7 @@ pub mod geometry;
 pub mod keyboard;
 pub mod math;
 pub mod mouse;
+pub(crate) mod native_input;
 pub mod navigation;
 pub mod page_size;
 pub mod profile;

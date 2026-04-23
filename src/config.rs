@@ -73,9 +73,10 @@ pub struct BrowserConfig {
 }
 
 /// Calibration mode for native cursor and click coordinate mapping.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum NativeClickCalibrationMode {
+    #[default]
     Windows,
     Mac,
     Linux,
@@ -106,9 +107,38 @@ impl NativeClickCalibrationMode {
     }
 }
 
-impl Default for NativeClickCalibrationMode {
-    fn default() -> Self {
-        Self::Windows
+/// Backend used for native OS input dispatch.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeInputBackend {
+    #[default]
+    Enigo,
+    Sendinput,
+    Rdev,
+}
+
+impl NativeInputBackend {
+    pub fn from_env_value(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "enigo" => Self::Enigo,
+            "sendinput" | "send_input" | "win32" => Self::Sendinput,
+            "rdev" => Self::Rdev,
+            other => {
+                warn!(
+                    "Invalid native input backend '{}', falling back to enigo",
+                    other
+                );
+                Self::Enigo
+            }
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Enigo => "enigo",
+            Self::Sendinput => "sendinput",
+            Self::Rdev => "rdev",
+        }
     }
 }
 
@@ -117,6 +147,8 @@ impl Default for NativeClickCalibrationMode {
 pub struct NativeInteractionConfig {
     #[serde(default)]
     pub calibration_mode: NativeClickCalibrationMode,
+    #[serde(default)]
+    pub native_input_backend: NativeInputBackend,
     #[serde(default = "default_native_interaction_stability_wait_ms")]
     pub stability_wait_ms: u64,
     #[serde(default = "default_native_interaction_resolve_timeout_ms")]
@@ -129,6 +161,7 @@ impl Default for NativeInteractionConfig {
     fn default() -> Self {
         Self {
             calibration_mode: NativeClickCalibrationMode::default(),
+            native_input_backend: NativeInputBackend::default(),
             stability_wait_ms: default_native_interaction_stability_wait_ms(),
             resolve_timeout_ms: default_native_interaction_resolve_timeout_ms(),
             settle_ms: default_native_interaction_settle_ms(),
@@ -548,6 +581,10 @@ mod tests {
             config.native_interaction.calibration_mode,
             NativeClickCalibrationMode::Windows
         );
+        assert_eq!(
+            config.native_interaction.native_input_backend,
+            NativeInputBackend::Enigo
+        );
         assert_eq!(config.native_interaction.stability_wait_ms, 5000);
         assert_eq!(config.native_interaction.resolve_timeout_ms, 2000);
         assert_eq!(config.native_interaction.settle_ms, 0);
@@ -758,6 +795,10 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.browser.native_interaction.settle_ms = settle_ms
             .parse()
             .unwrap_or(config.browser.native_interaction.settle_ms);
+    }
+    if let Ok(backend) = env::var("NATIVE_INPUT_BACKEND") {
+        config.browser.native_interaction.native_input_backend =
+            NativeInputBackend::from_env_value(&backend);
     }
 
     // Twitter Activity engagement limits overrides

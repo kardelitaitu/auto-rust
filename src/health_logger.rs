@@ -10,6 +10,7 @@ use sysinfo::System;
 use tracing::{info, warn};
 
 use crate::metrics::MetricsCollector;
+use crate::utils::mouse::native_input_lock_metrics_snapshot;
 
 /// Configuration for the health logger.
 #[derive(Debug, Clone)]
@@ -93,6 +94,19 @@ impl HealthLogger {
                         total_mem as f64 / 1024.0 / 1024.0,
                         mem_pct
                     );
+
+                    let native_lock = native_input_lock_metrics_snapshot();
+                    if native_lock.acquisitions > 0 {
+                        info!(
+                            "[health-native-lock] acquisitions={} contentions={} avg_wait_ms={:.1} max_wait_ms={} avg_hold_ms={:.1} max_hold_ms={}",
+                            native_lock.acquisitions,
+                            native_lock.contentions,
+                            native_lock.avg_wait_ms,
+                            native_lock.max_wait_ms,
+                            native_lock.avg_hold_ms,
+                            native_lock.max_hold_ms
+                        );
+                    }
 
                     if config.verbose {
                         info!(

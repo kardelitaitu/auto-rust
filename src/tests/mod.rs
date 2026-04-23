@@ -7,8 +7,8 @@ mod task_registry_policy_tests;
 #[cfg(test)]
 mod config_tests {
     use crate::config::{
-        validate_config, BrowserConfig, CircuitBreakerConfig, Config, OrchestratorConfig,
-        RoxybrowserConfig, TracingConfig, TwitterActivityConfig,
+        validate_config, BrowserConfig, CircuitBreakerConfig, Config, NativeInteractionConfig,
+        OrchestratorConfig, RoxybrowserConfig, TracingConfig, TwitterActivityConfig,
     };
     use std::collections::BTreeMap;
 
@@ -35,6 +35,7 @@ mod config_tests {
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
                 cursor_overlay_ms: 0,
+                native_interaction: NativeInteractionConfig::default(),
                 max_workers_per_session: 5,
             },
             orchestrator: OrchestratorConfig {
@@ -77,6 +78,7 @@ mod config_tests {
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
                 cursor_overlay_ms: 0,
+                native_interaction: NativeInteractionConfig::default(),
                 max_workers_per_session: 5,
             },
             orchestrator: OrchestratorConfig {

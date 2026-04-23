@@ -534,8 +534,37 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     }
 
     human_pause(api, 1000).await;
-    info!("Reply send completed");
-    Ok(true)
+
+    // Verify reply was sent by checking if textarea is cleared or composer closed
+    let verify_js = r#"
+        (function() {
+            const textarea = document.querySelector('[data-testid="tweetTextarea_0"]');
+            if (!textarea) return { sent: true, reason: "composer closed" }; // Composer closed, likely sent
+            const text = textarea.textContent || textarea.value || '';
+            if (text.trim() === '') return { sent: true, reason: "textarea cleared" }; // Text cleared, likely sent
+            return { sent: false, reason: "textarea still has text" };
+        })()
+    "#;
+
+    let verify_result = api.page().evaluate(verify_js).await?;
+    if let Some(obj) = verify_result.value().and_then(|v| v.as_object()) {
+        if let Some(sent) = obj.get("sent").and_then(|v| v.as_bool()) {
+            if sent {
+                info!("Reply send completed and verified");
+                Ok(true)
+            } else {
+                let reason = obj.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+                info!("Reply send verification failed: {}", reason);
+                Ok(false)
+            }
+        } else {
+            info!("Reply send completed (unable to verify)");
+            Ok(true)
+        }
+    } else {
+        info!("Reply send completed (verification failed)");
+        Ok(true)
+    }
 }
 
 /// Full reply flow: open composer, type text, send.

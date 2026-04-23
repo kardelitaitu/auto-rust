@@ -78,7 +78,7 @@ pub async fn generate_reply(
     top_replies: Vec<(String, String)>,
 ) -> Result<String> {
     info!(
-        "Generating LLM reply for tweet by @{} ({} replies for context)",
+        "Generating LLM reply for tweet by @{} ({} longest replies for context)",
         tweet_author,
         top_replies.len()
     );
@@ -127,8 +127,9 @@ pub async fn generate_quote_commentary(
     top_replies: Vec<(String, String)>,
 ) -> Result<String> {
     info!(
-        "Generating LLM quote commentary for tweet by @{}",
-        tweet_author
+        "Generating LLM quote commentary for tweet by @{} ({} longest replies for context)",
+        tweet_author,
+        top_replies.len()
     );
 
     let messages = build_quote_messages(
@@ -520,8 +521,8 @@ fn check_banned_words(text: &str) -> Option<String> {
 /// Extracts tweet context from the current page for LLM processing.
 ///
 /// This function queries the DOM to extract the current tweet's author, text,
-/// and up to 5 top replies. The extracted data is used as context for LLM
-/// reply/quote generation.
+/// and up to 20 top replies (then selects the 10 longest). The extracted data
+/// is used as context for LLM reply/quote generation.
 ///
 /// # Arguments
 ///
@@ -532,7 +533,7 @@ fn check_banned_words(text: &str) -> Option<String> {
 /// Returns tuple of (author, text, replies):
 /// - `author`: Username of the tweet author
 /// - `text`: Full text content of the tweet
-/// - `replies`: Vector of (reply_author, reply_text) tuples (up to 5)
+/// - `replies`: Vector of (reply_author, reply_text) tuples (up to 10 longest)
 ///
 /// # Errors
 ///
@@ -542,7 +543,7 @@ fn check_banned_words(text: &str) -> Option<String> {
 ///
 /// - Extracts author from `[data-testid="tweet"] [dir="auto"]`
 /// - Extracts tweet text from `[data-testid="tweetText"]`
-/// - Extracts up to 5 replies from article elements
+/// - Extracts up to 20 replies from article elements, selects 10 longest
 /// - Skips the first reply element (likely the root tweet)
 /// - Returns "unknown" for author if not found
 /// - Returns empty string for text if not found
@@ -565,10 +566,10 @@ pub async fn extract_tweet_context(
             var tweetEl = document.querySelector('[data-testid="tweetText"]');
             var text = tweetEl ? tweetEl.textContent.trim() : '';
             
-            // Extract top 5 replies
+            // Extract up to 20 replies (will be filtered to 10 longest in Rust)
             var replies = [];
             var replyEls = document.querySelectorAll('article [data-testid="tweet"] [dir="auto"]');
-            for (var i = 1; i < Math.min(replyEls.length, 6); i++) {
+            for (var i = 1; i < Math.min(replyEls.length, 21); i++) {
                 var replyEl = replyEls[i];
                 var replyText = replyEl.textContent.trim();
                 if (replyText && replyText.length > 0) {
@@ -601,7 +602,7 @@ pub async fn extract_tweet_context(
             .unwrap_or("")
             .to_string();
 
-        let replies = obj
+        let mut replies = obj
             .get("replies")
             .and_then(|v| v.as_array())
             .map(|arr| {
@@ -625,9 +626,13 @@ pub async fn extract_tweet_context(
                             }
                         })
                     })
-                    .collect()
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+
+        // Sort by text length descending and take top 10 longest replies
+        replies.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        replies.truncate(10);
 
         Ok((author, text, replies))
     } else {
@@ -701,7 +706,7 @@ mod tests {
                 
                 var replies = [];
                 var replyEls = document.querySelectorAll('article [data-testid="tweet"] [dir="auto"]');
-                for (var i = 1; i < Math.min(replyEls.length, 6); i++) {
+                for (var i = 1; i < Math.min(replyEls.length, 21); i++) {
                     var replyEl = replyEls[i];
                     var replyText = replyEl.textContent.trim();
                     if (replyText && replyText.length > 0) {

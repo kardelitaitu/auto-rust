@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use crate::result::TaskErrorKind;
 use crate::result::TaskResult;
+use crate::utils::mouse::native_input_lock_metrics_snapshot;
 
 pub const RUN_COUNTER_CANDIDATE_SCANNED: &str = "candidate_scanned";
 pub const RUN_COUNTER_BUTTON_MISSING: &str = "button_missing";
@@ -403,6 +404,18 @@ pub struct ClickLearningRunCounters {
     pub fallback_hit: usize,
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct NativeInputLockRunMetrics {
+    pub acquisitions: u64,
+    pub contentions: u64,
+    pub total_wait_ms: u64,
+    pub max_wait_ms: u64,
+    pub avg_wait_ms: f64,
+    pub total_hold_ms: u64,
+    pub max_hold_ms: u64,
+    pub avg_hold_ms: f64,
+}
+
 /// Get current allocated memory (platform-specific)
 #[cfg(target_os = "linux")]
 fn get_allocated_memory() -> Option<usize> {
@@ -502,6 +515,8 @@ pub struct RunSummary {
     pub twitteractivity_counters: TwitterActivityRunCounters,
     /// Structured counters emitted from task-api click learning
     pub click_learning_counters: ClickLearningRunCounters,
+    /// Native-input lock contention and timing metrics
+    pub native_input_lock_metrics: NativeInputLockRunMetrics,
 }
 
 impl MetricsCollector {
@@ -549,6 +564,17 @@ impl MetricsCollector {
                 .get(RUN_COUNTER_CLICK_FALLBACK_HIT)
                 .unwrap_or(&0),
         };
+        let native_lock = native_input_lock_metrics_snapshot();
+        let native_input_lock_metrics = NativeInputLockRunMetrics {
+            acquisitions: native_lock.acquisitions,
+            contentions: native_lock.contentions,
+            total_wait_ms: native_lock.total_wait_ms,
+            max_wait_ms: native_lock.max_wait_ms,
+            avg_wait_ms: native_lock.avg_wait_ms,
+            total_hold_ms: native_lock.total_hold_ms,
+            max_hold_ms: native_lock.max_hold_ms,
+            avg_hold_ms: native_lock.avg_hold_ms,
+        };
 
         let summary = RunSummary {
             timestamp: now,
@@ -567,6 +593,7 @@ impl MetricsCollector {
             session_breakdown: stats.session_breakdown,
             twitteractivity_counters,
             click_learning_counters,
+            native_input_lock_metrics,
         };
 
         let json = serde_json::to_string_pretty(&summary)?;
@@ -854,6 +881,14 @@ mod tests {
         );
         assert_eq!(summary["click_learning_counters"]["attempted"], serde_json::json!(0));
         assert_eq!(summary["click_learning_counters"]["success"], serde_json::json!(0));
+        assert_eq!(
+            summary["native_input_lock_metrics"]["acquisitions"],
+            serde_json::json!(0)
+        );
+        assert_eq!(
+            summary["native_input_lock_metrics"]["contentions"],
+            serde_json::json!(0)
+        );
         assert!(
             summary["task_breakdown"]["pageview"]["succeeded"]
                 .as_u64()

@@ -12,24 +12,26 @@ use crate::state::{
 };
 use crate::config::{NativeClickCalibrationMode, NativeInteractionConfig};
 use crate::logger::scoped_log_context;
+use crate::utils::native_input;
 use crate::utils::geometry::BoundingBox;
 use crate::utils::math::{gaussian, random_in_range};
 use crate::utils::page_size::get_viewport;
 use crate::utils::scroll;
 use crate::utils::timing::human_pause;
 use anyhow::Result;
-use enigo::{Button as NativeButton, Coordinate as NativeCoordinate, Direction, Enigo, Mouse, Settings};
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchMouseEventParams, DispatchMouseEventType, MouseButton as CdpMouseButton,
 };
 use chromiumoxide::Page;
-use log::debug;
-use rand::Rng;
+use log::{debug, info};
 use once_cell::sync::Lazy;
+#[cfg(test)]
+use rand::Rng;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::Mutex as TokioMutex;
@@ -206,6 +208,99 @@ static NATIVE_CLICK_CALIBRATION_CACHE: Lazy<
     std::sync::Mutex<HashMap<String, NativeClickCalibrationEntry>>,
 > = Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
 static NATIVE_CLICK_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
+static NATIVE_LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
+static NATIVE_LOCK_CONTENTIONS: AtomicU64 = AtomicU64::new(0);
+static NATIVE_LOCK_TOTAL_WAIT_MS: AtomicU64 = AtomicU64::new(0);
+static NATIVE_LOCK_MAX_WAIT_MS: AtomicU64 = AtomicU64::new(0);
+static NATIVE_LOCK_TOTAL_HOLD_MS: AtomicU64 = AtomicU64::new(0);
+static NATIVE_LOCK_MAX_HOLD_MS: AtomicU64 = AtomicU64::new(0);
+const NATIVE_LOCK_CONTENTION_THRESHOLD_MS: u64 = 50;
+const NATIVE_LOCK_WARN_WAIT_THRESHOLD_MS: u64 = 500;
+
+#[derive(Debug, Clone, Copy)]
+pub struct NativeInputLockMetricsSnapshot {
+    pub acquisitions: u64,
+    pub contentions: u64,
+    pub total_wait_ms: u64,
+    pub max_wait_ms: u64,
+    pub avg_wait_ms: f64,
+    pub total_hold_ms: u64,
+    pub max_hold_ms: u64,
+    pub avg_hold_ms: f64,
+}
+
+pub fn native_input_lock_metrics_snapshot() -> NativeInputLockMetricsSnapshot {
+    let acquisitions = NATIVE_LOCK_ACQUISITIONS.load(Ordering::Relaxed);
+    let total_wait_ms = NATIVE_LOCK_TOTAL_WAIT_MS.load(Ordering::Relaxed);
+    let total_hold_ms = NATIVE_LOCK_TOTAL_HOLD_MS.load(Ordering::Relaxed);
+    let denom = acquisitions.max(1) as f64;
+    NativeInputLockMetricsSnapshot {
+        acquisitions,
+        contentions: NATIVE_LOCK_CONTENTIONS.load(Ordering::Relaxed),
+        total_wait_ms,
+        max_wait_ms: NATIVE_LOCK_MAX_WAIT_MS.load(Ordering::Relaxed),
+        avg_wait_ms: total_wait_ms as f64 / denom,
+        total_hold_ms,
+        max_hold_ms: NATIVE_LOCK_MAX_HOLD_MS.load(Ordering::Relaxed),
+        avg_hold_ms: total_hold_ms as f64 / denom,
+    }
+}
+
+fn atomic_update_max(target: &AtomicU64, value: u64) {
+    let mut current = target.load(Ordering::Relaxed);
+    while value > current
+        && target
+            .compare_exchange(current, value, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        current = target.load(Ordering::Relaxed);
+    }
+}
+
+struct NativeInputLockGuard<'a> {
+    _guard: tokio::sync::MutexGuard<'a, ()>,
+    acquired_at: Instant,
+}
+
+impl Drop for NativeInputLockGuard<'_> {
+    fn drop(&mut self) {
+        let hold_ms = self.acquired_at.elapsed().as_millis() as u64;
+        NATIVE_LOCK_TOTAL_HOLD_MS.fetch_add(hold_ms, Ordering::Relaxed);
+        atomic_update_max(&NATIVE_LOCK_MAX_HOLD_MS, hold_ms);
+    }
+}
+
+async fn acquire_native_input_lock(
+    session_id: &str,
+    trace_id: u64,
+    op: &'static str,
+) -> NativeInputLockGuard<'static> {
+    let wait_started = Instant::now();
+    let guard = NATIVE_CLICK_LOCK.lock().await;
+    let wait_ms = wait_started.elapsed().as_millis() as u64;
+    NATIVE_LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
+    NATIVE_LOCK_TOTAL_WAIT_MS.fetch_add(wait_ms, Ordering::Relaxed);
+    atomic_update_max(&NATIVE_LOCK_MAX_WAIT_MS, wait_ms);
+    if wait_ms >= NATIVE_LOCK_CONTENTION_THRESHOLD_MS {
+        NATIVE_LOCK_CONTENTIONS.fetch_add(1, Ordering::Relaxed);
+    }
+    if wait_ms >= NATIVE_LOCK_WARN_WAIT_THRESHOLD_MS {
+        with_nativeclick_log_context(session_id, || {
+            info!(
+                "native-input-lock trace={} op={} wait_ms={} acquisitions={} contentions={}",
+                trace_id,
+                op,
+                wait_ms,
+                NATIVE_LOCK_ACQUISITIONS.load(Ordering::Relaxed),
+                NATIVE_LOCK_CONTENTIONS.load(Ordering::Relaxed)
+            );
+        });
+    }
+    NativeInputLockGuard {
+        _guard: guard,
+        acquired_at: Instant::now(),
+    }
+}
 
 fn with_nativeclick_log_context(session_id: &str, f: impl FnOnce()) {
     let mut ctx = crate::logger::get_log_context();
@@ -1117,7 +1212,7 @@ pub async fn native_move_cursor_human(
     let settle_variance = (reaction_delay_variance_pct / 3).max(10);
     let attention_pause_ms = (reaction_delay_ms / 4).clamp(40, 200);
 
-    let _native_click_guard = NATIVE_CLICK_LOCK.lock().await;
+    let _native_click_guard = acquire_native_input_lock(session_id, trace_id, "nativecursor").await;
     page.bring_to_front()
         .await
         .map_err(|err| anyhow::anyhow!(
@@ -1151,10 +1246,13 @@ pub async fn native_move_cursor_human(
         trace_id,
         point.x,
         point.y,
-        reaction_delay_ms,
-        reaction_delay_variance_pct,
-        settle_ms,
-        settle_variance,
+        NativeDispatchOptions {
+            backend: native_interaction.native_input_backend,
+            reaction_delay_ms,
+            reaction_delay_variance_pct,
+            settle_ms,
+            settle_variance_pct: settle_variance,
+        },
     )
     .await?;
     sync_native_overlay_position(page, candidate.x, candidate.y).await;
@@ -1767,7 +1865,7 @@ pub async fn native_click_selector_human(
 
     // Serialize the full native-click sequence so concurrent browser sessions
     // do not fight over the single global cursor or foreground focus.
-    let _native_click_guard = NATIVE_CLICK_LOCK.lock().await;
+    let _native_click_guard = acquire_native_input_lock(session_id, trace_id, "nativeclick").await;
     page.bring_to_front()
         .await
         .map_err(|err| anyhow::anyhow!(
@@ -1825,10 +1923,13 @@ pub async fn native_click_selector_human(
         trace_id,
         point.x,
         point.y,
-        reaction_delay_ms,
-        reaction_delay_variance_pct,
-        settle_ms,
-        settle_variance,
+        NativeDispatchOptions {
+            backend: native_interaction.native_input_backend,
+            reaction_delay_ms,
+            reaction_delay_variance_pct,
+            settle_ms,
+            settle_variance_pct: settle_variance,
+        },
     )
     .await
     .map_err(|err| {
@@ -2314,18 +2415,17 @@ struct NativeClickCalibration {
     mode: NativeClickCalibrationMode,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct NativeDispatchOptions {
+    backend: crate::config::NativeInputBackend,
+    reaction_delay_ms: u64,
+    reaction_delay_variance_pct: u32,
+    settle_ms: u64,
+    settle_variance_pct: u32,
+}
+
 const NATIVE_CLICK_PROBE_ID: &str = "__auto_rust_nativeclick_probe";
 const NATIVE_CLICK_PROBE_HIT_FLAG: &str = "__auto_rust_nativeclick_probe_hit";
-
-fn ensure_native_input_ready() {
-    static DPI_AWARENESS: OnceLock<()> = OnceLock::new();
-    DPI_AWARENESS.get_or_init(|| {
-        #[cfg(target_os = "windows")]
-        {
-            let _ = enigo::set_dpi_awareness();
-        }
-    });
-}
 
 fn browser_content_origin(
     metrics: &BrowserWindowMetrics,
@@ -2557,11 +2657,24 @@ async fn measure_native_click_probe(
     metrics: &BrowserWindowMetrics,
     desired_x: f64,
     desired_y: f64,
+    native_interaction: &NativeInteractionConfig,
 ) -> Result<Option<NativeClickProbeSample>> {
     inject_native_click_probe_at(page, desired_x - 24.0, desired_y - 24.0).await?;
     sync_native_overlay_position(page, desired_x, desired_y).await;
     let probe_point = screen_point_from_calibration(metrics, candidate, desired_x, desired_y);
-    native_move_and_click_point(trace_id, probe_point.x, probe_point.y, 10, 5, 5, 5).await?;
+    native_move_and_click_point(
+        trace_id,
+        probe_point.x,
+        probe_point.y,
+        NativeDispatchOptions {
+            backend: native_interaction.native_input_backend,
+            reaction_delay_ms: 10,
+            reaction_delay_variance_pct: 5,
+            settle_ms: 5,
+            settle_variance_pct: 5,
+        },
+    )
+    .await?;
     if !native_click_probe_hit(page).await.unwrap_or(false) {
         return Ok(None);
     }
@@ -2731,6 +2844,7 @@ async fn calibrate_native_click(
             metrics,
             probe_first_x,
             probe_first_y,
+            native_interaction,
         )
         .await
         {
@@ -2748,6 +2862,7 @@ async fn calibrate_native_click(
             metrics,
             probe_second_x,
             probe_second_y,
+            native_interaction,
         )
         .await
         {
@@ -2852,6 +2967,7 @@ async fn content_point_to_screen_point(
     Ok(screen_point_from_calibration(&metrics, &calibration, x, y))
 }
 
+#[cfg(test)]
 fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
     if base_ms == 0 {
         return 0;
@@ -2872,20 +2988,18 @@ async fn native_move_and_click_point(
     trace_id: u64,
     x: i32,
     y: i32,
-    reaction_delay_ms: u64,
-    reaction_delay_variance_pct: u32,
-    settle_ms: u64,
-    settle_variance_pct: u32,
+    opts: NativeDispatchOptions,
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || {
-        ensure_native_input_ready();
-        native_move_and_click_point_blocking(
+        native_input::ensure_native_input_ready(opts.backend);
+        native_input::native_move_and_click_point_blocking(
+            opts.backend,
             x,
             y,
-            reaction_delay_ms,
-            reaction_delay_variance_pct,
-            settle_ms,
-            settle_variance_pct,
+            opts.reaction_delay_ms,
+            opts.reaction_delay_variance_pct,
+            opts.settle_ms,
+            opts.settle_variance_pct,
         )
     })
     .await
@@ -2896,105 +3010,22 @@ async fn native_move_to_point(
     trace_id: u64,
     x: i32,
     y: i32,
-    reaction_delay_ms: u64,
-    reaction_delay_variance_pct: u32,
-    settle_ms: u64,
-    settle_variance_pct: u32,
+    opts: NativeDispatchOptions,
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || {
-        ensure_native_input_ready();
-        let mut enigo = Enigo::new(&Settings::default())
-            .map_err(|err| anyhow::anyhow!("enigo init failed: {err:?}"))?;
-        native_move_to_point_blocking(
-            &mut enigo,
+        native_input::ensure_native_input_ready(opts.backend);
+        native_input::native_move_to_point_blocking(
+            opts.backend,
             x,
             y,
-            reaction_delay_ms,
-            reaction_delay_variance_pct,
-            settle_ms,
-            settle_variance_pct,
+            opts.reaction_delay_ms,
+            opts.reaction_delay_variance_pct,
+            opts.settle_ms,
+            opts.settle_variance_pct,
         )
     })
     .await
     .map_err(|err| anyhow::anyhow!("trace={} nativecursor join error: {err}", trace_id))?
-}
-
-fn native_move_and_click_point_blocking(
-    target_x: i32,
-    target_y: i32,
-    reaction_delay_ms: u64,
-    reaction_delay_variance_pct: u32,
-    settle_ms: u64,
-    settle_variance_pct: u32,
-) -> Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|err| anyhow::anyhow!("enigo init failed: {err:?}"))?;
-    native_move_to_point_blocking(
-        &mut enigo,
-        target_x,
-        target_y,
-        reaction_delay_ms,
-        reaction_delay_variance_pct,
-        settle_ms,
-        settle_variance_pct,
-    )?;
-    enigo
-        .button(NativeButton::Left, Direction::Press)
-        .map_err(|err| anyhow::anyhow!("enigo press failed: {err:?}"))?;
-    std::thread::sleep(Duration::from_millis(jittered_delay_ms(45, 25)));
-    enigo
-        .button(NativeButton::Left, Direction::Release)
-        .map_err(|err| anyhow::anyhow!("enigo release failed: {err:?}"))?;
-    Ok(())
-}
-
-fn native_move_to_point_blocking(
-    enigo: &mut Enigo,
-    target_x: i32,
-    target_y: i32,
-    reaction_delay_ms: u64,
-    reaction_delay_variance_pct: u32,
-    settle_ms: u64,
-    settle_variance_pct: u32,
-) -> Result<()> {
-    let (start_x, start_y) = enigo.location().unwrap_or((target_x, target_y));
-    let dx = target_x - start_x;
-    let dy = target_y - start_y;
-    let distance = ((dx as f64).powi(2) + (dy as f64).powi(2)).sqrt();
-    let steps = ((distance / 85.0).ceil() as usize).clamp(6, 16);
-    let mut rng = rand::thread_rng();
-
-    if steps <= 1 {
-        enigo
-            .move_mouse(target_x, target_y, NativeCoordinate::Abs)
-            .map_err(|err| anyhow::anyhow!("enigo move failed: {err:?}"))?;
-    } else {
-        let step_base = (reaction_delay_ms / steps as u64).max(2);
-        for step in 1..=steps {
-            let t = step as f64 / steps as f64;
-            let eased = 1.0 - (1.0 - t).powi(3);
-            let jitter = (distance / 600.0).clamp(0.0, 1.4);
-            let x = start_x as f64 + (target_x - start_x) as f64 * eased
-                + rng.gen_range(-jitter..=jitter);
-            let y = start_y as f64 + (target_y - start_y) as f64 * eased
-                + rng.gen_range(-jitter..=jitter);
-            enigo
-                .move_mouse(x.round() as i32, y.round() as i32, NativeCoordinate::Abs)
-                .map_err(|err| anyhow::anyhow!("enigo move failed: {err:?}"))?;
-            if step < steps {
-                std::thread::sleep(Duration::from_millis(jittered_delay_ms(
-                    step_base,
-                    reaction_delay_variance_pct.min(60),
-                )));
-            }
-        }
-    }
-
-    std::thread::sleep(Duration::from_millis(jittered_delay_ms(
-        settle_ms,
-        settle_variance_pct,
-    )));
-    Ok(())
 }
 
 #[allow(dead_code)]

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chromiumoxide::Browser;
+use rust_orchestrator::config::NativeInteractionConfig;
 use rust_orchestrator::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
 use rust_orchestrator::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
 use rust_orchestrator::session::Session;
@@ -100,6 +101,7 @@ fn build_task_context(session: &Session, page: Arc<chromiumoxide::Page>) -> Task
         page,
         session.behavior_profile.clone(),
         session.behavior_runtime,
+        NativeInteractionConfig::default(),
     )
 }
 
@@ -113,6 +115,7 @@ fn build_task_context_with_metrics(
         page,
         session.behavior_profile.clone(),
         session.behavior_runtime,
+        NativeInteractionConfig::default(),
         metrics,
     )
 }

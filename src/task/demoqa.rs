@@ -44,6 +44,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     let title = api.title().await.unwrap_or_else(|_| "unknown".to_string());
     info!("Title: {}", title);
+    api.pause(1500).await;
 
     fill_text_field(api, "#userName", &config.full_name).await?;
     fill_text_field(api, "#userEmail", &config.email).await?;
@@ -72,6 +73,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         );
     }
     info!("Submit nativeclick phase=before selector=#submit");
+    warm_nativecursor(api).await?;
     let submit_click = match timeout(Duration::from_secs(12), api.nativeclick("#submit")).await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(e)) => {
@@ -150,6 +152,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 async fn fill_text_field(api: &TaskContext, selector: &str, value: &str) -> Result<()> {
+    warm_nativecursor(api).await?;
     let click = api.nativeclick(selector).await?;
     info!("{}", click.summary());
     if SHOW_CURSOR_OVERLAY {
@@ -157,6 +160,21 @@ async fn fill_text_field(api: &TaskContext, selector: &str, value: &str) -> Resu
     }
     api.clear(selector).await?;
     api.keyboard(selector, value).await?;
+    Ok(())
+}
+
+async fn warm_nativecursor(api: &TaskContext) -> Result<()> {
+    let cursor = match api.nativecursor_query("button").await {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            warn!(
+                "nativecursor button warm-up unavailable, falling back to any visible element: {}",
+                err
+            );
+            api.nativecursor().await?
+        }
+    };
+    info!("{}", cursor.summary());
     Ok(())
 }
 

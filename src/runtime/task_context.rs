@@ -8,6 +8,7 @@
 //! The TaskContext provides short, readable verbs for common actions:
 //! - `click()` - Click an element with human-like cursor movement
 //! - `nativeclick()` - Click an element using native OS input
+//! - `nativecursor()` - Move native cursor to a visible element
 //! - `keyboard()` or `r#type()` - Type text with human-like timing
 //! - `hover()` - Hover over an element
 //! - `focus()` - Focus an element
@@ -55,7 +56,7 @@ use crate::metrics::{
     RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, RUN_COUNTER_CLICK_SUCCESS,
 };
 use crate::state::ClipboardState;
-use crate::utils::mouse::{ClickOutcome, CursorMovementConfig, HoverOutcome};
+use crate::utils::mouse::{ClickOutcome, CursorMovementConfig, HoverOutcome, NativeCursorOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum ClickPageContext {
@@ -1412,6 +1413,21 @@ impl TaskContext {
         Ok(outcome)
     }
 
+    /// Native OS-level cursor move to any random visible element on the current page.
+    pub async fn nativecursor(&self) -> Result<NativeCursorOutcome> {
+        self.execute_nativecursor(None).await
+    }
+
+    /// Native OS-level cursor move to a random visible element matching the query.
+    pub async fn nativecursor_query(&self, query: &str) -> Result<NativeCursorOutcome> {
+        self.execute_nativecursor(Some(query)).await
+    }
+
+    /// Alias for selector-driven native cursor movement.
+    pub async fn nativecursor_selector(&self, selector: &str) -> Result<NativeCursorOutcome> {
+        self.execute_nativecursor(Some(selector)).await
+    }
+
     /// Immediate left-click at coordinates without cursor animation.
     pub async fn left_click_fast(&self, x: f64, y: f64) -> Result<()> {
         mouse::left_click_at_without_move(self.page(), x, y).await
@@ -1741,5 +1757,38 @@ impl TaskContext {
         let base_ms = action_delay.min_ms.clamp(120, 1_500).max(min_budget_ms);
         let variance_pct = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
         timing::uniform_pause(base_ms, variance_pct).await;
+    }
+
+    async fn execute_nativecursor(&self, query: Option<&str>) -> Result<NativeCursorOutcome> {
+        let session_id = self.session_id().to_string();
+        let click = &self.behavior_runtime.click;
+        let outcome = mouse::native_move_cursor_human(
+            self.page(),
+            &session_id,
+            query,
+            click.reaction_delay_ms,
+            self.behavior_runtime.action_delay.variance_pct.round() as u32,
+        )
+        .await?;
+        {
+            let mut ctx = crate::logger::get_log_context();
+            ctx.session_id = Some(session_id.clone());
+            let _guard = scoped_log_context(ctx);
+            let screen_point = match (outcome.screen_x, outcome.screen_y) {
+                (Some(x), Some(y)) => format!(" screen_point=({}, {})", x, y),
+                _ => String::new(),
+            };
+            info!(
+                "[task-api] nativecursor session={} target={} point=({:.1},{:.1}){} {}",
+                session_id,
+                outcome.target,
+                outcome.x,
+                outcome.y,
+                screen_point,
+                outcome.summary()
+            );
+        }
+        self.post_interaction_pause().await;
+        Ok(outcome)
     }
 }

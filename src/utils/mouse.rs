@@ -25,6 +25,7 @@ use chromiumoxide::Page;
 use log::debug;
 use rand::Rng;
 use once_cell::sync::Lazy;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -61,6 +62,15 @@ pub struct HoverOutcome {
     pub y: f64,
 }
 
+#[derive(Debug, Clone)]
+pub struct NativeCursorOutcome {
+    pub target: String,
+    pub x: f64,
+    pub y: f64,
+    pub screen_x: Option<i32>,
+    pub screen_y: Option<i32>,
+}
+
 impl ClickOutcome {
     pub fn summary(&self) -> String {
         match self.click {
@@ -77,6 +87,12 @@ impl HoverOutcome {
             HoverStatus::Failed => "failed",
         };
         format!("hover:{status} ({:.1},{:.1})", self.x, self.y)
+    }
+}
+
+impl NativeCursorOutcome {
+    pub fn summary(&self) -> String {
+        format!("nativecursor {} ({:.1},{:.1})", self.target, self.x, self.y)
     }
 }
 
@@ -248,6 +264,13 @@ fn nativeclick_debug(
 struct NativeClickCalibrationEntry {
     fingerprint: NativeClickFingerprint,
     calibration: NativeClickCalibration,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct NativeCursorCandidate {
+    label: String,
+    x: f64,
+    y: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1106,6 +1129,47 @@ pub async fn hover_selector_human(
     })
 }
 
+pub async fn native_move_cursor_human(
+    page: &Page,
+    session_id: &str,
+    query: Option<&str>,
+    reaction_delay_ms: u64,
+    reaction_delay_variance_pct: u32,
+) -> Result<NativeCursorOutcome> {
+    let trace_id = next_nativeclick_trace_id();
+    let settle_ms = (reaction_delay_ms / 4).clamp(40, 200);
+    let settle_variance = (reaction_delay_variance_pct / 3).max(10);
+    let attention_pause_ms = (reaction_delay_ms / 4).clamp(40, 200);
+
+    let _native_click_guard = NATIVE_CLICK_LOCK.lock().await;
+    page.bring_to_front().await?;
+    human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
+
+    let candidate = resolve_native_cursor_candidate(page, query).await?;
+    let point = content_point_to_screen_point(page, session_id, trace_id, candidate.x, candidate.y).await?;
+    sync_native_overlay_position(page, candidate.x, candidate.y).await;
+
+    page.bring_to_front().await?;
+    native_move_to_point(
+        point.x,
+        point.y,
+        reaction_delay_ms,
+        reaction_delay_variance_pct,
+        settle_ms,
+        settle_variance,
+    )
+    .await?;
+    sync_native_overlay_position(page, candidate.x, candidate.y).await;
+
+    Ok(NativeCursorOutcome {
+        target: candidate.label,
+        x: candidate.x,
+        y: candidate.y,
+        screen_x: Some(point.x),
+        screen_y: Some(point.y),
+    })
+}
+
 pub async fn middle_click_selector_human(
     page: &Page,
     selector: &str,
@@ -1932,6 +1996,108 @@ async fn resolve_native_click_point(
     );
 }
 
+async fn resolve_native_cursor_candidate(
+    page: &Page,
+    query: Option<&str>,
+) -> Result<NativeCursorCandidate> {
+    let scope = query.unwrap_or("*");
+    let query_js = match query {
+        Some(value) => serde_json::to_string(value)?,
+        None => "null".to_string(),
+    };
+    let js = format!(
+        r#"(() => {{
+            const query = {query_js};
+            const root = document.body || document.documentElement;
+            if (!root) return null;
+
+            const buildLabel = (el) => {{
+                const tag = (el.tagName || 'element').toLowerCase();
+                const id = el.id ? `#${{el.id}}` : '';
+                const classes = Array.from(el.classList || []).slice(0, 2).map((name) => `.${{name}}`).join('');
+                return `${{tag}}${{id}}${{classes}}`;
+            }};
+
+            const samplePoint = (rect) => {{
+                const centerX = Math.round(rect.left + rect.width / 2);
+                const centerY = Math.round(rect.top + rect.height / 2);
+                const minX = Math.max(Math.ceil(rect.left + 1), centerX - 4);
+                const maxX = Math.min(Math.floor(rect.right - 1), centerX + 4);
+                const minY = Math.max(Math.ceil(rect.top + 1), centerY - 4);
+                const maxY = Math.min(Math.floor(rect.bottom - 1), centerY + 4);
+                if (minX > maxX || minY > maxY) return null;
+                const x = minX + Math.floor(Math.random() * (maxX - minX + 1));
+                const y = minY + Math.floor(Math.random() * (maxY - minY + 1));
+                return {{ x, y }};
+            }};
+
+            const toCandidate = (el) => {{
+                if (!(el instanceof Element)) return null;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 8 || rect.height < 8) return null;
+                if (rect.bottom <= 0 || rect.right <= 0) return null;
+                if (rect.top >= window.innerHeight || rect.left >= window.innerWidth) return null;
+                const style = window.getComputedStyle(el);
+                if (!style) return null;
+                if (style.display === 'none' || style.visibility === 'hidden') return null;
+                if (Number.parseFloat(style.opacity || '1') === 0) return null;
+                if (el.getAttribute('aria-hidden') === 'true') return null;
+                if (el.id === '__auto_rust_mouse_overlay' || el.id === '__auto_rust_nativeclick_probe') return null;
+
+                const point = samplePoint(rect);
+                if (!point) return null;
+                const hit = document.elementFromPoint(point.x, point.y);
+                if (!hit) return null;
+                if (!(el === hit || el.contains(hit) || hit.contains(el))) return null;
+
+                return {{
+                    label: buildLabel(el),
+                    x: point.x,
+                    y: point.y,
+                }};
+            }};
+
+            let nodes;
+            try {{
+                nodes = query ? Array.from(document.querySelectorAll(query)) : Array.from(root.querySelectorAll('*'));
+            }} catch (err) {{
+                return {{ error: String(err && err.message ? err.message : err) }};
+            }}
+
+            let chosen = null;
+            let seen = 0;
+            for (const el of nodes) {{
+                const candidate = toCandidate(el);
+                if (!candidate) continue;
+                seen += 1;
+                if (Math.random() * seen < 1) {{
+                    chosen = candidate;
+                }}
+            }}
+
+            return chosen;
+        }})()"#,
+    );
+
+    let result = timeout(Duration::from_secs(2), page.evaluate(js))
+        .await
+        .map_err(|_| anyhow::anyhow!("nativecursor candidate lookup timed out"))??;
+    let value = result
+        .value()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("nativecursor found no visible candidates for '{scope}'"))?;
+
+    if value.is_null() {
+        anyhow::bail!("nativecursor found no visible candidates for '{scope}'");
+    }
+
+    if let Some(error) = value.get("error").and_then(|v| v.as_str()) {
+        anyhow::bail!("nativecursor invalid selector '{}': {}", query.unwrap_or(""), error);
+    }
+
+    Ok(serde_json::from_value(value)?)
+}
+
 async fn resolve_selector_bbox(page: &Page, selector: &str) -> Result<BoundingBox> {
     match wait_for_stable_element(page, selector, 2_000, 3, 2.0).await? {
         Some(bbox) => Ok(bbox),
@@ -2638,6 +2804,32 @@ async fn native_move_and_click_point(
     .map_err(|err| anyhow::anyhow!("nativeclick join error: {err}"))?
 }
 
+async fn native_move_to_point(
+    x: i32,
+    y: i32,
+    reaction_delay_ms: u64,
+    reaction_delay_variance_pct: u32,
+    settle_ms: u64,
+    settle_variance_pct: u32,
+) -> Result<()> {
+    tokio::task::spawn_blocking(move || {
+        ensure_native_input_ready();
+        let mut enigo = Enigo::new(&Settings::default())
+            .map_err(|err| anyhow::anyhow!("enigo init failed: {err:?}"))?;
+        native_move_to_point_blocking(
+            &mut enigo,
+            x,
+            y,
+            reaction_delay_ms,
+            reaction_delay_variance_pct,
+            settle_ms,
+            settle_variance_pct,
+        )
+    })
+    .await
+    .map_err(|err| anyhow::anyhow!("nativecursor join error: {err}"))?
+}
+
 fn native_move_and_click_point_blocking(
     target_x: i32,
     target_y: i32,
@@ -2648,6 +2840,34 @@ fn native_move_and_click_point_blocking(
 ) -> Result<()> {
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|err| anyhow::anyhow!("enigo init failed: {err:?}"))?;
+    native_move_to_point_blocking(
+        &mut enigo,
+        target_x,
+        target_y,
+        reaction_delay_ms,
+        reaction_delay_variance_pct,
+        settle_ms,
+        settle_variance_pct,
+    )?;
+    enigo
+        .button(NativeButton::Left, Direction::Press)
+        .map_err(|err| anyhow::anyhow!("enigo press failed: {err:?}"))?;
+    std::thread::sleep(Duration::from_millis(jittered_delay_ms(45, 25)));
+    enigo
+        .button(NativeButton::Left, Direction::Release)
+        .map_err(|err| anyhow::anyhow!("enigo release failed: {err:?}"))?;
+    Ok(())
+}
+
+fn native_move_to_point_blocking(
+    enigo: &mut Enigo,
+    target_x: i32,
+    target_y: i32,
+    reaction_delay_ms: u64,
+    reaction_delay_variance_pct: u32,
+    settle_ms: u64,
+    settle_variance_pct: u32,
+) -> Result<()> {
     let (start_x, start_y) = enigo.location().unwrap_or((target_x, target_y));
     let dx = target_x - start_x;
     let dy = target_y - start_y;
@@ -2685,13 +2905,6 @@ fn native_move_and_click_point_blocking(
         settle_ms,
         settle_variance_pct,
     )));
-    enigo
-        .button(NativeButton::Left, Direction::Press)
-        .map_err(|err| anyhow::anyhow!("enigo press failed: {err:?}"))?;
-    std::thread::sleep(Duration::from_millis(jittered_delay_ms(45, 25)));
-    enigo
-        .button(NativeButton::Left, Direction::Release)
-        .map_err(|err| anyhow::anyhow!("enigo release failed: {err:?}"))?;
     Ok(())
 }
 
@@ -2970,6 +3183,22 @@ mod tests {
         assert!(y >= 226.0 && y <= 234.0);
         assert!(x >= bbox.x && x <= bbox.x + bbox.width);
         assert!(y >= bbox.y && y <= bbox.y + bbox.height);
+    }
+
+    #[test]
+    fn test_native_cursor_outcome_summary() {
+        let outcome = NativeCursorOutcome {
+            target: "button#submit".to_string(),
+            x: 120.0,
+            y: 240.0,
+            screen_x: Some(640),
+            screen_y: Some(480),
+        };
+
+        assert_eq!(
+            outcome.summary(),
+            "nativecursor button#submit (120.0,240.0)"
+        );
     }
 
     #[test]

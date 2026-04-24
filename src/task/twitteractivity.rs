@@ -539,7 +539,7 @@ fn phase4_cleanup(
     last_remaining: Duration,
     api: &TaskContext,
 ) {
-    let _remaining_limits = limits.remaining(counters);
+    let remaining_limits = limits.remaining(counters);
     let duration_secs =
         (Duration::from_millis(task_config.duration_ms) - last_remaining).as_secs_f64();
     info!(
@@ -553,6 +553,17 @@ fn phase4_cleanup(
         counters.quote_tweets,
         counters.total_actions(),
         duration_secs
+    );
+    info!(
+        "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
+        remaining_limits.get("likes").unwrap_or(&0),
+        remaining_limits.get("retweets").unwrap_or(&0),
+        remaining_limits.get("follows").unwrap_or(&0),
+        remaining_limits.get("replies").unwrap_or(&0),
+        remaining_limits.get("thread_dives").unwrap_or(&0),
+        remaining_limits.get("bookmarks").unwrap_or(&0),
+        remaining_limits.get("quote_tweets").unwrap_or(&0),
+        remaining_limits.get("total_actions").unwrap_or(&0)
     );
 
     // Calculate and log success rates
@@ -1004,44 +1015,12 @@ async fn process_candidate(
                     {
                         Ok(true) => {
                             let quote_text = if task_config.llm_enabled {
-                                // Use cached data if available, fallback to extraction
-                                let (author, text, replies) = if let Some(ref cache) =
-                                    current_thread_cache
-                                {
-                                    if cache.is_valid() {
-                                        info!(
-                                            "Using cached thread data for quote ({} replies)",
-                                            cache.replies.len()
-                                        );
-                                        (
-                                            cache.tweet_author.clone(),
-                                            cache.tweet_text.clone(),
-                                            cache.replies.clone(),
-                                        )
-                                    } else {
-                                        match extract_tweet_context(api).await {
-                                            Ok(data) => data,
-                                            Err(e) => {
-                                                warn!(
-                                                    "Failed to extract tweet context for quote: {}",
-                                                    e
-                                                );
-                                                ("unknown".to_string(), String::new(), Vec::new())
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    match extract_tweet_context(api).await {
-                                        Ok(data) => data,
-                                        Err(e) => {
-                                            warn!(
-                                                "Failed to extract tweet context for quote: {}",
-                                                e
-                                            );
-                                            ("unknown".to_string(), String::new(), Vec::new())
-                                        }
-                                    }
-                                };
+                                let (author, text, replies) = get_tweet_context_for_llm(
+                                    api,
+                                    &current_thread_cache,
+                                    "quote",
+                                )
+                                .await;
                                 match generate_quote_commentary(api, &author, &text, replies).await
                                 {
                                     Ok(commentary) => {
@@ -1126,44 +1105,12 @@ async fn process_candidate(
                     {
                         Ok(true) => {
                             let reply_text = if task_config.llm_enabled {
-                                // Use cached data if available, fallback to extraction
-                                let (author, text, replies) = if let Some(ref cache) =
-                                    current_thread_cache
-                                {
-                                    if cache.is_valid() {
-                                        info!(
-                                            "Using cached thread data for reply ({} replies)",
-                                            cache.replies.len()
-                                        );
-                                        (
-                                            cache.tweet_author.clone(),
-                                            cache.tweet_text.clone(),
-                                            cache.replies.clone(),
-                                        )
-                                    } else {
-                                        match extract_tweet_context(api).await {
-                                            Ok(data) => data,
-                                            Err(e) => {
-                                                warn!(
-                                                    "Failed to extract tweet context for reply: {}",
-                                                    e
-                                                );
-                                                ("unknown".to_string(), String::new(), Vec::new())
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    match extract_tweet_context(api).await {
-                                        Ok(data) => data,
-                                        Err(e) => {
-                                            warn!(
-                                                "Failed to extract tweet context for reply: {}",
-                                                e
-                                            );
-                                            ("unknown".to_string(), String::new(), Vec::new())
-                                        }
-                                    }
-                                };
+                                let (author, text, replies) = get_tweet_context_for_llm(
+                                    api,
+                                    &current_thread_cache,
+                                    "reply",
+                                )
+                                .await;
                                 match generate_reply(api, &author, &text, replies).await {
                                     Ok(reply) => {
                                         info!("Generated LLM reply: {}", reply);
@@ -1508,6 +1455,38 @@ fn extract_tweet_text(tweet_obj: &Value) -> String {
     String::new()
 }
 
+// Helper: extract tweet context for LLM generation, using cache if available.
+async fn get_tweet_context_for_llm(
+    api: &TaskContext,
+    cache: &Option<ThreadCache>,
+    action_name: &str,
+) -> (String, String, Vec<(String, String)>) {
+    if let Some(ref cache) = cache {
+        if cache.is_valid() {
+            info!(
+                "Using cached thread data for {} ({} replies)",
+                action_name,
+                cache.replies.len()
+            );
+            return (
+                cache.tweet_author.clone(),
+                cache.tweet_text.clone(),
+                cache.replies.clone(),
+            );
+        }
+    }
+    match extract_tweet_context(api).await {
+        Ok(data) => data,
+        Err(e) => {
+            warn!(
+                "Failed to extract tweet context for {}: {}",
+                action_name, e
+            );
+            ("unknown".to_string(), String::new(), Vec::new())
+        }
+    }
+}
+
 // Helper: extract a per-tweet button center from candidate payload.
 fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64, f64)> {
     let button_obj = tweet
@@ -1577,7 +1556,8 @@ async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
         }
     }
 
-    Ok(true)
+    // Verification failed - assume like was not registered
+    Ok(false)
 }
 
 /// Generate a short reply string based on sentiment.

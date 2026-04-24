@@ -189,3 +189,101 @@ pub async fn attempt_close_popup(api: &TaskContext) -> Result<bool, anyhow::Erro
 
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_random_duration_within_bounds() {
+        for _ in 0..50 {
+            let duration = random_duration(100, 200);
+            let ms = duration.as_millis();
+            assert!((100..=200).contains(&ms));
+        }
+    }
+
+    #[test]
+    fn test_random_duration_same_bounds() {
+        let duration = random_duration(100, 100);
+        let ms = duration.as_millis();
+        assert!((90..=110).contains(&ms)); // Allow some variance
+    }
+
+    #[test]
+    fn test_random_duration_zero_bounds() {
+        let duration = random_duration(0, 0);
+        assert_eq!(duration.as_millis(), 0);
+    }
+
+    #[test]
+    fn test_random_duration_large_bounds() {
+        let duration = random_duration(1000, 5000);
+        let ms = duration.as_millis();
+        assert!((1000..=5000).contains(&ms));
+    }
+
+    #[test]
+    fn test_random_duration_consistency() {
+        // Test that the function produces reasonable distribution
+        let durations: Vec<u64> = (0..100)
+            .map(|_| random_duration(100, 200).as_millis() as u64)
+            .collect();
+        
+        // All should be within bounds
+        for duration in &durations {
+            assert!((100..=200).contains(duration));
+        }
+        
+        // Average should be close to midpoint
+        let avg = durations.iter().sum::<u64>() as f64 / durations.len() as f64;
+        assert!((130.0..=170.0).contains(&avg));
+    }
+
+    #[test]
+    fn test_selector_close_button_returns_js() {
+        let js = selector_close_button();
+        assert!(js.contains("querySelector"));
+        assert!(js.contains("aria-label"));
+        assert!(js.contains("Close"));
+    }
+
+    #[test]
+    fn test_selector_functions_return_valid_js() {
+        assert!(selector_feed_visible().contains("querySelector"));
+        assert!(selector_all_tweets().contains("querySelectorAll"));
+        assert!(selector_follow_button().contains("aria-label"));
+        assert!(selector_engagement_buttons().contains("like"));
+        assert!(selector_login_flow().contains("session"));
+        assert!(selector_popup_overlay().contains("dialog"));
+        assert!(selector_follow_confirm_modal().contains("follow"));
+        assert!(selector_following_indicator().contains("following"));
+        assert!(js_get_current_url().contains("location"));
+        assert!(js_extract_username_from_url().contains("pathname"));
+        assert!(selector_tweet_user_avatar().contains("avatar"));
+        assert!(selector_health_check().contains("feed_visible"));
+    }
+
+    #[test]
+    fn test_selector_element_center_formats_correctly() {
+        let js = selector_element_center("div.test");
+        assert!(js.contains("div.test"));
+        assert!(js.contains("getBoundingClientRect"));
+        assert!(js.contains("x"));
+        assert!(js.contains("y"));
+    }
+
+    #[test]
+    fn test_selector_element_center_escapes_quotes() {
+        let js = selector_element_center("div.test\"class");
+        assert!(js.contains("\\\""));
+        assert!(!js.contains("\"test\""));
+    }
+
+    #[test]
+    fn test_selector_element_center_with_complex_selector() {
+        let js = selector_element_center("[data-testid=\"tweet\"]");
+        assert!(js.contains("data-testid"));
+        assert!(js.contains("tweet"));
+    }
+}

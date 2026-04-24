@@ -339,19 +339,19 @@ mod tests {
     fn test_file_logger_log_without_context() {
         let temp_file = NamedTempFile::new().unwrap();
         let logger = FileLogger::new(temp_file.path()).unwrap();
-        
+
         let record = Record::builder()
             .args(format_args!("test message"))
             .level(log::Level::Info)
             .build();
-        
+
         logger.log(&record);
         logger.flush();
 
         let mut content = String::new();
         let mut file = std::fs::File::open(temp_file.path()).unwrap();
         file.read_to_string(&mut content).unwrap();
-        
+
         assert!(content.contains("test message"));
         assert!(content.contains("INFO"));
     }
@@ -360,25 +360,25 @@ mod tests {
     fn test_file_logger_log_with_context() {
         let temp_file = NamedTempFile::new().unwrap();
         let logger = FileLogger::new(temp_file.path()).unwrap();
-        
+
         set_log_context(LogContext {
             session_id: Some("test-session".to_string()),
             profile_name: None,
             task_name: None,
         });
-        
+
         let record = Record::builder()
             .args(format_args!("test message"))
             .level(log::Level::Info)
             .build();
-        
+
         logger.log(&record);
         logger.flush();
 
         let mut content = String::new();
         let mut file = std::fs::File::open(temp_file.path()).unwrap();
         file.read_to_string(&mut content).unwrap();
-        
+
         assert!(content.contains("test message"));
         assert!(content.contains("[test-session]"));
     }
@@ -387,20 +387,20 @@ mod tests {
     fn test_file_logger_filters_chromiumoxide() {
         let temp_file = NamedTempFile::new().unwrap();
         let logger = FileLogger::new(temp_file.path()).unwrap();
-        
+
         let record = Record::builder()
             .args(format_args!("chromiumoxide message"))
             .level(log::Level::Info)
             .target("chromiumoxide::handler")
             .build();
-        
+
         logger.log(&record);
         logger.flush();
 
         let mut content = String::new();
         let mut file = std::fs::File::open(temp_file.path()).unwrap();
         file.read_to_string(&mut content).unwrap();
-        
+
         // Chromiumoxide messages should be filtered out
         assert!(!content.contains("chromiumoxide message"));
     }
@@ -409,12 +409,12 @@ mod tests {
     fn test_file_logger_flush() {
         let temp_file = NamedTempFile::new().unwrap();
         let logger = FileLogger::new(temp_file.path()).unwrap();
-        
+
         let record = Record::builder()
             .args(format_args!("test message"))
             .level(log::Level::Info)
             .build();
-        
+
         logger.log(&record);
         logger.flush(); // Should not panic
     }

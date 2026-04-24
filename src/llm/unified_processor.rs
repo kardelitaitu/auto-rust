@@ -47,27 +47,23 @@ impl UnifiedLLMProcessor {
     ) -> Result<Vec<UnifiedReplyResponse>, anyhow::Error> {
         // Build context with all replies
         let context = reply_strategies::StrategyContext::default();
-        
+
         // Convert replies to owned format for build_reply_prompt
         let replies_owned: Vec<(String, String)> = replies
             .iter()
             .map(|(a, t)| (a.to_string(), t.to_string()))
             .collect();
-        
+
         // Build prompt for up to 20 replies
-        let prompt = reply_strategies::build_reply_prompt(
-            tweet_text,
-            author,
-            &replies_owned,
-            &context,
-        );
+        let prompt =
+            reply_strategies::build_reply_prompt(tweet_text, author, &replies_owned, &context);
 
         // Single LLM request for all replies
         let response = self.llm.chat(vec![ChatMessage::user(prompt)]).await?;
 
         // Parse response into individual reply results
         let parsed = self.parse_batch_response(&response, replies.len())?;
-        
+
         Ok(parsed)
     }
 
@@ -79,7 +75,7 @@ impl UnifiedLLMProcessor {
     ) -> Result<UnifiedQuoteResponse, anyhow::Error> {
         // Build context
         let _context = reply_strategies::StrategyContext::default();
-        
+
         // Build prompt
         let system = crate::llm::reply_engine::reply_engine_system_prompt();
         let user = format!(
@@ -94,7 +90,7 @@ impl UnifiedLLMProcessor {
         // Parse quote response with sentiment
         let sentiment = self.extract_sentiment_from_quote(&response)?;
         let content = self.extract_content_from_quote(&response)?;
-        
+
         // Calculate confidence based on content
         let confidence = sentiment.confidence;
 
@@ -130,7 +126,7 @@ impl UnifiedLLMProcessor {
                 }
             }
         }
-        
+
         // Fall back to line-based parsing
         Self::parse_line_based_batch_response(response, expected_count)
     }
@@ -148,28 +144,29 @@ impl UnifiedLLMProcessor {
     ) -> Result<Vec<UnifiedReplyResponse>, anyhow::Error> {
         let json: Value = serde_json::from_str(response)?;
         let mut results = Vec::new();
-        
+
         // Handle array of responses
         if let Value::Array(array) = json {
             for (i, item) in array.iter().enumerate() {
                 if i >= expected_count {
                     break;
                 }
-                
+
                 if let Value::Object(obj) = item {
-                    let content = obj.get("content")
+                    let content = obj
+                        .get("content")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    
+
                     let content = Self::clean_reply_content(&content);
-                    
+
                     if content.is_empty() {
                         continue;
                     }
-                    
+
                     let sentiment = Self::analyze_sentiment_from_text(&content);
-                    
+
                     results.push(UnifiedReplyResponse {
                         reply_index: i,
                         sentiment,
@@ -179,13 +176,14 @@ impl UnifiedLLMProcessor {
             }
         } else if let Value::Object(obj) = json {
             // Handle single object response
-            let content = obj.get("content")
+            let content = obj
+                .get("content")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            
+
             let content = Self::clean_reply_content(&content);
-            
+
             if !content.is_empty() {
                 let sentiment = Self::analyze_sentiment_from_text(&content);
                 results.push(UnifiedReplyResponse {
@@ -195,7 +193,7 @@ impl UnifiedLLMProcessor {
                 });
             }
         }
-        
+
         Ok(results)
     }
 
@@ -205,36 +203,37 @@ impl UnifiedLLMProcessor {
         expected_count: usize,
     ) -> Result<Vec<UnifiedReplyResponse>, anyhow::Error> {
         // Split response by common delimiters (newlines, numbers, etc.)
-        let lines: Vec<&str> = response.lines()
+        let lines: Vec<&str> = response
+            .lines()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty())
             .collect();
-        
+
         let mut results = Vec::new();
-        
+
         // Try to parse each line as a separate reply
         for (i, line) in lines.iter().enumerate() {
             if i >= expected_count {
                 break;
             }
-            
+
             // Clean the content
             let content = Self::clean_reply_content(line);
-            
+
             if content.is_empty() {
                 continue;
             }
-            
+
             // Analyze sentiment of the reply
             let sentiment = Self::analyze_sentiment_from_text(&content);
-            
+
             results.push(UnifiedReplyResponse {
                 reply_index: i,
                 sentiment,
                 content,
             });
         }
-        
+
         // If we didn't get enough results, use the full response as a single reply
         if results.is_empty() && !response.trim().is_empty() {
             let content = Self::clean_reply_content(response);
@@ -245,7 +244,7 @@ impl UnifiedLLMProcessor {
                 content,
             });
         }
-        
+
         Ok(results)
     }
 
@@ -253,7 +252,16 @@ impl UnifiedLLMProcessor {
     pub fn clean_reply_content(text: &str) -> String {
         text.trim()
             .chars()
-            .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '!' || *c == '?' || *c == '.' || *c == ',' || *c == '\'' || *c == '-')
+            .filter(|c| {
+                c.is_alphanumeric()
+                    || c.is_whitespace()
+                    || *c == '!'
+                    || *c == '?'
+                    || *c == '.'
+                    || *c == ','
+                    || *c == '\''
+                    || *c == '-'
+            })
             .collect::<String>()
             .trim()
             .to_string()
@@ -262,11 +270,11 @@ impl UnifiedLLMProcessor {
     /// Analyze sentiment from text using sentiment analysis utilities.
     pub fn analyze_sentiment_from_text(text: &str) -> SentimentAnalysis {
         use crate::utils::twitter::twitteractivity_sentiment::analyze_sentiment;
-        
+
         let sentiment = analyze_sentiment(text);
         let indicators = Self::extract_sentiment_indicators(text);
         let confidence = Self::calculate_confidence(text, &indicators);
-        
+
         SentimentAnalysis {
             sentiment,
             confidence,
@@ -278,48 +286,48 @@ impl UnifiedLLMProcessor {
     pub fn extract_sentiment_indicators(text: &str) -> Vec<String> {
         let lower = text.to_ascii_lowercase();
         let mut indicators = Vec::new();
-        
+
         // Positive indicators
         if lower.contains("great") || lower.contains("amazing") || lower.contains("excellent") {
             indicators.push("positive_word".to_string());
         }
-        
+
         // Negative indicators
         if lower.contains("bad") || lower.contains("terrible") || lower.contains("awful") {
             indicators.push("negative_word".to_string());
         }
-        
+
         // Exclamation marks indicate strong emotion
         if lower.contains('!') {
             indicators.push("exclamation".to_string());
         }
-        
+
         // Question marks indicate inquiry
         if lower.contains('?') {
             indicators.push("question".to_string());
         }
-        
+
         if indicators.is_empty() {
             indicators.push("neutral".to_string());
         }
-        
+
         indicators
     }
 
     /// Calculate confidence score based on text and indicators.
     pub fn calculate_confidence(text: &str, indicators: &[String]) -> f32 {
         let mut confidence: f32 = 0.5; // Base confidence
-        
+
         // Increase confidence for longer, more substantive content
         if text.len() > 20 {
             confidence += 0.1;
         }
-        
+
         // Increase confidence if we have clear indicators
         if !indicators.is_empty() && !indicators.contains(&"neutral".to_string()) {
             confidence += 0.2;
         }
-        
+
         // Cap at 0.95
         confidence.min(0.95)
     }
@@ -335,10 +343,7 @@ impl UnifiedLLMProcessor {
     }
 
     /// Extract content from quote response.
-    fn extract_content_from_quote(
-        &self,
-        response: &str,
-    ) -> Result<String, anyhow::Error> {
+    fn extract_content_from_quote(&self, response: &str) -> Result<String, anyhow::Error> {
         // Extract generated content
         Ok(response.to_string())
     }
@@ -372,18 +377,17 @@ mod tests {
                 return;
             }
         };
-        
+
         let replies = vec![
             ("user1", "Great post!"),
             ("user2", "Interesting perspective"),
         ];
-        
-        let results = processor.process_replies_batch(
-            "Original tweet text",
-            "author",
-            &replies,
-        ).await.unwrap();
-        
+
+        let results = processor
+            .process_replies_batch("Original tweet text", "author", &replies)
+            .await
+            .unwrap();
+
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].reply_index, 0);
         assert_eq!(results[1].reply_index, 1);
@@ -399,16 +403,14 @@ mod tests {
                 return;
             }
         };
-        
-        let replies = vec![
-            ("user1", "Great post!"),
-        ];
-        
-        let result = processor.process_quote_with_sentiment(
-            "Original tweet",
-            &replies,
-        ).await.unwrap();
-        
+
+        let replies = vec![("user1", "Great post!")];
+
+        let result = processor
+            .process_quote_with_sentiment("Original tweet", &replies)
+            .await
+            .unwrap();
+
         assert!(result.confidence > 0.5);
         assert!(!result.content.is_empty());
     }
@@ -417,7 +419,7 @@ mod tests {
     fn test_parse_batch_response_single_line() {
         let response = "This is a great reply!";
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
-        
+
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].reply_index, 0);
         assert!(!results[0].content.is_empty());
@@ -427,7 +429,7 @@ mod tests {
     fn test_parse_batch_response_empty() {
         let response = "";
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
-        
+
         assert_eq!(results.len(), 0);
     }
 
@@ -435,7 +437,7 @@ mod tests {
     fn test_parse_batch_response_whitespace() {
         let response = "   \n   \n   ";
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
-        
+
         assert_eq!(results.len(), 0);
     }
 
@@ -443,7 +445,7 @@ mod tests {
     fn test_parse_batch_response_multiple_lines() {
         let response = "First reply here\nSecond reply there\nThird reply somewhere";
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
-        
+
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].reply_index, 0);
         assert_eq!(results[1].reply_index, 1);
@@ -454,7 +456,7 @@ mod tests {
     fn test_parse_batch_response_mixed_empty_lines() {
         let response = "First reply\n\n\nSecond reply\n\nThird reply";
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
-        
+
         assert_eq!(results.len(), 3);
     }
 
@@ -462,7 +464,7 @@ mod tests {
     fn test_clean_reply_content() {
         let dirty = "  This has @mentions and #hashtags!  ";
         let clean = UnifiedLLMProcessor::clean_reply_content(dirty);
-        
+
         assert!(clean.contains("This"));
         assert!(!clean.contains("@"));
         assert!(!clean.contains("#"));
@@ -495,7 +497,7 @@ mod tests {
     fn test_analyze_sentiment_from_text_positive() {
         let text = "This is great and amazing!";
         let sentiment = UnifiedLLMProcessor::analyze_sentiment_from_text(text);
-        
+
         assert!(sentiment.confidence > 0.5);
         assert!(!sentiment.indicators.is_empty());
     }
@@ -504,7 +506,7 @@ mod tests {
     fn test_analyze_sentiment_from_text_empty() {
         let text = "";
         let sentiment = UnifiedLLMProcessor::analyze_sentiment_from_text(text);
-        
+
         assert!(sentiment.confidence >= 0.0);
     }
 
@@ -512,7 +514,7 @@ mod tests {
     fn test_analyze_sentiment_from_text_negative() {
         let text = "This is terrible and awful";
         let sentiment = UnifiedLLMProcessor::analyze_sentiment_from_text(text);
-        
+
         assert!(sentiment.indicators.contains(&"negative_word".to_string()));
     }
 
@@ -520,7 +522,7 @@ mod tests {
     fn test_extract_sentiment_indicators() {
         let text = "Great post!";
         let indicators = UnifiedLLMProcessor::extract_sentiment_indicators(text);
-        
+
         assert!(indicators.contains(&"positive_word".to_string()));
         assert!(indicators.contains(&"exclamation".to_string()));
     }
@@ -529,7 +531,7 @@ mod tests {
     fn test_extract_sentiment_indicators_empty() {
         let text = "";
         let indicators = UnifiedLLMProcessor::extract_sentiment_indicators(text);
-        
+
         assert!(indicators.contains(&"neutral".to_string()));
     }
 
@@ -537,7 +539,7 @@ mod tests {
     fn test_extract_sentiment_indicators_unicode() {
         let text = "Great post! 😊";
         let indicators = UnifiedLLMProcessor::extract_sentiment_indicators(text);
-        
+
         assert!(indicators.contains(&"exclamation".to_string()));
     }
 
@@ -545,7 +547,7 @@ mod tests {
     fn test_extract_sentiment_indicators_question() {
         let text = "What do you think?";
         let indicators = UnifiedLLMProcessor::extract_sentiment_indicators(text);
-        
+
         assert!(indicators.contains(&"question".to_string()));
     }
 
@@ -554,7 +556,7 @@ mod tests {
         let text = "This is a very long and substantive response with great content!";
         let indicators = vec!["positive_word".to_string(), "exclamation".to_string()];
         let confidence = UnifiedLLMProcessor::calculate_confidence(text, &indicators);
-        
+
         assert!(confidence > 0.5);
         assert!(confidence <= 0.95);
     }
@@ -564,7 +566,7 @@ mod tests {
         let text = "";
         let indicators = vec!["neutral".to_string()];
         let confidence = UnifiedLLMProcessor::calculate_confidence(text, &indicators);
-        
+
         assert!(confidence >= 0.5);
         assert!(confidence <= 0.95);
     }
@@ -573,7 +575,7 @@ mod tests {
     fn test_extract_sentiment_from_quote() {
         let response = "This is an amazing quote!";
         let sentiment = UnifiedLLMProcessor::analyze_sentiment_from_text(response);
-        
+
         assert!(sentiment.confidence > 0.0);
         assert!(!sentiment.indicators.is_empty());
     }
@@ -582,7 +584,7 @@ mod tests {
     fn test_extract_sentiment_from_quote_malformed() {
         let response = "!!!@@@###";
         let sentiment = UnifiedLLMProcessor::analyze_sentiment_from_text(response);
-        
+
         assert!(sentiment.confidence > 0.0);
     }
 
@@ -593,9 +595,9 @@ mod tests {
             {"content": "Second reply"},
             {"content": "Third reply"}
         ]"#;
-        
+
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
-        
+
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].reply_index, 0);
         assert_eq!(results[1].reply_index, 1);
@@ -606,9 +608,9 @@ mod tests {
     #[test]
     fn test_parse_json_batch_response_single_object() {
         let response = r#"{"content": "Single reply"}"#;
-        
+
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
-        
+
         assert_eq!(results.len(), 1);
         assert!(results[0].content.contains("Single"));
     }
@@ -616,16 +618,16 @@ mod tests {
     #[test]
     fn test_parse_json_batch_response_empty_array() {
         let response = r#"[]"#;
-        
+
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
-        
+
         assert_eq!(results.len(), 0);
     }
 
     #[test]
     fn test_parse_json_batch_response_malformed_json() {
         let response = r#"{"invalid json"#;
-        
+
         // Should fall back to line-based parsing for invalid JSON
         let _results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
         // Will parse as line-based, so may have 0 or 1 results depending on content
@@ -646,7 +648,9 @@ mod tests {
     #[test]
     fn test_is_json_response_plain_text() {
         assert!(!UnifiedLLMProcessor::is_json_response("plain text"));
-        assert!(!UnifiedLLMProcessor::is_json_response("Some text\nMore text"));
+        assert!(!UnifiedLLMProcessor::is_json_response(
+            "Some text\nMore text"
+        ));
     }
 
     #[test]
@@ -657,18 +661,18 @@ mod tests {
                 {"content": "Second reply"}
             ]  
         "#;
-        
+
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 2).unwrap();
-        
+
         assert_eq!(results.len(), 2);
     }
 
     #[test]
     fn test_parse_batch_response_line_based_fallback() {
         let response = "First reply\nSecond reply\nThird reply";
-        
+
         let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
-        
+
         assert_eq!(results.len(), 3);
     }
 }

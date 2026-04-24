@@ -1,6 +1,6 @@
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::prelude::TaskContext;
 use crate::llm::unified_processor::UnifiedLLMProcessor;
+use crate::prelude::TaskContext;
 use anyhow::Result;
 use log::{info, warn};
 use rand::Rng;
@@ -34,7 +34,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     info!("Generating AI reply using unified batch processor...");
     let processor = UnifiedLLMProcessor::new();
-    
+
     // Convert replies to format expected by unified processor
     let reply_tuples: Vec<(&str, &str)> = replies
         .iter()

@@ -197,16 +197,11 @@ pub fn get_intensifier_multiplier(text: &str, target_word: &str) -> f32 {
         if word_lower == target_lower {
             // Check up to 2 words before for intensifier
             let start = i.saturating_sub(2);
-            if let Some((_, multiplier)) = words
-                .iter()
-                .take(i)
-                .skip(start)
-                .find_map(|prev| {
-                    INTENSIFIERS
-                        .iter()
-                        .find(|(intensifier, _)| prev.to_lowercase() == *intensifier)
-                })
-            {
+            if let Some((_, multiplier)) = words.iter().take(i).skip(start).find_map(|prev| {
+                INTENSIFIERS
+                    .iter()
+                    .find(|(intensifier, _)| prev.to_lowercase() == *intensifier)
+            }) {
                 return *multiplier;
             }
         }

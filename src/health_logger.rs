@@ -218,7 +218,7 @@ mod tests {
         let logger = HealthLogger::new(config.clone(), metrics);
 
         let handle = logger.start();
-        
+
         // Give it a moment to start
         tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -241,7 +241,7 @@ mod tests {
         let logger = HealthLogger::new(config, metrics);
 
         let handle = logger.start();
-        
+
         // Immediate stop should work
         logger.stop();
 
@@ -257,12 +257,12 @@ mod tests {
             verbose: false,
         };
         let metrics = Arc::new(MetricsCollector::new(100));
-        
+
         // Add some metrics
         metrics.task_started();
-        metrics.task_completed(rust_orchestrator::metrics::TaskMetrics {
+        metrics.task_completed(crate::metrics::TaskMetrics {
             task_name: "test".to_string(),
-            status: rust_orchestrator::metrics::TaskStatus::Success,
+            status: crate::metrics::TaskStatus::Success,
             duration_ms: 100,
             session_id: "test-session".to_string(),
             attempt: 1,
@@ -305,7 +305,10 @@ mod tests {
         let config = HealthLoggerConfig::default();
         let cloned = config.clone();
         assert_eq!(config.interval, cloned.interval);
-        assert_eq!(config.memory_warning_percentage, cloned.memory_warning_percentage);
+        assert_eq!(
+            config.memory_warning_percentage,
+            cloned.memory_warning_percentage
+        );
         assert_eq!(config.verbose, cloned.verbose);
     }
 

@@ -2,8 +2,8 @@
 //! Quotes a tweet with LLM-generated commentary.
 
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::prelude::TaskContext;
 use crate::llm::unified_processor::UnifiedLLMProcessor;
+use crate::prelude::TaskContext;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -46,7 +46,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     } else {
         info!("[twitterquote] Generating LLM quote using unified batch processor...");
         let processor = UnifiedLLMProcessor::new();
-        
+
         // Convert replies to format expected by unified processor
         let reply_tuples: Vec<(&str, &str)> = replies
             .iter()
@@ -57,7 +57,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
             .process_quote_with_sentiment(&tweet_text, &reply_tuples)
             .await
             .map_err(|e| {
-                warn!("[twitterquote] Unified processor failed: {}, using fallback", e);
+                warn!(
+                    "[twitterquote] Unified processor failed: {}, using fallback",
+                    e
+                );
                 e
             })?;
 
@@ -297,7 +300,6 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {} retries", max_retries)))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,5 +331,4 @@ mod tests {
         let payload = json!({});
         assert!(extract_url_from_payload(&payload).is_err());
     }
-
 }

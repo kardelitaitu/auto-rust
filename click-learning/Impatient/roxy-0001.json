@@ -1,0 +1,27 @@
+{
+  "interaction_count": 3,
+  "total_attempts": 3,
+  "total_successes": 3,
+  "recent_results": [
+    true,
+    true,
+    true
+  ],
+  "selectors": {
+    "a[href='/soft_servo/status/2047436911657025858']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[aria-label=\"X\"]": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    },
+    "a[href='/TryLiveAvatar/status/2047362615609823657']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    }
+  }
+}

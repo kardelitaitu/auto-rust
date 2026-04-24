@@ -229,12 +229,12 @@ mod tests {
         let durations: Vec<u64> = (0..100)
             .map(|_| random_duration(100, 200).as_millis() as u64)
             .collect();
-        
+
         // All should be within bounds
         for duration in &durations {
             assert!((100..=200).contains(duration));
         }
-        
+
         // Average should be close to midpoint
         let avg = durations.iter().sum::<u64>() as f64 / durations.len() as f64;
         assert!((130.0..=170.0).contains(&avg));

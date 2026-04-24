@@ -65,7 +65,10 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
     let timeout_ms = DEFAULT_WAIT_TIMEOUT_MS;
 
     // Wait for home logo to be visible
-    if !api.wait_for_any_visible_selector(&[selector], timeout_ms).await? {
+    if !api
+        .wait_for_any_visible_selector(&[selector], timeout_ms)
+        .await?
+    {
         log::warn!("Home logo not found, falling back to URL navigation");
         return goto_home_fallback(api).await;
     }
@@ -111,7 +114,10 @@ async fn get_element_center(api: &TaskContext, selector: &str) -> Result<Option<
 
     let result = api.page().evaluate(js).await?;
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (obj.get("x").and_then(|v| v.as_f64()), obj.get("y").and_then(|v| v.as_f64())) {
+        if let (Some(x), Some(y)) = (
+            obj.get("x").and_then(|v| v.as_f64()),
+            obj.get("y").and_then(|v| v.as_f64()),
+        ) {
             return Ok(Some((x, y)));
         }
     }

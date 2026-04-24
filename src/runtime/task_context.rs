@@ -39,8 +39,8 @@
 use chromiumoxide::Page;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs;
-use std::sync::Arc;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -48,11 +48,11 @@ use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::logger::scoped_log_context;
-use crate::config::NativeInteractionConfig;
 use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
+use crate::config::NativeInteractionConfig;
 use crate::internal::page_size::{self, Viewport};
 use crate::internal::profile::{BrowserProfile, ProfileRuntime};
+use crate::logger::scoped_log_context;
 use crate::metrics::{
     MetricsCollector, RUN_COUNTER_CLICK_ATTEMPTED, RUN_COUNTER_CLICK_FALLBACK_HIT,
     RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, RUN_COUNTER_CLICK_SUCCESS,
@@ -196,8 +196,7 @@ impl ClickLearningState {
             let selector_success_rate =
                 selector_stats.successes as f64 / selector_stats.attempts as f64;
             if selector_success_rate < 0.75 {
-                adaptation.extra_stability_wait_ms =
-                    adaptation.extra_stability_wait_ms.max(250);
+                adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(250);
                 adaptation.reaction_delay_multiplier *= 1.20;
                 adaptation.reaction_variance_boost_pct += 8;
                 adaptation.require_strict_verification = true;
@@ -206,8 +205,7 @@ impl ClickLearningState {
         }
 
         if selector_stats.consecutive_failures >= 2 {
-            adaptation.extra_stability_wait_ms =
-                adaptation.extra_stability_wait_ms.max(380);
+            adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(380);
             adaptation.reaction_delay_multiplier *= 1.22;
             adaptation.reaction_variance_boost_pct += 10;
             adaptation.click_offset_adjustment_px += 2;
@@ -218,8 +216,7 @@ impl ClickLearningState {
         if context.fatigue == ClickFatigueLevel::Tired {
             adaptation.reaction_delay_multiplier *= 1.15;
             adaptation.reaction_variance_boost_pct += 6;
-            adaptation.extra_stability_wait_ms =
-                adaptation.extra_stability_wait_ms.max(140);
+            adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(140);
         }
 
         adaptation
@@ -229,7 +226,13 @@ impl ClickLearningState {
 fn sanitize_path_component(value: &str) -> String {
     let cleaned: String = value
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim_matches('_').to_string();
     if trimmed.is_empty() {
@@ -243,7 +246,11 @@ fn click_learning_path(session_id: &str, behavior_profile: &BrowserProfile) -> O
     let base_dir = std::env::current_dir().ok()?.join("click-learning");
     let profile_component = sanitize_path_component(&behavior_profile.name);
     let session_component = sanitize_path_component(session_id);
-    Some(base_dir.join(profile_component).join(format!("{session_component}.json")))
+    Some(
+        base_dir
+            .join(profile_component)
+            .join(format!("{session_component}.json")),
+    )
 }
 
 fn load_click_learning(path: &Path) -> Option<ClickLearningState> {
@@ -620,7 +627,10 @@ mod tests {
         for i in 0..80 {
             learning.record("a[href='/x']", i % 2 == 0);
         }
-        assert_eq!(learning.recent_results.len(), ClickLearningState::RECENT_WINDOW);
+        assert_eq!(
+            learning.recent_results.len(),
+            ClickLearningState::RECENT_WINDOW
+        );
     }
 
     #[test]
@@ -652,7 +662,9 @@ mod tests {
             2
         );
         assert_eq!(
-            loaded.selector_stats("button[data-testid='like']").successes,
+            loaded
+                .selector_stats("button[data-testid='like']")
+                .successes,
             1
         );
 
@@ -802,7 +814,9 @@ impl TaskContext {
     }
 
     pub fn metrics(&self) -> &MetricsCollector {
-        self.metrics.as_ref().expect("Metrics collector not initialized")
+        self.metrics
+            .as_ref()
+            .expect("Metrics collector not initialized")
     }
 
     fn click_learning_path(&self) -> Option<&Path> {
@@ -1156,32 +1170,39 @@ impl TaskContext {
             }
             self.increment_run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT, 1);
 
-            match self.fallback_click_with_adaptation(selector, &adaptation).await {
+            match self
+                .fallback_click_with_adaptation(selector, &adaptation)
+                .await
+            {
                 Ok(outcome) => Ok(outcome),
                 Err(fallback_err) => Err(last_error.unwrap_or(fallback_err)),
             }
         };
 
-        let outcome = match tokio::time::timeout(
-            Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS),
-            click_future,
-        )
-        .await
-        {
-            Ok(Ok(outcome)) => outcome,
-            Ok(Err(err)) => {
-                if let Err(persist_err) = self.record_click_learning(selector, false).await {
-                    warn!("[task-api] click learning persistence failed: {}", persist_err);
+        let outcome =
+            match tokio::time::timeout(Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS), click_future)
+                .await
+            {
+                Ok(Ok(outcome)) => outcome,
+                Ok(Err(err)) => {
+                    if let Err(persist_err) = self.record_click_learning(selector, false).await {
+                        warn!(
+                            "[task-api] click learning persistence failed: {}",
+                            persist_err
+                        );
+                    }
+                    return Err(err);
                 }
-                return Err(err);
-            }
-            Err(_) => {
-                if let Err(persist_err) = self.record_click_learning(selector, false).await {
-                    warn!("[task-api] click learning persistence failed: {}", persist_err);
+                Err(_) => {
+                    if let Err(persist_err) = self.record_click_learning(selector, false).await {
+                        warn!(
+                            "[task-api] click learning persistence failed: {}",
+                            persist_err
+                        );
+                    }
+                    return Err(anyhow::anyhow!("click timed out for '{}'", selector));
                 }
-                return Err(anyhow::anyhow!("click timed out for '{}'", selector));
-            }
-        };
+            };
 
         if adaptation.require_strict_verification {
             let verified = self
@@ -1191,13 +1212,18 @@ impl TaskContext {
             if !verified {
                 self.increment_run_counter(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, 1);
                 if let Err(persist_err) = self.record_click_learning(selector, false).await {
-                    warn!("[task-api] click learning persistence failed: {}", persist_err);
+                    warn!(
+                        "[task-api] click learning persistence failed: {}",
+                        persist_err
+                    );
                 }
                 self.increment_run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT, 1);
-                match self.fallback_click_with_adaptation(selector, &adaptation).await {
+                match self
+                    .fallback_click_with_adaptation(selector, &adaptation)
+                    .await
+                {
                     Ok(fallback_outcome) => {
-                        if let Err(persist_err) = self.record_click_learning(selector, true).await
-                        {
+                        if let Err(persist_err) = self.record_click_learning(selector, true).await {
                             warn!(
                                 "[task-api] click learning persistence failed: {}",
                                 persist_err
@@ -1221,7 +1247,10 @@ impl TaskContext {
 
         {
             if let Err(persist_err) = self.record_click_learning(selector, true).await {
-                warn!("[task-api] click learning persistence failed: {}", persist_err);
+                warn!(
+                    "[task-api] click learning persistence failed: {}",
+                    persist_err
+                );
             }
         }
         self.increment_run_counter(RUN_COUNTER_CLICK_SUCCESS, 1);
@@ -1445,20 +1474,19 @@ impl TaskContext {
             let mut ctx = crate::logger::get_log_context();
             ctx.session_id = Some(session_id.clone());
             let _guard = scoped_log_context(ctx);
-            info!("{}", nativeclick_public_log_line(selector, outcome.x, outcome.y));
+            info!(
+                "{}",
+                nativeclick_public_log_line(selector, outcome.x, outcome.y)
+            );
             if let (Some(screen_x), Some(screen_y)) = (outcome.screen_x, outcome.screen_y) {
                 debug!(
                     "[task-api] nativeclick session={} selector={} screen_point=({}, {})",
-                    session_id,
-                    selector,
-                    screen_x,
-                    screen_y
+                    session_id, selector, screen_x, screen_y
                 );
             } else {
                 debug!(
                     "[task-api] nativeclick session={} selector={} screen_point=(unknown)",
-                    session_id,
-                    selector
+                    session_id, selector
                 );
             }
             debug!(
@@ -1840,12 +1868,7 @@ impl TaskContext {
             };
             info!(
                 "[task-api] t={} ({:.1},{:.1}) p=({:.1},{:.1}) s={}",
-                outcome.target,
-                outcome.x,
-                outcome.y,
-                outcome.x,
-                outcome.y,
-                screen_point
+                outcome.target, outcome.x, outcome.y, outcome.x, outcome.y, screen_point
             );
         }
         self.post_interaction_pause().await;

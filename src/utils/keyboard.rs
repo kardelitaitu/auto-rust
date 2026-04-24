@@ -451,4 +451,159 @@ mod tests {
         assert_eq!(get_similar_char(','), ',');
         assert_eq!(get_similar_char('!'), '!');
     }
+
+    #[test]
+    fn test_press_options_clone() {
+        let options = PressOptions {
+            modifiers: vec!["Control".to_string()],
+            delay: 50,
+            repeat: 2,
+            down_and_up: true,
+        };
+        let cloned = options.clone();
+        assert_eq!(cloned.modifiers, options.modifiers);
+        assert_eq!(cloned.delay, options.delay);
+        assert_eq!(cloned.repeat, options.repeat);
+        assert_eq!(cloned.down_and_up, options.down_and_up);
+    }
+
+    #[test]
+    fn test_press_options_debug() {
+        let options = PressOptions::default();
+        let debug_str = format!("{:?}", options);
+        assert!(debug_str.contains("PressOptions"));
+    }
+
+    #[test]
+    fn test_normalize_modifier_variations() {
+        assert_eq!(normalize_modifier("CtRl"), "Control");
+        assert_eq!(normalize_modifier("SHIFT"), "Shift");
+        assert_eq!(normalize_modifier("aLt"), "Alt");
+        assert_eq!(normalize_modifier("MeTa"), "Meta");
+    }
+
+    #[test]
+    fn test_normalize_modifier_windows_variants() {
+        assert_eq!(normalize_modifier("Windows"), "Windows");
+        assert_eq!(normalize_modifier("Meta"), "Meta");
+        assert_eq!(normalize_modifier("Command"), "Meta");
+    }
+
+    #[test]
+    fn test_is_modifier_all_standard() {
+        assert!(is_modifier("Control"));
+        assert!(is_modifier("Alt"));
+        assert!(is_modifier("Meta"));
+    }
+
+    #[test]
+    fn test_is_modifier_function_keys() {
+        assert!(!is_modifier("F1"));
+        assert!(!is_modifier("F12"));
+        assert!(!is_modifier("Escape"));
+    }
+
+    #[test]
+    fn test_is_modifier_navigation_keys() {
+        assert!(!is_modifier("ArrowUp"));
+        assert!(!is_modifier("ArrowDown"));
+        assert!(!is_modifier("Home"));
+        assert!(!is_modifier("End"));
+    }
+
+    #[test]
+    fn test_get_similar_char_i() {
+        assert_eq!(get_similar_char('i'), 'o');
+    }
+
+    #[test]
+    fn test_get_similar_char_unicode() {
+        assert_eq!(get_similar_char('é'), 'é');
+        assert_eq!(get_similar_char('ñ'), 'ñ');
+    }
+
+    #[test]
+    fn test_get_similar_char_empty() {
+        assert_eq!(get_similar_char('\0'), '\0');
+    }
+
+    #[test]
+    fn test_press_options_repeat_zero() {
+        let options = PressOptions {
+            repeat: 0,
+            ..Default::default()
+        };
+        assert_eq!(options.repeat, 0);
+    }
+
+    #[test]
+    fn test_press_options_high_repeat() {
+        let options = PressOptions {
+            repeat: 100,
+            ..Default::default()
+        };
+        assert_eq!(options.repeat, 100);
+    }
+
+    #[test]
+    fn test_press_options_multiple_modifiers() {
+        let options = PressOptions {
+            modifiers: vec![
+                "Control".to_string(),
+                "Shift".to_string(),
+                "Alt".to_string(),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(options.modifiers.len(), 3);
+    }
+
+    #[test]
+    fn test_press_options_no_modifiers() {
+        let options = PressOptions {
+            modifiers: vec![],
+            ..Default::default()
+        };
+        assert!(options.modifiers.is_empty());
+    }
+
+    #[test]
+    fn test_press_options_delay_variations() {
+        let options1 = PressOptions {
+            delay: 0,
+            ..Default::default()
+        };
+        let options2 = PressOptions {
+            delay: 1000,
+            ..Default::default()
+        };
+        assert_eq!(options1.delay, 0);
+        assert_eq!(options2.delay, 1000);
+    }
+
+    #[test]
+    fn test_normalize_modifier_mixed_case() {
+        assert_eq!(normalize_modifier("cOnTrOl"), "Control");
+        assert_eq!(normalize_modifier("sHiFt"), "Shift");
+    }
+
+    #[test]
+    fn test_get_similar_char_all_mapped() {
+        // Test all mapped characters
+        assert_eq!(get_similar_char('a'), 's');
+        assert_eq!(get_similar_char('s'), 'a');
+        assert_eq!(get_similar_char('d'), 'f');
+        assert_eq!(get_similar_char('f'), 'd');
+        assert_eq!(get_similar_char('e'), 'r');
+        assert_eq!(get_similar_char('r'), 'e');
+        assert_eq!(get_similar_char('w'), 'q');
+        assert_eq!(get_similar_char('q'), 'w');
+        assert_eq!(get_similar_char('t'), 'y');
+        assert_eq!(get_similar_char('y'), 't');
+        assert_eq!(get_similar_char('o'), 'p');
+        assert_eq!(get_similar_char('p'), 'o');
+        assert_eq!(get_similar_char('i'), 'o');
+        assert_eq!(get_similar_char('n'), 'm');
+        assert_eq!(get_similar_char('m'), 'n');
+    }
 }

@@ -101,4 +101,330 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
     }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_success_does_not_open() {
+        let cb = BrowserCircuitBreaker::new(3, 1);
+
+        // Successes should not open the circuit
+        for _ in 0..5 {
+            let result = cb.call(async { Ok::<(), ()>(()) }).await;
+            assert!(result.is_ok());
+        }
+
+        // Should still be closed
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_half_open_success_closes() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        // Open the circuit
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        // Should be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+
+        // Wait for timeout
+        sleep(Duration::from_secs(2)).await;
+
+        // Success in half-open should close the circuit
+        let result = cb.call(async { Ok("success") }).await;
+        assert!(result.is_ok());
+
+        // Should now be closed again
+        let result = cb.call(async { Ok("success2") }).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_half_open_failure_reopens() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        // Open the circuit
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        // Wait for timeout
+        sleep(Duration::from_secs(2)).await;
+
+        // Failure in half-open should reopen
+        let result = cb.call(async { Err::<(), _>("half-open failed") }).await;
+        assert!(result.is_err());
+
+        // Should still be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_default() {
+        let cb = BrowserCircuitBreaker::default();
+        // Default should work
+        let result = cb.call(async { Ok::<i32, ()>(42) }).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_single_failure_threshold() {
+        let cb = BrowserCircuitBreaker::new(1, 1);
+
+        // Single failure should open
+        let result = cb.call(async { Err::<(), _>("failed") }).await;
+        assert!(result.is_err());
+
+        // Should be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_high_threshold() {
+        let cb = BrowserCircuitBreaker::new(10, 1);
+
+        // 9 failures should not open
+        for _ in 0..9 {
+            let result = cb.call(async { Err::<(), _>("failed") }).await;
+            assert!(result.is_err());
+        }
+
+        // Should still be closed
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_ok());
+
+        // 10th failure should open
+        let result = cb.call(async { Err::<(), _>("failed") }).await;
+        assert!(result.is_err());
+
+        // Should be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_zero_timeout() {
+        let cb = BrowserCircuitBreaker::new(2, 0);
+
+        // Open the circuit
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        // Should be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+
+        // Zero timeout should allow immediate retry
+        sleep(Duration::from_millis(10)).await;
+
+        let result = cb.call(async { Ok("success") }).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_long_timeout() {
+        let cb = BrowserCircuitBreaker::new(2, 60);
+
+        // Open the circuit
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        // Should be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+
+        // Should still be open after short wait
+        sleep(Duration::from_millis(100)).await;
+
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_mixed_success_failure() {
+        let cb = BrowserCircuitBreaker::new(3, 1);
+
+        // Mix of success and failure
+        let _ = cb.call(async { Ok::<(), ()>(()) }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Ok::<(), ()>(()) }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Ok::<(), ()>(()) }).await;
+
+        // Should still be closed (no consecutive failures)
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_ok());
+
+        // 3 consecutive failures should open
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_clone_independent() {
+        let cb1 = BrowserCircuitBreaker::new(2, 1);
+        let cb2 = cb1.clone();
+
+        // Open cb1
+        let _ = cb1.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb1.call(async { Err::<(), _>("failed") }).await;
+
+        // cb1 should be open
+        let result = cb1.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+
+        // cb2 should be independent (closed)
+        let result = cb2.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_concurrent_calls() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        // Concurrent failures
+        let tasks: Vec<_> = (0..5)
+            .map(|_| {
+                let cb = cb.clone();
+                tokio::spawn(async move {
+                    cb.call(async { Err::<(), _>("failed") }).await
+                })
+            })
+            .collect();
+
+        for task in tasks {
+            let _ = task.await;
+        }
+
+        // Circuit should be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_different_error_types() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        let _ = cb.call(async { Err::<(), &str>("error1") }).await;
+        let _ = cb.call(async { Err::<(), &str>("error2") }).await;
+
+        // Should be open regardless of error type
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_recovery_after_timeout() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        // Open circuit
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        sleep(Duration::from_secs(2)).await;
+
+        // Should recover
+        let result = cb.call(async { Ok("recovered") }).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_multiple_reopen_cycles() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        for cycle in 0..3 {
+            // Open circuit
+            let _ = cb.call(async { Err::<(), _>("failed") }).await;
+            let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+            // Should be open
+            let result = cb.call(async { Ok::<(), ()>(()) }).await;
+            assert!(result.is_err(), "Cycle {}: should be open", cycle);
+
+            // Wait for recovery
+            sleep(Duration::from_secs(2)).await;
+
+            // Should recover
+            let result = cb.call(async { Ok(format!("cycle {}", cycle)) }).await;
+            assert!(result.is_ok(), "Cycle {}: should recover", cycle);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_with_timeout_error() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        let _ = cb.call(async { Err::<(), _>("timeout") }).await;
+        let _ = cb.call(async { Err::<(), _>("timeout") }).await;
+
+        // Should be open
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_success_after_partial_failures() {
+        let cb = BrowserCircuitBreaker::new(3, 1);
+
+        // 2 failures (below threshold)
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        // Success should reset failure count
+        let result = cb.call(async { Ok("success") }).await;
+        assert!(result.is_ok());
+
+        // Need 3 more failures to open
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+        let _ = cb.call(async { Err::<(), _>("failed") }).await;
+
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_immediate_success() {
+        let cb = BrowserCircuitBreaker::new(5, 10);
+
+        let result = cb.call(async { Ok(123) }).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 123);
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_string_return_type() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        let result = cb.call(async { Ok("test string".to_string()) }).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "test string");
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_unit_return_type() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        let result = cb.call(async { Ok::<(), ()>(()) }).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_complex_return_type() {
+        let cb = BrowserCircuitBreaker::new(2, 1);
+
+        let result = cb
+            .call(async { Ok(vec![1, 2, 3, 4, 5]) })
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![1, 2, 3, 4, 5]);
+    }
 }

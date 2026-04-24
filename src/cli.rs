@@ -66,7 +66,7 @@ pub fn is_known_task(task_name: &str) -> bool {
 
 /// Check if a task file exists in the task directory
 pub fn task_file_exists(task_name: &str) -> bool {
-    let clean_name = task_name.strip_suffix(".js").unwrap_or(task_name);
+    let clean_name = crate::task::normalize_task_name(task_name);
 
     // Check for .rs file in src/task/ directory
     let task_path = Path::new("src/task").join(format!("{}.rs", clean_name));
@@ -81,11 +81,11 @@ pub fn task_file_exists(task_name: &str) -> bool {
 
 /// Validate a task name and return validation result
 pub fn validate_task(task_name: &str) -> TaskValidationResult {
-    let clean_name = task_name.strip_suffix(".js").unwrap_or(task_name);
+    let clean_name = crate::task::normalize_task_name(task_name);
     let mut warnings = Vec::new();
 
-    let is_known = is_known_task(task_name);
-    let file_exists = task_file_exists(task_name);
+    let is_known = is_known_task(clean_name);
+    let file_exists = task_file_exists(clean_name);
 
     if !is_known {
         let known_tasks = crate::task::known_task_names().join(", ");
@@ -117,7 +117,8 @@ pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidatio
 
     for group in groups {
         for task in group {
-            if !seen_tasks.contains(&task.name) {
+            let normalized = crate::task::normalize_task_name(&task.name).to_string();
+            if !seen_tasks.contains(&normalized) {
                 let result = validate_task(&task.name);
 
                 // Log warnings for unknown tasks
@@ -126,7 +127,7 @@ pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidatio
                 }
 
                 results.push(result);
-                seen_tasks.insert(task.name.clone());
+                seen_tasks.insert(normalized);
             }
         }
     }
@@ -208,11 +209,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     value = &value[1..value.len() - 1];
                 }
 
-                let shorthand_task_name = if key.ends_with(".js") {
-                    key.strip_suffix(".js").unwrap_or(key).to_string()
-                } else {
-                    key.to_string()
-                };
+                let shorthand_task_name = crate::task::normalize_task_name(key).to_string();
 
                 if current_task.is_none() {
                     let is_numeric = value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty();
@@ -279,7 +276,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     payload: std::mem::take(&mut current_payload),
                 });
             }
-            current_task = Some(arg.strip_suffix(".js").unwrap_or(arg).to_string());
+            current_task = Some(crate::task::normalize_task_name(arg).to_string());
             current_payload.clear();
         }
     }
@@ -565,6 +562,14 @@ mod tests {
     fn test_is_known_task_invalid() {
         assert!(!is_known_task("unknown_task"));
         assert!(!is_known_task("nonexistent"));
+    }
+
+    #[test]
+    fn test_is_known_task_normalizes_js_suffix() {
+        assert!(is_known_task("cookiebot.js"));
+        assert!(is_known_task(crate::task::normalize_task_name(
+            "pageview.js"
+        )));
     }
 
     #[test]

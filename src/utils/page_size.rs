@@ -247,7 +247,7 @@ mod tests {
             height: 800.0,
         };
         let margin = 10.0;
-        
+
         for _ in 0..50 {
             let (x, y) = random_position(&viewport, margin);
             assert!(x >= margin);
@@ -264,7 +264,7 @@ mod tests {
             height: 800.0,
         };
         let margin = 200.0;
-        
+
         let (x, y) = random_position(&viewport, margin);
         assert!(x >= margin);
         assert!(x <= viewport.width - margin);
@@ -278,7 +278,7 @@ mod tests {
             width: 1000.0,
             height: 800.0,
         };
-        
+
         for _ in 0..20 {
             let (x, y) = random_position(&viewport, 0.0);
             assert!(x >= 1.0);
@@ -295,14 +295,14 @@ mod tests {
             height: 800.0,
         };
         let edge_ratio = 0.10;
-        
+
         for _ in 0..50 {
             let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
             let min_x_expected = viewport.width * edge_ratio;
             let max_x_expected = viewport.width * (1.0 - edge_ratio);
             let min_y_expected = viewport.height * edge_ratio;
             let max_y_expected = viewport.height * (1.0 - edge_ratio);
-            
+
             assert!(x >= min_x_expected);
             assert!(x <= max_x_expected);
             assert!(y >= min_y_expected);
@@ -316,14 +316,14 @@ mod tests {
             width: 1000.0,
             height: 800.0,
         };
-        
+
         // Test that ratio is clamped to 0.45
         let (x, y) = random_position_with_edge_ratio(&viewport, 0.50);
         let min_x_expected = viewport.width * 0.45;
         let max_x_expected = viewport.width * 0.55;
         let min_y_expected = viewport.height * 0.45;
         let max_y_expected = viewport.height * 0.55;
-        
+
         assert!(x >= min_x_expected);
         assert!(x <= max_x_expected);
         assert!(y >= min_y_expected);
@@ -336,7 +336,7 @@ mod tests {
             width: 1000.0,
             height: 800.0,
         };
-        
+
         let (x, y) = random_position_with_edge_ratio(&viewport, 0.0);
         assert!(x >= 1.0);
         assert!(x <= viewport.width - 1.0);
@@ -425,18 +425,23 @@ mod tests {
             width: 1000.0,
             height: 800.0,
         };
-        
+
         // Test that distribution is reasonably spread
-        let positions: Vec<(f64, f64)> = (0..100)
-            .map(|_| random_position(&viewport, 50.0))
-            .collect();
-        
+        let positions: Vec<(f64, f64)> =
+            (0..100).map(|_| random_position(&viewport, 50.0)).collect();
+
         // Check that positions span the range
         let min_x = positions.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-        let max_x = positions.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+        let max_x = positions
+            .iter()
+            .map(|p| p.0)
+            .fold(f64::NEG_INFINITY, f64::max);
         let min_y = positions.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-        let max_y = positions.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
-        
+        let max_y = positions
+            .iter()
+            .map(|p| p.1)
+            .fold(f64::NEG_INFINITY, f64::max);
+
         assert!(min_x < 200.0); // Should have some near the left edge
         assert!(max_x > 800.0); // Should have some near the right edge
         assert!(min_y < 200.0); // Should have some near the top edge
@@ -449,7 +454,7 @@ mod tests {
             width: 100.0,
             height: 100.0,
         };
-        
+
         let (x, y) = random_position(&viewport, 10.0);
         assert!(x >= 10.0);
         assert!(x <= 90.0);
@@ -463,7 +468,7 @@ mod tests {
             width: 100.0,
             height: 100.0,
         };
-        
+
         let (x, y) = random_position_with_edge_ratio(&viewport, 0.20);
         assert!(x >= 20.0);
         assert!(x <= 80.0);

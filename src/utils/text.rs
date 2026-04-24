@@ -157,4 +157,114 @@ mod tests {
         assert_eq!(result.chars().count(), 5);
         assert!(result.ends_with("..."));
     }
+
+    #[test]
+    fn preview_chars_mixed_unicode() {
+        let text = "Hello世界🙂";
+        assert_eq!(preview_chars(text, 7), "Hello世界");
+    }
+
+    #[test]
+    fn truncate_chars_mixed_unicode() {
+        let text = "Hello世界🙂";
+        assert_eq!(truncate_chars(text, 7), "Hello世界");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_mixed_unicode() {
+        let text = "Hello世界🙂";
+        let result = truncate_with_ellipsis(text, 6);
+        assert_eq!(result.chars().count(), 6);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn preview_chars_whitespace() {
+        let text = "   hello   ";
+        assert_eq!(preview_chars(text, 5), "   he");
+    }
+
+    #[test]
+    fn truncate_chars_whitespace() {
+        let text = "   hello   ";
+        assert_eq!(truncate_chars(text, 5), "   he");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_whitespace() {
+        let text = "   hello world   ";
+        let result = truncate_with_ellipsis(text, 8);
+        assert_eq!(result.chars().count(), 8);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn preview_chars_newlines() {
+        let text = "hello\nworld";
+        assert_eq!(preview_chars(text, 6), "hello\n");
+    }
+
+    #[test]
+    fn truncate_chars_newlines() {
+        let text = "hello\nworld";
+        assert_eq!(truncate_chars(text, 6), "hello\n");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_newlines() {
+        let text = "hello\nworld";
+        let result = truncate_with_ellipsis(text, 8);
+        assert_eq!(result.chars().count(), 8);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn preview_chars_tabs() {
+        let text = "hello\tworld";
+        assert_eq!(preview_chars(text, 6), "hello\t");
+    }
+
+    #[test]
+    fn truncate_chars_tabs() {
+        let text = "hello\tworld";
+        assert_eq!(truncate_chars(text, 6), "hello\t");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_very_long_text() {
+        let text = "a".repeat(10000);
+        let result = truncate_with_ellipsis(&text, 100);
+        assert_eq!(result.chars().count(), 100);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn preview_chars_special_chars() {
+        let text = "!@#$%^&*()";
+        assert_eq!(preview_chars(text, 5), "!@#$%");
+    }
+
+    #[test]
+    fn truncate_chars_special_chars() {
+        let text = "!@#$%^&*()";
+        assert_eq!(truncate_chars(text, 5), "!@#$%");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_limit_equals_ellipsis_length() {
+        let result = truncate_with_ellipsis("hello", 3);
+        assert_eq!(result, "...");
+    }
+
+    #[test]
+    fn preview_chars_unicode_combining() {
+        let text = "café";
+        assert_eq!(preview_chars(text, 3), "caf");
+    }
+
+    #[test]
+    fn truncate_chars_unicode_combining() {
+        let text = "café";
+        assert_eq!(truncate_chars(text, 3), "caf");
+    }
 }

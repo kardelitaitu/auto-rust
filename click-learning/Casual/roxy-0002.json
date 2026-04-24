@@ -1,0 +1,15 @@
+{
+  "interaction_count": 1,
+  "total_attempts": 1,
+  "total_successes": 1,
+  "recent_results": [
+    true
+  ],
+  "selectors": {
+    "a[href='/NFL/status/2047525268437262621']": {
+      "attempts": 1,
+      "successes": 1,
+      "consecutive_failures": 0
+    }
+  }
+}

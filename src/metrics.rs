@@ -570,7 +570,15 @@ impl MetricsCollector {
         active_sessions: usize,
         healthy_sessions: usize,
     ) -> Result<(), std::io::Error> {
-        self.export_summary_to("run-summary.json", active_sessions, healthy_sessions, 0, 0, 0, 0)
+        self.export_summary_to(
+            "run-summary.json",
+            active_sessions,
+            healthy_sessions,
+            0,
+            0,
+            0,
+            0,
+        )
     }
 
     pub fn export_summary_to<P: AsRef<Path>>(

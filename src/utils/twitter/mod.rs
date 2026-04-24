@@ -19,8 +19,8 @@ pub mod twitteractivity_sentiment;
 pub mod twitteractivity_sentiment_context;
 pub mod twitteractivity_sentiment_domains;
 pub mod twitteractivity_sentiment_emoji;
-pub mod twitteractivity_sentiment_llm;
 pub mod twitteractivity_sentiment_enhanced;
+pub mod twitteractivity_sentiment_llm;
 
 #[allow(unused_imports)]
 pub use twitteractivity_decision::*;

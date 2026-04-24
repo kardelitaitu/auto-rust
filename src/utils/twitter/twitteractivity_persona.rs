@@ -97,6 +97,10 @@ impl PersonaWeights {
     }
 }
 
+fn effective_probability(base_probability: f64, persona: &PersonaWeights) -> f64 {
+    (base_probability * persona.interest_multiplier).clamp(0.0, 1.0)
+}
+
 /// Selects a PersonaWeights configuration based on the provided weights dictionary.
 /// The `weights` JSON may include any of: `like_prob`, `retweet_prob`, `quote_prob`, `follow_prob`, `reply_prob`, `thread_dive_prob`, `interest_multiplier`.
 /// Any missing weights default to the provided config probabilities.
@@ -184,7 +188,7 @@ pub fn apply_behavior_profile(
 /// Decides whether to like a tweet given the persona weights.
 /// Returns `true` if the randomized chance was met.
 pub fn should_like(persona: &PersonaWeights) -> bool {
-    let prob = persona.like_prob.clamp(0.0, 1.0);
+    let prob = effective_probability(persona.like_prob, persona);
     let mut rng = rand::thread_rng();
     let result = rng.gen_bool(prob);
     log::debug!("should_like: prob={:.3}, result={}", prob, result);
@@ -194,37 +198,37 @@ pub fn should_like(persona: &PersonaWeights) -> bool {
 /// Decides whether to retweet.
 pub fn should_retweet(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
-    rng.gen_bool(persona.retweet_prob.clamp(0.0, 1.0))
+    rng.gen_bool(effective_probability(persona.retweet_prob, persona))
 }
 
 /// Decides whether to quote tweet.
 pub fn should_quote(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
-    rng.gen_bool(persona.quote_prob.clamp(0.0, 1.0))
+    rng.gen_bool(effective_probability(persona.quote_prob, persona))
 }
 
 /// Decides whether to follow the author.
 pub fn should_follow(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
-    rng.gen_bool(persona.follow_prob.clamp(0.0, 1.0))
+    rng.gen_bool(effective_probability(persona.follow_prob, persona))
 }
 
 /// Decides whether to reply.
 pub fn should_reply(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
-    rng.gen_bool(persona.reply_prob.clamp(0.0, 1.0))
+    rng.gen_bool(effective_probability(persona.reply_prob, persona))
 }
 
 /// Decides whether to bookmark a tweet.
 pub fn should_bookmark(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
-    rng.gen_bool(persona.bookmark_prob.clamp(0.0, 1.0))
+    rng.gen_bool(effective_probability(persona.bookmark_prob, persona))
 }
 
 /// Decides whether to dive into the thread.
 pub fn should_dive(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
-    rng.gen_bool(persona.thread_dive_prob.clamp(0.0, 1.0))
+    rng.gen_bool(effective_probability(persona.thread_dive_prob, persona))
 }
 
 /// Builds a persona payload for task configuration.
@@ -371,6 +375,50 @@ mod tests {
     }
 
     #[test]
+    fn test_interest_multiplier_suppresses_decisions() {
+        let weights = PersonaWeights {
+            like_prob: 1.0,
+            retweet_prob: 1.0,
+            quote_prob: 1.0,
+            follow_prob: 1.0,
+            reply_prob: 1.0,
+            bookmark_prob: 1.0,
+            thread_dive_prob: 1.0,
+            interest_multiplier: 0.0,
+        };
+
+        assert!(!should_like(&weights));
+        assert!(!should_retweet(&weights));
+        assert!(!should_quote(&weights));
+        assert!(!should_follow(&weights));
+        assert!(!should_reply(&weights));
+        assert!(!should_bookmark(&weights));
+        assert!(!should_dive(&weights));
+    }
+
+    #[test]
+    fn test_interest_multiplier_boosts_and_clamps_decisions() {
+        let weights = PersonaWeights {
+            like_prob: 0.6,
+            retweet_prob: 0.6,
+            quote_prob: 0.6,
+            follow_prob: 0.6,
+            reply_prob: 0.6,
+            bookmark_prob: 0.6,
+            thread_dive_prob: 0.6,
+            interest_multiplier: 2.0,
+        };
+
+        assert!(should_like(&weights));
+        assert!(should_retweet(&weights));
+        assert!(should_quote(&weights));
+        assert!(should_follow(&weights));
+        assert!(should_reply(&weights));
+        assert!(should_bookmark(&weights));
+        assert!(should_dive(&weights));
+    }
+
+    #[test]
     fn test_should_retweet_probability_bounds() {
         let weights = PersonaWeights {
             retweet_prob: 0.0,
@@ -490,7 +538,10 @@ mod tests {
         let config = build_persona_config(Some(weights), None);
         let weights_obj = config.get("weights").unwrap();
         assert_eq!(weights_obj.get("like_prob").unwrap().as_f64().unwrap(), 0.5);
-        assert_eq!(weights_obj.get("retweet_prob").unwrap().as_f64().unwrap(), 0.2);
+        assert_eq!(
+            weights_obj.get("retweet_prob").unwrap().as_f64().unwrap(),
+            0.2
+        );
     }
 
     #[test]

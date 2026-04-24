@@ -54,6 +54,7 @@ use rand;
 use tracing::instrument;
 
 use super::twitteractivity_humanized::*;
+use super::twitteractivity_selectors::selector_follow_button;
 
 /// Gets the current page URL.
 #[instrument(skip(api))]
@@ -83,6 +84,79 @@ pub async fn is_on_home_feed(api: &TaskContext) -> Result<bool> {
 pub async fn is_on_tweet_page(api: &TaskContext) -> Result<bool> {
     let url = get_current_url(api).await?;
     Ok(url.contains("/status/") || url.contains("x.com/") && url.contains("/status/"))
+}
+
+fn root_tweet_button_center_js(selector: &str) -> Result<String> {
+    let selector_json = serde_json::to_string(selector)?;
+    Ok(format!(
+        r#"
+        (function() {{
+            var selector = {selector_json};
+            function visible(el) {{
+                if (!el) return false;
+                var rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            }}
+            function center(el) {{
+                var rect = el.getBoundingClientRect();
+                return {{ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }};
+            }}
+
+            var articles = Array.prototype.slice.call(
+                document.querySelectorAll('article[data-testid="tweet"]')
+            ).filter(visible);
+            var statusMatch = window.location.pathname.match(/\/status\/(\d+)/);
+            var targetStatusId = statusMatch ? statusMatch[1] : null;
+            var targetArticle = null;
+            if (targetStatusId) {{
+                for (var i = 0; i < articles.length; i++) {{
+                    if (articles[i].querySelector('a[href*="/status/' + targetStatusId + '"]')) {{
+                        targetArticle = articles[i];
+                        break;
+                    }}
+                }}
+            }}
+            var scopes = articles.length > 0
+                ? [targetArticle || articles[0]]
+                : [document.querySelector('main'), document.body].filter(Boolean);
+
+            for (var i = 0; i < scopes.length; i++) {{
+                var button = scopes[i].querySelector(selector);
+                if (visible(button)) return center(button);
+            }}
+            return null;
+        }})()
+        "#
+    ))
+}
+
+async fn click_root_tweet_button(
+    api: &TaskContext,
+    selector: &str,
+    action_name: &str,
+) -> Result<bool> {
+    let js = root_tweet_button_center_js(selector)?;
+    let result = api.page().evaluate(js).await?;
+
+    if let Some(obj) = result.value().and_then(|v| v.as_object()) {
+        if let (Some(x), Some(y)) = (
+            obj.get("x").and_then(|v| v.as_f64()),
+            obj.get("y").and_then(|v| v.as_f64()),
+        ) {
+            info!(
+                "Found root tweet {} button at ({:.1}, {:.1})",
+                action_name, x, y
+            );
+            api.move_mouse_to(x, y).await?;
+            human_pause(api, 250).await;
+            api.click_at(x, y).await?;
+            human_pause(api, 500).await;
+            return Ok(true);
+        }
+    }
+
+    info!("Root tweet {} button not found", action_name);
+    Ok(false)
 }
 
 /// Navigates to tweet by moving mouse to it and clicking.
@@ -131,18 +205,12 @@ pub async fn navigate_to_tweet(api: &TaskContext, x: f64, y: f64) -> Result<bool
 pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
     use crate::task::twitteractivity::LIKE_BUTTON_SELECTOR;
 
-    // Scroll like button into view before clicking
-    if let Err(e) = api.scroll_into_view(LIKE_BUTTON_SELECTOR).await {
-        info!("Failed to scroll like button into view: {}", e);
-        return Ok(false);
+    if click_root_tweet_button(api, LIKE_BUTTON_SELECTOR, "like").await? {
+        info!("Clicked root tweet like button");
+        return Ok(true);
     }
-    if let Err(e) = api.click(LIKE_BUTTON_SELECTOR).await {
-        info!("Failed to click like button: {}", e);
-        return Ok(false);
-    }
-    info!("Clicked like button");
-    human_pause(api, 500).await;
-    Ok(true)
+
+    Ok(false)
 }
 
 /// Clicks the "retweet" button on the current tweet to open the retweet menu.
@@ -178,38 +246,12 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
 /// Filters for: data-testid includes "retweet" but not "unretweet"
 #[instrument(skip(api))]
 pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
-    let js = r#"
-        (function() {
-            var buttons = document.querySelectorAll('button[data-testid], a[data-testid]');
-            for (var i = 0; i < buttons.length; i++) {
-                var el = buttons[i];
-                var testId = (el.getAttribute('data-testid') || '').toLowerCase();
-                if (testId.includes('retweet') && !testId.includes('unretweet')) {
-                    var rect = el.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
-                    }
-                }
-            }
-            return null;
-        })()
-    "#;
-    let result = api.page().evaluate(js).await?;
+    use crate::task::twitteractivity::RETWEET_BUTTON_SELECTOR;
 
-    if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
-        ) {
-            info!("Found retweet button at ({:.1}, {:.1})", x, y);
-            api.move_mouse_to(x, y).await?;
-            human_pause(api, 250).await;
-            api.click_at(x, y).await?;
-            info!("Clicked retweet button, waiting for menu...");
-            human_pause(api, 600).await;
-            return Ok(true);
-        }
+    if click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
+        return Ok(true);
     }
+
     info!("Retweet button not found");
     Ok(false)
 }
@@ -303,14 +345,7 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
     use crate::task::twitteractivity::RETWEET_CONFIRM_SELECTOR;
 
     info!("Starting retweet action");
-    // Scroll retweet button into view before clicking
-    if let Err(e) = api.scroll_into_view(RETWEET_BUTTON_SELECTOR).await {
-        info!("Failed to scroll retweet button into view: {}", e);
-        return Ok(false);
-    }
-    // Click retweet button to open menu
-    if let Err(e) = api.click(RETWEET_BUTTON_SELECTOR).await {
-        info!("Failed to click retweet button: {}", e);
+    if !click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
         return Ok(false);
     }
     info!("Clicked retweet button, waiting for menu...");
@@ -367,36 +402,10 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
 /// Filters for: data-testid includes "reply" or "comment"
 #[instrument(skip(api))]
 pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
-    let js = r#"
-        (function() {
-            var buttons = document.querySelectorAll('button[data-testid], a[data-testid]');
-            for (var i = 0; i < buttons.length; i++) {
-                var el = buttons[i];
-                var testId = (el.getAttribute('data-testid') || '').toLowerCase();
-                if (testId.includes('reply') || testId.includes('comment')) {
-                    var rect = el.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
-                    }
-                }
-            }
-            return null;
-        })()
-    "#;
-    let result = api.page().evaluate(js).await?;
-
-    if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
-        ) {
-            api.move_mouse_to(x, y).await?;
-            human_pause(api, 250).await;
-            api.click_at(x, y).await?;
-            human_pause(api, 500).await;
-            return Ok(true);
-        }
+    if click_root_tweet_button(api, r#"button[data-testid="reply"]"#, "reply").await? {
+        return Ok(true);
     }
+
     Ok(false)
 }
 
@@ -444,8 +453,21 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 
     info!("Starting send_reply with text: '{}'", reply_text);
 
-    // Focus the specific reply textarea
-    let textarea_js = r##"(function() { var ta = document.querySelector('[data-testid="tweetTextarea_0"]'); if (ta) { ta.focus(); ta.click(); return { found: true }; } return { found: false }; })()"##;
+    // Focus the specific reply textarea.
+    let textarea_js = r##"
+        (function() {
+            var textboxes = document.querySelectorAll('[data-testid="tweetTextarea_0"][role="textbox"], [data-testid="tweetTextarea_0"]');
+            for (var i = 0; i < textboxes.length; i++) {
+                var ta = textboxes[i];
+                var rect = ta.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                ta.focus();
+                ta.click();
+                return { found: true };
+            }
+            return { found: false };
+        })()
+    "##;
 
     info!("Focusing reply textarea");
     match timeout(Duration::from_secs(5), api.page().evaluate(textarea_js)).await {
@@ -483,12 +505,17 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     }
     human_pause(api, 400).await;
 
-    // Click the Reply button
+    // Click the Reply submit button in the composer.
     let reply_button_js = r#"
         (function() {
-            var btn = document.querySelector('[data-testid="tweetButtonInline"]');
-            if (btn) {
+            var buttons = document.querySelectorAll('button[data-testid="tweetButtonInline"]');
+            for (var i = 0; i < buttons.length; i++) {
+                var btn = buttons[i];
                 var rect = btn.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+                var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
+                if (text !== 'reply') continue;
                 return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
             }
             return null;
@@ -496,13 +523,14 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     "#;
 
     info!("Finding reply button");
-    let button_result = match timeout(Duration::from_secs(5), api.page().evaluate(reply_button_js)).await {
-        Ok(result) => result?,
-        Err(_) => {
-            info!("Timeout finding reply button");
-            return Ok(false);
-        }
-    };
+    let button_result =
+        match timeout(Duration::from_secs(5), api.page().evaluate(reply_button_js)).await {
+            Ok(result) => result?,
+            Err(_) => {
+                info!("Timeout finding reply button");
+                return Ok(false);
+            }
+        };
 
     if let Some(coords) = button_result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
@@ -557,17 +585,20 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
                 info!("Reply send completed and verified");
                 Ok(true)
             } else {
-                let reason = obj.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let reason = obj
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 info!("Reply send verification failed: {}", reason);
                 Ok(false)
             }
         } else {
             info!("Reply send completed (unable to verify)");
-            Ok(true)
+            Ok(false)
         }
     } else {
         info!("Reply send completed (verification failed)");
-        Ok(true)
+        Ok(false)
     }
 }
 
@@ -637,8 +668,6 @@ pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<bool>
 /// - Subscribe check: `button[data-testid*="-subscribe"]` with aria-label
 #[instrument(skip(api))]
 pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::FOLLOW_BUTTON_SELECTOR;
-
     // Simulate reading replies by scrolling down a bit more
     info!("Simulating reading replies before following...");
     api.scroll_read(1, 200, true, false).await?;
@@ -649,40 +678,53 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     api.scroll_to_top().await?;
     human_pause(api, 1000).await;
 
-    // Check if already following (subscribe button present)
-    let subscribe_js = r#"
+    // Check if already following.
+    let following_js = r#"
         (function() {
-            var buttons = document.querySelectorAll('button[data-testid*="-subscribe"]');
+            var buttons = document.querySelectorAll('button, [role="button"]');
             for (var i = 0; i < buttons.length; i++) {
                 var btn = buttons[i];
-                var ariaLabel = btn.getAttribute('aria-label') || '';
-                if (ariaLabel.includes('Subscribe to @')) {
-                    var username = ariaLabel.replace('Subscribe to @', '').split(' ')[0];
-                    return username;
+                var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
+                var label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                var dataTestId = (btn.getAttribute('data-testid') || '').toLowerCase();
+                if (text === 'following' ||
+                    label.includes('following @') ||
+                    label.includes('unfollow @') ||
+                    dataTestId.includes('unfollow')) {
+                    return true;
                 }
             }
-            return null;
+            return false;
         })()
     "#;
 
-    let subscribe_result = api.page().evaluate(subscribe_js).await?;
-    if let Some(username_val) = subscribe_result.value() {
-        if let Some(username) = username_val.as_str() {
-            info!("Already following @{}", username);
-            return Ok(false); // Not an error, just already following
+    let following_result = api.page().evaluate(following_js).await?;
+    if following_result
+        .value()
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    {
+        info!("Already following tweet author");
+        return Ok(false);
+    }
+
+    let follow_result = api.page().evaluate(selector_follow_button()).await?;
+    if let Some(obj) = follow_result.value().and_then(|v| v.as_object()) {
+        if let (Some(x), Some(y)) = (
+            obj.get("x").and_then(|v| v.as_f64()),
+            obj.get("y").and_then(|v| v.as_f64()),
+        ) {
+            info!("Found scoped follow button at ({:.1}, {:.1})", x, y);
+            api.move_mouse_to(x, y).await?;
+            human_pause(api, 250).await;
+            api.click_at(x, y).await?;
+            human_pause(api, 1000).await;
+            return Ok(true);
         }
     }
 
-    // Click the follow button
-    if let Err(e) = api.click(FOLLOW_BUTTON_SELECTOR).await {
-        info!("Failed to click follow button: {}", e);
-        return Ok(false);
-    }
-    info!("Clicked follow button");
-
-    // Wait for action to complete
-    human_pause(api, 1000).await;
-    Ok(true)
+    info!("Scoped follow button not found");
+    Ok(false)
 }
 
 /// Clicks the "bookmark" button on the current tweet.
@@ -716,16 +758,26 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
 pub async fn bookmark_tweet(api: &TaskContext) -> Result<bool> {
     use crate::task::twitteractivity::BOOKMARK_BUTTON_SELECTOR;
 
-    // Scroll bookmark button into view before clicking
-    if let Err(e) = api.scroll_into_view(BOOKMARK_BUTTON_SELECTOR).await {
-        info!("Failed to scroll bookmark button into view: {}", e);
-        return Ok(false);
+    if click_root_tweet_button(api, BOOKMARK_BUTTON_SELECTOR, "bookmark").await? {
+        info!("Clicked root tweet bookmark button");
+        return Ok(true);
     }
-    if let Err(e) = api.click(BOOKMARK_BUTTON_SELECTOR).await {
-        info!("Failed to click bookmark button: {}", e);
-        return Ok(false);
+
+    Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_root_tweet_button_center_js_scopes_to_first_visible_tweet() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#).unwrap();
+
+        assert!(js.contains("article[data-testid=\"tweet\"]"));
+        assert!(js.contains("targetStatusId"));
+        assert!(js.contains("articles[0]"));
+        assert!(js.contains("querySelector(selector)"));
+        assert!(js.contains(r#"button[data-testid=\"reply\"]"#));
     }
-    info!("Clicked bookmark button");
-    human_pause(api, 500).await;
-    Ok(true)
 }

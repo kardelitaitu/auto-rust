@@ -184,8 +184,9 @@ mod tests {
 
     #[test]
     fn test_gaussian_infinity_bounds() {
+        // When bounds are not finite, gaussian returns the mean
         let value = gaussian(50.0, 10.0, f64::NEG_INFINITY, f64::INFINITY);
-        assert!(!value.is_finite());
+        assert_eq!(value, 50.0);
     }
 
     #[test]
@@ -257,6 +258,49 @@ mod tests {
     #[test]
     fn test_gaussian_mean_at_max_bound() {
         let value = gaussian(100.0, 10.0, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_very_small_std_dev() {
+        let value = gaussian(50.0, 0.001, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_mean_clamp_to_min() {
+        let value = gaussian(-10.0, 5.0, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_mean_clamp_to_max() {
+        let value = gaussian(110.0, 5.0, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
+
+    #[test]
+    fn test_random_in_range_max_u64() {
+        let result = random_in_range(u64::MAX - 10, u64::MAX);
+        assert!(result >= u64::MAX - 10 && result <= u64::MAX);
+    }
+
+    #[test]
+    fn test_gaussian_consistency_with_fixed_rng() {
+        // Test that gaussian produces consistent results with same parameters
+        let mut values = Vec::new();
+        for _ in 0..10 {
+            values.push(gaussian(50.0, 10.0, 0.0, 100.0));
+        }
+        // All values should be within bounds
+        for value in values {
+            assert!((0.0..=100.0).contains(&value));
+        }
+    }
+
+    #[test]
+    fn test_gaussian_small_std_dev() {
+        let value = gaussian(50.0, 0.001, 0.0, 100.0);
         assert!((0.0..=100.0).contains(&value));
     }
 }

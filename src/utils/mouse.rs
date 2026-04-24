@@ -7,14 +7,14 @@
 //! - Configurable velocity and trajectory randomization
 //! - Utilities for human-computer interaction studies
 
+use crate::config::{NativeClickCalibrationMode, NativeInteractionConfig};
+use crate::logger::scoped_log_context;
 use crate::state::{
     are_all_overlays_enabled, overlay_for_page, set_overlay_enabled_for_all, SessionOverlayState,
 };
-use crate::config::{NativeClickCalibrationMode, NativeInteractionConfig};
-use crate::logger::scoped_log_context;
-use crate::utils::native_input;
 use crate::utils::geometry::BoundingBox;
 use crate::utils::math::{gaussian, random_in_range};
+use crate::utils::native_input;
 use crate::utils::page_size::get_viewport;
 use crate::utils::scroll;
 use crate::utils::timing::human_pause;
@@ -336,7 +336,8 @@ fn nativeclick_debug(
 
 fn record_nativeclick_trace_phase(session_id: &str, phase: &str) {
     if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
-        hooks.entry(session_id.to_string())
+        hooks
+            .entry(session_id.to_string())
             .or_default()
             .push(phase.to_string());
     }
@@ -1275,16 +1276,17 @@ pub async fn native_move_cursor_human(
     let attention_pause_ms = (reaction_delay_ms / 4).clamp(40, 200);
 
     let _native_click_guard = acquire_native_input_lock(session_id, trace_id, "nativecursor").await;
-    page.bring_to_front()
-        .await
-        .map_err(|err| anyhow::anyhow!(
+    page.bring_to_front().await.map_err(|err| {
+        anyhow::anyhow!(
             "trace={} nativecursor bring_to_front failed: {}",
             trace_id,
             err
-        ))?;
+        )
+    })?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
 
-    let candidate = resolve_native_cursor_candidate(page, trace_id, native_interaction, query).await?;
+    let candidate =
+        resolve_native_cursor_candidate(page, trace_id, native_interaction, query).await?;
     let point = content_point_to_screen_point(
         page,
         session_id,
@@ -1297,13 +1299,13 @@ pub async fn native_move_cursor_human(
     .map_err(|err| anyhow::anyhow!("trace={} nativecursor mapping failed: {}", trace_id, err))?;
     sync_native_overlay_position(page, candidate.x, candidate.y).await;
 
-    page.bring_to_front()
-        .await
-        .map_err(|err| anyhow::anyhow!(
+    page.bring_to_front().await.map_err(|err| {
+        anyhow::anyhow!(
             "trace={} nativecursor bring_to_front failed: {}",
             trace_id,
             err
-        ))?;
+        )
+    })?;
     native_move_to_point(
         trace_id,
         point.x,
@@ -1421,11 +1423,7 @@ fn detect_element_type(selector: &str) -> String {
 }
 
 /// Waits for element to be stable (position not changing) before interaction
-async fn wait_for_element_stability(
-    page: &Page,
-    selector: &str,
-    timeout_ms: u64,
-) -> Result<bool> {
+async fn wait_for_element_stability(page: &Page, selector: &str, timeout_ms: u64) -> Result<bool> {
     let start_time = std::time::Instant::now();
     let check_interval_ms = 100;
     let required_stable_checks = 3;
@@ -1443,7 +1441,9 @@ async fn wait_for_element_stability(
             serde_json::to_string(selector)?
         );
 
-        let exists = page.evaluate(exists_js).await?
+        let exists = page
+            .evaluate(exists_js)
+            .await?
             .value()
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
@@ -1507,11 +1507,7 @@ async fn wait_for_element_stability(
 }
 
 /// Moves cursor to target coordinates with adaptive speed and collision avoidance
-async fn move_cursor_collision_avoidant(
-    page: &Page,
-    target_x: f64,
-    target_y: f64,
-) -> Result<()> {
+async fn move_cursor_collision_avoidant(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
     // Get current cursor position (assume viewport center if unknown)
     let viewport = timeout(Duration::from_secs(1), get_viewport(page))
         .await
@@ -1522,7 +1518,12 @@ async fn move_cursor_collision_avoidant(
 
     // Calculate adaptive speed based on context
     let distance = ((target_x - start_x).powi(2) + (target_y - start_y).powi(2)).sqrt();
-    let mut config = calculate_adaptive_cursor_config(distance, 50.0, ExperienceLevel::Intermediate, ElementPriority::Normal);
+    let mut config = calculate_adaptive_cursor_config(
+        distance,
+        50.0,
+        ExperienceLevel::Intermediate,
+        ElementPriority::Normal,
+    );
 
     let start_point = Point::new(start_x, start_y);
     let end_point = Point::new(target_x, target_y);
@@ -1557,9 +1558,9 @@ fn calculate_adaptive_cursor_config(
 ) -> CursorMovementConfig {
     // Base speed depends on user experience
     let base_multiplier = match user_experience {
-        ExperienceLevel::Novice => 0.7,    // Slower, more deliberate
+        ExperienceLevel::Novice => 0.7, // Slower, more deliberate
         ExperienceLevel::Intermediate => 1.0,
-        ExperienceLevel::Expert => 1.3,    // Faster, more confident
+        ExperienceLevel::Expert => 1.3, // Faster, more confident
     };
 
     // Adjust for distance (Fitts' Law approximation)
@@ -1570,9 +1571,9 @@ fn calculate_adaptive_cursor_config(
 
     // Adjust for importance (important elements get more careful approach)
     let importance_factor = match target_importance {
-        ElementPriority::Critical => 0.8,   // More careful
+        ElementPriority::Critical => 0.8, // More careful
         ElementPriority::Normal => 1.0,
-        ElementPriority::Optional => 1.2,   // Less careful
+        ElementPriority::Optional => 1.2, // Less careful
     };
 
     let final_multiplier = base_multiplier * distance_factor * size_factor * importance_factor;
@@ -1625,14 +1626,17 @@ async fn move_along_points_adaptive(
         };
 
         let adjusted_min_delay = (config.min_step_delay_ms as f64 / speed_adjustment) as u64;
-        let adjusted_max_variance = (config.max_step_delay_variance_ms as f64 / speed_adjustment) as u32;
+        let adjusted_max_variance =
+            (config.max_step_delay_variance_ms as f64 / speed_adjustment) as u32;
 
         human_pause(adjusted_min_delay, adjusted_max_variance).await;
 
         // Include attention simulation
-        if random_in_range(0, 100) < 8 { // 8% chance
+        if random_in_range(0, 100) < 8 {
+            // 8% chance
             simulate_attention_drift(page, point.x, point.y).await?;
-        } else if random_in_range(0, 100) < 12 { // 12% chance
+        } else if random_in_range(0, 100) < 12 {
+            // 12% chance
             human_pause(random_in_range(50, 200), 20).await;
         }
     }
@@ -1641,10 +1645,7 @@ async fn move_along_points_adaptive(
 }
 
 /// Detects UI elements that would cause unwanted hovers along cursor path
-async fn detect_ui_collisions_along_path(
-    page: &Page,
-    points: &[Point],
-) -> Result<Vec<Point>> {
+async fn detect_ui_collisions_along_path(page: &Page, points: &[Point]) -> Result<Vec<Point>> {
     let mut collision_points = Vec::new();
     let sample_rate = 5; // Check every 5th point to optimize
 
@@ -1676,7 +1677,11 @@ async fn detect_ui_collisions_along_path(
 
         if let Ok(result) = page.evaluate(js).await {
             if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-                if obj.get("significant").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if obj
+                    .get("significant")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     collision_points.push(*point);
                 }
             }
@@ -1736,18 +1741,22 @@ async fn move_along_points(
 
         if config.add_micro_pauses {
             let delay = (config.min_step_delay_ms as f64 / config.speed_multiplier) as u64;
-            let variance = (config.max_step_delay_variance_ms as f64 / config.speed_multiplier) as u32;
+            let variance =
+                (config.max_step_delay_variance_ms as f64 / config.speed_multiplier) as u32;
             human_pause(delay, variance).await;
 
             // Phase 2: Attention simulation - occasional drift and micro-breaks
-            if random_in_range(0, 100) < 8 { // 8% chance of attention drift
+            if random_in_range(0, 100) < 8 {
+                // 8% chance of attention drift
                 simulate_attention_drift(page, point.x, point.y).await?;
-            } else if random_in_range(0, 100) < 12 { // 12% chance of micro-pause
+            } else if random_in_range(0, 100) < 12 {
+                // 12% chance of micro-pause
                 human_pause(random_in_range(50, 200), 20).await;
             }
 
             // Phase 2: Fatigue effects - occasional longer pauses when "tired"
-            if i > points.len() / 2 && random_in_range(0, 100) < 5 { // 5% chance in second half
+            if i > points.len() / 2 && random_in_range(0, 100) < 5 {
+                // 5% chance in second half
                 human_pause(random_in_range(300, 800), 30).await; // Fatigue pause
             }
         }
@@ -1781,10 +1790,7 @@ async fn simulate_attention_drift(page: &Page, target_x: f64, target_y: f64) -> 
 }
 
 /// Checks if element is visually clickable (not obscured, enabled, etc.)
-async fn is_element_clickable(
-    page: &Page,
-    selector: &str,
-) -> Result<bool> {
+async fn is_element_clickable(page: &Page, selector: &str) -> Result<bool> {
     let js = format!(
         r#"(() => {{
             const el = document.querySelector({});
@@ -1826,7 +1832,8 @@ async fn is_element_clickable(
         serde_json::to_string(selector)?
     );
 
-    page.evaluate(js).await?
+    page.evaluate(js)
+        .await?
         .value()
         .and_then(|v| v.as_bool())
         .ok_or_else(|| anyhow::anyhow!("Failed to evaluate clickability"))
@@ -1841,7 +1848,10 @@ pub async fn click_selector_human(
 ) -> Result<ClickOutcome> {
     // Phase 1: Smart element waiting and stability check
     if !wait_for_element_stability(page, selector, 5000).await? {
-        return Err(anyhow::anyhow!("Element '{}' not stable within 5s", selector));
+        return Err(anyhow::anyhow!(
+            "Element '{}' not stable within 5s",
+            selector
+        ));
     }
 
     // Phase 1: Visual clickability confirmation
@@ -1928,21 +1938,15 @@ pub async fn native_click_selector_human(
     // Serialize the full native-click sequence so concurrent browser sessions
     // do not fight over the single global cursor or foreground focus.
     let _native_click_guard = acquire_native_input_lock(session_id, trace_id, "nativeclick").await;
-    page.bring_to_front()
-        .await
-        .map_err(|err| anyhow::anyhow!(
+    page.bring_to_front().await.map_err(|err| {
+        anyhow::anyhow!(
             "trace={} nativeclick bring_to_front failed: {}",
             trace_id,
             err
-        ))?;
+        )
+    })?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
-    nativeclick_debug(
-        session_id,
-        trace_id,
-        selector,
-        "scroll-into-view",
-        "start",
-    );
+    nativeclick_debug(session_id, trace_id, selector, "scroll-into-view", "start");
     scroll::scroll_into_view(page, selector).await?;
 
     let bbox = timeout(
@@ -1981,13 +1985,13 @@ pub async fn native_click_selector_human(
     .await
     .map_err(|err| anyhow::anyhow!("trace={} nativeclick mapping failed: {}", trace_id, err))?;
     sync_native_overlay_position(page, content_x, content_y).await;
-    page.bring_to_front()
-        .await
-        .map_err(|err| anyhow::anyhow!(
+    page.bring_to_front().await.map_err(|err| {
+        anyhow::anyhow!(
             "trace={} nativeclick bring_to_front failed: {}",
             trace_id,
             err
-        ))?;
+        )
+    })?;
     nativeclick_debug(
         session_id,
         trace_id,
@@ -2017,9 +2021,15 @@ pub async fn native_click_selector_human(
         )
     })?;
 
-    let verified = verify_click_target(page, selector, content_x, content_y).await.map_err(|err| {
-        anyhow::anyhow!("trace={} nativeclick verification check failed: {}", trace_id, err)
-    })?;
+    let verified = verify_click_target(page, selector, content_x, content_y)
+        .await
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "trace={} nativeclick verification check failed: {}",
+                trace_id,
+                err
+            )
+        })?;
     sync_native_overlay_position(page, content_x, content_y).await;
     if !verified {
         return Err(anyhow::anyhow!(
@@ -2319,23 +2329,20 @@ async fn resolve_native_cursor_candidate(
         Duration::from_millis(native_interaction.resolve_timeout_ms.clamp(250, 30_000)),
         page.evaluate(js),
     )
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "trace={} nativecursor candidate lookup timed out for '{}'",
-                trace_id,
-                scope
-            )
-        })??;
-    let value = result
-        .value()
-        .cloned()
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "trace={} nativecursor found no visible candidates for '{scope}'",
-                trace_id
-            )
-        })?;
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "trace={} nativecursor candidate lookup timed out for '{}'",
+            trace_id,
+            scope
+        )
+    })??;
+    let value = result.value().cloned().ok_or_else(|| {
+        anyhow::anyhow!(
+            "trace={} nativecursor found no visible candidates for '{scope}'",
+            trace_id
+        )
+    })?;
 
     if value.is_null() {
         anyhow::bail!(
@@ -2511,8 +2518,9 @@ fn browser_content_origin(
 ) -> (f64, f64) {
     let chrome_y = (metrics.outer_height - metrics.inner_height).max(0.0);
     let chrome_x = match mode {
-        NativeClickCalibrationMode::Windows => ((metrics.outer_width - metrics.inner_width).max(0.0))
-            / 2.0,
+        NativeClickCalibrationMode::Windows => {
+            ((metrics.outer_width - metrics.inner_width).max(0.0)) / 2.0
+        }
         NativeClickCalibrationMode::Mac | NativeClickCalibrationMode::Linux => 0.0,
     };
     (
@@ -2614,7 +2622,10 @@ fn native_click_probe_scale_candidates(base_scale: f64) -> Vec<f64> {
     let mut scales: Vec<f64> = Vec::new();
     let mut push_scale = |scale: f64| {
         let scale = scale.clamp(0.5, 4.0);
-        if !scales.iter().any(|existing| (*existing - scale).abs() < 0.001) {
+        if !scales
+            .iter()
+            .any(|existing| (*existing - scale).abs() < 0.001)
+        {
             scales.push(scale);
         }
     };
@@ -3318,12 +3329,8 @@ mod tests {
             visual_viewport_offset_top: 0.0,
         };
 
-        let (x, y) = browser_content_origin(
-            &metrics,
-            1.0,
-            1.0,
-            NativeClickCalibrationMode::Windows,
-        );
+        let (x, y) =
+            browser_content_origin(&metrics, 1.0, 1.0, NativeClickCalibrationMode::Windows);
         assert_eq!(x, 140.0);
         assert_eq!(y, 180.0);
     }
@@ -3343,7 +3350,8 @@ mod tests {
             visual_viewport_offset_top: 0.0,
         };
 
-        let calibration = native_click_calibration_from_metrics(&metrics, NativeClickCalibrationMode::Windows);
+        let calibration =
+            native_click_calibration_from_metrics(&metrics, NativeClickCalibrationMode::Windows);
         let point = screen_point_from_calibration(&metrics, &calibration, 20.0, 10.0);
         assert_eq!(point.x, 180);
         assert_eq!(point.y, 200);
@@ -3363,7 +3371,8 @@ mod tests {
             visual_viewport_offset_left: 0.0,
             visual_viewport_offset_top: 0.0,
         };
-        let calibration = native_click_calibration_from_metrics(&metrics, NativeClickCalibrationMode::Windows);
+        let calibration =
+            native_click_calibration_from_metrics(&metrics, NativeClickCalibrationMode::Windows);
         let base_point = screen_point_from_calibration(&metrics, &calibration, 20.0, 10.0);
 
         let scrolled = BrowserWindowMetrics {
@@ -3487,12 +3496,7 @@ mod tests {
             visual_viewport_offset_top: 0.0,
         };
 
-        let (x, y) = browser_content_origin(
-            &metrics,
-            1.0,
-            1.0,
-            NativeClickCalibrationMode::Mac,
-        );
+        let (x, y) = browser_content_origin(&metrics, 1.0, 1.0, NativeClickCalibrationMode::Mac);
         assert_eq!(x, 100.0);
         assert_eq!(y, 180.0);
     }

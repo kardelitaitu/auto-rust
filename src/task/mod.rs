@@ -93,7 +93,12 @@ pub async fn perform_task(
     }
 }
 
-async fn execute_single_attempt(api: &TaskContext, name: &str, payload: &Value, config: &crate::config::Config) -> Result<()> {
+async fn execute_single_attempt(
+    api: &TaskContext,
+    name: &str,
+    payload: &Value,
+    config: &crate::config::Config,
+) -> Result<()> {
     match name {
         "cookiebot" => cookiebot::run(api, payload.clone())
             .await

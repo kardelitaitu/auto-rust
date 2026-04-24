@@ -425,4 +425,121 @@ mod tests {
         let summary = RunSummary::new();
         assert_eq!(summary.success_rate(), 0.0);
     }
+
+    #[test]
+    fn test_task_status_partial_eq() {
+        assert_eq!(TaskStatus::Success, TaskStatus::Success);
+        assert_ne!(TaskStatus::Success, TaskStatus::Failed("error".to_string()));
+    }
+
+    #[test]
+    fn test_task_result_with_attempt() {
+        let result = TaskResult::success(100).with_attempt(3, 5);
+        assert_eq!(result.attempt, 3);
+        assert_eq!(result.max_retries, 5);
+    }
+
+    #[test]
+    fn test_task_result_with_error_kind() {
+        let result = TaskResult::success(100).with_error_kind(TaskErrorKind::Timeout);
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Timeout));
+    }
+
+    #[test]
+    fn test_task_error_kind_ord() {
+        assert!(TaskErrorKind::Timeout < TaskErrorKind::Unknown);
+        assert!(TaskErrorKind::Validation < TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(TaskErrorKind::Timeout);
+        set.insert(TaskErrorKind::Validation);
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_task_result_zero_duration() {
+        let result = TaskResult::success(0);
+        assert_eq!(result.duration_ms, 0);
+    }
+
+    #[test]
+    fn test_task_result_large_duration() {
+        let result = TaskResult::success(u64::MAX);
+        assert_eq!(result.duration_ms, u64::MAX);
+    }
+
+    #[test]
+    fn test_task_result_chain_with_retry_and_attempt() {
+        let result = TaskResult::success(100)
+            .with_retry(2, 3, "error".to_string())
+            .with_attempt(3, 5);
+        assert_eq!(result.attempt, 3);
+        assert_eq!(result.max_retries, 5);
+    }
+
+    #[test]
+    fn test_run_summary_default() {
+        let summary = RunSummary::default();
+        assert_eq!(summary.total_tasks, 0);
+    }
+
+    #[test]
+    fn test_run_summary_add_timeout() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::failure(50, "timeout".to_string(), TaskErrorKind::Timeout));
+        assert_eq!(summary.timed_out, 1);
+        assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn test_run_summary_multiple_results() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::success(100));
+        assert_eq!(summary.total_tasks, 3);
+        assert_eq!(summary.succeeded, 2);
+        assert_eq!(summary.failed, 1);
+    }
+
+    #[test]
+    fn test_run_summary_total_duration() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::success(200));
+        summary.add(TaskResult::success(50));
+        assert_eq!(summary.total_duration_ms, 350);
+    }
+
+    #[test]
+    fn test_task_status_serialize() {
+        let status = TaskStatus::Success;
+        let serialized = serde_json::to_string(&status).unwrap();
+        assert!(serialized.contains("Success"));
+    }
+
+    #[test]
+    fn test_task_result_serialize() {
+        let result = TaskResult::success(100);
+        let serialized = serde_json::to_string(&result).unwrap();
+        assert!(serialized.contains("duration_ms"));
+    }
+
+    #[test]
+    fn test_run_summary_serialize() {
+        let summary = RunSummary::new();
+        let serialized = serde_json::to_string(&summary).unwrap();
+        assert!(serialized.contains("total_tasks"));
+    }
+
+    #[test]
+    fn test_task_error_kind_copy() {
+        let kind1 = TaskErrorKind::Timeout;
+        let kind2 = kind1;
+        assert_eq!(kind1, kind2);
+    }
 }

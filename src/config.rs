@@ -402,6 +402,9 @@ pub struct EngagementLimitsConfig {
     /// Maximum bookmarks per session (default: 0, disabled in V1)
     #[serde(default = "default_max_bookmarks")]
     pub max_bookmarks: u32,
+    /// Maximum quote tweets per session (default: 2)
+    #[serde(default = "default_max_quote_tweets")]
+    pub max_quote_tweets: u32,
     /// Maximum total engagement actions per session (default: 10)
     #[serde(default = "default_max_total_actions")]
     pub max_total_actions: u32,
@@ -416,6 +419,7 @@ impl Default for EngagementLimitsConfig {
             max_replies: default_max_replies(),
             max_thread_dives: default_max_thread_dives(),
             max_bookmarks: default_max_bookmarks(),
+            max_quote_tweets: default_max_quote_tweets(),
             max_total_actions: default_max_total_actions(),
         }
     }
@@ -442,6 +446,10 @@ fn default_max_thread_dives() -> u32 {
 }
 
 fn default_max_bookmarks() -> u32 {
+    2
+}
+
+fn default_max_quote_tweets() -> u32 {
     2
 }
 
@@ -623,6 +631,216 @@ mod tests {
         let config = RoxybrowserConfig::default();
         assert_eq!(config.api_url, "http://localhost:4444");
         assert!(!config.enabled);
+    }
+
+    #[test]
+    fn test_native_click_calibration_mode_from_env() {
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("windows"),
+            NativeClickCalibrationMode::Windows
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("mac"),
+            NativeClickCalibrationMode::Mac
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("darwin"),
+            NativeClickCalibrationMode::Mac
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("linux"),
+            NativeClickCalibrationMode::Linux
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("invalid"),
+            NativeClickCalibrationMode::Windows
+        );
+    }
+
+    #[test]
+    fn test_native_click_calibration_mode_as_str() {
+        assert_eq!(NativeClickCalibrationMode::Windows.as_str(), "windows");
+        assert_eq!(NativeClickCalibrationMode::Mac.as_str(), "mac");
+        assert_eq!(NativeClickCalibrationMode::Linux.as_str(), "linux");
+    }
+
+    #[test]
+    fn test_native_input_backend_from_env() {
+        assert_eq!(
+            NativeInputBackend::from_env_value("enigo"),
+            NativeInputBackend::Enigo
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("sendinput"),
+            NativeInputBackend::Sendinput
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("send_input"),
+            NativeInputBackend::Sendinput
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("rdev"),
+            NativeInputBackend::Rdev
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("invalid"),
+            NativeInputBackend::Enigo
+        );
+    }
+
+    #[test]
+    fn test_native_input_backend_as_str() {
+        assert_eq!(NativeInputBackend::Enigo.as_str(), "enigo");
+        assert_eq!(NativeInputBackend::Sendinput.as_str(), "sendinput");
+        assert_eq!(NativeInputBackend::Rdev.as_str(), "rdev");
+    }
+
+    #[test]
+    fn test_native_interaction_config_defaults() {
+        let config = NativeInteractionConfig::default();
+        assert_eq!(config.calibration_mode, NativeClickCalibrationMode::Windows);
+        assert_eq!(config.native_input_backend, NativeInputBackend::Enigo);
+        assert_eq!(config.stability_wait_ms, 5000);
+        assert_eq!(config.resolve_timeout_ms, 2000);
+        assert_eq!(config.settle_ms, 0);
+    }
+
+    #[test]
+    fn test_twitter_probabilities_config_defaults() {
+        let config = TwitterProbabilitiesConfig::default();
+        assert_eq!(config.like_probability, 0.4);
+        assert_eq!(config.retweet_probability, 0.15);
+        assert_eq!(config.quote_probability, 0.15);
+        assert_eq!(config.follow_probability, 0.05);
+        assert_eq!(config.reply_probability, 0.05);
+        assert_eq!(config.bookmark_probability, 0.02);
+        assert_eq!(config.thread_dive_probability, 0.25);
+    }
+
+    #[test]
+    fn test_engagement_limits_config_defaults() {
+        let config = EngagementLimitsConfig::default();
+        assert_eq!(config.max_likes, 5);
+        assert_eq!(config.max_retweets, 3);
+        assert_eq!(config.max_follows, 2);
+        assert_eq!(config.max_replies, 1);
+        assert_eq!(config.max_thread_dives, 3);
+        assert_eq!(config.max_bookmarks, 2);
+        assert_eq!(config.max_quote_tweets, 2);
+        assert_eq!(config.max_total_actions, 10);
+    }
+
+    #[test]
+    fn test_twitter_llm_config_defaults() {
+        let config = TwitterLLMConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.provider, "");
+        assert_eq!(config.model, "");
+        assert_eq!(config.temperature, 0.0);
+        assert_eq!(config.max_tokens, 0);
+        assert_eq!(config.timeout_ms, 0);
+    }
+
+    #[test]
+    fn test_tracing_config_defaults() {
+        let config = TracingConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.otlp_endpoint, "");
+        assert_eq!(config.service_name, "");
+    }
+
+    #[test]
+    fn test_browser_profile_defaults() {
+        let profile = BrowserProfile::default();
+        assert_eq!(profile.name, "default");
+        assert_eq!(profile.r#type, "chrome");
+        assert!(profile.ws_endpoint.is_empty());
+    }
+
+    #[test]
+    fn test_config_validation_report_new() {
+        let report = ConfigValidationReport::new();
+        assert!(report.errors.is_empty());
+        assert!(report.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_native_click_calibration_mode_case_insensitive() {
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("WINDOWS"),
+            NativeClickCalibrationMode::Windows
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("MAC"),
+            NativeClickCalibrationMode::Mac
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("LINUX"),
+            NativeClickCalibrationMode::Linux
+        );
+    }
+
+    #[test]
+    fn test_native_input_backend_case_insensitive() {
+        assert_eq!(
+            NativeInputBackend::from_env_value("ENIGO"),
+            NativeInputBackend::Enigo
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("SENDINPUT"),
+            NativeInputBackend::Sendinput
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("RDEV"),
+            NativeInputBackend::Rdev
+        );
+    }
+
+    #[test]
+    fn test_twitter_activity_config_clone() {
+        let config = TwitterActivityConfig::default();
+        let cloned = config.clone();
+        assert_eq!(cloned.feed_scan_duration_ms, config.feed_scan_duration_ms);
+        assert_eq!(cloned.feed_scroll_count, config.feed_scroll_count);
+    }
+
+    #[test]
+    fn test_orchestrator_config_clone() {
+        let config = OrchestratorConfig::default();
+        let cloned = config.clone();
+        assert_eq!(cloned.max_global_concurrency, config.max_global_concurrency);
+        assert_eq!(cloned.task_timeout_ms, config.task_timeout_ms);
+    }
+
+    #[test]
+    fn test_browser_config_clone() {
+        let config = BrowserConfig::default();
+        let cloned = config.clone();
+        assert_eq!(cloned.max_discovery_retries, config.max_discovery_retries);
+        assert_eq!(cloned.discovery_retry_delay_ms, config.discovery_retry_delay_ms);
+    }
+
+    #[test]
+    fn test_native_click_calibration_mode_partial_equality() {
+        let mode1 = NativeClickCalibrationMode::Windows;
+        let mode2 = NativeClickCalibrationMode::Windows;
+        assert_eq!(mode1, mode2);
+        assert!(mode1 == mode2);
+    }
+
+    #[test]
+    fn test_native_input_backend_partial_equality() {
+        let backend1 = NativeInputBackend::Enigo;
+        let backend2 = NativeInputBackend::Enigo;
+        assert_eq!(backend1, backend2);
+        assert!(backend1 == backend2);
+    }
+
+    #[test]
+    fn test_config_struct_debug() {
+        let config = BrowserConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("BrowserConfig"));
     }
 }
 

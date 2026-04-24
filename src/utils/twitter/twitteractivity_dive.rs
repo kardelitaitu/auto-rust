@@ -78,6 +78,14 @@ pub struct DiveIntoThreadOutcome {
     pub cache: Option<ThreadCache>,
 }
 
+fn status_id_from_url(status_url: &str) -> Option<&str> {
+    status_url
+        .split("/status/")
+        .nth(1)
+        .and_then(|tail| tail.split(['?', '/', '#']).next())
+        .filter(|id| !id.is_empty())
+}
+
 /// Clicks on a tweet to open it in the thread/detail view.
 ///
 /// This function navigates into a tweet's thread by clicking on a tweet link
@@ -117,7 +125,10 @@ pub struct DiveIntoThreadOutcome {
 /// - `[aria-label="Timeline: Thread"]` - Thread timeline
 /// - `article[data-testid="tweet"]` - Tweet in detail view
 #[instrument(skip(api))]
-pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<DiveIntoThreadOutcome> {
+pub async fn dive_into_thread(
+    api: &TaskContext,
+    status_url: &str,
+) -> Result<DiveIntoThreadOutcome> {
     if status_url.is_empty() {
         info!("Dive skipped: empty status_url");
         return Ok(DiveIntoThreadOutcome {
@@ -144,21 +155,43 @@ pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<Div
 
     // Wait for thread/modal view to open (tweet detail or thread)
     let selectors = [
-        r#"div[role="dialog"]"#,                    // Modal dialog (common for tweet details)
-        r#"div[data-testid="tweetDetail"]"#,        // Thread detail view
-        r#"div[data-testid="tweetThread"]"#,        // Thread view
-        r#"[aria-label="Timeline: Thread"]"#,       // Thread timeline
-        r#"article[data-testid="tweet"]"#,          // Tweet in detail view
+        r#"div[role="dialog"]"#, // Modal dialog (common for tweet details)
+        r#"div[data-testid="tweetDetail"]"#, // Thread detail view
+        r#"div[data-testid="tweetThread"]"#, // Thread view
+        r#"[aria-label="Timeline: Thread"]"#, // Thread timeline
     ];
-    let thread_opened = api
+    let detail_visible = api
         .wait_for_any_visible_selector(&selectors, 5_000)
         .await
         .unwrap_or(false);
+    let current_url = api
+        .page()
+        .evaluate(js_get_current_url())
+        .await
+        .ok()
+        .and_then(|result| {
+            result
+                .value()
+                .and_then(|value| value.as_str().map(str::to_owned))
+        })
+        .unwrap_or_default();
+    let target_status_id = status_id_from_url(status_url);
+    let url_matches = target_status_id
+        .map(|id| current_url.contains(&format!("/status/{id}")))
+        .unwrap_or_else(|| current_url.contains(status_url));
+    let tweet_article_visible = api
+        .wait_for_any_visible_selector(&[r#"article[data-testid="tweet"]"#], 1_000)
+        .await
+        .unwrap_or(false);
+    let thread_opened = url_matches && (detail_visible || tweet_article_visible);
 
     if thread_opened {
         info!("Thread view opened successfully");
     } else {
-        info!("Thread view did not open within timeout");
+        info!(
+            "Thread view did not open within timeout or URL mismatch (detail_visible={}, tweet_article_visible={}, url_matches={}, current_url={})",
+            detail_visible, tweet_article_visible, url_matches, current_url
+        );
     }
 
     let cache = if thread_opened {
@@ -224,7 +257,11 @@ pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<Div
 /// # }
 /// ```
 #[instrument(skip(api, cache))]
-pub async fn read_full_thread(api: &TaskContext, max_scrolls: u32, cache: &mut ThreadCache) -> Result<()> {
+pub async fn read_full_thread(
+    api: &TaskContext,
+    max_scrolls: u32,
+    cache: &mut ThreadCache,
+) -> Result<()> {
     for i in 0..max_scrolls {
         // Check if we've reached the end
         let progress: f64 = get_scroll_progress(api).await.unwrap_or_else(|e| {
@@ -240,7 +277,11 @@ pub async fn read_full_thread(api: &TaskContext, max_scrolls: u32, cache: &mut T
             match extract_visible_replies(api, cache).await {
                 Ok(count) => {
                     if count > 0 {
-                        info!("Extracted {} new replies (total: {})", count, cache.replies.len());
+                        info!(
+                            "Extracted {} new replies (total: {})",
+                            count,
+                            cache.replies.len()
+                        );
                     }
                 }
                 Err(e) => {
@@ -266,7 +307,10 @@ pub async fn read_full_thread(api: &TaskContext, max_scrolls: u32, cache: &mut T
         }
     }
 
-    info!("Thread reading complete. Cached {} replies", cache.replies.len());
+    info!(
+        "Thread reading complete. Cached {} replies",
+        cache.replies.len()
+    );
     Ok(())
 }
 
@@ -346,7 +390,9 @@ pub async fn extract_initial_thread_data(api: &TaskContext) -> Result<ThreadCach
     "#;
 
     let result = api.page().evaluate(js).await?;
-    let value = result.value().context("Failed to extract initial thread data")?;
+    let value = result
+        .value()
+        .context("Failed to extract initial thread data")?;
 
     if let Some(obj) = value.as_object() {
         let author = obj
@@ -361,7 +407,11 @@ pub async fn extract_initial_thread_data(api: &TaskContext) -> Result<ThreadCach
             .unwrap_or("")
             .to_string();
 
-        info!("Extracted initial thread data: author='{}', text_len={}", author, text.len());
+        info!(
+            "Extracted initial thread data: author='{}', text_len={}",
+            author,
+            text.len()
+        );
         Ok(ThreadCache {
             tweet_author: author,
             tweet_text: text,
@@ -434,7 +484,9 @@ pub async fn extract_visible_replies(api: &TaskContext, cache: &mut ThreadCache)
     "#;
 
     let result = api.page().evaluate(js).await?;
-    let value = result.value().context("Failed to extract visible replies")?;
+    let value = result
+        .value()
+        .context("Failed to extract visible replies")?;
 
     if let Some(arr) = value.as_array() {
         let mut new_count = 0;
@@ -453,7 +505,10 @@ pub async fn extract_visible_replies(api: &TaskContext, cache: &mut ThreadCache)
                     .to_string();
 
                 // Only add if not already in cache (simple deduplication)
-                let already_cached = cache.replies.iter().any(|(a, t)| a == &author && t == &text);
+                let already_cached = cache
+                    .replies
+                    .iter()
+                    .any(|(a, t)| a == &author && t == &text);
                 if !already_cached && !text.is_empty() {
                     cache.add_reply(author, text);
                     new_count += 1;
@@ -463,5 +518,28 @@ pub async fn extract_visible_replies(api: &TaskContext, cache: &mut ThreadCache)
         Ok(new_count)
     } else {
         anyhow::bail!("Invalid replies data format")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_id_from_relative_url() {
+        assert_eq!(status_id_from_url("/user/status/12345"), Some("12345"));
+    }
+
+    #[test]
+    fn test_status_id_from_absolute_url_with_query() {
+        assert_eq!(
+            status_id_from_url("https://x.com/user/status/12345?lang=en"),
+            Some("12345")
+        );
+    }
+
+    #[test]
+    fn test_status_id_from_non_status_url() {
+        assert_eq!(status_id_from_url("https://x.com/home"), None);
     }
 }

@@ -497,7 +497,11 @@ async fn execute_task_with_retry(
     if !session.is_idle() {
         return TaskResult::failure(
             start.elapsed().as_millis() as u64,
-            format!("Session {} is not idle (state: {:?}), skipping task", session.id, session.state()),
+            format!(
+                "Session {} is not idle (state: {:?}), skipping task",
+                session.id,
+                session.state()
+            ),
             TaskErrorKind::Session,
         );
     }
@@ -930,9 +934,9 @@ mod tests {
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
         };
-        
+
         let orchestrator = Orchestrator::new(config);
-        
+
         // Verify semaphore was created with correct capacity
         // This is a basic sanity check - the semaphore is private but we can infer it works
         assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 10);
@@ -947,9 +951,9 @@ mod tests {
             tracing: Default::default(),
             twitter_activity: Default::default(),
         };
-        
+
         let orchestrator = Orchestrator::new(config);
-        
+
         // Verify active task counter starts at 0
         assert_eq!(orchestrator.global_active_tasks.load(Ordering::SeqCst), 0);
     }
@@ -958,7 +962,7 @@ mod tests {
     async fn test_execute_group_with_empty_sessions_returns_error() {
         use crate::config::OrchestratorConfig;
         use crate::metrics::MetricsCollector;
-        
+
         let config = Config {
             orchestrator: OrchestratorConfig::default(),
             browser: Default::default(),
@@ -972,9 +976,11 @@ mod tests {
             name: "test_task".to_string(),
             payload: Default::default(),
         };
-        
-        let result = orchestrator.execute_group(&[task_def], &sessions, metrics).await;
-        
+
+        let result = orchestrator
+            .execute_group(&[task_def], &sessions, metrics)
+            .await;
+
         assert!(result.is_err());
         match result {
             Err(OrchestratorError::Session(SessionError::InitializationFailed(msg))) => {
@@ -1023,14 +1029,23 @@ mod tests {
     #[test]
     fn test_should_mark_session_unhealthy_all_error_kinds() {
         assert!(should_mark_session_unhealthy(TaskErrorKind::Timeout, false));
-        assert!(should_mark_session_unhealthy(TaskErrorKind::Navigation, false));
+        assert!(should_mark_session_unhealthy(
+            TaskErrorKind::Navigation,
+            false
+        ));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
-        
+
         // Should NOT mark unhealthy for these
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, false));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, false));
-        
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            false
+        ));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Unknown,
+            false
+        ));
+
         // Cancelled tasks should never mark unhealthy
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
@@ -1041,7 +1056,7 @@ mod tests {
         let global_semaphore = Arc::new(Semaphore::new(10));
         let global_active = Arc::new(AtomicUsize::new(0));
         let _cancel_token = CancellationToken::new();
-        
+
         {
             let _slot = GlobalExecutionSlot::new(
                 global_active.clone(),
@@ -1049,7 +1064,7 @@ mod tests {
             );
             assert_eq!(global_active.load(Ordering::SeqCst), 1);
         }
-        
+
         assert_eq!(global_active.load(Ordering::SeqCst), 0);
     }
 }

@@ -40,27 +40,36 @@ pub const TWEET_DETAIL_FALLBACK3: &str = r#"[aria-label="Timeline: Thread"]"#;
 pub const TWEET_DETAIL_FALLBACK4: &str = r#"article[data-testid="tweet"]"#;
 pub const RETWEET_BUTTON_SELECTOR: &str = r#"button[data-testid="retweet"]"#;
 pub const RETWEET_CONFIRM_SELECTOR: &str = r#"div[data-testid="retweetConfirm"]"#;
-pub const LIKE_BUTTON_SELECTOR: &str = r#"button[data-testid*="like"]"#;
+pub const LIKE_BUTTON_SELECTOR: &str = r#"button[data-testid="like"]"#;
 pub const FOLLOW_BUTTON_SELECTOR: &str = r#"button[data-testid$="-follow"]"#;
 pub const BOOKMARK_BUTTON_SELECTOR: &str = r#"button[data-testid="bookmark"]"#;
 
 use crate::metrics::{
     RUN_COUNTER_BOOKMARK_FAILURE, RUN_COUNTER_BOOKMARK_SUCCESS, RUN_COUNTER_BUTTON_MISSING,
-    RUN_COUNTER_CANDIDATE_SCANNED, RUN_COUNTER_CLICK_VERIFY_FAILED,
-    RUN_COUNTER_DIVE_FAILURE, RUN_COUNTER_DIVE_SUCCESS, RUN_COUNTER_DIVE_TARGET_FALLBACK_USED,
-    RUN_COUNTER_FOLLOW_FAILURE, RUN_COUNTER_FOLLOW_SUCCESS, RUN_COUNTER_LIKE_FAILURE,
-    RUN_COUNTER_LIKE_SUCCESS, RUN_COUNTER_QUOTE_FAILURE, RUN_COUNTER_QUOTE_SUCCESS,
-    RUN_COUNTER_REPLY_FAILURE, RUN_COUNTER_REPLY_SUCCESS, RUN_COUNTER_RETWEET_FAILURE,
-    RUN_COUNTER_RETWEET_SUCCESS,
+    RUN_COUNTER_CANDIDATE_SCANNED, RUN_COUNTER_CLICK_VERIFY_FAILED, RUN_COUNTER_DIVE_FAILURE,
+    RUN_COUNTER_DIVE_SUCCESS, RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, RUN_COUNTER_FOLLOW_FAILURE,
+    RUN_COUNTER_FOLLOW_SUCCESS, RUN_COUNTER_LIKE_FAILURE, RUN_COUNTER_LIKE_SUCCESS,
+    RUN_COUNTER_QUOTE_FAILURE, RUN_COUNTER_QUOTE_SUCCESS, RUN_COUNTER_REPLY_FAILURE,
+    RUN_COUNTER_REPLY_SUCCESS, RUN_COUNTER_RETWEET_FAILURE, RUN_COUNTER_RETWEET_SUCCESS,
 };
 use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
 use crate::utils::twitter::{
-    twitteractivity_decision::*, twitteractivity_dive::*, twitteractivity_feed::*,
-    twitteractivity_humanized::*, twitteractivity_interact::*, twitteractivity_limits::*,
-    twitteractivity_llm::*, twitteractivity_navigation::*, twitteractivity_persona::*,
-    twitteractivity_popup::*, twitteractivity_sentiment::*,
-    twitteractivity_sentiment_enhanced::{EnhancedSentimentAnalyzer, EnhancedSentimentResult, extract_thread_context, extract_user_reputation, extract_temporal_factors},
+    twitteractivity_decision::*,
+    twitteractivity_dive::*,
+    twitteractivity_feed::*,
+    twitteractivity_humanized::*,
+    twitteractivity_interact::*,
+    twitteractivity_limits::*,
+    twitteractivity_llm::*,
+    twitteractivity_navigation::*,
+    twitteractivity_persona::*,
+    twitteractivity_popup::*,
+    twitteractivity_sentiment::*,
+    twitteractivity_sentiment_enhanced::{
+        extract_temporal_factors, extract_thread_context, extract_user_reputation,
+        EnhancedSentimentAnalyzer, EnhancedSentimentResult,
+    },
 };
 
 /// Default feed scan duration range (ms): 5-9 minutes (300-540 seconds)
@@ -403,13 +412,18 @@ struct TaskConfig {
     smart_decision_enabled: bool,
     sentiment_templates: SentimentTemplates,
     enhanced_sentiment_enabled: bool,
+    dry_run_actions: bool,
 }
 
 impl TaskConfig {
     /// Parse task configuration from JSON payload with defaults
     fn from_payload(payload: &Value, config: &crate::config::TwitterActivityConfig) -> Self {
         let duration_ms = read_u64(payload, "duration_ms", default_duration_ms(config));
-        let candidate_count = read_u32(payload, "candidate_count", config.engagement_candidate_count);
+        let candidate_count = read_u32(
+            payload,
+            "candidate_count",
+            config.engagement_candidate_count,
+        );
         let thread_depth = read_u32(payload, "thread_depth", 3);
         let max_actions_per_scan = read_u32(
             payload,
@@ -423,7 +437,7 @@ impl TaskConfig {
         let llm_enabled = payload
             .get("llm_enabled")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or(config.llm.enabled);
 
         // Parse smart decision config (V3 feature - rule-based)
         let smart_decision_enabled = payload
@@ -439,6 +453,10 @@ impl TaskConfig {
             .get("enhanced_sentiment_enabled")
             .and_then(|v| v.as_bool())
             .unwrap_or(true); // Enable by default for better analysis
+        let dry_run_actions = payload
+            .get("dry_run_actions")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         Self {
             duration_ms,
@@ -450,7 +468,60 @@ impl TaskConfig {
             smart_decision_enabled,
             sentiment_templates,
             enhanced_sentiment_enabled,
+            dry_run_actions,
         }
+    }
+}
+
+fn engagement_limits_from_config(
+    config: &crate::config::EngagementLimitsConfig,
+) -> EngagementLimits {
+    EngagementLimits::with_limits(
+        config.max_likes,
+        config.max_retweets,
+        config.max_follows,
+        config.max_replies,
+        config.max_thread_dives,
+        config.max_bookmarks,
+        config.max_quote_tweets,
+        config.max_total_actions,
+    )
+}
+
+fn select_candidate_action(
+    actions_to_do: &[&'static str],
+    allow_dive: bool,
+    can_open_detail: bool,
+) -> Option<&'static str> {
+    if allow_dive && can_open_detail {
+        if let Some(action) = actions_to_do
+            .iter()
+            .copied()
+            .find(|action| *action != "like")
+        {
+            return Some(action);
+        }
+    }
+
+    actions_to_do
+        .iter()
+        .copied()
+        .find(|action| *action == "like")
+}
+
+fn action_allowed_by_limits(
+    action: &str,
+    limits: &EngagementLimits,
+    counters: &EngagementCounters,
+) -> bool {
+    match action {
+        "like" => limits.can_like(counters),
+        "retweet" => limits.can_retweet(counters),
+        "quote" => limits.can_quote_tweet(counters),
+        "follow" => limits.can_follow(counters),
+        "reply" => limits.can_reply(counters),
+        "bookmark" => limits.can_bookmark(counters),
+        _ => false,
     }
 }
 
@@ -469,7 +540,8 @@ fn phase4_cleanup(
     api: &TaskContext,
 ) {
     let _remaining_limits = limits.remaining(counters);
-    let duration_secs = (Duration::from_millis(task_config.duration_ms) - last_remaining).as_secs_f64();
+    let duration_secs =
+        (Duration::from_millis(task_config.duration_ms) - last_remaining).as_secs_f64();
     info!(
         "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
         counters.likes,
@@ -484,16 +556,27 @@ fn phase4_cleanup(
     );
 
     // Calculate and log success rates
-    let like_attempts = api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_LIKE_FAILURE);
-    let retweet_attempts = api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_RETWEET_FAILURE);
-    let follow_attempts = api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_FOLLOW_FAILURE);
-    let reply_attempts = api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_REPLY_FAILURE);
-    let bookmark_attempts = api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_BOOKMARK_FAILURE);
-    let quote_attempts = api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_QUOTE_FAILURE);
-    let dive_attempts = api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_DIVE_FAILURE);
+    let like_attempts = api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS)
+        + api.metrics().run_counter(RUN_COUNTER_LIKE_FAILURE);
+    let retweet_attempts = api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS)
+        + api.metrics().run_counter(RUN_COUNTER_RETWEET_FAILURE);
+    let follow_attempts = api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS)
+        + api.metrics().run_counter(RUN_COUNTER_FOLLOW_FAILURE);
+    let reply_attempts = api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS)
+        + api.metrics().run_counter(RUN_COUNTER_REPLY_FAILURE);
+    let bookmark_attempts = api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS)
+        + api.metrics().run_counter(RUN_COUNTER_BOOKMARK_FAILURE);
+    let quote_attempts = api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS)
+        + api.metrics().run_counter(RUN_COUNTER_QUOTE_FAILURE);
+    let dive_attempts = api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS)
+        + api.metrics().run_counter(RUN_COUNTER_DIVE_FAILURE);
 
     fn calc_rate(success: usize, total: usize) -> f64 {
-        if total == 0 { 0.0 } else { (success as f64 / total as f64) * 100.0 }
+        if total == 0 {
+            0.0
+        } else {
+            (success as f64 / total as f64) * 100.0
+        }
     }
 
     info!(
@@ -552,7 +635,10 @@ async fn phase1_navigation(api: &TaskContext) -> Result<()> {
 ///
 /// # Returns
 /// Option<EngagementDecision> - None if smart decision disabled or should skip, Some(decision) otherwise
-fn handle_engagement_decision(tweet: &Value, task_config: &TaskConfig) -> Option<EngagementDecision> {
+fn handle_engagement_decision(
+    tweet: &Value,
+    task_config: &TaskConfig,
+) -> Option<EngagementDecision> {
     if !task_config.smart_decision_enabled {
         return None;
     }
@@ -571,8 +657,7 @@ fn handle_engagement_decision(tweet: &Value, task_config: &TaskConfig) -> Option
                     if let (Some(author_str), Some(text_str)) =
                         (author_value.as_str(), text_value.as_str())
                     {
-                        replies
-                            .push((author_str.to_string(), text_str.to_string()));
+                        replies.push((author_str.to_string(), text_str.to_string()));
                     }
                 }
             }
@@ -637,7 +722,13 @@ async fn process_candidate(
             "Per-scan action budget reached ({}/{}), deferring remaining candidates",
             actions_this_scan, task_config.max_actions_per_scan
         );
-        return Ok((true, next_scroll, actions_this_scan, _actions_taken, current_thread_cache));
+        return Ok((
+            true,
+            next_scroll,
+            actions_this_scan,
+            _actions_taken,
+            current_thread_cache,
+        ));
     }
 
     // Analyze sentiment with enhanced context when enabled
@@ -663,14 +754,15 @@ async fn process_candidate(
             base_score: sentiment_score(sentiment) as f32,
             final_score: sentiment_score(sentiment) as f32,
             confidence: 0.7, // Default confidence for basic analysis
-            score_breakdown: crate::utils::twitter::twitteractivity_sentiment_enhanced::ScoreBreakdown {
-                text_score: sentiment_score(sentiment) as f32,
-                emoji_score: 0.0,
-                domain_score: 0.0,
-                context_score: 0.0,
-                reputation_score: 0.0,
-                temporal_score: 0.0,
-            },
+            score_breakdown:
+                crate::utils::twitter::twitteractivity_sentiment_enhanced::ScoreBreakdown {
+                    text_score: sentiment_score(sentiment) as f32,
+                    emoji_score: 0.0,
+                    domain_score: 0.0,
+                    context_score: 0.0,
+                    reputation_score: 0.0,
+                    temporal_score: 0.0,
+                },
         }
     };
 
@@ -702,7 +794,13 @@ async fn process_candidate(
                 "Skipping engagement: {} (score: {})",
                 decision.reason, decision.score
             );
-            return Ok((false, next_scroll, actions_this_scan, _actions_taken, current_thread_cache));
+            return Ok((
+                false,
+                next_scroll,
+                actions_this_scan,
+                _actions_taken,
+                current_thread_cache,
+            ));
         }
     }
 
@@ -751,21 +849,43 @@ async fn process_candidate(
         actions_to_do.push("bookmark");
     }
 
-    // Determine if we need to dive (retweet, quote, reply, follow, bookmark require dive; like does not)
-    let need_dive = actions_to_do.iter().any(|&action| action != "like");
+    let status_url = tweet.get("status_url").and_then(|v| v.as_str());
+    let selected_action = select_candidate_action(
+        &actions_to_do,
+        should_dive(&candidate_persona),
+        status_url.is_some(),
+    );
+    let Some(selected_action) = selected_action else {
+        return Ok((
+            false,
+            next_scroll,
+            actions_this_scan,
+            _actions_taken,
+            current_thread_cache,
+        ));
+    };
+
+    // Retweet, quote, reply, follow, and bookmark require a detail view; like does not.
+    let need_dive = selected_action != "like";
     let mut did_dive = false;
 
     if need_dive {
         // Dive into thread for non-like actions
         if actions_this_scan >= task_config.max_actions_per_scan {
-            return Ok((true, next_scroll, actions_this_scan, _actions_taken, current_thread_cache));
+            return Ok((
+                true,
+                next_scroll,
+                actions_this_scan,
+                _actions_taken,
+                current_thread_cache,
+            ));
         }
         if !limits.can_dive(counters) {
             info!(
                 "Skipping dive: limit reached ({}/{})",
                 counters.thread_dives, limits.max_thread_dives
             );
-        } else if let Some(status_url) = tweet.get("status_url").and_then(|v| v.as_str()) {
+        } else if let Some(status_url) = status_url {
             // Pause continuous scrolling before diving to avoid interference
             let original_next_scroll = next_scroll;
             next_scroll = Instant::now() + Duration::from_secs(300); // Pause for 5 minutes during dive
@@ -785,6 +905,8 @@ async fn process_candidate(
                 // Use cache from dive outcome, initialize empty if none
                 let mut thread_cache = dive_outcome.cache.unwrap_or_default();
                 read_full_thread(api, task_config.thread_depth, &mut thread_cache).await?;
+                api.scroll_to_top().await?;
+                human_pause(api, 800).await;
                 scroll_pause(api).await;
                 counters.increment_thread_dive();
                 _actions_taken += 1;
@@ -798,8 +920,35 @@ async fn process_candidate(
         }
     }
 
-    // Perform actions (only 1 per dive)
-    for &action in actions_to_do.iter().take(1) {
+    // Perform the selected action.
+    for action in [selected_action] {
+        if task_config.dry_run_actions {
+            if action != "like" && !did_dive {
+                info!(
+                    "Dry-run: would skip {} on tweet {} because thread detail did not open",
+                    action, tweet_id
+                );
+                continue;
+            }
+            info!(
+                "Dry-run: would perform {} on tweet {} (did_dive={})",
+                action, tweet_id, did_dive
+            );
+            continue;
+        }
+
+        if actions_this_scan >= task_config.max_actions_per_scan {
+            info!(
+                "Skipping {}: per-scan action budget reached after dive ({}/{})",
+                action, actions_this_scan, task_config.max_actions_per_scan
+            );
+            continue;
+        }
+        if !action_allowed_by_limits(action, limits, counters) {
+            info!("Skipping {}: engagement limit reached after dive", action);
+            continue;
+        }
+
         let success = match action {
             "like" => {
                 // Like can be done on feed or in detail
@@ -820,10 +969,15 @@ async fn process_candidate(
             "retweet" => {
                 // Validate we're in thread detail view before retweeting
                 if !did_dive {
-                    warn!("Skipping retweet: not in thread detail view for tweet {}", tweet_id);
+                    warn!(
+                        "Skipping retweet: not in thread detail view for tweet {}",
+                        tweet_id
+                    );
                     false
                 } else {
-                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
+                        .await
+                    {
                         Ok(true) => retweet_tweet(api).await?,
                         Ok(false) => {
                             warn!("Skipping retweet: not on tweet page for tweet {}", tweet_id);
@@ -839,22 +993,39 @@ async fn process_candidate(
             "quote" => {
                 // Validate we're in thread detail view before quoting
                 if !did_dive {
-                    warn!("Skipping quote: not in thread detail view for tweet {}", tweet_id);
+                    warn!(
+                        "Skipping quote: not in thread detail view for tweet {}",
+                        tweet_id
+                    );
                     false
                 } else {
-                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
+                        .await
+                    {
                         Ok(true) => {
                             let quote_text = if task_config.llm_enabled {
                                 // Use cached data if available, fallback to extraction
-                                let (author, text, replies) = if let Some(ref cache) = current_thread_cache {
+                                let (author, text, replies) = if let Some(ref cache) =
+                                    current_thread_cache
+                                {
                                     if cache.is_valid() {
-                                        info!("Using cached thread data for quote ({} replies)", cache.replies.len());
-                                        (cache.tweet_author.clone(), cache.tweet_text.clone(), cache.replies.clone())
+                                        info!(
+                                            "Using cached thread data for quote ({} replies)",
+                                            cache.replies.len()
+                                        );
+                                        (
+                                            cache.tweet_author.clone(),
+                                            cache.tweet_text.clone(),
+                                            cache.replies.clone(),
+                                        )
                                     } else {
                                         match extract_tweet_context(api).await {
                                             Ok(data) => data,
                                             Err(e) => {
-                                                warn!("Failed to extract tweet context for quote: {}", e);
+                                                warn!(
+                                                    "Failed to extract tweet context for quote: {}",
+                                                    e
+                                                );
                                                 ("unknown".to_string(), String::new(), Vec::new())
                                             }
                                         }
@@ -863,23 +1034,35 @@ async fn process_candidate(
                                     match extract_tweet_context(api).await {
                                         Ok(data) => data,
                                         Err(e) => {
-                                            warn!("Failed to extract tweet context for quote: {}", e);
+                                            warn!(
+                                                "Failed to extract tweet context for quote: {}",
+                                                e
+                                            );
                                             ("unknown".to_string(), String::new(), Vec::new())
                                         }
                                     }
                                 };
-                                match generate_quote_commentary(api, &author, &text, replies).await {
+                                match generate_quote_commentary(api, &author, &text, replies).await
+                                {
                                     Ok(commentary) => {
                                         info!("Generated LLM quote: {}", commentary);
                                         commentary
                                     }
                                     Err(e) => {
                                         warn!("LLM quote failed, using template: {}", e);
-                                        generate_quote_text(sentiment, counters.quote_tweets, &task_config.sentiment_templates)
+                                        generate_quote_text(
+                                            sentiment,
+                                            counters.quote_tweets,
+                                            &task_config.sentiment_templates,
+                                        )
                                     }
                                 }
                             } else {
-                                generate_quote_text(sentiment, counters.quote_tweets, &task_config.sentiment_templates)
+                                generate_quote_text(
+                                    sentiment,
+                                    counters.quote_tweets,
+                                    &task_config.sentiment_templates,
+                                )
                             };
                             match quote_tweet(api, &quote_text).await {
                                 Ok(success) => {
@@ -908,10 +1091,15 @@ async fn process_candidate(
             "follow" => {
                 // Validate we're in thread detail view before following
                 if !did_dive {
-                    warn!("Skipping follow: not in thread detail view for tweet {}", tweet_id);
+                    warn!(
+                        "Skipping follow: not in thread detail view for tweet {}",
+                        tweet_id
+                    );
                     false
                 } else {
-                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
+                        .await
+                    {
                         Ok(true) => follow_from_tweet(api).await?,
                         Ok(false) => {
                             warn!("Skipping follow: not on tweet page for tweet {}", tweet_id);
@@ -927,22 +1115,39 @@ async fn process_candidate(
             "reply" => {
                 // Validate we're in thread detail view before replying
                 if !did_dive {
-                    warn!("Skipping reply: not in thread detail view for tweet {}", tweet_id);
+                    warn!(
+                        "Skipping reply: not in thread detail view for tweet {}",
+                        tweet_id
+                    );
                     false
                 } else {
-                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
+                        .await
+                    {
                         Ok(true) => {
                             let reply_text = if task_config.llm_enabled {
                                 // Use cached data if available, fallback to extraction
-                                let (author, text, replies) = if let Some(ref cache) = current_thread_cache {
+                                let (author, text, replies) = if let Some(ref cache) =
+                                    current_thread_cache
+                                {
                                     if cache.is_valid() {
-                                        info!("Using cached thread data for reply ({} replies)", cache.replies.len());
-                                        (cache.tweet_author.clone(), cache.tweet_text.clone(), cache.replies.clone())
+                                        info!(
+                                            "Using cached thread data for reply ({} replies)",
+                                            cache.replies.len()
+                                        );
+                                        (
+                                            cache.tweet_author.clone(),
+                                            cache.tweet_text.clone(),
+                                            cache.replies.clone(),
+                                        )
                                     } else {
                                         match extract_tweet_context(api).await {
                                             Ok(data) => data,
                                             Err(e) => {
-                                                warn!("Failed to extract tweet context for reply: {}", e);
+                                                warn!(
+                                                    "Failed to extract tweet context for reply: {}",
+                                                    e
+                                                );
                                                 ("unknown".to_string(), String::new(), Vec::new())
                                             }
                                         }
@@ -951,7 +1156,10 @@ async fn process_candidate(
                                     match extract_tweet_context(api).await {
                                         Ok(data) => data,
                                         Err(e) => {
-                                            warn!("Failed to extract tweet context for reply: {}", e);
+                                            warn!(
+                                                "Failed to extract tweet context for reply: {}",
+                                                e
+                                            );
                                             ("unknown".to_string(), String::new(), Vec::new())
                                         }
                                     }
@@ -963,11 +1171,19 @@ async fn process_candidate(
                                     }
                                     Err(e) => {
                                         warn!("LLM reply failed, using template: {}", e);
-                                        generate_reply_text(sentiment, counters.replies, &task_config.sentiment_templates)
+                                        generate_reply_text(
+                                            sentiment,
+                                            counters.replies,
+                                            &task_config.sentiment_templates,
+                                        )
                                     }
                                 }
                             } else {
-                                generate_reply_text(sentiment, counters.replies, &task_config.sentiment_templates)
+                                generate_reply_text(
+                                    sentiment,
+                                    counters.replies,
+                                    &task_config.sentiment_templates,
+                                )
                             };
                             reply_to_tweet(api, &reply_text).await?
                         }
@@ -985,13 +1201,21 @@ async fn process_candidate(
             "bookmark" => {
                 // Validate we're in thread detail view before bookmarking
                 if !did_dive {
-                    warn!("Skipping bookmark: not in thread detail view for tweet {}", tweet_id);
+                    warn!(
+                        "Skipping bookmark: not in thread detail view for tweet {}",
+                        tweet_id
+                    );
                     false
                 } else {
-                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api).await {
+                    match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
+                        .await
+                    {
                         Ok(true) => bookmark_tweet(api).await?,
                         Ok(false) => {
-                            warn!("Skipping bookmark: not on tweet page for tweet {}", tweet_id);
+                            warn!(
+                                "Skipping bookmark: not on tweet page for tweet {}",
+                                tweet_id
+                            );
                             false
                         }
                         Err(e) => {
@@ -1077,7 +1301,13 @@ async fn process_candidate(
         info!("Resumed continuous scrolling after thread dive");
     }
 
-    Ok((false, next_scroll, actions_this_scan, _actions_taken, current_thread_cache))
+    Ok((
+        false,
+        next_scroll,
+        actions_this_scan,
+        _actions_taken,
+        current_thread_cache,
+    ))
 }
 
 /// Task entry point called by orchestrator.
@@ -1096,7 +1326,10 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
     let task_config = TaskConfig::from_payload(&payload, &config.twitter_activity);
 
     // Build persona weights
-    let mut persona = select_persona_weights(task_config.weights.as_ref(), &config.twitter_activity.probabilities);
+    let mut persona = select_persona_weights(
+        task_config.weights.as_ref(),
+        &config.twitter_activity.probabilities,
+    );
     let profile = api.behavior_profile();
 
     persona = apply_behavior_profile(persona, profile, 0.0);
@@ -1108,9 +1341,10 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
 
     // Initialize engagement counters and limits
     let mut counters = EngagementCounters::new();
-    let limits = EngagementLimits::default();
+    let limits = engagement_limits_from_config(&config.twitter_activity.engagement_limits);
     let mut action_tracker = TweetActionTracker::new(MIN_ACTION_CHAIN_DELAY_MS);
-    let _current_thread_cache: Option<crate::utils::twitter::twitteractivity_dive::ThreadCache> = None;
+    let _current_thread_cache: Option<crate::utils::twitter::twitteractivity_dive::ThreadCache> =
+        None;
 
     info!(
         "Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
@@ -1201,7 +1435,13 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
             let mut actions_this_scan = 0u32;
 
             for tweet in to_consider {
-                let (should_break, new_next_scroll, new_actions_this_scan, new_actions_taken, _new_thread_cache) = process_candidate(
+                let (
+                    should_break,
+                    new_next_scroll,
+                    new_actions_this_scan,
+                    new_actions_taken,
+                    _new_thread_cache,
+                ) = process_candidate(
                     tweet,
                     &persona,
                     &task_config,
@@ -1210,12 +1450,13 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
                     scroll_interval,
                     &mut action_tracker,
                     &mut counters,
-                    None,  // Each tweet starts with fresh cache (no cross-tweet contamination)
+                    None, // Each tweet starts with fresh cache (no cross-tweet contamination)
                     actions_this_scan,
                     next_scroll,
                     _actions_taken,
-                ).await?;
-                
+                )
+                .await?;
+
                 next_scroll = new_next_scroll;
                 actions_this_scan = new_actions_this_scan;
                 _actions_taken = new_actions_taken;
@@ -1224,7 +1465,7 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
                 // We discard it here to prevent accidental reuse.
                 // If we wanted to use it, we'd need to track it per-tweet, not globally.
                 // current_thread_cache = new_thread_cache;  // REMOVED - prevents cross-tweet contamination
-                
+
                 if should_break {
                     break;
                 }
@@ -1358,7 +1599,11 @@ async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
 /// - Positive sentiment → enthusiastic agreement templates
 /// - Neutral sentiment → brief acknowledgment templates
 /// - Negative sentiment → respectful disagreement templates
-fn generate_reply_text(sentiment: Sentiment, reply_idx: u32, templates: &SentimentTemplates) -> String {
+fn generate_reply_text(
+    sentiment: Sentiment,
+    reply_idx: u32,
+    templates: &SentimentTemplates,
+) -> String {
     let phrases = match sentiment {
         Sentiment::Positive => &templates.reply_positive,
         Sentiment::Neutral => &templates.reply_neutral,
@@ -1386,7 +1631,11 @@ fn generate_reply_text(sentiment: Sentiment, reply_idx: u32, templates: &Sentime
 /// - Positive sentiment → enthusiastic sharing templates
 /// - Neutral sentiment → informative sharing templates
 /// - Negative sentiment → thought-provoking sharing templates
-fn generate_quote_text(sentiment: Sentiment, quote_idx: u32, templates: &SentimentTemplates) -> String {
+fn generate_quote_text(
+    sentiment: Sentiment,
+    quote_idx: u32,
+    templates: &SentimentTemplates,
+) -> String {
     let phrases = match sentiment {
         Sentiment::Positive => &templates.quote_positive,
         Sentiment::Neutral => &templates.quote_neutral,
@@ -1497,6 +1746,12 @@ mod tests {
     }
 
     #[test]
+    fn test_like_button_selector_does_not_match_unlike_state() {
+        assert_eq!(LIKE_BUTTON_SELECTOR, r#"button[data-testid="like"]"#);
+        assert!(!LIKE_BUTTON_SELECTOR.contains("*="));
+    }
+
+    #[test]
     fn test_task_config_from_payload_with_all_fields() {
         let payload = json!({
             "duration_ms": 120000,
@@ -1506,7 +1761,8 @@ mod tests {
             "weights": { "like_prob": 0.5 },
             "llm_enabled": true,
             "smart_decision_enabled": true,
-            "enhanced_sentiment_enabled": false
+            "enhanced_sentiment_enabled": false,
+            "dry_run_actions": true
         });
         let twitter_config = crate::config::TwitterActivityConfig::default();
         let config = TaskConfig::from_payload(&payload, &twitter_config);
@@ -1518,6 +1774,7 @@ mod tests {
         assert!(config.llm_enabled);
         assert!(config.smart_decision_enabled);
         assert!(!config.enhanced_sentiment_enabled); // Explicitly set to false
+        assert!(config.dry_run_actions);
     }
 
     #[test]
@@ -1527,13 +1784,40 @@ mod tests {
         let config = TaskConfig::from_payload(&payload, &twitter_config);
         // duration_ms has random default, so just check it's non-zero
         assert!(config.duration_ms > 0);
-        assert_eq!(config.candidate_count, twitter_config.engagement_candidate_count);
+        assert_eq!(
+            config.candidate_count,
+            twitter_config.engagement_candidate_count
+        );
         assert_eq!(config.thread_depth, 3); // default from TaskConfig::from_payload
-        assert_eq!(config.max_actions_per_scan, twitter_config.engagement_candidate_count);
+        assert_eq!(
+            config.max_actions_per_scan,
+            twitter_config.engagement_candidate_count
+        );
         assert!(config.weights.is_none());
         assert!(!config.llm_enabled);
         assert!(!config.smart_decision_enabled);
         assert!(config.enhanced_sentiment_enabled); // Default to true
+        assert!(!config.dry_run_actions);
+    }
+
+    #[test]
+    fn test_task_config_llm_enabled_uses_config_default() {
+        let payload = json!({});
+        let mut twitter_config = crate::config::TwitterActivityConfig::default();
+        twitter_config.llm.enabled = true;
+
+        let config = TaskConfig::from_payload(&payload, &twitter_config);
+        assert!(config.llm_enabled);
+    }
+
+    #[test]
+    fn test_task_config_llm_enabled_payload_overrides_config() {
+        let payload = json!({ "llm_enabled": false });
+        let mut twitter_config = crate::config::TwitterActivityConfig::default();
+        twitter_config.llm.enabled = true;
+
+        let config = TaskConfig::from_payload(&payload, &twitter_config);
+        assert!(!config.llm_enabled);
     }
 
     #[test]
@@ -1542,6 +1826,71 @@ mod tests {
         let twitter_config = crate::config::TwitterActivityConfig::default();
         let config = TaskConfig::from_payload(&payload, &twitter_config);
         assert_eq!(config.max_actions_per_scan, 1); // should be max(1, 0)
+    }
+
+    #[test]
+    fn test_engagement_limits_from_config_uses_configured_values() {
+        let config = crate::config::EngagementLimitsConfig {
+            max_likes: 11,
+            max_retweets: 7,
+            max_follows: 5,
+            max_replies: 3,
+            max_thread_dives: 9,
+            max_bookmarks: 4,
+            max_quote_tweets: 2,
+            max_total_actions: 13,
+        };
+
+        let limits = engagement_limits_from_config(&config);
+        assert_eq!(limits.max_likes, 11);
+        assert_eq!(limits.max_retweets, 7);
+        assert_eq!(limits.max_follows, 5);
+        assert_eq!(limits.max_replies, 3);
+        assert_eq!(limits.max_thread_dives, 9);
+        assert_eq!(limits.max_bookmarks, 4);
+        assert_eq!(limits.max_quote_tweets, 2);
+        assert_eq!(limits.max_total_actions, 13);
+    }
+
+    #[test]
+    fn test_select_candidate_action_prefers_detail_action_when_dive_allowed() {
+        let action = select_candidate_action(&["like", "retweet", "reply"], true, true);
+        assert_eq!(action, Some("retweet"));
+    }
+
+    #[test]
+    fn test_select_candidate_action_falls_back_to_like_when_dive_blocked() {
+        let action = select_candidate_action(&["like", "retweet", "reply"], false, true);
+        assert_eq!(action, Some("like"));
+    }
+
+    #[test]
+    fn test_select_candidate_action_skips_detail_only_when_dive_blocked() {
+        let action = select_candidate_action(&["retweet", "reply"], false, true);
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn test_select_candidate_action_falls_back_to_like_when_detail_unavailable() {
+        let action = select_candidate_action(&["like", "retweet", "reply"], true, false);
+        assert_eq!(action, Some("like"));
+    }
+
+    #[test]
+    fn test_select_candidate_action_skips_detail_only_when_detail_unavailable() {
+        let action = select_candidate_action(&["retweet", "reply"], true, false);
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn test_action_allowed_by_limits_respects_total_after_dive() {
+        let limits = EngagementLimits::with_limits(5, 5, 5, 5, 5, 5, 5, 1);
+        let mut counters = EngagementCounters::new();
+        counters.increment_thread_dive();
+
+        assert!(!action_allowed_by_limits("retweet", &limits, &counters));
+        assert!(!action_allowed_by_limits("reply", &limits, &counters));
+        assert!(!action_allowed_by_limits("like", &limits, &counters));
     }
 
     #[test]
@@ -1573,7 +1922,7 @@ mod tests {
     fn test_entry_points_structure() {
         // Verify ENTRY_POINTS has the expected structure
         assert_eq!(ENTRY_POINTS.len(), 15);
-        
+
         // Verify all weights are positive
         for ep in ENTRY_POINTS.iter() {
             assert!(ep.weight > 0);

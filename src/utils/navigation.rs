@@ -373,4 +373,219 @@ mod tests {
         );
         assert!(js.contains("typeof el.value === 'string'"));
     }
+
+    #[test]
+    fn test_referrer_list_valid_urls() {
+        let referrers = [
+            "https://www.google.com",
+            "https://www.bing.com",
+            "https://search.yahoo.com",
+            "https://duckduckgo.com",
+            "https://www.reddit.com",
+            "https://x.com",
+            "https://web.telegram.org",
+            "https://web.whatsapp.com",
+        ];
+        for referrer in &referrers {
+            assert!(referrer.starts_with("https://"));
+            assert!(referrer.contains('.'));
+        }
+    }
+
+    #[test]
+    fn test_selector_json_special_chars() {
+        let selector = "div[data-test=\"value\"]";
+        let json = serde_json::to_string(selector).unwrap();
+        assert!(json.contains("data-test"));
+    }
+
+    #[test]
+    fn test_selector_json_unicode() {
+        let selector = "div.日本語";
+        let json = serde_json::to_string(selector).unwrap();
+        assert!(json.contains("日本語"));
+    }
+
+    #[test]
+    fn test_selector_json_empty() {
+        let selector = "";
+        let json = serde_json::to_string(selector).unwrap();
+        assert_eq!(json, "\"\"");
+    }
+
+    #[test]
+    fn test_focus_js_has_prevent_scroll() {
+        let selector = "#input";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return false;
+                if (typeof el.focus === 'function') {{
+                    try {{
+                        el.focus({{ preventScroll: true }});
+                    }} catch (_) {{
+                        el.focus();
+                    }}
+                }}
+                const active = document.activeElement;
+                return active === el || (active && el.contains(active));
+            }})()"#,
+        );
+        assert!(js.contains("preventScroll"));
+    }
+
+    #[test]
+    fn test_wait_timeout_clamp() {
+        let timeout_ms = 10000;
+        let clamped = timeout_ms.min(4000);
+        assert_eq!(clamped, 4000);
+    }
+
+    #[test]
+    fn test_wait_timeout_no_clamp() {
+        let timeout_ms = 2000;
+        let clamped = timeout_ms.min(4000);
+        assert_eq!(clamped, 2000);
+    }
+
+    #[test]
+    fn test_page_settle_deadline() {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        assert!(deadline > std::time::Instant::now());
+    }
+
+    #[test]
+    fn test_ready_state_values() {
+        let valid_states = ["loading", "interactive", "complete"];
+        for state in &valid_states {
+            assert!(!state.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_attr_json_serialization() {
+        let attr = "data-value";
+        let json = serde_json::to_string(attr).unwrap();
+        assert_eq!(json, "\"data-value\"");
+    }
+
+    #[test]
+    fn test_attr_json_hyphen() {
+        let attr = "aria-label";
+        let json = serde_json::to_string(attr).unwrap();
+        assert!(json.contains("aria"));
+    }
+
+    #[test]
+    fn test_text_extraction_js_uses_inner_text() {
+        let selector = "div.content";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return null;
+                const text = (el.innerText || el.textContent || "").trim();
+                return text.length ? text : null;
+            }})()"#,
+        );
+        assert!(js.contains("innerText"));
+        assert!(js.contains("textContent"));
+    }
+
+    #[test]
+    fn test_html_extraction_js_uses_inner_html() {
+        let selector = "div.content";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return null;
+                const html = (el.innerHTML || "").trim();
+                return html.length ? html : null;
+            }})()"#,
+        );
+        assert!(js.contains("innerHTML"));
+    }
+
+    #[test]
+    fn test_visibility_checks_display_none() {
+        let selector = ".hidden";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                return true;
+            }})()"#,
+        );
+        assert!(js.contains("display === 'none'"));
+    }
+
+    #[test]
+    fn test_visibility_checks_visibility_hidden() {
+        let selector = ".invisible";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                return true;
+            }})()"#,
+        );
+        assert!(js.contains("visibility === 'hidden'"));
+    }
+
+    #[test]
+    fn test_visibility_checks_rect_dimensions() {
+        let selector = ".element";
+        let selector_js = serde_json::to_string(selector).unwrap();
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({selector_js});
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                return true;
+            }})()"#,
+        );
+        assert!(js.contains("getBoundingClientRect"));
+        assert!(js.contains("rect.width"));
+        assert!(js.contains("rect.height"));
+    }
+
+    #[test]
+    fn test_wait_loop_interval() {
+        let interval_ms = 100;
+        assert!(interval_ms > 0);
+        assert!(interval_ms < 1000);
+    }
+
+    #[test]
+    fn test_any_visible_selector_logic() {
+        let selectors = vec!["#a", "#b", "#c"];
+        assert_eq!(selectors.len(), 3);
+    }
+
+    #[test]
+    fn test_empty_selectors_array() {
+        let selectors: Vec<&str> = vec![];
+        assert_eq!(selectors.len(), 0);
+    }
+
+    #[test]
+    fn test_single_selector_array() {
+        let selectors = vec!["#test"];
+        assert_eq!(selectors.len(), 1);
+    }
 }

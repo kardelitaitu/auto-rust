@@ -57,7 +57,6 @@
 //! - No emojis
 //! - No banned AI-sounding words
 
-
 /// Timeout for finding quote tweet button (seconds)
 const QUOTE_BUTTON_TIMEOUT_SECS: u64 = 5;
 /// Short pause after clicking quote button (milliseconds)
@@ -75,6 +74,8 @@ use tracing::instrument;
 
 use crate::llm::{build_quote_messages, build_reply_messages, Llm};
 use crate::prelude::TaskContext;
+
+use super::twitteractivity_interact::click_retweet_button;
 
 /// Generates a contextual reply to a tweet using LLM.
 ///
@@ -120,12 +121,12 @@ pub async fn generate_reply(
 
     // Validate and sanitize output
     let sanitized = validate_reply(&reply)?;
-    
+
     // Ensure non-empty after sanitization
     if sanitized.is_empty() {
         anyhow::bail!("Generated reply is empty after sanitization");
     }
-    
+
     info!("Generated reply ({} chars): {}", sanitized.len(), sanitized);
 
     Ok(sanitized)
@@ -173,13 +174,17 @@ pub async fn generate_quote_commentary(
 
     // Validate and sanitize output
     let sanitized = validate_reply(&commentary)?;
-    
+
     // Ensure non-empty after sanitization
     if sanitized.is_empty() {
         anyhow::bail!("Generated quote commentary is empty after sanitization");
     }
-    
-    info!("Generated quote commentary ({} chars): {}", sanitized.len(), sanitized);
+
+    info!(
+        "Generated quote commentary ({} chars): {}",
+        sanitized.len(),
+        sanitized
+    );
 
     Ok(sanitized)
 }
@@ -233,25 +238,57 @@ pub async fn generate_quote_commentary(
 pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     info!("Executing quote tweet with {} chars", commentary.len());
 
+    if !click_retweet_button(api).await? {
+        warn!("Unable to open retweet menu before quote tweet");
+        return Ok(false);
+    }
+
     // Find quote tweet button coordinates
     let quote_btn_js = r#"
         (function() {
-            var buttons = document.querySelectorAll('[role="button"]');
+            function visible(el) {
+                if (!el) return false;
+                var rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            }
+            var scopes = Array.prototype.slice.call(
+                document.querySelectorAll('[role="menu"], div[role="dialog"], [data-testid="Dropdown"]')
+            ).filter(visible);
+            if (scopes.length === 0) scopes = [document.body];
+
+            var buttons = [];
+            for (var s = 0; s < scopes.length; s++) {
+                var exact = scopes[s].querySelector('a[href="/compose/post"][role="menuitem"]');
+                var exactText = exact ? (exact.textContent || exact.innerText || '').trim().toLowerCase() : '';
+                if (visible(exact) && exactText.includes('quote')) {
+                    return center(exact);
+                }
+                buttons = buttons.concat(Array.prototype.slice.call(scopes[s].querySelectorAll('[role="button"], [role="menuitem"]')));
+            }
             for (var i = 0; i < buttons.length; i++) {
                 var btn = buttons[i];
                 var ariaLabel = btn.getAttribute('aria-label') || '';
-                if (ariaLabel.toLowerCase().includes('quote')) {
-                    var rect = btn.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
-                    }
+                var text = btn.textContent || btn.innerText || '';
+                var haystack = (ariaLabel + ' ' + text).toLowerCase();
+                if (haystack.includes('quote')) {
+                    if (visible(btn)) return center(btn);
                 }
             }
             return null;
+
+            function center(el) {
+                var rect = el.getBoundingClientRect();
+                return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
+            }
         })()
     "#;
 
-    let result = match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.page().evaluate(quote_btn_js.to_string())).await {
+    let result = match timeout(
+        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        api.page().evaluate(quote_btn_js.to_string()),
+    )
+    .await
+    {
         Ok(r) => r?,
         Err(_) => {
             warn!("Timeout finding quote tweet button");
@@ -289,9 +326,11 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     // Find composer textarea and type commentary
     let composer_js = r#"
         (function() {
-            var textarea = document.querySelector('[data-testid="tweetTextarea_0"]') ||
-                          document.querySelector('[role="textbox"]');
-            if (textarea) {
+            var textboxes = document.querySelectorAll('[data-testid="tweetTextarea_0"][role="textbox"], [data-testid="tweetTextarea_0"], [role="textbox"][aria-label="Post text"]');
+            for (var i = 0; i < textboxes.length; i++) {
+                var textarea = textboxes[i];
+                var rect = textarea.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
                 textarea.focus();
                 return true;
             }
@@ -299,7 +338,12 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         })()
     "#;
 
-    let focused = match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.page().evaluate(composer_js.to_string())).await {
+    let focused = match timeout(
+        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        api.page().evaluate(composer_js.to_string()),
+    )
+    .await
+    {
         Ok(r) => r?,
         Err(_) => {
             warn!("Timeout focusing composer textarea");
@@ -314,7 +358,12 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     api.pause(500).await;
 
     // Type the commentary
-    match timeout(Duration::from_secs(10), api.keyboard("[data-testid='tweetTextarea_0']", commentary)).await {
+    match timeout(
+        Duration::from_secs(10),
+        api.keyboard("[data-testid='tweetTextarea_0']", commentary),
+    )
+    .await
+    {
         Ok(r) => r?,
         Err(_) => {
             warn!("Timeout typing commentary");
@@ -326,16 +375,26 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     // Find Tweet button coordinates
     let tweet_btn_js = r#"
         (function() {
-            var buttons = document.querySelectorAll('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
-            if (buttons.length > 0) {
-                var rect = buttons[0].getBoundingClientRect();
+            var buttons = document.querySelectorAll('button[data-testid="tweetButton"]');
+            for (var i = 0; i < buttons.length; i++) {
+                var btn = buttons[i];
+                var rect = btn.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+                var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
+                if (text !== 'post') continue;
                 return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
             }
             return null;
         })()
     "#;
 
-    let button_result = match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.page().evaluate(tweet_btn_js.to_string())).await {
+    let button_result = match timeout(
+        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        api.page().evaluate(tweet_btn_js.to_string()),
+    )
+    .await
+    {
         Ok(r) => r?,
         Err(_) => {
             warn!("Timeout finding tweet button");
@@ -362,7 +421,12 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     };
 
     // Human-like cursor movement then click
-    match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.move_mouse_to(tx, ty)).await {
+    match timeout(
+        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        api.move_mouse_to(tx, ty),
+    )
+    .await
+    {
         Ok(_) => {}
         Err(_) => {
             warn!("Timeout moving mouse to tweet button");
@@ -370,7 +434,12 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         }
     }
     super::twitteractivity_humanized::human_pause(api, QUOTE_CLICK_PAUSE_SHORT_MS).await;
-    match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.click_at(tx, ty)).await {
+    match timeout(
+        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        api.click_at(tx, ty),
+    )
+    .await
+    {
         Ok(_) => {}
         Err(_) => {
             warn!("Timeout clicking tweet button");
@@ -381,8 +450,37 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     // Wait for post to complete
     api.pause(2000).await;
 
-    info!("Quote tweet posted successfully");
-    Ok(true)
+    let verify_js = r#"
+        (function() {
+            var textarea = document.querySelector('[data-testid="tweetTextarea_0"]') ||
+                           document.querySelector('[role="textbox"]');
+            if (!textarea) return { posted: true, reason: 'composer closed' };
+            var text = textarea.textContent || textarea.value || '';
+            if (text.trim() === '') return { posted: true, reason: 'composer cleared' };
+            return { posted: false, reason: 'composer still contains text' };
+        })()
+    "#;
+
+    let verify_result = api.page().evaluate(verify_js).await?;
+    if let Some(obj) = verify_result.value().and_then(|v| v.as_object()) {
+        let posted = obj
+            .get("posted")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let reason = obj
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        if posted {
+            info!("Quote tweet posted successfully ({})", reason);
+        } else {
+            warn!("Quote tweet verification failed: {}", reason);
+        }
+        return Ok(posted);
+    }
+
+    warn!("Quote tweet verification returned an unexpected result");
+    Ok(false)
 }
 
 /// Validates and sanitizes LLM-generated text for Twitter.

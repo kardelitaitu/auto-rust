@@ -115,8 +115,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         let output_visible_after_wait = api.visible("#output").await?;
         warn!(
             "DemoQA output wait failed: exists={} visible={}",
-            output_exists_after_wait,
-            output_visible_after_wait
+            output_exists_after_wait, output_visible_after_wait
         );
         if !output_exists_after_wait {
             bail!("DemoQA output element did not exist after submit");

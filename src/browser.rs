@@ -475,7 +475,11 @@ mod tests {
 
     #[test]
     fn test_matches_browser_filters_multiple_filters() {
-        let filters = vec!["brave".to_string(), "chrome".to_string(), "safari".to_string()];
+        let filters = vec![
+            "brave".to_string(),
+            "chrome".to_string(),
+            "safari".to_string(),
+        ];
         assert!(matches_browser_filters("Brave Browser", &filters));
         assert!(matches_browser_filters("Chrome Instance", &filters));
         assert!(matches_browser_filters("Safari Web", &filters));

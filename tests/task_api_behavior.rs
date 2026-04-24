@@ -127,7 +127,13 @@ fn build_task_context_with_metrics(
 fn sanitize_component(value: &str) -> String {
     let cleaned: String = value
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim_matches('_').to_string();
     if trimmed.is_empty() {

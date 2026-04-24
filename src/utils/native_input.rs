@@ -1,6 +1,8 @@
 use crate::config::NativeInputBackend;
 use anyhow::Result;
-use enigo::{Button as NativeButton, Coordinate as NativeCoordinate, Direction, Enigo, Mouse, Settings};
+use enigo::{
+    Button as NativeButton, Coordinate as NativeCoordinate, Direction, Enigo, Mouse, Settings,
+};
 use log::warn;
 use rand::Rng;
 use std::sync::OnceLock;
@@ -92,14 +94,14 @@ pub(crate) fn native_move_to_point_blocking(
 
 impl NativeMouseBackend for EnigoNativeMouseBackend {
     fn ensure_ready(&self) {
-    static NATIVE_INIT_ONCE: OnceLock<()> = OnceLock::new();
-    NATIVE_INIT_ONCE.get_or_init(|| {
-        #[cfg(target_os = "windows")]
-        {
-            let _ = enigo::set_dpi_awareness();
-        }
-        let _ = Enigo::new(&Settings::default());
-    });
+        static NATIVE_INIT_ONCE: OnceLock<()> = OnceLock::new();
+        NATIVE_INIT_ONCE.get_or_init(|| {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = enigo::set_dpi_awareness();
+            }
+            let _ = Enigo::new(&Settings::default());
+        });
     }
 
     fn move_to_point_blocking(
@@ -181,9 +183,11 @@ fn native_move_to_point_blocking_with_enigo(
             let t = step as f64 / steps as f64;
             let eased = 1.0 - (1.0 - t).powi(3);
             let jitter = (distance / 600.0).clamp(0.0, 1.4);
-            let x = start_x as f64 + (target_x - start_x) as f64 * eased
+            let x = start_x as f64
+                + (target_x - start_x) as f64 * eased
                 + rng.gen_range(-jitter..=jitter);
-            let y = start_y as f64 + (target_y - start_y) as f64 * eased
+            let y = start_y as f64
+                + (target_y - start_y) as f64 * eased
                 + rng.gen_range(-jitter..=jitter);
             enigo
                 .move_mouse(x.round() as i32, y.round() as i32, NativeCoordinate::Abs)

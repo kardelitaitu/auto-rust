@@ -176,13 +176,6 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
                     var tweetTextEl = el.querySelector('[data-testid="tweetText"]');
                     var tweetText = tweetTextEl ? tweetTextEl.textContent.trim() : '';
                     
-                    // Extract basic tweet info
-                    // Twitter may not have a tweet ID attribute, so generate one from position
-                    var tweetId = el.dataset.tweetId || 
-                                  el.getAttribute('data-item-id') || 
-                                  el.getAttribute('data-tweet-id') || 
-                                  'tweet_' + Math.floor(rect.x) + '_' + Math.floor(rect.y);
-                    
                     // Find engagement buttons within this tweet element
                     var likeBtn = el.querySelector('[data-testid="like"]');
                     var retweetBtn = el.querySelector('[data-testid="retweet"]');
@@ -222,6 +215,18 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
                             break; // Take the first matching permalink
                         }
                     }
+
+                    // Prefer stable tweet identity from permalink. Position fallback is last resort.
+                    var statusId = null;
+                    if (statusUrl) {
+                        var statusParts = statusUrl.split('/').filter(function(p) { return p.length > 0; });
+                        statusId = statusParts[statusParts.length - 1].split(/[?#]/)[0];
+                    }
+                    var tweetId = el.dataset.tweetId ||
+                                  el.getAttribute('data-item-id') ||
+                                  el.getAttribute('data-tweet-id') ||
+                                  statusId ||
+                                  'tweet_' + Math.floor(rect.x) + '_' + Math.floor(rect.y);
                     
                     var tweetObj = {
                         id: tweetId,

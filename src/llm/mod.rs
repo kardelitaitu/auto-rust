@@ -2,11 +2,13 @@ pub mod client;
 pub mod models;
 pub mod reply_engine;
 pub mod reply_strategies;
+pub mod unified_processor;
 
 pub use client::*;
 pub use models::*;
 pub use reply_engine::*;
 pub use reply_strategies::*;
+pub use unified_processor::*;
 
 use log::info;
 

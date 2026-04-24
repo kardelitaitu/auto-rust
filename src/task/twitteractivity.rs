@@ -65,10 +65,12 @@ use crate::utils::twitter::{
 
 /// Default feed scan duration range (ms): 5-9 minutes (300-540 seconds)
 fn default_duration_ms(config: &crate::config::TwitterActivityConfig) -> u64 {
-    rand::random::<u64>() % (config.duration_range_max_ms - config.duration_range_min_ms) + config.duration_range_min_ms
+    config.feed_scan_duration_ms
 }
 /// Minimum delay between feed candidate scans (ms)
 const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;
+/// Minimum delay between actions on same tweet (ms)
+const MIN_ACTION_CHAIN_DELAY_MS: u64 = 3000;
 
 /// Entry point for navigation (URL and weight)
 struct EntryPoint {
@@ -407,12 +409,12 @@ impl TaskConfig {
     /// Parse task configuration from JSON payload with defaults
     fn from_payload(payload: &Value, config: &crate::config::TwitterActivityConfig) -> Self {
         let duration_ms = read_u64(payload, "duration_ms", default_duration_ms(config));
-        let candidate_count = read_u32(payload, "candidate_count", config.default_candidate_count);
-        let thread_depth = read_u32(payload, "thread_depth", config.default_thread_depth);
+        let candidate_count = read_u32(payload, "candidate_count", config.engagement_candidate_count);
+        let thread_depth = read_u32(payload, "thread_depth", 3);
         let max_actions_per_scan = read_u32(
             payload,
             "max_actions_per_scan",
-            config.default_max_actions_per_scan,
+            config.engagement_candidate_count,
         )
         .max(1);
         let weights = payload.get("weights").cloned();
@@ -482,13 +484,13 @@ fn phase4_cleanup(
     );
 
     // Calculate and log success rates
-    let like_attempts = api.run_counter(RUN_COUNTER_LIKE_SUCCESS) + api.run_counter(RUN_COUNTER_LIKE_FAILURE);
-    let retweet_attempts = api.run_counter(RUN_COUNTER_RETWEET_SUCCESS) + api.run_counter(RUN_COUNTER_RETWEET_FAILURE);
-    let follow_attempts = api.run_counter(RUN_COUNTER_FOLLOW_SUCCESS) + api.run_counter(RUN_COUNTER_FOLLOW_FAILURE);
-    let reply_attempts = api.run_counter(RUN_COUNTER_REPLY_SUCCESS) + api.run_counter(RUN_COUNTER_REPLY_FAILURE);
-    let bookmark_attempts = api.run_counter(RUN_COUNTER_BOOKMARK_SUCCESS) + api.run_counter(RUN_COUNTER_BOOKMARK_FAILURE);
-    let quote_attempts = api.run_counter(RUN_COUNTER_QUOTE_SUCCESS) + api.run_counter(RUN_COUNTER_QUOTE_FAILURE);
-    let dive_attempts = api.run_counter(RUN_COUNTER_DIVE_SUCCESS) + api.run_counter(RUN_COUNTER_DIVE_FAILURE);
+    let like_attempts = api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_LIKE_FAILURE);
+    let retweet_attempts = api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_RETWEET_FAILURE);
+    let follow_attempts = api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_FOLLOW_FAILURE);
+    let reply_attempts = api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_REPLY_FAILURE);
+    let bookmark_attempts = api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_BOOKMARK_FAILURE);
+    let quote_attempts = api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_QUOTE_FAILURE);
+    let dive_attempts = api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS) + api.metrics().run_counter(RUN_COUNTER_DIVE_FAILURE);
 
     fn calc_rate(success: usize, total: usize) -> f64 {
         if total == 0 { 0.0 } else { (success as f64 / total as f64) * 100.0 }
@@ -496,13 +498,13 @@ fn phase4_cleanup(
 
     info!(
         "[twitter] Success rates | like={:.1}% ({}/{}) retweet={:.1}% ({}/{}) follow={:.1}% ({}/{}) reply={:.1}% ({}/{}) bookmark={:.1}% ({}/{}) quote={:.1}% ({}/{}) dive={:.1}% ({}/{})",
-        calc_rate(api.run_counter(RUN_COUNTER_LIKE_SUCCESS), like_attempts), api.run_counter(RUN_COUNTER_LIKE_SUCCESS), like_attempts,
-        calc_rate(api.run_counter(RUN_COUNTER_RETWEET_SUCCESS), retweet_attempts), api.run_counter(RUN_COUNTER_RETWEET_SUCCESS), retweet_attempts,
-        calc_rate(api.run_counter(RUN_COUNTER_FOLLOW_SUCCESS), follow_attempts), api.run_counter(RUN_COUNTER_FOLLOW_SUCCESS), follow_attempts,
-        calc_rate(api.run_counter(RUN_COUNTER_REPLY_SUCCESS), reply_attempts), api.run_counter(RUN_COUNTER_REPLY_SUCCESS), reply_attempts,
-        calc_rate(api.run_counter(RUN_COUNTER_BOOKMARK_SUCCESS), bookmark_attempts), api.run_counter(RUN_COUNTER_BOOKMARK_SUCCESS), bookmark_attempts,
-        calc_rate(api.run_counter(RUN_COUNTER_QUOTE_SUCCESS), quote_attempts), api.run_counter(RUN_COUNTER_QUOTE_SUCCESS), quote_attempts,
-        calc_rate(api.run_counter(RUN_COUNTER_DIVE_SUCCESS), dive_attempts), api.run_counter(RUN_COUNTER_DIVE_SUCCESS), dive_attempts
+        calc_rate(api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS), like_attempts), api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS), like_attempts,
+        calc_rate(api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS), retweet_attempts), api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS), retweet_attempts,
+        calc_rate(api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS), follow_attempts), api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS), follow_attempts,
+        calc_rate(api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS), reply_attempts), api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS), reply_attempts,
+        calc_rate(api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS), bookmark_attempts), api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS), bookmark_attempts,
+        calc_rate(api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS), quote_attempts), api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS), quote_attempts,
+        calc_rate(api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS), dive_attempts), api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS), dive_attempts
     );
 }
 
@@ -1105,7 +1107,7 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
     // Initialize engagement counters and limits
     let mut counters = EngagementCounters::new();
     let limits = EngagementLimits::default();
-    let mut action_tracker = TweetActionTracker::new(config.twitter_activity.min_action_chain_delay_ms);
+    let mut action_tracker = TweetActionTracker::new(MIN_ACTION_CHAIN_DELAY_MS);
     let _current_thread_cache: Option<crate::utils::twitter::twitteractivity_dive::ThreadCache> = None;
 
     info!(

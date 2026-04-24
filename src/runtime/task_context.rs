@@ -801,6 +801,10 @@ impl TaskContext {
         }
     }
 
+    pub fn metrics(&self) -> &MetricsCollector {
+        self.metrics.as_ref().expect("Metrics collector not initialized")
+    }
+
     fn click_learning_path(&self) -> Option<&Path> {
         self.click_learning_path.as_deref()
     }

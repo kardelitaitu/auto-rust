@@ -18,7 +18,7 @@ pub mod scroll {
 
 pub mod clipboard {
     #[allow(unused_imports)]
-    pub use crate::internal::clipboard::{
+    pub use crate::utils::clipboard::{
         clear_clipboard, copy, cut, get_clipboard, paste_from_clipboard, set_clipboard,
         ClipboardState,
     };

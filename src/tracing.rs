@@ -80,3 +80,32 @@ pub fn init_console_tracing() {
 pub fn shutdown_tracing() {
     global::shutdown_tracer_provider();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_init_console_tracing() {
+        // This test verifies that console tracing initialization doesn't panic
+        // It will actually initialize the global subscriber, which may affect other tests
+        // In a real test suite, you'd want to use a test isolation mechanism
+        init_console_tracing();
+        // If we get here without panicking, the test passes
+    }
+
+    #[test]
+    fn test_shutdown_tracing() {
+        // This test verifies that shutdown doesn't panic
+        // It's safe to call even if tracing wasn't initialized
+        shutdown_tracing();
+    }
+
+    #[test]
+    fn test_shutdown_tracing_idempotent() {
+        // Multiple shutdowns should not panic
+        shutdown_tracing();
+        shutdown_tracing();
+        shutdown_tracing();
+    }
+}

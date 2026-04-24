@@ -193,3 +193,268 @@ impl From<tokio::sync::AcquireError> for OrchestratorError {
         OrchestratorError::Session(SessionError::WorkerTimeout { timeout_ms: 0 })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_browser_error_message_formatting() {
+        let err = BrowserError::ConnectionFailed("test error".to_string());
+        assert_eq!(err.to_string(), "Failed to connect to browser: test error");
+
+        let err = BrowserError::PageError("navigation failed".to_string());
+        assert_eq!(err.to_string(), "Page error: navigation failed");
+
+        let err = BrowserError::ElementError {
+            selector: "#button".to_string(),
+            reason: "not clickable".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Element interaction failed: #button - not clickable"
+        );
+
+        let err = BrowserError::SelectorNotFound(".missing".to_string());
+        assert_eq!(err.to_string(), "Selector not found: .missing");
+
+        let err = BrowserError::Disconnected("crashed".to_string());
+        assert_eq!(err.to_string(), "Browser disconnected: crashed");
+
+        let err = BrowserError::Timeout("operation".to_string());
+        assert_eq!(err.to_string(), "Browser operation timed out: operation");
+    }
+
+    #[test]
+    fn test_session_error_message_formatting() {
+        let err = SessionError::InitializationFailed("failed".to_string());
+        assert_eq!(err.to_string(), "Failed to initialize session: failed");
+
+        let err = SessionError::WorkerTimeout { timeout_ms: 5000 };
+        assert_eq!(err.to_string(), "Worker acquisition timed out after 5000ms");
+
+        let err = SessionError::Unhealthy("low health score".to_string());
+        assert_eq!(err.to_string(), "Session unhealthy: low health score");
+
+        let err = SessionError::PageRegistry("registry error".to_string());
+        assert_eq!(err.to_string(), "Page registry error: registry error");
+
+        let err = SessionError::ShutdownFailed("cleanup failed".to_string());
+        assert_eq!(err.to_string(), "Session shutdown failed: cleanup failed");
+    }
+
+    #[test]
+    fn test_task_error_message_formatting() {
+        let err = TaskError::ValidationFailed {
+            task_name: "test_task".to_string(),
+            reason: "invalid payload".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Task validation failed: test_task - invalid payload"
+        );
+
+        let err = TaskError::Timeout {
+            task_name: "slow_task".to_string(),
+            timeout_ms: 30000,
+        };
+        assert_eq!(
+            err.to_string(),
+            "Task timed out: slow_task after 30000ms"
+        );
+
+        let err = TaskError::ExecutionFailed {
+            task_name: "failing_task".to_string(),
+            reason: "element not found".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Task execution failed: failing_task - element not found"
+        );
+
+        let err = TaskError::NotFound("unknown_task".to_string());
+        assert_eq!(err.to_string(), "Unknown task: unknown_task");
+
+        let err = TaskError::Cancelled("user cancelled".to_string());
+        assert_eq!(err.to_string(), "Task cancelled: user cancelled");
+
+        let err = TaskError::RetryExhausted {
+            max_retries: 3,
+            task_name: "flaky_task".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Retry exhausted after 3 attempts for flaky_task"
+        );
+    }
+
+    #[test]
+    fn test_config_error_message_formatting() {
+        let err = ConfigError::LoadFailed {
+            path: "/path/to/config".to_string(),
+            reason: "file not found".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Failed to load config from /path/to/config: file not found"
+        );
+
+        let err = ConfigError::ValidationFailed("invalid field".to_string());
+        assert_eq!(err.to_string(), "Config validation failed: invalid field");
+
+        let err = ConfigError::MissingField("required_field".to_string());
+        assert_eq!(err.to_string(), "Missing required config field: required_field");
+
+        let err = ConfigError::InvalidValue {
+            field: "port".to_string(),
+            value: "abc".to_string(),
+            reason: "must be a number".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Invalid value for port: abc - must be a number"
+        );
+
+        let err = ConfigError::EnvVar("API_KEY not set".to_string());
+        assert_eq!(err.to_string(), "Environment variable error: API_KEY not set");
+    }
+
+    #[test]
+    fn test_network_error_message_formatting() {
+        let err = NetworkError::HttpError {
+            url: "https://example.com".to_string(),
+            status: "500".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "HTTP request failed: https://example.com - 500"
+        );
+
+        let err = NetworkError::Timeout("request timed out".to_string());
+        assert_eq!(err.to_string(), "Request timed out: request timed out");
+
+        let err = NetworkError::CircuitBreakerOpen {
+            service: "api_service".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Circuit breaker is open for api_service"
+        );
+
+        let err = NetworkError::Connection("connection refused".to_string());
+        assert_eq!(err.to_string(), "Connection error: connection refused");
+
+        let err = NetworkError::ApiKey("invalid key".to_string());
+        assert_eq!(err.to_string(), "API key error: invalid key");
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_browser_error() {
+        let browser_err = BrowserError::ConnectionFailed("test".to_string());
+        let orch_err: OrchestratorError = browser_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Browser(_)));
+        assert_eq!(orch_err.to_string(), "Browser error: Failed to connect to browser: test");
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_session_error() {
+        let session_err = SessionError::Unhealthy("test".to_string());
+        let orch_err: OrchestratorError = session_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Session(_)));
+        assert_eq!(orch_err.to_string(), "Session error: Session unhealthy: test");
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_task_error() {
+        let task_err = TaskError::NotFound("test".to_string());
+        let orch_err: OrchestratorError = task_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Task(_)));
+        assert_eq!(orch_err.to_string(), "Task error: Unknown task: test");
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_config_error() {
+        let config_err = ConfigError::MissingField("test".to_string());
+        let orch_err: OrchestratorError = config_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Config(_)));
+        assert_eq!(
+            orch_err.to_string(),
+            "Configuration error: Missing required config field: test"
+        );
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_network_error() {
+        let network_err = NetworkError::Timeout("test".to_string());
+        let orch_err: OrchestratorError = network_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Network(_)));
+        assert_eq!(orch_err.to_string(), "Network error: Request timed out: test");
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "test");
+        let orch_err: OrchestratorError = io_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Io(_)));
+        assert!(orch_err.to_string().contains("I/O error:"));
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_anyhow_error() {
+        let anyhow_err = anyhow::anyhow!("test error");
+        let orch_err: OrchestratorError = anyhow_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Other(_)));
+        assert_eq!(orch_err.to_string(), "test error");
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_toml_error() {
+        let toml_err = toml::de::Error::custom("invalid TOML");
+        let orch_err: OrchestratorError = toml_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Config(_)));
+        assert!(orch_err.to_string().contains("Failed to load config from config file"));
+    }
+
+    #[test]
+    fn test_orchestrator_error_from_acquire_error() {
+        let acquire_err = tokio::sync::AcquireError;
+        let orch_err: OrchestratorError = acquire_err.into();
+        assert!(matches!(orch_err, OrchestratorError::Session(_)));
+        assert_eq!(
+            orch_err.to_string(),
+            "Session error: Worker acquisition timed out after 0ms"
+        );
+    }
+
+    #[test]
+    fn test_orchestrator_error_other_variant() {
+        let orch_err = OrchestratorError::Other("custom error".to_string());
+        assert_eq!(orch_err.to_string(), "custom error");
+    }
+
+    #[test]
+    fn test_error_debug_display() {
+        let err = BrowserError::ConnectionFailed("test".to_string());
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("ConnectionFailed"));
+        assert!(debug_str.contains("test"));
+    }
+
+    #[test]
+    fn test_result_type_alias() {
+        // Test that Result<T> works as expected
+        let ok_result: Result<i32> = Ok(42);
+        assert!(ok_result.is_ok());
+
+        let err_result: Result<i32> = Err(BrowserError::ConnectionFailed("test".to_string()).into());
+        assert!(err_result.is_err());
+    }
+
+    #[test]
+    fn test_error_chain_with_source() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        let orch_err: OrchestratorError = io_err.into();
+        // The I/O error should be preserved in the Io variant
+        assert!(matches!(orch_err, OrchestratorError::Io(_)));
+    }
+}

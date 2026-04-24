@@ -213,3 +213,245 @@ pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64
         coords.y + coords.height,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_viewport_creation() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        assert_eq!(viewport.width, 800.0);
+        assert_eq!(viewport.height, 600.0);
+    }
+
+    #[test]
+    fn test_viewport_clone() {
+        let viewport1 = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let viewport2 = viewport1.clone();
+        assert_eq!(viewport1.width, viewport2.width);
+        assert_eq!(viewport1.height, viewport2.height);
+    }
+
+    #[test]
+    fn test_document_size_creation() {
+        let doc = DocumentSize {
+            scroll_width: 1200.0,
+            scroll_height: 2000.0,
+        };
+        assert_eq!(doc.scroll_width, 1200.0);
+        assert_eq!(doc.scroll_height, 2000.0);
+    }
+
+    #[test]
+    fn test_center_position() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let (x, y) = center_position(&viewport);
+        assert_eq!(x, 400.0);
+        assert_eq!(y, 300.0);
+    }
+
+    #[test]
+    fn test_center_position_odd_dimensions() {
+        let viewport = Viewport {
+            width: 801.0,
+            height: 601.0,
+        };
+        let (x, y) = center_position(&viewport);
+        assert_eq!(x, 400.5);
+        assert_eq!(y, 300.5);
+    }
+
+    #[test]
+    fn test_random_position_within_bounds() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let margin = 10.0;
+
+        for _ in 0..10 {
+            let (x, y) = random_position(&viewport, margin);
+            assert!(x >= margin, "x should be >= margin");
+            assert!(x <= viewport.width - margin, "x should be <= width - margin");
+            assert!(y >= margin, "y should be >= margin");
+            assert!(y <= viewport.height - margin, "y should be <= height - margin");
+        }
+    }
+
+    #[test]
+    fn test_random_position_with_zero_margin() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let margin = 0.0;
+
+        let (x, y) = random_position(&viewport, margin);
+        // Should still be within bounds with minimum margin of 1.0
+        assert!(x >= 1.0);
+        assert!(x <= viewport.width - 1.0);
+        assert!(y >= 1.0);
+        assert!(y <= viewport.height - 1.0);
+    }
+
+    #[test]
+    fn test_random_position_with_large_margin() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let margin = 500.0;
+
+        let (x, y) = random_position(&viewport, margin);
+        // Margin should be clamped to viewport/4
+        let expected_max_margin = viewport.width / 4.0;
+        assert!(x >= expected_max_margin);
+        assert!(x <= viewport.width - expected_max_margin);
+    }
+
+    #[test]
+    fn test_random_position_with_edge_ratio() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let edge_ratio = 0.1;
+
+        for _ in 0..10 {
+            let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
+            let min_expected = viewport.width * edge_ratio;
+            let max_expected = viewport.width * (1.0 - edge_ratio);
+            assert!(x >= min_expected);
+            assert!(x <= max_expected);
+            assert!(y >= min_expected);
+            assert!(y <= max_expected);
+        }
+    }
+
+    #[test]
+    fn test_random_position_with_edge_ratio_clamped_high() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let edge_ratio = 0.5; // Should be clamped to 0.45
+
+        let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
+        let min_expected = viewport.width * 0.45;
+        let max_expected = viewport.width * 0.55;
+        assert!(x >= min_expected);
+        assert!(x <= max_expected);
+    }
+
+    #[test]
+    fn test_random_position_with_edge_ratio_clamped_low() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let edge_ratio = -0.1; // Should be clamped to 0.0
+
+        let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
+        assert!(x >= 1.0);
+        assert!(x <= viewport.width - 1.0);
+    }
+
+    #[test]
+    fn test_random_position_with_edge_ratio_zero() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let edge_ratio = 0.0;
+
+        let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
+        // Should use minimum of 1.0
+        assert!(x >= 1.0);
+        assert!(x <= viewport.width - 1.0);
+    }
+
+    #[test]
+    fn test_element_coords_valid() {
+        let coords = ElementCoords {
+            x: 100.0,
+            y: 200.0,
+            width: 50.0,
+            height: 30.0,
+        };
+        assert!(coords.is_valid());
+    }
+
+    #[test]
+    fn test_element_coords_invalid_nan() {
+        let coords = ElementCoords {
+            x: f64::NAN,
+            y: 200.0,
+            width: 50.0,
+            height: 30.0,
+        };
+        assert!(!coords.is_valid());
+    }
+
+    #[test]
+    fn test_element_coords_invalid_zero_width() {
+        let coords = ElementCoords {
+            x: 100.0,
+            y: 200.0,
+            width: 0.0,
+            height: 30.0,
+        };
+        assert!(!coords.is_valid());
+    }
+
+    #[test]
+    fn test_element_coords_invalid_zero_height() {
+        let coords = ElementCoords {
+            x: 100.0,
+            y: 200.0,
+            width: 50.0,
+            height: 0.0,
+        };
+        assert!(!coords.is_valid());
+    }
+
+    #[test]
+    fn test_element_coords_invalid_negative_width() {
+        let coords = ElementCoords {
+            x: 100.0,
+            y: 200.0,
+            width: -10.0,
+            height: 30.0,
+        };
+        assert!(!coords.is_valid());
+    }
+
+    #[test]
+    fn test_viewport_debug() {
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+        let debug_str = format!("{:?}", viewport);
+        assert!(debug_str.contains("Viewport"));
+    }
+
+    #[test]
+    fn test_document_size_debug() {
+        let doc = DocumentSize {
+            scroll_width: 1200.0,
+            scroll_height: 2000.0,
+        };
+        let debug_str = format!("{:?}", doc);
+        assert!(debug_str.contains("DocumentSize"));
+    }
+}

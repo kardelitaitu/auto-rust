@@ -140,4 +140,123 @@ mod tests {
         let value = gaussian(42.0, 10.0, 10.0, 10.0);
         assert_eq!(value, 10.0);
     }
+
+    #[test]
+    fn test_random_in_range_same_value() {
+        let result = random_in_range(5, 5);
+        assert_eq!(result, 5);
+    }
+
+    #[test]
+    fn test_random_in_range_distribution() {
+        // Test that random_in_range produces values across the range
+        let mut values = std::collections::HashSet::new();
+        for _ in 0..100 {
+            values.insert(random_in_range(0, 10));
+        }
+        // Should have multiple different values
+        assert!(values.len() > 5);
+    }
+
+    #[test]
+    fn test_gaussian_infinity_mean() {
+        let value = gaussian(f64::INFINITY, 10.0, 0.0, 100.0);
+        assert!(!value.is_finite());
+    }
+
+    #[test]
+    fn test_gaussian_nan_mean() {
+        let value = gaussian(f64::NAN, 10.0, 0.0, 100.0);
+        assert!(!value.is_finite());
+    }
+
+    #[test]
+    fn test_gaussian_infinity_std_dev() {
+        let value = gaussian(50.0, f64::INFINITY, 0.0, 100.0);
+        assert_eq!(value, 50.0);
+    }
+
+    #[test]
+    fn test_gaussian_nan_std_dev() {
+        let value = gaussian(50.0, f64::NAN, 0.0, 100.0);
+        assert_eq!(value, 50.0);
+    }
+
+    #[test]
+    fn test_gaussian_infinity_bounds() {
+        let value = gaussian(50.0, 10.0, f64::NEG_INFINITY, f64::INFINITY);
+        assert!(!value.is_finite());
+    }
+
+    #[test]
+    fn test_gaussian_zero_std_dev() {
+        let value = gaussian(50.0, 0.0, 0.0, 100.0);
+        assert_eq!(value, 50.0);
+    }
+
+    #[test]
+    fn test_gaussian_negative_std_dev() {
+        let value = gaussian(50.0, -10.0, 0.0, 100.0);
+        assert_eq!(value, 50.0);
+    }
+
+    #[test]
+    fn test_gaussian_mean_outside_bounds() {
+        // Mean is outside bounds, should still produce values within bounds
+        let value = gaussian(150.0, 10.0, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_negative_bounds() {
+        let value = gaussian(-50.0, 10.0, -100.0, 0.0);
+        assert!((-100.0..=0.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_tight_bounds() {
+        // Tight bounds around mean
+        let value = gaussian(50.0, 10.0, 49.0, 51.0);
+        assert!((49.0..=51.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_large_std_dev() {
+        // Large standard deviation with tight bounds
+        let value = gaussian(50.0, 1000.0, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_clamping() {
+        // Test that values are properly clamped when sampling would exceed bounds
+        for _ in 0..100 {
+            let value = gaussian(50.0, 5.0, 40.0, 60.0);
+            assert!((40.0..=60.0).contains(&value));
+        }
+    }
+
+    #[test]
+    fn test_random_in_range_zero() {
+        let result = random_in_range(0, 0);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_random_in_range_large_values() {
+        let result = random_in_range(1_000_000, 2_000_000);
+        assert!((1_000_000..=2_000_000).contains(&result));
+    }
+
+    #[test]
+    fn test_gaussian_mean_at_min_bound() {
+        let value = gaussian(0.0, 10.0, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
+
+    #[test]
+    fn test_gaussian_mean_at_max_bound() {
+        let value = gaussian(100.0, 10.0, 0.0, 100.0);
+        assert!((0.0..=100.0).contains(&value));
+    }
 }

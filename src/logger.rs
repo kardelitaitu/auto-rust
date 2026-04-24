@@ -158,6 +158,103 @@ impl Log for FileLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_log_context_default() {
+        let ctx = LogContext::default();
+        assert!(ctx.session_id.is_none());
+        assert!(ctx.profile_name.is_none());
+        assert!(ctx.task_name.is_none());
+    }
+
+    #[test]
+    fn test_log_context_creation() {
+        let ctx = LogContext {
+            session_id: Some("test-session".to_string()),
+            profile_name: Some("test-profile".to_string()),
+            task_name: Some("test-task".to_string()),
+        };
+        assert_eq!(ctx.session_id, Some("test-session".to_string()));
+        assert_eq!(ctx.profile_name, Some("test-profile".to_string()));
+        assert_eq!(ctx.task_name, Some("test-task".to_string()));
+    }
+
+    #[test]
+    fn test_log_context_clone() {
+        let ctx1 = LogContext {
+            session_id: Some("test".to_string()),
+            profile_name: Some("profile".to_string()),
+            task_name: Some("task".to_string()),
+        };
+        let ctx2 = ctx1.clone();
+        assert_eq!(ctx1.session_id, ctx2.session_id);
+        assert_eq!(ctx1.profile_name, ctx2.profile_name);
+        assert_eq!(ctx1.task_name, ctx2.task_name);
+    }
+
+    #[test]
+    fn test_log_context_format_all_fields() {
+        let ctx = LogContext {
+            session_id: Some("brave-9002".to_string()),
+            profile_name: Some("Teen".to_string()),
+            task_name: Some("pageview".to_string()),
+        };
+        let formatted = ctx.format();
+        assert_eq!(formatted, "[brave-9002][Teen][pageview]");
+    }
+
+    #[test]
+    fn test_log_context_format_partial() {
+        let ctx = LogContext {
+            session_id: Some("brave-9002".to_string()),
+            profile_name: None,
+            task_name: Some("pageview".to_string()),
+        };
+        let formatted = ctx.format();
+        assert_eq!(formatted, "[brave-9002][pageview]");
+    }
+
+    #[test]
+    fn test_log_context_format_empty() {
+        let ctx = LogContext::default();
+        let formatted = ctx.format();
+        assert!(formatted.is_empty());
+    }
+
+    #[test]
+    fn test_set_log_context() {
+        let ctx = LogContext {
+            session_id: Some("test".to_string()),
+            profile_name: None,
+            task_name: None,
+        };
+        set_log_context(ctx);
+        let retrieved = get_log_context();
+        assert_eq!(retrieved.session_id, Some("test".to_string()));
+    }
+
+    #[test]
+    fn test_get_log_context_default() {
+        clear_log_context();
+        let ctx = get_log_context();
+        assert!(ctx.session_id.is_none());
+        assert!(ctx.profile_name.is_none());
+        assert!(ctx.task_name.is_none());
+    }
+
+    #[test]
+    fn test_clear_log_context() {
+        set_log_context(LogContext {
+            session_id: Some("test".to_string()),
+            profile_name: None,
+            task_name: None,
+        });
+        clear_log_context();
+        let ctx = get_log_context();
+        assert!(ctx.session_id.is_none());
+    }
 
     #[test]
     fn scoped_log_context_restores_previous_context_on_drop() {
@@ -201,5 +298,124 @@ mod tests {
         assert_eq!(ctx.session_id.as_deref(), Some("outer"));
         assert_eq!(ctx.profile_name.as_deref(), Some("brave"));
         assert_eq!(ctx.task_name.as_deref(), Some("demoqa"));
+    }
+
+    #[test]
+    fn test_file_logger_creation() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        // Logger should be created successfully
+        let _ = logger;
+    }
+
+    #[test]
+    fn test_file_logger_enabled_info() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        // Default level is Info, so Info should be enabled
+        let metadata = Metadata::builder().level(log::Level::Info).build();
+        assert!(logger.enabled(&metadata));
+    }
+
+    #[test]
+    fn test_file_logger_enabled_debug() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        // Default level is Info, so Debug should not be enabled
+        let metadata = Metadata::builder().level(log::Level::Debug).build();
+        assert!(!logger.enabled(&metadata));
+    }
+
+    #[test]
+    fn test_file_logger_enabled_warn() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        // Default level is Info, so Warn should be enabled
+        let metadata = Metadata::builder().level(log::Level::Warn).build();
+        assert!(logger.enabled(&metadata));
+    }
+
+    #[test]
+    fn test_file_logger_log_without_context() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        
+        let record = Record::builder()
+            .args(format_args!("test message"))
+            .level(log::Level::Info)
+            .build();
+        
+        logger.log(&record);
+        logger.flush();
+
+        let mut content = String::new();
+        let mut file = std::fs::File::open(temp_file.path()).unwrap();
+        file.read_to_string(&mut content).unwrap();
+        
+        assert!(content.contains("test message"));
+        assert!(content.contains("INFO"));
+    }
+
+    #[test]
+    fn test_file_logger_log_with_context() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        
+        set_log_context(LogContext {
+            session_id: Some("test-session".to_string()),
+            profile_name: None,
+            task_name: None,
+        });
+        
+        let record = Record::builder()
+            .args(format_args!("test message"))
+            .level(log::Level::Info)
+            .build();
+        
+        logger.log(&record);
+        logger.flush();
+
+        let mut content = String::new();
+        let mut file = std::fs::File::open(temp_file.path()).unwrap();
+        file.read_to_string(&mut content).unwrap();
+        
+        assert!(content.contains("test message"));
+        assert!(content.contains("[test-session]"));
+    }
+
+    #[test]
+    fn test_file_logger_filters_chromiumoxide() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        
+        let record = Record::builder()
+            .args(format_args!("chromiumoxide message"))
+            .level(log::Level::Info)
+            .target("chromiumoxide::handler")
+            .build();
+        
+        logger.log(&record);
+        logger.flush();
+
+        let mut content = String::new();
+        let mut file = std::fs::File::open(temp_file.path()).unwrap();
+        file.read_to_string(&mut content).unwrap();
+        
+        // Chromiumoxide messages should be filtered out
+        assert!(!content.contains("chromiumoxide message"));
+    }
+
+    #[test]
+    fn test_file_logger_flush() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let logger = FileLogger::new(temp_file.path()).unwrap();
+        
+        let record = Record::builder()
+            .args(format_args!("test message"))
+            .level(log::Level::Info)
+            .build();
+        
+        logger.log(&record);
+        logger.flush(); // Should not panic
     }
 }

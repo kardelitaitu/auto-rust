@@ -172,3 +172,107 @@ pub async fn unblock_all(_page: &chromiumoxide::Page) -> Result<()> {
     log::info!("   [utils] All URLs unblocked (no-op)");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_blocked_patterns_not_empty() {
+        let patterns = blocked_patterns();
+        assert!(!patterns.is_empty());
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_image_extensions() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("png")));
+        assert!(patterns.iter().any(|p| p.contains("jpg")));
+        assert!(patterns.iter().any(|p| p.contains("jpeg")));
+        assert!(patterns.iter().any(|p| p.contains("gif")));
+        assert!(patterns.iter().any(|p| p.contains("webp")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_video_extensions() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("mp4")));
+        assert!(patterns.iter().any(|p| p.contains("webm")));
+        assert!(patterns.iter().any(|p| p.contains("m3u8")));
+        assert!(patterns.iter().any(|p| p.contains("mkv")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_audio_extensions() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("mp3")));
+        assert!(patterns.iter().any(|p| p.contains("wav")));
+        assert!(patterns.iter().any(|p| p.contains("aac")));
+        assert!(patterns.iter().any(|p| p.contains("ogg")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_data_image() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p == "data:image/*"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_not_empty() {
+        let js = dom_cleanup_js();
+        assert!(!js.is_empty());
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_key_operations() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("querySelectorAll"));
+        assert!(js.contains("img"));
+        assert!(js.contains("video"));
+        assert!(js.contains("audio"));
+        assert!(js.contains("src"));
+        assert!(js.contains("remove"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_not_empty() {
+        let js = cookiebot_block_js();
+        assert!(!js.is_empty());
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_fetch_override() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("window.fetch"));
+        assert!(js.contains("OriginalFetch"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_xhr_override() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("XMLHttpRequest"));
+        assert!(js.contains("OriginalXHR"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_websocket_override() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("WebSocket"));
+        assert!(js.contains("OrigWS"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_block_extensions() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("BLOCK_EXTENSIONS"));
+        assert!(js.contains("mp4"));
+        assert!(js.contains("m3u8"));
+    }
+
+    #[test]
+    fn test_blocked_patterns_count() {
+        let patterns = blocked_patterns();
+        // Should have a reasonable number of patterns
+        assert!(patterns.len() > 20);
+    }
+}

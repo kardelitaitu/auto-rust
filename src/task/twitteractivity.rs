@@ -70,7 +70,7 @@ fn default_duration_ms(config: &crate::config::TwitterActivityConfig) -> u64 {
 /// Minimum delay between feed candidate scans (ms)
 const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;
 /// Minimum delay between actions on same tweet (ms)
-const MIN_ACTION_CHAIN_DELAY_MS: u64 = 3000;
+pub const MIN_ACTION_CHAIN_DELAY_MS: u64 = 3000;
 
 /// Entry point for navigation (URL and weight)
 struct EntryPoint {

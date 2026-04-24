@@ -40,4 +40,120 @@ mod tests {
         assert_eq!(out.chars().count(), 280);
         assert!(out.ends_with("..."));
     }
+
+    #[test]
+    fn test_preview_chars_shorter_than_max() {
+        assert_eq!(preview_chars("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_preview_chars_exact_length() {
+        assert_eq!(preview_chars("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_preview_chars_longer_than_max() {
+        assert_eq!(preview_chars("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn test_preview_chars_zero_max() {
+        assert_eq!(preview_chars("hello", 0), "");
+    }
+
+    #[test]
+    fn test_preview_chars_empty_string() {
+        assert_eq!(preview_chars("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_chars_shorter_than_max() {
+        assert_eq!(truncate_chars("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_exact_length() {
+        assert_eq!(truncate_chars("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_longer_than_max() {
+        assert_eq!(truncate_chars("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_zero_max() {
+        assert_eq!(truncate_chars("hello", 0), "");
+    }
+
+    #[test]
+    fn test_truncate_chars_empty_string() {
+        assert_eq!(truncate_chars("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_no_truncation() {
+        assert_eq!(truncate_with_ellipsis("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_exact_length() {
+        assert_eq!(truncate_with_ellipsis("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_truncates() {
+        assert_eq!(truncate_with_ellipsis("hello world", 8), "hello...");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_zero_max() {
+        assert_eq!(truncate_with_ellipsis("hello", 0), "");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_less_than_ellipsis() {
+        assert_eq!(truncate_with_ellipsis("hello", 2), "");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_exactly_ellipsis() {
+        assert_eq!(truncate_with_ellipsis("hello", 3), "...");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_empty_string() {
+        assert_eq!(truncate_with_ellipsis("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_multibyte_characters() {
+        assert_eq!(truncate_with_ellipsis("naïve", 4), "naï...");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_emoji() {
+        assert_eq!(truncate_with_ellipsis("🙂🙃😊", 4), "🙂🙃...");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_whitespace() {
+        assert_eq!(truncate_with_ellipsis("a b c", 3), "a...");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_large_max() {
+        let text = "x".repeat(1000);
+        assert_eq!(truncate_with_ellipsis(&text, 1000), text);
+    }
+
+    #[test]
+    fn test_preview_chars_multibyte() {
+        assert_eq!(preview_chars("naïve", 4), "naïv");
+    }
+
+    #[test]
+    fn test_truncate_chars_multibyte() {
+        assert_eq!(truncate_chars("naïve", 4), "naïv");
+    }
 }

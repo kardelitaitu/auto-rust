@@ -382,4 +382,73 @@ mod tests {
         assert_eq!(get_similar_char('z'), 'z');
         assert_eq!(get_similar_char('1'), '1');
     }
+
+    #[test]
+    fn test_press_options_custom() {
+        let options = PressOptions {
+            modifiers: vec!["Control".to_string(), "Shift".to_string()],
+            delay: 100,
+            repeat: 3,
+            down_and_up: false,
+        };
+        assert_eq!(options.modifiers.len(), 2);
+        assert_eq!(options.delay, 100);
+        assert_eq!(options.repeat, 3);
+        assert!(!options.down_and_up);
+    }
+
+    #[test]
+    fn test_normalize_modifier_case_insensitive() {
+        assert_eq!(normalize_modifier("CTRL"), "Control");
+        assert_eq!(normalize_modifier("ShIfT"), "Shift");
+        assert_eq!(normalize_modifier("ALT"), "Alt");
+    }
+
+    #[test]
+    fn test_normalize_modifier_unknown() {
+        assert_eq!(normalize_modifier("unknown"), "unknown");
+        assert_eq!(normalize_modifier("F1"), "F1");
+    }
+
+    #[test]
+    fn test_is_modifier_case_sensitive() {
+        assert!(is_modifier("Control"));
+        assert!(!is_modifier("control"));
+        assert!(is_modifier("Shift"));
+        assert!(!is_modifier("shift"));
+    }
+
+    #[test]
+    fn test_get_similar_char_case_preservation() {
+        // Lowercase input
+        assert_eq!(get_similar_char('a'), 's');
+        // Uppercase input should still return lowercase (since it uses to_ascii_lowercase)
+        assert_eq!(get_similar_char('A'), 's');
+    }
+
+    #[test]
+    fn test_get_similar_char_bottom_row() {
+        assert_eq!(get_similar_char('n'), 'm');
+        assert_eq!(get_similar_char('m'), 'n');
+    }
+
+    #[test]
+    fn test_get_similar_char_special_chars() {
+        assert_eq!(get_similar_char('@'), '@');
+        assert_eq!(get_similar_char('#'), '#');
+        assert_eq!(get_similar_char(' '), ' ');
+    }
+
+    #[test]
+    fn test_get_similar_char_numbers() {
+        assert_eq!(get_similar_char('0'), '0');
+        assert_eq!(get_similar_char('9'), '9');
+    }
+
+    #[test]
+    fn test_get_similar_char_punctuation() {
+        assert_eq!(get_similar_char('.'), '.');
+        assert_eq!(get_similar_char(','), ',');
+        assert_eq!(get_similar_char('!'), '!');
+    }
 }

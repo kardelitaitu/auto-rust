@@ -155,3 +155,164 @@ impl HealthLogger {
         self.shutdown.notify_one();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_health_logger_config_default() {
+        let config = HealthLoggerConfig::default();
+        assert_eq!(config.interval, Duration::from_secs(60));
+        assert_eq!(config.memory_warning_percentage, 86.0);
+        assert!(!config.verbose);
+    }
+
+    #[test]
+    fn test_health_logger_config_custom() {
+        let config = HealthLoggerConfig {
+            interval: Duration::from_secs(30),
+            memory_warning_percentage: 90.0,
+            verbose: true,
+        };
+        assert_eq!(config.interval, Duration::from_secs(30));
+        assert_eq!(config.memory_warning_percentage, 90.0);
+        assert!(config.verbose);
+    }
+
+    #[test]
+    fn test_health_logger_new() {
+        let config = HealthLoggerConfig::default();
+        let metrics = Arc::new(MetricsCollector::new(100));
+        let logger = HealthLogger::new(config, metrics);
+
+        // Logger should be created successfully
+        // We can't easily test the internals without accessing private fields
+        let _ = logger;
+    }
+
+    #[tokio::test]
+    async fn test_health_logger_start_returns_handle() {
+        let config = HealthLoggerConfig::default();
+        let metrics = Arc::new(MetricsCollector::new(100));
+        let logger = HealthLogger::new(config, metrics);
+
+        let handle = logger.start();
+        // Handle should be valid
+        assert!(!handle.is_finished());
+
+        // Clean up
+        logger.stop();
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+    }
+
+    #[tokio::test]
+    async fn test_health_logger_stop() {
+        let config = HealthLoggerConfig {
+            interval: Duration::from_millis(100), // Short interval for testing
+            memory_warning_percentage: 86.0,
+            verbose: false,
+        };
+        let metrics = Arc::new(MetricsCollector::new(100));
+        let logger = HealthLogger::new(config.clone(), metrics);
+
+        let handle = logger.start();
+        
+        // Give it a moment to start
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Stop should not panic
+        logger.stop();
+
+        // Handle should complete within reasonable time
+        let result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        assert!(result.is_ok(), "Handle should complete after stop");
+    }
+
+    #[tokio::test]
+    async fn test_health_logger_shutdown_signal() {
+        let config = HealthLoggerConfig {
+            interval: Duration::from_secs(60),
+            memory_warning_percentage: 86.0,
+            verbose: false,
+        };
+        let metrics = Arc::new(MetricsCollector::new(100));
+        let logger = HealthLogger::new(config, metrics);
+
+        let handle = logger.start();
+        
+        // Immediate stop should work
+        logger.stop();
+
+        let result = tokio::time::timeout(Duration::from_secs(1), handle).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_health_logger_with_metrics() {
+        let config = HealthLoggerConfig {
+            interval: Duration::from_millis(100),
+            memory_warning_percentage: 86.0,
+            verbose: false,
+        };
+        let metrics = Arc::new(MetricsCollector::new(100));
+        
+        // Add some metrics
+        metrics.task_started();
+        metrics.task_completed(rust_orchestrator::metrics::TaskMetrics {
+            task_name: "test".to_string(),
+            status: rust_orchestrator::metrics::TaskStatus::Success,
+            duration_ms: 100,
+            session_id: "test-session".to_string(),
+            attempt: 1,
+            error_kind: None,
+            last_error: None,
+        });
+
+        let logger = HealthLogger::new(config, metrics.clone());
+        let handle = logger.start();
+
+        // Let it run for a bit
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        logger.stop();
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+
+        // Metrics should still be accessible
+        let stats = metrics.get_stats();
+        assert_eq!(stats.total_tasks, 1);
+    }
+
+    #[tokio::test]
+    async fn test_health_logger_multiple_stops() {
+        let config = HealthLoggerConfig::default();
+        let metrics = Arc::new(MetricsCollector::new(100));
+        let logger = HealthLogger::new(config, metrics);
+
+        let handle = logger.start();
+
+        // Multiple stops should not panic
+        logger.stop();
+        logger.stop();
+        logger.stop();
+
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+    }
+
+    #[test]
+    fn test_health_logger_config_clone() {
+        let config = HealthLoggerConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.interval, cloned.interval);
+        assert_eq!(config.memory_warning_percentage, cloned.memory_warning_percentage);
+        assert_eq!(config.verbose, cloned.verbose);
+    }
+
+    #[test]
+    fn test_health_logger_config_debug() {
+        let config = HealthLoggerConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("HealthLoggerConfig"));
+    }
+}

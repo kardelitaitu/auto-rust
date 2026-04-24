@@ -86,8 +86,9 @@ fn twitteractivity_sentiment_score_ordering() {
 /// Tests that TweetActionTracker enforces minimum delay between actions on same tweet.
 #[test]
 fn twitteractivity_action_chaining_prevention_works() {
-    let mut tracker =
-        TweetActionTracker::new(crate::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS);
+    let mut tracker = TweetActionTracker::new(
+        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
+    );
     let tweet_id = "test_tweet_123";
 
     // First action should be allowed
@@ -118,8 +119,9 @@ fn twitteractivity_action_chaining_prevention_works() {
 /// Tests that TweetActionTracker allows actions on different tweets.
 #[test]
 fn twitteractivity_action_chaining_different_tweets_allowed() {
-    let mut tracker =
-        TweetActionTracker::new(crate::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS);
+    let mut tracker = TweetActionTracker::new(
+        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
+    );
     let tweet_id_1 = "test_tweet_1";
     let tweet_id_2 = "test_tweet_2";
 
@@ -136,8 +138,9 @@ fn twitteractivity_action_chaining_different_tweets_allowed() {
 /// Tests that TweetActionTracker allows same action type on same tweet after cooldown.
 #[test]
 fn twitteractivity_action_chaining_same_action_after_cooldown() {
-    let mut tracker =
-        TweetActionTracker::new(crate::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS);
+    let mut tracker = TweetActionTracker::new(
+        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
+    );
     let tweet_id = "test_tweet_456";
 
     // Record first like action
@@ -393,8 +396,9 @@ fn twitteractivity_persona_weights_override() {
 /// Tests that TweetActionTracker handles multiple tweets correctly.
 #[test]
 fn twitteractivity_action_chaining_multiple_tweets() {
-    let mut tracker =
-        TweetActionTracker::new(crate::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS);
+    let mut tracker = TweetActionTracker::new(
+        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
+    );
     let tweet_ids = vec!["tweet_1", "tweet_2", "tweet_3"];
 
     // Record actions on different tweets
@@ -425,8 +429,9 @@ fn twitteractivity_action_chaining_multiple_tweets() {
 /// Tests that TweetActionTracker overwrites previous actions correctly.
 #[test]
 fn twitteractivity_action_chaining_overwrites_previous() {
-    let mut tracker =
-        TweetActionTracker::new(crate::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS);
+    let mut tracker = TweetActionTracker::new(
+        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
+    );
     let tweet_id = "test_tweet_overwrite";
 
     // Record first action

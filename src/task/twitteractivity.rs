@@ -1527,9 +1527,9 @@ mod tests {
         let config = TaskConfig::from_payload(&payload, &twitter_config);
         // duration_ms has random default, so just check it's non-zero
         assert!(config.duration_ms > 0);
-        assert_eq!(config.candidate_count, twitter_config.default_candidate_count);
-        assert_eq!(config.thread_depth, twitter_config.default_thread_depth);
-        assert_eq!(config.max_actions_per_scan, twitter_config.default_max_actions_per_scan);
+        assert_eq!(config.candidate_count, twitter_config.engagement_candidate_count);
+        assert_eq!(config.thread_depth, 3); // default from TaskConfig::from_payload
+        assert_eq!(config.max_actions_per_scan, twitter_config.engagement_candidate_count);
         assert!(config.weights.is_none());
         assert!(!config.llm_enabled);
         assert!(!config.smart_decision_enabled);

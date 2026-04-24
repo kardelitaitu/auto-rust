@@ -75,7 +75,7 @@ impl UnifiedLLMProcessor {
     pub async fn process_quote_with_sentiment(
         &self,
         tweet_text: &str,
-        replies: &[(&str, &str)],
+        _replies: &[(&str, &str)],
     ) -> Result<UnifiedQuoteResponse, anyhow::Error> {
         // Build context
         let _context = reply_strategies::StrategyContext::default();

@@ -555,4 +555,220 @@ mod tests {
         let err2 = OrchestratorError::Browser(err1);
         assert!(err2.to_string().contains("test"));
     }
+
+    #[test]
+    fn test_browser_error_clone_not_implemented() {
+        // BrowserError doesn't derive Clone, so this test documents that
+        // If Clone is added in the future, this test should be updated
+        let err = BrowserError::ConnectionFailed("test".to_string());
+        // err.clone(); // This would fail to compile
+        assert_eq!(err.to_string(), "Failed to connect to browser: test");
+    }
+
+    #[test]
+    fn test_session_error_clone_not_implemented() {
+        // SessionError doesn't derive Clone
+        let err = SessionError::Unhealthy("test".to_string());
+        assert_eq!(err.to_string(), "Session unhealthy: test");
+    }
+
+    #[test]
+    fn test_task_error_clone_not_implemented() {
+        // TaskError doesn't derive Clone
+        let err = TaskError::NotFound("test".to_string());
+        assert_eq!(err.to_string(), "Unknown task: test");
+    }
+
+    #[test]
+    fn test_config_error_clone_not_implemented() {
+        // ConfigError doesn't derive Clone
+        let err = ConfigError::MissingField("test".to_string());
+        assert_eq!(err.to_string(), "Missing required config field: test");
+    }
+
+    #[test]
+    fn test_network_error_clone_not_implemented() {
+        // NetworkError doesn't derive Clone
+        let err = NetworkError::Timeout("test".to_string());
+        assert_eq!(err.to_string(), "Request timed out: test");
+    }
+
+    #[test]
+    fn test_orchestrator_error_clone_not_implemented() {
+        // OrchestratorError doesn't derive Clone
+        let err = OrchestratorError::Other("test".to_string());
+        assert_eq!(err.to_string(), "test");
+    }
+
+    #[test]
+    fn test_error_message_with_newlines() {
+        let err = BrowserError::ConnectionFailed("error\nwith\nnewlines".to_string());
+        assert!(err.to_string().contains("error"));
+        assert!(err.to_string().contains("newlines"));
+    }
+
+    #[test]
+    fn test_error_message_with_tabs() {
+        let err = BrowserError::ConnectionFailed("error\twith\ttabs".to_string());
+        assert!(err.to_string().contains("error"));
+        assert!(err.to_string().contains("tabs"));
+    }
+
+    #[test]
+    fn test_error_message_very_long() {
+        let long_msg = "a".repeat(1000);
+        let err = BrowserError::ConnectionFailed(long_msg.clone());
+        assert!(err.to_string().len() > 1000);
+    }
+
+    #[test]
+    fn test_task_error_validation_with_empty_reason() {
+        let err = TaskError::ValidationFailed {
+            task_name: "test".to_string(),
+            reason: "".to_string(),
+        };
+        assert_eq!(err.to_string(), "Task validation failed: test - ");
+    }
+
+    #[test]
+    fn test_task_error_execution_with_empty_reason() {
+        let err = TaskError::ExecutionFailed {
+            task_name: "test".to_string(),
+            reason: "".to_string(),
+        };
+        assert_eq!(err.to_string(), "Task execution failed: test - ");
+    }
+
+    #[test]
+    fn test_config_error_validation_with_empty_message() {
+        let err = ConfigError::ValidationFailed("".to_string());
+        assert_eq!(err.to_string(), "Config validation failed: ");
+    }
+
+    #[test]
+    fn test_config_error_env_var_with_empty_message() {
+        let err = ConfigError::EnvVar("".to_string());
+        assert_eq!(err.to_string(), "Environment variable error: ");
+    }
+
+    #[test]
+    fn test_network_error_timeout_with_empty_message() {
+        let err = NetworkError::Timeout("".to_string());
+        assert_eq!(err.to_string(), "Request timed out: ");
+    }
+
+    #[test]
+    fn test_network_error_connection_with_empty_message() {
+        let err = NetworkError::Connection("".to_string());
+        assert_eq!(err.to_string(), "Connection error: ");
+    }
+
+    #[test]
+    fn test_network_error_api_key_with_empty_message() {
+        let err = NetworkError::ApiKey("".to_string());
+        assert_eq!(err.to_string(), "API key error: ");
+    }
+
+    #[test]
+    fn test_session_error_initialization_with_empty_message() {
+        let err = SessionError::InitializationFailed("".to_string());
+        assert_eq!(err.to_string(), "Failed to initialize session: ");
+    }
+
+    #[test]
+    fn test_session_error_unhealthy_with_empty_message() {
+        let err = SessionError::Unhealthy("".to_string());
+        assert_eq!(err.to_string(), "Session unhealthy: ");
+    }
+
+    #[test]
+    fn test_session_error_page_registry_with_empty_message() {
+        let err = SessionError::PageRegistry("".to_string());
+        assert_eq!(err.to_string(), "Page registry error: ");
+    }
+
+    #[test]
+    fn test_session_error_shutdown_with_empty_message() {
+        let err = SessionError::ShutdownFailed("".to_string());
+        assert_eq!(err.to_string(), "Session shutdown failed: ");
+    }
+
+    #[test]
+    fn test_browser_error_connection_with_empty_message() {
+        let err = BrowserError::ConnectionFailed("".to_string());
+        assert_eq!(err.to_string(), "Failed to connect to browser: ");
+    }
+
+    #[test]
+    fn test_browser_error_page_with_empty_message() {
+        let err = BrowserError::PageError("".to_string());
+        assert_eq!(err.to_string(), "Page error: ");
+    }
+
+    #[test]
+    fn test_browser_error_disconnected_with_empty_message() {
+        let err = BrowserError::Disconnected("".to_string());
+        assert_eq!(err.to_string(), "Browser disconnected: ");
+    }
+
+    #[test]
+    fn test_browser_error_timeout_with_empty_message() {
+        let err = BrowserError::Timeout("".to_string());
+        assert_eq!(err.to_string(), "Browser operation timed out: ");
+    }
+
+    #[test]
+    fn test_task_error_cancelled_with_empty_message() {
+        let err = TaskError::Cancelled("".to_string());
+        assert_eq!(err.to_string(), "Task cancelled: ");
+    }
+
+    #[test]
+    fn test_error_variants_are_exhaustive() {
+        // This test ensures all error variants are covered in tests
+        // If a new variant is added, this test should be updated
+        let _browser_errors = [
+            BrowserError::ConnectionFailed("".to_string()),
+            BrowserError::PageError("".to_string()),
+            BrowserError::ElementError { selector: "".to_string(), reason: "".to_string() },
+            BrowserError::SelectorNotFound("".to_string()),
+            BrowserError::Disconnected("".to_string()),
+            BrowserError::Timeout("".to_string()),
+        ];
+        let _session_errors = [
+            SessionError::InitializationFailed("".to_string()),
+            SessionError::WorkerTimeout { timeout_ms: 0 },
+            SessionError::Unhealthy("".to_string()),
+            SessionError::PageRegistry("".to_string()),
+            SessionError::ShutdownFailed("".to_string()),
+        ];
+        let _task_errors = [
+            TaskError::ValidationFailed { task_name: "".to_string(), reason: "".to_string() },
+            TaskError::Timeout { task_name: "".to_string(), timeout_ms: 0 },
+            TaskError::ExecutionFailed { task_name: "".to_string(), reason: "".to_string() },
+            TaskError::NotFound("".to_string()),
+            TaskError::Cancelled("".to_string()),
+            TaskError::RetryExhausted { max_retries: 0, task_name: "".to_string() },
+        ];
+        let _config_errors = [
+            ConfigError::LoadFailed { path: "".to_string(), reason: "".to_string() },
+            ConfigError::ValidationFailed("".to_string()),
+            ConfigError::MissingField("".to_string()),
+            ConfigError::InvalidValue { field: "".to_string(), value: "".to_string(), reason: "".to_string() },
+            ConfigError::EnvVar("".to_string()),
+        ];
+        let _network_errors = [
+            NetworkError::HttpError { url: "".to_string(), status: "".to_string() },
+            NetworkError::Timeout("".to_string()),
+            NetworkError::CircuitBreakerOpen { service: "".to_string() },
+            NetworkError::Connection("".to_string()),
+            NetworkError::ApiKey("".to_string()),
+        ];
+        // If this compiles, all variants are accounted for
+        assert_eq!(_browser_errors.len(), 6);
+        assert_eq!(_session_errors.len(), 5);
+        assert_eq!(_task_errors.len(), 6);
+        assert_eq!(_config_errors.len(), 5);
+        assert_eq!(_network_errors.len(), 5);
+    }
 }

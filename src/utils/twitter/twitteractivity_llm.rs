@@ -23,15 +23,21 @@
 //!
 //! ```rust,no_run
 //! use rust_orchestrator::utils::twitter::twitteractivity_llm::*;
+//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Generate a contextual reply
+//! let replies = vec![("user1".to_string(), "reply1".to_string()), ("user2".to_string(), "reply2".to_string())];
 //! let reply = generate_reply(api, "author", "tweet text", replies).await?;
 //!
 //! // Generate quote commentary
+//! let replies = vec![("user1".to_string(), "reply1".to_string()), ("user2".to_string(), "reply2".to_string())];
 //! let commentary = generate_quote_commentary(api, "author", "tweet text", replies).await?;
 //!
 //! // Validate output before posting
 //! let sanitized = validate_reply(&reply)?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## LLM Providers

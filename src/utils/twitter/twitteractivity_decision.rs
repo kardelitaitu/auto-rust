@@ -99,7 +99,6 @@ const NEGATIVE_WORDS: &[&str] = &[
     "stupid",
     "dumb",
     "moron",
-    "idiot",
     "cry",
     "die",
     "kill",

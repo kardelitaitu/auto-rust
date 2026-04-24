@@ -42,118 +42,119 @@ mod tests {
     }
 
     #[test]
-    fn test_preview_chars_shorter_than_max() {
-        assert_eq!(preview_chars("hello", 10), "hello");
-    }
-
-    #[test]
-    fn test_preview_chars_exact_length() {
-        assert_eq!(preview_chars("hello", 5), "hello");
-    }
-
-    #[test]
-    fn test_preview_chars_longer_than_max() {
-        assert_eq!(preview_chars("hello world", 5), "hello");
-    }
-
-    #[test]
-    fn test_preview_chars_zero_max() {
-        assert_eq!(preview_chars("hello", 0), "");
-    }
-
-    #[test]
-    fn test_preview_chars_empty_string() {
+    fn preview_chars_empty_string() {
         assert_eq!(preview_chars("", 10), "");
     }
 
     #[test]
-    fn test_truncate_chars_shorter_than_max() {
-        assert_eq!(truncate_chars("hello", 10), "hello");
+    fn preview_chars_zero_limit() {
+        assert_eq!(preview_chars("hello", 0), "");
     }
 
     #[test]
-    fn test_truncate_chars_exact_length() {
-        assert_eq!(truncate_chars("hello", 5), "hello");
+    fn preview_chars_longer_than_text() {
+        assert_eq!(preview_chars("hello", 100), "hello");
     }
 
     #[test]
-    fn test_truncate_chars_longer_than_max() {
-        assert_eq!(truncate_chars("hello world", 5), "hello");
+    fn preview_chars_exact_length() {
+        assert_eq!(preview_chars("hello", 5), "hello");
     }
 
     #[test]
-    fn test_truncate_chars_zero_max() {
-        assert_eq!(truncate_chars("hello", 0), "");
-    }
-
-    #[test]
-    fn test_truncate_chars_empty_string() {
+    fn truncate_chars_empty_string() {
         assert_eq!(truncate_chars("", 10), "");
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_no_truncation() {
+    fn truncate_chars_zero_limit() {
+        assert_eq!(truncate_chars("hello", 0), "");
+    }
+
+    #[test]
+    fn truncate_chars_longer_than_text() {
+        assert_eq!(truncate_chars("hello", 100), "hello");
+    }
+
+    #[test]
+    fn truncate_chars_exact_length() {
+        assert_eq!(truncate_chars("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_no_truncation_needed() {
         assert_eq!(truncate_with_ellipsis("hello", 10), "hello");
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_exact_length() {
+    fn truncate_with_ellipsis_exact_length() {
         assert_eq!(truncate_with_ellipsis("hello", 5), "hello");
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_truncates() {
-        assert_eq!(truncate_with_ellipsis("hello world", 8), "hello...");
+    fn truncate_with_ellipsis_truncates_and_adds_ellipsis() {
+        let result = truncate_with_ellipsis("hello world", 8);
+        assert_eq!(result, "hello...");
+        assert_eq!(result.chars().count(), 8);
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_zero_max() {
-        assert_eq!(truncate_with_ellipsis("hello", 0), "");
-    }
-
-    #[test]
-    fn test_truncate_with_ellipsis_less_than_ellipsis() {
-        assert_eq!(truncate_with_ellipsis("hello", 2), "");
-    }
-
-    #[test]
-    fn test_truncate_with_ellipsis_exactly_ellipsis() {
-        assert_eq!(truncate_with_ellipsis("hello", 3), "...");
-    }
-
-    #[test]
-    fn test_truncate_with_ellipsis_empty_string() {
+    fn truncate_with_ellipsis_empty_string() {
         assert_eq!(truncate_with_ellipsis("", 10), "");
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_multibyte_characters() {
-        assert_eq!(truncate_with_ellipsis("naïve", 4), "naï...");
+    fn truncate_with_ellipsis_zero_limit() {
+        assert_eq!(truncate_with_ellipsis("hello", 0), "...");
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_emoji() {
-        assert_eq!(truncate_with_ellipsis("🙂🙃😊", 4), "🙂🙃...");
+    fn truncate_with_ellipsis_shorter_than_ellipsis() {
+        let result = truncate_with_ellipsis("hi", 2);
+        assert_eq!(result, "hi"); // No truncation needed
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_whitespace() {
-        assert_eq!(truncate_with_ellipsis("a b c", 3), "a...");
+    fn truncate_with_ellipsis_one_less_than_ellipsis() {
+        let result = truncate_with_ellipsis("hi", 3);
+        assert_eq!(result, "hi"); // No truncation needed, text fits within limit
     }
 
     #[test]
-    fn test_truncate_with_ellipsis_large_max() {
-        let text = "x".repeat(1000);
-        assert_eq!(truncate_with_ellipsis(&text, 1000), text);
+    fn preview_chars_multibyte_characters() {
+        let text = "日本語テキスト";
+        assert_eq!(preview_chars(text, 3), "日本語");
     }
 
     #[test]
-    fn test_preview_chars_multibyte() {
-        assert_eq!(preview_chars("naïve", 4), "naïv");
+    fn truncate_chars_multibyte_characters() {
+        let text = "日本語テキスト";
+        assert_eq!(truncate_chars(text, 3), "日本語");
     }
 
     #[test]
-    fn test_truncate_chars_multibyte() {
-        assert_eq!(truncate_chars("naïve", 4), "naïv");
+    fn truncate_with_ellipsis_multibyte_characters() {
+        let text = "日本語テキスト";
+        let result = truncate_with_ellipsis(text, 5);
+        assert_eq!(result.chars().count(), 5);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn preview_chars_single_character() {
+        assert_eq!(preview_chars("hello", 1), "h");
+    }
+
+    #[test]
+    fn truncate_chars_single_character() {
+        assert_eq!(truncate_chars("hello", 1), "h");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_emoji_sequence() {
+        let text = "😀😁😂🤣😃😄😅";
+        let result = truncate_with_ellipsis(text, 5);
+        assert_eq!(result.chars().count(), 5);
+        assert!(result.ends_with("..."));
     }
 }

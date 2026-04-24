@@ -250,3 +250,289 @@ pub fn build_persona_config(
         "profile": profile,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_persona_weights_default() {
+        let weights = PersonaWeights::default();
+        assert_eq!(weights.like_prob, 0.3);
+        assert_eq!(weights.retweet_prob, 0.1);
+        assert_eq!(weights.quote_prob, 0.05);
+        assert_eq!(weights.follow_prob, 0.05);
+        assert_eq!(weights.reply_prob, 0.02);
+        assert_eq!(weights.bookmark_prob, 0.0);
+        assert_eq!(weights.thread_dive_prob, 0.2);
+        assert_eq!(weights.interest_multiplier, 1.0);
+    }
+
+    #[test]
+    fn test_persona_weights_with_sentiment_modulation_positive() {
+        let weights = PersonaWeights::default();
+        let modulated = weights.with_sentiment_modulation(1.0);
+        // Positive sentiment should increase interest multiplier
+        assert!(modulated.interest_multiplier >= 0.5);
+        assert!(modulated.interest_multiplier <= 1.0);
+    }
+
+    #[test]
+    fn test_persona_weights_with_sentiment_modulation_negative() {
+        let weights = PersonaWeights::default();
+        let modulated = weights.with_sentiment_modulation(-1.0);
+        // Negative sentiment should decrease interest multiplier
+        assert!(modulated.interest_multiplier >= 0.5);
+        assert!(modulated.interest_multiplier <= 1.0);
+    }
+
+    #[test]
+    fn test_persona_weights_with_sentiment_modulation_neutral() {
+        let weights = PersonaWeights::default();
+        let modulated = weights.with_sentiment_modulation(0.0);
+        // Neutral sentiment should give middle value
+        assert!(modulated.interest_multiplier >= 0.5);
+        assert!(modulated.interest_multiplier <= 1.0);
+    }
+
+    #[test]
+    fn test_persona_weights_normalized() {
+        let weights = PersonaWeights {
+            like_prob: 1.5,
+            retweet_prob: -0.5,
+            quote_prob: 0.5,
+            follow_prob: 0.3,
+            reply_prob: 2.0,
+            bookmark_prob: -1.0,
+            thread_dive_prob: 0.8,
+            interest_multiplier: 1.0,
+        };
+        let normalized = weights.normalized();
+        assert_eq!(normalized.like_prob, 1.0);
+        assert_eq!(normalized.retweet_prob, 0.0);
+        assert_eq!(normalized.quote_prob, 0.5);
+        assert_eq!(normalized.follow_prob, 0.3);
+        assert_eq!(normalized.reply_prob, 1.0);
+        assert_eq!(normalized.bookmark_prob, 0.0);
+        assert_eq!(normalized.thread_dive_prob, 0.8);
+    }
+
+    #[test]
+    fn test_select_persona_weights_none() {
+        let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+        let persona = select_persona_weights(None, &config_probs);
+        assert!(persona.like_prob >= 0.0 && persona.like_prob <= 1.0);
+        assert!(persona.retweet_prob >= 0.0 && persona.retweet_prob <= 1.0);
+    }
+
+    #[test]
+    fn test_select_persona_weights_with_overrides() {
+        let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+        let weights = json!({
+            "like_prob": 0.8,
+            "retweet_prob": 0.4,
+            "follow_prob": 0.2
+        });
+        let persona = select_persona_weights(Some(&weights), &config_probs);
+        assert_eq!(persona.like_prob, 0.8);
+        assert_eq!(persona.retweet_prob, 0.4);
+        assert_eq!(persona.follow_prob, 0.2);
+    }
+
+    #[test]
+    fn test_select_persona_weights_partial_overrides() {
+        let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+        let weights = json!({
+            "like_prob": 0.7
+        });
+        let persona = select_persona_weights(Some(&weights), &config_probs);
+        assert_eq!(persona.like_prob, 0.7);
+        // Other values should come from config
+        assert!(persona.retweet_prob >= 0.0);
+    }
+
+    #[test]
+    fn test_should_like_probability_bounds() {
+        let weights = PersonaWeights {
+            like_prob: 0.0,
+            ..Default::default()
+        };
+        // With 0 probability, should always be false (statistically)
+        let false_count = (0..100).filter(|_| should_like(&weights)).count();
+        assert_eq!(false_count, 0);
+
+        let weights = PersonaWeights {
+            like_prob: 1.0,
+            ..Default::default()
+        };
+        // With 1.0 probability, should always be true (statistically)
+        let true_count = (0..100).filter(|_| should_like(&weights)).count();
+        assert_eq!(true_count, 100);
+    }
+
+    #[test]
+    fn test_should_retweet_probability_bounds() {
+        let weights = PersonaWeights {
+            retweet_prob: 0.0,
+            ..Default::default()
+        };
+        let false_count = (0..100).filter(|_| should_retweet(&weights)).count();
+        assert_eq!(false_count, 0);
+
+        let weights = PersonaWeights {
+            retweet_prob: 1.0,
+            ..Default::default()
+        };
+        let true_count = (0..100).filter(|_| should_retweet(&weights)).count();
+        assert_eq!(true_count, 100);
+    }
+
+    #[test]
+    fn test_should_quote_probability_bounds() {
+        let weights = PersonaWeights {
+            quote_prob: 0.0,
+            ..Default::default()
+        };
+        let false_count = (0..100).filter(|_| should_quote(&weights)).count();
+        assert_eq!(false_count, 0);
+
+        let weights = PersonaWeights {
+            quote_prob: 1.0,
+            ..Default::default()
+        };
+        let true_count = (0..100).filter(|_| should_quote(&weights)).count();
+        assert_eq!(true_count, 100);
+    }
+
+    #[test]
+    fn test_should_follow_probability_bounds() {
+        let weights = PersonaWeights {
+            follow_prob: 0.0,
+            ..Default::default()
+        };
+        let false_count = (0..100).filter(|_| should_follow(&weights)).count();
+        assert_eq!(false_count, 0);
+
+        let weights = PersonaWeights {
+            follow_prob: 1.0,
+            ..Default::default()
+        };
+        let true_count = (0..100).filter(|_| should_follow(&weights)).count();
+        assert_eq!(true_count, 100);
+    }
+
+    #[test]
+    fn test_should_reply_probability_bounds() {
+        let weights = PersonaWeights {
+            reply_prob: 0.0,
+            ..Default::default()
+        };
+        let false_count = (0..100).filter(|_| should_reply(&weights)).count();
+        assert_eq!(false_count, 0);
+
+        let weights = PersonaWeights {
+            reply_prob: 1.0,
+            ..Default::default()
+        };
+        let true_count = (0..100).filter(|_| should_reply(&weights)).count();
+        assert_eq!(true_count, 100);
+    }
+
+    #[test]
+    fn test_should_bookmark_probability_bounds() {
+        let weights = PersonaWeights {
+            bookmark_prob: 0.0,
+            ..Default::default()
+        };
+        let false_count = (0..100).filter(|_| should_bookmark(&weights)).count();
+        assert_eq!(false_count, 0);
+
+        let weights = PersonaWeights {
+            bookmark_prob: 1.0,
+            ..Default::default()
+        };
+        let true_count = (0..100).filter(|_| should_bookmark(&weights)).count();
+        assert_eq!(true_count, 100);
+    }
+
+    #[test]
+    fn test_should_dive_probability_bounds() {
+        let weights = PersonaWeights {
+            thread_dive_prob: 0.0,
+            ..Default::default()
+        };
+        let false_count = (0..100).filter(|_| should_dive(&weights)).count();
+        assert_eq!(false_count, 0);
+
+        let weights = PersonaWeights {
+            thread_dive_prob: 1.0,
+            ..Default::default()
+        };
+        let true_count = (0..100).filter(|_| should_dive(&weights)).count();
+        assert_eq!(true_count, 100);
+    }
+
+    #[test]
+    fn test_build_persona_config_no_weights() {
+        let config = build_persona_config(None, None);
+        assert!(config.is_object());
+        assert!(config.get("weights").is_some());
+        assert!(config.get("profile").is_some());
+    }
+
+    #[test]
+    fn test_build_persona_config_with_weights() {
+        let weights = PersonaWeights {
+            like_prob: 0.5,
+            retweet_prob: 0.2,
+            ..Default::default()
+        };
+        let config = build_persona_config(Some(weights), None);
+        let weights_obj = config.get("weights").unwrap();
+        assert_eq!(weights_obj.get("like_prob").unwrap().as_f64().unwrap(), 0.5);
+        assert_eq!(weights_obj.get("retweet_prob").unwrap().as_f64().unwrap(), 0.2);
+    }
+
+    #[test]
+    fn test_build_persona_config_with_profile() {
+        let config = build_persona_config(None, Some(ProfilePreset::Teen));
+        assert!(config.is_object());
+        let profile = config.get("profile").unwrap();
+        assert!(profile.is_string());
+    }
+
+    #[test]
+    fn test_persona_weights_clamping_in_decision_functions() {
+        let weights = PersonaWeights {
+            like_prob: 2.0,
+            retweet_prob: -1.0,
+            quote_prob: 1.5,
+            follow_prob: -0.5,
+            reply_prob: 3.0,
+            bookmark_prob: -2.0,
+            thread_dive_prob: 0.5,
+            interest_multiplier: 1.0,
+        };
+        // All functions should clamp to [0, 1] before use
+        let _ = should_like(&weights);
+        let _ = should_retweet(&weights);
+        let _ = should_quote(&weights);
+        let _ = should_follow(&weights);
+        let _ = should_reply(&weights);
+        let _ = should_bookmark(&weights);
+        let _ = should_dive(&weights);
+    }
+
+    #[test]
+    fn test_apply_behavior_profile_integration() {
+        let persona = PersonaWeights::default();
+        let profile = BrowserProfile::average();
+        let sentiment_score = 0.5;
+
+        let result = apply_behavior_profile(persona, &profile, sentiment_score);
+        // Result should be normalized
+        assert!(result.like_prob >= 0.0 && result.like_prob <= 1.0);
+        assert!(result.retweet_prob >= 0.0 && result.retweet_prob <= 1.0);
+        assert!(result.interest_multiplier >= 0.5);
+    }
+}

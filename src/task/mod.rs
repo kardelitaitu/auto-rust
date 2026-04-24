@@ -45,8 +45,12 @@ pub const TASK_NAMES: &[&str] = &[
     "twittertest",
 ];
 
+pub fn normalize_task_name(name: &str) -> &str {
+    name.strip_suffix(".js").unwrap_or(name)
+}
+
 pub fn is_known_task(name: &str) -> bool {
-    let clean_name = name.strip_suffix(".js").unwrap_or(name);
+    let clean_name = normalize_task_name(name);
     TASK_NAMES.contains(&clean_name)
 }
 
@@ -62,7 +66,7 @@ pub async fn perform_task(
     config: &crate::config::Config,
 ) -> Result<TaskResult> {
     let start = std::time::Instant::now();
-    let clean_name = name.strip_suffix(".js").unwrap_or(name);
+    let clean_name = normalize_task_name(name);
 
     let result = execute_single_attempt(api, clean_name, &payload, config).await;
 

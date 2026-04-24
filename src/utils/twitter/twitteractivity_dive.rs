@@ -21,11 +21,16 @@
 //!
 //! ```rust,no_run
 //! use rust_orchestrator::utils::twitter::twitteractivity_dive::*;
+//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Dive into a thread and read it with caching
+//! let status_url = "https://x.com/user/status/123";
 //! let outcome = dive_into_thread(api, status_url).await?;
 //! let mut cache = outcome.cache.unwrap_or_default();
 //! read_full_thread(api, 10, &mut cache).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Thread Caching
@@ -210,9 +215,13 @@ pub async fn dive_into_thread(api: &TaskContext, status_url: &str) -> Result<Div
 ///
 /// ```rust,no_run
 /// use rust_orchestrator::utils::twitter::twitteractivity_dive::*;
+/// # use rust_orchestrator::runtime::task_context::TaskContext;
+/// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 ///
 /// let mut cache = ThreadCache::default();
 /// read_full_thread(api, 10, &mut cache).await?;
+/// # Ok(())
+/// # }
 /// ```
 #[instrument(skip(api, cache))]
 pub async fn read_full_thread(api: &TaskContext, max_scrolls: u32, cache: &mut ThreadCache) -> Result<()> {

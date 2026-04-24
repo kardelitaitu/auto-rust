@@ -25,15 +25,19 @@
 //!
 //! ```rust,no_run
 //! use rust_orchestrator::utils::twitter::twitteractivity_interact::*;
+//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Like a tweet
-//! click_like_button(api).await?;
+//! like_tweet(api).await?;
 //!
 //! // Retweet with confirmation
 //! retweet_tweet(api).await?;
 //!
 //! // Reply to a tweet
 //! reply_to_tweet(api, "Great point!").await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Timing and Humanization

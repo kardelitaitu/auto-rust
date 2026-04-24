@@ -23,17 +23,18 @@
 //!
 //! ```rust,no_run
 //! use rust_orchestrator::utils::twitter::twitteractivity_navigation::*;
+//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Navigate to home timeline
-//! navigate_to_home(api).await?;
+//! goto_home(api).await?;
 //!
 //! // Check login status
-//! if is_logged_in(api).await? {
+//! if verify_login(api).await? {
 //!     // User is authenticated
 //! }
-//!
-//! // Get current URL
-//! let url = get_current_url(api).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Navigation Timeouts
@@ -245,4 +246,152 @@ pub async fn check_selector_health(api: &TaskContext) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_navigation_timeout_constant() {
+        assert_eq!(DEFAULT_NAVIGATION_TIMEOUT_MS, 30_000);
+    }
+
+    #[test]
+    fn test_default_wait_timeout_constant() {
+        assert_eq!(DEFAULT_WAIT_TIMEOUT_MS, 15_000);
+    }
+
+    #[test]
+    fn test_timeout_constants_are_positive() {
+        assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > 0);
+        assert!(DEFAULT_WAIT_TIMEOUT_MS > 0);
+    }
+
+    #[test]
+    fn test_navigation_timeout_greater_than_wait_timeout() {
+        assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > DEFAULT_WAIT_TIMEOUT_MS);
+    }
+
+    #[test]
+    fn test_selector_feed_visible_returns_js() {
+        let js = selector_feed_visible();
+        assert!(js.contains("querySelector"));
+        assert!(js.contains("data-testid"));
+        assert!(js.contains("primaryColumn"));
+    }
+
+    #[test]
+    fn test_selector_login_flow_returns_js() {
+        let js = selector_login_flow();
+        assert!(js.contains("session"));
+        assert!(js.contains("login"));
+        assert!(js.contains("Sign in"));
+    }
+
+    #[test]
+    fn test_selector_health_check_returns_js() {
+        let js = selector_health_check();
+        assert!(js.contains("feed_visible"));
+        assert!(js.contains("tweets_found"));
+        assert!(js.contains("engagement_buttons"));
+    }
+
+    #[test]
+    fn test_selector_functions_exist() {
+        // Test that all selector functions are callable
+        let _ = selector_feed_visible();
+        let _ = selector_login_flow();
+        let _ = selector_health_check();
+        let _ = selector_close_button();
+        let _ = js_get_current_url();
+        let _ = js_extract_username_from_url();
+    }
+
+    #[test]
+    fn test_js_get_current_url_format() {
+        let js = js_get_current_url();
+        assert!(js.contains("window.location.href"));
+        assert!(js.len() < 100); // Should be concise
+    }
+
+    #[test]
+    fn test_js_extract_username_from_url_format() {
+        let js = js_extract_username_from_url();
+        assert!(js.contains("pathname"));
+        assert!(js.contains("split"));
+    }
+
+    #[test]
+    fn test_selector_close_button_format() {
+        let js = selector_close_button();
+        assert!(js.contains("aria-label"));
+        assert!(js.contains("Close"));
+    }
+
+    #[test]
+    fn test_selector_follow_confirm_modal_format() {
+        let js = selector_follow_confirm_modal();
+        assert!(js.contains("dialog"));
+        assert!(js.contains("follow"));
+    }
+
+    #[test]
+    fn test_selector_following_indicator_format() {
+        let js = selector_following_indicator();
+        assert!(js.contains("following"));
+        assert!(js.contains("button"));
+    }
+
+    #[test]
+    fn test_selector_tweet_user_avatar_format() {
+        let js = selector_tweet_user_avatar();
+        assert!(js.contains("Tweet-User-Avatar"));
+        assert!(js.contains("profile_images"));
+    }
+
+    #[test]
+    fn test_selector_element_center_format() {
+        let js = selector_element_center("div.test");
+        assert!(js.contains("getBoundingClientRect"));
+        assert!(js.contains("x"));
+        assert!(js.contains("y"));
+    }
+
+    #[test]
+    fn test_selector_element_center_escapes_quotes() {
+        let js = selector_element_center("div.test\"class");
+        assert!(js.contains("\\\""));
+        assert!(!js.contains("\"test\""));
+    }
+
+    #[test]
+    fn test_selector_all_tweets_format() {
+        let js = selector_all_tweets();
+        assert!(js.contains("querySelectorAll"));
+        assert!(js.contains("article"));
+        assert!(js.contains("data-testid"));
+    }
+
+    #[test]
+    fn test_selector_follow_button_format() {
+        let js = selector_follow_button();
+        assert!(js.contains("aria-label"));
+        assert!(js.contains("follow"));
+    }
+
+    #[test]
+    fn test_selector_engagement_buttons_format() {
+        let js = selector_engagement_buttons();
+        assert!(js.contains("like"));
+        assert!(js.contains("retweet"));
+        assert!(js.contains("reply"));
+    }
+
+    #[test]
+    fn test_selector_popup_overlay_format() {
+        let js = selector_popup_overlay();
+        assert!(js.contains("dialog"));
+        assert!(js.contains("aria-modal"));
+    }
 }

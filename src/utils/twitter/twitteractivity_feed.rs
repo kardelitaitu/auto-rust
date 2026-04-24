@@ -22,15 +22,19 @@
 //!
 //! ```rust,no_run
 //! use rust_orchestrator::utils::twitter::twitteractivity_feed::*;
+//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Scroll through feed with reading pauses
-//! scroll_through_feed(api, 10, 300, true).await?;
+//! scroll_feed(api, 10, true).await?;
 //!
 //! // Identify tweets for engagement
-//! let candidates = identify_engagement_candidates(api, 5).await?;
+//! let candidates = identify_engagement_candidates(api).await?;
 //!
 //! // Check scroll progress
 //! let progress = get_scroll_progress(api).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Scroll Behavior

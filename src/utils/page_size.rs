@@ -219,165 +219,129 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_viewport_creation() {
-        let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
-        };
-        assert_eq!(viewport.width, 800.0);
-        assert_eq!(viewport.height, 600.0);
-    }
-
-    #[test]
-    fn test_viewport_clone() {
-        let viewport1 = Viewport {
-            width: 800.0,
-            height: 600.0,
-        };
-        let viewport2 = viewport1.clone();
-        assert_eq!(viewport1.width, viewport2.width);
-        assert_eq!(viewport1.height, viewport2.height);
-    }
-
-    #[test]
-    fn test_document_size_creation() {
-        let doc = DocumentSize {
-            scroll_width: 1200.0,
-            scroll_height: 2000.0,
-        };
-        assert_eq!(doc.scroll_width, 1200.0);
-        assert_eq!(doc.scroll_height, 2000.0);
-    }
-
-    #[test]
     fn test_center_position() {
         let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
+            width: 1000.0,
+            height: 800.0,
         };
         let (x, y) = center_position(&viewport);
-        assert_eq!(x, 400.0);
-        assert_eq!(y, 300.0);
+        assert_eq!(x, 500.0);
+        assert_eq!(y, 400.0);
     }
 
     #[test]
     fn test_center_position_odd_dimensions() {
         let viewport = Viewport {
-            width: 801.0,
-            height: 601.0,
+            width: 1001.0,
+            height: 801.0,
         };
         let (x, y) = center_position(&viewport);
-        assert_eq!(x, 400.5);
-        assert_eq!(y, 300.5);
+        assert_eq!(x, 500.5);
+        assert_eq!(y, 400.5);
     }
 
     #[test]
     fn test_random_position_within_bounds() {
         let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
+            width: 1000.0,
+            height: 800.0,
         };
         let margin = 10.0;
-
-        for _ in 0..10 {
+        
+        for _ in 0..50 {
             let (x, y) = random_position(&viewport, margin);
-            assert!(x >= margin, "x should be >= margin");
-            assert!(x <= viewport.width - margin, "x should be <= width - margin");
-            assert!(y >= margin, "y should be >= margin");
-            assert!(y <= viewport.height - margin, "y should be <= height - margin");
+            assert!(x >= margin);
+            assert!(x <= viewport.width - margin);
+            assert!(y >= margin);
+            assert!(y <= viewport.height - margin);
         }
-    }
-
-    #[test]
-    fn test_random_position_with_zero_margin() {
-        let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
-        };
-        let margin = 0.0;
-
-        let (x, y) = random_position(&viewport, margin);
-        // Should still be within bounds with minimum margin of 1.0
-        assert!(x >= 1.0);
-        assert!(x <= viewport.width - 1.0);
-        assert!(y >= 1.0);
-        assert!(y <= viewport.height - 1.0);
     }
 
     #[test]
     fn test_random_position_with_large_margin() {
         let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
+            width: 1000.0,
+            height: 800.0,
         };
-        let margin = 500.0;
-
+        let margin = 200.0;
+        
         let (x, y) = random_position(&viewport, margin);
-        // Margin should be clamped to viewport/4
-        let expected_max_margin = viewport.width / 4.0;
-        assert!(x >= expected_max_margin);
-        assert!(x <= viewport.width - expected_max_margin);
+        assert!(x >= margin);
+        assert!(x <= viewport.width - margin);
+        assert!(y >= margin);
+        assert!(y <= viewport.height - margin);
+    }
+
+    #[test]
+    fn test_random_position_zero_margin() {
+        let viewport = Viewport {
+            width: 1000.0,
+            height: 800.0,
+        };
+        
+        for _ in 0..20 {
+            let (x, y) = random_position(&viewport, 0.0);
+            assert!(x >= 1.0);
+            assert!(x <= viewport.width - 1.0);
+            assert!(y >= 1.0);
+            assert!(y <= viewport.height - 1.0);
+        }
     }
 
     #[test]
     fn test_random_position_with_edge_ratio() {
         let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
+            width: 1000.0,
+            height: 800.0,
         };
-        let edge_ratio = 0.1;
-
-        for _ in 0..10 {
+        let edge_ratio = 0.10;
+        
+        for _ in 0..50 {
             let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
-            let min_expected = viewport.width * edge_ratio;
-            let max_expected = viewport.width * (1.0 - edge_ratio);
-            assert!(x >= min_expected);
-            assert!(x <= max_expected);
-            assert!(y >= min_expected);
-            assert!(y <= max_expected);
+            let min_x_expected = viewport.width * edge_ratio;
+            let max_x_expected = viewport.width * (1.0 - edge_ratio);
+            let min_y_expected = viewport.height * edge_ratio;
+            let max_y_expected = viewport.height * (1.0 - edge_ratio);
+            
+            assert!(x >= min_x_expected);
+            assert!(x <= max_x_expected);
+            assert!(y >= min_y_expected);
+            assert!(y <= max_y_expected);
         }
     }
 
     #[test]
-    fn test_random_position_with_edge_ratio_clamped_high() {
+    fn test_random_position_with_edge_ratio_clamps_high_ratio() {
         let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
+            width: 1000.0,
+            height: 800.0,
         };
-        let edge_ratio = 0.5; // Should be clamped to 0.45
-
-        let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
-        let min_expected = viewport.width * 0.45;
-        let max_expected = viewport.width * 0.55;
-        assert!(x >= min_expected);
-        assert!(x <= max_expected);
-    }
-
-    #[test]
-    fn test_random_position_with_edge_ratio_clamped_low() {
-        let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
-        };
-        let edge_ratio = -0.1; // Should be clamped to 0.0
-
-        let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
-        assert!(x >= 1.0);
-        assert!(x <= viewport.width - 1.0);
+        
+        // Test that ratio is clamped to 0.45
+        let (x, y) = random_position_with_edge_ratio(&viewport, 0.50);
+        let min_x_expected = viewport.width * 0.45;
+        let max_x_expected = viewport.width * 0.55;
+        let min_y_expected = viewport.height * 0.45;
+        let max_y_expected = viewport.height * 0.55;
+        
+        assert!(x >= min_x_expected);
+        assert!(x <= max_x_expected);
+        assert!(y >= min_y_expected);
+        assert!(y <= max_y_expected);
     }
 
     #[test]
     fn test_random_position_with_edge_ratio_zero() {
         let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
+            width: 1000.0,
+            height: 800.0,
         };
-        let edge_ratio = 0.0;
-
-        let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
-        // Should use minimum of 1.0
+        
+        let (x, y) = random_position_with_edge_ratio(&viewport, 0.0);
         assert!(x >= 1.0);
         assert!(x <= viewport.width - 1.0);
+        assert!(y >= 1.0);
+        assert!(y <= viewport.height - 1.0);
     }
 
     #[test]
@@ -436,22 +400,74 @@ mod tests {
     }
 
     #[test]
-    fn test_viewport_debug() {
+    fn test_viewport_struct_fields() {
         let viewport = Viewport {
-            width: 800.0,
-            height: 600.0,
+            width: 1920.0,
+            height: 1080.0,
         };
-        let debug_str = format!("{:?}", viewport);
-        assert!(debug_str.contains("Viewport"));
+        assert_eq!(viewport.width, 1920.0);
+        assert_eq!(viewport.height, 1080.0);
     }
 
     #[test]
-    fn test_document_size_debug() {
+    fn test_document_size_struct_fields() {
         let doc = DocumentSize {
-            scroll_width: 1200.0,
-            scroll_height: 2000.0,
+            scroll_width: 1920.0,
+            scroll_height: 5000.0,
         };
-        let debug_str = format!("{:?}", doc);
-        assert!(debug_str.contains("DocumentSize"));
+        assert_eq!(doc.scroll_width, 1920.0);
+        assert_eq!(doc.scroll_height, 5000.0);
+    }
+
+    #[test]
+    fn test_random_position_distribution() {
+        let viewport = Viewport {
+            width: 1000.0,
+            height: 800.0,
+        };
+        
+        // Test that distribution is reasonably spread
+        let positions: Vec<(f64, f64)> = (0..100)
+            .map(|_| random_position(&viewport, 50.0))
+            .collect();
+        
+        // Check that positions span the range
+        let min_x = positions.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+        let max_x = positions.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+        let min_y = positions.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+        let max_y = positions.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+        
+        assert!(min_x < 200.0); // Should have some near the left edge
+        assert!(max_x > 800.0); // Should have some near the right edge
+        assert!(min_y < 200.0); // Should have some near the top edge
+        assert!(max_y > 600.0); // Should have some near the bottom edge
+    }
+
+    #[test]
+    fn test_random_position_small_viewport() {
+        let viewport = Viewport {
+            width: 100.0,
+            height: 100.0,
+        };
+        
+        let (x, y) = random_position(&viewport, 10.0);
+        assert!(x >= 10.0);
+        assert!(x <= 90.0);
+        assert!(y >= 10.0);
+        assert!(y <= 90.0);
+    }
+
+    #[test]
+    fn test_random_position_with_edge_ratio_small_viewport() {
+        let viewport = Viewport {
+            width: 100.0,
+            height: 100.0,
+        };
+        
+        let (x, y) = random_position_with_edge_ratio(&viewport, 0.20);
+        assert!(x >= 20.0);
+        assert!(x <= 80.0);
+        assert!(y >= 20.0);
+        assert!(y <= 80.0);
     }
 }

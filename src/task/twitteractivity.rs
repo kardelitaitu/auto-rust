@@ -597,13 +597,15 @@ fn handle_engagement_decision(tweet: &Value, task_config: &TaskConfig) -> Option
 /// * `task_config` - Task configuration
 /// * `api` - Task context
 /// * `limits` - Engagement limits
-/// * `scroll_interval` - Scroll interval for resuming after dive
 /// * `action_tracker` - Action tracking state (mutable)
+/// * `scroll_interval` - Scroll interval between scans
 /// * `counters` - Engagement counters (mutable)
-/// * `current_thread_cache` - Thread cache from previous dive (mutable)
 /// * `actions_this_scan` - Actions taken in current scan
 /// * `next_scroll` - Next scroll time (mutable)
+
 /// * `_actions_taken` - Total actions taken (mutable)
+/// Context for processing a single tweet candidate.
+/// Groups configuration and mutable state for candidate processing.
 ///
 /// # Returns
 /// Result<(bool, Instant, u32, u32, Option<ThreadCache>)> - (should_break, next_scroll, actions_this_scan, _actions_taken, thread_cache)

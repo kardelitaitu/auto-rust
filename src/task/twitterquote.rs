@@ -297,18 +297,6 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {} retries", max_retries)))
 }
 
-fn validate_reply(text: &str) -> String {
-    let mut result = text.trim().to_string();
-
-    result = result.trim_start_matches('"').to_string();
-    result = result.trim_end_matches('"').to_string();
-
-    if result.ends_with('.') {
-        result.pop();
-    }
-
-    result
-}
 
 #[cfg(test)]
 mod tests {
@@ -342,17 +330,4 @@ mod tests {
         assert!(extract_url_from_payload(&payload).is_err());
     }
 
-    #[test]
-    fn validate_reply_removes_quotes() {
-        let text = "\"Hello world\"";
-        let result = validate_reply(text);
-        assert_eq!(result, "Hello world");
-    }
-
-    #[test]
-    fn validate_reply_trims() {
-        let text = "  Some text  ";
-        let result = validate_reply(text);
-        assert_eq!(result, "Some text");
-    }
 }

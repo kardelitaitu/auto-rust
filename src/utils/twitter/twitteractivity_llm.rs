@@ -51,6 +51,16 @@
 //! - No emojis
 //! - No banned AI-sounding words
 
+
+/// Timeout for finding quote tweet button (seconds)
+const QUOTE_BUTTON_TIMEOUT_SECS: u64 = 5;
+/// Short pause after clicking quote button (milliseconds)
+const QUOTE_CLICK_PAUSE_SHORT_MS: u64 = 300;
+/// Long pause after clicking quote button (milliseconds)
+const QUOTE_CLICK_PAUSE_LONG_MS: u64 = 600;
+/// Wait time for composer to appear after button click (milliseconds)
+const COMPOSER_WAIT_MS: u64 = 1000;
+
 use anyhow::{Context, Result};
 use log::{info, warn};
 use std::time::Duration;
@@ -235,7 +245,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         })()
     "#;
 
-    let result = match timeout(Duration::from_secs(5), api.page().evaluate(quote_btn_js.to_string())).await {
+    let result = match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.page().evaluate(quote_btn_js.to_string())).await {
         Ok(r) => r?,
         Err(_) => {
             warn!("Timeout finding quote tweet button");
@@ -263,12 +273,12 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
 
     // Human-like cursor movement then click
     api.move_mouse_to(x, y).await?;
-    super::twitteractivity_humanized::human_pause(api, 300).await;
+    super::twitteractivity_humanized::human_pause(api, QUOTE_CLICK_PAUSE_SHORT_MS).await;
     api.click_at(x, y).await?;
-    super::twitteractivity_humanized::human_pause(api, 600).await;
+    super::twitteractivity_humanized::human_pause(api, QUOTE_CLICK_PAUSE_LONG_MS).await;
 
     // Wait for composer to appear
-    api.pause(1000).await;
+    api.pause(COMPOSER_WAIT_MS).await;
 
     // Find composer textarea and type commentary
     let composer_js = r#"
@@ -283,7 +293,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         })()
     "#;
 
-    let focused = match timeout(Duration::from_secs(5), api.page().evaluate(composer_js.to_string())).await {
+    let focused = match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.page().evaluate(composer_js.to_string())).await {
         Ok(r) => r?,
         Err(_) => {
             warn!("Timeout focusing composer textarea");
@@ -305,7 +315,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
             return Ok(false);
         }
     }
-    api.pause(1000).await;
+    api.pause(COMPOSER_WAIT_MS).await;
 
     // Find Tweet button coordinates
     let tweet_btn_js = r#"
@@ -319,7 +329,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         })()
     "#;
 
-    let button_result = match timeout(Duration::from_secs(5), api.page().evaluate(tweet_btn_js.to_string())).await {
+    let button_result = match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.page().evaluate(tweet_btn_js.to_string())).await {
         Ok(r) => r?,
         Err(_) => {
             warn!("Timeout finding tweet button");
@@ -346,15 +356,15 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     };
 
     // Human-like cursor movement then click
-    match timeout(Duration::from_secs(5), api.move_mouse_to(tx, ty)).await {
+    match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.move_mouse_to(tx, ty)).await {
         Ok(_) => {}
         Err(_) => {
             warn!("Timeout moving mouse to tweet button");
             return Ok(false);
         }
     }
-    super::twitteractivity_humanized::human_pause(api, 300).await;
-    match timeout(Duration::from_secs(5), api.click_at(tx, ty)).await {
+    super::twitteractivity_humanized::human_pause(api, QUOTE_CLICK_PAUSE_SHORT_MS).await;
+    match timeout(Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS), api.click_at(tx, ty)).await {
         Ok(_) => {}
         Err(_) => {
             warn!("Timeout clicking tweet button");

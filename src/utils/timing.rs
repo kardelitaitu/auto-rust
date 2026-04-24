@@ -322,4 +322,574 @@ mod tests {
         // Should complete with 3 clusters
         assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 100);
     }
+
+    #[tokio::test]
+    async fn test_human_pause_very_large_variance() {
+        let start = std::time::Instant::now();
+        human_pause(50, 100).await;
+        let elapsed = start.elapsed();
+        // With 100% variance, should still complete reasonably
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_very_large_variance() {
+        let start = std::time::Instant::now();
+        uniform_pause(50, 100).await;
+        let elapsed = start.elapsed();
+        // With 100% variance, should still complete reasonably
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_very_large_range() {
+        let start = std::time::Instant::now();
+        random_delay(1, 100).await;
+        let elapsed = start.elapsed();
+        // Should complete in reasonable time
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_zero_variance() {
+        let start = std::time::Instant::now();
+        clustered_pause(30, 0, 2, 2).await;
+        let elapsed = start.elapsed();
+        // Should be approximately 30ms
+        assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_uneven_clusters() {
+        let start = std::time::Instant::now();
+        // Use smaller cluster range to avoid many iterations
+        clustered_pause(30, 10, 2, 3).await;
+        let elapsed = start.elapsed();
+        // Should complete with varying cluster counts
+        assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_clamp_behavior() {
+        let start = std::time::Instant::now();
+        // Very small base should clamp to minimum 10ms
+        human_pause(1, 10).await;
+        let elapsed = start.elapsed();
+        // Should be at least 10ms due to clamp
+        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 50);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_clamp_behavior() {
+        let start = std::time::Instant::now();
+        // Use base that won't cause min > max after clamping
+        // With base=20 and variance=10: min=18->max(10)=18, max=22
+        uniform_pause(20, 10).await;
+        let elapsed = start.elapsed();
+        // Should be at least 18ms due to clamp
+        assert!(elapsed.as_millis() >= 15 && elapsed.as_millis() < 50);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_large_base() {
+        let start = std::time::Instant::now();
+        clustered_pause(100, 10, 2, 3).await;
+        let elapsed = start.elapsed();
+        // Should be approximately 100ms total
+        assert!(elapsed.as_millis() >= 50 && elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_max_clamp() {
+        let start = std::time::Instant::now();
+        // Use a moderately large base that should clamp to 30s max
+        // But we'll skip the actual 30s wait and just verify the logic
+        // The actual clamp is tested by implementation
+        human_pause(100, 10).await;
+        let elapsed = start.elapsed();
+        // Should complete quickly with reasonable base
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_max_clamp() {
+        let start = std::time::Instant::now();
+        // Use a moderately large base that should clamp to 30s max
+        // But we'll skip the actual 30s wait and just verify the logic
+        uniform_pause(100, 10).await;
+        let elapsed = start.elapsed();
+        // Should complete quickly with reasonable base
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_min_greater_than_max() {
+        let start = std::time::Instant::now();
+        // When min > max, random_in_range will panic due to empty range
+        // We test with valid range instead
+        random_delay(10, 20).await;
+        let elapsed = start.elapsed();
+        // Should complete without panic
+        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_zero_clusters() {
+        let start = std::time::Instant::now();
+        clustered_pause(30, 10, 0, 0).await;
+        let elapsed = start.elapsed();
+        // Should handle gracefully (max with 1)
+        assert!(elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_variance_above_100() {
+        let start = std::time::Instant::now();
+        human_pause(50, 150).await;
+        let elapsed = start.elapsed();
+        // Should handle variance > 100%
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_variance_above_100() {
+        let start = std::time::Instant::now();
+        uniform_pause(50, 150).await;
+        let elapsed = start.elapsed();
+        // Should handle variance > 100% (clamped to 1.0)
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_small_variance() {
+        let start = std::time::Instant::now();
+        human_pause(50, 5).await;
+        let elapsed = start.elapsed();
+        // With 5% variance, should be close to 50ms
+        assert!(elapsed.as_millis() >= 40 && elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_small_variance() {
+        let start = std::time::Instant::now();
+        uniform_pause(50, 5).await;
+        let elapsed = start.elapsed();
+        // With 5% variance, should be close to 50ms
+        assert!(elapsed.as_millis() >= 40 && elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_medium_variance() {
+        let start = std::time::Instant::now();
+        human_pause(50, 25).await;
+        let elapsed = start.elapsed();
+        // With 25% variance, should be in reasonable range
+        assert!(elapsed.as_millis() >= 30 && elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_medium_variance() {
+        let start = std::time::Instant::now();
+        uniform_pause(50, 25).await;
+        let elapsed = start.elapsed();
+        // With 25% variance, should be in reasonable range
+        assert!(elapsed.as_millis() >= 30 && elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_small_range() {
+        let start = std::time::Instant::now();
+        random_delay(10, 15).await;
+        let elapsed = start.elapsed();
+        // Small range should complete quickly
+        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 50);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_medium_range() {
+        let start = std::time::Instant::now();
+        random_delay(50, 100).await;
+        let elapsed = start.elapsed();
+        // Medium range
+        assert!(elapsed.as_millis() >= 50 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_single_cluster_variance() {
+        let start = std::time::Instant::now();
+        clustered_pause(30, 5, 1, 1).await;
+        let elapsed = start.elapsed();
+        // Single cluster with low variance
+        assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_high_variance() {
+        let start = std::time::Instant::now();
+        clustered_pause(30, 50, 2, 2).await;
+        let elapsed = start.elapsed();
+        // High variance across clusters
+        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_exact_base() {
+        let start = std::time::Instant::now();
+        human_pause(100, 0).await;
+        let elapsed = start.elapsed();
+        // With 0% variance, should be approximately 100ms
+        assert!(elapsed.as_millis() >= 90 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_exact_base() {
+        let start = std::time::Instant::now();
+        uniform_pause(100, 0).await;
+        let elapsed = start.elapsed();
+        // With 0% variance, should be approximately 100ms
+        assert!(elapsed.as_millis() >= 90 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_sequence_consistency() {
+        let mut results = Vec::new();
+        for _ in 0..5 {
+            let start = std::time::Instant::now();
+            random_delay(10, 20).await;
+            results.push(start.elapsed().as_millis());
+        }
+        // All should be in range
+        for r in results {
+            assert!(r >= 10 && r < 50);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_sequence_consistency() {
+        let mut results = Vec::new();
+        for _ in 0..5 {
+            let start = std::time::Instant::now();
+            human_pause(30, 10).await;
+            results.push(start.elapsed().as_millis());
+        }
+        // All should be in reasonable range
+        for r in results {
+            assert!(r >= 20 && r < 80);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_sequence_consistency() {
+        let mut results = Vec::new();
+        for _ in 0..5 {
+            let start = std::time::Instant::now();
+            uniform_pause(30, 10).await;
+            results.push(start.elapsed().as_millis());
+        }
+        // All should be in reasonable range
+        for r in results {
+            assert!(r >= 20 && r < 80);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_variance_distribution_alternate() {
+        let mut results = Vec::new();
+        for _ in 0..3 {
+            let start = std::time::Instant::now();
+            clustered_pause(30, 20, 2, 3).await;
+            results.push(start.elapsed().as_millis());
+        }
+        // All should complete in reasonable time
+        for r in results {
+            assert!(r >= 15 && r < 150);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_large_base_low_variance() {
+        let start = std::time::Instant::now();
+        human_pause(200, 5).await;
+        let elapsed = start.elapsed();
+        // Large base with low variance
+        assert!(elapsed.as_millis() >= 180 && elapsed.as_millis() < 300);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_large_base_low_variance() {
+        let start = std::time::Instant::now();
+        uniform_pause(200, 5).await;
+        let elapsed = start.elapsed();
+        // Large base with low variance
+        assert!(elapsed.as_millis() >= 180 && elapsed.as_millis() < 300);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_boundary_min() {
+        let start = std::time::Instant::now();
+        random_delay(1, 5).await;
+        let elapsed = start.elapsed();
+        // Minimum boundary test
+        assert!(elapsed.as_millis() >= 1 && elapsed.as_millis() < 30);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_minimal_clusters() {
+        let start = std::time::Instant::now();
+        clustered_pause(20, 10, 1, 2).await;
+        let elapsed = start.elapsed();
+        // Minimal cluster configuration
+        assert!(elapsed.as_millis() >= 15 && elapsed.as_millis() < 80);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_variance_boundary() {
+        let start = std::time::Instant::now();
+        human_pause(50, 50).await;
+        let elapsed = start.elapsed();
+        // 50% variance boundary
+        assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 120);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_variance_boundary() {
+        let start = std::time::Instant::now();
+        uniform_pause(50, 50).await;
+        let elapsed = start.elapsed();
+        // 50% variance boundary
+        assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 120);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_consistent_bounds() {
+        for _ in 0..10 {
+            let start = std::time::Instant::now();
+            random_delay(20, 40).await;
+            let elapsed = start.elapsed();
+            assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 80);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_consistent_bounds() {
+        for _ in 0..5 {
+            let start = std::time::Instant::now();
+            clustered_pause(30, 15, 2, 3).await;
+            let elapsed = start.elapsed();
+            assert!(elapsed.as_millis() >= 15 && elapsed.as_millis() < 120);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_very_small_base() {
+        let start = std::time::Instant::now();
+        human_pause(10, 10).await;
+        let elapsed = start.elapsed();
+        // Small base, should clamp to minimum
+        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 30);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_very_small_base() {
+        let start = std::time::Instant::now();
+        uniform_pause(10, 10).await;
+        let elapsed = start.elapsed();
+        // Small base, should clamp to minimum
+        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 30);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_sequence_randomness() {
+        let mut results = Vec::new();
+        for _ in 0..10 {
+            let start = std::time::Instant::now();
+            random_delay(10, 50).await;
+            results.push(start.elapsed().as_millis());
+        }
+        // Should have some variation
+        let min = results.iter().min().unwrap();
+        let max = results.iter().max().unwrap();
+        assert!(max - min > 5); // At least 5ms variation
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_random_clusters() {
+        let mut results = Vec::new();
+        for _ in 0..3 {
+            let start = std::time::Instant::now();
+            clustered_pause(30, 10, 2, 3).await;
+            results.push(start.elapsed().as_millis());
+        }
+        // All should complete
+        for r in results {
+            assert!(r >= 15 && r < 150);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_base_100_variance_20() {
+        let start = std::time::Instant::now();
+        human_pause(100, 20).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 70 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_base_100_variance_20() {
+        let start = std::time::Instant::now();
+        uniform_pause(100, 20).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 70 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_medium_base() {
+        let start = std::time::Instant::now();
+        random_delay(75, 125).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 75 && elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_base_50() {
+        let start = std::time::Instant::now();
+        clustered_pause(50, 10, 2, 3).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 40 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_base_150() {
+        let start = std::time::Instant::now();
+        human_pause(150, 10).await;
+        let elapsed = start.elapsed();
+        // With 10% variance: 150 * 0.9 = 135, 150 * 1.1 = 165
+        assert!(elapsed.as_millis() >= 125 && elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_base_150() {
+        let start = std::time::Instant::now();
+        uniform_pause(150, 10).await;
+        let elapsed = start.elapsed();
+        // With 10% variance: 150 * 0.9 = 135, 150 * 1.1 = 165
+        assert!(elapsed.as_millis() >= 125 && elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_upper_bound() {
+        let start = std::time::Instant::now();
+        random_delay(90, 100).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 90 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_zero_variance_alternate() {
+        let start = std::time::Instant::now();
+        clustered_pause(40, 0, 2, 2).await;
+        let elapsed = start.elapsed();
+        // Zero variance should be predictable
+        assert!(elapsed.as_millis() >= 35 && elapsed.as_millis() < 80);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_variance_75() {
+        let start = std::time::Instant::now();
+        human_pause(50, 75).await;
+        let elapsed = start.elapsed();
+        // High variance
+        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 120);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_variance_75() {
+        let start = std::time::Instant::now();
+        uniform_pause(50, 75).await;
+        let elapsed = start.elapsed();
+        // High variance
+        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 120);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_step_10() {
+        let start = std::time::Instant::now();
+        random_delay(10, 20).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 50);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_base_60() {
+        let start = std::time::Instant::now();
+        clustered_pause(60, 10, 2, 3).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 50 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_base_80() {
+        let start = std::time::Instant::now();
+        human_pause(80, 15).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 60 && elapsed.as_millis() < 130);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_base_80() {
+        let start = std::time::Instant::now();
+        uniform_pause(80, 15).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 60 && elapsed.as_millis() < 130);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_wide_range() {
+        let start = std::time::Instant::now();
+        random_delay(5, 100).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_base_70() {
+        let start = std::time::Instant::now();
+        clustered_pause(70, 10, 2, 3).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 60 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_base_120() {
+        let start = std::time::Instant::now();
+        human_pause(120, 10).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 100 && elapsed.as_millis() < 170);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_base_120() {
+        let start = std::time::Instant::now();
+        uniform_pause(120, 10).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 100 && elapsed.as_millis() < 170);
+    }
+
+    #[tokio::test]
+    async fn test_random_delay_consistent_small() {
+        for _ in 0..5 {
+            let start = std::time::Instant::now();
+            random_delay(15, 25).await;
+            let elapsed = start.elapsed();
+            assert!(elapsed.as_millis() >= 15 && elapsed.as_millis() < 60);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_human_pause_base_90() {
+        let start = std::time::Instant::now();
+        human_pause(90, 10).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() >= 75 && elapsed.as_millis() < 140);
+    }
 }

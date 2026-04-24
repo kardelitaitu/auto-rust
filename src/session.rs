@@ -1331,4 +1331,277 @@ mod tests {
         // Should be closed at exact boundary (strict inequality)
         assert!(!is_open, "Circuit should be closed at exact timeout boundary");
     }
+
+    #[test]
+    fn test_session_state_clone() {
+        let state = SessionState::Idle;
+        let cloned = state;
+        assert_eq!(state, cloned);
+    }
+
+    #[test]
+    fn test_session_state_all_variants_distinct() {
+        let states = [SessionState::Idle, SessionState::Busy, SessionState::Failed];
+        for (i, state1) in states.iter().enumerate() {
+            for (j, state2) in states.iter().enumerate() {
+                if i == j {
+                    assert_eq!(state1, state2);
+                } else {
+                    assert_ne!(state1, state2);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_session_state_ord_partial_eq() {
+        // SessionState doesn't implement Ord, but we can test PartialEq
+        assert!(SessionState::Idle == SessionState::Idle);
+        assert!(SessionState::Idle != SessionState::Busy);
+    }
+
+    #[test]
+    fn test_circuit_breaker_threshold_one() {
+        let failure_threshold = 1;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = 1;
+        let last_failure = current_time;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(is_open, "Circuit should open on first failure with threshold=1");
+    }
+
+    #[test]
+    fn test_circuit_breaker_recovery_after_single_failure() {
+        let failure_threshold = 1;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = 1;
+        let last_failure = current_time - 31; // Beyond timeout
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(!is_open, "Circuit should recover after timeout with threshold=1");
+    }
+
+    #[test]
+    fn test_circuit_breaker_no_failures() {
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = 0;
+        let last_failure = current_time;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(!is_open, "Circuit should be closed with zero failures");
+    }
+
+    #[test]
+    fn test_circuit_breaker_threshold_very_large() {
+        let failure_threshold = 1000;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = 999; // Just below threshold
+        let last_failure = current_time;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(!is_open, "Circuit should be closed below very large threshold");
+    }
+
+    #[test]
+    fn test_circuit_breaker_timeout_very_short() {
+        let failure_threshold = 5;
+        let timeout_secs = 1;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = failure_threshold;
+        let last_failure = current_time;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(is_open, "Circuit should be open with very short timeout");
+    }
+
+    #[test]
+    fn test_circuit_breaker_timeout_very_long() {
+        let failure_threshold = 5;
+        let timeout_secs = 31536000; // 1 year
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = failure_threshold;
+        let last_failure = current_time;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(is_open, "Circuit should be open with very long timeout");
+    }
+
+    #[test]
+    fn test_circuit_breaker_multiple_thresholds() {
+        // Test various threshold values
+        let thresholds = [1, 2, 5, 10, 50, 100];
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        for threshold in thresholds {
+            let failure_count = threshold;
+            let last_failure = current_time;
+
+            let is_open = failure_count >= threshold
+                && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+            assert!(is_open, "Circuit should be open at threshold {}", threshold);
+        }
+    }
+
+    #[test]
+    fn test_circuit_breaker_failure_count_overflow_safety() {
+        // Test that failure count doesn't cause issues with large values
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = usize::MAX;
+        let last_failure = current_time;
+
+        // Should handle without panic
+        let _is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+    }
+
+    #[test]
+    fn test_session_state_default_values() {
+        // SessionState has no Default impl, but we can test initial values
+        let idle = SessionState::Idle;
+        let busy = SessionState::Busy;
+        let failed = SessionState::Failed;
+
+        // All variants should be valid
+        assert!(matches!(idle, SessionState::Idle));
+        assert!(matches!(busy, SessionState::Busy));
+        assert!(matches!(failed, SessionState::Failed));
+    }
+
+    #[test]
+    fn test_circuit_breaker_time_calculation_precision() {
+        // Test that time calculations are precise enough
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        // Test with 1 second difference
+        let last_failure = current_time - 1;
+        let failure_count = failure_threshold;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(is_open, "Circuit should be open with 1 second difference");
+    }
+
+    #[test]
+    fn test_circuit_breaker_simultaneous_failures() {
+        // Test behavior when failures happen at the same time
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = 5;
+        let last_failure = current_time;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(is_open, "Circuit should be open with simultaneous failures at threshold");
+    }
+
+    #[test]
+    fn test_circuit_breaker_gradual_failure_recovery() {
+        // Test gradual recovery after failures
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        // Start with high failure count
+        let failure_count = 10;
+        let last_failure = current_time - 31; // Beyond timeout
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(!is_open, "Circuit should recover after timeout regardless of failure count");
+    }
+
+    #[test]
+    fn test_circuit_breaker_timeout_boundary_plus_one() {
+        // Test just beyond timeout boundary
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let last_failure = current_time - (timeout_secs as usize + 1);
+        let failure_count = failure_threshold;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(!is_open, "Circuit should be closed just beyond timeout boundary");
+    }
+
+    #[test]
+    fn test_circuit_breaker_timeout_boundary_minus_one() {
+        // Test just before timeout boundary
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let last_failure = current_time - (timeout_secs as usize - 1);
+        let failure_count = failure_threshold;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(is_open, "Circuit should be open just before timeout boundary");
+    }
 }

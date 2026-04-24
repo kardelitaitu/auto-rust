@@ -275,4 +275,266 @@ mod tests {
         // Should have a reasonable number of patterns
         assert!(patterns.len() > 20);
     }
+
+    #[test]
+    fn test_blocked_patterns_contains_svg() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("svg")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_bmp() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("bmp")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_ico() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("ico")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_avi() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("avi")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_mov() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("mov")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_flv() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("flv")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_opus() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("opus")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_contains_mpd() {
+        let patterns = blocked_patterns();
+        assert!(patterns.iter().any(|p| p.contains("mpd")));
+    }
+
+    #[test]
+    fn test_blocked_patterns_wildcard_variants() {
+        let patterns = blocked_patterns();
+        // Should have both *.ext and *.ext* variants
+        assert!(patterns.iter().any(|p| p == "*.png"));
+        assert!(patterns.iter().any(|p| p == "*.png*"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_play_override() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("HTMLVideoElement.prototype.play"));
+        assert!(js.contains("HTMLAudioElement.prototype.play"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_srcset() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("srcset"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_pause() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("pause"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_background_image() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("background-image"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_should_block() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("shouldBlock"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_console_log() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("console.log"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_blocked_message() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("Blocked by cookiebot"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_type_error() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("TypeError"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_url_parsing() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("new URL"));
+    }
+
+    #[test]
+    fn test_blocked_patterns_all_strings() {
+        let patterns = blocked_patterns();
+        // All patterns should be strings (verified by type system)
+        assert!(!patterns.is_empty());
+    }
+
+    #[test]
+    fn test_blocked_patterns_no_empty_strings() {
+        let patterns = blocked_patterns();
+        // No pattern should be empty
+        for pattern in &patterns {
+            assert!(!pattern.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_source_element() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("source"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_picture_element() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("picture"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_data_check() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("data:"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_try_catch() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("try"));
+        assert!(js.contains("catch"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_protocols_param() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("protocols"));
+    }
+
+    #[test]
+    fn test_blocked_patterns_exact_count() {
+        let patterns = blocked_patterns();
+        // Exact count based on the implementation
+        assert_eq!(patterns.len(), 45);
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_is_wrapped_in_iife() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("(() =>"));
+        assert!(js.contains("})()"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_is_wrapped_in_iife() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("(() =>"));
+        assert!(js.contains("})()"));
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_foreach() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("forEach"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_some() {
+        let js = cookiebot_block_js();
+        assert!(js.contains(".some"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_endswith() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("endsWith"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_pathname() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("pathname"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_tolowercase() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("toLowerCase"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_send_override() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("xhr.send"));
+    }
+
+    #[test]
+    fn test_blocked_patterns_pattern_format() {
+        let patterns = blocked_patterns();
+        // All patterns should start with * or data:
+        for pattern in &patterns {
+            assert!(pattern.starts_with('*') || pattern.starts_with("data:"));
+        }
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_srcobject() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("srcObject"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_origws() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("OrigWS"));
+    }
+
+    #[test]
+    fn test_blocked_patterns_unique() {
+        let patterns = blocked_patterns();
+        // All patterns should be unique
+        let unique_patterns: std::collections::HashSet<_> = patterns.iter().collect();
+        assert_eq!(unique_patterns.len(), patterns.len());
+    }
+
+    #[test]
+    fn test_dom_cleanup_js_contains_style_attribute() {
+        let js = dom_cleanup_js();
+        assert!(js.contains("[style"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_method_param() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("method"));
+    }
+
+    #[test]
+    fn test_cookiebot_block_js_contains_noop_for_blocked() {
+        let js = cookiebot_block_js();
+        assert!(js.contains("no-op"));
+    }
 }

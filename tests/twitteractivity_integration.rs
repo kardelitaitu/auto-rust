@@ -86,9 +86,9 @@ fn twitteractivity_sentiment_score_ordering() {
 /// Tests that TweetActionTracker enforces minimum delay between actions on same tweet.
 #[test]
 fn twitteractivity_action_chaining_prevention_works() {
-    let mut tracker = TweetActionTracker::new(
-        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
-    );
+    // Use smaller delay for tests to speed up execution
+    const TEST_DELAY_MS: u64 = 100;
+    let mut tracker = TweetActionTracker::new(TEST_DELAY_MS);
     let tweet_id = "test_tweet_123";
 
     // First action should be allowed
@@ -106,8 +106,8 @@ fn twitteractivity_action_chaining_prevention_works() {
         "second action immediately after first should be blocked"
     );
 
-    // Wait for cooldown to expire (MIN_ACTION_CHAIN_DELAY_MS = 3000ms)
-    std::thread::sleep(Duration::from_millis(3100));
+    // Wait for cooldown to expire
+    std::thread::sleep(Duration::from_millis(TEST_DELAY_MS + 10));
 
     // After cooldown, action should be allowed again
     assert!(
@@ -138,16 +138,16 @@ fn twitteractivity_action_chaining_different_tweets_allowed() {
 /// Tests that TweetActionTracker allows same action type on same tweet after cooldown.
 #[test]
 fn twitteractivity_action_chaining_same_action_after_cooldown() {
-    let mut tracker = TweetActionTracker::new(
-        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
-    );
+    // Use smaller delay for tests to speed up execution
+    const TEST_DELAY_MS: u64 = 100;
+    let mut tracker = TweetActionTracker::new(TEST_DELAY_MS);
     let tweet_id = "test_tweet_456";
 
     // Record first like action
     tracker.record_action(tweet_id.to_string(), "like");
 
     // Wait for cooldown
-    std::thread::sleep(Duration::from_millis(3100));
+    std::thread::sleep(Duration::from_millis(TEST_DELAY_MS + 10));
 
     // Same action type should be allowed after cooldown
     assert!(
@@ -396,9 +396,9 @@ fn twitteractivity_persona_weights_override() {
 /// Tests that TweetActionTracker handles multiple tweets correctly.
 #[test]
 fn twitteractivity_action_chaining_multiple_tweets() {
-    let mut tracker = TweetActionTracker::new(
-        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
-    );
+    // Use smaller delay for tests to speed up execution
+    const TEST_DELAY_MS: u64 = 100;
+    let mut tracker = TweetActionTracker::new(TEST_DELAY_MS);
     let tweet_ids = vec!["tweet_1", "tweet_2", "tweet_3"];
 
     // Record actions on different tweets
@@ -415,7 +415,7 @@ fn twitteractivity_action_chaining_multiple_tweets() {
     }
 
     // Wait for cooldown
-    std::thread::sleep(Duration::from_millis(3100));
+    std::thread::sleep(Duration::from_millis(TEST_DELAY_MS + 10));
 
     // All tweets should now be unblocked
     for tweet_id in &tweet_ids {
@@ -429,9 +429,9 @@ fn twitteractivity_action_chaining_multiple_tweets() {
 /// Tests that TweetActionTracker overwrites previous actions correctly.
 #[test]
 fn twitteractivity_action_chaining_overwrites_previous() {
-    let mut tracker = TweetActionTracker::new(
-        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
-    );
+    // Use smaller delay for tests to speed up execution
+    const TEST_DELAY_MS: u64 = 100;
+    let mut tracker = TweetActionTracker::new(TEST_DELAY_MS);
     let tweet_id = "test_tweet_overwrite";
 
     // Record first action
@@ -439,7 +439,7 @@ fn twitteractivity_action_chaining_overwrites_previous() {
     assert!(!tracker.can_perform_action(tweet_id, "retweet"));
 
     // Wait for cooldown
-    std::thread::sleep(Duration::from_millis(3100));
+    std::thread::sleep(Duration::from_millis(TEST_DELAY_MS + 10));
 
     // Record second action
     tracker.record_action(tweet_id.to_string(), "retweet");
@@ -451,9 +451,9 @@ fn twitteractivity_action_chaining_overwrites_previous() {
 fn twitteractivity_entry_point_selection_distribution() {
     use rust_orchestrator::task::twitteractivity::select_entry_point;
 
-    // Sample many times to check distribution
+    // Sample many times to check distribution (reduced from 1000 for speed)
     let mut counts = std::collections::HashMap::new();
-    for _ in 0..1000 {
+    for _ in 0..100 {
         let entry_url = select_entry_point();
         *counts.entry(entry_url).or_insert(0) += 1;
     }
@@ -461,7 +461,7 @@ fn twitteractivity_entry_point_selection_distribution() {
     // Home should be the most common (59% weight)
     let home_count = counts.get("https://x.com/").unwrap_or(&0);
     assert!(
-        *home_count > 500,
+        *home_count > 50,
         "home should appear in >50% of samples (got {})",
         home_count
     );

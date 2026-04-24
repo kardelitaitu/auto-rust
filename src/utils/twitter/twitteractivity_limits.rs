@@ -497,4 +497,176 @@ mod tests {
         assert_eq!(summary.get("follows").copied().unwrap_or(0), 1);
         assert_eq!(summary.get("quote_tweets").copied().unwrap_or(0), 1);
     }
+
+    #[test]
+    fn test_counters_all_zero_initially() {
+        let counters = EngagementCounters::new();
+        assert_eq!(counters.likes, 0);
+        assert_eq!(counters.retweets, 0);
+        assert_eq!(counters.follows, 0);
+        assert_eq!(counters.replies, 0);
+        assert_eq!(counters.thread_dives, 0);
+        assert_eq!(counters.bookmarks, 0);
+        assert_eq!(counters.quote_tweets, 0);
+    }
+
+    #[test]
+    fn test_counters_multiple_increments() {
+        let mut counters = EngagementCounters::new();
+        for _ in 0..10 {
+            counters.increment_like();
+        }
+        assert_eq!(counters.likes, 10);
+    }
+
+    #[test]
+    fn test_limits_zero_max_likes() {
+        let limits = EngagementLimits::with_limits(0, 3, 2, 1, 3, 2, 2, 10);
+        let counters = EngagementCounters::new();
+        assert!(!limits.can_like(&counters));
+    }
+
+    #[test]
+    fn test_limits_zero_total_actions() {
+        let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 0);
+        let counters = EngagementCounters::new();
+        assert!(!limits.can_like(&counters));
+        assert!(!limits.can_retweet(&counters));
+    }
+
+    #[test]
+    fn test_limits_very_large_values() {
+        let limits = EngagementLimits::with_limits(1000, 1000, 1000, 1000, 1000, 1000, 1000, 10000);
+        let counters = EngagementCounters::new();
+        assert!(limits.can_like(&counters));
+        assert!(limits.can_retweet(&counters));
+    }
+
+    #[test]
+    fn test_remaining_saturates_at_zero() {
+        let limits = EngagementLimits::new();
+        let mut counters = EngagementCounters::new();
+        for _ in 0..100 {
+            counters.increment_like();
+        }
+        let remaining = limits.remaining(&counters);
+        assert_eq!(remaining.get("likes").copied().unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn test_available_actions_empty_when_all_blocked() {
+        let limits = EngagementLimits::with_limits(0, 0, 0, 0, 0, 0, 0, 0);
+        let counters = EngagementCounters::new();
+        let available = limits.available_actions(&counters);
+        assert!(available.is_empty());
+    }
+
+    #[test]
+    fn test_session_limit_reached_check() {
+        let check = EngagementCheck::SessionLimitReached;
+        assert!(!check.is_allowed());
+        assert_eq!(check.reason(), Some("Session engagement limit reached".to_string()));
+    }
+
+    #[test]
+    fn test_engagement_check_limit_reached_variants() {
+        let actions = ["like", "retweet", "follow", "reply"];
+        for action in actions {
+            let check = EngagementCheck::LimitReached { action };
+            assert!(!check.is_allowed());
+            assert!(check.reason().unwrap().contains(action));
+        }
+    }
+
+    #[test]
+    fn test_counters_clone() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_retweet();
+        let cloned = counters.clone();
+        assert_eq!(cloned.likes, counters.likes);
+        assert_eq!(cloned.retweets, counters.retweets);
+    }
+
+    #[test]
+    fn test_limits_clone() {
+        let limits = EngagementLimits::with_limits(10, 5, 3, 2, 5, 1, 2, 20);
+        let cloned = limits.clone();
+        assert_eq!(cloned.max_likes, limits.max_likes);
+        assert_eq!(cloned.max_total_actions, limits.max_total_actions);
+    }
+
+    #[test]
+    fn test_total_actions_includes_all_counters() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_retweet();
+        counters.increment_follow();
+        counters.increment_reply();
+        counters.increment_thread_dive();
+        counters.increment_bookmark();
+        counters.increment_quote_tweet();
+        assert_eq!(counters.total_actions(), 7);
+    }
+
+    #[test]
+    fn test_can_bookmark_when_enabled() {
+        let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 5, 2, 20);
+        let counters = EngagementCounters::new();
+        assert!(limits.can_bookmark(&counters));
+    }
+
+    #[test]
+    fn test_can_quote_tweet_when_enabled() {
+        let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 5, 20);
+        let counters = EngagementCounters::new();
+        assert!(limits.can_quote_tweet(&counters));
+    }
+
+    #[test]
+    fn test_remaining_total_actions_calculation() {
+        let limits = EngagementLimits::new();
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_retweet();
+        let remaining = limits.remaining(&counters);
+        assert_eq!(remaining.get("total_actions").copied().unwrap_or(0), 8); // 10 - 2
+    }
+
+    #[test]
+    fn test_available_actions_includes_v2_features() {
+        let limits = EngagementLimits::new();
+        let counters = EngagementCounters::new();
+        let available = limits.available_actions(&counters);
+        assert!(available.contains(&"bookmark"));
+        assert!(available.contains(&"quote_tweet"));
+    }
+
+    #[test]
+    fn test_summary_contains_all_keys() {
+        let counters = EngagementCounters::new();
+        let summary = counters.to_summary();
+        assert!(summary.contains_key("likes"));
+        assert!(summary.contains_key("retweets"));
+        assert!(summary.contains_key("follows"));
+        assert!(summary.contains_key("replies"));
+        assert!(summary.contains_key("thread_dives"));
+        assert!(summary.contains_key("bookmarks"));
+        assert!(summary.contains_key("quote_tweets"));
+    }
+
+    #[test]
+    fn test_remaining_contains_all_keys() {
+        let limits = EngagementLimits::new();
+        let counters = EngagementCounters::new();
+        let remaining = limits.remaining(&counters);
+        assert!(remaining.contains_key("likes"));
+        assert!(remaining.contains_key("retweets"));
+        assert!(remaining.contains_key("follows"));
+        assert!(remaining.contains_key("replies"));
+        assert!(remaining.contains_key("thread_dives"));
+        assert!(remaining.contains_key("bookmarks"));
+        assert!(remaining.contains_key("quote_tweets"));
+        assert!(remaining.contains_key("total_actions"));
+    }
 }

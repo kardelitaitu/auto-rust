@@ -827,6 +827,194 @@ mod tests {
             ClickFatigueLevel::Normal
         );
     }
+
+    #[test]
+    fn test_click_learning_state_consecutive_failures_tracking() {
+        let mut state = ClickLearningState::default();
+        state.record("#button", false);
+        state.record("#button", false);
+        let stats = state.selector_stats("#button");
+        assert_eq!(stats.consecutive_failures, 2);
+    }
+
+    #[test]
+    fn test_click_learning_state_consecutive_failures_reset_on_success() {
+        let mut state = ClickLearningState::default();
+        state.record("#button", false);
+        state.record("#button", false);
+        state.record("#button", true);
+        let stats = state.selector_stats("#button");
+        assert_eq!(stats.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn test_click_learning_state_multiple_selectors() {
+        let mut state = ClickLearningState::default();
+        state.record("#button1", true);
+        state.record("#button2", false);
+        let stats1 = state.selector_stats("#button1");
+        let stats2 = state.selector_stats("#button2");
+        assert_eq!(stats1.attempts, 1);
+        assert_eq!(stats1.successes, 1);
+        assert_eq!(stats2.attempts, 1);
+        assert_eq!(stats2.successes, 0);
+    }
+
+    #[test]
+    fn test_click_learning_state_interaction_count() {
+        let mut state = ClickLearningState::default();
+        state.record("#button", true);
+        state.record("#button", false);
+        state.record("#link", true);
+        assert_eq!(state.interaction_count, 3);
+    }
+
+    #[test]
+    fn test_click_learning_state_recent_success_rate_mixed() {
+        let mut state = ClickLearningState::default();
+        for i in 0..10 {
+            state.record("#button", i % 2 == 0);
+        }
+        let rate = state.recent_success_rate();
+        assert!(rate >= 0.0 && rate <= 1.0);
+    }
+
+    #[test]
+    fn test_click_learning_state_recent_success_rate_all_success() {
+        let mut state = ClickLearningState::default();
+        for _ in 0..10 {
+            state.record("#button", true);
+        }
+        assert_eq!(state.recent_success_rate(), 1.0);
+    }
+
+    #[test]
+    fn test_click_learning_state_recent_success_rate_all_failure() {
+        let mut state = ClickLearningState::default();
+        for _ in 0..10 {
+            state.record("#button", false);
+        }
+        assert_eq!(state.recent_success_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_click_adaptation_with_high_multiplier() {
+        let adaptation = ClickAdaptation {
+            extra_stability_wait_ms: 500,
+            reaction_delay_multiplier: 2.5,
+            require_strict_verification: true,
+            click_offset_adjustment_px: 0,
+            prefer_coordinate_fallback: false,
+            reaction_variance_boost_pct: 0,
+        };
+        assert_eq!(adaptation.extra_stability_wait_ms, 500);
+        assert_eq!(adaptation.reaction_delay_multiplier, 2.5);
+        assert!(adaptation.require_strict_verification);
+    }
+
+    #[test]
+    fn test_click_timing_profile_from_observation() {
+        let context = ClickTimingContext::from_observation(
+            "https://example.com",
+            "#button",
+            10,
+            0.8,
+        );
+        assert_eq!(context.page, ClickPageContext::Home);
+        assert_eq!(context.priority, ClickElementPriority::Normal);
+        assert_eq!(context.fatigue, ClickFatigueLevel::Rested);
+        assert_eq!(context.recent_success_rate, 0.8);
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_page_commerce() {
+        assert_eq!(
+            ClickTimingContext::classify_page("https://shop.example.com"),
+            ClickPageContext::Commerce
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_page_content() {
+        assert_eq!(
+            ClickTimingContext::classify_page("https://blog.example.com/article"),
+            ClickPageContext::Content
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_page_other() {
+        // Need a URL with more than 2 path segments to trigger Other
+        assert_eq!(
+            ClickTimingContext::classify_page("https://unknown.example.com/path/to/page"),
+            ClickPageContext::Other
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_priority_critical_data_testid() {
+        assert_eq!(
+            ClickTimingContext::classify_priority("[data-testid='submit']"),
+            ClickElementPriority::Critical
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_priority_critical_type_submit() {
+        assert_eq!(
+            ClickTimingContext::classify_priority("button[type='submit']"),
+            ClickElementPriority::Critical
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_fatigue_boundary_normal() {
+        // Boundary is < 50 for Normal, so 49 should be Normal
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(49),
+            ClickFatigueLevel::Normal
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_fatigue_boundary_tired() {
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(70),
+            ClickFatigueLevel::Tired
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_fatigue_boundary_rested() {
+        // Boundary is < 15 for Rested, so 14 should be Rested
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(14),
+            ClickFatigueLevel::Rested
+        );
+    }
+
+    #[test]
+    fn test_sanitize_path_component_unicode() {
+        assert_eq!(sanitize_path_component("test🎉"), "test");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_underscores() {
+        assert_eq!(sanitize_path_component("test_name"), "test_name");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_dashes() {
+        assert_eq!(sanitize_path_component("test-name"), "test-name");
+    }
+
+    #[test]
+    fn test_click_learning_state_selector_stats_nonexistent() {
+        let state = ClickLearningState::default();
+        let stats = state.selector_stats("#nonexistent");
+        assert_eq!(stats.attempts, 0);
+        assert_eq!(stats.successes, 0);
+    }
 }
 
 /// High-level API context for browser automation tasks.

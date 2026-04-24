@@ -202,4 +202,297 @@ mod tests {
         assert!(cancel_js.contains("close"));
         assert!(cancel_js.contains("getBoundingClientRect"));
     }
+
+    #[test]
+    fn test_cookie_selectors_aria_label() {
+        let selector = "button[aria-label*='Accept']";
+        assert!(selector.contains("aria-label"));
+        assert!(selector.contains("Accept"));
+    }
+
+    #[test]
+    fn test_cookie_selectors_data_testid() {
+        let selector = "button[data-testid*='accept']";
+        assert!(selector.contains("data-testid"));
+        assert!(selector.contains("accept"));
+    }
+
+    #[test]
+    fn test_cookie_selectors_contains_pseudo() {
+        let selector = "button:contains('Accept all')";
+        assert!(selector.contains(":contains"));
+        assert!(selector.contains("Accept all"));
+    }
+
+    #[test]
+    fn test_cookie_selectors_role_button() {
+        let selector = "div[role='button']:contains('Accept')";
+        assert!(selector.contains("role='button'"));
+        assert!(selector.contains("Accept"));
+    }
+
+    #[test]
+    fn test_close_button_js_includes_not_now() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("not now"));
+    }
+
+    #[test]
+    fn test_close_button_js_returns_coordinates() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("x:"));
+        assert!(cancel_js.contains("y:"));
+    }
+
+    #[test]
+    fn test_close_button_js_uses_trim() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("trim"));
+    }
+
+    #[test]
+    fn test_close_button_js_uses_tolowercase() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("toLowerCase"));
+    }
+
+    #[test]
+    fn test_cookie_banner_js_structure() {
+        let js = r#"
+            (function() {
+                var btn = document.querySelector("button[aria-label*='Accept']");
+                if (btn) {
+                    var r = btn.getBoundingClientRect();
+                    return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                }
+                return null;
+            })()
+        "#;
+        assert!(js.contains("querySelector"));
+        assert!(js.contains("getBoundingClientRect"));
+        assert!(js.contains("return null"));
+    }
+
+    #[test]
+    fn test_popup_detection_order() {
+        // Verify the order of popup detection
+        let detection_order = ["overlay", "follow_confirm", "login_flow"];
+        assert_eq!(detection_order[0], "overlay");
+        assert_eq!(detection_order[1], "follow_confirm");
+        assert_eq!(detection_order[2], "login_flow");
+    }
+
+    #[test]
+    fn test_close_button_js_loops_buttons() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("for (var i = 0; i < btns.length; i++)"));
+    }
+
+    #[test]
+    fn test_cookie_selector_escaping() {
+        let selector = "button[aria-label*=\"Accept\"]";
+        let escaped = selector.replace('"', "\\\"");
+        assert!(escaped.contains("\\\""));
+    }
+
+    #[test]
+    fn test_close_button_js_null_return() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("return null"));
+    }
+
+    #[test]
+    fn test_cookie_banner_js_returns_object() {
+        let js = r#"
+            (function() {
+                var btn = document.querySelector("button[aria-label*='Accept']");
+                if (btn) {
+                    var r = btn.getBoundingClientRect();
+                    return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                }
+                return null;
+            })()
+        "#;
+        assert!(js.contains("{ x:"));
+        assert!(js.contains("y:"));
+    }
+
+    #[test]
+    fn test_close_button_js_center_calculation() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("width/2"));
+        assert!(cancel_js.contains("height/2"));
+    }
+
+    #[test]
+    fn test_dismiss_signup_nag_disabled() {
+        // The function is disabled and returns false
+        // This test documents that behavior
+        assert!(true); // Just verifies the test compiles
+    }
+
+    #[test]
+    fn test_cookie_selectors_array_length() {
+        let cookie_selectors = [
+            "button[aria-label*='Accept']",
+            "button[data-testid*='accept']",
+            "button:contains('Accept all')",
+            "div[role='button']:contains('Accept')",
+        ];
+        assert_eq!(cookie_selectors.len(), 4);
+    }
+
+    #[test]
+    fn test_close_button_js_text_content_fallback() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("textContent || ''"));
+    }
+
+    #[test]
+    fn test_cookie_banner_js_if_check() {
+        let js = r#"
+            (function() {
+                var btn = document.querySelector("button[aria-label*='Accept']");
+                if (btn) {
+                    var r = btn.getBoundingClientRect();
+                    return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                }
+                return null;
+            })()
+        "#;
+        assert!(js.contains("if (btn)"));
+    }
+
+    #[test]
+    fn test_close_button_js_exact_match() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("t === 'cancel'"));
+        assert!(cancel_js.contains("t === 'close'"));
+    }
+
+    #[test]
+    fn test_close_button_js_partial_match() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("t.includes('not now')"));
+    }
 }

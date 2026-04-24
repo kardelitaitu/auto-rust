@@ -1150,4 +1150,160 @@ mod tests {
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, false));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
     }
+
+    #[test]
+    fn test_format_duration_minute_only() {
+        assert_eq!(format_duration(60000), "1min");
+        assert_eq!(format_duration(120000), "2min");
+        assert_eq!(format_duration(180000), "3min");
+    }
+
+    #[test]
+    fn test_format_duration_hour_only() {
+        assert_eq!(format_duration(3600000), "1h");
+        assert_eq!(format_duration(7200000), "2h");
+        assert_eq!(format_duration(10800000), "3h");
+    }
+
+    #[test]
+    fn test_format_duration_minute_with_seconds() {
+        assert_eq!(format_duration(61000), "1min 1s");
+        assert_eq!(format_duration(125000), "2min 5s");
+        assert_eq!(format_duration(185000), "3min 5s");
+    }
+
+    #[test]
+    fn test_format_duration_hour_with_minutes() {
+        assert_eq!(format_duration(3660000), "1h 1min");
+        assert_eq!(format_duration(7320000), "2h 2min");
+        assert_eq!(format_duration(10980000), "3h 3min");
+    }
+
+    #[test]
+    fn test_format_duration_very_large_hours() {
+        assert_eq!(format_duration(36000000), "10h");
+        assert_eq!(format_duration(72000000), "20h");
+        assert_eq!(format_duration(86400000), "24h");
+    }
+
+    #[test]
+    fn test_format_duration_sub_second_boundary() {
+        assert_eq!(format_duration(999), "999ms");
+        assert_eq!(format_duration(1000), "1s");
+    }
+
+    #[test]
+    fn test_format_duration_minute_boundary() {
+        assert_eq!(format_duration(59999), "59s");
+        assert_eq!(format_duration(60000), "1min");
+    }
+
+    #[test]
+    fn test_format_duration_hour_boundary() {
+        assert_eq!(format_duration(3599999), "59min 59s");
+        assert_eq!(format_duration(3600000), "1h");
+    }
+
+    #[test]
+    fn test_broadcast_execution_count_saturation() {
+        assert_eq!(broadcast_execution_count(usize::MAX, 1), usize::MAX);
+        assert_eq!(broadcast_execution_count(1, usize::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn test_broadcast_execution_count_identity() {
+        assert_eq!(broadcast_execution_count(1, 1), 1);
+        assert_eq!(broadcast_execution_count(0, 0), 0);
+    }
+
+    #[test]
+    fn test_should_mark_session_unhealthy_validation_error() {
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, false));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, true));
+    }
+
+    #[test]
+    fn test_should_mark_session_unhealthy_cancelled_all_kinds() {
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Navigation, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Session, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
+    }
+
+    #[test]
+    fn test_format_duration_zero() {
+        assert_eq!(format_duration(0), "0ms");
+    }
+
+    #[test]
+    fn test_format_duration_single_millisecond() {
+        assert_eq!(format_duration(1), "1ms");
+    }
+
+    #[test]
+    fn test_format_duration_single_second() {
+        assert_eq!(format_duration(1000), "1s");
+    }
+
+    #[test]
+    fn test_format_duration_single_minute() {
+        assert_eq!(format_duration(60000), "1min");
+    }
+
+    #[test]
+    fn test_format_duration_single_hour() {
+        assert_eq!(format_duration(3600000), "1h");
+    }
+
+    #[test]
+    fn test_broadcast_execution_count_asymmetric() {
+        assert_eq!(broadcast_execution_count(10, 1), 10);
+        assert_eq!(broadcast_execution_count(1, 10), 10);
+        assert_eq!(broadcast_execution_count(100, 1), 100);
+        assert_eq!(broadcast_execution_count(1, 100), 100);
+    }
+
+    #[test]
+    fn test_orchestrator_new_stores_config() {
+        use crate::config::OrchestratorConfig;
+        let config = Config {
+            orchestrator: OrchestratorConfig {
+                max_global_concurrency: 5,
+                group_timeout_ms: 3000,
+                task_timeout_ms: 15000,
+                task_stagger_delay_ms: 50,
+                worker_wait_timeout_ms: 2500,
+                retry_delay_ms: 500,
+                max_retries: 0,
+                stuck_worker_threshold_ms: 30000,
+            },
+            browser: Default::default(),
+            tracing: Default::default(),
+            twitter_activity: Default::default(),
+        };
+
+        let orchestrator = Orchestrator::new(config.clone());
+        assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 5);
+        assert_eq!(orchestrator.config.orchestrator.group_timeout_ms, 3000);
+    }
+
+    #[tokio::test]
+    async fn test_global_execution_slot_counter_atomicity() {
+        let global_active = Arc::new(AtomicUsize::new(0));
+        let _cancel_token = CancellationToken::new();
+        let semaphore = Arc::new(Semaphore::new(10));
+
+        let _slot1 = GlobalExecutionSlot::new(
+            global_active.clone(),
+            semaphore.clone().acquire_owned().await.unwrap(),
+        );
+        let _slot2 = GlobalExecutionSlot::new(
+            global_active.clone(),
+            semaphore.clone().acquire_owned().await.unwrap(),
+        );
+
+        assert_eq!(global_active.load(Ordering::SeqCst), 2);
+    }
 }

@@ -578,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scroll_feed_js_uses_window_scrollBy() {
+    fn test_scroll_feed_js_uses_window_scroll_by() {
         let js = "window.scrollBy(0, {});";
         assert!(js.contains("window.scrollBy"));
         assert!(js.contains("0,"));

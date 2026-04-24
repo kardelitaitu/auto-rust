@@ -656,6 +656,177 @@ mod tests {
         let client = ApiClient::with_retry_policy("https://api.example.com".to_string(), policy);
         assert_eq!(client.retry_policy.max_retries, 5);
     }
+
+    #[test]
+    fn test_circuit_breaker_single_failure_does_not_open() {
+        let mut cb = CircuitBreaker::new(5, 3, 30000);
+        cb.record_failure();
+        assert!(cb.is_closed());
+        assert!(cb.can_execute());
+    }
+
+    #[test]
+    fn test_circuit_breaker_success_in_closed_state() {
+        let mut cb = CircuitBreaker::new(5, 3, 30000);
+        cb.record_success();
+        assert!(cb.is_closed());
+        assert!(cb.can_execute());
+    }
+
+    #[test]
+    fn test_circuit_breaker_multiple_successes_in_closed() {
+        let mut cb = CircuitBreaker::new(5, 3, 30000);
+        for _ in 0..10 {
+            cb.record_success();
+        }
+        assert!(cb.is_closed());
+        assert!(cb.can_execute());
+    }
+
+    #[test]
+    fn test_circuit_breaker_zero_failure_threshold() {
+        let mut cb = CircuitBreaker::new(0, 3, 30000);
+        // With 0 threshold, first failure should open
+        cb.record_failure();
+        assert!(cb.is_open());
+    }
+
+    #[test]
+    fn test_circuit_breaker_zero_success_threshold() {
+        let mut cb = CircuitBreaker::new(5, 0, 30000);
+        cb.state = CircuitState::HalfOpen;
+        // With 0 threshold, first success should close
+        cb.record_success();
+        assert!(cb.is_closed());
+    }
+
+    #[test]
+    fn test_retry_policy_jitter_range() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            factor: 2.0,
+            jitter: 0.5,
+        };
+        // With jitter, delay should be between 0 and capped value
+        let delay1 = policy.delay_for_attempt(1);
+        let delay2 = policy.delay_for_attempt(1);
+        // Due to randomness, delays may differ
+        assert!(delay1 <= Duration::from_millis(200));
+        assert!(delay2 <= Duration::from_millis(200));
+    }
+
+    #[test]
+    fn test_retry_policy_negative_jitter() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            factor: 2.0,
+            jitter: -0.1,
+        };
+        // Negative jitter should be treated as 0 (deterministic)
+        let delay = policy.delay_for_attempt(1);
+        assert_eq!(delay, Duration::from_millis(200));
+    }
+
+    #[test]
+    fn test_retry_policy_very_large_jitter() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            factor: 2.0,
+            jitter: 2.0,
+        };
+        // Jitter > 1.0 should still work
+        let delay = policy.delay_for_attempt(1);
+        assert!(delay <= Duration::from_millis(200));
+    }
+
+    #[test]
+    fn test_retry_policy_zero_initial_delay() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::ZERO,
+            max_delay: Duration::from_secs(10),
+            factor: 2.0,
+            jitter: 0.0,
+        };
+        let delay = policy.delay_for_attempt(1);
+        assert_eq!(delay, Duration::ZERO);
+    }
+
+    #[test]
+    fn test_retry_policy_zero_factor() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            factor: 0.0,
+            jitter: 0.0,
+        };
+        let delay = policy.delay_for_attempt(1);
+        // 100 * 0^1 = 0
+        assert_eq!(delay, Duration::ZERO);
+    }
+
+    #[test]
+    fn test_retry_policy_fractional_factor() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            factor: 0.5,
+            jitter: 0.0,
+        };
+        let delay = policy.delay_for_attempt(2);
+        // 100 * 0.5^2 = 25ms
+        assert_eq!(delay, Duration::from_millis(25));
+    }
+
+    #[test]
+    fn test_circuit_breaker_very_large_thresholds() {
+        let cb = CircuitBreaker::new(1000, 500, 60000);
+        assert_eq!(cb.failure_threshold, 1000);
+        assert_eq!(cb.success_threshold, 500);
+    }
+
+    #[test]
+    fn test_api_client_can_execute_without_circuit_breaker() {
+        let client = ApiClient::new("https://api.example.com".to_string());
+        assert!(client.can_execute());
+    }
+
+    #[test]
+    fn test_api_client_can_execute_with_closed_circuit() {
+        let cb = CircuitBreaker::new(5, 3, 30000);
+        let client = ApiClient::with_circuit_breaker("https://api.example.com".to_string(), cb);
+        assert!(client.can_execute());
+    }
+
+    #[test]
+    fn test_api_client_can_execute_with_open_circuit() {
+        let mut cb = CircuitBreaker::new(1, 3, 30000);
+        cb.record_failure();
+        let client = ApiClient::with_circuit_breaker("https://api.example.com".to_string(), cb);
+        assert!(!client.can_execute());
+    }
+
+    #[test]
+    fn test_retry_policy_very_high_attempt() {
+        let policy = RetryPolicy {
+            max_retries: 10,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            factor: 2.0,
+            jitter: 0.0,
+        };
+        // Very high attempt should be capped by max_delay
+        let delay = policy.delay_for_attempt(100);
+        assert_eq!(delay, Duration::from_secs(10));
+    }
 }
 
 /// Configuration for exponential backoff retry policy.

@@ -322,4 +322,305 @@ mod tests {
         assert_eq!(bbox1.x, bbox2.x);
         assert_eq!(bbox1.y, bbox2.y);
     }
+
+    #[test]
+    fn test_approx_eq_both_differences_at_threshold() {
+        let bbox1 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 10.04,
+            y: 20.04,
+            width: 100.0,
+            height: 50.0,
+        };
+        // dx + dy = 0.04 + 0.04 = 0.08, threshold = 0.1, so 0.08 <= 0.1 is true
+        assert!(bbox1.approx_eq(&bbox2, 0.1));
+    }
+
+    #[test]
+    fn test_approx_eq_both_differences_exceed_threshold() {
+        let bbox1 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 10.06,
+            y: 20.06,
+            width: 100.0,
+            height: 50.0,
+        };
+        // dx + dy = 0.06 + 0.06 = 0.12, threshold = 0.1, so 0.12 <= 0.1 is false
+        assert!(!bbox1.approx_eq(&bbox2, 0.1));
+    }
+
+    #[test]
+    fn test_approx_eq_with_negative_threshold() {
+        let bbox1 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        // dx + dy = 0, threshold = -0.1, so 0 <= -0.1 is false
+        assert!(!bbox1.approx_eq(&bbox2, -0.1));
+    }
+
+    #[test]
+    fn test_bounding_box_very_small_values() {
+        let bbox = BoundingBox {
+            x: 0.0001,
+            y: 0.0002,
+            width: 0.0003,
+            height: 0.0004,
+        };
+        assert_eq!(bbox.x, 0.0001);
+        assert_eq!(bbox.y, 0.0002);
+    }
+
+    #[test]
+    fn test_bounding_box_floating_point_precision() {
+        let bbox1 = BoundingBox {
+            x: 1.0 / 3.0,
+            y: 2.0 / 3.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 1.0 / 3.0,
+            y: 2.0 / 3.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        assert!(bbox1.approx_eq(&bbox2, 0.0001));
+    }
+
+    #[test]
+    fn test_approx_eq_asymmetric_difference() {
+        let bbox1 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 10.09,
+            y: 20.01,
+            width: 100.0,
+            height: 50.0,
+        };
+        // dx = 0.09, dy = 0.01, dx + dy = 0.10, threshold = 0.1
+        // Due to floating point precision, use a slightly larger threshold
+        assert!(bbox1.approx_eq(&bbox2, 0.11));
+    }
+
+    #[test]
+    fn test_bounding_box_max_f64_values() {
+        let bbox = BoundingBox {
+            x: f64::MAX,
+            y: f64::MAX,
+            width: f64::MAX,
+            height: f64::MAX,
+        };
+        assert_eq!(bbox.x, f64::MAX);
+    }
+
+    #[test]
+    fn test_bounding_box_min_f64_values() {
+        let bbox = BoundingBox {
+            x: f64::MIN,
+            y: f64::MIN,
+            width: f64::MIN,
+            height: f64::MIN,
+        };
+        assert_eq!(bbox.x, f64::MIN);
+    }
+
+    #[test]
+    fn test_bounding_box_infinity() {
+        let bbox = BoundingBox {
+            x: f64::INFINITY,
+            y: f64::INFINITY,
+            width: f64::INFINITY,
+            height: f64::INFINITY,
+        };
+        assert!(bbox.x.is_infinite());
+    }
+
+    #[test]
+    fn test_bounding_box_nan() {
+        let bbox = BoundingBox {
+            x: f64::NAN,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        assert!(bbox.x.is_nan());
+    }
+
+    #[test]
+    fn test_approx_eq_with_nan() {
+        let bbox1 = BoundingBox {
+            x: f64::NAN,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        // NaN comparison should return false
+        assert!(!bbox1.approx_eq(&bbox2, 0.1));
+    }
+
+    #[test]
+    fn test_approx_eq_both_nan() {
+        let bbox1 = BoundingBox {
+            x: f64::NAN,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: f64::NAN,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        // NaN != NaN, so should be false
+        assert!(!bbox1.approx_eq(&bbox2, 0.1));
+    }
+
+    #[test]
+    fn test_bounding_box_partial_mutability() {
+        let mut bbox = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        bbox.x = 15.0;
+        bbox.y = 25.0;
+        assert_eq!(bbox.x, 15.0);
+        assert_eq!(bbox.y, 25.0);
+    }
+
+    #[test]
+    fn test_approx_eq_very_large_difference() {
+        let bbox1 = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 1000000.0,
+            y: 1000000.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        assert!(!bbox1.approx_eq(&bbox2, 1000.0));
+    }
+
+    #[test]
+    fn test_approx_eq_threshold_exactly_equal_to_difference() {
+        let bbox1 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 10.04,
+            y: 20.04,
+            width: 100.0,
+            height: 50.0,
+        };
+        // dx + dy = 0.04 + 0.04 = 0.08, threshold = 0.1, so 0.08 <= 0.1 is true
+        assert!(bbox1.approx_eq(&bbox2, 0.1));
+    }
+
+    #[test]
+    fn test_bounding_box_struct_fields_public() {
+        let bbox = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        // Verify all fields are accessible
+        let _ = bbox.x;
+        let _ = bbox.y;
+        let _ = bbox.width;
+        let _ = bbox.height;
+    }
+
+    #[test]
+    fn test_bounding_box_default_values_not_implemented() {
+        // BoundingBox doesn't implement Default
+        // This test documents that behavior
+        let bbox = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        };
+        assert_eq!(bbox.x, 0.0);
+    }
+
+    #[test]
+    fn test_approx_eq_symmetric() {
+        let bbox1 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = BoundingBox {
+            x: 10.05,
+            y: 20.03,
+            width: 100.0,
+            height: 50.0,
+        };
+        assert_eq!(bbox1.approx_eq(&bbox2, 0.1), bbox2.approx_eq(&bbox1, 0.1));
+    }
+
+    #[test]
+    fn test_approx_eq_reflexive() {
+        let bbox = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        assert!(bbox.approx_eq(&bbox, 0.0));
+    }
+
+    #[test]
+    fn test_bounding_box_copy_semantics() {
+        let bbox1 = BoundingBox {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let bbox2 = bbox1;
+        // bbox1 should still be valid (Copy trait)
+        assert_eq!(bbox1.x, 10.0);
+        assert_eq!(bbox2.x, 10.0);
+    }
 }

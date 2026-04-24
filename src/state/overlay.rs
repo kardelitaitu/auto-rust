@@ -580,4 +580,218 @@ mod tests {
         // Check that the timestamp was updated
         assert!(!state.claim_sync_slot(later_ms, false, min_interval_ms));
     }
+
+    #[test]
+    fn test_cursor_position_at_viewport_boundaries() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+
+        // Test exact boundaries
+        state.set_cursor_position(0.0, 0.0);
+        let (x, y) = state.cursor_start_position(&viewport);
+        assert_eq!(x, 0.0);
+        assert_eq!(y, 0.0);
+
+        state.set_cursor_position(800.0, 600.0);
+        let (x, y) = state.cursor_start_position(&viewport);
+        assert_eq!(x, 800.0);
+        assert_eq!(y, 600.0);
+    }
+
+    #[test]
+    fn test_cursor_position_very_large_viewport() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 10000.0,
+            height: 10000.0,
+        };
+
+        state.set_cursor_position(5000.0, 5000.0);
+        let (x, y) = state.cursor_start_position(&viewport);
+        assert_eq!(x, 5000.0);
+        assert_eq!(y, 5000.0);
+    }
+
+    #[test]
+    fn test_cursor_position_very_small_viewport() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 10.0,
+            height: 10.0,
+        };
+
+        state.set_cursor_position(5.0, 5.0);
+        let (x, y) = state.cursor_start_position(&viewport);
+        assert_eq!(x, 5.0);
+        assert_eq!(y, 5.0);
+    }
+
+    #[test]
+    fn test_cursor_position_very_large_values() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+
+        state.set_cursor_position(1e10, 1e10);
+        let (x, y) = state.cursor_start_position(&viewport);
+        // Should fall back to center
+        assert_eq!(x, 400.0);
+        assert_eq!(y, 300.0);
+    }
+
+    #[test]
+    fn test_sync_slot_very_large_timestamp() {
+        let state = SessionOverlayState::new(true);
+        let now_ms = u64::MAX - 1000;
+        let min_interval_ms = 100;
+
+        assert!(state.claim_sync_slot(now_ms, false, min_interval_ms));
+    }
+
+    #[test]
+    fn test_multiple_overlays_same_state_deduplication() {
+        let page_id1 = "test-page-1".to_string();
+        let page_id2 = "test-page-2".to_string();
+        let overlay = Arc::new(SessionOverlayState::new(true));
+
+        bind_page_overlay(page_id1.clone(), overlay.clone());
+        bind_page_overlay(page_id2.clone(), overlay.clone());
+
+        // Both should point to the same state
+        let retrieved1 = overlay_for_page(&page_id1);
+        let retrieved2 = overlay_for_page(&page_id2);
+
+        assert!(retrieved1.is_some());
+        assert!(retrieved2.is_some());
+
+        // Check they're the same Arc by comparing pointer
+        let ptr1 = Arc::as_ptr(&retrieved1.unwrap());
+        let ptr2 = Arc::as_ptr(&retrieved2.unwrap());
+        assert_eq!(ptr1, ptr2);
+
+        unbind_page_overlay(&page_id1);
+        unbind_page_overlay(&page_id2);
+    }
+
+    #[test]
+    fn test_cursor_position_negative_infinity() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+
+        state.set_cursor_position(f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let (x, y) = state.cursor_start_position(&viewport);
+        // Should fall back to center
+        assert_eq!(x, 400.0);
+        assert_eq!(y, 300.0);
+    }
+
+    #[test]
+    fn test_cursor_position_precision() {
+        let state = SessionOverlayState::new(true);
+
+        // Test high precision values
+        state.set_cursor_position(123.456789, 987.654321);
+        let pos = state.cursor_position_snapshot();
+        assert!(pos.is_some());
+        let (x, y) = pos.unwrap();
+        assert_eq!(x, 123.456789);
+        assert_eq!(y, 987.654321);
+    }
+
+    #[test]
+    fn test_sync_slot_very_large_interval() {
+        let state = SessionOverlayState::new(true);
+        let now_ms = 10000;
+        let min_interval_ms = 1000;
+
+        // First claim should succeed (10000 - 0 = 10000 >= 1000)
+        assert!(state.claim_sync_slot(now_ms, false, min_interval_ms));
+
+        // Second claim should fail due to large interval (10000 - 10000 = 0 < 1000)
+        assert!(!state.claim_sync_slot(now_ms, false, min_interval_ms));
+    }
+
+    #[test]
+    fn test_cursor_position_at_zero() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+
+        state.set_cursor_position(0.0, 0.0);
+        let (x, y) = state.cursor_start_position(&viewport);
+        assert_eq!(x, 0.0);
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn test_very_long_page_id() {
+        let page_id = "a".repeat(10000);
+        let overlay_state = Arc::new(SessionOverlayState::new(true));
+
+        bind_page_overlay(page_id.clone(), overlay_state.clone());
+        let retrieved = overlay_for_page(&page_id);
+        assert!(retrieved.is_some());
+
+        unbind_page_overlay(&page_id);
+    }
+
+    #[test]
+    fn test_empty_page_id() {
+        let page_id = "";
+        let overlay_state = Arc::new(SessionOverlayState::new(true));
+
+        bind_page_overlay(page_id.to_string(), overlay_state.clone());
+        let retrieved = overlay_for_page(page_id);
+        assert!(retrieved.is_some());
+
+        unbind_page_overlay(page_id);
+    }
+
+    #[test]
+    fn test_page_id_with_special_characters() {
+        let page_id = "test-page-1_@#$%^&*()";
+        let overlay_state = Arc::new(SessionOverlayState::new(true));
+
+        bind_page_overlay(page_id.to_string(), overlay_state.clone());
+        let retrieved = overlay_for_page(page_id);
+        assert!(retrieved.is_some());
+
+        unbind_page_overlay(page_id);
+    }
+
+    #[test]
+    fn test_cursor_position_partial_nan() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 800.0,
+            height: 600.0,
+        };
+
+        // X is NaN, Y is valid
+        state.set_cursor_position(f64::NAN, 300.0);
+        let (x, y) = state.cursor_start_position(&viewport);
+        // Should fall back to center since X is invalid
+        assert_eq!(x, 400.0);
+        assert_eq!(y, 300.0);
+    }
+
+    #[test]
+    fn test_sync_slot_zero_timestamp() {
+        let state = SessionOverlayState::new(true);
+        let now_ms = 100;
+        let min_interval_ms = 50;
+
+        // First claim should succeed (100 - 0 = 100 >= 50)
+        assert!(state.claim_sync_slot(now_ms, false, min_interval_ms));
+    }
 }

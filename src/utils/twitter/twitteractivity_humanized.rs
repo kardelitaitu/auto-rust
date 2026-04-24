@@ -299,7 +299,8 @@ mod tests {
     fn test_random_duration_negative_bounds_clamped() {
         // Gaussian with negative bounds should clamp to min
         let duration = random_duration(0, 10);
-        assert!(duration.as_millis() >= 0);
+        // Duration should be a valid non-zero duration
+        assert!(duration.as_secs() > 0 || duration.subsec_nanos() > 0);
     }
 
     #[test]

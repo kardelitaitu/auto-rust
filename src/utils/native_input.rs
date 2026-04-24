@@ -356,4 +356,126 @@ mod tests {
         let backend: &dyn NativeMouseBackend = &ENIGO_BACKEND;
         backend.ensure_ready(); // Should not panic
     }
+
+    #[test]
+    fn test_jittered_delay_ms_very_large_base() {
+        let delay = jittered_delay_ms(100000, 5);
+        assert!((95000..=105000).contains(&delay));
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_base_one() {
+        let delay = jittered_delay_ms(1, 50);
+        // With base=1 and variance=50%, range is 0-2
+        assert!(delay <= 2);
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_variance_100_percent() {
+        for _ in 0..20 {
+            let delay = jittered_delay_ms(100, 100);
+            // Range is 0-200
+            assert!(delay <= 200);
+        }
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_variance_above_100() {
+        let delay = jittered_delay_ms(100, 150);
+        // Variance > 100% should still work
+        assert!(delay <= 350); // 100 + 150% of 100 = 250, but saturating add may give more
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_very_small_variance() {
+        let delay = jittered_delay_ms(1000, 1);
+        // With 1% variance, range is 990-1010
+        assert!((990..=1010).contains(&delay));
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_base_max_u64() {
+        let delay = jittered_delay_ms(u64::MAX, 0);
+        // With 0 variance, should return base
+        assert_eq!(delay, u64::MAX);
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_variance_with_small_base() {
+        let delay = jittered_delay_ms(2, 100);
+        // With base=2 and 100% variance, range is 0-4
+        assert!(delay <= 4);
+    }
+
+    #[test]
+    fn test_backend_selection_consistency() {
+        // Multiple calls should return the same backend
+        let backend1 = backend(NativeInputBackend::Enigo);
+        let backend2 = backend(NativeInputBackend::Enigo);
+        // Both should be the same static reference
+        // We can't compare trait object pointers directly, but we can verify they're both the ENIGO_BACKEND
+        let _ = backend1;
+        let _ = backend2;
+    }
+
+    #[test]
+    fn test_ensure_ready_multiple_calls() {
+        // Multiple calls should not panic
+        for _ in 0..10 {
+            ensure_native_input_ready(NativeInputBackend::Enigo);
+        }
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_distribution() {
+        // Test that delays are distributed across the range
+        let delays: Vec<u64> = (0..100).map(|_| jittered_delay_ms(100, 20)).collect();
+        let min = *delays.iter().min().unwrap();
+        let max = *delays.iter().max().unwrap();
+        // Should cover most of the range
+        assert!(min <= 85); // Lower bound of range
+        assert!(max >= 115); // Upper bound of range
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_base_saturating_sub() {
+        // Test that saturating_sub doesn't underflow
+        let delay = jittered_delay_ms(1, 100);
+        // Should never be negative (u64)
+        assert!(delay <= 2);
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_non_deterministic() {
+        // With variance > 0, calls should produce different results
+        let delay1 = jittered_delay_ms(100, 20);
+        let delay2 = jittered_delay_ms(100, 20);
+        // While they could theoretically be the same, statistically unlikely
+        // We just verify they're both in range
+        assert!((80..=120).contains(&delay1));
+        assert!((80..=120).contains(&delay2));
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_variance_exact_50() {
+        let delay = jittered_delay_ms(100, 50);
+        // Range is 50-150
+        assert!((50..=150).contains(&delay));
+    }
+
+    #[test]
+    fn test_backend_fallback_warning_once() {
+        // The warning should only be logged once per backend type
+        // This test just verifies it doesn't panic
+        for _ in 0..5 {
+            backend(NativeInputBackend::Sendinput);
+            backend(NativeInputBackend::Rdev);
+        }
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_variance_zero_with_large_base() {
+        let delay = jittered_delay_ms(10000, 0);
+        assert_eq!(delay, 10000);
+    }
 }

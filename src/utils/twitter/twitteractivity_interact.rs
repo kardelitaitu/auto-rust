@@ -780,4 +780,58 @@ mod tests {
         assert!(js.contains("querySelector(selector)"));
         assert!(js.contains(r#"button[data-testid=\"reply\"]"#));
     }
+
+    #[test]
+    fn test_root_tweet_button_center_js_includes_visibility_check() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="like"]"#).unwrap();
+        assert!(js.contains("visible(el)"));
+        assert!(js.contains("getBoundingClientRect"));
+    }
+
+    #[test]
+    fn test_root_tweet_button_center_js_includes_center_function() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="retweet"]"#).unwrap();
+        assert!(js.contains("function center(el)"));
+        assert!(js.contains("rect.x + rect.width / 2"));
+        assert!(js.contains("rect.y + rect.height / 2"));
+    }
+
+    #[test]
+    fn test_root_tweet_button_center_js_handles_status_id_extraction() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="bookmark"]"#).unwrap();
+        assert!(js.contains("window.location.pathname"));
+        assert!(js.contains("/status/"));
+    }
+
+    #[test]
+    fn test_root_tweet_button_center_js_escapes_selector_json() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="test\"quote"]"#).unwrap();
+        assert!(js.contains("\\\""));
+    }
+
+    #[test]
+    fn test_root_tweet_button_center_js_with_complex_selector() {
+        let js = root_tweet_button_center_js(r#"[data-testid="tweet"] button[aria-label="Like"]"#).unwrap();
+        assert!(js.contains("data-testid"));
+        assert!(js.contains("aria-label"));
+    }
+
+    #[test]
+    fn test_root_tweet_button_center_js_returns_null_on_failure() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="test"]"#).unwrap();
+        assert!(js.contains("return null"));
+    }
+
+    #[test]
+    fn test_root_tweet_button_center_js_filters_visible_elements() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="follow"]"#).unwrap();
+        assert!(js.contains(".filter(visible)"));
+    }
+
+    #[test]
+    fn test_root_tweet_button_center_js_scopes_to_main_or_body() {
+        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#).unwrap();
+        assert!(js.contains("document.querySelector('main')"));
+        assert!(js.contains("document.body"));
+    }
 }

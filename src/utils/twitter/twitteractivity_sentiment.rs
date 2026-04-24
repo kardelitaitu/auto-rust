@@ -328,3 +328,199 @@ pub fn is_controversial(text: &str, stats: Option<&SentimentStats>) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sentiment_enum_variants() {
+        let pos = Sentiment::Positive;
+        let neu = Sentiment::Neutral;
+        let neg = Sentiment::Negative;
+        assert_eq!(pos, Sentiment::Positive);
+        assert_eq!(neu, Sentiment::Neutral);
+        assert_eq!(neg, Sentiment::Negative);
+    }
+
+    #[test]
+    fn test_sentiment_score_positive() {
+        assert_eq!(sentiment_score(Sentiment::Positive), 1);
+    }
+
+    #[test]
+    fn test_sentiment_score_neutral() {
+        assert_eq!(sentiment_score(Sentiment::Neutral), 0);
+    }
+
+    #[test]
+    fn test_sentiment_score_negative() {
+        assert_eq!(sentiment_score(Sentiment::Negative), -1);
+    }
+
+    #[test]
+    fn test_sentiment_stats_default() {
+        let stats = SentimentStats::default();
+        assert_eq!(stats.positive, 0);
+        assert_eq!(stats.neutral, 0);
+        assert_eq!(stats.negative, 0);
+    }
+
+    #[test]
+    fn test_sentiment_stats_new() {
+        let stats = SentimentStats::new();
+        assert_eq!(stats.positive, 0);
+        assert_eq!(stats.neutral, 0);
+        assert_eq!(stats.negative, 0);
+    }
+
+    #[test]
+    fn test_sentiment_stats_add_positive() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        assert_eq!(stats.positive, 1);
+        assert_eq!(stats.neutral, 0);
+        assert_eq!(stats.negative, 0);
+    }
+
+    #[test]
+    fn test_sentiment_stats_add_neutral() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Neutral);
+        assert_eq!(stats.positive, 0);
+        assert_eq!(stats.neutral, 1);
+        assert_eq!(stats.negative, 0);
+    }
+
+    #[test]
+    fn test_sentiment_stats_add_negative() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Negative);
+        assert_eq!(stats.positive, 0);
+        assert_eq!(stats.neutral, 0);
+        assert_eq!(stats.negative, 1);
+    }
+
+    #[test]
+    fn test_sentiment_stats_dominant_positive() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Negative);
+        assert_eq!(stats.dominant(), Sentiment::Positive);
+    }
+
+    #[test]
+    fn test_sentiment_stats_dominant_negative() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Negative);
+        stats.add(Sentiment::Negative);
+        stats.add(Sentiment::Positive);
+        assert_eq!(stats.dominant(), Sentiment::Negative);
+    }
+
+    #[test]
+    fn test_sentiment_stats_dominant_neutral() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Neutral);
+        stats.add(Sentiment::Neutral);
+        assert_eq!(stats.dominant(), Sentiment::Neutral);
+    }
+
+    #[test]
+    fn test_sentiment_stats_total() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Neutral);
+        stats.add(Sentiment::Negative);
+        assert_eq!(stats.total(), 3);
+    }
+
+    #[test]
+    fn test_feed_sentiment_score_empty() {
+        let stats = SentimentStats::new();
+        assert_eq!(feed_sentiment_score(&stats), 0.0);
+    }
+
+    #[test]
+    fn test_feed_sentiment_score_all_positive() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Positive);
+        assert_eq!(feed_sentiment_score(&stats), 1.0);
+    }
+
+    #[test]
+    fn test_feed_sentiment_score_all_negative() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Negative);
+        stats.add(Sentiment::Negative);
+        assert_eq!(feed_sentiment_score(&stats), -1.0);
+    }
+
+    #[test]
+    fn test_feed_sentiment_score_mixed() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Negative);
+        assert_eq!(feed_sentiment_score(&stats), 0.0);
+    }
+
+    #[test]
+    fn test_positive_words_not_empty() {
+        assert!(!POSITIVE_WORDS.is_empty());
+    }
+
+    #[test]
+    fn test_negative_words_not_empty() {
+        assert!(!NEGATIVE_WORDS.is_empty());
+    }
+
+    #[test]
+    fn test_positive_words_contains_common() {
+        assert!(POSITIVE_WORDS.contains(&"good"));
+        assert!(POSITIVE_WORDS.contains(&"great"));
+        assert!(POSITIVE_WORDS.contains(&"love"));
+    }
+
+    #[test]
+    fn test_negative_words_contains_common() {
+        assert!(NEGATIVE_WORDS.contains(&"bad"));
+        assert!(NEGATIVE_WORDS.contains(&"hate"));
+        assert!(NEGATIVE_WORDS.contains(&"terrible"));
+    }
+
+    #[test]
+    fn test_is_controversial_mixed_words() {
+        let text = "This is good but also bad";
+        assert!(is_controversial(text, None));
+    }
+
+    #[test]
+    fn test_is_controversial_only_positive() {
+        let text = "This is great and wonderful";
+        assert!(!is_controversial(text, None));
+    }
+
+    #[test]
+    fn test_is_controversial_only_negative() {
+        let text = "This is terrible and awful";
+        assert!(!is_controversial(text, None));
+    }
+
+    #[test]
+    fn test_is_controversial_with_stats_mixed() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Negative);
+        assert!(is_controversial("", Some(&stats)));
+    }
+
+    #[test]
+    fn test_is_controversial_with_stats_only_positive() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Positive);
+        assert!(!is_controversial("", Some(&stats)));
+    }
+}

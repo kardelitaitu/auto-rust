@@ -415,7 +415,7 @@ impl ClickTimingContext {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusStatus {
     Success,
     Failed,
@@ -669,6 +669,163 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_click_page_context_variants() {
+        assert_eq!(ClickPageContext::Home, ClickPageContext::Home);
+        assert_eq!(ClickPageContext::Form, ClickPageContext::Form);
+        assert_eq!(ClickPageContext::Social, ClickPageContext::Social);
+    }
+
+    #[test]
+    fn test_click_element_priority_variants() {
+        assert_eq!(ClickElementPriority::Critical, ClickElementPriority::Critical);
+        assert_eq!(ClickElementPriority::Normal, ClickElementPriority::Normal);
+        assert_eq!(ClickElementPriority::Optional, ClickElementPriority::Optional);
+    }
+
+    #[test]
+    fn test_click_fatigue_level_variants() {
+        assert_eq!(ClickFatigueLevel::Rested, ClickFatigueLevel::Rested);
+        assert_eq!(ClickFatigueLevel::Normal, ClickFatigueLevel::Normal);
+        assert_eq!(ClickFatigueLevel::Tired, ClickFatigueLevel::Tired);
+    }
+
+    #[test]
+    fn test_click_adaptation_default() {
+        let adaptation = ClickAdaptation::default();
+        assert_eq!(adaptation.extra_stability_wait_ms, 0);
+        assert_eq!(adaptation.reaction_delay_multiplier, 1.0);
+        assert!(!adaptation.require_strict_verification);
+    }
+
+    #[test]
+    fn test_selector_learning_stats_default() {
+        let stats = SelectorLearningStats::default();
+        assert_eq!(stats.attempts, 0);
+        assert_eq!(stats.successes, 0);
+        assert_eq!(stats.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn test_click_learning_state_default() {
+        let state = ClickLearningState::default();
+        assert_eq!(state.interaction_count, 0);
+        assert_eq!(state.total_attempts, 0);
+        assert!(state.recent_results.is_empty());
+    }
+
+    #[test]
+    fn test_click_learning_state_recent_success_rate_empty() {
+        let state = ClickLearningState::default();
+        assert_eq!(state.recent_success_rate(), 1.0);
+    }
+
+    #[test]
+    fn test_click_learning_state_record_success() {
+        let mut state = ClickLearningState::default();
+        state.record("#button", true);
+        assert_eq!(state.total_attempts, 1);
+        assert_eq!(state.total_successes, 1);
+    }
+
+    #[test]
+    fn test_click_learning_state_record_failure() {
+        let mut state = ClickLearningState::default();
+        state.record("#button", false);
+        assert_eq!(state.total_attempts, 1);
+        assert_eq!(state.total_successes, 0);
+    }
+
+    #[test]
+    fn test_click_learning_state_selector_stats() {
+        let mut state = ClickLearningState::default();
+        state.record("#button", true);
+        state.record("#button", false);
+        let stats = state.selector_stats("#button");
+        assert_eq!(stats.attempts, 2);
+        assert_eq!(stats.successes, 1);
+    }
+
+    #[test]
+    fn test_focus_status_variants() {
+        assert_eq!(FocusStatus::Success, FocusStatus::Success);
+        assert_eq!(FocusStatus::Failed, FocusStatus::Failed);
+    }
+
+    #[test]
+    fn test_wait_for_visible_status_variants() {
+        assert_eq!(WaitForVisibleStatus::Visible, WaitForVisibleStatus::Visible);
+        assert_eq!(WaitForVisibleStatus::Timeout, WaitForVisibleStatus::Timeout);
+    }
+
+    #[test]
+    fn test_sanitize_path_component_alphanumeric() {
+        assert_eq!(sanitize_path_component("test123"), "test123");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_special_chars() {
+        assert_eq!(sanitize_path_component("test@#$"), "test");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_empty() {
+        assert_eq!(sanitize_path_component("@#$"), "default");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_spaces() {
+        assert_eq!(sanitize_path_component("test name"), "test_name");
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_page_home() {
+        assert_eq!(
+            ClickTimingContext::classify_page("https://example.com/"),
+            ClickPageContext::Home
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_page_form() {
+        assert_eq!(
+            ClickTimingContext::classify_page("https://example.com/login"),
+            ClickPageContext::Form
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_priority_normal() {
+        assert_eq!(
+            ClickTimingContext::classify_priority("button"),
+            ClickElementPriority::Normal
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_priority_optional() {
+        assert_eq!(
+            ClickTimingContext::classify_priority("button.ad"),
+            ClickElementPriority::Optional
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_fatigue_rested() {
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(10),
+            ClickFatigueLevel::Rested
+        );
+    }
+
+    #[test]
+    fn test_click_timing_context_classify_fatigue_normal() {
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(30),
+            ClickFatigueLevel::Normal
+        );
     }
 }
 

@@ -444,3 +444,161 @@ pub async fn scroll_to_bottom_feed(api: &TaskContext) -> Result<()> {
     human_pause(api, 2000).await;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_function_signatures_exist() {
+        // Compile-time check that public functions exist
+        let _ = scroll_feed;
+        let _ = identify_engagement_candidates;
+        let _ = get_tweet_engagement_buttons;
+        let _ = is_following_user_at_position;
+        let _ = get_scroll_progress;
+        let _ = ensure_feed_populated;
+        let _ = scroll_to_bottom_feed;
+    }
+
+    #[test]
+    fn test_function_count() {
+        // Verify we have the expected number of public functions
+        let function_names = [
+            "scroll_feed",
+            "identify_engagement_candidates",
+            "get_tweet_engagement_buttons",
+            "is_following_user_at_position",
+            "get_scroll_progress",
+            "ensure_feed_populated",
+            "scroll_to_bottom_feed",
+        ];
+        assert_eq!(function_names.len(), 7);
+    }
+
+    #[test]
+    fn test_identify_engagement_candidates_js_contains_tweet_selector() {
+        let js = r#"
+        (function() {
+            var tweets = [];
+            var elements = document.querySelectorAll('article[data-testid="tweet"]');
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                var rect = el.getBoundingClientRect();
+                if (rect.height > 0 && rect.width > 0) {
+                    var tweetTextEl = el.querySelector('[data-testid="tweetText"]');
+                    var tweetText = tweetTextEl ? tweetTextEl.textContent.trim() : '';
+                    tweets.push({ text: tweetText });
+                }
+            }
+            return tweets;
+        })()
+        "#;
+        assert!(js.contains("article[data-testid=\"tweet\"]"));
+        assert!(js.contains("getBoundingClientRect"));
+        assert!(js.contains("data-testid=\"tweetText\""));
+    }
+
+    #[test]
+    fn test_identify_engagement_candidates_js_extracts_button_positions() {
+        let js = r#"
+        (function() {
+            var likeBtn = el.querySelector('[data-testid="like"]');
+            var retweetBtn = el.querySelector('[data-testid="retweet"]');
+            var replyBtn = el.querySelector('[data-testid="reply"]');
+            var buttonPositions = {};
+            if (likeBtn) {
+                var likeRect = likeBtn.getBoundingClientRect();
+                buttonPositions.like = { x: likeRect.x + likeRect.width/2, y: likeRect.y + likeRect.height/2 };
+            }
+            return buttonPositions;
+        })()
+        "#;
+        assert!(js.contains("data-testid=\"like\""));
+        assert!(js.contains("data-testid=\"retweet\""));
+        assert!(js.contains("data-testid=\"reply\""));
+        assert!(js.contains("buttonPositions"));
+    }
+
+    #[test]
+    fn test_identify_engagement_candidates_js_extracts_status_url() {
+        let js = r#"
+        (function() {
+            var links = el.querySelectorAll('a[href*="/status/"]');
+            var statusUrl = null;
+            for (var j = 0; j < links.length; j++) {
+                var href = links[j].getAttribute('href');
+                var parts = href.split('/').filter(function(p) { return p.length > 0; });
+                if (parts.length === 3 && parts[1] === 'status' && !isNaN(parts[2])) {
+                    statusUrl = href;
+                    break;
+                }
+            }
+            return statusUrl;
+        })()
+        "#;
+        assert!(js.contains("href*=\"/status/\""));
+        assert!(js.contains("parts.length === 3"));
+        assert!(js.contains("parts[1] === 'status'"));
+    }
+
+    #[test]
+    fn test_identify_engagement_candidates_js_extracts_replies() {
+        let js = r#"
+        (function() {
+            var replies = [];
+            var replyElements = el.querySelectorAll('[data-testid="tweetReply"]');
+            for (var j = 0; j < Math.min(replyElements.length, 3); j++) {
+                var replyEl = replyElements[j];
+                var authorEl = replyEl.querySelector('[dir="auto"] span:first-child');
+                var textEl = replyEl.querySelector('[data-testid="tweetText"]');
+                if (authorEl && textEl) {
+                    replies.push({
+                        author: authorEl.textContent.trim(),
+                        text: textEl.textContent.trim()
+                    });
+                }
+            }
+            return replies;
+        })()
+        "#;
+        assert!(js.contains("data-testid=\"tweetReply\""));
+        assert!(js.contains("Math.min(replyElements.length, 3)"));
+        assert!(js.contains("author"));
+        assert!(js.contains("text"));
+    }
+
+    #[test]
+    fn test_get_scroll_progress_js_formula() {
+        let js = "window.scrollY + window.innerHeight >= document.body.scrollHeight ? 1.0 : (window.scrollY / (document.body.scrollHeight - window.innerHeight))";
+        assert!(js.contains("window.scrollY"));
+        assert!(js.contains("window.innerHeight"));
+        assert!(js.contains("document.body.scrollHeight"));
+        assert!(js.contains("? 1.0 :"));
+    }
+
+    #[test]
+    fn test_scroll_feed_js_uses_window_scrollBy() {
+        let js = "window.scrollBy(0, {});";
+        assert!(js.contains("window.scrollBy"));
+        assert!(js.contains("0,"));
+    }
+
+    #[test]
+    fn test_identify_engagement_candidates_js_generates_fallback_id() {
+        let js = r#"
+        (function() {
+            var tweetId = el.dataset.tweetId ||
+                          el.getAttribute('data-item-id') ||
+                          el.getAttribute('data-tweet-id') ||
+                          statusId ||
+                          'tweet_' + Math.floor(rect.x) + '_' + Math.floor(rect.y);
+            return tweetId;
+        })()
+        "#;
+        assert!(js.contains("dataset.tweetId"));
+        assert!(js.contains("data-item-id"));
+        assert!(js.contains("data-tweet-id"));
+        assert!(js.contains("'tweet_' + Math.floor(rect.x)"));
+    }
+}

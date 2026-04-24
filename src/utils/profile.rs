@@ -1243,4 +1243,365 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_profile_param_new() {
+        let param = ProfileParam::new(50.0, 20.0);
+        assert_eq!(param.base, 50.0);
+        assert_eq!(param.deviation_pct, 20.0);
+    }
+
+    #[test]
+    fn test_profile_param_random_u64() {
+        let param = ProfileParam::new(100.0, 10.0);
+        for _ in 0..10 {
+            let val = param.random_u64();
+            assert!((90..=110).contains(&val));
+        }
+    }
+
+    #[test]
+    fn test_profile_param_random_u32() {
+        let param = ProfileParam::new(50.0, 10.0);
+        for _ in 0..10 {
+            let val = param.random_u32();
+            assert!((45..=55).contains(&val));
+        }
+    }
+
+    #[test]
+    fn test_profile_param_random_clamped() {
+        let param = ProfileParam::new(100.0, 50.0);
+        for _ in 0..10 {
+            let val = param.random_clamped(80.0, 120.0);
+            assert!((80.0..=120.0).contains(&val));
+        }
+    }
+
+    #[test]
+    fn test_scroll_behavior_creation() {
+        let scroll = ScrollBehavior {
+            amount: 300,
+            pause_ms: 100,
+            smooth: true,
+            back_scroll: false,
+        };
+        assert_eq!(scroll.amount, 300);
+        assert_eq!(scroll.pause_ms, 100);
+    }
+
+    #[test]
+    fn test_cursor_behavior_creation() {
+        let cursor = CursorBehavior {
+            interval_min_ms: 10,
+            interval_max_ms: 20,
+        };
+        assert_eq!(cursor.interval_min_ms, 10);
+        assert_eq!(cursor.interval_max_ms, 20);
+    }
+
+    #[test]
+    fn test_cursor_behavior_to_movement_config() {
+        let cursor = CursorBehavior {
+            interval_min_ms: 10,
+            interval_max_ms: 20,
+        };
+        let config = cursor.to_movement_config();
+        assert_eq!(config.min_step_delay_ms, 10);
+    }
+
+    #[test]
+    fn test_typing_behavior_creation() {
+        let typing = TypingBehavior {
+            keystroke_mean_ms: 100,
+            keystroke_stddev_ms: 20,
+            word_pause_ms: 300,
+            typo_rate_pct: 2.0,
+            typo_notice_delay_ms: 500,
+            typo_retry_delay_ms: 200,
+            typo_recovery_chance_pct: 90.0,
+        };
+        assert_eq!(typing.keystroke_mean_ms, 100);
+        assert_eq!(typing.typo_rate_pct, 2.0);
+    }
+
+    #[test]
+    fn test_click_behavior_creation() {
+        let click = ClickBehavior {
+            reaction_delay_ms: 200,
+            reaction_delay_variance_pct: 20.0,
+            offset_px: 5,
+        };
+        assert_eq!(click.reaction_delay_ms, 200);
+        assert_eq!(click.reaction_delay_variance_pct, 20.0);
+        assert_eq!(click.offset_px, 5);
+    }
+
+    #[test]
+    fn test_action_delay_behavior_creation() {
+        let delay = ActionDelayBehavior {
+            min_ms: 100,
+            variance_pct: 20.0,
+        };
+        assert_eq!(delay.min_ms, 100);
+        assert_eq!(delay.variance_pct, 20.0);
+    }
+
+    #[test]
+    fn test_profile_runtime_creation() {
+        let profile = BrowserProfile::average();
+        let runtime = profile.runtime();
+        assert!(runtime.cursor.interval_min_ms > 0);
+    }
+
+    #[test]
+    fn test_browser_profile_from_preset_average() {
+        let profile = BrowserProfile::from_preset(&ProfilePreset::Average);
+        assert_eq!(profile.name, "Average");
+    }
+
+    #[test]
+    fn test_browser_profile_from_preset_teen() {
+        let profile = BrowserProfile::from_preset(&ProfilePreset::Teen);
+        assert_eq!(profile.name, "Teen");
+    }
+
+    #[test]
+    fn test_browser_profile_scroll_behavior() {
+        let profile = BrowserProfile::average();
+        let scroll = profile.scroll_behavior();
+        assert!(scroll.amount > 0);
+    }
+
+    #[test]
+    fn test_browser_profile_cursor_behavior() {
+        let profile = BrowserProfile::average();
+        let cursor = profile.cursor_behavior();
+        assert!(cursor.interval_min_ms > 0);
+    }
+
+    #[test]
+    fn test_browser_profile_cursor_movement_config() {
+        let profile = BrowserProfile::average();
+        let config = profile.cursor_movement_config();
+        assert!(config.min_step_delay_ms > 0);
+    }
+
+    #[test]
+    fn test_browser_profile_typing_behavior() {
+        let profile = BrowserProfile::average();
+        let typing = profile.typing_behavior();
+        assert!(typing.keystroke_mean_ms > 0);
+    }
+
+    #[test]
+    fn test_browser_profile_click_behavior() {
+        let profile = BrowserProfile::average();
+        let click = profile.click_behavior();
+        assert!(click.reaction_delay_ms > 0);
+    }
+
+    #[test]
+    fn test_browser_profile_action_delay_behavior() {
+        let profile = BrowserProfile::average();
+        let delay = profile.action_delay_behavior();
+        assert!(delay.min_ms > 0);
+    }
+
+    #[test]
+    fn test_browser_profile_random_cursor_safe_edge_ratio() {
+        let profile = BrowserProfile::average();
+        let ratio = profile.random_cursor_safe_edge_ratio();
+        assert!(ratio >= 0.0 && ratio <= 1.0);
+    }
+
+    #[test]
+    fn test_randomize_profile() {
+        let profile = randomize_profile(&ProfilePreset::Average);
+        assert!(!profile.name.is_empty());
+    }
+
+    #[test]
+    fn test_random_preset() {
+        let preset = random_preset();
+        // Just verify it returns a valid preset
+        let _ = BrowserProfile::from_preset(&preset);
+    }
+
+    #[test]
+    fn test_cursor_behavior_fast_interval() {
+        let cursor = CursorBehavior {
+            interval_min_ms: 5,
+            interval_max_ms: 10,
+        };
+        let config = cursor.to_movement_config();
+        assert_eq!(config.speed, Speed::Fast);
+    }
+
+    #[test]
+    fn test_cursor_behavior_slow_interval() {
+        let cursor = CursorBehavior {
+            interval_min_ms: 25,
+            interval_max_ms: 30,
+        };
+        let config = cursor.to_movement_config();
+        assert_eq!(config.speed, Speed::Slow);
+    }
+
+    #[test]
+    fn test_cursor_behavior_normal_interval() {
+        let cursor = CursorBehavior {
+            interval_min_ms: 15,
+            interval_max_ms: 20,
+        };
+        let config = cursor.to_movement_config();
+        assert_eq!(config.speed, Speed::Normal);
+    }
+
+    #[test]
+    fn test_profile_preset_average() {
+        let preset = ProfilePreset::Average;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Average");
+    }
+
+    #[test]
+    fn test_profile_preset_teen() {
+        let preset = ProfilePreset::Teen;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Teen");
+    }
+
+    #[test]
+    fn test_profile_preset_senior() {
+        let preset = ProfilePreset::Senior;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Senior");
+    }
+
+    #[test]
+    fn test_profile_preset_enthusiast() {
+        let preset = ProfilePreset::Enthusiast;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Enthusiast");
+    }
+
+    #[test]
+    fn test_profile_preset_power_user() {
+        let preset = ProfilePreset::PowerUser;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "PowerUser");
+    }
+
+    #[test]
+    fn test_profile_preset_cautious() {
+        let preset = ProfilePreset::Cautious;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Cautious");
+    }
+
+    #[test]
+    fn test_profile_preset_impatient() {
+        let preset = ProfilePreset::Impatient;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Impatient");
+    }
+
+    #[test]
+    fn test_profile_preset_erratic() {
+        let preset = ProfilePreset::Erratic;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Erratic");
+    }
+
+    #[test]
+    fn test_profile_preset_researcher() {
+        let preset = ProfilePreset::Researcher;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Researcher");
+    }
+
+    #[test]
+    fn test_profile_preset_casual() {
+        let preset = ProfilePreset::Casual;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Casual");
+    }
+
+    #[test]
+    fn test_profile_preset_professional() {
+        let preset = ProfilePreset::Professional;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Professional");
+    }
+
+    #[test]
+    fn test_profile_preset_novice() {
+        let preset = ProfilePreset::Novice;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Novice");
+    }
+
+    #[test]
+    fn test_profile_preset_expert() {
+        let preset = ProfilePreset::Expert;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Expert");
+    }
+
+    #[test]
+    fn test_profile_preset_distracted() {
+        let preset = ProfilePreset::Distracted;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Distracted");
+    }
+
+    #[test]
+    fn test_profile_preset_focused() {
+        let preset = ProfilePreset::Focused;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Focused");
+    }
+
+    #[test]
+    fn test_profile_preset_analytical() {
+        let preset = ProfilePreset::Analytical;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Analytical");
+    }
+
+    #[test]
+    fn test_profile_preset_quick_scanner() {
+        let preset = ProfilePreset::QuickScanner;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "QuickScanner");
+    }
+
+    #[test]
+    fn test_profile_preset_thorough() {
+        let preset = ProfilePreset::Thorough;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Thorough");
+    }
+
+    #[test]
+    fn test_profile_preset_adaptive() {
+        let preset = ProfilePreset::Adaptive;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Adaptive");
+    }
+
+    #[test]
+    fn test_profile_preset_stressed() {
+        let preset = ProfilePreset::Stressed;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Stressed");
+    }
+
+    #[test]
+    fn test_profile_preset_leisure() {
+        let preset = ProfilePreset::Leisure;
+        let profile = BrowserProfile::from_preset(&preset);
+        assert_eq!(profile.name, "Leisure");
+    }
 }

@@ -147,4 +147,150 @@ mod tests {
         assert_eq!(result.action_type, "quote");
         assert!(result.confidence > 0.5);
     }
+
+    #[tokio::test]
+    async fn test_process_candidate_like() {
+        let mut processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        let result = processor.process_candidate(&tweet, "like").await.unwrap();
+        
+        assert_eq!(result.action_type, "like");
+        assert_eq!(result.confidence, 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_process_candidate_follow() {
+        let mut processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        let result = processor.process_candidate(&tweet, "follow").await.unwrap();
+        
+        assert_eq!(result.action_type, "follow");
+        assert_eq!(result.confidence, 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_process_candidate_retweet() {
+        let mut processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        let result = processor.process_candidate(&tweet, "retweet").await.unwrap();
+        
+        assert_eq!(result.action_type, "retweet");
+        assert_eq!(result.confidence, 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_unified_action_processor_new() {
+        let processor = UnifiedActionProcessor::new();
+        // Just verify it doesn't panic
+        let _ = processor;
+    }
+
+    #[tokio::test]
+    async fn test_action_result_with_sentiment_fields() {
+        let result = ActionResultWithSentiment {
+            action_type: "reply".to_string(),
+            content: "test content".to_string(),
+            sentiment: SentimentAnalysis::default(),
+            confidence: 0.75,
+        };
+        
+        assert_eq!(result.action_type, "reply");
+        assert_eq!(result.content, "test content");
+        assert_eq!(result.confidence, 0.75);
+    }
+
+    #[tokio::test]
+    async fn test_process_candidate_with_text() {
+        let mut processor = UnifiedActionProcessor::new();
+        let mut tweet_data = std::collections::HashMap::new();
+        tweet_data.insert("text".to_string(), crate::utils::twitter::twitteractivity_feed::Value::String("Hello world".to_string()));
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(tweet_data);
+        
+        let result = processor.process_candidate(&tweet, "reply").await.unwrap();
+        
+        assert_eq!(result.action_type, "reply");
+    }
+
+    #[tokio::test]
+    async fn test_process_candidate_unknown_action() {
+        let mut processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        let result = processor.process_candidate(&tweet, "unknown_action").await.unwrap();
+        
+        assert_eq!(result.action_type, "unknown_action");
+        assert_eq!(result.confidence, 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_get_replies_for_context_empty() {
+        let processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        let replies = processor.get_replies_for_context(&tweet).await.unwrap();
+        
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_process_basic_action() {
+        let processor = UnifiedActionProcessor::new();
+        let result = processor.process_basic_action("test tweet", "like").await;
+        
+        // Should not panic (may fail with LLM error, but that's expected)
+        let _ = result;
+    }
+
+    #[tokio::test]
+    async fn test_learning_engine_integration() {
+        let mut processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        // Process should update learning engine
+        let _ = processor.process_candidate(&tweet, "reply").await;
+        
+        // Verify learning engine was called (no panic means success)
+        let _ = processor.learning_engine;
+    }
+
+    #[tokio::test]
+    async fn test_confidence_bounds() {
+        let mut processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        let result = processor.process_candidate(&tweet, "reply").await.unwrap();
+        
+        assert!(result.confidence >= 0.0);
+        assert!(result.confidence <= 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_sentiment_field_present() {
+        let mut processor = UnifiedActionProcessor::new();
+        let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(
+            std::collections::HashMap::new()
+        );
+        
+        let result = processor.process_candidate(&tweet, "reply").await.unwrap();
+        
+        // Sentiment should be present even if default
+        let _ = result.sentiment;
+    }
 }

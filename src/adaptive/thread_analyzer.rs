@@ -611,4 +611,221 @@ mod integration_tests {
         assert_eq!(summary.total_tweets, 2);
         assert!(summary.sentiment_flow.avg_score > 0.0);
     }
+
+    #[test]
+    fn test_thread_graph_add_relationship() {
+        let mut graph = ThreadGraph::new();
+        graph.add_relationship("parent".to_string(), "child".to_string());
+        
+        assert_eq!(graph.relationships.get("parent").unwrap().len(), 1);
+        assert_eq!(graph.relationships.get("parent").unwrap()[0], "child");
+    }
+
+    #[test]
+    fn test_thread_graph_add_quote() {
+        let mut graph = ThreadGraph::new();
+        graph.add_quote("source".to_string(), "quoted".to_string());
+        
+        assert_eq!(graph.quotes.get("source").unwrap().len(), 1);
+        assert_eq!(graph.quotes.get("source").unwrap()[0], "quoted");
+    }
+
+    #[test]
+    fn test_thread_graph_get_replies() {
+        let mut graph = ThreadGraph::new();
+        
+        let parent = TweetNode {
+            id: "parent".to_string(),
+            author: "user1".to_string(),
+            text: "Parent tweet".to_string(),
+            timestamp: Instant::now(),
+            sentiment: SentimentAnalysis::default(),
+            engagement: EngagementMetrics::default(),
+            depth: 0,
+            is_reply: false,
+            is_quote: false,
+        };
+        
+        let child = TweetNode {
+            id: "child".to_string(),
+            author: "user2".to_string(),
+            text: "Reply tweet".to_string(),
+            timestamp: Instant::now(),
+            sentiment: SentimentAnalysis::default(),
+            engagement: EngagementMetrics::default(),
+            depth: 1,
+            is_reply: true,
+            is_quote: false,
+        };
+        
+        graph.add_tweet(parent);
+        graph.add_tweet(child);
+        graph.add_relationship("parent".to_string(), "child".to_string());
+        
+        let replies = graph.get_replies("parent");
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].id, "child");
+    }
+
+    #[test]
+    fn test_thread_graph_depth_statistics_empty() {
+        let graph = ThreadGraph::new();
+        let (min, max, avg) = graph.depth_statistics();
+        
+        assert_eq!(min, 0);
+        assert_eq!(max, 0);
+        assert_eq!(avg, 0.0);
+    }
+
+    #[test]
+    fn test_thread_graph_depth_statistics() {
+        let mut graph = ThreadGraph::new();
+        
+        for i in 0..5 {
+            let tweet = TweetNode {
+                id: i.to_string(),
+                author: "user".to_string(),
+                text: "Tweet".to_string(),
+                timestamp: Instant::now(),
+                sentiment: SentimentAnalysis::default(),
+                engagement: EngagementMetrics::default(),
+                depth: i,
+                is_reply: false,
+                is_quote: false,
+            };
+            graph.add_tweet(tweet);
+        }
+        
+        let (min, max, avg) = graph.depth_statistics();
+        assert_eq!(min, 0);
+        assert_eq!(max, 4);
+        assert_eq!(avg, 2.0);
+    }
+
+    #[test]
+    fn test_conversation_style_enum() {
+        assert_eq!(ConversationStyle::Discussion, ConversationStyle::Discussion);
+        assert_ne!(ConversationStyle::Debate, ConversationStyle::Announcement);
+    }
+
+    #[test]
+    fn test_engagement_level_enum() {
+        assert_eq!(EngagementLevel::Low, EngagementLevel::Low);
+        assert_ne!(EngagementLevel::High, EngagementLevel::Viral);
+    }
+
+    #[test]
+    fn test_conflict_level_enum() {
+        assert_eq!(ConflictLevel::None, ConflictLevel::None);
+        assert_ne!(ConflictLevel::High, ConflictLevel::Minor);
+    }
+
+    #[test]
+    fn test_engagement_metrics_total() {
+        let metrics = EngagementMetrics {
+            likes: 10,
+            retweets: 5,
+            replies: 3,
+            quotes: 2,
+            views: 100,
+            rate: 0.2,
+        };
+        
+        assert_eq!(metrics.total(), 20); // likes + retweets + replies + quotes
+    }
+
+    #[test]
+    fn test_topic_keywords_extraction() {
+        let text = "This is a test sentence with some longer words";
+        let keywords = topic_keywords(text);
+        
+        assert!(!keywords.is_empty());
+    }
+
+    #[test]
+    fn test_conversation_context_default() {
+        let context = ConversationContext::default();
+        assert_eq!(context.thread_structure.tweets.len(), 0);
+    }
+
+    #[test]
+    fn test_thread_graph_default() {
+        let graph = ThreadGraph::default();
+        assert_eq!(graph.tweets.len(), 0);
+    }
+
+    #[test]
+    fn test_sentiment_analysis_bounds() {
+        let analysis = SentimentAnalysis {
+            sentiment: Sentiment::Positive,
+            score: 0.5,
+            confidence: 0.9,
+            factors: vec!["test".to_string()],
+        };
+        
+        assert!(analysis.score >= -1.0);
+        assert!(analysis.score <= 1.0);
+        assert!(analysis.confidence >= 0.0);
+        assert!(analysis.confidence <= 1.0);
+    }
+
+    #[test]
+    fn test_participant_influence_fields() {
+        let influence = ParticipantInfluence {
+            participant_id: "user1".to_string(),
+            influence_score: 0.8,
+            interaction_count: 10,
+            avg_sentiment: 0.5,
+            is_initiator: true,
+            topics: HashSet::new(),
+            avg_response_time: 1.5,
+            network_centrality: 0.7,
+        };
+        
+        assert_eq!(influence.participant_id, "user1");
+        assert!(influence.influence_score >= 0.0);
+        assert!(influence.influence_score <= 1.0);
+    }
+
+    #[test]
+    fn test_response_patterns_default() {
+        let patterns = ResponsePatterns::default();
+        assert_eq!(patterns.avg_response_time, 0.0);
+    }
+
+    #[test]
+    fn test_topic_evolution_default() {
+        let evolution = TopicEvolution::default();
+        assert!(evolution.peak_time.is_none());
+        assert!(evolution.decline_time.is_none());
+    }
+
+    #[test]
+    fn test_conversation_dynamics_default() {
+        let dynamics = ConversationDynamics::default();
+        assert_eq!(dynamics.style, ConversationStyle::Mixed);
+    }
+
+    #[test]
+    fn test_sentiment_flow_analysis_default() {
+        let flow = SentimentFlowAnalysis::default();
+        assert_eq!(flow.overall_sentiment, Sentiment::Neutral);
+    }
+
+    #[test]
+    fn test_conversation_summary_fields() {
+        let summary = ConversationSummary {
+            total_tweets: 10,
+            total_participants: 5,
+            min_depth: 0,
+            max_depth: 3,
+            avg_depth: 1.5,
+            total_engagement: EngagementMetrics::default(),
+            sentiment_flow: SentimentFlowAnalysis::default(),
+            conversation_style: ConversationStyle::Discussion,
+        };
+        
+        assert_eq!(summary.total_tweets, 10);
+        assert_eq!(summary.total_participants, 5);
+    }
 }

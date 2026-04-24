@@ -286,4 +286,47 @@ mod tests {
         assert!(js.contains("data-testid"));
         assert!(js.contains("tweet"));
     }
+
+    #[test]
+    fn test_random_duration_produces_variance() {
+        let d1 = random_duration(100, 200);
+        let d2 = random_duration(100, 200);
+        // Should rarely be exactly the same
+        assert_ne!(d1.as_millis(), d2.as_millis());
+    }
+
+    #[test]
+    fn test_random_duration_negative_bounds_clamped() {
+        // Gaussian with negative bounds should clamp to min
+        let duration = random_duration(0, 10);
+        assert!(duration.as_millis() >= 0);
+    }
+
+    #[test]
+    fn test_selector_functions_return_non_empty() {
+        assert!(!selector_feed_visible().is_empty());
+        assert!(!selector_all_tweets().is_empty());
+        assert!(!selector_follow_button().is_empty());
+        assert!(!selector_engagement_buttons().is_empty());
+    }
+
+    #[test]
+    fn test_selector_functions_contain_function_keyword() {
+        assert!(selector_feed_visible().contains("function"));
+        assert!(selector_all_tweets().contains("function"));
+        assert!(selector_follow_button().contains("function"));
+    }
+
+    #[test]
+    fn test_selector_element_center_empty_selector() {
+        let js = selector_element_center("");
+        assert!(js.contains("querySelector"));
+    }
+
+    #[test]
+    fn test_random_duration_very_small_bounds() {
+        let duration = random_duration(1, 5);
+        let ms = duration.as_millis();
+        assert!((0..=10).contains(&ms)); // Allow some variance
+    }
 }

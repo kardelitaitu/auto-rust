@@ -3551,4 +3551,87 @@ mod tests {
             assert!((80..=120).contains(&delay));
         }
     }
+
+    #[test]
+    fn test_jittered_delay_zero_base() {
+        let delay = jittered_delay_ms(0, 20);
+        assert_eq!(delay, 0);
+    }
+
+    #[test]
+    fn test_jittered_delay_zero_variance() {
+        let delay = jittered_delay_ms(100, 0);
+        assert_eq!(delay, 100);
+    }
+
+    #[test]
+    fn test_click_status_variants() {
+        assert_eq!(ClickStatus::Success, ClickStatus::Success);
+        assert_eq!(ClickStatus::Failed, ClickStatus::Failed);
+    }
+
+    #[test]
+    fn test_hover_status_variants() {
+        assert_eq!(HoverStatus::Success, HoverStatus::Success);
+        assert_eq!(HoverStatus::Failed, HoverStatus::Failed);
+    }
+
+    #[test]
+    fn test_click_outcome_summary_success() {
+        let outcome = ClickOutcome {
+            click: ClickStatus::Success,
+            x: 100.0,
+            y: 200.0,
+            screen_x: None,
+            screen_y: None,
+        };
+        assert_eq!(outcome.summary(), "Clicked (100.0,200.0)");
+    }
+
+    #[test]
+    fn test_click_outcome_summary_failed() {
+        let outcome = ClickOutcome {
+            click: ClickStatus::Failed,
+            x: 100.0,
+            y: 200.0,
+            screen_x: None,
+            screen_y: None,
+        };
+        assert_eq!(outcome.summary(), "Click failed (100.0,200.0)");
+    }
+
+    #[test]
+    fn test_hover_outcome_summary_success() {
+        let outcome = HoverOutcome {
+            hover: HoverStatus::Success,
+            x: 150.0,
+            y: 250.0,
+        };
+        assert_eq!(outcome.summary(), "hover:success (150.0,250.0)");
+    }
+
+    #[test]
+    fn test_hover_outcome_summary_failed() {
+        let outcome = HoverOutcome {
+            hover: HoverStatus::Failed,
+            x: 150.0,
+            y: 250.0,
+        };
+        assert_eq!(outcome.summary(), "hover:failed (150.0,250.0)");
+    }
+
+    #[test]
+    fn test_set_overlay_enabled() {
+        // Test that the functions don't panic
+        set_overlay_enabled(true);
+        let _ = is_overlay_enabled();
+        set_overlay_enabled(false);
+        let _ = is_overlay_enabled();
+    }
+
+    #[test]
+    fn test_is_overlay_enabled_default() {
+        // Test that the function works without panicking
+        let _ = is_overlay_enabled();
+    }
 }

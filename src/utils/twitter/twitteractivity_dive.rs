@@ -542,4 +542,75 @@ mod tests {
     fn test_status_id_from_non_status_url() {
         assert_eq!(status_id_from_url("https://x.com/home"), None);
     }
+
+    #[test]
+    fn test_status_id_from_url_with_fragment() {
+        assert_eq!(
+            status_id_from_url("/user/status/12345#reply-1"),
+            Some("12345")
+        );
+    }
+
+    #[test]
+    fn test_status_id_from_url_with_trailing_slash() {
+        assert_eq!(status_id_from_url("/user/status/12345/"), Some("12345"));
+    }
+
+    #[test]
+    fn test_status_id_from_empty_url() {
+        assert_eq!(status_id_from_url(""), None);
+    }
+
+    #[test]
+    fn test_thread_cache_default() {
+        let cache = ThreadCache::default();
+        assert!(cache.tweet_author.is_empty());
+        assert!(cache.tweet_text.is_empty());
+        assert!(cache.replies.is_empty());
+    }
+
+    #[test]
+    fn test_thread_cache_add_reply() {
+        let mut cache = ThreadCache::default();
+        cache.add_reply("user1".to_string(), "reply1".to_string());
+        assert_eq!(cache.replies.len(), 1);
+        assert_eq!(cache.replies[0], ("user1".to_string(), "reply1".to_string()));
+    }
+
+    #[test]
+    fn test_thread_cache_add_reply_limit() {
+        let mut cache = ThreadCache::default();
+        for i in 0..25 {
+            cache.add_reply(format!("user{}", i), format!("reply{}", i));
+        }
+        assert_eq!(cache.replies.len(), 20);
+    }
+
+    #[test]
+    fn test_thread_cache_is_valid_empty() {
+        let cache = ThreadCache::default();
+        assert!(!cache.is_valid());
+    }
+
+    #[test]
+    fn test_thread_cache_is_valid_with_author() {
+        let mut cache = ThreadCache::default();
+        cache.tweet_author = "testuser".to_string();
+        assert!(cache.is_valid());
+    }
+
+    #[test]
+    fn test_thread_cache_is_valid_with_text() {
+        let mut cache = ThreadCache::default();
+        cache.tweet_text = "test tweet".to_string();
+        assert!(cache.is_valid());
+    }
+
+    #[test]
+    fn test_dive_into_thread_outcome_default() {
+        let outcome = DiveIntoThreadOutcome::default();
+        assert!(!outcome.opened);
+        assert!(!outcome.used_fallback_target);
+        assert!(outcome.cache.is_none());
+    }
 }

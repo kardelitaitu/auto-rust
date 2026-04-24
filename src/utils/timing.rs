@@ -304,4 +304,22 @@ mod tests {
         // Should complete in reasonable time
         assert!(elapsed.as_millis() < 100);
     }
+
+    #[tokio::test]
+    async fn test_clustered_pause_variance_distribution() {
+        let start = std::time::Instant::now();
+        clustered_pause(50, 20, 2, 2).await;
+        let elapsed = start.elapsed();
+        // Should be approximately 50ms total
+        assert!(elapsed.as_millis() >= 30 && elapsed.as_millis() < 150);
+    }
+
+    #[tokio::test]
+    async fn test_clustered_pause_max_clusters() {
+        let start = std::time::Instant::now();
+        clustered_pause(30, 10, 3, 3).await;
+        let elapsed = start.elapsed();
+        // Should complete with 3 clusters
+        assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 100);
+    }
 }

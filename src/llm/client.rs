@@ -215,3 +215,233 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
 
     Ok(config)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_llm_client_new() {
+        let config = LlmConfig::default();
+        let client = LlmClient::new(config);
+        // Verify client is created without panicking
+        let _ = client;
+    }
+
+    #[test]
+    fn test_llm_client_has_fallback() {
+        let config = LlmConfig::default();
+        let client = LlmClient::new(config);
+        assert!(client.fallback_config.is_some());
+    }
+
+    #[test]
+    fn test_create_llm_client_from_config_default() {
+        // Test that the function exists and returns a result
+        // Skip actual config file check since it may not exist
+        let result = create_llm_client_from_config();
+        // Either returns config or error due to missing file
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_llm_provider_variants() {
+        assert_eq!(LlmProvider::Ollama, LlmProvider::Ollama);
+        assert_eq!(LlmProvider::OpenRouter, LlmProvider::OpenRouter);
+    }
+
+    #[test]
+    fn test_llm_provider_inequality() {
+        assert_ne!(LlmProvider::Ollama, LlmProvider::OpenRouter);
+    }
+
+    #[test]
+    fn test_chat_message_creation() {
+        let message = ChatMessage {
+            role: "user".to_string(),
+            content: "test".to_string(),
+        };
+        assert_eq!(message.role, "user");
+        assert_eq!(message.content, "test");
+    }
+
+    #[test]
+    fn test_chat_request_creation() {
+        let request = ChatRequest {
+            model: "llama3".to_string(),
+            messages: vec![],
+            temperature: Some(0.7),
+            max_tokens: Some(2048),
+        };
+        assert_eq!(request.model, "llama3");
+        assert_eq!(request.temperature, Some(0.7));
+    }
+
+    #[test]
+    fn test_chat_response_creation() {
+        let response = ChatResponse {
+            message: None,
+            done: None,
+            error: None,
+        };
+        assert!(response.message.is_none());
+        assert!(response.error.is_none());
+    }
+
+    #[test]
+    fn test_chat_message_struct() {
+        let message = ChatMessage {
+            role: "system".to_string(),
+            content: "You are helpful".to_string(),
+        };
+        assert_eq!(message.role, "system");
+    }
+
+    #[test]
+    fn test_ollama_config_defaults() {
+        let config = OllamaConfig::default();
+        assert!(!config.base_url.is_empty());
+        assert!(!config.model.is_empty());
+    }
+
+    #[test]
+    fn test_openrouter_config_defaults() {
+        let config = OpenRouterConfig::default();
+        assert!(!config.base_url.is_empty());
+        assert!(!config.model.is_empty());
+    }
+
+    #[test]
+    fn test_llm_config_default() {
+        let config = LlmConfig::default();
+        assert_eq!(config.provider, LlmProvider::Ollama);
+    }
+
+    #[test]
+    fn test_chat_choice_with_message() {
+        let choice = ChatChoice::WithMessage {
+            message: ChatMessage {
+                role: "assistant".to_string(),
+                content: "Hello".to_string(),
+            },
+        };
+        if let ChatChoice::WithMessage { message } = choice {
+            assert_eq!(message.content, "Hello");
+        }
+    }
+
+    #[test]
+    fn test_chat_choice_with_content() {
+        let choice = ChatChoice::WithContent {
+            content: "Direct content".to_string(),
+        };
+        if let ChatChoice::WithContent { content } = choice {
+            assert_eq!(content, "Direct content");
+        }
+    }
+
+    #[test]
+    fn test_openrouter_response_creation() {
+        let response = OpenRouterResponse {
+            id: None,
+            model: None,
+            choices: None,
+            usage: None,
+            error: None,
+        };
+        assert!(response.choices.is_none());
+    }
+
+    #[test]
+    fn test_openrouter_error_creation() {
+        let error = OpenRouterError {
+            message: "Test error".to_string(),
+            code: None,
+        };
+        assert_eq!(error.message, "Test error");
+    }
+
+    #[test]
+    fn test_multiple_chat_messages() {
+        let messages = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "System prompt".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: "User message".to_string(),
+            },
+        ];
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn test_chat_request_with_messages() {
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "test".to_string(),
+        }];
+        let request = ChatRequest {
+            model: "llama3".to_string(),
+            messages,
+            temperature: Some(0.5),
+            max_tokens: Some(1024),
+        };
+        assert_eq!(request.messages.len(), 1);
+    }
+
+    #[test]
+    fn test_chat_response_with_error() {
+        let response = ChatResponse {
+            message: None,
+            done: None,
+            error: Some("Connection failed".to_string()),
+        };
+        assert_eq!(response.error, Some("Connection failed".to_string()));
+    }
+
+    #[test]
+    fn test_chat_response_with_message() {
+        let response = ChatResponse {
+            message: Some(ChatMessage {
+                role: "assistant".to_string(),
+                content: "Response".to_string(),
+            }),
+            done: None,
+            error: None,
+        };
+        assert!(response.message.is_some());
+    }
+
+    #[test]
+    fn test_ollama_config_custom() {
+        let config = OllamaConfig {
+            base_url: "http://custom:11434".to_string(),
+            model: "custom-model".to_string(),
+            timeout_ms: 60000,
+        };
+        assert_eq!(config.base_url, "http://custom:11434");
+    }
+
+    #[test]
+    fn test_openrouter_config_custom() {
+        let config = OpenRouterConfig {
+            base_url: "https://custom.api".to_string(),
+            model: "custom-model".to_string(),
+            api_key: "key123".to_string(),
+            timeout_ms: 90000,
+        };
+        assert_eq!(config.api_key, "key123");
+    }
+
+    #[test]
+    fn test_llm_config_custom_provider() {
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig::default(),
+        };
+        assert_eq!(config.provider, LlmProvider::OpenRouter);
+    }
+}

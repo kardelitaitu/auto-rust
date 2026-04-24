@@ -139,6 +139,21 @@ pub struct ResourceCleanup {
     pub threshold: f32,
 }
 
+/// Performance recovery strategy.
+pub struct PerformanceRecovery {
+    /// Performance tuning parameters
+    pub tuning: PerformanceTuning,
+}
+
+/// Performance tuning parameters.
+#[derive(Debug, Clone, Default)]
+pub struct PerformanceTuning {
+    /// Target performance level
+    pub target_level: f32,
+    /// Adjustment factor
+    pub adjustment_factor: f32,
+}
+
 /// Error recovery strategy.
 pub struct ErrorRecovery {
     /// Error classification rules
@@ -558,10 +573,27 @@ impl Default for ErrorRecovery {
     }
 }
 
+impl ErrorRecovery {
+    fn select_recovery_action(&self) -> RecoveryActionType {
+        RecoveryActionType::RestartService
+    }
+}
+
 impl Default for PerformanceRecovery {
     fn default() -> Self {
-        Self {}
+        Self {
+            tuning: PerformanceTuning::default(),
+        }
     }
+}
+
+/// Performance tuning parameters.
+#[derive(Debug, Clone, Default)]
+pub struct PerformanceTuning {
+    /// Target performance level
+    pub target_level: f32,
+    /// Adjustment factor
+    pub adjustment_factor: f32,
 }
 
 impl Default for ResourceScaling {
@@ -624,5 +656,261 @@ mod tests {
     fn test_self_healing_creation() {
         let healing = SelfHealingSystem::new();
         assert!(healing.health_monitor.status == SystemHealth::Healthy);
+    }
+
+    #[test]
+    fn test_system_health_variants() {
+        assert_eq!(SystemHealth::Healthy, SystemHealth::Healthy);
+        assert_eq!(SystemHealth::Degraded, SystemHealth::Degraded);
+        assert_eq!(SystemHealth::Recovering, SystemHealth::Recovering);
+        assert_eq!(SystemHealth::Critical, SystemHealth::Critical);
+        assert_eq!(SystemHealth::Offline, SystemHealth::Offline);
+    }
+
+    #[test]
+    fn test_health_check_type_variants() {
+        assert_eq!(HealthCheckType::Connection, HealthCheckType::Connection);
+        assert_eq!(HealthCheckType::Resource, HealthCheckType::Resource);
+        assert_eq!(HealthCheckType::Performance, HealthCheckType::Performance);
+        assert_eq!(HealthCheckType::ErrorRate, HealthCheckType::ErrorRate);
+        assert_eq!(HealthCheckType::Api, HealthCheckType::Api);
+    }
+
+    #[test]
+    fn test_health_check_status_variants() {
+        assert_eq!(HealthCheckStatus::Passed, HealthCheckStatus::Passed);
+        assert_eq!(HealthCheckStatus::Failed, HealthCheckStatus::Failed);
+        assert_eq!(HealthCheckStatus::Skipped, HealthCheckStatus::Skipped);
+    }
+
+    #[test]
+    fn test_error_category_variants() {
+        assert_eq!(ErrorCategory::Connection, ErrorCategory::Connection);
+        assert_eq!(ErrorCategory::Resource, ErrorCategory::Resource);
+        assert_eq!(ErrorCategory::Api, ErrorCategory::Api);
+        assert_eq!(ErrorCategory::Data, ErrorCategory::Data);
+        assert_eq!(ErrorCategory::Logic, ErrorCategory::Logic);
+        assert_eq!(ErrorCategory::Unknown, ErrorCategory::Unknown);
+    }
+
+    #[test]
+    fn test_error_severity_variants() {
+        assert_eq!(ErrorSeverity::Low, ErrorSeverity::Low);
+        assert_eq!(ErrorSeverity::Medium, ErrorSeverity::Medium);
+        assert_eq!(ErrorSeverity::High, ErrorSeverity::High);
+        assert_eq!(ErrorSeverity::Critical, ErrorSeverity::Critical);
+    }
+
+    #[test]
+    fn test_failure_type_variants() {
+        assert_eq!(FailureType::Connection, FailureType::Connection);
+        assert_eq!(FailureType::Resource, FailureType::Resource);
+        assert_eq!(FailureType::Api, FailureType::Api);
+        assert_eq!(FailureType::Timeout, FailureType::Timeout);
+        assert_eq!(FailureType::Data, FailureType::Data);
+        assert_eq!(FailureType::Unknown, FailureType::Unknown);
+    }
+
+    #[test]
+    fn test_impact_level_variants() {
+        assert_eq!(ImpactLevel::Low, ImpactLevel::Low);
+        assert_eq!(ImpactLevel::Medium, ImpactLevel::Medium);
+        assert_eq!(ImpactLevel::High, ImpactLevel::High);
+        assert_eq!(ImpactLevel::Critical, ImpactLevel::Critical);
+    }
+
+    #[test]
+    fn test_recovery_mode_variants() {
+        assert_eq!(RecoveryMode::Normal, RecoveryMode::Normal);
+        assert_eq!(RecoveryMode::Recovering, RecoveryMode::Recovering);
+        assert_eq!(RecoveryMode::Degraded, RecoveryMode::Degraded);
+        assert_eq!(RecoveryMode::Emergency, RecoveryMode::Emergency);
+    }
+
+    #[test]
+    fn test_recovery_type_variants() {
+        assert_eq!(RecoveryType::Automatic, RecoveryType::Automatic);
+        assert_eq!(RecoveryType::Manual, RecoveryType::Manual);
+        assert_eq!(RecoveryType::Hybrid, RecoveryType::Hybrid);
+    }
+
+    #[test]
+    fn test_recovery_status_variants() {
+        assert_eq!(RecoveryStatus::Initiated, RecoveryStatus::Initiated);
+        assert_eq!(RecoveryStatus::InProgress, RecoveryStatus::InProgress);
+        assert_eq!(RecoveryStatus::Completed, RecoveryStatus::Completed);
+        assert_eq!(RecoveryStatus::Failed, RecoveryStatus::Failed);
+        assert_eq!(RecoveryStatus::Pending, RecoveryStatus::Pending);
+    }
+
+    #[test]
+    fn test_health_check_result_creation() {
+        let result = HealthCheckResult {
+            check_id: "check1".to_string(),
+            check_type: HealthCheckType::Connection,
+            status: HealthCheckStatus::Passed,
+            error: None,
+            timestamp: Instant::now(),
+            recovery_action: None,
+        };
+        assert_eq!(result.check_id, "check1");
+    }
+
+    #[test]
+    fn test_recovery_result_creation() {
+        let result = RecoveryResult {
+            action: RecoveryActionType::RestartService,
+            success: true,
+            timestamp: Instant::now(),
+            details: "Test recovery".to_string(),
+            health_impact: HealthImpact::default(),
+        };
+        assert!(result.success);
+    }
+
+    #[test]
+    fn test_failure_record_creation() {
+        let record = FailureRecord {
+            id: "fail1".to_string(),
+            failure_type: FailureType::Connection,
+            timestamp: Instant::now(),
+            error: "Connection failed".to_string(),
+            recovery_time: Duration::from_secs(5),
+        };
+        assert_eq!(record.failure_type, FailureType::Connection);
+    }
+
+    #[test]
+    fn test_failure_pattern_creation() {
+        let pattern = FailurePattern {
+            id: "pattern1".to_string(),
+            signature: vec!["error1".to_string(), "error2".to_string()],
+            frequency: 5,
+            impact: ImpactLevel::High,
+        };
+        assert_eq!(pattern.frequency, 5);
+    }
+
+    #[test]
+    fn test_active_recovery_creation() {
+        let recovery = ActiveRecovery {
+            id: "rec1".to_string(),
+            recovery_type: RecoveryType::Automatic,
+            start_time: Instant::now(),
+            estimated_completion: None,
+            status: RecoveryStatus::Initiated,
+        };
+        assert_eq!(recovery.recovery_type, RecoveryType::Automatic);
+    }
+
+    #[test]
+    fn test_recovery_progress_creation() {
+        let progress = RecoveryProgress {
+            current_step: 1,
+            total_steps: 5,
+            completion: 0.2,
+            estimated_remaining: Duration::from_secs(10),
+        };
+        assert_eq!(progress.current_step, 1);
+    }
+
+    #[test]
+    fn test_health_impact_default() {
+        let impact = HealthImpact::default();
+        assert_eq!(impact.improvement, 0.0);
+    }
+
+    #[test]
+    fn test_resource_scaling_default() {
+        let scaling = ResourceScaling::default();
+        assert_eq!(scaling.scale_up_threshold, 0.8);
+    }
+
+    #[test]
+    fn test_resource_cleanup_default() {
+        let cleanup = ResourceCleanup::default();
+        assert_eq!(cleanup.interval, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_connection_recovery_default() {
+        let recovery = ConnectionRecovery::default();
+        assert_eq!(recovery.max_retries, 3);
+    }
+
+    #[test]
+    fn test_recovery_action_type_scale_resources() {
+        let action = RecoveryActionType::ScaleResources(1.5);
+        if let RecoveryActionType::ScaleResources(factor) = action {
+            assert_eq!(factor, 1.5);
+        } else {
+            panic!("Expected ScaleResources variant");
+        }
+    }
+
+    #[test]
+    fn test_recovery_action_type_switch_to_backup() {
+        let action = RecoveryActionType::SwitchToBackup("backup1".to_string());
+        if let RecoveryActionType::SwitchToBackup(endpoint) = action {
+            assert_eq!(endpoint, "backup1");
+        } else {
+            panic!("Expected SwitchToBackup variant");
+        }
+    }
+
+    #[test]
+    fn test_recovery_action_type_alert_operator() {
+        let action = RecoveryActionType::AlertOperator("admin@example.com".to_string());
+        if let RecoveryActionType::AlertOperator(email) = action {
+            assert_eq!(email, "admin@example.com");
+        } else {
+            panic!("Expected AlertOperator variant");
+        }
+    }
+
+    #[test]
+    fn test_recovery_action_type_custom() {
+        let action = RecoveryActionType::Custom("custom_action".to_string());
+        if let RecoveryActionType::Custom(name) = action {
+            assert_eq!(name, "custom_action");
+        } else {
+            panic!("Expected Custom variant");
+        }
+    }
+
+    #[test]
+    fn test_error_classification_creation() {
+        let classification = ErrorClassification {
+            pattern: "timeout".to_string(),
+            category: ErrorCategory::Connection,
+            severity: ErrorSeverity::High,
+        };
+        assert_eq!(classification.category, ErrorCategory::Connection);
+    }
+
+    #[test]
+    fn test_error_procedure_creation() {
+        let procedure = ErrorProcedure {
+            id: "proc1".to_string(),
+            name: "Recovery procedure".to_string(),
+            steps: vec![],
+            conditions: RecoveryConditions {
+                required_health: SystemHealth::Degraded,
+                failure_threshold: 5,
+                time_window: Duration::from_secs(60),
+            },
+        };
+        assert_eq!(procedure.id, "proc1");
+    }
+
+    #[test]
+    fn test_recovery_step_creation() {
+        let step = RecoveryStep {
+            id: "step1".to_string(),
+            description: "Restart service".to_string(),
+            action: RecoveryActionType::RestartService,
+            expected_outcome: "Service running".to_string(),
+        };
+        assert_eq!(step.id, "step1");
     }
 }

@@ -363,4 +363,68 @@ mod tests {
         assert!(js.contains("session"));
         assert!(js.contains("Sign in"));
     }
+
+    #[test]
+    fn test_selector_element_center_format() {
+        let js = selector_element_center("#test-selector");
+        assert!(js.contains("querySelector"));
+        assert!(js.contains("getBoundingClientRect"));
+        assert!(js.contains("x:"));
+        assert!(js.contains("y:"));
+    }
+
+    #[test]
+    fn test_selector_element_center_escapes_quotes() {
+        let js = selector_element_center("#test\"quote");
+        assert!(js.contains("\\\""));
+    }
+
+    #[test]
+    fn test_selector_popup_overlay_returns_js() {
+        let js = selector_popup_overlay();
+        assert!(js.contains("dialog"));
+        assert!(js.contains("aria-modal"));
+    }
+
+    #[test]
+    fn test_selector_follow_confirm_modal_returns_js() {
+        let js = selector_follow_confirm_modal();
+        assert!(js.contains("dialog"));
+        assert!(js.contains("follow"));
+    }
+
+    #[test]
+    fn test_selector_close_button_returns_js() {
+        let js = selector_close_button();
+        assert!(js.contains("Close"));
+        assert!(js.contains("aria-label"));
+    }
+
+    #[test]
+    fn test_selector_following_indicator_returns_js() {
+        let js = selector_following_indicator();
+        assert!(js.contains("following"));
+        assert!(js.contains("unfollow"));
+    }
+
+    #[test]
+    fn test_js_get_current_url_returns_js() {
+        let js = js_get_current_url();
+        assert!(js.contains("window.location.href"));
+    }
+
+    #[test]
+    fn test_js_extract_username_from_url_returns_js() {
+        let js = js_extract_username_from_url();
+        assert!(js.contains("window.location.pathname"));
+        assert!(js.contains("split"));
+    }
+
+    #[test]
+    fn test_selector_health_check_returns_js() {
+        let js = selector_health_check();
+        assert!(js.contains("feed_visible"));
+        assert!(js.contains("tweets_found"));
+        assert!(js.contains("engagement_buttons"));
+    }
 }

@@ -539,4 +539,150 @@ mod tests {
         context.add_platform(platform);
         assert_eq!(context.platforms.len(), 1);
     }
+
+    #[test]
+    fn test_remove_platform() {
+        let mut context = CrossPlatformContext::new();
+        let platform = PlatformIntegration {
+            platform_id: "twitter".to_string(),
+            api_config: ApiConfig::default(),
+            data_settings: DataSettings::default(),
+            features: vec![],
+            status: PlatformStatus::Connected,
+        };
+        
+        context.add_platform(platform);
+        context.remove_platform("twitter");
+        assert_eq!(context.platforms.len(), 0);
+    }
+
+    #[test]
+    fn test_get_platform_status() {
+        let mut context = CrossPlatformContext::new();
+        let platform = PlatformIntegration {
+            platform_id: "twitter".to_string(),
+            api_config: ApiConfig::default(),
+            data_settings: DataSettings::default(),
+            features: vec![],
+            status: PlatformStatus::Connected,
+        };
+        
+        context.add_platform(platform);
+        let status = context.get_platform_status("twitter");
+        assert!(status.is_some());
+        assert_eq!(status.unwrap(), &PlatformStatus::Connected);
+    }
+
+    #[test]
+    fn test_get_platform_status_nonexistent() {
+        let context = CrossPlatformContext::new();
+        let status = context.get_platform_status("nonexistent");
+        assert!(status.is_none());
+    }
+
+    #[test]
+    fn test_platform_status_enum() {
+        assert_eq!(PlatformStatus::Connected, PlatformStatus::Connected);
+        assert_ne!(PlatformStatus::Disconnected, PlatformStatus::RateLimited);
+    }
+
+    #[test]
+    fn test_unified_data_default() {
+        let data = UnifiedData::default();
+        assert!(data.entities.is_empty());
+        assert!(data.relationships.is_empty());
+    }
+
+    #[test]
+    fn test_sentiment_data_default() {
+        let data = SentimentData::default();
+        assert_eq!(data.overall, Sentiment::Neutral);
+        assert_eq!(data.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_temporal_sentiment_default() {
+        let temporal = TemporalSentiment::default();
+        assert!(temporal.weekly_trends.is_empty());
+        assert!(temporal.seasonal.is_empty());
+    }
+
+    #[test]
+    fn test_activity_patterns_default() {
+        let patterns = ActivityPatterns::default();
+        assert_eq!(patterns.posting_frequency, 0.0);
+        assert!(patterns.peak_times.is_empty());
+    }
+
+    #[test]
+    fn test_cross_platform_entity_fields() {
+        let entity = CrossPlatformEntity {
+            id: "entity1".to_string(),
+            platform_ids: HashMap::new(),
+            entity_type: "user".to_string(),
+            data: serde_json::Value::Null,
+            metadata: EntityMetadata {
+                created_at: 0,
+                updated_at: 0,
+                sources: vec![],
+                quality_score: 1.0,
+                relevance_score: 1.0,
+            },
+        };
+        
+        assert_eq!(entity.id, "entity1");
+        assert_eq!(entity.entity_type, "user");
+    }
+
+    #[test]
+    fn test_api_config_default() {
+        let config = ApiConfig::default();
+        assert!(config.base_url.is_empty());
+        assert!(config.auth_token.is_empty());
+    }
+
+    #[test]
+    fn test_data_settings_default() {
+        let settings = DataSettings::default();
+        assert!(settings.data_types.is_empty());
+        assert!(settings.filters.is_empty());
+    }
+
+    #[test]
+    fn test_trend_fields() {
+        let trend = Trend {
+            id: "trend1".to_string(),
+            name: "Test Trend".to_string(),
+            platforms: vec!["twitter".to_string()],
+            strength: 0.8,
+            velocity: 0.5,
+            entities: vec![],
+        };
+        
+        assert_eq!(trend.id, "trend1");
+        assert!(trend.strength >= 0.0);
+        assert!(trend.strength <= 1.0);
+    }
+
+    #[test]
+    fn test_update_unified_data() {
+        let mut context = CrossPlatformContext::new();
+        context.update_unified_data();
+        let data = context.get_unified_data();
+        assert!(data.entities.is_empty());
+    }
+
+    #[test]
+    fn test_detect_trends() {
+        let mut context = CrossPlatformContext::new();
+        let trends = context.detect_trends(&UnifiedData::default());
+        assert!(!trends.is_empty());
+    }
+
+    #[test]
+    fn test_correlate_data() {
+        let mut context = CrossPlatformContext::new();
+        context.correlate_data();
+        // Should not panic
+    }
 }

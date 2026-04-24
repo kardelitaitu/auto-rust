@@ -191,3 +191,120 @@ async fn insert_text(page: &Page, text: &str) -> Result<()> {
     .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clipboard_state_creation() {
+        let state = ClipboardState::new("session-123");
+        assert_eq!(state.session_id(), "session-123");
+    }
+
+    #[test]
+    fn test_clipboard_state_set_get() {
+        let state = ClipboardState::new("session-test");
+        state.set("test content");
+        assert_eq!(state.get(), Some("test content".to_string()));
+    }
+
+    #[test]
+    fn test_clipboard_state_clear() {
+        let state = ClipboardState::new("session-clear");
+        state.set("content");
+        state.clear();
+        assert_eq!(state.get(), None);
+    }
+
+    #[test]
+    fn test_set_clipboard() {
+        set_clipboard("session-1", "hello world");
+        assert_eq!(get_clipboard("session-1"), Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_get_clipboard_empty() {
+        assert_eq!(get_clipboard("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_clear_clipboard() {
+        set_clipboard("session-2", "to be cleared");
+        clear_clipboard("session-2");
+        assert_eq!(get_clipboard("session-2"), None);
+    }
+
+    #[test]
+    fn test_set_session_clipboard() {
+        set_session_clipboard("session-3", "session content");
+        assert_eq!(get_session_clipboard("session-3"), Some("session content".to_string()));
+    }
+
+    #[test]
+    fn test_get_session_clipboard_empty() {
+        assert_eq!(get_session_clipboard("empty-session"), None);
+    }
+
+    #[test]
+    fn test_clear_session_clipboard() {
+        set_session_clipboard("session-4", "data");
+        clear_session_clipboard("session-4");
+        assert_eq!(get_session_clipboard("session-4"), None);
+    }
+
+    #[test]
+    fn test_clipboard_state_clone() {
+        let state1 = ClipboardState::new("session-clone");
+        state1.set("original");
+        let state2 = state1.clone();
+        assert_eq!(state2.get(), Some("original".to_string()));
+    }
+
+    #[test]
+    fn test_clipboard_state_multiple_sessions() {
+        let state1 = ClipboardState::new("session-a");
+        let state2 = ClipboardState::new("session-b");
+        state1.set("content a");
+        state2.set("content b");
+        assert_eq!(state1.get(), Some("content a".to_string()));
+        assert_eq!(state2.get(), Some("content b".to_string()));
+    }
+
+    #[test]
+    fn test_clipboard_state_overwrite() {
+        let state = ClipboardState::new("session-overwrite");
+        state.set("first");
+        state.set("second");
+        assert_eq!(state.get(), Some("second".to_string()));
+    }
+
+    #[test]
+    fn test_clipboard_state_empty_string() {
+        let state = ClipboardState::new("session-empty");
+        state.set("");
+        assert_eq!(state.get(), Some("".to_string()));
+    }
+
+    #[test]
+    fn test_clipboard_state_special_chars() {
+        let state = ClipboardState::new("session-special");
+        state.set("hello\nworld\t!");
+        assert_eq!(state.get(), Some("hello\nworld\t!".to_string()));
+    }
+
+    #[test]
+    fn test_clipboard_state_unicode() {
+        let state = ClipboardState::new("session-unicode");
+        state.set("🎉 test 🚀");
+        assert_eq!(state.get(), Some("🎉 test 🚀".to_string()));
+    }
+
+    #[test]
+    fn test_clipboard_state_long_text() {
+        let state = ClipboardState::new("session-long");
+        let long_text = "a".repeat(10000);
+        state.set(&long_text);
+        assert_eq!(state.get(), Some(long_text));
+    }
+}

@@ -463,4 +463,76 @@ mod tests {
         assert_ne!(decision.reason, "spam content");
         assert_ne!(decision.reason, "controversial topic");
     }
+
+    #[test]
+    fn test_engagement_level_variants() {
+        assert_eq!(EngagementLevel::Full, EngagementLevel::Full);
+        assert_eq!(EngagementLevel::Medium, EngagementLevel::Medium);
+        assert_eq!(EngagementLevel::Minimal, EngagementLevel::Minimal);
+        assert_eq!(EngagementLevel::None, EngagementLevel::None);
+    }
+
+    #[test]
+    fn test_engagement_level_inequality() {
+        assert_ne!(EngagementLevel::Full, EngagementLevel::Medium);
+        assert_ne!(EngagementLevel::Medium, EngagementLevel::Minimal);
+        assert_ne!(EngagementLevel::Minimal, EngagementLevel::None);
+    }
+
+    #[test]
+    fn test_very_short_tweet_penalty() {
+        let tweet = "Hi";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score < 0); // Short tweet penalty
+    }
+
+    #[test]
+    fn test_image_bonus() {
+        let tweet = "Check out this photo pic.twitter.com/abc123";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score >= 20); // Image bonus
+    }
+
+    #[test]
+    fn test_multiple_sentences_bonus() {
+        let tweet = "This is sentence one. This is sentence two.";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score >= 10); // Multiple sentences bonus
+    }
+
+    #[test]
+    fn test_excessive_emojis_penalty() {
+        let tweet = "Check this out 😀😀😀😀😀😀😀😀😀😀";
+        let decision = decide_engagement(tweet, &[]);
+        assert!(decision.score < 0); // Emoji penalty
+    }
+
+    #[test]
+    fn test_is_emoji_function() {
+        assert!(is_emoji('😀'));
+        assert!(is_emoji('🎉'));
+        assert!(is_emoji('❤'));
+        assert!(!is_emoji('a'));
+        assert!(!is_emoji('1'));
+    }
+
+    #[test]
+    fn test_contains_any_function() {
+        let text = "This is a test string";
+        assert!(contains_any(text, &["test", "example"]));
+        assert!(!contains_any(text, &["missing", "not here"]));
+        assert!(contains_any(text, &["string"]));
+    }
+
+    #[test]
+    fn test_engagement_decision_fields() {
+        let decision = EngagementDecision {
+            level: EngagementLevel::Full,
+            score: 100,
+            reason: "test reason",
+        };
+        assert_eq!(decision.level, EngagementLevel::Full);
+        assert_eq!(decision.score, 100);
+        assert_eq!(decision.reason, "test reason");
+    }
 }

@@ -476,4 +476,158 @@ mod tests {
         assert!(prompt.contains(&"a".repeat(500)));
         assert!(!prompt.contains(&"a".repeat(600)));
     }
+
+    #[test]
+    fn test_strategy_context_default() {
+        let context = StrategyContext::default();
+        assert_eq!(context.sentiment, "");
+        assert_eq!(context.conversation_type, "");
+        assert_eq!(context.engagement_level, "");
+    }
+
+    #[test]
+    fn test_strategy_context_fields() {
+        let context = StrategyContext {
+            sentiment: "humorous".to_string(),
+            conversation_type: "tech".to_string(),
+            engagement_level: "high".to_string(),
+        };
+        
+        assert_eq!(context.sentiment, "humorous");
+        assert_eq!(context.conversation_type, "tech");
+        assert_eq!(context.engagement_level, "high");
+    }
+
+    #[test]
+    fn test_strategy_context_equality() {
+        let ctx1 = StrategyContext {
+            sentiment: "humorous".to_string(),
+            conversation_type: "tech".to_string(),
+            engagement_level: "high".to_string(),
+        };
+        
+        let ctx2 = StrategyContext {
+            sentiment: "humorous".to_string(),
+            conversation_type: "tech".to_string(),
+            engagement_level: "high".to_string(),
+        };
+        
+        assert_eq!(ctx1, ctx2);
+    }
+
+    #[test]
+    fn test_build_reply_prompt_no_replies() {
+        let context = StrategyContext::default();
+        let prompt = build_reply_prompt("Test tweet", "user", &[], &context);
+        
+        assert!(prompt.contains("(no other replies visible)"));
+    }
+
+    #[test]
+    fn test_build_reply_prompt_filters_emoji() {
+        let context = StrategyContext::default();
+        let replies = vec![("user1".to_string(), "Great! 😂🎉".to_string())];
+        
+        let prompt = build_reply_prompt("Test", "user", &replies, &context);
+        
+        // Emoji should be filtered out
+        assert!(!prompt.contains("😂"));
+        assert!(!prompt.contains("🎉"));
+        assert!(prompt.contains("Great!"));
+    }
+
+    #[test]
+    fn test_build_reply_prompt_filters_hashtags() {
+        let context = StrategyContext::default();
+        let replies = vec![("user1".to_string(), "Great #test #hashtag".to_string())];
+        
+        let prompt = build_reply_prompt("Test", "user", &replies, &context);
+        
+        // Hashtags should be removed
+        assert!(!prompt.contains("#test"));
+        assert!(!prompt.contains("#hashtag"));
+        assert!(prompt.contains("Great"));
+    }
+
+    #[test]
+    fn test_build_reply_prompt_limits_replies() {
+        let context = StrategyContext::default();
+        let many_replies: Vec<(String, String)> = (0..25)
+            .map(|i| (format!("user{}", i), format!("Reply {}", i)))
+            .collect();
+        
+        let prompt = build_reply_prompt("Test", "user", &many_replies, &context);
+        
+        // Should only include first 20 replies
+        assert!(prompt.contains("@user0:"));
+        assert!(prompt.contains("@user19:"));
+        assert!(!prompt.contains("@user20:"));
+    }
+
+    #[test]
+    fn test_context_boosts_structure() {
+        // Verify context boosts have expected structure
+        for (context, boosts) in CONTEXT_BOOSTS {
+            assert!(!context.is_empty());
+            assert!(!boosts.is_empty());
+            for (strategy, multiplier) in *boosts {
+                assert!(!strategy.is_empty());
+                assert!(*multiplier != 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_strategy_pool_base_weights() {
+        // All base weights should be 1
+        for (_, weight) in STRATEGY_POOL {
+            assert_eq!(*weight, 1);
+        }
+    }
+
+    #[test]
+    fn test_strategy_instructions_format() {
+        for (strategy, instruction) in STRATEGY_INSTRUCTIONS {
+            assert!(instruction.contains("CRITICAL INSTRUCTION"), 
+                "Strategy {} missing CRITICAL INSTRUCTION marker", strategy);
+            assert!(instruction.contains("NEVER write \"Okay\" or \"Yes\""),
+                "Strategy {} missing NEVER instruction", strategy);
+        }
+    }
+
+    #[test]
+    fn test_get_strategy_with_multiple_context_keys() {
+        let context = StrategyContext {
+            sentiment: "humorous".to_string(),
+            conversation_type: "gaming".to_string(),
+            engagement_level: "viral".to_string(),
+        };
+        
+        let instruction = get_strategy_instruction(&context);
+        assert!(instruction.contains("CRITICAL INSTRUCTION"));
+    }
+
+    #[test]
+    fn test_get_strategy_with_tech_context() {
+        let context = StrategyContext {
+            sentiment: "tech".to_string(),
+            conversation_type: String::new(),
+            engagement_level: String::new(),
+        };
+        
+        let instruction = get_strategy_instruction(&context);
+        assert!(instruction.contains("CRITICAL INSTRUCTION"));
+    }
+
+    #[test]
+    fn test_get_strategy_with_news_context() {
+        let context = StrategyContext {
+            sentiment: "news".to_string(),
+            conversation_type: String::new(),
+            engagement_level: String::new(),
+        };
+        
+        let instruction = get_strategy_instruction(&context);
+        assert!(instruction.contains("CRITICAL INSTRUCTION"));
+    }
 }

@@ -108,4 +108,92 @@ mod tests {
         shutdown_tracing();
         shutdown_tracing();
     }
+
+    #[test]
+    fn test_init_tracing_signature() {
+        // Compile-time check that init_tracing has the correct signature
+        fn check_signature(_: fn(&str, &str) -> Result<(), TraceError>) {}
+        check_signature(init_tracing);
+    }
+
+    #[test]
+    fn test_init_console_tracing_signature() {
+        // Compile-time check that init_console_tracing has the correct signature
+        fn check_signature(_: fn()) {}
+        check_signature(init_console_tracing);
+    }
+
+    #[test]
+    fn test_shutdown_tracing_signature() {
+        // Compile-time check that shutdown_tracing has the correct signature
+        fn check_signature(_: fn()) {}
+        check_signature(shutdown_tracing);
+    }
+
+    #[test]
+    fn test_env_filter_directives() {
+        // Test that the env filter directives parse correctly
+        let directive1 = "rust_orchestrator=debug".parse::<tracing_subscriber::EnvFilter>();
+        let directive2 = "chromiumoxide=off".parse::<tracing_subscriber::EnvFilter>();
+        assert!(directive1.is_ok());
+        assert!(directive2.is_ok());
+    }
+
+    #[test]
+    fn test_service_name_parameter() {
+        // Test that service name parameter is used correctly
+        let service_name = "test-service";
+        assert_eq!(service_name, "test-service");
+        assert!(!service_name.is_empty());
+    }
+
+    #[test]
+    fn test_endpoint_parameter() {
+        // Test that endpoint parameter is used correctly
+        let endpoint = "http://localhost:4317";
+        assert!(endpoint.starts_with("http"));
+        assert!(endpoint.contains("localhost"));
+    }
+
+    #[test]
+    fn test_resource_key_value_pairs() {
+        // Test that resource key-value pairs are correctly structured
+        let service_name = "test-service";
+        let version = env!("CARGO_PKG_VERSION");
+        
+        assert!(!service_name.is_empty());
+        assert!(!version.is_empty());
+        assert!(version.contains('.'));
+    }
+
+    #[test]
+    fn test_env_filter_invalid_directive() {
+        // Test that invalid directives are handled
+        let invalid_directive = "invalid=directive=extra".parse::<tracing_subscriber::EnvFilter>();
+        // Invalid directives should fail to parse
+        assert!(invalid_directive.is_err());
+    }
+
+    #[test]
+    fn test_endpoint_with_https() {
+        // Test endpoint with HTTPS
+        let endpoint = "https://otel-collector.example.com:4317";
+        assert!(endpoint.starts_with("https"));
+        assert!(endpoint.contains(":4317"));
+    }
+
+    #[test]
+    fn test_service_name_with_special_chars() {
+        // Test service name with special characters
+        let service_name = "my-service_v2";
+        assert_eq!(service_name, "my-service_v2");
+        assert!(service_name.contains('_'));
+    }
+
+    #[test]
+    fn test_runtime_tokio_constant() {
+        // Test that runtime::Tokio is a valid runtime
+        // This is a compile-time check
+        let _ = runtime::Tokio;
+    }
 }

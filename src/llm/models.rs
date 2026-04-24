@@ -202,4 +202,199 @@ mod tests {
         assert!(response.done.unwrap());
         assert!(response.error.is_none());
     }
+
+    #[test]
+    fn test_chat_message_content_conversion() {
+        let msg = ChatMessage::user("123");
+        assert_eq!(msg.content, "123");
+    }
+
+    #[test]
+    fn test_chat_message_clone() {
+        let msg = ChatMessage::user("test");
+        let cloned = msg.clone();
+        assert_eq!(msg.role, cloned.role);
+        assert_eq!(msg.content, cloned.content);
+    }
+
+    #[test]
+    fn test_chat_request_with_temperature() {
+        let request = ChatRequest {
+            model: "llama3".to_string(),
+            messages: vec![],
+            temperature: Some(0.5),
+            max_tokens: None,
+        };
+        assert_eq!(request.temperature, Some(0.5));
+    }
+
+    #[test]
+    fn test_chat_request_with_max_tokens() {
+        let request = ChatRequest {
+            model: "llama3".to_string(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: Some(1024),
+        };
+        assert_eq!(request.max_tokens, Some(1024));
+    }
+
+    #[test]
+    fn test_chat_response_with_done_false() {
+        let response = ChatResponse {
+            message: None,
+            done: Some(false),
+            error: None,
+        };
+        assert!(!response.done.unwrap());
+    }
+
+    #[test]
+    fn test_chat_response_with_error() {
+        let response = ChatResponse {
+            message: None,
+            done: None,
+            error: Some("Connection failed".to_string()),
+        };
+        assert_eq!(response.error, Some("Connection failed".to_string()));
+    }
+
+    #[test]
+    fn test_openrouter_response_with_id() {
+        let response = OpenRouterResponse {
+            id: Some("req-123".to_string()),
+            model: None,
+            choices: None,
+            usage: None,
+            error: None,
+        };
+        assert_eq!(response.id, Some("req-123".to_string()));
+    }
+
+    #[test]
+    fn test_openrouter_response_with_model() {
+        let response = OpenRouterResponse {
+            id: None,
+            model: Some("claude-3".to_string()),
+            choices: None,
+            usage: None,
+            error: None,
+        };
+        assert_eq!(response.model, Some("claude-3".to_string()));
+    }
+
+    #[test]
+    fn test_openrouter_error_with_code() {
+        let error = OpenRouterError {
+            message: "Rate limit".to_string(),
+            code: Some(429),
+        };
+        assert_eq!(error.code, Some(429));
+    }
+
+    #[test]
+    fn test_usage_with_tokens() {
+        let usage = Usage {
+            prompt_tokens: Some(10),
+            completion_tokens: Some(20),
+            total_tokens: Some(30),
+        };
+        assert_eq!(usage.total_tokens, Some(30));
+    }
+
+    #[test]
+    fn test_usage_partial() {
+        let usage = Usage {
+            prompt_tokens: Some(10),
+            completion_tokens: None,
+            total_tokens: None,
+        };
+        assert_eq!(usage.prompt_tokens, Some(10));
+    }
+
+    #[test]
+    fn test_chat_choice_with_message_variant() {
+        let choice = ChatChoice::WithMessage {
+            message: ChatMessage::user("test"),
+        };
+        if let ChatChoice::WithMessage { message } = choice {
+            assert_eq!(message.role, "user");
+        }
+    }
+
+    #[test]
+    fn test_chat_choice_with_content_variant() {
+        let choice = ChatChoice::WithContent {
+            content: "direct".to_string(),
+        };
+        if let ChatChoice::WithContent { content } = choice {
+            assert_eq!(content, "direct");
+        }
+    }
+
+    #[test]
+    fn test_llm_config_new() {
+        let config = LlmConfig::new();
+        assert_eq!(config.provider, LlmProvider::Ollama);
+    }
+
+    #[test]
+    fn test_llm_config_custom() {
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig::default(),
+        };
+        assert_eq!(config.provider, LlmProvider::OpenRouter);
+    }
+
+    #[test]
+    fn test_ollama_config_custom() {
+        let config = OllamaConfig {
+            base_url: "http://custom:11434".to_string(),
+            model: "custom-model".to_string(),
+            timeout_ms: 60000,
+        };
+        assert_eq!(config.base_url, "http://custom:11434");
+    }
+
+    #[test]
+    fn test_openrouter_config_custom() {
+        let config = OpenRouterConfig {
+            api_key: "key".to_string(),
+            base_url: "https://api.example.com".to_string(),
+            model: "gpt-4".to_string(),
+            timeout_ms: 90000,
+        };
+        assert_eq!(config.api_key, "key");
+    }
+
+    #[test]
+    fn test_chat_message_empty_content() {
+        let msg = ChatMessage::user("");
+        assert_eq!(msg.content, "");
+    }
+
+    #[test]
+    fn test_chat_request_empty_messages() {
+        let request = ChatRequest {
+            model: "test".to_string(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+        };
+        assert!(request.messages.is_empty());
+    }
+
+    #[test]
+    fn test_openrouter_response_empty() {
+        let response = OpenRouterResponse {
+            id: None,
+            model: None,
+            choices: None,
+            usage: None,
+            error: None,
+        };
+        assert!(response.id.is_none());
+    }
 }

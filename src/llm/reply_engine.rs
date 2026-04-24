@@ -212,4 +212,184 @@ mod tests {
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[1].role, "user");
     }
+
+    #[test]
+    fn test_reply_engine_system_prompt_not_empty() {
+        let prompt = reply_engine_system_prompt();
+        assert!(!prompt.is_empty());
+    }
+
+    #[test]
+    fn test_quote_engine_system_prompt_not_empty() {
+        let prompt = quote_engine_system_prompt();
+        assert!(!prompt.is_empty());
+    }
+
+    #[test]
+    fn test_quote_engine_system_prompt_contains_rules() {
+        let prompt = quote_engine_system_prompt();
+        assert!(prompt.contains("LANGUAGE MATCHING"));
+        assert!(prompt.contains("CONSENSUS QUOTE STYLE"));
+    }
+
+    #[test]
+    fn test_user_prompt_without_replies() {
+        let replies: Vec<(&str, &str)> = vec![];
+        let user = reply_engine_user_prompt("testuser", "Hello world!", &replies);
+
+        assert!(user.contains("Tweet by @testuser:"));
+        assert!(!user.contains("Replies:"));
+    }
+
+    #[test]
+    fn test_quote_user_prompt_without_replies() {
+        let replies: Vec<(&str, &str)> = vec![];
+        let user = quote_engine_user_prompt("testuser", "Hello world!", &replies);
+
+        assert!(user.contains("Quote this tweet by @testuser:"));
+        assert!(!user.contains("Community replies:"));
+    }
+
+    #[test]
+    fn test_quote_user_prompt_with_replies() {
+        let replies = vec![("user1", "Great!"), ("user2", "Agreed")];
+        let user = quote_engine_user_prompt("testuser", "Hello world!", &replies);
+
+        assert!(user.contains("Community replies:"));
+        assert!(user.contains("@user1: Great!"));
+    }
+
+    #[test]
+    fn test_build_quote_messages_structure() {
+        let replies = vec![("user1", "reply")];
+        let messages = build_quote_messages("author", "tweet text", &replies);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[1].role, "user");
+    }
+
+    #[test]
+    fn test_build_reply_messages_empty_replies() {
+        let replies: Vec<(&str, &str)> = vec![];
+        let messages = build_reply_messages("author", "tweet text", &replies);
+
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn test_build_quote_messages_empty_replies() {
+        let replies: Vec<(&str, &str)> = vec![];
+        let messages = build_quote_messages("author", "tweet text", &replies);
+
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn test_user_prompt_with_single_reply() {
+        let replies = vec![("user1", "Only reply")];
+        let user = reply_engine_user_prompt("testuser", "tweet", &replies);
+
+        assert!(user.contains("@user1: Only reply"));
+    }
+
+    #[test]
+    fn test_user_prompt_with_multiple_replies() {
+        let replies = vec![("user1", "first"), ("user2", "second"), ("user3", "third")];
+        let user = reply_engine_user_prompt("testuser", "tweet", &replies);
+
+        assert!(user.contains("@user1: first"));
+        assert!(user.contains("@user2: second"));
+        assert!(user.contains("@user3: third"));
+    }
+
+    #[test]
+    fn test_reply_engine_system_prompt_banned_words() {
+        let prompt = reply_engine_system_prompt();
+        assert!(prompt.contains("BANNED WORDS"));
+        assert!(prompt.contains("Tapestry"));
+    }
+
+    #[test]
+    fn test_quote_engine_system_prompt_banned_words() {
+        let prompt = quote_engine_system_prompt();
+        assert!(prompt.contains("BANNED WORDS"));
+        assert!(prompt.contains("Tapestry"));
+    }
+
+    #[test]
+    fn test_reply_engine_system_prompt_formatting_rules() {
+        let prompt = reply_engine_system_prompt();
+        assert!(prompt.contains("FORMATTING"));
+        assert!(prompt.contains("NO @mentions"));
+    }
+
+    #[test]
+    fn test_quote_engine_system_prompt_formatting_rules() {
+        let prompt = quote_engine_system_prompt();
+        assert!(prompt.contains("FORMATTING"));
+        assert!(prompt.contains("NO @mentions"));
+    }
+
+    #[test]
+    fn test_user_prompt_ends_with_your_reply() {
+        let replies = vec![("user1", "reply")];
+        let user = reply_engine_user_prompt("testuser", "tweet", &replies);
+
+        assert!(user.ends_with("Your reply:"));
+    }
+
+    #[test]
+    fn test_quote_user_prompt_ends_with_quote_tweet() {
+        let replies = vec![("user1", "reply")];
+        let user = quote_engine_user_prompt("testuser", "tweet", &replies);
+
+        assert!(user.ends_with("Your quote tweet:"));
+    }
+
+    #[test]
+    fn test_build_reply_messages_content_order() {
+        let replies = vec![("user1", "reply")];
+        let messages = build_reply_messages("author", "tweet text", &replies);
+
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[1].role, "user");
+    }
+
+    #[test]
+    fn test_build_quote_messages_content_order() {
+        let replies = vec![("user1", "reply")];
+        let messages = build_quote_messages("author", "tweet text", &replies);
+
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[1].role, "user");
+    }
+
+    #[test]
+    fn test_reply_engine_system_prompt_image_handling() {
+        let prompt = reply_engine_system_prompt();
+        assert!(prompt.contains("IMAGE HANDLING"));
+    }
+
+    #[test]
+    fn test_quote_engine_system_prompt_tone_adaptation() {
+        let prompt = quote_engine_system_prompt();
+        assert!(prompt.contains("TONE ADAPTATION"));
+    }
+
+    #[test]
+    fn test_user_prompt_trims_tweet_text() {
+        let replies = vec![];
+        let user = reply_engine_user_prompt("testuser", "  tweet with spaces  ", &replies);
+
+        assert!(user.contains("tweet with spaces"));
+    }
+
+    #[test]
+    fn test_quote_user_prompt_trims_tweet_text() {
+        let replies = vec![];
+        let user = quote_engine_user_prompt("testuser", "  tweet with spaces  ", &replies);
+
+        assert!(user.contains("tweet with spaces"));
+    }
 }

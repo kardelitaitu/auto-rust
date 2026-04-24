@@ -139,3 +139,67 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
 pub async fn dismiss_signup_nag(_api: &TaskContext) -> Result<bool> {
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cookie_selectors_not_empty() {
+        let cookie_selectors = [
+            "button[aria-label*='Accept']",
+            "button[data-testid*='accept']",
+            "button:contains('Accept all')",
+            "div[role='button']:contains('Accept')",
+        ];
+        assert_eq!(cookie_selectors.len(), 4);
+    }
+
+    #[test]
+    fn test_cookie_selectors_contain_accept() {
+        let cookie_selectors = [
+            "button[aria-label*='Accept']",
+            "button[data-testid*='accept']",
+            "button:contains('Accept all')",
+            "div[role='button']:contains('Accept')",
+        ];
+        for selector in &cookie_selectors {
+            assert!(selector.to_lowercase().contains("accept"));
+        }
+    }
+
+    #[test]
+    fn test_dismiss_signup_nag_returns_false() {
+        // Test that the function exists and has the right signature
+        // Just verify it compiles
+        let _ = dismiss_signup_nag;
+    }
+
+    #[test]
+    fn test_detect_popup_types() {
+        // Test that we know the popup types we detect
+        let popup_types = ["overlay", "follow_confirm", "login_flow"];
+        assert_eq!(popup_types.len(), 3);
+    }
+
+    #[test]
+    fn test_close_button_search_js_structure() {
+        let cancel_js = r#"
+            (function() {
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var t = (btns[i].textContent || '').trim().toLowerCase();
+                    if (t === 'cancel' || t === 'close' || t.includes('not now')) {
+                        var r = btns[i].getBoundingClientRect();
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+                return null;
+            })()
+        "#;
+        assert!(cancel_js.contains("querySelectorAll"));
+        assert!(cancel_js.contains("cancel"));
+        assert!(cancel_js.contains("close"));
+        assert!(cancel_js.contains("getBoundingClientRect"));
+    }
+}

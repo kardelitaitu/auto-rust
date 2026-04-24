@@ -119,3 +119,58 @@ async fn execute_single_attempt(
         _ => Err(anyhow::anyhow!("Unknown task: {name}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_task_name_with_js_suffix() {
+        assert_eq!(normalize_task_name("cookiebot.js"), "cookiebot");
+        assert_eq!(normalize_task_name("pageview.js"), "pageview");
+    }
+
+    #[test]
+    fn test_normalize_task_name_without_suffix() {
+        assert_eq!(normalize_task_name("cookiebot"), "cookiebot");
+        assert_eq!(normalize_task_name("pageview"), "pageview");
+    }
+
+    #[test]
+    fn test_is_known_task_true() {
+        assert!(is_known_task("cookiebot"));
+        assert!(is_known_task("pageview"));
+        assert!(is_known_task("cookiebot.js"));
+    }
+
+    #[test]
+    fn test_is_known_task_false() {
+        assert!(!is_known_task("unknown"));
+        assert!(!is_known_task("fake_task"));
+    }
+
+    #[test]
+    fn test_known_task_names() {
+        let names = known_task_names();
+        assert!(names.contains(&"cookiebot"));
+        assert!(names.contains(&"pageview"));
+        assert!(names.contains(&"twitteractivity"));
+    }
+
+    #[test]
+    fn test_task_names_constant() {
+        assert_eq!(TASK_NAMES.len(), 14);
+        assert!(TASK_NAMES.contains(&"cookiebot"));
+        assert!(TASK_NAMES.contains(&"pageview"));
+    }
+
+    #[test]
+    fn test_normalize_task_name_empty() {
+        assert_eq!(normalize_task_name(""), "");
+    }
+
+    #[test]
+    fn test_normalize_task_name_multiple_dots() {
+        assert_eq!(normalize_task_name("test.js.js"), "test.js");
+    }
+}

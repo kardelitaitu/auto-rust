@@ -2,6 +2,7 @@
 //! Dynamically plans action sequences based on goals, constraints, and context.
 
 use std::collections::{HashMap, VecDeque};
+use std::time::{Duration, Instant};
 
 use crate::adaptive::learning_engine::{EngagementGoal, UserBehaviorProfile};
 use crate::utils::twitter::twitteractivity_sentiment::{Sentiment, SentimentAnalysis};
@@ -22,6 +23,14 @@ pub struct ActionPlanner {
 struct ActionRegistry {
     /// Available actions with their metadata
     actions: HashMap<String, ActionMetadata>,
+}
+
+impl ActionRegistry {
+    fn new() -> Self {
+        Self {
+            actions: HashMap::new(),
+        }
+    }
 }
 
 /// Metadata for an action type.
@@ -66,7 +75,18 @@ struct ConstraintSolver {
     context_constraints: ContextConstraints,
 }
 
+impl ConstraintSolver {
+    fn new() -> Self {
+        Self {
+            temporal_constraints: TemporalConstraints::default(),
+            resource_constraints: ResourceConstraints::default(),
+            context_constraints: ContextConstraints::default(),
+        }
+    }
+}
+
 /// Temporal constraints for action sequencing.
+#[derive(Debug, Clone, Default)]
 struct TemporalConstraints {
     /// Minimum delay between actions
     min_delay: Duration,
@@ -77,6 +97,7 @@ struct TemporalConstraints {
 }
 
 /// Time window definition.
+#[derive(Debug, Clone)]
 struct TimeWindow {
     /// Start time
     start: Duration,
@@ -87,6 +108,7 @@ struct TimeWindow {
 }
 
 /// Resource constraints.
+#[derive(Debug, Clone, Default)]
 struct ResourceConstraints {
     /// Maximum API calls per minute
     max_api_calls: u32,
@@ -97,6 +119,7 @@ struct ResourceConstraints {
 }
 
 /// Context constraints.
+#[derive(Debug, Clone, Default)]
 struct ContextConstraints {
     /// Required context availability
     required_context: Vec<String>,
@@ -114,6 +137,29 @@ struct PlanOptimizer {
     weights: OptimizationWeights,
 }
 
+impl PlanOptimizer {
+    fn new() -> Self {
+        Self {
+            strategy: OptimizationStrategy::Greedy,
+            weights: OptimizationWeights::default(),
+        }
+    }
+
+    fn optimize_sequence(&self, scored_actions: Vec<(String, f32)>, _context: &ExecutionContext) -> Vec<PlannedAction> {
+        scored_actions
+            .into_iter()
+            .map(|(action, score)| PlannedAction {
+                action,
+                context: vec![],
+                priority: 1,
+                estimated_success: score,
+                optimal_time: Instant::now(),
+                constraints: vec![],
+            })
+            .collect()
+    }
+}
+
 /// Optimization strategy type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OptimizationStrategy {
@@ -128,6 +174,7 @@ enum OptimizationStrategy {
 }
 
 /// Weights for multi-objective optimization.
+#[derive(Debug, Clone, Default)]
 struct OptimizationWeights {
     /// Success rate weight
     success_weight: f32,
@@ -235,6 +282,23 @@ pub struct PlannedAction {
     pub optimal_time: Instant,
     /// Constraints
     pub constraints: Vec<String>,
+}
+
+// Stub AdaptiveLearningEngine for compilation
+struct AdaptiveLearningEngine;
+
+impl AdaptiveLearningEngine {
+    fn new() -> Self {
+        Self
+    }
+
+    fn predict_success(&self, _action: &str) -> bool {
+        true
+    }
+
+    fn record_result(&mut self, _result: ActionResult) {
+        // Stub implementation
+    }
 }
 
 impl ActionPlanner {
@@ -476,5 +540,193 @@ mod tests {
     fn test_sequencer_creation() {
         let sequencer = SmartActionSequencer::new();
         assert!(sequencer.execution_queue.is_empty());
+    }
+
+    #[test]
+    fn test_action_metadata_creation() {
+        let metadata = ActionMetadata {
+            name: "like".to_string(),
+            description: "Like a tweet".to_string(),
+            required_context: vec![],
+            base_success_rate: 0.8,
+            resource_cost: ResourceCost::default(),
+            cooldown: Duration::from_secs(5),
+            priority: 1,
+        };
+        assert_eq!(metadata.name, "like");
+    }
+
+    #[test]
+    fn test_resource_cost_default() {
+        let cost = ResourceCost::default();
+        assert_eq!(cost.time, 0.0);
+        assert_eq!(cost.api_calls, 0);
+    }
+
+    #[test]
+    fn test_resource_cost_custom() {
+        let cost = ResourceCost {
+            time: 1.5,
+            api_calls: 2,
+            computation: 0.5,
+            risk: 0.1,
+        };
+        assert_eq!(cost.time, 1.5);
+        assert_eq!(cost.api_calls, 2);
+    }
+
+    #[test]
+    fn test_optimization_strategy_variants() {
+        assert_eq!(OptimizationStrategy::Greedy, OptimizationStrategy::Greedy);
+        assert_eq!(OptimizationStrategy::DynamicProgramming, OptimizationStrategy::DynamicProgramming);
+    }
+
+    #[test]
+    fn test_selector_strategy_variants() {
+        assert_eq!(SelectorStrategy::BestFirst, SelectorStrategy::BestFirst);
+        assert_eq!(SelectorStrategy::Bandit, SelectorStrategy::Bandit);
+    }
+
+    #[test]
+    fn test_execution_context_default() {
+        let context = ExecutionContext::default();
+        assert!(context.user_profile.is_none());
+        assert!(context.recent_actions.is_empty());
+    }
+
+    #[test]
+    fn test_resources_default() {
+        let resources = Resources::default();
+        assert_eq!(resources.api_quota, 0);
+        assert_eq!(resources.computation, 0.0);
+    }
+
+    #[test]
+    fn test_action_metrics_default() {
+        let metrics = ActionMetrics::default();
+        assert_eq!(metrics.engagement, 0.0);
+    }
+
+    #[test]
+    fn test_action_result_creation() {
+        let result = ActionResult {
+            action: "like".to_string(),
+            success: true,
+            timestamp: Instant::now(),
+            metrics: ActionMetrics::default(),
+        };
+        assert_eq!(result.action, "like");
+        assert!(result.success);
+    }
+
+    #[test]
+    fn test_planned_action_creation() {
+        let action = PlannedAction {
+            action: "retweet".to_string(),
+            context: vec![],
+            priority: 1,
+            estimated_success: 0.9,
+            optimal_time: Instant::now(),
+            constraints: vec![],
+        };
+        assert_eq!(action.action, "retweet");
+    }
+
+    #[test]
+    fn test_planner_plan_sequence() {
+        let planner = ActionPlanner::new(vec![]);
+        let context = ExecutionContext::default();
+        let actions = vec!["like".to_string(), "retweet".to_string()];
+        let sequence = planner.plan_sequence(&context, &actions);
+        assert!(!sequence.is_empty());
+    }
+
+    #[test]
+    fn test_selector_best_first() {
+        let context = ExecutionContext::default();
+        let selector = ContextAwareSelector::new(context);
+        let actions = vec!["like".to_string(), "retweet".to_string()];
+        let selected = selector.select_action(&actions);
+        assert!(selected.is_some());
+    }
+
+    #[test]
+    fn test_selector_bandit() {
+        let mut context = ExecutionContext::default();
+        context.selector_strategy = SelectorStrategy::Bandit;
+        let selector = ContextAwareSelector::new(context);
+        let actions = vec!["like".to_string()];
+        let selected = selector.select_action(&actions);
+        assert!(selected.is_some());
+    }
+
+    #[test]
+    fn test_sequencer_execute_sequence() {
+        let mut sequencer = SmartActionSequencer::new();
+        let context = ExecutionContext::default();
+        let results = sequencer.execute_sequence(&context);
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn test_sequencer_get_available_actions() {
+        let sequencer = SmartActionSequencer::new();
+        let actions = sequencer.get_available_actions();
+        assert_eq!(actions.len(), 5);
+    }
+
+    #[test]
+    fn test_action_registry_default() {
+        let registry = ActionRegistry::new();
+        assert!(registry.actions.is_empty());
+    }
+
+    #[test]
+    fn test_constraint_solver_default() {
+        let solver = ConstraintSolver::new();
+        // Verify solver is created without panicking
+        let _ = solver;
+    }
+
+    #[test]
+    fn test_plan_optimizer_default() {
+        let optimizer = PlanOptimizer::new();
+        // Verify optimizer is created without panicking
+        let _ = optimizer;
+    }
+
+    #[test]
+    fn test_planner_filter_by_context() {
+        let planner = ActionPlanner::new(vec![]);
+        let context = ExecutionContext::default();
+        let actions = vec!["like".to_string()];
+        let filtered = planner.filter_by_context(&actions, &context);
+        // May be empty if no context requirements met
+        assert!(filtered.len() <= actions.len());
+    }
+
+    #[test]
+    fn test_planner_score_actions() {
+        let planner = ActionPlanner::new(vec![]);
+        let context = ExecutionContext::default();
+        let actions = vec!["like".to_string()];
+        let scored = planner.score_actions(&actions, &context);
+        assert_eq!(scored.len(), 1);
+    }
+
+    #[test]
+    fn test_planner_context_bonus() {
+        let planner = ActionPlanner::new(vec![]);
+        let context = ExecutionContext::default();
+        let bonus = planner.context_bonus("like", &context);
+        assert!(bonus >= 0.0);
+    }
+
+    #[test]
+    fn test_planner_goal_alignment() {
+        let planner = ActionPlanner::new(vec![]);
+        let profile = None;
+        let alignment = planner.goal_alignment("like", &profile);
+        assert_eq!(alignment, 0.0);
     }
 }

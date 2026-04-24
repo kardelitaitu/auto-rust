@@ -413,4 +413,106 @@ mod tests {
         alerts.check_thresholds(&metrics);
         assert!(!alerts.active_alerts.is_empty());
     }
+
+    #[test]
+    fn test_live_metrics_creation() {
+        let metrics = LiveMetrics::new();
+        assert!(metrics.metrics_window.is_empty());
+        assert_eq!(metrics.update_interval, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn test_aggregated_metrics_default() {
+        let metrics = AggregatedMetrics::default();
+        assert_eq!(metrics.total_actions, 0);
+        assert_eq!(metrics.error_count, 0);
+    }
+
+    #[test]
+    fn test_alert_thresholds_default() {
+        let thresholds = AlertThresholds::default();
+        assert_eq!(thresholds.min_success_rate, 0.0);
+        assert_eq!(thresholds.max_error_rate, 0.0);
+    }
+
+    #[test]
+    fn test_alert_level_enum() {
+        assert_eq!(AlertLevel::Info, AlertLevel::Info);
+        assert_ne!(AlertLevel::Critical, AlertLevel::Warning);
+    }
+
+    #[test]
+    fn test_chart_type_enum() {
+        assert_eq!(ChartType::Line, ChartType::Line);
+        assert_ne!(ChartType::Bar, ChartType::Pie);
+    }
+
+    #[test]
+    fn test_system_health_status_enum() {
+        assert_eq!(SystemHealthStatus::Healthy, SystemHealthStatus::Healthy);
+        assert_ne!(SystemHealthStatus::Critical, SystemHealthStatus::Degraded);
+    }
+
+    #[test]
+    fn test_health_check_result_enum() {
+        assert_eq!(HealthCheckResult::Passed, HealthCheckResult::Passed);
+        assert_ne!(HealthCheckResult::Failed("test".to_string()), HealthCheckResult::Inconclusive);
+    }
+
+    #[test]
+    fn test_recovery_action_type_enum() {
+        assert_eq!(RecoveryActionType::RestartService, RecoveryActionType::RestartService);
+        assert_ne!(RecoveryActionType::ScaleResources, RecoveryActionType::SwitchBackup);
+    }
+
+    #[test]
+    fn test_dashboard_update() {
+        let mut dashboard = MonitoringDashboard::new();
+        let snapshot = PerformanceSnapshot {
+            timestamp: Instant::now(),
+            metrics: TwitterActivityRunCounters::default(),
+            adaptation_events: vec![],
+        };
+        dashboard.update(snapshot);
+        let state = dashboard.get_state();
+        assert_eq!(state.alerts.len(), 0); // No alerts with default metrics
+    }
+
+    #[test]
+    fn test_alert_system_creation() {
+        let alerts = AlertSystem::new();
+        assert!(alerts.active_alerts.is_empty());
+        assert!(alerts.history.is_empty());
+    }
+
+    #[test]
+    fn test_health_monitor_creation() {
+        let monitor = HealthMonitor::new();
+        assert_eq!(monitor.status, SystemHealthStatus::Healthy);
+    }
+
+    #[test]
+    fn test_visualization_engine_creation() {
+        let engine = VisualizationEngine::new();
+        assert!(engine.chart_configs.is_empty());
+        assert!(!engine.viz_types.is_empty());
+    }
+
+    #[test]
+    fn test_alert_metrics_default() {
+        let metrics = AlertMetrics::default();
+        assert_eq!(metrics.success_rate, 0.0);
+        assert_eq!(metrics.error_rate, 0.0);
+    }
+
+    #[test]
+    fn test_performance_snapshot_fields() {
+        let snapshot = PerformanceSnapshot {
+            timestamp: Instant::now(),
+            metrics: TwitterActivityRunCounters::default(),
+            adaptation_events: vec![],
+        };
+        let _ = snapshot.timestamp;
+        let _ = snapshot.metrics;
+    }
 }

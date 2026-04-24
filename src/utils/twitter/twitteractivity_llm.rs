@@ -850,4 +850,66 @@ mod tests {
         assert!(js.contains("data-testid"));
         assert!(js.contains("return"));
     }
+
+    #[test]
+    fn test_validate_reply_removes_asterisks() {
+        let text = "This is **bold** and *italic* text";
+        let result = validate_reply(text).unwrap();
+        assert!(!result.contains("**"));
+        assert!(!result.contains("*"));
+    }
+
+    #[test]
+    fn test_validate_reply_empty_after_sanitization() {
+        let text = "@user #tag 😀";
+        let result = validate_reply(text);
+        // After removing @, #, and emojis, we get "user tag" which is not empty
+        // So this should succeed, not fail
+        assert!(result.is_ok());
+        let sanitized = result.unwrap();
+        assert!(!sanitized.contains("@"));
+        assert!(!sanitized.contains("#"));
+    }
+
+    #[test]
+    fn test_remove_mentions_function() {
+        let text = "Hello @user1 and @user2";
+        let result = remove_mentions(text);
+        assert!(!result.contains("@user1"));
+        assert!(!result.contains("@user2"));
+        assert!(result.contains("Hello"));
+    }
+
+    #[test]
+    fn test_remove_hashtags_function() {
+        let text = "This is #tech and #coding";
+        let result = remove_hashtags(text);
+        assert!(!result.contains("#"));
+        assert!(result.contains("tech"));
+        assert!(result.contains("coding"));
+    }
+
+    #[test]
+    fn test_remove_emojis_function() {
+        let text = "Test 😀 🔥 👍";
+        let result = remove_emojis(text);
+        assert!(!result.contains("😀"));
+        assert!(!result.contains("🔥"));
+        assert!(!result.contains("👍"));
+        assert!(result.contains("Test"));
+    }
+
+    #[test]
+    fn test_truncate_to_word_boundary_short_text() {
+        let text = "Short";
+        let result = truncate_to_word_boundary(text, 30);
+        assert_eq!(result, "Short");
+    }
+
+    #[test]
+    fn test_truncate_to_word_boundary_no_space() {
+        let text = "Verylongwordwithoutspaces";
+        let result = truncate_to_word_boundary(text, 10);
+        assert!(result.len() <= 13); // 10 + "..."
+    }
 }

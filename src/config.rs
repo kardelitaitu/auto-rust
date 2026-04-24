@@ -842,6 +842,200 @@ mod tests {
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("BrowserConfig"));
     }
+
+    #[test]
+    fn test_config_validation_report_add_error() {
+        let mut report = ConfigValidationReport::new();
+        report.errors.push("Test error".to_string());
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(report.errors[0], "Test error");
+    }
+
+    #[test]
+    fn test_config_validation_report_add_warning() {
+        let mut report = ConfigValidationReport::new();
+        report.warnings.push("Test warning".to_string());
+        assert_eq!(report.warnings.len(), 1);
+        assert_eq!(report.warnings[0], "Test warning");
+    }
+
+    #[test]
+    fn test_config_validation_report_clone() {
+        let mut report = ConfigValidationReport::new();
+        report.errors.push("Error 1".to_string());
+        report.warnings.push("Warning 1".to_string());
+        let cloned = report.clone();
+        assert_eq!(cloned.errors.len(), 1);
+        assert_eq!(cloned.warnings.len(), 1);
+    }
+
+    #[test]
+    fn test_twitter_activity_config_with_persona_path() {
+        let mut config = TwitterActivityConfig::default();
+        config.persona_file_path = Some("/path/to/persona.json".to_string());
+        assert!(config.persona_file_path.is_some());
+        assert_eq!(config.persona_file_path.unwrap(), "/path/to/persona.json");
+    }
+
+    #[test]
+    fn test_twitter_activity_config_scroll_amount_override() {
+        let mut config = TwitterActivityConfig::default();
+        config.scroll_amount_pixels = 500;
+        assert_eq!(config.scroll_amount_pixels, 500);
+    }
+
+    #[test]
+    fn test_twitter_activity_config_candidate_scan_interval() {
+        let mut config = TwitterActivityConfig::default();
+        config.candidate_scan_interval_ms = 3000;
+        assert_eq!(config.candidate_scan_interval_ms, 3000);
+    }
+
+    #[test]
+    fn test_twitter_llm_config_with_custom_values() {
+        let config = TwitterLLMConfig {
+            enabled: true,
+            provider: "openrouter".to_string(),
+            model: "gpt-4".to_string(),
+            temperature: 0.5,
+            max_tokens: 200,
+            timeout_ms: 60000,
+            reply_probability: 0.1,
+            quote_tweet_probability: 0.05,
+        };
+        assert!(config.enabled);
+        assert_eq!(config.provider, "openrouter");
+        assert_eq!(config.model, "gpt-4");
+        assert_eq!(config.temperature, 0.5);
+        assert_eq!(config.max_tokens, 200);
+    }
+
+    #[test]
+    fn test_tracing_config_with_custom_values() {
+        let config = TracingConfig {
+            enabled: true,
+            otlp_endpoint: "http://localhost:4318".to_string(),
+            service_name: "my-service".to_string(),
+        };
+        assert!(config.enabled);
+        assert_eq!(config.otlp_endpoint, "http://localhost:4318");
+        assert_eq!(config.service_name, "my-service");
+    }
+
+    #[test]
+    fn test_browser_config_with_user_agent() {
+        let mut config = BrowserConfig::default();
+        config.user_agent = Some("CustomAgent/1.0".to_string());
+        assert!(config.user_agent.is_some());
+        assert_eq!(config.user_agent.unwrap(), "CustomAgent/1.0");
+    }
+
+    #[test]
+    fn test_browser_config_with_extra_headers() {
+        let mut config = BrowserConfig::default();
+        config.extra_http_headers.insert("X-Custom".to_string(), "Value".to_string());
+        assert_eq!(config.extra_http_headers.len(), 1);
+        assert_eq!(config.extra_http_headers.get("X-Custom"), Some(&"Value".to_string()));
+    }
+
+    #[test]
+    fn test_browser_config_cursor_overlay_ms() {
+        let mut config = BrowserConfig::default();
+        config.cursor_overlay_ms = 100;
+        assert_eq!(config.cursor_overlay_ms, 100);
+    }
+
+    #[test]
+    fn test_browser_config_max_workers_per_session() {
+        let config = BrowserConfig::default();
+        assert_eq!(config.max_workers_per_session, 5);
+    }
+
+    #[test]
+    fn test_roxybrowser_config_with_api_key() {
+        let config = RoxybrowserConfig {
+            enabled: true,
+            api_url: "https://api.roxybrowser.com".to_string(),
+            api_key: "test-key-123".to_string(),
+        };
+        assert!(config.enabled);
+        assert_eq!(config.api_url, "https://api.roxybrowser.com");
+        assert_eq!(config.api_key, "test-key-123");
+    }
+
+    #[test]
+    fn test_circuit_breaker_config_custom_values() {
+        let config = CircuitBreakerConfig {
+            enabled: true,
+            failure_threshold: 10,
+            success_threshold: 5,
+            half_open_time_ms: 60000,
+        };
+        assert!(config.enabled);
+        assert_eq!(config.failure_threshold, 10);
+        assert_eq!(config.success_threshold, 5);
+        assert_eq!(config.half_open_time_ms, 60000);
+    }
+
+    #[test]
+    fn test_orchestrator_config_custom_values() {
+        let config = OrchestratorConfig {
+            max_global_concurrency: 10,
+            task_timeout_ms: 120000,
+            group_timeout_ms: 600000,
+            worker_wait_timeout_ms: 20000,
+            stuck_worker_threshold_ms: 240000,
+            task_stagger_delay_ms: 1000,
+            max_retries: 5,
+            retry_delay_ms: 5000,
+        };
+        assert_eq!(config.max_global_concurrency, 10);
+        assert_eq!(config.task_timeout_ms, 120000);
+        assert_eq!(config.max_retries, 5);
+    }
+
+    #[test]
+    fn test_browser_profile_custom_values() {
+        let profile = BrowserProfile {
+            name: "MyProfile".to_string(),
+            r#type: "brave".to_string(),
+            ws_endpoint: "ws://localhost:9222".to_string(),
+        };
+        assert_eq!(profile.name, "MyProfile");
+        assert_eq!(profile.r#type, "brave");
+        assert_eq!(profile.ws_endpoint, "ws://localhost:9222");
+    }
+
+    #[test]
+    fn test_engagement_limits_config_custom_values() {
+        let config = EngagementLimitsConfig {
+            max_likes: 10,
+            max_retweets: 5,
+            max_follows: 3,
+            max_replies: 2,
+            max_thread_dives: 5,
+            max_bookmarks: 3,
+            max_quote_tweets: 4,
+            max_total_actions: 20,
+        };
+        assert_eq!(config.max_likes, 10);
+        assert_eq!(config.max_total_actions, 20);
+    }
+
+    #[test]
+    fn test_twitter_probabilities_config_custom_values() {
+        let config = TwitterProbabilitiesConfig {
+            like_probability: 0.5,
+            retweet_probability: 0.2,
+            quote_probability: 0.1,
+            follow_probability: 0.1,
+            reply_probability: 0.1,
+            bookmark_probability: 0.05,
+            thread_dive_probability: 0.3,
+        };
+        assert_eq!(config.like_probability, 0.5);
+        assert_eq!(config.thread_dive_probability, 0.3);
+    }
 }
 
 /// Loads configuration from file and environment variables.

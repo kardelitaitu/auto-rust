@@ -212,7 +212,7 @@ impl TweetActionTracker {
     pub fn can_perform_action(&self, tweet_id: &str, _action_type: &str) -> bool {
         if let Some((_, last_time)) = self.last_action.get(tweet_id) {
             let elapsed = last_time.elapsed();
-            // Enforce minimum delay between different action types on same tweet
+            // Enforce minimum delay between actions on same tweet
             if elapsed.as_millis() < self.min_delay_ms as u128 {
                 return false;
             }

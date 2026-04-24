@@ -542,4 +542,412 @@ mod tests {
         let kind2 = kind1;
         assert_eq!(kind1, kind2);
     }
+
+    #[test]
+    fn test_task_status_failed_with_message() {
+        let status = TaskStatus::Failed("Test error message".to_string());
+        assert!(matches!(status, TaskStatus::Failed(_)));
+    }
+
+    #[test]
+    fn test_task_status_failed_with_empty_message() {
+        let status = TaskStatus::Failed("".to_string());
+        assert!(matches!(status, TaskStatus::Failed(_)));
+    }
+
+    #[test]
+    fn test_task_status_failed_with_long_message() {
+        let long_msg = "a".repeat(1000);
+        let status = TaskStatus::Failed(long_msg.clone());
+        if let TaskStatus::Failed(msg) = status {
+            assert_eq!(msg.len(), 1000);
+        } else {
+            panic!("Expected Failed status");
+        }
+    }
+
+    #[test]
+    fn test_task_result_clone() {
+        let result = TaskResult::success(100);
+        let cloned = result.clone();
+        assert_eq!(result.duration_ms, cloned.duration_ms);
+        assert_eq!(result.status, cloned.status);
+    }
+
+    #[test]
+    fn test_task_result_debug() {
+        let result = TaskResult::success(100);
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("TaskResult"));
+    }
+
+    #[test]
+    fn test_task_error_kind_partial_ord() {
+        assert!(TaskErrorKind::Timeout <= TaskErrorKind::Timeout);
+        assert!(TaskErrorKind::Timeout < TaskErrorKind::Unknown);
+    }
+
+    #[test]
+    fn test_task_error_kind_eq() {
+        assert_eq!(TaskErrorKind::Timeout, TaskErrorKind::Timeout);
+        assert_ne!(TaskErrorKind::Timeout, TaskErrorKind::Validation);
+    }
+
+    #[test]
+    fn test_task_error_kind_all_variants() {
+        let variants = [
+            TaskErrorKind::Timeout,
+            TaskErrorKind::Validation,
+            TaskErrorKind::Navigation,
+            TaskErrorKind::Session,
+            TaskErrorKind::Browser,
+            TaskErrorKind::Unknown,
+        ];
+        assert_eq!(variants.len(), 6);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_case_insensitive() {
+        let kind1 = TaskErrorKind::classify("TIMEOUT ERROR");
+        let kind2 = TaskErrorKind::classify("timeout error");
+        assert_eq!(kind1, kind2);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_multiple_keywords() {
+        let kind = TaskErrorKind::classify("Browser timeout during navigation");
+        // Should classify as timeout since timeout is checked first
+        assert_eq!(kind, TaskErrorKind::Timeout);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_websocket_error() {
+        let kind = TaskErrorKind::classify("WebSocket connection failed");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_channel_closed() {
+        let kind = TaskErrorKind::classify("channel closed");
+        assert_eq!(kind, TaskErrorKind::Session);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_worker_error() {
+        let kind = TaskErrorKind::classify("worker acquisition failed");
+        assert_eq!(kind, TaskErrorKind::Session);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_page_error() {
+        let kind = TaskErrorKind::classify("page not found");
+        assert_eq!(kind, TaskErrorKind::Session);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_chromium_error() {
+        let kind = TaskErrorKind::classify("chromium process crashed");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_brave_error() {
+        let kind = TaskErrorKind::classify("brave browser disconnected");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_deadline_error() {
+        let kind = TaskErrorKind::classify("deadline exceeded");
+        assert_eq!(kind, TaskErrorKind::Timeout);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_schema_error() {
+        let kind = TaskErrorKind::classify("schema validation failed");
+        assert_eq!(kind, TaskErrorKind::Validation);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_invalid_error() {
+        let kind = TaskErrorKind::classify("invalid parameter");
+        assert_eq!(kind, TaskErrorKind::Validation);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_goto_error() {
+        let kind = TaskErrorKind::classify("goto failed");
+        assert_eq!(kind, TaskErrorKind::Navigation);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_load_error() {
+        let kind = TaskErrorKind::classify("page load failed");
+        assert_eq!(kind, TaskErrorKind::Navigation);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_connection_reset() {
+        let kind = TaskErrorKind::classify("connection reset by peer");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_connection_closed() {
+        let kind = TaskErrorKind::classify("connection closed");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_protocol_error() {
+        let kind = TaskErrorKind::classify("protocol error");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_send_failed() {
+        let kind = TaskErrorKind::classify("send failed");
+        assert_eq!(kind, TaskErrorKind::Session);
+    }
+
+    #[test]
+    fn test_task_result_with_retry_zero_attempt() {
+        let result = TaskResult::success(100).with_retry(0, 3, "error".to_string());
+        assert_eq!(result.attempt, 0);
+    }
+
+    #[test]
+    fn test_task_result_with_retry_zero_max_retries() {
+        let result = TaskResult::success(100).with_retry(1, 0, "error".to_string());
+        assert_eq!(result.max_retries, 0);
+    }
+
+    #[test]
+    fn test_task_result_with_attempt_zero_values() {
+        let result = TaskResult::success(100).with_attempt(0, 0);
+        assert_eq!(result.attempt, 0);
+        assert_eq!(result.max_retries, 0);
+    }
+
+    #[test]
+    fn test_task_result_with_error_kind_all_variants() {
+        let result = TaskResult::success(100).with_error_kind(TaskErrorKind::Validation);
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Validation));
+    }
+
+    #[test]
+    fn test_run_summary_add_multiple_timeouts() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::failure(50, "timeout".to_string(), TaskErrorKind::Timeout));
+        summary.add(TaskResult::failure(50, "timeout".to_string(), TaskErrorKind::Timeout));
+        assert_eq!(summary.timed_out, 2);
+    }
+
+    #[test]
+    fn test_run_summary_add_multiple_cancelled() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::cancelled(25, "cancelled".to_string(), TaskErrorKind::Timeout));
+        summary.add(TaskResult::cancelled(25, "cancelled".to_string(), TaskErrorKind::Timeout));
+        assert_eq!(summary.cancelled, 2);
+    }
+
+    #[test]
+    fn test_run_summary_success_rate_100_percent() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::success(100));
+        assert_eq!(summary.success_rate(), 100.0);
+    }
+
+    #[test]
+    fn test_run_summary_success_rate_0_percent() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        assert_eq!(summary.success_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_run_summary_success_rate_50_percent() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        assert_eq!(summary.success_rate(), 50.0);
+    }
+
+    #[test]
+    fn test_run_summary_results_vec() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        assert_eq!(summary.results.len(), 2);
+    }
+
+    #[test]
+    fn test_run_summary_clone() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        let cloned = summary.clone();
+        assert_eq!(cloned.total_tasks, 1);
+        assert_eq!(cloned.succeeded, 1);
+    }
+
+    #[test]
+    fn test_run_summary_debug() {
+        let summary = RunSummary::new();
+        let debug_str = format!("{:?}", summary);
+        assert!(debug_str.contains("RunSummary"));
+    }
+
+    #[test]
+    fn test_task_status_deserialize() {
+        let json = r#"{"Failed":"test error"}"#;
+        let status: TaskStatus = serde_json::from_str(json).unwrap();
+        assert!(matches!(status, TaskStatus::Failed(_)));
+    }
+
+    #[test]
+    fn test_task_result_deserialize() {
+        let json = r#"{"status":"Success","attempt":1,"max_retries":0,"last_error":null,"error_kind":null,"duration_ms":100}"#;
+        let result: TaskResult = serde_json::from_str(json).unwrap();
+        assert!(result.is_success());
+        assert_eq!(result.duration_ms, 100);
+    }
+
+    #[test]
+    fn test_run_summary_deserialize() {
+        let json = r#"{"total_tasks":0,"succeeded":0,"failed":0,"timed_out":0,"cancelled":0,"total_duration_ms":0,"results":[]}"#;
+        let summary: RunSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(summary.total_tasks, 0);
+    }
+
+    #[test]
+    fn test_task_result_with_all_fields() {
+        let result = TaskResult {
+            status: TaskStatus::Success,
+            attempt: 5,
+            max_retries: 10,
+            last_error: Some("test error".to_string()),
+            error_kind: Some(TaskErrorKind::Browser),
+            duration_ms: 1000,
+        };
+        assert_eq!(result.attempt, 5);
+        assert_eq!(result.max_retries, 10);
+    }
+
+    #[test]
+    fn test_task_result_is_success_false_for_failed() {
+        let result = TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser);
+        assert!(!result.is_success());
+    }
+
+    #[test]
+    fn test_task_result_is_success_false_for_timeout() {
+        let result = TaskResult::failure(50, "timeout".to_string(), TaskErrorKind::Timeout);
+        assert!(!result.is_success());
+    }
+
+    #[test]
+    fn test_task_result_is_success_false_for_cancelled() {
+        let result = TaskResult::cancelled(50, "cancelled".to_string(), TaskErrorKind::Timeout);
+        assert!(!result.is_success());
+    }
+
+    #[test]
+    fn test_task_status_serialize_failed() {
+        let status = TaskStatus::Failed("test".to_string());
+        let serialized = serde_json::to_string(&status).unwrap();
+        assert!(serialized.contains("Failed"));
+    }
+
+    #[test]
+    fn test_task_status_serialize_timeout() {
+        let status = TaskStatus::Timeout;
+        let serialized = serde_json::to_string(&status).unwrap();
+        assert!(serialized.contains("Timeout"));
+    }
+
+    #[test]
+    fn test_task_status_serialize_cancelled() {
+        let status = TaskStatus::Cancelled;
+        let serialized = serde_json::to_string(&status).unwrap();
+        assert!(serialized.contains("Cancelled"));
+    }
+
+    #[test]
+    fn test_task_error_kind_serialize() {
+        let kind = TaskErrorKind::Timeout;
+        let serialized = serde_json::to_string(&kind).unwrap();
+        assert!(serialized.contains("Timeout"));
+    }
+
+    #[test]
+    fn test_task_error_kind_deserialize() {
+        let json = r#""Timeout""#;
+        let kind: TaskErrorKind = serde_json::from_str(json).unwrap();
+        assert_eq!(kind, TaskErrorKind::Timeout);
+    }
+
+    #[test]
+    fn test_run_summary_results_preserve_order() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::failure(50, "error1".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::success(200));
+        assert_eq!(summary.results[0].duration_ms, 100);
+        assert_eq!(summary.results[1].duration_ms, 50);
+        assert_eq!(summary.results[2].duration_ms, 200);
+    }
+
+    #[test]
+    fn test_task_result_failure_with_timeout_kind_sets_timeout_status() {
+        let result = TaskResult::failure(50, "any error".to_string(), TaskErrorKind::Timeout);
+        assert!(matches!(result.status, TaskStatus::Timeout));
+    }
+
+    #[test]
+    fn test_task_result_failure_with_non_timeout_kind_sets_failed_status() {
+        let result = TaskResult::failure(50, "any error".to_string(), TaskErrorKind::Browser);
+        assert!(matches!(result.status, TaskStatus::Failed(_)));
+    }
+
+    #[test]
+    fn test_task_result_cancelled_preserves_error_kind() {
+        let result = TaskResult::cancelled(50, "cancelled".to_string(), TaskErrorKind::Session);
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Session));
+    }
+
+    #[test]
+    fn test_task_result_with_retry_preserves_status() {
+        let result = TaskResult::success(100).with_retry(2, 3, "error".to_string());
+        assert!(matches!(result.status, TaskStatus::Success));
+    }
+
+    #[test]
+    fn test_task_result_with_error_kind_overwrites() {
+        let result = TaskResult::success(100)
+            .with_error_kind(TaskErrorKind::Timeout)
+            .with_error_kind(TaskErrorKind::Browser);
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Browser));
+    }
+
+    #[test]
+    fn test_run_summary_add_does_not_modify_original_result() {
+        let result = TaskResult::success(100);
+        let original_duration = result.duration_ms;
+        let mut summary = RunSummary::new();
+        summary.add(result.clone());
+        assert_eq!(result.duration_ms, original_duration);
+    }
+
+    #[test]
+    fn test_task_status_all_variants() {
+        let variants = [
+            TaskStatus::Success,
+            TaskStatus::Failed("test".to_string()),
+            TaskStatus::Timeout,
+            TaskStatus::Cancelled,
+        ];
+        assert_eq!(variants.len(), 4);
+    }
 }

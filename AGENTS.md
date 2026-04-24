@@ -202,3 +202,71 @@ All core orchestration features have been implemented and are production-ready:
 - Build: `cargo build --all-features`
 - Generate documentation: `cargo doc --all-features`
 - View documentation: `cargo doc --open`
+
+## Code Improvement Workflow
+
+When improving the codebase, follow this systematic procedure to ensure quality and prevent regressions:
+
+### 1. Identify Problems
+- Review code for bugs, performance issues, code smells, or violations of best practices
+- Use grep/search to find patterns across the codebase
+- Check for unused variables, dead code, duplicate logic, inconsistent error handling
+- Review large functions, complex control flow, and unclear abstractions
+
+### 2. Filter Problems
+- Separate actual bugs from style preferences
+- Prioritize by impact: functional bugs > performance > maintainability > style
+- Discard findings that are intentional design choices (documented or justified)
+- Focus on issues that have clear, measurable impact
+
+### 3. Verify Problems Are Real
+- **Deep trace the data flow** - follow variables through the code to understand actual behavior
+- **Check usage patterns** - verify how functions are called and return values are used
+- **Review documentation** - check if comments explain why code is written a certain way
+- **Consider context** - understand the broader architecture before making changes
+- **Be 100% certain** - only proceed with fixes when you have complete understanding
+
+### 4. Prove Fixes Won't Break Codebase
+- **Run cargo check** - verify compilation before any changes
+- **Run cargo test** - establish baseline test results
+- **Consider test coverage** - if tests don't cover the code, plan to add tests
+- **Think about edge cases** - what could go wrong with the fix?
+- **Review dependencies** - will the change affect other modules?
+
+### 5. Wait for Confirmation
+- **Present findings clearly** - explain the problem, the fix, and the rationale
+- **Show evidence** - include code snippets, test results, and analysis
+- **Ask for approval** - do not make changes until user confirms
+- **Be prepared to adjust** - user may have different priorities or constraints
+
+### 6. Fix Files (After Confirmation)
+- **Make minimal changes** - fix only what's necessary
+- **Follow existing style** - match the surrounding code conventions
+- **Add comments if needed** - explain non-obvious changes
+- **Use edit tools** - prefer targeted edits over wholesale rewrites
+
+### 7. Run Verification
+- **cargo check** - ensure compilation succeeds
+- **cargo test** - ensure all tests pass
+- **If tests fail** - either fix the implementation or patch the test (if test was wrong)
+- **If no tests exist** - consider adding tests for the fixed code
+
+### 8. Handle Test Issues
+- **If implementation is wrong** - fix the implementation and re-test
+- **If test is wrong** - update the test to match correct behavior
+- **If no test coverage** - create a test that validates the fix
+- **Document the test** - explain what it tests and why
+
+### 9. Report, Commit, and Push
+- **Summarize changes** - explain what was fixed and why
+- **Use clear commit messages** - describe the change, not just "fix bug"
+- **Include context** - mention the issue addressed and the impact
+- **git commit** - commit with proper message
+- **git push** - push to remote repository
+
+### Key Principles
+- **Be conservative** - when in doubt, don't change it
+- **Be thorough** - verify your understanding before proposing changes
+- **Be transparent** - show your work and reasoning
+- **Be patient** - wait for confirmation before acting
+- **Be minimal** - change only what needs to be changed

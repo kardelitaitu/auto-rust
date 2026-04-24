@@ -515,6 +515,147 @@ mod tests {
         assert!(!is_retryable_status(StatusCode::BAD_REQUEST));
         assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
     }
+
+    #[test]
+    fn test_circuit_state_variants() {
+        assert_eq!(CircuitState::Closed, CircuitState::Closed);
+        assert_eq!(CircuitState::Open, CircuitState::Open);
+        assert_eq!(CircuitState::HalfOpen, CircuitState::HalfOpen);
+    }
+
+    #[test]
+    fn test_circuit_state_inequality() {
+        assert_ne!(CircuitState::Closed, CircuitState::Open);
+        assert_ne!(CircuitState::Open, CircuitState::HalfOpen);
+        assert_ne!(CircuitState::HalfOpen, CircuitState::Closed);
+    }
+
+    #[test]
+    fn test_api_call_error_retryable() {
+        let error = ApiCallError::retryable("temporary error");
+        assert!(error.retryable);
+        assert_eq!(error.message, "temporary error");
+    }
+
+    #[test]
+    fn test_api_call_error_permanent() {
+        let error = ApiCallError::permanent("permanent error");
+        assert!(!error.retryable);
+        assert_eq!(error.message, "permanent error");
+    }
+
+    #[test]
+    fn test_api_call_error_display() {
+        let error = ApiCallError::retryable("test error");
+        let display = format!("{}", error);
+        assert_eq!(display, "test error");
+    }
+
+    #[test]
+    fn test_retry_policy_custom_values() {
+        let policy = RetryPolicy {
+            max_retries: 5,
+            initial_delay: Duration::from_millis(500),
+            max_delay: Duration::from_secs(30),
+            factor: 3.0,
+            jitter: 0.5,
+        };
+        assert_eq!(policy.max_retries, 5);
+        assert_eq!(policy.initial_delay, Duration::from_millis(500));
+        assert_eq!(policy.factor, 3.0);
+    }
+
+    #[test]
+    fn test_retry_policy_zero_retries() {
+        let policy = RetryPolicy {
+            max_retries: 0,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            factor: 2.0,
+            jitter: 0.0,
+        };
+        // With 0 retries, delay should still be calculated but only 1 attempt is made
+        let delay = policy.delay_for_attempt(1);
+        assert_eq!(delay, Duration::from_millis(200));
+    }
+
+    #[test]
+    fn test_retry_policy_large_factor() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(60),
+            factor: 10.0,
+            jitter: 0.0,
+        };
+        let delay = policy.delay_for_attempt(2);
+        // 100 * 10^2 = 10,000ms = 10s
+        assert_eq!(delay, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_circuit_breaker_half_open_allows_execution() {
+        let mut cb = CircuitBreaker::new(3, 2, 30000);
+        cb.state = CircuitState::HalfOpen;
+        assert!(cb.can_execute());
+    }
+
+    #[test]
+    fn test_circuit_breaker_open_blocks_execution() {
+        let mut cb = CircuitBreaker::new(3, 2, 30000);
+        cb.state = CircuitState::Open;
+        assert!(!cb.can_execute());
+    }
+
+    #[test]
+    fn test_circuit_breaker_failure_in_half_open_opens() {
+        let mut cb = CircuitBreaker::new(2, 2, 30000);
+        cb.state = CircuitState::HalfOpen;
+        cb.record_failure();
+        assert!(cb.is_open());
+        assert!(!cb.can_execute());
+    }
+
+    #[test]
+    fn test_circuit_breaker_custom_thresholds() {
+        let cb = CircuitBreaker::new(10, 5, 60000);
+        assert_eq!(cb.failure_threshold, 10);
+        assert_eq!(cb.success_threshold, 5);
+        assert_eq!(cb.half_open_timeout_ms, 60000);
+    }
+
+    #[test]
+    fn test_circuit_breaker_state_accessor() {
+        let cb = CircuitBreaker::new(5, 3, 30000);
+        assert_eq!(cb.state(), CircuitState::Closed);
+    }
+
+    #[test]
+    fn test_api_client_new_creates_client() {
+        let client = ApiClient::new("https://api.example.com".to_string());
+        assert_eq!(client.base_url, "https://api.example.com");
+        assert!(client.circuit_breaker.is_none());
+    }
+
+    #[test]
+    fn test_api_client_with_circuit_breaker() {
+        let cb = CircuitBreaker::new(5, 3, 30000);
+        let client = ApiClient::with_circuit_breaker("https://api.example.com".to_string(), cb);
+        assert!(client.circuit_breaker.is_some());
+    }
+
+    #[test]
+    fn test_api_client_with_retry_policy() {
+        let policy = RetryPolicy {
+            max_retries: 5,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(30),
+            factor: 2.0,
+            jitter: 0.0,
+        };
+        let client = ApiClient::with_retry_policy("https://api.example.com".to_string(), policy);
+        assert_eq!(client.retry_policy.max_retries, 5);
+    }
 }
 
 /// Configuration for exponential backoff retry policy.

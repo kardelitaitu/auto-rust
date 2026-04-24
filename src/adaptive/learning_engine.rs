@@ -322,4 +322,161 @@ mod tests {
         let optimal = engine.get_optimal_action("user1", &vec!["like".to_string(), "retweet".to_string()]);
         assert_eq!(optimal, Some("like".to_string()));
     }
+
+    #[test]
+    fn test_learning_engine_new() {
+        let engine = AdaptiveLearningEngine::new();
+        assert!(engine.success_patterns.is_empty());
+        assert!(engine.user_profiles.is_empty());
+        assert!(!engine.current_goals.is_empty());
+    }
+
+    #[test]
+    fn test_learning_engine_default() {
+        let engine = AdaptiveLearningEngine::default();
+        assert!(engine.success_patterns.is_empty());
+        assert!(engine.user_profiles.is_empty());
+    }
+
+    #[test]
+    fn test_record_attempt_failure() {
+        let mut engine = AdaptiveLearningEngine::new();
+        engine.record_attempt("user1", "like", false, vec!["test".to_string()]);
+        
+        let patterns = engine.success_patterns.get("like").unwrap();
+        assert_eq!(patterns.total_attempts, 1);
+        assert_eq!(patterns.successful_attempts, 0);
+        assert_eq!(patterns.success_rate, 0.0);
+    }
+
+    #[test]
+    fn test_record_attempt_multiple() {
+        let mut engine = AdaptiveLearningEngine::new();
+        engine.record_attempt("user1", "like", true, vec![]);
+        engine.record_attempt("user1", "like", false, vec![]);
+        engine.record_attempt("user1", "like", true, vec![]);
+        
+        let patterns = engine.success_patterns.get("like").unwrap();
+        assert_eq!(patterns.total_attempts, 3);
+        assert_eq!(patterns.successful_attempts, 2);
+        assert!((patterns.success_rate - 0.666).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_get_optimal_action_no_patterns() {
+        let engine = AdaptiveLearningEngine::new();
+        let optimal = engine.get_optimal_action("user1", &vec!["like".to_string()]);
+        assert_eq!(optimal, Some("like".to_string()));
+    }
+
+    #[test]
+    fn test_get_optimal_action_empty_list() {
+        let engine = AdaptiveLearningEngine::new();
+        let optimal = engine.get_optimal_action("user1", &vec![]);
+        assert_eq!(optimal, None);
+    }
+
+    #[test]
+    fn test_get_goal_recommendations() {
+        let engine = AdaptiveLearningEngine::new();
+        let goals = engine.get_goal_recommendations();
+        assert!(!goals.is_empty());
+    }
+
+    #[test]
+    fn test_update_goals_low_success_rate() {
+        let mut engine = AdaptiveLearningEngine::new();
+        let metrics = PerformanceMetrics {
+            success_rate: 0.3,
+            engagement_quality: 0.5,
+        };
+        engine.update_goals(&metrics);
+        assert_eq!(engine.current_goals.len(), 1);
+    }
+
+    #[test]
+    fn test_update_goals_high_engagement() {
+        let mut engine = AdaptiveLearningEngine::new();
+        let metrics = PerformanceMetrics {
+            success_rate: 0.7,
+            engagement_quality: 0.9,
+        };
+        engine.update_goals(&metrics);
+        assert_eq!(engine.current_goals.len(), 1);
+    }
+
+    #[test]
+    fn test_conversation_style_variants() {
+        assert_eq!(ConversationStyle::Aggressive, ConversationStyle::Aggressive);
+        assert_eq!(ConversationStyle::Balanced, ConversationStyle::Balanced);
+        assert_eq!(ConversationStyle::Conservative, ConversationStyle::Conservative);
+        assert_eq!(ConversationStyle::Experimental, ConversationStyle::Experimental);
+    }
+
+    #[test]
+    fn test_conversation_style_inequality() {
+        assert_ne!(ConversationStyle::Aggressive, ConversationStyle::Balanced);
+        assert_ne!(ConversationStyle::Balanced, ConversationStyle::Conservative);
+        assert_ne!(ConversationStyle::Conservative, ConversationStyle::Experimental);
+    }
+
+    #[test]
+    fn test_user_behavior_profile_default() {
+        let profile = UserBehaviorProfile::default();
+        assert!(profile.preferred_times.is_empty());
+        assert!(profile.successful_actions.is_empty());
+        assert_eq!(profile.risk_tolerance, 0.0);
+    }
+
+    #[test]
+    fn test_action_success_patterns_default() {
+        let patterns = ActionSuccessPatterns::default();
+        assert_eq!(patterns.total_attempts, 0);
+        assert_eq!(patterns.successful_attempts, 0);
+        assert_eq!(patterns.success_rate, 0.0);
+    }
+
+    #[test]
+    fn test_engagement_goal_variants() {
+        let _ = EngagementGoal::MaximizeEngagement;
+        let _ = EngagementGoal::MinimizeFailures;
+        let _ = EngagementGoal::BalancedGrowth;
+        let _ = EngagementGoal::QualityFocus;
+        let _ = EngagementGoal::ActionTypeOptimization("like".to_string());
+    }
+
+    #[test]
+    fn test_record_attempt_creates_user_profile() {
+        let mut engine = AdaptiveLearningEngine::new();
+        engine.record_attempt("user1", "like", true, vec![]);
+        
+        assert!(engine.user_profiles.contains_key("user1"));
+    }
+
+    #[test]
+    fn test_record_attempt_different_users() {
+        let mut engine = AdaptiveLearningEngine::new();
+        engine.record_attempt("user1", "like", true, vec![]);
+        engine.record_attempt("user2", "like", false, vec![]);
+        
+        assert!(engine.user_profiles.contains_key("user1"));
+        assert!(engine.user_profiles.contains_key("user2"));
+    }
+
+    #[test]
+    fn test_record_attempt_different_actions() {
+        let mut engine = AdaptiveLearningEngine::new();
+        engine.record_attempt("user1", "like", true, vec![]);
+        engine.record_attempt("user1", "retweet", true, vec![]);
+        
+        assert!(engine.success_patterns.contains_key("like"));
+        assert!(engine.success_patterns.contains_key("retweet"));
+    }
+
+    #[test]
+    fn test_temporal_pattern_analyzer_new() {
+        let analyzer = TemporalPatternAnalyzer::new();
+        assert_eq!(analyzer.hourly_success.len(), 24);
+        assert_eq!(analyzer.daily_success.len(), 7);
+    }
 }

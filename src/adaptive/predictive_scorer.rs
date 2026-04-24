@@ -433,6 +433,188 @@ mod tests {
         assert_eq!(features.length, 12);
         assert!(features.sentiment >= 0.0);
     }
+
+    #[test]
+    fn test_scorer_new() {
+        let scorer = PredictiveEngagementScorer::new();
+        // Verify scorer is created without panicking
+        let _ = scorer.predict_engagement(
+            "test",
+            &UserBehaviorProfile::default(),
+            &TemporalFeatures::default(),
+            &ContextFeatures::default(),
+        );
+    }
+
+    #[test]
+    fn test_prediction_confidence_bounds() {
+        let scorer = PredictiveEngagementScorer::new();
+        let prediction = scorer.predict_engagement(
+            "test",
+            &UserBehaviorProfile::default(),
+            &TemporalFeatures::default(),
+            &ContextFeatures::default(),
+        );
+        
+        assert!(prediction.confidence >= 0.0);
+        assert!(prediction.confidence <= 1.0);
+    }
+
+    #[test]
+    fn test_prediction_expected_engagement() {
+        let scorer = PredictiveEngagementScorer::new();
+        let prediction = scorer.predict_engagement(
+            "test",
+            &UserBehaviorProfile::default(),
+            &TemporalFeatures::default(),
+            &ContextFeatures::default(),
+        );
+        
+        assert!(prediction.expected_engagement >= 0.0);
+        assert!(prediction.expected_engagement <= 1.0);
+    }
+
+    #[test]
+    fn test_prediction_optimal_time() {
+        let scorer = PredictiveEngagementScorer::new();
+        let prediction = scorer.predict_engagement(
+            "test",
+            &UserBehaviorProfile::default(),
+            &TemporalFeatures::default(),
+            &ContextFeatures::default(),
+        );
+        
+        assert!(prediction.optimal_time < 24);
+    }
+
+    #[test]
+    fn test_prediction_key_factors() {
+        let scorer = PredictiveEngagementScorer::new();
+        let prediction = scorer.predict_engagement(
+            "test",
+            &UserBehaviorProfile::default(),
+            &TemporalFeatures::default(),
+            &ContextFeatures::default(),
+        );
+        
+        assert!(!prediction.key_factors.is_empty());
+    }
+
+    #[test]
+    fn test_feature_extractor_new() {
+        let extractor = FeatureExtractor::new();
+        assert_eq!(extractor.text_features.length, 0);
+    }
+
+    #[test]
+    fn test_feature_extractor_default() {
+        let extractor = FeatureExtractor::default();
+        assert_eq!(extractor.text_features.length, 0);
+    }
+
+    #[test]
+    fn test_text_features_default() {
+        let features = TextFeatures::default();
+        assert_eq!(features.length, 0);
+        assert_eq!(features.sentiment, 0.0);
+    }
+
+    #[test]
+    fn test_temporal_features_default() {
+        let features = TemporalFeatures::default();
+        assert_eq!(features.hour, 12);
+        assert_eq!(features.day_of_week, 1);
+    }
+
+    #[test]
+    fn test_user_features_default() {
+        let features = UserFeatures::default();
+        assert_eq!(features.follower_count, 1000);
+        assert_eq!(features.following_count, 100);
+    }
+
+    #[test]
+    fn test_context_features_default() {
+        let features = ContextFeatures::default();
+        assert_eq!(features.thread_depth, 0);
+        assert_eq!(features.reply_count, 0);
+    }
+
+    #[test]
+    fn test_model_weights_default() {
+        let weights = ModelWeights::default();
+        assert_eq!(weights.coefficients.len(), 3);
+        assert_eq!(weights.bias, 0.0);
+    }
+
+    #[test]
+    fn test_model_accuracy_default() {
+        let accuracy = ModelAccuracy::default();
+        assert_eq!(accuracy.accuracy, 0.0);
+        assert_eq!(accuracy.precision, 0.0);
+    }
+
+    #[test]
+    fn test_engagement_model_new() {
+        let model = EngagementModel::new();
+        assert_eq!(model.accuracy_metrics.accuracy, 0.0);
+    }
+
+    #[test]
+    fn test_action_recommender_new() {
+        let recommender = ActionRecommender::new();
+        assert!(recommender.action_rankings.is_empty());
+    }
+
+    #[test]
+    fn test_timing_recommendations_default() {
+        let timing = TimingRecommendations::default();
+        assert_eq!(timing.optimal_times.len(), 3);
+        assert_eq!(timing.best_days.len(), 3);
+    }
+
+    #[test]
+    fn test_text_features_length_calculation() {
+        let extractor = FeatureExtractor::new();
+        let features = extractor.extract_text_features("Hello");
+        assert_eq!(features.length, 5);
+    }
+
+    #[test]
+    fn test_user_features_extraction() {
+        let extractor = FeatureExtractor::new();
+        let profile = UserBehaviorProfile::default();
+        let features = extractor.extract_user_features(&profile);
+        assert_eq!(features.account_age, 365);
+    }
+
+    #[test]
+    fn test_temporal_features_extraction() {
+        let extractor = FeatureExtractor::new();
+        let temporal = TemporalFeatures { hour: 15, ..Default::default() };
+        let features = extractor.extract_temporal_features(&temporal);
+        assert_eq!(features.hour, 15);
+    }
+
+    #[test]
+    fn test_context_features_extraction() {
+        let extractor = FeatureExtractor::new();
+        let context = ContextFeatures { reply_count: 10, ..Default::default() };
+        let features = extractor.extract_context_features(&context);
+        assert_eq!(features.reply_count, 10);
+    }
+
+    #[test]
+    fn test_feature_combination() {
+        let extractor = FeatureExtractor::new();
+        let vector = extractor.combine_features(
+            TextFeatures::default(),
+            UserFeatures::default(),
+            TemporalFeatures::default(),
+            ContextFeatures::default(),
+        );
+        assert_eq!(vector.user.follower_count, 1000);
+    }
 }
 
 #[cfg(test)]

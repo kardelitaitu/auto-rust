@@ -584,4 +584,47 @@ mod tests {
         let filters: Vec<String> = vec![];
         assert!(matches_browser_filters("any browser", &filters));
     }
+
+    #[test]
+    fn test_normalize_browser_token_unicode() {
+        assert_eq!(normalize_browser_token("Brave浏览器"), "brave");
+        assert_eq!(normalize_browser_token("ChromeКонтекст"), "chrome");
+    }
+
+    #[test]
+    fn test_normalize_browser_token_whitespace_only() {
+        assert_eq!(normalize_browser_token("   "), "");
+        assert_eq!(normalize_browser_token("\t\n"), "");
+    }
+
+    #[test]
+    fn test_matches_browser_filters_empty_filter_ignored() {
+        let filters = vec!["".to_string()];
+        assert!(!matches_browser_filters("Brave", &filters));
+    }
+
+    #[test]
+    fn test_matches_browser_filters_substring_match() {
+        let filters = vec!["bra".to_string()];
+        assert!(matches_browser_filters("Brave Browser", &filters));
+        assert!(matches_browser_filters("abra", &filters));
+    }
+
+    #[test]
+    fn test_normalize_browser_token_mixed_case() {
+        assert_eq!(normalize_browser_token("BrAvE"), "brave");
+        assert_eq!(normalize_browser_token("ChRoMe"), "chrome");
+    }
+
+    #[test]
+    fn test_profile_matches_filters_both_name_and_type() {
+        let profile = BrowserProfile {
+            name: "Brave Browser".to_string(),
+            r#type: "brave".to_string(),
+            ws_endpoint: "ws://localhost:9222".to_string(),
+        };
+        let filters = vec!["brave".to_string()];
+        // Should match because both name and type contain "brave"
+        assert!(profile_matches_filters(&profile, &filters));
+    }
 }

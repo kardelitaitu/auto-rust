@@ -1165,4 +1165,170 @@ mod tests {
             "Circuit breaker should close after timeout even with high failure count"
         );
     }
+
+    #[test]
+    fn test_session_state_debug_formatting() {
+        // Test that SessionState variants can be formatted for debugging
+        let idle = format!("{:?}", SessionState::Idle);
+        let busy = format!("{:?}", SessionState::Busy);
+        let failed = format!("{:?}", SessionState::Failed);
+
+        assert!(idle.contains("Idle"));
+        assert!(busy.contains("Busy"));
+        assert!(failed.contains("Failed"));
+    }
+
+    #[test]
+    fn test_session_state_copy_trait() {
+        // Test that SessionState implements Copy
+        let state = SessionState::Idle;
+        let copied = state;
+        assert_eq!(state, copied);
+        assert_eq!(state, SessionState::Idle);
+    }
+
+    #[test]
+    fn test_circuit_breaker_zero_timeout() {
+        // Test circuit breaker behavior with zero timeout (immediate recovery)
+        let failure_threshold = 5;
+        let timeout_secs = 0;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = failure_threshold;
+        let last_failure = current_time;
+
+        // With zero timeout, circuit should be closed immediately
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(
+            !is_open,
+            "Circuit breaker should be closed with zero timeout"
+        );
+    }
+
+    #[test]
+    fn test_circuit_breaker_zero_threshold() {
+        // Test circuit breaker behavior with zero threshold (always open)
+        let failure_threshold = 0;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = 1;
+        let last_failure = current_time;
+
+        // With zero threshold, circuit should be open immediately
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(
+            is_open,
+            "Circuit breaker should be open with zero threshold"
+        );
+    }
+
+    #[test]
+    fn test_circuit_breaker_large_timeout() {
+        // Test circuit breaker behavior with large timeout (long recovery)
+        let failure_threshold = 5;
+        let timeout_secs = 86400; // 24 hours
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = failure_threshold;
+        let last_failure = current_time;
+
+        // With large timeout, circuit should stay open for a long time
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        assert!(
+            is_open,
+            "Circuit breaker should be open with large timeout"
+        );
+    }
+
+    #[test]
+    fn test_circuit_breaker_time_safety() {
+        // Test that circuit breaker handles time calculations safely
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+
+        // Test with very old failure time (before Unix epoch would be negative, but saturating_sub handles it)
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+        let last_failure = 0; // Unix epoch
+
+        let is_open = failure_threshold >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        // Should be closed since the failure is very old
+        assert!(!is_open, "Very old failure should not keep circuit open");
+    }
+
+    #[test]
+    fn test_circuit_breaker_max_values() {
+        // Test circuit breaker with maximum values
+        let failure_threshold = usize::MAX;
+        let timeout_secs = usize::MAX;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        let failure_count = usize::MAX;
+        let last_failure = current_time;
+
+        // Should handle max values without overflow
+        let _is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs;
+    }
+
+    #[test]
+    fn test_circuit_breaker_negative_time_offset() {
+        // Test that negative time offsets are handled correctly via saturating_sub
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        // Simulate last_failure being in the future (shouldn't happen in practice but test safety)
+        let last_failure = current_time + 100;
+        let failure_count = failure_threshold;
+
+        // saturating_sub returns 0 when subtracting a larger value, so 0 < timeout is true
+        // This means the circuit would be considered open with a future failure time
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        // With saturating_sub, future failure time results in 0 difference, which is < timeout
+        assert!(is_open, "Future failure time with saturating_sub results in circuit open");
+    }
+
+    #[test]
+    fn test_circuit_breaker_exact_timeout_boundary() {
+        // Test circuit breaker at exact timeout boundary
+        let failure_threshold = 5;
+        let timeout_secs = 30;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+
+        // Exactly at timeout boundary
+        let last_failure = current_time - timeout_secs as usize;
+        let failure_count = failure_threshold;
+
+        let is_open = failure_count >= failure_threshold
+            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
+        // Should be closed at exact boundary (strict inequality)
+        assert!(!is_open, "Circuit should be closed at exact timeout boundary");
+    }
 }

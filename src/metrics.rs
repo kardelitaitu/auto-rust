@@ -1017,4 +1017,122 @@ mod tests {
         );
         assert_eq!(collector.run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT), 2);
     }
+
+    #[test]
+    fn test_task_status_variants() {
+        assert_eq!(TaskStatus::Success, TaskStatus::Success);
+        assert_eq!(TaskStatus::Failed, TaskStatus::Failed);
+        assert_eq!(TaskStatus::Timeout, TaskStatus::Timeout);
+        assert_eq!(TaskStatus::Cancelled, TaskStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_task_status_inequality() {
+        assert_ne!(TaskStatus::Success, TaskStatus::Failed);
+        assert_ne!(TaskStatus::Failed, TaskStatus::Timeout);
+        assert_ne!(TaskStatus::Timeout, TaskStatus::Cancelled);
+        assert_ne!(TaskStatus::Cancelled, TaskStatus::Success);
+    }
+
+    #[test]
+    fn test_outcome_breakdown_default() {
+        let breakdown = OutcomeBreakdown::default();
+        assert_eq!(breakdown.succeeded, 0);
+        assert_eq!(breakdown.failed, 0);
+        assert_eq!(breakdown.timed_out, 0);
+        assert_eq!(breakdown.cancelled, 0);
+    }
+
+    #[test]
+    fn test_outcome_breakdown_record_success() {
+        let mut breakdown = OutcomeBreakdown::default();
+        breakdown.record(TaskStatus::Success);
+        assert_eq!(breakdown.succeeded, 1);
+        assert_eq!(breakdown.failed, 0);
+    }
+
+    #[test]
+    fn test_outcome_breakdown_record_all_statuses() {
+        let mut breakdown = OutcomeBreakdown::default();
+        breakdown.record(TaskStatus::Success);
+        breakdown.record(TaskStatus::Failed);
+        breakdown.record(TaskStatus::Timeout);
+        breakdown.record(TaskStatus::Cancelled);
+        
+        assert_eq!(breakdown.succeeded, 1);
+        assert_eq!(breakdown.failed, 1);
+        assert_eq!(breakdown.timed_out, 1);
+        assert_eq!(breakdown.cancelled, 1);
+    }
+
+    #[test]
+    fn test_outcome_breakdown_failure_count() {
+        let mut breakdown = OutcomeBreakdown::default();
+        breakdown.record(TaskStatus::Failed);
+        breakdown.record(TaskStatus::Timeout);
+        breakdown.record(TaskStatus::Cancelled);
+        breakdown.record(TaskStatus::Success);
+        
+        assert_eq!(breakdown.failure_count(), 3);
+    }
+
+    #[test]
+    fn test_memory_snapshot_creation() {
+        let snapshot = MemorySnapshot {
+            allocated_bytes: Some(1024 * 1024),
+            active_sessions: 3,
+            active_workers: 5,
+            task_queue_depth: 10,
+            timestamp_ms: 1234567890,
+        };
+        assert_eq!(snapshot.allocated_bytes, Some(1024 * 1024));
+        assert_eq!(snapshot.active_sessions, 3);
+        assert_eq!(snapshot.active_workers, 5);
+    }
+
+    #[test]
+    fn test_memory_thresholds_custom() {
+        let thresholds = MemoryThresholds {
+            warning_bytes: 100 * 1024 * 1024,
+            critical_bytes: 200 * 1024 * 1024,
+            warning_active_tasks: 10,
+            critical_active_tasks: 20,
+        };
+        assert_eq!(thresholds.warning_bytes, 100 * 1024 * 1024);
+        assert_eq!(thresholds.critical_active_tasks, 20);
+    }
+
+    #[test]
+    fn test_fan_out_metrics_default() {
+        let metrics = FanOutMetrics::default();
+        assert_eq!(metrics.planned_groups, 0);
+        assert_eq!(metrics.completed_groups, 0);
+        assert_eq!(metrics.planned_executions, 0);
+        assert_eq!(metrics.actual_executions, 0);
+        assert_eq!(metrics.fan_out_efficiency, 0.0);
+    }
+
+    #[test]
+    fn test_fan_out_efficiency_calculation() {
+        let metrics = FanOutMetrics {
+            planned_groups: 10,
+            completed_groups: 8,
+            planned_executions: 100,
+            actual_executions: 80,
+            fan_out_efficiency: 80.0,
+        };
+        assert_eq!(metrics.fan_out_efficiency, 80.0);
+    }
+
+    #[test]
+    fn test_fan_out_efficiency_zero_planned() {
+        let metrics = FanOutMetrics {
+            planned_groups: 5,
+            completed_groups: 5,
+            planned_executions: 0,
+            actual_executions: 10,
+            fan_out_efficiency: 0.0,
+        };
+        assert_eq!(metrics.fan_out_efficiency, 0.0);
+    }
 }

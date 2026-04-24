@@ -1067,4 +1067,87 @@ mod tests {
 
         assert_eq!(global_active.load(Ordering::SeqCst), 0);
     }
+
+    #[test]
+    fn test_format_duration_boundary_values() {
+        assert_eq!(format_duration(999), "999ms");
+        assert_eq!(format_duration(1000), "1s");
+        assert_eq!(format_duration(59999), "59s");
+        assert_eq!(format_duration(60000), "1min");
+        assert_eq!(format_duration(3599999), "59min 59s");
+        assert_eq!(format_duration(3600000), "1h");
+    }
+
+    #[test]
+    fn test_format_duration_large_values() {
+        assert_eq!(format_duration(7200000), "2h");
+        assert_eq!(format_duration(7260000), "2h 1min");
+        assert_eq!(format_duration(10800000), "3h");
+        assert_eq!(format_duration(36000000), "10h");
+    }
+
+    #[test]
+    fn test_format_duration_exact_boundaries() {
+        assert_eq!(format_duration(60000), "1min");
+        assert_eq!(format_duration(3600000), "1h");
+        assert_eq!(format_duration(120000), "2min");
+        assert_eq!(format_duration(7200000), "2h");
+    }
+
+    #[test]
+    fn test_broadcast_execution_count_single_values() {
+        assert_eq!(broadcast_execution_count(1, 1), 1);
+        assert_eq!(broadcast_execution_count(1, 10), 10);
+        assert_eq!(broadcast_execution_count(10, 1), 10);
+    }
+
+    #[tokio::test]
+    async fn test_global_execution_slot_multiple_slots() {
+        let global_semaphore = Arc::new(Semaphore::new(5));
+        let global_active = Arc::new(AtomicUsize::new(0));
+        let _cancel_token = CancellationToken::new();
+
+        let mut slots = Vec::new();
+        for _ in 0..3 {
+            slots.push(GlobalExecutionSlot::new(
+                global_active.clone(),
+                global_semaphore.clone().acquire_owned().await.unwrap(),
+            ));
+        }
+
+        assert_eq!(global_active.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn test_orchestrator_config_preservation() {
+        use crate::config::OrchestratorConfig;
+        let original_config = Config {
+            orchestrator: OrchestratorConfig {
+                max_global_concurrency: 15,
+                group_timeout_ms: 10000,
+                task_timeout_ms: 60000,
+                task_stagger_delay_ms: 200,
+                worker_wait_timeout_ms: 10000,
+                retry_delay_ms: 2000,
+                max_retries: 3,
+                stuck_worker_threshold_ms: 120000,
+            },
+            browser: Default::default(),
+            tracing: Default::default(),
+            twitter_activity: Default::default(),
+        };
+
+        let orchestrator = Orchestrator::new(original_config.clone());
+        assert_eq!(
+            orchestrator.config.orchestrator.max_global_concurrency,
+            15
+        );
+        assert_eq!(orchestrator.config.orchestrator.group_timeout_ms, 10000);
+    }
+
+    #[test]
+    fn test_should_mark_session_unhealthy_unknown_error() {
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, false));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
+    }
 }

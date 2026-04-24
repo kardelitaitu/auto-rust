@@ -219,3 +219,137 @@ fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
     let upper = base_ms.saturating_add(variance);
     rng.gen_range(lower..=upper)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_jittered_delay_ms_zero_base() {
+        let delay = jittered_delay_ms(0, 20);
+        assert_eq!(delay, 0);
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_zero_variance() {
+        let delay = jittered_delay_ms(100, 0);
+        assert_eq!(delay, 100);
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_within_bounds() {
+        for _ in 0..50 {
+            let delay = jittered_delay_ms(100, 20);
+            assert!((80..=120).contains(&delay));
+        }
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_high_variance() {
+        for _ in 0..50 {
+            let delay = jittered_delay_ms(100, 100);
+            assert!((0..=200).contains(&delay));
+        }
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_large_base() {
+        let delay = jittered_delay_ms(1000, 10);
+        assert!((900..=1100).contains(&delay));
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_small_base() {
+        let delay = jittered_delay_ms(5, 50);
+        assert!((0..=10).contains(&delay));
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_variance_clamping() {
+        // Test that variance doesn't cause underflow
+        let delay = jittered_delay_ms(1, 200);
+        // delay is u64, so it's always non-negative
+        assert!(delay <= 300); // Reasonable upper bound
+    }
+
+    #[test]
+    fn test_backend_selection_enigo() {
+        let backend = backend(NativeInputBackend::Enigo);
+        // Should return a backend without panicking
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_backend_selection_sendinput() {
+        let backend = backend(NativeInputBackend::Sendinput);
+        // Should fall back to enigo without panicking
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_backend_selection_rdev() {
+        let backend = backend(NativeInputBackend::Rdev);
+        // Should fall back to enigo without panicking
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_ensure_native_input_ready_enigo() {
+        // Should not panic
+        ensure_native_input_ready(NativeInputBackend::Enigo);
+    }
+
+    #[test]
+    fn test_ensure_native_input_ready_sendinput() {
+        // Should not panic (falls back to enigo)
+        ensure_native_input_ready(NativeInputBackend::Sendinput);
+    }
+
+    #[test]
+    fn test_ensure_native_input_ready_rdev() {
+        // Should not panic (falls back to enigo)
+        ensure_native_input_ready(NativeInputBackend::Rdev);
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_consistency() {
+        // Test that the function is deterministic in its randomness
+        let delays: Vec<u64> = (0..20).map(|_| jittered_delay_ms(100, 10)).collect();
+        // All should be within bounds
+        for delay in delays {
+            assert!((90..=110).contains(&delay));
+        }
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_extreme_variance() {
+        for _ in 0..20 {
+            let delay = jittered_delay_ms(100, 500);
+            assert!((0..=600).contains(&delay));
+        }
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_variance_rounding() {
+        // Test that variance rounding doesn't cause issues
+        let delay = jittered_delay_ms(3, 33);
+        // delay is u64, so it's always non-negative
+        assert!(delay <= 10); // Reasonable upper bound for base=3, variance=33
+    }
+
+    #[test]
+    fn test_jittered_delay_ms_single_value() {
+        // When variance is 0, should always return base
+        for _ in 0..10 {
+            let delay = jittered_delay_ms(50, 0);
+            assert_eq!(delay, 50);
+        }
+    }
+
+    #[test]
+    fn test_native_input_backend_trait() {
+        // Test that the trait is object-safe
+        let backend: &dyn NativeMouseBackend = &ENIGO_BACKEND;
+        backend.ensure_ready(); // Should not panic
+    }
+}

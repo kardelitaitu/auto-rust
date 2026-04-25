@@ -1,6 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
+set "ROOT=%~dp0"
+pushd "%ROOT%"
+
 :: ============================================================================
 :: Auto-Rust Windows Setup Script
 :: - Detects CPU threads and optimizes build configuration
@@ -110,9 +113,29 @@ if errorlevel 1 (
 echo.
 
 :: ----------------------------------------------------------------------------
-:: Step 3: Create .env File
+:: Step 3: Install auto launcher on PATH
 :: ----------------------------------------------------------------------------
-echo [4/5] Creating .env file...
+echo [4/6] Installing auto launcher on PATH...
+
+set "AUTO_LAUNCHER_DIR=%ROOT%config"
+if not exist "%AUTO_LAUNCHER_DIR%\auto.cmd" (
+    echo auto launcher not found at %AUTO_LAUNCHER_DIR%\auto.cmd
+    echo Please create config\auto.cmd first.
+    exit /b 1
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root = (Resolve-Path '%AUTO_LAUNCHER_DIR%').Path; $path = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @(); if ($path) { $parts = $path -split ';' | Where-Object { $_ -and (-not (Test-Path (Join-Path $_ 'auto.cmd'))) -and (-not (Test-Path (Join-Path $_ 'auto.bat'))) -and (-not (Test-Path (Join-Path $_ 'auto.exe'))) } }; $newPath = @($root) + $parts | Select-Object -Unique; [Environment]::SetEnvironmentVariable('Path', ($newPath -join ';'), 'User'); Write-Host ('Rebuilt PATH and moved ' + $root + ' to the front')"
+if errorlevel 1 (
+    echo Failed to update user PATH.
+    exit /b 1
+)
+
+echo.
+
+:: ----------------------------------------------------------------------------
+:: Step 4: Create .env File
+:: ----------------------------------------------------------------------------
+echo [5/6] Creating .env file...
 
 if exist ".env" (
     echo .env file already exists, skipping...
@@ -172,9 +195,9 @@ if exist ".env" (
 echo.
 
 :: ----------------------------------------------------------------------------
-:: Step 4: Build Project
+:: Step 5: Build Project
 :: ----------------------------------------------------------------------------
-echo [5/5] Building project...
+echo [6/6] Building project...
 echo.
 
 :: Clean previous builds
@@ -203,7 +226,7 @@ echo - Build profile: release (optimized)
 echo.
 echo Next steps:
 echo 1. Add your API keys to .env file
-echo 2. Run: cargo run --profile release --all-features
+echo 2. Run: auto task1 task2 then task3
 echo.
 echo On your other machines:
 echo - 24-thread PC: Run this script (will auto-detect and use 23 jobs)
@@ -211,4 +234,5 @@ echo - 12-thread VPS: Run this script (will auto-detect and use 11 jobs)
 echo.
 
 :: Keep window open if run directly
+popd
 pause

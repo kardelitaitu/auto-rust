@@ -110,9 +110,9 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     }
 
     // Simulate reading home feeds with scroll
-    let pause_count = random_in_range(5, 10) as u32;
-    let scroll_amount = 400;
-    info!("[twitterintent] Reading home feeds with {} pauses", pause_count);
+    let pause_count = random_in_range(30, 100) as u32;
+    let scroll_amount = random_in_range(300, 600) as i32;
+    info!("[twitterintent] Reading home feeds with {} pauses ({}px per scroll)", pause_count, scroll_amount);
     api.scroll_read(pause_count, scroll_amount, true, false).await?;
 
     // Final random 3-5s wait

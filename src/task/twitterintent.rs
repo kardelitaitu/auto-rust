@@ -48,6 +48,25 @@ impl IntentType {
             IntentType::Post | IntentType::Quote => "[data-testid=\"tweetButton\"]",
         }
     }
+
+    fn fallback_selectors(&self) -> Vec<&'static str> {
+        match self {
+            IntentType::Follow | IntentType::Like | IntentType::Retweet => {
+                vec![
+                    "[data-testid=\"confirmationSheetConfirm\"]",
+                    "button[data-testid=\"confirmationSheetConfirm\"]",
+                ]
+            }
+            IntentType::Post | IntentType::Quote => {
+                vec![
+                    "[data-testid=\"tweetButton\"]",
+                    "button[data-testid=\"tweetButton\"]",
+                    "button:has-text(\"Post\")",
+                    "button:has-text(\"Tweet\")",
+                ]
+            }
+        }
+    }
 }
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
@@ -114,14 +133,27 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
 async fn click_with_verification(
     api: &TaskContext,
     selector: &str,
-    _intent_type: IntentType,
+    intent_type: IntentType,
 ) -> Result<bool> {
-    // First check if button exists
-    if !api.visible(selector).await? {
-        warn!("[twitterintent] Button not visible before click - may already be clicked");
-        return Ok(false);
+    // Try primary selector first
+    if api.visible(selector).await? {
+        return click_and_verify(api, selector).await;
     }
 
+    // Try fallback selectors
+    let fallbacks = intent_type.fallback_selectors();
+    for fallback in fallbacks.iter().skip(1) { // Skip first (already tried)
+        if api.visible(fallback).await? {
+            info!("[twitterintent] Using fallback selector: {}", fallback);
+            return click_and_verify(api, fallback).await;
+        }
+    }
+
+    warn!("[twitterintent] No visible button found with any selector");
+    Ok(false)
+}
+
+async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<bool> {
     // Random 4-8s pause before clicking (100ms interval)
     let pause_ms = random_in_range(4000, 8000);
     info!("[twitterintent] Waiting {}ms before clicking", pause_ms);

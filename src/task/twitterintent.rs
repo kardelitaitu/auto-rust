@@ -58,6 +58,11 @@ impl IntentType {
     }
 }
 
+#[derive(Debug)]
+struct IntentInfo {
+    description: String,
+}
+
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let url = extract_url_from_payload(&payload)?;
     info!("[twitterintent] Intent URL: {}", url);
@@ -77,7 +82,8 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let click_success = click_with_verification(api, selector, intent_type).await?;
     
     if click_success {
-        info!("[twitterintent] Click verified successful");
+        let intent_info = parse_intent_info(&url, intent_type);
+        info!("[twitterintent] SUCCESS {}", intent_info.description);
     } else {
         warn!("[twitterintent] Click verification failed - button may have already been clicked or action already performed");
     }
@@ -152,6 +158,53 @@ async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<bool> {
     // Verify success: confirm button should disappear for all intents
     let button_gone = !api.visible(selector).await?;
     Ok(button_gone)
+}
+
+fn parse_intent_info(url: &str, intent_type: IntentType) -> IntentInfo {
+    match intent_type {
+        IntentType::Follow => {
+            let username = extract_param(url, "screen_name").unwrap_or_else(|| "unknown".to_string());
+            IntentInfo {
+                description: format!("Followed @{}", username),
+            }
+        }
+        IntentType::Like => {
+            let tweet_id = extract_param(url, "tweet_id").unwrap_or_else(|| "unknown".to_string());
+            IntentInfo {
+                description: format!("Liked tweet {}", tweet_id),
+            }
+        }
+        IntentType::Post => {
+            let text = extract_param(url, "text")
+                .unwrap_or_else(|| "empty text".to_string());
+            IntentInfo {
+                description: format!("Posted '{}'", text),
+            }
+        }
+        IntentType::Quote => {
+            let url_param = extract_param(url, "url").unwrap_or_else(|| "unknown".to_string());
+            IntentInfo {
+                description: format!("Quoted {}", url_param),
+            }
+        }
+        IntentType::Retweet => {
+            let tweet_id = extract_param(url, "tweet_id").unwrap_or_else(|| "unknown".to_string());
+            IntentInfo {
+                description: format!("Retweeted tweet {}", tweet_id),
+            }
+        }
+    }
+}
+
+fn extract_param(url: &str, param: &str) -> Option<String> {
+    let pattern = format!("{}=", param);
+    if let Some(start) = url.find(&pattern) {
+        let start = start + pattern.len();
+        let end = url[start..].find('&').map(|e| start + e).unwrap_or(url.len());
+        Some(url[start..end].to_string())
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -237,5 +290,84 @@ mod tests {
     fn extract_url_missing() {
         let payload = json!({});
         assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn test_extract_param_screen_name() {
+        let url = "https://x.com/intent/follow?screen_name=elonmusk";
+        assert_eq!(extract_param(url, "screen_name"), Some("elonmusk".to_string()));
+    }
+
+    #[test]
+    fn test_extract_param_tweet_id() {
+        let url = "https://x.com/intent/like?tweet_id=123456789";
+        assert_eq!(extract_param(url, "tweet_id"), Some("123456789".to_string()));
+    }
+
+    #[test]
+    fn test_extract_param_text() {
+        let url = "https://x.com/intent/tweet?text=Hello%20world";
+        assert_eq!(extract_param(url, "text"), Some("Hello%20world".to_string()));
+    }
+
+    #[test]
+    fn test_extract_param_url() {
+        let url = "https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Great";
+        assert_eq!(extract_param(url, "url"), Some("https://x.com/user/status/123".to_string()));
+    }
+
+    #[test]
+    fn test_extract_param_missing() {
+        let url = "https://x.com/intent/follow?screen_name=elonmusk";
+        assert_eq!(extract_param(url, "tweet_id"), None);
+    }
+
+    #[test]
+    fn test_parse_intent_info_follow() {
+        let url = "https://x.com/intent/follow?screen_name=elonmusk";
+        let info = parse_intent_info(url, IntentType::Follow);
+        assert_eq!(info.description, "Followed @elonmusk");
+    }
+
+    #[test]
+    fn test_parse_intent_info_like() {
+        let url = "https://x.com/intent/like?tweet_id=123456789";
+        let info = parse_intent_info(url, IntentType::Like);
+        assert_eq!(info.description, "Liked tweet 123456789");
+    }
+
+    #[test]
+    fn test_parse_intent_info_post() {
+        let url = "https://x.com/intent/tweet?text=Hello%20world";
+        let info = parse_intent_info(url, IntentType::Post);
+        assert_eq!(info.description, "Posted 'Hello%20world'");
+    }
+
+    #[test]
+    fn test_parse_intent_info_quote() {
+        let url = "https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Great";
+        let info = parse_intent_info(url, IntentType::Quote);
+        assert_eq!(info.description, "Quoted https://x.com/user/status/123");
+    }
+
+    #[test]
+    fn test_parse_intent_info_retweet() {
+        let url = "https://x.com/intent/retweet?tweet_id=123456789";
+        let info = parse_intent_info(url, IntentType::Retweet);
+        assert_eq!(info.description, "Retweeted tweet 123456789");
+    }
+
+    #[test]
+    fn test_parse_intent_info_follow_unknown() {
+        let url = "https://x.com/intent/follow";
+        let info = parse_intent_info(url, IntentType::Follow);
+        assert_eq!(info.description, "Followed @unknown");
+    }
+
+    #[test]
+    fn test_parse_intent_info_post_empty() {
+        let url = "https://x.com/intent/tweet";
+        let info = parse_intent_info(url, IntentType::Post);
+        assert_eq!(info.description, "Posted 'empty text'");
     }
 }

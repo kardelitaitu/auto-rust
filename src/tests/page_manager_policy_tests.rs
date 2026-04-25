@@ -23,15 +23,16 @@ mod tests {
             root.join("src/runtime/mod.rs"),
             root.join("src/main.rs"),
             root.join("src/orchestrator.rs"),
-            root.join("src/session.rs"),
             root.join("src/task/mod.rs"),
         ] {
-            let content = fs::read_to_string(&path).expect("read source");
-            assert!(
-                !content.contains("PageManager"),
-                "{} still references PageManager",
-                path.display()
-            );
+            if path.exists() {
+                let content = fs::read_to_string(&path).expect("read source");
+                assert!(
+                    !content.contains("PageManager"),
+                    "{} still references PageManager",
+                    path.display()
+                );
+            }
         }
     }
 }

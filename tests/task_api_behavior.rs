@@ -1,14 +1,14 @@
 use anyhow::Result;
 use chromiumoxide::Browser;
-use rust_orchestrator::config::NativeInteractionConfig;
-use rust_orchestrator::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
-use rust_orchestrator::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
-use rust_orchestrator::session::Session;
-use rust_orchestrator::utils::mouse::{
+use auto::config::{NativeInteractionConfig, NativeClickCalibrationMode};
+use auto::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
+use auto::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
+use auto::session::Session;
+use auto::utils::mouse::{
     clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
-    set_nativeclick_forced_calibration_for_tests, take_nativeclick_trace_hooks,
+    set_nativeclick_forced_calibration_for_tests, take_nativeclick_trace_hooks, ClickStatus,
 };
-use rust_orchestrator::{result::TaskErrorKind, result::TaskResult};
+use auto::{result::{TaskErrorKind, TaskResult, TaskStatus}};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -184,7 +184,7 @@ fn seed_click_learning(
 
 #[tokio::test]
 async fn navigate_loads_expected_content() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -193,7 +193,7 @@ async fn navigate_loads_expected_content() -> Result<()> {
     )
     .await?;
 
-    let page = session.acquire_page().await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page().await?;
     let api = build_task_context(&session, page.clone());
 
     api.navigate(server.url(), 10_000).await?;
@@ -211,7 +211,7 @@ async fn navigate_loads_expected_content() -> Result<()> {
 
 #[tokio::test]
 async fn focus_reports_success_and_focus_event() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -220,7 +220,7 @@ async fn focus_reports_success_and_focus_event() -> Result<()> {
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
 
     let outcome = api.focus("#target").await?;
@@ -242,7 +242,7 @@ async fn focus_reports_success_and_focus_event() -> Result<()> {
 
 #[tokio::test]
 async fn focus_returns_error_for_missing_selector() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -251,10 +251,11 @@ async fn focus_returns_error_for_missing_selector() -> Result<()> {
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
 
-    assert!(api.focus("#missing").await.is_err());
+    let result = api.focus("#missing").await;
+    assert!(result.is_err());
 
     drop(api);
     session.release_page(page).await;
@@ -266,7 +267,7 @@ async fn focus_returns_error_for_missing_selector() -> Result<()> {
 
 #[tokio::test]
 async fn click_and_wait_reports_visible_when_target_opens() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -275,7 +276,7 @@ async fn click_and_wait_reports_visible_when_target_opens() -> Result<()> {
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
 
     let outcome = api.click_and_wait("#go", "#next", 5_000).await?;
@@ -294,7 +295,7 @@ async fn click_and_wait_reports_visible_when_target_opens() -> Result<()> {
 
 #[tokio::test]
 async fn click_and_wait_times_out_when_target_stays_hidden() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -303,7 +304,7 @@ async fn click_and_wait_times_out_when_target_stays_hidden() -> Result<()> {
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
 
     let outcome = api.click_and_wait("#go", "#next", 1_000).await?;
@@ -322,7 +323,7 @@ async fn click_and_wait_times_out_when_target_stays_hidden() -> Result<()> {
 
 #[tokio::test]
 async fn cancelled_run_releases_page_for_reuse() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -331,7 +332,7 @@ async fn cancelled_run_releases_page_for_reuse() -> Result<()> {
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
 
     api.wait_for_visible("#ready", 1_000).await?;
@@ -342,12 +343,12 @@ async fn cancelled_run_releases_page_for_reuse() -> Result<()> {
     );
     assert!(matches!(
         cancelled.status,
-        rust_orchestrator::result::TaskStatus::Cancelled
+        TaskStatus::Cancelled
     ));
     drop(api);
     session.release_page(page).await;
 
-    let second_page = session.acquire_page_at(server.url()).await?;
+    let second_page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let second_api = build_task_context(&session, second_page.clone());
     assert_eq!(second_api.title().await?, "Cancel");
     drop(second_api);
@@ -361,7 +362,7 @@ async fn cancelled_run_releases_page_for_reuse() -> Result<()> {
 
 #[tokio::test]
 async fn click_retries_and_fallback_when_target_detaches_mid_action() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -379,7 +380,7 @@ async fn click_retries_and_fallback_when_target_detaches_mid_action() -> Result<
         3,
     )?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let metrics = Arc::new(MetricsCollector::new(100));
     let api = build_task_context_with_metrics(&session, page.clone(), metrics.clone());
 
@@ -405,7 +406,7 @@ async fn click_retries_and_fallback_when_target_detaches_mid_action() -> Result<
 
 #[tokio::test]
 async fn click_timeout_storm_hits_fallback_without_panicking() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -423,7 +424,7 @@ async fn click_timeout_storm_hits_fallback_without_panicking() -> Result<()> {
         5,
     )?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let metrics = Arc::new(MetricsCollector::new(100));
     let api = build_task_context_with_metrics(&session, page.clone(), metrics.clone());
 
@@ -449,7 +450,7 @@ async fn click_timeout_storm_hits_fallback_without_panicking() -> Result<()> {
 
 #[tokio::test]
 async fn nativeclick_pipeline_orders_scroll_before_dispatch() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -458,14 +459,14 @@ async fn nativeclick_pipeline_orders_scroll_before_dispatch() -> Result<()> {
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
     clear_nativeclick_trace_hooks(&session.id);
 
     let outcome = api.nativeclick("#target").await?;
     assert!(matches!(
         outcome.click,
-        rust_orchestrator::utils::mouse::ClickStatus::Success
+        ClickStatus::Success
     ));
     assert_eq!(
         api.attr("body", "data-native-clicked").await?,
@@ -496,7 +497,7 @@ async fn nativeclick_pipeline_orders_scroll_before_dispatch() -> Result<()> {
 
 #[tokio::test]
 async fn nativeclick_verify_failure_returns_expected_error_class() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -505,10 +506,10 @@ async fn nativeclick_verify_failure_returns_expected_error_class() -> Result<()>
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
 
-    let err = api
+    let err: anyhow::Error = api
         .nativeclick("#target")
         .await
         .expect_err("expected nativeclick verification failure");
@@ -528,7 +529,7 @@ async fn nativeclick_verify_failure_returns_expected_error_class() -> Result<()>
 
 #[tokio::test]
 async fn nativeclick_mapping_failure_returns_expected_error_class() -> Result<()> {
-    let Some(mut session) = connect_test_session().await? else {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
 
@@ -537,7 +538,7 @@ async fn nativeclick_mapping_failure_returns_expected_error_class() -> Result<()
     )
     .await?;
 
-    let page = session.acquire_page_at(server.url()).await?;
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let api = build_task_context(&session, page.clone());
 
     // Force invalid calibration input to assert mapping error class deterministically.
@@ -547,10 +548,10 @@ async fn nativeclick_mapping_failure_returns_expected_error_class() -> Result<()
         1.0,
         0.0,
         0.0,
-        rust_orchestrator::config::NativeClickCalibrationMode::Windows,
+        NativeClickCalibrationMode::Windows,
     );
 
-    let err = api
+    let err: anyhow::Error = api
         .nativeclick("#target")
         .await
         .expect_err("expected nativeclick mapping failure");

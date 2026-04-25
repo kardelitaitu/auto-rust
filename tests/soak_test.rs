@@ -10,8 +10,8 @@
 //! Usage: cargo test --test soak_test -- --ignored --nocapture
 
 use log::{info, warn};
-use rust_orchestrator::{
-    health_monitor::HealthMonitor, metrics::MetricsCollector, result::TaskErrorKind,
+use auto::{
+    health_monitor::HealthMonitor, metrics::{MetricsCollector, TaskMetrics, TaskStatus}, result::TaskErrorKind,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -35,9 +35,9 @@ async fn simulate_task(metrics: Arc<MetricsCollector>, task_id: usize) -> Result
 
     // Simulate occasional failures (1% failure rate)
     if task_id.is_multiple_of(100) {
-        metrics.task_completed(rust_orchestrator::metrics::TaskMetrics {
+        metrics.task_completed(TaskMetrics {
             task_name: "simulated_task".to_string(),
-            status: rust_orchestrator::metrics::TaskStatus::Failed,
+            status: TaskStatus::Failed,
             duration_ms: delay_ms as u64,
             session_id: "soak-test".to_string(),
             attempt: 1,
@@ -47,9 +47,9 @@ async fn simulate_task(metrics: Arc<MetricsCollector>, task_id: usize) -> Result
         return Err("Simulated failure".to_string());
     }
 
-    metrics.task_completed(rust_orchestrator::metrics::TaskMetrics {
+    metrics.task_completed(TaskMetrics {
         task_name: "simulated_task".to_string(),
-        status: rust_orchestrator::metrics::TaskStatus::Success,
+        status: TaskStatus::Success,
         duration_ms: delay_ms as u64,
         session_id: "soak-test".to_string(),
         attempt: 1,

@@ -3,11 +3,12 @@
 //! analysis, entry point selection, action chaining, and engagement limits
 //! without requiring a live browser.
 
-use rust_orchestrator::config::TwitterActivityConfig;
-use rust_orchestrator::task::twitteractivity::TweetActionTracker;
-use rust_orchestrator::utils::twitter::{
+use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
+use auto::task::{twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS, select_entry_point}};
+use auto::utils::twitter::{
     twitteractivity_persona::select_persona_weights,
     twitteractivity_sentiment::{analyze_tweet_sentiment, sentiment_score, Sentiment},
+    twitteractivity_limits::{EngagementCounters, EngagementLimits},
 };
 use serde_json::json;
 use std::time::Duration;
@@ -15,7 +16,7 @@ use std::time::Duration;
 /// Ensures the twitteractivity module is linked and its entry point is accessible.
 #[test]
 fn twitteractivity_module_loads() {
-    use rust_orchestrator::task::twitteractivity;
+    use auto::task::twitteractivity;
     let _ = &twitteractivity::run;
 }
 
@@ -42,7 +43,7 @@ fn twitteractivity_config_has_valid_defaults() {
 /// Checks that persona selection returns weights within allowed ranges.
 #[test]
 fn twitteractivity_persona_weights_in_range() {
-    let config_probs = rust_orchestrator::config::TwitterProbabilitiesConfig::default();
+    let config_probs = TwitterProbabilitiesConfig::default();
     let weights = select_persona_weights(None, &config_probs);
     assert!((0.0..=1.0).contains(&weights.like_prob));
     assert!((0.0..=1.0).contains(&weights.retweet_prob));
@@ -120,7 +121,7 @@ fn twitteractivity_action_chaining_prevention_works() {
 #[test]
 fn twitteractivity_action_chaining_different_tweets_allowed() {
     let mut tracker = TweetActionTracker::new(
-        rust_orchestrator::task::twitteractivity::MIN_ACTION_CHAIN_DELAY_MS,
+        MIN_ACTION_CHAIN_DELAY_MS,
     );
     let tweet_id_1 = "test_tweet_1";
     let tweet_id_2 = "test_tweet_2";
@@ -159,7 +160,7 @@ fn twitteractivity_action_chaining_same_action_after_cooldown() {
 /// Tests entry point selection returns valid URLs.
 #[test]
 fn twitteractivity_entry_point_selection_returns_valid_url() {
-    use rust_orchestrator::task::twitteractivity::select_entry_point;
+    use auto::task::twitteractivity::select_entry_point;
 
     // Test multiple selections to ensure all return valid URLs
     for _ in 0..10 {
@@ -178,7 +179,7 @@ fn twitteractivity_entry_point_selection_returns_valid_url() {
 /// Tests that entry point selection includes home URL.
 #[test]
 fn twitteractivity_entry_point_selection_includes_home() {
-    use rust_orchestrator::task::twitteractivity::select_entry_point;
+    use auto::task::twitteractivity::select_entry_point;
 
     // Sample many times to ensure home URL is in the distribution
     let mut found_home = false;
@@ -195,7 +196,7 @@ fn twitteractivity_entry_point_selection_includes_home() {
 /// Tests that engagement limits prevent actions when limits are reached.
 #[test]
 fn twitteractivity_engagement_limits_prevent_actions() {
-    use rust_orchestrator::utils::twitter::twitteractivity_limits::{
+    use auto::utils::twitter::twitteractivity_limits::{
         EngagementCounters, EngagementLimits,
     };
 
@@ -233,7 +234,7 @@ fn twitteractivity_engagement_limits_prevent_actions() {
 /// Tests that engagement limits track total actions correctly.
 #[test]
 fn twitteractivity_engagement_limits_total_actions() {
-    use rust_orchestrator::utils::twitter::twitteractivity_limits::{
+    use auto::utils::twitter::twitteractivity_limits::{
         EngagementCounters, EngagementLimits,
     };
 
@@ -263,7 +264,7 @@ fn twitteractivity_engagement_limits_total_actions() {
 /// Tests that engagement limits remaining calculation is correct.
 #[test]
 fn twitteractivity_engagement_limits_remaining_calculation() {
-    use rust_orchestrator::utils::twitter::twitteractivity_limits::{
+    use auto::utils::twitter::twitteractivity_limits::{
         EngagementCounters, EngagementLimits,
     };
 
@@ -285,7 +286,7 @@ fn twitteractivity_engagement_limits_remaining_calculation() {
 /// Tests that engagement limits work for all action types.
 #[test]
 fn twitteractivity_engagement_limits_all_action_types() {
-    use rust_orchestrator::utils::twitter::twitteractivity_limits::{
+    use auto::utils::twitter::twitteractivity_limits::{
         EngagementCounters, EngagementLimits,
     };
 
@@ -348,7 +349,7 @@ fn twitteractivity_engagement_limits_all_action_types() {
 /// Tests that persona weights can be overridden via payload.
 #[test]
 fn twitteractivity_persona_weights_override() {
-    let config_probs = rust_orchestrator::config::TwitterProbabilitiesConfig::default();
+    let config_probs = TwitterProbabilitiesConfig::default();
 
     // Default weights
     let default_weights = select_persona_weights(None, &config_probs);
@@ -449,7 +450,7 @@ fn twitteractivity_action_chaining_overwrites_previous() {
 /// Tests that entry point selection has expected distribution.
 #[test]
 fn twitteractivity_entry_point_selection_distribution() {
-    use rust_orchestrator::task::twitteractivity::select_entry_point;
+    use auto::task::twitteractivity::select_entry_point;
 
     // Sample many times to check distribution (reduced from 1000 for speed)
     let mut counts = std::collections::HashMap::new();

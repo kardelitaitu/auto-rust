@@ -1,4 +1,4 @@
-use rust_orchestrator::result::{TaskErrorKind, TaskResult, TaskStatus};
+use auto::result::{TaskErrorKind, TaskResult, TaskStatus};
 
 #[test]
 fn chaos_mid_action_page_detach_classifies_as_browser_failure() {

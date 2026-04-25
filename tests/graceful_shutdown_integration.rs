@@ -2,11 +2,13 @@
 //! Tests that the orchestrator properly handles shutdown signals
 //! and cleans up resources gracefully.
 
-use rust_orchestrator::{
+use auto::{
     cli, config,
     metrics::MetricsCollector,
     orchestrator::Orchestrator,
     result::{TaskErrorKind, TaskResult},
+    session::Session,
+    browser::discover_browsers,
 };
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -87,7 +89,7 @@ async fn test_shutdown_records_cancelled_outcome() {
     });
 
     let _ = shutdown_tx.send(());
-    let result = shutdown_task.await.expect("shutdown task");
+    let result: TaskResult = shutdown_task.await.expect("shutdown task");
 
     metrics.task_started();
     metrics.task_completed_from_result("demo".to_string(), "session-1".to_string(), &result);
@@ -116,7 +118,7 @@ async fn test_orchestrator_empty_group() {
         let empty_group: Vec<cli::TaskDefinition> = vec![];
 
         // Sessions will be empty in test environment
-        let sessions: Vec<rust_orchestrator::session::Session> = vec![];
+        let sessions: Vec<Session> = vec![];
 
         // Should handle gracefully
         let result = orchestrator
@@ -158,5 +160,5 @@ async fn test_idle_shutdown_behavior() {
 async fn test_browser_discovery_empty() {
     // Skip actual browser discovery in test environment to avoid slow execution
     // Just verify the module is accessible
-    let _ = &rust_orchestrator::browser::discover_browsers;
+    let _ = &discover_browsers;
 }

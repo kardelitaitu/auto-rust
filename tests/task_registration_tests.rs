@@ -1,0 +1,214 @@
+//! Integration tests for task registration and validation.
+//! Tests task discovery, validation, and registry functionality.
+
+use auto::task::{
+    is_known_task, known_task_names, normalize_task_name, TASK_NAMES,
+};
+use auto::validation::{
+    is_known_task as validate_is_known_task,
+    task_file_exists,
+    validate_task_groups,
+    validate_task_groups_strict,
+};
+
+/// Test that task names list is not empty
+#[test]
+fn task_names_list_not_empty() {
+    assert!(!TASK_NAMES.is_empty());
+}
+
+/// Test that all task names are lowercase and valid
+#[test]
+fn task_names_are_valid() {
+    for name in TASK_NAMES.iter() {
+        // Should not be empty
+        assert!(!name.is_empty(), "Task name cannot be empty");
+        
+        // Should not contain spaces
+        assert!(!name.contains(' '), "Task name '{}' contains spaces", name);
+        
+        // Should be lowercase
+        assert_eq!(
+            *name,
+            name.to_lowercase(),
+            "Task name '{}' is not lowercase",
+            name
+        );
+    }
+}
+
+/// Test normalize_task_name with .js suffix
+#[test]
+fn normalize_task_name_strips_js_suffix() {
+    assert_eq!(normalize_task_name("cookiebot.js"), "cookiebot");
+    assert_eq!(normalize_task_name("pageview.js"), "pageview");
+}
+
+/// Test normalize_task_name without suffix
+#[test]
+fn normalize_task_name_no_suffix() {
+    assert_eq!(normalize_task_name("cookiebot"), "cookiebot");
+    assert_eq!(normalize_task_name("pageview"), "pageview");
+}
+
+/// Test normalize_task_name with empty string
+#[test]
+fn normalize_task_name_empty() {
+    assert_eq!(normalize_task_name(""), "");
+}
+
+/// Test normalize_task_name with multiple .js suffixes
+#[test]
+fn normalize_task_name_multiple_suffixes() {
+    assert_eq!(normalize_task_name("task.js.js"), "task.js");
+}
+
+/// Test is_known_task with valid task names
+#[test]
+fn is_known_task_valid_tasks() {
+    assert!(is_known_task("cookiebot"));
+    assert!(is_known_task("pageview"));
+    assert!(is_known_task("twitteractivity"));
+}
+
+/// Test is_known_task with invalid task names
+#[test]
+fn is_known_task_invalid_tasks() {
+    assert!(!is_known_task("unknown_task"));
+    assert!(!is_known_task("fake"));
+    assert!(!is_known_task(""));
+}
+
+/// Test is_known_task with .js suffix (should normalize)
+#[test]
+fn is_known_task_with_js_suffix() {
+    assert!(is_known_task("cookiebot.js"));
+    assert!(is_known_task("pageview.js"));
+}
+
+/// Test known_task_names returns expected tasks
+#[test]
+fn known_task_names_contains_expected() {
+    let names = known_task_names();
+    
+    assert!(names.contains(&"cookiebot"));
+    assert!(names.contains(&"pageview"));
+    assert!(names.contains(&"twitteractivity"));
+}
+
+/// Test validation layer is_known_task matches task layer
+#[test]
+fn validation_is_known_task_matches_task_layer() {
+    for name in ["cookiebot", "pageview", "twitteractivity", "unknown"] {
+        assert_eq!(
+            validate_is_known_task(name),
+            is_known_task(name),
+            "Mismatch for task '{}' between validation and task layers",
+            name
+        );
+    }
+}
+
+/// Test task file existence check for known tasks
+#[test]
+fn task_file_exists_known_tasks() {
+    // These should exist (they're in the source)
+    assert!(task_file_exists("cookiebot"));
+    assert!(task_file_exists("pageview"));
+    assert!(task_file_exists("twitteractivity"));
+}
+
+/// Test task file existence check for unknown tasks
+#[test]
+fn task_file_exists_unknown_tasks() {
+    assert!(!task_file_exists("unknown_task"));
+    assert!(!task_file_exists("fake"));
+}
+
+/// Test validate_task_groups with valid groups
+#[test]
+fn validate_task_groups_valid() {
+    use auto::cli::TaskDefinition;
+    
+    let groups = vec![vec![
+        TaskDefinition {
+            name: "cookiebot".to_string(),
+            payload: std::collections::HashMap::new(),
+        },
+    ]];
+    
+    let results = validate_task_groups(&groups);
+    assert_eq!(results.len(), 1);
+    assert!(results[0].is_known);
+    assert!(results[0].file_exists);
+}
+
+/// Test validate_task_groups with invalid task
+#[test]
+fn validate_task_groups_invalid_task() {
+    use auto::cli::TaskDefinition;
+    
+    let groups = vec![vec![
+        TaskDefinition {
+            name: "unknown_task".to_string(),
+            payload: std::collections::HashMap::new(),
+        },
+    ]];
+    
+    let results = validate_task_groups(&groups);
+    assert_eq!(results.len(), 1);
+    // Unknown task should not be known and file should not exist
+    assert!(!results[0].is_known);
+    assert!(!results[0].file_exists);
+}
+
+/// Test validate_task_groups_strict with valid groups
+#[test]
+fn validate_task_groups_strict_valid() {
+    use auto::cli::TaskDefinition;
+    
+    let groups = vec![vec![
+        TaskDefinition {
+            name: "cookiebot".to_string(),
+            payload: std::collections::HashMap::new(),
+        },
+        TaskDefinition {
+            name: "pageview".to_string(),
+            payload: std::collections::HashMap::new(),
+        },
+    ]];
+    
+    let result = validate_task_groups_strict(&groups);
+    assert!(result.is_ok());
+}
+
+/// Test validate_task_groups_strict with invalid task
+#[test]
+fn validate_task_groups_strict_invalid() {
+    use auto::cli::TaskDefinition;
+    
+    let groups = vec![vec![
+        TaskDefinition {
+            name: "unknown_task".to_string(),
+            payload: std::collections::HashMap::new(),
+        },
+    ]];
+    
+    let result = validate_task_groups_strict(&groups);
+    assert!(result.is_err());
+}
+
+/// Test validate_task_groups_strict with empty groups
+#[test]
+fn validate_task_groups_strict_empty_groups() {
+    let groups: Vec<Vec<auto::cli::TaskDefinition>> = vec![];
+    
+    let result = validate_task_groups_strict(&groups);
+    assert!(result.is_ok());
+}
+
+/// Test that task count is consistent
+#[test]
+fn task_names_count_consistent() {
+    assert_eq!(TASK_NAMES.len(), known_task_names().len());
+}

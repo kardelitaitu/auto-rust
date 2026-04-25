@@ -51,10 +51,17 @@ impl IntentType {
 
     fn fallback_selectors(&self) -> Vec<&'static str> {
         match self {
-            IntentType::Follow | IntentType::Like | IntentType::Retweet => {
+            IntentType::Follow | IntentType::Like => {
                 vec![
                     "[data-testid=\"confirmationSheetConfirm\"]",
                     "button[data-testid=\"confirmationSheetConfirm\"]",
+                ]
+            }
+            IntentType::Retweet => {
+                vec![
+                    "[data-testid=\"confirmationSheetConfirm\"]",
+                    "button[data-testid=\"confirmationSheetConfirm\"]",
+                    "button:has-text(\"Repost\")",
                 ]
             }
             IntentType::Post | IntentType::Quote => {

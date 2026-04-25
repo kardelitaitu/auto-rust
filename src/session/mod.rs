@@ -60,12 +60,12 @@ impl<'a> Drop for WorkerPermit<'a> {
 /// # Examples
 ///
 /// ```no_run
-/// # use rust_orchestrator::session::Session;
+/// # use auto::session::Session;
 /// # let browser: chromiumoxide::Browser = todo!();
 /// # let handler: chromiumoxide::Handler = todo!();
 /// # let max_workers: usize = 5;
 /// # let cursor_overlay_ms: u64 = 0;
-/// # let circuit_breaker_config = rust_orchestrator::config::CircuitBreakerConfig {
+/// # let circuit_breaker_config = auto::config::CircuitBreakerConfig {
 /// #     enabled: true,
 /// #     failure_threshold: 5,
 /// #     success_threshold: 3,
@@ -157,8 +157,8 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::session::Session;
-    /// # use rust_orchestrator::config::CircuitBreakerConfig;
+    /// # use auto::session::Session;
+    /// # use auto::config::CircuitBreakerConfig;
     /// # let browser: chromiumoxide::Browser = todo!();
     /// # let handler: chromiumoxide::Handler = todo!();
     /// let config = CircuitBreakerConfig {
@@ -439,7 +439,7 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::session::Session;
+    /// # use auto::session::Session;
     /// # async fn example(session: &Session) {
     /// if let Some(permit) = session.acquire_worker(5000).await {
     ///     // Perform page operation
@@ -515,7 +515,7 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::session::Session;
+    /// # use auto::session::Session;
     /// # async fn example(session: &Session) -> anyhow::Result<()> {
     /// match session.acquire_page().await {
     ///     Ok(page) => {
@@ -602,7 +602,7 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::session::Session;
+    /// # use auto::session::Session;
     /// # async fn example(session: &Session) -> anyhow::Result<()> {
     /// match session.acquire_page_at("https://example.com").await {
     ///     Ok(page) => {
@@ -680,7 +680,7 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::session::Session;
+    /// # use auto::session::Session;
     /// # use chromiumoxide::Page;
     /// # use std::sync::Arc;
     /// # async fn example(session: &Session, page: Arc<Page>) {
@@ -767,7 +767,7 @@ impl Session {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::session::Session;
+    /// # use auto::session::Session;
     /// # async fn example(session: &mut Session) -> anyhow::Result<()> {
     /// session.graceful_shutdown().await?;
     /// # Ok(())
@@ -823,6 +823,9 @@ impl Session {
         Ok(())
     }
 }
+
+/// Cleanup utilities for session management.
+pub mod cleanup;
 
 #[cfg(test)]
 mod tests {

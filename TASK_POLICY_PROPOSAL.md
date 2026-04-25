@@ -140,6 +140,19 @@ for cookie in cookies {
 
 **Implementation:**
 ```rust
+/// Session data structure for export/import operations
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SessionData {
+    /// Browser cookies from the session
+    pub cookies: Vec<Cookie>,
+    /// localStorage key-value pairs
+    pub local_storage: HashMap<String, String>,
+    /// Timestamp when session was exported (for audit trail)
+    pub exported_at: DateTime<Utc>,
+    /// Source URL for the session
+    pub url: String,
+}
+
 // CDP: Network.getCookies + Runtime.evaluate (for localStorage)
 let cookies = page.execute(Network::get_cookies()).await?;
 
@@ -237,6 +250,51 @@ let content = std::fs::read_to_string(path)?;
 ```
 
 **Security consideration:** Path-restricted to config/data folders only. Rejects absolute paths and directory traversal.
+
+**Path Validation Implementation:**
+```rust
+use std::path::{Path, PathBuf};
+
+/// Validates that a path is within allowed data directories.
+/// Checks:
+/// 1. Path must be relative (no absolute paths)
+/// 2. No directory traversal (../)
+/// 3. No symlinks (prevents escaping via symlink)
+/// 4. Must resolve within config/ or data/ folders
+fn validate_data_path(path: &Path) -> Result<PathBuf> {
+    // Reject absolute paths
+    if path.is_absolute() {
+        return Err(TaskError::InvalidPath("Absolute paths not allowed".into()));
+    }
+    
+    // Check for traversal attempts
+    let path_str = path.to_string_lossy();
+    if path_str.contains("..") || path_str.starts_with('/') || path_str.starts_with('\\') {
+        return Err(TaskError::InvalidPath("Directory traversal not allowed".into()));
+    }
+    
+    // Resolve to canonical path (follows symlinks, so we check after)
+    let base_dirs = [Path::new("config"), Path::new("data")];
+    let current_dir = std::env::current_dir()?;
+    
+    for base in &base_dirs {
+        let full_path = current_dir.join(base).join(path);
+        let canonical = full_path.canonicalize().map_err(|e| {
+            TaskError::InvalidPath(format!("Failed to canonicalize path: {}", e))
+        })?;
+        
+        // Ensure the canonical path is still within the base directory
+        let base_canonical = base.canonicalize()?;
+        if !canonical.starts_with(&base_canonical) {
+            return Err(TaskError::InvalidPath("Path escapes allowed directory".into()));
+        }
+        
+        return Ok(canonical);
+    }
+    
+    Err(TaskError::InvalidPath("Path not in config/ or data/".into()))
+}
+```
 
 ---
 
@@ -644,75 +702,176 @@ pub async fn execute_task(
 }
 ```
 
-### 2. TaskContext: Permission Checks
+### 2. TaskContext: Permission Checks with Implied Permissions
 
 ```rust
 impl TaskContext {
+    /// Check if task has screenshot permission
     pub async fn screenshot(&self) -> Result<Vec<u8>> {
         if !self.policy.permissions.allow_screenshot {
-            return Err(TaskError::PermissionDenied("allow_screenshot"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_screenshot",
+                task_name: self.task_name.clone(),
+            });
         }
         // CDP: Page.captureScreenshot
+        self.page.screenshot(ScreenshotParams::default()).await
     }
     
+    /// Check if task has cookie export permission
     pub async fn export_cookies(&self, url: &str) -> Result<Vec<Cookie>> {
         if !self.policy.permissions.allow_export_cookies {
-            return Err(TaskError::PermissionDenied("allow_export_cookies"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_export_cookies",
+                task_name: self.task_name.clone(),
+            });
         }
         // CDP: Network.getCookies
+        let cookies = page.execute(Network::get_cookies()).await?;
+        Ok(cookies.cookies)
     }
     
+    /// Check if task has cookie import permission
     pub async fn import_cookies(&self, cookies: &[Cookie]) -> Result<()> {
         if !self.policy.permissions.allow_import_cookies {
-            return Err(TaskError::PermissionDenied("allow_import_cookies"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_import_cookies",
+                task_name: self.task_name.clone(),
+            });
         }
         // CDP: Network.setCookie for each
+        for cookie in cookies {
+            page.execute(Network::set_cookie(
+                cookie.name, cookie.value, /* ... */
+            )).await?;
+        }
+        Ok(())
     }
     
+    /// Check if task has session export permission (requires allow_export_cookies)
     pub async fn export_session(&self, url: &str) -> Result<SessionData> {
+        // Check primary permission
         if !self.policy.permissions.allow_export_session {
-            return Err(TaskError::PermissionDenied("allow_export_session"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_export_session",
+                task_name: self.task_name.clone(),
+            });
         }
+        // Implied permission: session export requires cookie export capability
+        if !self.policy.permissions.allow_export_cookies {
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_export_session (requires allow_export_cookies)",
+                task_name: self.task_name.clone(),
+            });
+        }
+        
         // CDP: Network.getCookies + Runtime.evaluate (localStorage)
-        log::warn!("Task '{}' exported full session from {}", self.task_name, url);
+        let cookies = self.export_cookies(url).await?;
+        let local_storage_js = r#"JSON.stringify(localStorage)"#;
+        let local_storage: String = self.page.evaluate(local_storage_js).await?;
+        
+        // Audit log for high-risk operation
+        log::warn!(
+            target: "task_policy_audit",
+            task = %self.task_name,
+            permission = "allow_export_session",
+            url = %url,
+            "Session exported with {} cookies", cookies.len()
+        );
+        
+        Ok(SessionData {
+            cookies,
+            local_storage: serde_json::from_str(&local_storage)?,
+            exported_at: Utc::now(),
+            url: url.to_string(),
+        })
     }
     
+    /// Check if task has session import permission (requires allow_import_cookies)
     pub async fn import_session(&self, session_data: &SessionData) -> Result<()> {
+        // Check primary permission
         if !self.policy.permissions.allow_import_session {
-            return Err(TaskError::PermissionDenied("allow_import_session"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_import_session",
+                task_name: self.task_name.clone(),
+            });
         }
+        // Implied permission: session import requires cookie import capability
+        if !self.policy.permissions.allow_import_cookies {
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_import_session (requires allow_import_cookies)",
+                task_name: self.task_name.clone(),
+            });
+        }
+        
         // CDP: Network.setCookies + Runtime.evaluate (localStorage restore)
-        log::warn!("Task '{}' imported full session", self.task_name);
+        self.import_cookies(&session_data.cookies).await?;
+        let restore_js = format!(
+            r#"Object.entries({}).forEach(([k,v]) => localStorage.setItem(k,v))"#,
+            serde_json::to_string(&session_data.local_storage)?
+        );
+        self.page.evaluate(restore_js).await?;
+        
+        // Audit log for high-risk operation
+        log::warn!(
+            target: "task_policy_audit",
+            task = %self.task_name,
+            permission = "allow_import_session",
+            cookies_count = session_data.cookies.len(),
+            "Session imported"
+        );
+        Ok(())
     }
     
     pub fn read_clipboard(&self) -> Result<String> {
         if !self.policy.permissions.allow_session_clipboard {
-            return Err(TaskError::PermissionDenied("allow_session_clipboard"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_session_clipboard",
+                task_name: self.task_name.clone(),
+            });
         }
         // OS clipboard read
+        clipboard::get_text()
     }
     
     pub fn write_clipboard(&self, text: &str) -> Result<()> {
         if !self.policy.permissions.allow_session_clipboard {
-            return Err(TaskError::PermissionDenied("allow_session_clipboard"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_session_clipboard",
+                task_name: self.task_name.clone(),
+            });
         }
         // OS clipboard write
+        clipboard::set_text(text)
     }
     
-    pub async fn read_data_file(&self, path: &str) -> Result<String> {
+    pub async fn read_data_file(&self, relative_path: &str) -> Result<String> {
         if !self.policy.permissions.allow_read_data {
-            return Err(TaskError::PermissionDenied("allow_read_data"));
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_read_data",
+                task_name: self.task_name.clone(),
+            });
         }
         // Validate path is within config/ or data/
-        // Standard filesystem read
+        let path = validate_data_path(Path::new(relative_path))?;
+        Ok(std::fs::read_to_string(path)?)
     }
     
-    pub async fn write_data_file(&self, path: &str, content: &[u8]) -> Result<()> {
-        if !self.policy.permissions.allow_write_data {
-            return Err(TaskError::PermissionDenied("allow_write_data"));
+    pub async fn write_data_file(&self, relative_path: &str, content: &[u8]) -> Result<()> {
+        // Check explicit permission OR implied permission from screenshot
+        let has_permission = self.policy.permissions.allow_write_data
+            || self.policy.permissions.allow_screenshot;
+        
+        if !has_permission {
+            return Err(TaskError::PermissionDenied {
+                permission: "allow_write_data (or allow_screenshot)",
+                task_name: self.task_name.clone(),
+            });
         }
         // Validate path is within config/ or data/
-        // Standard filesystem write
+        let path = validate_data_path(Path::new(relative_path))?;
+        std::fs::write(path, content)?;
+        Ok(())
     }
 }
 ```
@@ -721,13 +880,42 @@ impl TaskContext {
 
 ## CDP Feature Implementation Guide
 
+All CDP operations should handle errors gracefully and map to appropriate `TaskError` variants:
+
+```rust
+/// Helper to map CDP errors to TaskError
+fn map_cdp_error<T>(result: Result<T, chromiumoxide::Error>, operation: &str) -> Result<T, TaskError> {
+    result.map_err(|e| TaskError::CdpError {
+        operation: operation.to_string(),
+        reason: e.to_string(),
+    })
+}
+
+/// Helper to check page connectivity before CDP operations
+async fn check_page_connected(page: &Page) -> Result<(), TaskError> {
+    if page.is_closed() {
+        return Err(TaskError::CdpError {
+            operation: "page_check".to_string(),
+            reason: "Page is closed or disconnected".to_string(),
+        });
+    }
+    Ok(())
+}
+```
+
 ### export_cookies (Network.getCookies)
 
 ```rust
 use chromiumoxide::cdp::browser_protocol::network::GetCookiesParams;
 
-async fn export_cookies(page: &Page) -> Result<Vec<Cookie>> {
-    let cookies = page.execute(GetCookiesParams::default()).await?;
+async fn export_cookies(page: &Page) -> Result<Vec<Cookie>, TaskError> {
+    // Check page is connected
+    check_page_connected(page).await?;
+    
+    // Execute CDP command with error mapping
+    let result = page.execute(GetCookiesParams::default()).await;
+    let cookies = map_cdp_error(result, "Network.getCookies")?;
+    
     Ok(cookies.cookies)
 }
 ```
@@ -737,16 +925,23 @@ async fn export_cookies(page: &Page) -> Result<Vec<Cookie>> {
 ```rust
 use chromiumoxide::cdp::browser_protocol::network::SetCookieParams;
 
-async fn import_cookies(page: &Page, cookies: &[Cookie]) -> Result<()> {
+async fn import_cookies(page: &Page, cookies: &[Cookie]) -> Result<(), TaskError> {
+    check_page_connected(page).await?;
+    
     for cookie in cookies {
         let params = SetCookieParams::builder()
             .name(&cookie.name)
             .value(&cookie.value)
             .domain(&cookie.domain)
             .path(&cookie.path)
-            .build()?;
+            .build()
+            .map_err(|e| TaskError::CdpError {
+                operation: "SetCookieParams::builder".to_string(),
+                reason: e.to_string(),
+            })?;
         
-        page.execute(params).await?;
+        let result = page.execute(params).await;
+        map_cdp_error(result, "Network.setCookie")?;
     }
     Ok(())
 }
@@ -755,7 +950,7 @@ async fn import_cookies(page: &Page, cookies: &[Cookie]) -> Result<()> {
 ### export_session (Network.getCookies + Runtime.evaluate)
 
 ```rust
-async fn export_session(page: &Page) -> Result<SessionData> {
+async fn export_session(page: &Page, url: &str) -> Result<SessionData, TaskError> {
     // Get cookies via CDP
     let cookies = export_cookies(page).await?;
     
@@ -771,12 +966,20 @@ async fn export_session(page: &Page) -> Result<SessionData> {
         })()
     "#;
     
-    let local_storage_json: String = page.evaluate(local_storage_js).await?;
-    let local_storage: Value = serde_json::from_str(&local_storage_json)?;
+    let local_storage_result = page.evaluate(local_storage_js).await;
+    let local_storage_json: String = map_cdp_error(local_storage_result, "Runtime.evaluate")?;
+    
+    let local_storage: HashMap<String, String> = serde_json::from_str(&local_storage_json)
+        .map_err(|e| TaskError::CdpError {
+            operation: "parse localStorage".to_string(),
+            reason: format!("JSON parse error: {}", e),
+        })?;
     
     Ok(SessionData {
         cookies,
         local_storage,
+        exported_at: Utc::now(),
+        url: url.to_string(),
     })
 }
 ```
@@ -784,11 +987,17 @@ async fn export_session(page: &Page) -> Result<SessionData> {
 ### import_session (Network.setCookie + Runtime.evaluate)
 
 ```rust
-async fn import_session(page: &Page, session_data: &SessionData) -> Result<()> {
+async fn import_session(page: &Page, session_data: &SessionData) -> Result<(), TaskError> {
     // Set cookies via CDP
     import_cookies(page, &session_data.cookies).await?;
     
     // Set localStorage via JavaScript
+    let local_storage_json = serde_json::to_string(&session_data.local_storage)
+        .map_err(|e| TaskError::CdpError {
+            operation: "serialize localStorage".to_string(),
+            reason: e.to_string(),
+        })?;
+    
     let local_storage_js = format!(
         r#"
         (function() {{
@@ -799,10 +1008,11 @@ async fn import_session(page: &Page, session_data: &SessionData) -> Result<()> {
             return 'localStorage restored';
         }})()
         "#,
-        serde_json::to_string(&session_data.local_storage)?
+        local_storage_json
     );
     
-    page.evaluate(local_storage_js).await?;
+    let result = page.evaluate(local_storage_js).await;
+    map_cdp_error(result, "Runtime.evaluate")?;
     
     Ok(())
 }
@@ -813,9 +1023,12 @@ async fn import_session(page: &Page, session_data: &SessionData) -> Result<()> {
 ```rust
 use chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotParams;
 
-async fn screenshot(page: &Page) -> Result<Vec<u8>> {
+async fn screenshot(page: &Page) -> Result<Vec<u8>, TaskError> {
+    check_page_connected(page).await?;
+    
     let params = CaptureScreenshotParams::default();
-    let screenshot = page.screenshot(params).await?;
+    let result = page.screenshot(params).await;
+    let screenshot = map_cdp_error(result, "Page.captureScreenshot")?;
     Ok(screenshot)
 }
 ```
@@ -826,9 +1039,36 @@ async fn screenshot(page: &Page) -> Result<Vec<u8>> {
 
 When a task tries to use a capability without permission:
 
-1. **Return error** - `TaskError::PermissionDenied("allow_screenshot")`
-2. **Log warning** - "Task 'cookiebot' attempted allow_screenshot without permission"
+1. **Return error** - `TaskError::PermissionDenied { permission: "allow_screenshot", task_name: "cookiebot" }`
+2. **Log warning** - Structured audit log with task context
 3. **Continue execution** - Task can handle error or fail gracefully
+
+**Audit Logging Format:**
+
+```rust
+// Standard log (for debugging)
+log::warn!(
+    "Task '{}' attempted '{}' without permission",
+    task_name, permission
+);
+
+// Structured audit log (for security monitoring)
+log::warn!(
+    target: "task_policy_audit",
+    task = %task_name,
+    permission = %permission,
+    session_id = %self.session_id,
+    timestamp = %Utc::now().to_rfc3339(),
+    "Permission denied"
+);
+```
+
+**Log Output Examples:**
+```
+WARN [task_policy_audit] task=cookiebot permission=allow_screenshot session_id=brave-9002 timestamp=2024-01-15T10:30:00Z Permission denied
+WARN [task_policy_audit] task=session_manager permission=allow_export_session session_id=brave-9002 timestamp=2024-01-15T10:35:00Z Session exported with 12 cookies
+WARN [task_policy_audit] task=session_manager permission=allow_import_session session_id=brave-9003 timestamp=2024-01-15T10:40:00Z Session imported
+```
 
 ---
 
@@ -854,6 +1094,54 @@ Execution time:
 [Gate each privileged operation]
 ```
 
+## Extended TaskError Types
+
+Add to existing `TaskError` enum:
+
+```rust
+#[derive(Debug, Error)]
+pub enum TaskError {
+    /// Task validation failed
+    #[error("Task validation failed: {task_name} - {reason}")]
+    ValidationFailed { task_name: String, reason: String },
+
+    /// Task execution timeout
+    #[error("Task timed out: {task_name} after {timeout_ms}ms")]
+    Timeout { task_name: String, timeout_ms: u64 },
+
+    /// Task execution failed
+    #[error("Task execution failed: {task_name} - {reason}")]
+    ExecutionFailed { task_name: String, reason: String },
+
+    /// Task not found
+    #[error("Unknown task: {0}")]
+    NotFound(String),
+
+    /// Task cancelled
+    #[error("Task cancelled: {0}")]
+    Cancelled(String),
+
+    /// Retry exhausted
+    #[error("Retry exhausted after {max_retries} attempts for {task_name}")]
+    RetryExhausted { max_retries: u32, task_name: String },
+
+    /// NEW: Permission denied for task operation
+    #[error("Permission denied: task '{task_name}' lacks '{permission}' permission")]
+    PermissionDenied {
+        permission: &'static str,
+        task_name: String,
+    },
+
+    /// NEW: Invalid path for data file operation
+    #[error("Invalid path: {0}")]
+    InvalidPath(String),
+
+    /// NEW: CDP/browser operation failed
+    #[error("CDP error: {operation} - {reason}")]
+    CdpError { operation: String, reason: String },
+}
+```
+
 ---
 
 ## Migration Strategy
@@ -875,13 +1163,50 @@ pub const TASKNAME_POLICY: TaskPolicy = TaskPolicy {
 };
 ```
 
+**Policy Inheritance Pattern:**
+Tasks can extend base policies while overriding specific fields:
+
+```rust
+/// Base policy for most Twitter tasks
+pub const TWITTER_BASE_POLICY: TaskPolicy = TaskPolicy {
+    max_duration_ms: 45_000,
+    permissions: TaskPermissions {
+        allow_screenshot: true,           // Debug failures
+        allow_export_cookies: true,       // Auth verification
+        allow_session_clipboard: true,    // Copy/paste tweets
+        ..DEFAULT_TASK_POLICY.permissions
+    },
+};
+
+/// TwitterLike extends base policy
+pub const TWITTERLIKE_POLICY: TaskPolicy = TaskPolicy {
+    max_duration_ms: 30_000,  // Override: faster timeout
+    ..TWITTER_BASE_POLICY
+};
+
+/// TwitterQuote adds persona reading
+pub const TWITTERQUOTE_POLICY: TaskPolicy = TaskPolicy {
+    permissions: TaskPermissions {
+        allow_read_data: true,  // Read persona files
+        ..TWITTER_BASE_POLICY.permissions
+    },
+    ..TWITTER_BASE_POLICY
+};
+```
+
 ### Phase 3: Permission Gates (3 hours)
 Wrap sensitive operations in `TaskContext`:
-- Screenshot methods
-- Cookie export/import
+- Screenshot methods (with CDP error handling)
+- Cookie export/import (with CDP error handling)
 - Session export/import (with audit logging)
 - Clipboard access
-- Data file read/write
+- Data file read/write (with path validation)
+
+### Phase 4: Security Hardening (1 hour)
+- Add path validation unit tests
+- Add permission denial integration tests
+- Add CDP error recovery tests
+- Document security considerations
 
 ---
 
@@ -926,6 +1251,8 @@ Wrap sensitive operations in `TaskContext`:
 - [ ] Create `TaskPermissions` struct with 8 bool flags
 - [ ] Define `DEFAULT_TASK_POLICY`
 - [ ] Create policy registry (task name → policy lookup)
+- [ ] Add `SessionData` struct for session export/import
+- [ ] Extend `TaskError` with `PermissionDenied`, `InvalidPath`, `CdpError` variants
 
 ### Phase 2: Runtime Enforcement
 - [ ] Add timeout enforcement in orchestrator (`tokio::time::timeout`)
@@ -933,11 +1260,16 @@ Wrap sensitive operations in `TaskContext`:
 - [ ] Add implied permissions logic (`allow_screenshot` → `allow_write_data`, `allow_export_session` → `allow_export_cookies`, etc.)
 
 ### Phase 3: Feature Implementation
-- [ ] Add path validation for `allow_read_data` and `allow_write_data` (config/ and data/ only)
-- [ ] Add CDP implementations for all 7 features (allow_screenshot, allow_export_cookies, allow_export_session, allow_session_clipboard)
+- [ ] Add path validation for `allow_read_data` and `allow_write_data` (config/ and data/ only, with symlink/traversal protection)
+- [ ] Add CDP implementations for all 7 features with error handling
+- [ ] Add CDP error mapping helpers (`map_cdp_error`, `check_page_connected`)
 - [ ] Add audit logging for session export/import operations
+- [ ] Implement implied permission checks (screenshot→write_data, export_session→export_cookies, etc.)
 
 ### Phase 4: Application & Testing
 - [ ] Add policies to all task files (`*_POLICY` constants)
-- [ ] Add tests for timeout enforcement
+- [ ] Add policy inheritance examples (TWITTER_BASE_POLICY pattern)
+- [ ] Add tests for timeout enforcement (including zero validation)
 - [ ] Add tests for permission denial
+- [ ] Add path validation tests (traversal, symlinks, absolute paths)
+- [ ] Add CDP error handling tests

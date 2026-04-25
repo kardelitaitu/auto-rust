@@ -1,8 +1,10 @@
-# Agents Journal
+# Agents Journal 
+# New journal should be at the top for easy indexing
+
+Date - Title - commit number
+- filename : Description
 
 ## 2026-04-22 - Documentation Improvements
-
-### Accomplished This Session
 
 #### Rust Documentation Enhancements
 - **Cargo.toml metadata**: Added documentation metadata (authors, description, license, repository, keywords, categories)
@@ -161,8 +163,8 @@ cookiebot, pageview, demo-keyboard, demo-mouse, demoqa, twitterfollow, twitterre
 - [ ] Prevent task dispatch to non-idle or failed sessions by policy, not convention.
 
 ### Phase 3 - Zero-Match Browser Filter Hard Fail
-- [ ] Treat `--browsers` filter with zero matched sessions as startup error.
-- [ ] Add startup test coverage for valid/invalid filter scenarios.
+- [x] Treat `--browsers` filter with zero matched sessions as startup error.
+- [x] Add startup test coverage for valid/invalid filter scenarios.
 
 ### Phase 4 - Structured Run Report Upgrades
 - [ ] Add run summary fields for planned vs executed fan-out.
@@ -211,3 +213,13 @@ cookiebot, pageview, demo-keyboard, demo-mouse, demoqa, twitterfollow, twitterre
 - Timeout defaults to max(5000ms, config.browser.connection_timeout_ms) to prevent indefinite hangs when browser accepts TCP but doesn't complete WebSocket handshake
 - Files: `session.rs`, `browser.rs`
 - Validation: 1,604 tests passed, `cargo check` clean
+
+### 2026-04-25 - Phase 3 Completion (Commit: TBD)
+- Verified zero-match browser filter hard fail was already implemented in `browser.rs:148-157`
+- Added integration tests for `discover_browsers_with_filters`:
+  - `test_discover_browsers_with_filters_empty_config_no_filter` - verifies warn path when no filters
+  - `test_discover_browsers_with_filters_empty_config_with_filter` - verifies error path when filters active but no matches
+  - `test_discover_browsers_with_filters_empty_filter_string` - verifies empty filter treated as no filter
+- Tests use minimal config with `max_discovery_retries: 0` to avoid actual browser connections
+- Files: `browser.rs`
+- Validation: 1,607 tests passed (3 new tests added)

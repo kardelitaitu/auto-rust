@@ -1,46 +1,45 @@
+# OS files
+.DS_Store
+Thumbs.db
+nul
 
-# Local learning artifacts
-click-learning/
-# Rust build output
-/target
-# Keep Cargo.lock committed for reproducible binary builds
-
-/click-learning
-
-
-
-# Local config and secrets
-config.toml
-.env
-
-# IDE files
+# Editor / IDE files
 .idea/
 .vscode/
 *.swp
 *.swo
-nul
-# OS files
-.DS_Store
-Thumbs.db
 
-# Logs and generated reports
-JOURNAL.md
-TODO.md
-*.log
-logs/
-auto-rust.log
-log
-rust-analyzer-problems.log
-clippy_output.txt
-run-summary.json
+# Local config and secrets
+.env
+config.toml
+
+# Rust build output
+/target
+
+# Local learning artifacts
+click-learning/
 
 # Migration steps
 .migration-steps/
 
-# Reference and analysis outputs
+# Tool-specific state
+.pi/
+.qwen/
 .nodejs-reference
+
+# Reference and analysis outputs
 .graphify_*.json
 graphify-out/
 
-# Qwen
-.qwen/
+# Logs and generated reports
+*.log
+auto-rust.log
+clippy_output.txt
+log
+logs/
+run-summary.json
+rust-analyzer-problems.log
+JOURNAL.md
+TODO.md
+
+# Keep Cargo.lock committed for reproducible binary builds

@@ -2,6 +2,7 @@
 //! Handles Twitter intent URLs for follow, like, post, quote, and retweet actions.
 
 use crate::prelude::TaskContext;
+use crate::utils::math::random_in_range;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -120,6 +121,11 @@ async fn click_with_verification(
         warn!("[twitterintent] Button not visible before click - may already be clicked");
         return Ok(false);
     }
+
+    // Random 4-8s pause before clicking (100ms interval)
+    let pause_ms = random_in_range(4000, 8000);
+    info!("[twitterintent] Waiting {}ms before clicking", pause_ms);
+    api.pause(pause_ms).await;
 
     // Attempt click
     let outcome = api.click(selector).await?;

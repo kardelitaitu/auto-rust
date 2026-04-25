@@ -113,7 +113,7 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
 async fn click_with_verification(
     api: &TaskContext,
     selector: &str,
-    intent_type: IntentType,
+    _intent_type: IntentType,
 ) -> Result<bool> {
     // First check if button exists
     if !api.visible(selector).await? {
@@ -128,20 +128,9 @@ async fn click_with_verification(
     // Wait for action to process
     api.pause(1000).await;
 
-    // Verify success based on intent type
-    match intent_type {
-        IntentType::Follow | IntentType::Like | IntentType::Retweet => {
-            // For confirm actions, button should disappear after success
-            let button_gone = !api.visible(selector).await?;
-            Ok(button_gone)
-        }
-        IntentType::Post | IntentType::Quote => {
-            // For post actions, check if we're no longer on intent page or button disabled
-            let current_url = api.url().await?;
-            let still_on_intent = current_url.contains("/intent/");
-            Ok(!still_on_intent)
-        }
-    }
+    // Verify success: confirm button should disappear for all intents
+    let button_gone = !api.visible(selector).await?;
+    Ok(button_gone)
 }
 
 #[cfg(test)]

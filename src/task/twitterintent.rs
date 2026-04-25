@@ -18,7 +18,6 @@ use serde_json::Value;
 
 const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const POST_NAVIGATE_WAIT_MS: u64 = 2000;
-const POST_CLICK_WAIT_MS: u64 = 3000;
 
 #[derive(Debug, Clone, Copy)]
 enum IntentType {
@@ -83,7 +82,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         warn!("[twitterintent] Click verification failed - button may have already been clicked or action already performed");
     }
 
-    api.pause(POST_CLICK_WAIT_MS).await;
+    // Random 5-10s pause after intent action (success or failed)
+    let post_action_pause = random_in_range(5000, 10000);
+    info!("[twitterintent] Pausing {}ms after intent action", post_action_pause);
+    api.pause(post_action_pause).await;
 
     // Return to previous page using JavaScript
     info!("[twitterintent] Returning to previous page");

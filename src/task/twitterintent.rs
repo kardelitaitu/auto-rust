@@ -3,7 +3,7 @@
 
 use crate::prelude::TaskContext;
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
 use serde_json::Value;
 
 const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
@@ -61,12 +61,17 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         .await?;
     api.pause(POST_NAVIGATE_WAIT_MS).await;
 
-    // Click confirm button
+    // Click confirm button with verification
     let selector = intent_type.confirm_selector();
     info!("[twitterintent] Clicking button: {}", selector);
     
-    let outcome = api.click(selector).await?;
-    info!("[twitterintent] Click outcome: {}", outcome.summary());
+    let click_success = click_with_verification(api, selector, intent_type).await?;
+    
+    if click_success {
+        info!("[twitterintent] Click verified successful");
+    } else {
+        warn!("[twitterintent] Click verification failed - button may have already been clicked or action already performed");
+    }
 
     api.pause(POST_CLICK_WAIT_MS).await;
 
@@ -103,6 +108,40 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
         }
     }
     Err(anyhow::anyhow!("No URL found in payload"))
+}
+
+async fn click_with_verification(
+    api: &TaskContext,
+    selector: &str,
+    intent_type: IntentType,
+) -> Result<bool> {
+    // First check if button exists
+    if !api.visible(selector).await? {
+        warn!("[twitterintent] Button not visible before click - may already be clicked");
+        return Ok(false);
+    }
+
+    // Attempt click
+    let outcome = api.click(selector).await?;
+    info!("[twitterintent] Click outcome: {}", outcome.summary());
+
+    // Wait for action to process
+    api.pause(1000).await;
+
+    // Verify success based on intent type
+    match intent_type {
+        IntentType::Follow | IntentType::Like | IntentType::Retweet => {
+            // For confirm actions, button should disappear after success
+            let button_gone = !api.visible(selector).await?;
+            Ok(button_gone)
+        }
+        IntentType::Post | IntentType::Quote => {
+            // For post actions, check if we're no longer on intent page or button disabled
+            let current_url = api.url().await?;
+            let still_on_intent = current_url.contains("/intent/");
+            Ok(!still_on_intent)
+        }
+    }
 }
 
 #[cfg(test)]

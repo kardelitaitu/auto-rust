@@ -93,6 +93,26 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("[twitterintent] Pausing {}ms after intent action", post_action_pause);
     api.pause(post_action_pause).await;
 
+    // Click home link to go to home feed
+    let home_selector = "a[href=\"/home\"]";
+    info!("[twitterintent] Clicking home link: {}", home_selector);
+    if api.visible(home_selector).await? {
+        api.click(home_selector).await?;
+        info!("[twitterintent] Navigated to home feed");
+    } else {
+        warn!("[twitterintent] Home link not visible, skipping");
+    }
+
+    // Simulate reading home feeds for random 30-120s
+    let read_pause = random_in_range(30000, 120000);
+    info!("[twitterintent] Reading home feeds for {}ms", read_pause);
+    api.pause(read_pause).await;
+
+    // Final random 3-5s wait
+    let final_wait = random_in_range(3000, 5000);
+    info!("[twitterintent] Final wait {}ms", final_wait);
+    api.pause(final_wait).await;
+
     // Return to previous page using JavaScript
     info!("[twitterintent] Returning to previous page");
     api.page().evaluate("window.history.back()").await?;

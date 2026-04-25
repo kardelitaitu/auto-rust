@@ -298,15 +298,17 @@ mod tests {
 
         for _ in 0..50 {
             let (x, y) = random_position_with_edge_ratio(&viewport, edge_ratio);
-            let min_x_expected = viewport.width * edge_ratio;
-            let max_x_expected = viewport.width * (1.0 - edge_ratio);
-            let min_y_expected = viewport.height * edge_ratio;
-            let max_y_expected = viewport.height * (1.0 - edge_ratio);
+            // Use integer bounds to avoid floating-point precision issues
+            // Function internally converts to u64, so we check against integer bounds
+            let min_x_expected = (viewport.width * edge_ratio) as u64 as f64;
+            let max_x_expected = (viewport.width * (1.0 - edge_ratio)) as u64 as f64;
+            let min_y_expected = (viewport.height * edge_ratio) as u64 as f64;
+            let max_y_expected = (viewport.height * (1.0 - edge_ratio)) as u64 as f64;
 
-            assert!(x >= min_x_expected);
-            assert!(x <= max_x_expected);
-            assert!(y >= min_y_expected);
-            assert!(y <= max_y_expected);
+            assert!(x >= min_x_expected, "x={} < min_x={}", x, min_x_expected);
+            assert!(x <= max_x_expected, "x={} > max_x={}", x, max_x_expected);
+            assert!(y >= min_y_expected, "y={} < min_y={}", y, min_y_expected);
+            assert!(y <= max_y_expected, "y={} > max_y={}", y, max_y_expected);
         }
     }
 
@@ -319,15 +321,16 @@ mod tests {
 
         // Test that ratio is clamped to 0.45
         let (x, y) = random_position_with_edge_ratio(&viewport, 0.50);
-        let min_x_expected = viewport.width * 0.45;
-        let max_x_expected = viewport.width * 0.55;
-        let min_y_expected = viewport.height * 0.45;
-        let max_y_expected = viewport.height * 0.55;
+        // Use integer bounds to match function's internal conversion
+        let min_x_expected = (viewport.width * 0.45) as u64 as f64;
+        let max_x_expected = (viewport.width * 0.55) as u64 as f64;
+        let min_y_expected = (viewport.height * 0.45) as u64 as f64;
+        let max_y_expected = (viewport.height * 0.55) as u64 as f64;
 
-        assert!(x >= min_x_expected);
-        assert!(x <= max_x_expected);
-        assert!(y >= min_y_expected);
-        assert!(y <= max_y_expected);
+        assert!(x >= min_x_expected, "x={} < min_x={}", x, min_x_expected);
+        assert!(x <= max_x_expected, "x={} > max_x={}", x, max_x_expected);
+        assert!(y >= min_y_expected, "y={} < min_y={}", y, min_y_expected);
+        assert!(y <= max_y_expected, "y={} > max_y={}", y, max_y_expected);
     }
 
     #[test]

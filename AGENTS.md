@@ -130,6 +130,10 @@ Need external app integration (GitHub, Slack)?
 4. For composio tools with `schemaRef`: Fetch schema via `COMPOSIO_GET_TOOL_SCHEMAS` first
 5. Never invent tool arguments - stay schema-compliant
 6. **ALWAYS try MCP tools before falling back to shell commands**
+7. **Git commit messages must be descriptive** - use format `type: what changed (reason/impact)`. Never use generic messages like "update", "fix", "changes". Examples:
+   - `docs: rewrite README with TOC (843 -> 350 lines)`
+   - `feat: add twitterquote task with LLM integration`
+   - `fix: handle rate limit in twitterfollow retry logic`
 
 ### Codebase rules
 - `TaskContext` is the task-api entry point; task code should stay thin and compose shared capabilities.

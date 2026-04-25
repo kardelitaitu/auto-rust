@@ -127,27 +127,28 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
+    // Check for task-specific field first (e.g., "twitterintent")
+    if let Some(obj) = payload.as_object() {
+        for (key, val) in obj {
+            if key != "url" && key != "value" {
+                if let Some(v) = val.as_str() {
+                    if !v.is_empty() && (v.contains("x.com") || v.contains("twitter.com")) {
+                        return Ok(v.to_string());
+                    }
+                }
+            }
+        }
+    }
+    // Check for standard url field
     if let Some(value) = payload.get("url") {
         if let Some(url_str) = value.as_str() {
             return Ok(url_str.to_string());
         }
     }
+    // Check for standard value field
     if let Some(value) = payload.get("value") {
         if let Some(url_str) = value.as_str() {
             return Ok(url_str.to_string());
-        }
-    }
-    // Fallback: check any field that looks like a URL
-    for (key, val) in payload
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
-    {
-        if key != "url" && key != "value" {
-            if let Some(v) = val.as_str() {
-                if !v.is_empty() && (v.contains("x.com") || v.contains("twitter.com")) {
-                    return Ok(v.to_string());
-                }
-            }
         }
     }
     Err(anyhow::anyhow!("No URL found in payload"))
@@ -315,6 +316,13 @@ mod tests {
     fn extract_url_missing() {
         let payload = json!({});
         assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn extract_url_from_task_name_field() {
+        let payload = json!({"twitterintent": "https://x.com/intent/follow?screen_name=elonmusk"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert!(result.contains("intent/follow"));
     }
 
     #[test]

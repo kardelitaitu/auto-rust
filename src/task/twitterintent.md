@@ -43,7 +43,8 @@ Automatically detects intent type from URL path:
 | **Follow** | `/intent/follow?screen_name={username}` | `[data-testid="confirmationSheetConfirm"]` | Follow @{username} |
 | **Like** | `/intent/like?tweet_id={tweetId}` | `[data-testid="confirmationSheetConfirm"]` | Like |
 | **Post** | `/intent/tweet?text={encodedText}` | `[data-testid="tweetButton"]` | Post |
-| **Quote** | `/intent/tweet?url={url}&text={encodedText}` | `[data-testid="tweetButton"]` | Reply |
+| **Reply** | `/intent/tweet?url={url}&text={encodedText}` | `[data-testid="tweetButton"]` | Reply |
+| **Quote** | `https://x.com/intent/tweet?text=this+is+example+reply%0Athis+is+second+line&url=https%3A%2F%2Fx.com%2Fyureiyks%2Fstatus%2F2047729785334579374` | `[data-testid="tweetButton"]` | Quote |
 | **Retweet** | `/intent/retweet?tweet_id={tweetId}` | `[data-testid="confirmationSheetConfirm"]` | Repost |
 
 ## Intent URL Examples

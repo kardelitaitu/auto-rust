@@ -1,6 +1,10 @@
 //! Twitter intent task.
 //! Handles Twitter intent URLs for follow, like, post, quote, and retweet actions.
 //!
+//! # Intent URL Generator
+//!
+//! Use this tool to generate Twitter intent URLs: https://devtoollab.com/tools/twitter-intent-generator
+//!
 //! # Intent URL Examples
 //!
 //! - Follow: `https://x.com/intent/follow?screen_name=username`

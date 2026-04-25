@@ -297,10 +297,12 @@ mod tests {
 
     #[test]
     fn test_random_duration_negative_bounds_clamped() {
-        // Gaussian with negative bounds should clamp to min
+        // Gaussian with min=0 can produce 0-1ms values which cast to 0
+        // This is valid behavior - duration can be 0 when min_ms is 0
         let duration = random_duration(0, 10);
-        // Duration should be a valid non-zero duration
-        assert!(duration.as_secs() > 0 || duration.subsec_nanos() > 0);
+        // Duration should always be within bounds (0 to 10 ms)
+        let ms = duration.as_millis();
+        assert!(ms <= 10, "Duration {}ms exceeded max bound of 10ms", ms);
     }
 
     #[test]

@@ -29,6 +29,9 @@ pub mod twitterreply;
 pub mod twitterretweet;
 pub mod twittertest;
 
+// Re-exports for twitteractivity test access
+pub use twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS, select_entry_point};
+
 pub const TASK_NAMES: &[&str] = &[
     "cookiebot",
     "pageview",

@@ -165,6 +165,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     );
 
     api.pause(config.initial_pause_ms).await;
+    api.navigate(&url, config.selector_wait_ms).await?;
     let x_selectors = [
         "[data-testid=\"primaryColumn\"]",
         "main[role=\"main\"]",

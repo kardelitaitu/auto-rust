@@ -21,6 +21,22 @@ pub async fn random_scroll(page: &Page) -> Result<()> {
     .await
 }
 
+pub async fn read_by_duration(page: &Page, duration_ms: u64) -> Result<()> {
+    // Calculate pause count based on duration
+    // Average pause time ~800ms (500-1100ms range with 45% variance)
+    let avg_pause_ms = 800;
+    let pauses = (duration_ms / avg_pause_ms).max(2) as u32;
+    
+    read(
+        page,
+        pauses,
+        gaussian(420.0, 160.0, 180.0, 900.0) as i32,
+        true,
+        random_in_range(0, 100) < 70,
+    )
+    .await
+}
+
 #[allow(dead_code)]
 pub async fn human_scroll(page: &Page, direction: &str, amount: i32) -> Result<()> {
     let signed = match direction {

@@ -2020,6 +2020,11 @@ impl TaskContext {
         .await
     }
 
+    /// Scroll through page content for a specified duration (ms). Automatically calculates pause count.
+    pub async fn scrollread(&self, duration_ms: u64) -> Result<()> {
+        scroll::read_by_duration(self.page(), duration_ms).await
+    }
+
     /// Scroll to selector, then read with pauses. Params: selector, pause count, scroll px, variable speed, scroll back after.
     pub async fn scroll_read_to(
         &self,

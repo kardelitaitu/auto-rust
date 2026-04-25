@@ -243,6 +243,30 @@ When improving the codebase, follow this systematic procedure to ensure quality 
 - **git commit** - commit with proper message
 - **git push** - push to remote repository
 
+### 10. Update Journal
+
+Add entry to `JOURNAL.md` summarizing the session's accomplishments:
+
+```markdown
+## YYYY-MM-DD - Brief Description
+
+### Accomplished This Session
+
+#### Area of Work
+- **file.rs**: What changed and why
+- **Module**: Key additions or fixes
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass / ❌ Fail |
+| Tests | ✅ X passed / ❌ Y failed |
+| cargo clippy | ✅ Clean / ⚠️ Warnings |
+```
+
+**Keep it concise** - focus on what changed, not how. Cross-reference commit messages for details.
+
 ### Key Principles
 - **Be conservative** - when in doubt, don't change it
 - **Be thorough** - verify your understanding before proposing changes

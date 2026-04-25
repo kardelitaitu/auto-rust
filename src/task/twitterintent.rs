@@ -142,7 +142,15 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
     // Check for standard url field
     if let Some(value) = payload.get("url") {
         if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
+            if url_str.contains("x.com") || url_str.contains("twitter.com") {
+                return Ok(url_str.to_string());
+            }
+            // Handle CLI parser truncation: if url is just a username/ID, reconstruct
+            // CLI splits on '=' in query strings, so "screen_name=snsnokyoufu" becomes "snsnokyoufu"
+            if !url_str.contains('/') && !url_str.contains('.') {
+                // Looks like a username or ID, assume follow intent
+                return Ok(format!("https://x.com/intent/follow?screen_name={}", url_str));
+            }
         }
     }
     // Check for standard value field

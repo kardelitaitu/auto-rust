@@ -452,6 +452,16 @@ impl Session {
     pub async fn acquire_worker(&self, timeout_ms: u64) -> Option<WorkerPermit<'_>> {
         use tokio::time::{timeout, Duration};
 
+        // Fast-fail if circuit breaker is open - prevents assigning tasks to
+        // sessions that are experiencing repeated failures
+        if self.is_circuit_breaker_open() {
+            warn!(
+                "[{}] Circuit breaker is open, rejecting task assignment",
+                self.id
+            );
+            return None;
+        }
+
         match timeout(
             Duration::from_millis(timeout_ms),
             self.worker_semaphore.acquire(),

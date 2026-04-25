@@ -199,14 +199,24 @@ async fn connect_to_browser(
         )));
     }
 
-    let (browser, handler) = chromiumoxide::Browser::connect(ws_endpoint)
-        .await
-        .map_err(|e| {
-            OrchestratorError::Browser(BrowserError::ConnectionFailed(format!(
-                "Failed to connect to {}: {}",
-                profile.name, e
-            )))
-        })?;
+    // Apply connection timeout to prevent indefinite hangs
+    let connect_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+    let (browser, handler) = match tokio::time::timeout(
+        connect_timeout,
+        chromiumoxide::Browser::connect(ws_endpoint)
+    ).await {
+        Ok(Ok((browser, handler))) => (browser, handler),
+        Ok(Err(e)) => {
+            return Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+                format!("Failed to connect to {}: {}", profile.name, e)
+            )));
+        }
+        Err(_) => {
+            return Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+                format!("Connection timeout to {} after {}ms", profile.name, connect_timeout.as_millis())
+            )));
+        }
+    };
 
     let session = Session::new(
         format!("config-{}", profile.name),
@@ -281,9 +291,13 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                     if let Some(ws_str) = ws_url.as_str() {
                         info!("Found Brave browser on port {port}");
 
-                        // Try to connect to chromiumoxide
-                        match chromiumoxide::Browser::connect(ws_str).await {
-                            Ok((browser, handler)) => {
+                        // Try to connect to chromiumoxide with timeout
+                        let brave_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+                        match tokio::time::timeout(
+                            brave_timeout,
+                            chromiumoxide::Browser::connect(ws_str)
+                        ).await {
+                            Ok(Ok((browser, handler))) => {
                                 let session = Session::new(
                                     format!("brave-{port}"),
                                     format!("Brave on port {port}"),
@@ -296,8 +310,11 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                                 );
                                 return Ok(Some(session));
                             }
-                            Err(e) => {
+                            Ok(Err(e)) => {
                                 warn!("Failed to connect to Brave on port {port}: {e}");
+                            }
+                            Err(_) => {
+                                warn!("Connection timeout to Brave on port {port} after {}ms", brave_timeout.as_millis());
                             }
                         }
                     }
@@ -396,8 +413,9 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
 
         debug!("Connecting to Roxybrowser: {profile_name} ({ws_url})");
 
-        match chromiumoxide::Browser::connect(&ws_url).await {
-            Ok((browser, handler)) => {
+        let roxy_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+        match tokio::time::timeout(roxy_timeout, chromiumoxide::Browser::connect(&ws_url)).await {
+            Ok(Ok((browser, handler))) => {
                 let session = Session::new(
                     profile_id,
                     profile_name.clone(),
@@ -411,8 +429,11 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
                 sessions.push(session);
                 info!("Connected to Roxybrowser: {profile_name}");
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!("Failed to connect to Roxybrowser {profile_name}: {e}");
+            }
+            Err(_) => {
+                warn!("Connection timeout to Roxybrowser {profile_name} after {}ms", roxy_timeout.as_millis());
             }
         }
     }

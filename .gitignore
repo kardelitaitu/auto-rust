@@ -1,6 +1,13 @@
+
+# Local learning artifacts
+click-learning/
 # Rust build output
 /target
 # Keep Cargo.lock committed for reproducible binary builds
+
+/click-learning
+
+
 
 # Local config and secrets
 config.toml

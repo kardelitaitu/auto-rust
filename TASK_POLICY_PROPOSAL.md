@@ -7,9 +7,9 @@
 The only hard requirement is `max_duration_ms` - tasks cannot hang forever. Eight boolean permissions control what the task is allowed to do, defaulted as `false`.
 
 **Design Notes:**
-- `screenshot` permission implies `write_data` capability (screenshots must be saved)
-- `export_session` and `import_session` are **intentionally separate** for granular control
-- Clipboard read/write are **combined** as `session_clipboard`
+- `allow_screenshot` permission implies `allow_write_data` capability (screenshots must be saved)
+- `allow_export_session` and `allow_import_session` are **intentionally separate** for granular control
+- Clipboard read/write are **combined** as `allow_session_clipboard`
 
 ## Policy Structure
 
@@ -29,37 +29,37 @@ pub struct TaskPolicy {
 #[derive(Debug, Clone, Default)]
 pub struct TaskPermissions {
     /// Allow capturing screenshots
-    /// NOTE: Implies write_data capability (screenshots must be saved)
-    pub screenshot: bool,
+    /// NOTE: Implies allow_write_data capability (screenshots must be saved)
+    pub allow_screenshot: bool,
     
     /// Allow exporting cookies from browser
-    pub export_cookies: bool,
+    pub allow_export_cookies: bool,
     
     /// Allow importing cookies into browser
-    pub import_cookies: bool,
+    pub allow_import_cookies: bool,
     
     /// Allow exporting full session data (cookies + localStorage)
-    pub export_session: bool,
+    pub allow_export_session: bool,
     
     /// Allow importing full session data (cookies + localStorage)
-    /// NOTE: Intentionally separate from export_session for granular control
-    pub import_session: bool,
+    /// NOTE: Intentionally separate from allow_export_session for granular control
+    pub allow_import_session: bool,
     
     /// Allow reading/writing clipboard
     /// NOTE: Combined read+write permission
-    pub session_clipboard: bool,
+    pub allow_session_clipboard: bool,
     
     /// Allow reading data files from config/ or data/ folders
-    pub read_data: bool,
+    pub allow_read_data: bool,
     
     /// Allow writing data files to config/ or data/ folders
-    pub write_data: bool,
+    pub allow_write_data: bool,
 }
 ```
 
 ## Permission Utilities & Use Cases
 
-### 1. `screenshot` - Visual Debugging & Evidence
+### 1. `allow_screenshot` - Visual Debugging & Evidence
 
 **Purpose:** Allow tasks to capture screenshots of the browser window.
 
@@ -72,16 +72,16 @@ pub struct TaskPermissions {
 ```rust
 // CDP: Page.captureScreenshot
 let screenshot = page.screenshot(ScreenshotParams::default()).await?;
-// Saves to file (requires implied write_data capability)
+// Saves to file (requires implied allow_write_data capability)
 ```
 
 **Security consideration:** Screenshots may contain sensitive information (personal data, credentials, private content).
 
-**Implies:** `write_data` (screenshots must be saved to disk)
+**Implies:** `allow_write_data` (screenshots must be saved to disk)
 
 ---
 
-### 2. `export_cookies` - Cookie Export
+### 2. `allow_export_cookies` - Cookie Export
 
 **Purpose:** Allow tasks to export browser cookies from the current session.
 
@@ -99,7 +99,7 @@ let cookies = page.execute(Network::get_cookies()).await?;
 
 ---
 
-### 3. `import_cookies` - Cookie Import
+### 3. `allow_import_cookies` - Cookie Import
 
 **Purpose:** Allow tasks to import cookies into the browser session.
 
@@ -126,11 +126,11 @@ for cookie in cookies {
 }
 ```
 
-**Security consideration:** Importing malicious cookies could hijack sessions or inject tracking data. Combined with `export_cookies`, enables full session transfer between browsers.
+**Security consideration:** Importing malicious cookies could hijack sessions or inject tracking data. Combined with `allow_export_cookies`, enables full session transfer between browsers.
 
 ---
 
-### 4. `export_session` - Full Session Export
+### 4. `allow_export_session` - Full Session Export
 
 **Purpose:** Allow tasks to export complete session data (cookies + localStorage).
 
@@ -151,11 +151,11 @@ let local_storage: Value = page.evaluate(r#"
 
 **Security consideration:** This is a **HIGH RISK** permission. Enables session cloning (e.g., cloning Discord, Telegram sessions).
 
-**Relationship:** Intentionally **separate** from `import_session`. A task may only need to backup (export) without restoring (import).
+**Relationship:** Intentionally **separate** from `allow_import_session`. A task may only need to backup (export) without restoring (import).
 
 ---
 
-### 5. `import_session` - Full Session Import
+### 5. `allow_import_session` - Full Session Import
 
 **Purpose:** Allow tasks to import complete session data (cookies + localStorage).
 
@@ -191,14 +191,14 @@ page.evaluate(js_code).await?;
 - Inject malicious localStorage data
 - Enable account takeover
 
-**Relationship:** Intentionally **separate** from `export_session`. Granular control allows:
+**Relationship:** Intentionally **separate** from `allow_export_session`. Granular control allows:
 - Backup-only tasks (export only)
 - Import-only tasks (restore from trusted sources)
 - Full session manager tasks (both)
 
 ---
 
-### 6. `session_clipboard` - Text Transfer (Read + Write)
+### 6. `allow_session_clipboard` - Text Transfer (Read + Write)
 
 **Purpose:** Allow tasks to read from and write to the system clipboard.
 
@@ -221,7 +221,7 @@ clipboard.set_text("content")?;
 
 ---
 
-### 7. `read_data` - External Data Loading
+### 7. `allow_read_data` - External Data Loading
 
 **Purpose:** Allow tasks to read files from `config/` or `data/` folders.
 
@@ -240,13 +240,13 @@ let content = std::fs::read_to_string(path)?;
 
 ---
 
-### 8. `write_data` - External Data Saving
+### 8. `allow_write_data` - External Data Saving
 
 **Purpose:** Allow tasks to write files to `config/` or `data/` folders.
 
 **Use Cases:**
 - **Session file saving** - Save exported sessions to disk
-- **Screenshot saving** - Save captured screenshots (also implied by `screenshot`)
+- **Screenshot saving** - Save captured screenshots (also implied by `allow_screenshot`)
 - **Data persistence** - Save task results for later use
 - **Log/debug output** - Write debug information to files
 
@@ -258,7 +258,7 @@ std::fs::write(path, content)?;
 
 **Security consideration:** Path-restricted to config/data folders only. Prevents overwriting system files or sensitive data.
 
-**Relationship:** `screenshot` permission **implies** `write_data` (screenshots must be saved).
+**Relationship:** `allow_screenshot` permission **implies** `allow_write_data` (screenshots must be saved).
 
 ---
 
@@ -266,17 +266,17 @@ std::fs::write(path, content)?;
 
 | Permission | CookieBot | PageView | TwitterActivity | DataTyping | DemoQA | SessionManager | ScreenshotTask |
 |------------|-----------|----------|-----------------|------------|--------|----------------|----------------|
-| `screenshot` | ✅ Debug | ✅ Verify | ✅ Debug | ❌ | ❌ | ✅ Debug | ✅ Capture |
-| `export_cookies` | ✅ Verify | ❌ | ✅ Debug | ❌ | ❌ | ✅ Export | ❌ |
-| `import_cookies` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Import | ❌ |
-| `export_session` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Export | ❌ |
-| `import_session` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Import | ❌ |
-| `session_clipboard` | ❌ | ❌ | ✅ Copy/paste | ✅ Paste | ❌ | ❌ | ❌ |
-| `read_data` | ❌ | ❌ | ✅ Persona | ✅ Data file | ❌ | ✅ Session files | ❌ |
-| `write_data` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Save sessions | ✅ Save images |
+| `allow_screenshot` | ✅ Debug | ✅ Verify | ✅ Debug | ❌ | ❌ | ✅ Debug | ✅ Capture |
+| `allow_export_cookies` | ✅ Verify | ❌ | ✅ Debug | ❌ | ❌ | ✅ Export | ❌ |
+| `allow_import_cookies` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Import | ❌ |
+| `allow_export_session` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Export | ❌ |
+| `allow_import_session` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Import | ❌ |
+| `allow_session_clipboard` | ❌ | ❌ | ✅ Copy/paste | ✅ Paste | ❌ | ❌ | ❌ |
+| `allow_read_data` | ❌ | ❌ | ✅ Persona | ✅ Data file | ❌ | ✅ Session files | ❌ |
+| `allow_write_data` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Save sessions | ✅ Save images |
 
 **Notes:**
-- `screenshot` tasks get `write_data` implicitly (for saving images)
+- `allow_screenshot` tasks get `allow_write_data` implicitly (for saving images)
 - `SessionManager` has most permissions for full session management
 - Most tasks only need 1-3 permissions
 
@@ -290,14 +290,14 @@ std::fs::write(path, content)?;
 pub static DEFAULT_TASK_POLICY: TaskPolicy = TaskPolicy {
     max_duration_ms: 60_000,  // 1 minute - safe default
     permissions: TaskPermissions {
-        screenshot: false,
-        export_cookies: false,
-        import_cookies: false,
-        export_session: false,
-        import_session: false,
-        session_clipboard: false,
-        read_data: false,
-        write_data: false,
+        allow_screenshot: false,
+        allow_export_cookies: false,
+        allow_import_cookies: false,
+        allow_export_session: false,
+        allow_import_session: false,
+        allow_session_clipboard: false,
+        allow_read_data: false,
+        allow_write_data: false,
     },
 };
 ```
@@ -316,13 +316,13 @@ File: `src/task/cookiebot.rs`
 use crate::task::policy::{TaskPolicy, TaskPermissions};
 
 /// CookieBot policy - handles cookie consent dialogs
-/// Needs: export_cookies (verify consent), screenshot (debug)
+/// Needs: allow_export_cookies (verify consent), allow_screenshot (debug)
 pub const COOKIEBOT_POLICY: TaskPolicy = TaskPolicy {
     max_duration_ms: 30_000,  // 30 seconds max for consent handling
     permissions: TaskPermissions {
-        export_cookies: true,   // Export to verify consent state
-        screenshot: true,       // Capture consent dialog for debugging
-        // write_data implied by screenshot
+        allow_export_cookies: true,   // Export to verify consent state
+        allow_screenshot: true,       // Capture consent dialog for debugging
+        // allow_write_data implied by allow_screenshot
         ..Default::default()
     },
 };
@@ -335,10 +335,10 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<TaskResult> {
     let url = payload["url"].as_str().unwrap_or("");
     ctx.goto(url).await?;
     
-    // This call checks screenshot permission internally
+    // This call checks allow_screenshot permission internally
     let screenshot = ctx.screenshot().await?;
     
-    // This call checks export_cookies permission internally
+    // This call checks allow_export_cookies permission internally
     let cookies = ctx.export_cookies(url).await?;
     
     // Handle consent dialog...
@@ -356,12 +356,12 @@ File: `src/task/pageview.rs`
 use crate::task::policy::{TaskPolicy, TaskPermissions};
 
 /// PageView policy - simple page loading with verification
-/// Needs: screenshot (verify page loaded)
+/// Needs: allow_screenshot (verify page loaded)
 pub const PAGEVIEW_POLICY: TaskPolicy = TaskPolicy {
     max_duration_ms: 30_000,  // Page load timeout
     permissions: TaskPermissions {
-        screenshot: true,       // Verify page loaded correctly
-        // write_data implied by screenshot
+        allow_screenshot: true,       // Verify page loaded correctly
+        // allow_write_data implied by allow_screenshot
         ..Default::default()
     },
 };
@@ -372,10 +372,10 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<TaskResult> {
     ctx.goto(url).await?;
     ctx.pause(2000).await; // Wait for load
     
-    // Verify with screenshot
-    let screenshot = ctx.screenshot().await?;
+    // Verify with allow_screenshot
+    let img = ctx.screenshot().await?;
     let path = format!("data/screenshots/{}.png", ctx.task_id);
-    std::fs::write(&path, screenshot)?;  // write_data implied
+    std::fs::write(&path, img)?;  // allow_write_data implied
     
     Ok(TaskResult::success())
 }
@@ -391,15 +391,15 @@ File: `src/task/twitteractivity.rs`
 use crate::task::policy::{TaskPolicy, TaskPermissions};
 
 /// TwitterActivity policy - complex social media automation
-/// Needs: export_cookies, session_clipboard, read_data, screenshot
+/// Needs: allow_export_cookies, allow_session_clipboard, allow_read_data, allow_screenshot
 pub const TWITTERACTIVITY_POLICY: TaskPolicy = TaskPolicy {
     max_duration_ms: 300_000,  // 5 minutes for feed scanning
     permissions: TaskPermissions {
-        export_cookies: true,       // Verify login session
-        session_clipboard: true,     // Copy tweet text, paste replies
-        read_data: true,            // Read persona files from config/
-        screenshot: true,           // Debug screenshots
-        // write_data implied by screenshot
+        allow_export_cookies: true,       // Verify login session
+        allow_session_clipboard: true,     // Copy tweet text, paste replies
+        allow_read_data: true,            // Read persona files from config/
+        allow_screenshot: true,           // Debug screenshots
+        // allow_write_data implied by allow_screenshot
         ..Default::default()
     },
 };
@@ -421,7 +421,7 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<TaskResult> {
         
         // Copy tweet text to clipboard
         let text = ctx.text(tweet.text_selector).await?;
-        ctx.write_clipboard(&text).await?;  // session_clipboard check
+        ctx.write_clipboard(&text).await?;  // allow_session_clipboard check
         
         // Generate reply using LLM...
         let reply = generate_reply(&text, &persona).await?;
@@ -442,13 +442,13 @@ File: `src/task/data_typing.rs`
 ```rust
 use crate::task::policy::{TaskPolicy, TaskPermissions};
 
-/// DataTyping policy - read file and type into form
-/// Needs: read_data (load data file), session_clipboard (paste into field)
-pub const DATA_TYPING_POLICY: TaskPolicy = TaskPolicy {
+/// DataTyping policy - keyboard automation with clipboard
+/// Needs: allow_session_clipboard (paste), allow_read_data (load text)
+pub const DATATYPING_POLICY: TaskPolicy = TaskPolicy {
     max_duration_ms: 60_000,
     permissions: TaskPermissions {
-        read_data: true,            // Read text file from data/ folder
-        session_clipboard: true,    // Paste the value into form
+        allow_session_clipboard: true,  // Paste from clipboard
+        allow_read_data: true,          // Load text files from data/ folder
         ..Default::default()
     },
 };
@@ -480,19 +480,19 @@ File: `src/task/session_manager.rs`
 ```rust
 use crate::task::policy::{TaskPolicy, TaskPermissions};
 
-/// SessionManager policy - full session backup and restore
-/// Needs: ALL session permissions + read/write data
-pub const SESSION_MANAGER_POLICY: TaskPolicy = TaskPolicy {
-    max_duration_ms: 60_000,
+/// SessionManager policy - full session import/export
+/// Needs: allow_export_cookies, allow_import_cookies, allow_export_session, allow_import_session, allow_read_data, allow_write_data
+pub const SESSIONMANAGER_POLICY: TaskPolicy = TaskPolicy {
+    max_duration_ms: 120_000,
     permissions: TaskPermissions {
-        export_cookies: true,
-        import_cookies: true,
-        export_session: true,
-        import_session: true,
-        read_data: true,      // Read session files
-        write_data: true,     // Save session files
-        screenshot: true,     // Debug session state
-        // write_data also implied by screenshot
+        allow_export_cookies: true,   // Export cookies
+        allow_import_cookies: true,   // Import cookies
+        allow_export_session: true,   // Export full session
+        allow_import_session: true,   // Import full session
+        allow_read_data: true,        // Load session files
+        allow_write_data: true,       // Save session files
+        allow_screenshot: true,     // Debug session state
+        // allow_write_data also implied by allow_screenshot
         ..Default::default()
     },
 };
@@ -541,13 +541,13 @@ File: `src/task/screenshot.rs`
 ```rust
 use crate::task::policy::{TaskPolicy, TaskPermissions};
 
-/// Screenshot-only task policy
-/// Needs: screenshot (implies write_data)
-pub const SCREENSHOT_POLICY: TaskPolicy = TaskPolicy {
+/// ScreenshotTask policy - page capture
+/// Needs: allow_screenshot (implies allow_write_data)
+pub const SCREENSHOTTASK_POLICY: TaskPolicy = TaskPolicy {
     max_duration_ms: 30_000,
     permissions: TaskPermissions {
-        screenshot: true,
-        // write_data is IMPLIED by screenshot
+        allow_screenshot: true,   // Capture and save screenshot
+        // allow_write_data is IMPLIED by allow_screenshot
         // TaskContext::screenshot() handles both capture AND save
         ..Default::default()
     },
@@ -559,7 +559,7 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<TaskResult> {
     
     ctx.goto(url).await?;
     
-    // screenshot() captures AND saves (uses implied write_data)
+    // screenshot() captures AND saves (uses implied allow_write_data)
     let path = ctx.screenshot_to_file(output).await?;
     
     Ok(TaskResult::success().with_output("path", path))
@@ -578,19 +578,19 @@ impl TaskPolicy {
     pub fn effective_permissions(&self) -> TaskPermissions {
         let mut perms = self.permissions.clone();
         
-        // screenshot implies write_data (must save the image)
-        if perms.screenshot {
-            perms.write_data = true;
+        // allow_screenshot implies allow_write_data (must save the image)
+        if perms.allow_screenshot {
+            perms.allow_write_data = true;
         }
         
-        // export_session implies export_cookies (uses same CDP call)
-        if perms.export_session {
-            perms.export_cookies = true;
+        // allow_export_session implies allow_export_cookies (uses same CDP call)
+        if perms.allow_export_session {
+            perms.allow_export_cookies = true;
         }
         
-        // import_session implies import_cookies
-        if perms.import_session {
-            perms.import_cookies = true;
+        // allow_import_session implies allow_import_cookies
+        if perms.allow_import_session {
+            perms.allow_import_cookies = true;
         }
         
         perms
@@ -605,11 +605,11 @@ impl TaskContext {
         // Use effective permissions (includes implied ones)
         let perms = self.policy.effective_permissions();
         
-        if !perms.screenshot {
-            return Err(TaskError::PermissionDenied("screenshot"));
+        if !perms.allow_screenshot {
+            return Err(TaskError::PermissionDenied("allow_screenshot"));
         }
         
-        // screenshot implies write_data, so this is allowed
+        // allow_screenshot implies allow_write_data, so this is allowed
         let image = self.capture_screenshot().await?;
         std::fs::write(path, image)?;
         
@@ -649,67 +649,67 @@ pub async fn execute_task(
 ```rust
 impl TaskContext {
     pub async fn screenshot(&self) -> Result<Vec<u8>> {
-        if !self.policy.permissions.screenshot {
-            return Err(TaskError::PermissionDenied("screenshot"));
+        if !self.policy.permissions.allow_screenshot {
+            return Err(TaskError::PermissionDenied("allow_screenshot"));
         }
         // CDP: Page.captureScreenshot
     }
     
     pub async fn export_cookies(&self, url: &str) -> Result<Vec<Cookie>> {
-        if !self.policy.permissions.export_cookies {
-            return Err(TaskError::PermissionDenied("export_cookies"));
+        if !self.policy.permissions.allow_export_cookies {
+            return Err(TaskError::PermissionDenied("allow_export_cookies"));
         }
         // CDP: Network.getCookies
     }
     
     pub async fn import_cookies(&self, cookies: &[Cookie]) -> Result<()> {
-        if !self.policy.permissions.import_cookies {
-            return Err(TaskError::PermissionDenied("import_cookies"));
+        if !self.policy.permissions.allow_import_cookies {
+            return Err(TaskError::PermissionDenied("allow_import_cookies"));
         }
         // CDP: Network.setCookie for each
     }
     
     pub async fn export_session(&self, url: &str) -> Result<SessionData> {
-        if !self.policy.permissions.export_session {
-            return Err(TaskError::PermissionDenied("export_session"));
+        if !self.policy.permissions.allow_export_session {
+            return Err(TaskError::PermissionDenied("allow_export_session"));
         }
         // CDP: Network.getCookies + Runtime.evaluate (localStorage)
         log::warn!("Task '{}' exported full session from {}", self.task_name, url);
     }
     
     pub async fn import_session(&self, session_data: &SessionData) -> Result<()> {
-        if !self.policy.permissions.import_session {
-            return Err(TaskError::PermissionDenied("import_session"));
+        if !self.policy.permissions.allow_import_session {
+            return Err(TaskError::PermissionDenied("allow_import_session"));
         }
         // CDP: Network.setCookies + Runtime.evaluate (localStorage restore)
         log::warn!("Task '{}' imported full session", self.task_name);
     }
     
     pub fn read_clipboard(&self) -> Result<String> {
-        if !self.policy.permissions.session_clipboard {
-            return Err(TaskError::PermissionDenied("session_clipboard"));
+        if !self.policy.permissions.allow_session_clipboard {
+            return Err(TaskError::PermissionDenied("allow_session_clipboard"));
         }
         // OS clipboard read
     }
     
     pub fn write_clipboard(&self, text: &str) -> Result<()> {
-        if !self.policy.permissions.session_clipboard {
-            return Err(TaskError::PermissionDenied("session_clipboard"));
+        if !self.policy.permissions.allow_session_clipboard {
+            return Err(TaskError::PermissionDenied("allow_session_clipboard"));
         }
         // OS clipboard write
     }
     
     pub async fn read_data_file(&self, path: &str) -> Result<String> {
-        if !self.policy.permissions.read_data {
-            return Err(TaskError::PermissionDenied("read_data"));
+        if !self.policy.permissions.allow_read_data {
+            return Err(TaskError::PermissionDenied("allow_read_data"));
         }
         // Validate path is within config/ or data/
         // Standard filesystem read
     }
     
     pub async fn write_data_file(&self, path: &str, content: &[u8]) -> Result<()> {
-        if !self.policy.permissions.write_data {
-            return Err(TaskError::PermissionDenied("write_data"));
+        if !self.policy.permissions.allow_write_data {
+            return Err(TaskError::PermissionDenied("allow_write_data"));
         }
         // Validate path is within config/ or data/
         // Standard filesystem write
@@ -826,8 +826,8 @@ async fn screenshot(page: &Page) -> Result<Vec<u8>> {
 
 When a task tries to use a capability without permission:
 
-1. **Return error** - `TaskError::PermissionDenied("screenshot")`
-2. **Log warning** - "Task 'cookiebot' attempted screenshot without permission"
+1. **Return error** - `TaskError::PermissionDenied("allow_screenshot")`
+2. **Log warning** - "Task 'cookiebot' attempted allow_screenshot without permission"
 3. **Continue execution** - Task can handle error or fail gracefully
 
 ---
@@ -890,19 +890,19 @@ Wrap sensitive operations in `TaskContext`:
 | Policy | Type | Purpose | Security Risk | Implies |
 |--------|------|---------|---------------|---------|
 | `max_duration_ms` | `u64` | **Mandatory** - Kill task if it hangs | None | - |
-| `screenshot` | `bool` | Visual debugging & evidence | May capture sensitive data | `write_data` |
-| `export_cookies` | `bool` | Export cookies from browser | May expose auth tokens | - |
-| `import_cookies` | `bool` | Import cookies into browser | Session hijacking risk | - |
-| `export_session` | `bool` | Export full session | **HIGH** - Session cloning | `export_cookies` |
-| `import_session` | `bool` | Import full session | **HIGH** - Account takeover | `import_cookies` |
-| `session_clipboard` | `bool` | Text transfer (read+write) | May leak credentials | - |
-| `read_data` | `bool` | Read files from config/data | Path-restricted | - |
-| `write_data` | `bool` | Write files to config/data | Path-restricted | - |
+| `allow_screenshot` | `bool` | Visual debugging & evidence | May capture sensitive data | `allow_write_data` |
+| `allow_export_cookies` | `bool` | Export browser cookies | Low | - |
+| `allow_import_cookies` | `bool` | Import cookies into browser | Medium | - |
+| `allow_export_session` | `bool` | Export cookies + localStorage | **HIGH** | `allow_export_cookies` |
+| `allow_import_session` | `bool` | Import cookies + localStorage | **HIGH** | `allow_import_cookies` |
+| `allow_session_clipboard` | `bool` | Read/write system clipboard | Medium | - |
+| `allow_read_data` | `bool` | Read files from config/data | Low | - |
+| `allow_write_data` | `bool` | Write files to config/data | Path-restricted | - |
 
 **Permission Dependencies:**
-- `screenshot` → `write_data` (must save images)
-- `export_session` → `export_cookies` (uses same CDP call)
-- `import_session` → `import_cookies` (uses same CDP call)
+- `allow_screenshot` → `allow_write_data` (must save images)
+- `allow_export_session` → `allow_export_cookies` (uses same CDP call)
+- `allow_import_session` → `allow_import_cookies` (uses same CDP call)
 
 ---
 
@@ -911,7 +911,7 @@ Wrap sensitive operations in `TaskContext`:
 1. **Simplicity** - One mandatory rule, 8 simple permissions (9 total)
 2. **Security** - Tasks can't overreach without explicit permission
 3. **Granularity** - Session import/export are separate permissions
-4. **Implied permissions** - screenshot automatically allows saving images
+4. **Implied permissions** - allow_screenshot automatically allows saving images
 5. **Session management** - Full import/export capabilities for advanced use cases
 6. **Malware prevention** - Unauthorized access blocked
 7. **Debugging** - Clear errors when permissions missing
@@ -930,11 +930,11 @@ Wrap sensitive operations in `TaskContext`:
 ### Phase 2: Runtime Enforcement
 - [ ] Add timeout enforcement in orchestrator (`tokio::time::timeout`)
 - [ ] Add permission check methods to `TaskContext` (return errors if denied)
-- [ ] Add implied permissions logic (`screenshot` → `write_data`, `export_session` → `export_cookies`, etc.)
+- [ ] Add implied permissions logic (`allow_screenshot` → `allow_write_data`, `allow_export_session` → `allow_export_cookies`, etc.)
 
 ### Phase 3: Feature Implementation
-- [ ] Add path validation for `read_data` and `write_data` (config/ and data/ only)
-- [ ] Add CDP implementations for all 7 features (screenshot, cookies, session, clipboard)
+- [ ] Add path validation for `allow_read_data` and `allow_write_data` (config/ and data/ only)
+- [ ] Add CDP implementations for all 7 features (allow_screenshot, allow_export_cookies, allow_export_session, allow_session_clipboard)
 - [ ] Add audit logging for session export/import operations
 
 ### Phase 4: Application & Testing

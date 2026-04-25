@@ -22,6 +22,7 @@ pub mod task_example;
 pub mod twitteractivity;
 pub mod twitterdive;
 pub mod twitterfollow;
+pub mod twitterintent;
 pub mod twitterlike;
 pub mod twitterquote;
 pub mod twitterreply;
@@ -38,6 +39,7 @@ pub const TASK_NAMES: &[&str] = &[
     "twitteractivity",
     "twitterdive",
     "twitterfollow",
+    "twitterintent",
     "twitterlike",
     "twitterquote",
     "twitterreply",
@@ -112,6 +114,7 @@ async fn execute_single_attempt(
         "twitteractivity" => twitteractivity::run(api, payload.clone(), config).await,
         "twitterdive" => twitterdive::run(api, payload.clone()).await,
         "twitterfollow" => twitterfollow::run(api, payload.clone()).await,
+        "twitterintent" => twitterintent::run(api, payload.clone()).await,
         "twitterlike" => twitterlike::run(api, payload.clone()).await,
         "twitterquote" => twitterquote::run(api, payload.clone()).await,
         "twitterreply" => twitterreply::run(api, payload.clone()).await,
@@ -160,9 +163,10 @@ mod tests {
 
     #[test]
     fn test_task_names_constant() {
-        assert_eq!(TASK_NAMES.len(), 14);
+        assert_eq!(TASK_NAMES.len(), 15);
         assert!(TASK_NAMES.contains(&"cookiebot"));
         assert!(TASK_NAMES.contains(&"pageview"));
+        assert!(TASK_NAMES.contains(&"twitterintent"));
     }
 
     #[test]

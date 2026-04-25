@@ -73,8 +73,8 @@ fn session_matches_filters(session: &Session, filters: &[String]) -> bool {
 /// # Examples
 ///
 /// ```no_run
-/// # use rust_orchestrator::browser::discover_browsers;
-/// # use rust_orchestrator::config::Config;
+/// # use auto::browser::discover_browsers;
+/// # use auto::config::Config;
 /// # async fn example(config: &Config) -> anyhow::Result<()> {
 /// let sessions = discover_browsers(config).await?;
 /// println!("Discovered {} browsers", sessions.len());

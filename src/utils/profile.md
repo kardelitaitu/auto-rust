@@ -260,7 +260,7 @@ Enjoyment-focused - slow, exploratory
 ## Usage Example
 
 ```rust
-use rust_orchestrator::prelude::*;
+use auto::prelude::*;
 
 // Get a preset and randomize it for this session
 let profile = randomize_profile(&ProfilePreset::Teen);

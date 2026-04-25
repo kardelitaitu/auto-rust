@@ -187,7 +187,7 @@ pub fn select_entry_point() -> &'static str {
 //
 // # Example
 /// ```rust,no_run
-/// # use rust_orchestrator::task::twitteractivity::TweetActionTracker;
+/// # use auto::task::twitteractivity::TweetActionTracker;
 /// // This is a simplified example for documentation purposes
 /// let mut tracker = TweetActionTracker::new(3000);
 /// // In actual use, you would call can_perform_action and record_action

@@ -6,7 +6,7 @@
 //!
 //! # Usage
 //! ```no_run
-//! use rust_orchestrator::utils::{randomize_profile, ProfilePreset};
+//! use auto::utils::{randomize_profile, ProfilePreset};
 //!
 //! // Get a preset and randomize it for this session
 //! let profile = randomize_profile(&ProfilePreset::Teen);

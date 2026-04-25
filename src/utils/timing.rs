@@ -38,7 +38,7 @@ pub async fn random_delay(min_ms: u64, max_ms: u64) {
 ///
 /// # Examples
 /// ```no_run
-/// # use rust_orchestrator::prelude::timing::human_pause;
+/// # use auto::prelude::timing::human_pause;
 /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// // Pause for approximately 500ms with ±20% variability
 /// human_pause(500, 20).await;

@@ -20,8 +20,8 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use rust_orchestrator::utils::twitter::twitteractivity_dive::*;
-//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! use auto::utils::twitter::twitteractivity_dive::*;
+//! # use auto::runtime::task_context::TaskContext;
 //! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Dive into a thread and read it with caching
@@ -247,8 +247,8 @@ pub async fn dive_into_thread(
 /// # Example
 ///
 /// ```rust,no_run
-/// use rust_orchestrator::utils::twitter::twitteractivity_dive::*;
-/// # use rust_orchestrator::runtime::task_context::TaskContext;
+/// use auto::utils::twitter::twitteractivity_dive::*;
+/// # use auto::runtime::task_context::TaskContext;
 /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 ///
 /// let mut cache = ThreadCache::default();

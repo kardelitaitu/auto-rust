@@ -25,8 +25,8 @@
 //! # Examples
 //!
 //! ```no_run
-//! # use rust_orchestrator::runtime::task_context::TaskContext;
-//! # use rust_orchestrator::config::NativeInteractionConfig;
+//! # use auto::runtime::task_context::TaskContext;
+//! # use auto::config::NativeInteractionConfig;
 //! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //! api.navigate("https://example.com", 30_000).await?;
 //! api.click("#submit-button").await?;
@@ -1032,11 +1032,11 @@ mod tests {
 /// # Examples
 ///
 /// ```no_run
-/// # use rust_orchestrator::runtime::task_context::TaskContext;
+/// # use auto::runtime::task_context::TaskContext;
 /// # use chromiumoxide::Page;
 /// # use std::sync::Arc;
-/// # use rust_orchestrator::internal::profile::{BrowserProfile, ProfileRuntime};
-/// # use rust_orchestrator::config::NativeInteractionConfig;
+/// # use auto::internal::profile::{BrowserProfile, ProfileRuntime};
+/// # use auto::config::NativeInteractionConfig;
 /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
 /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default());
 /// // Use the API for browser automation
@@ -1073,11 +1073,11 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use auto::runtime::task_context::TaskContext;
     /// # use chromiumoxide::Page;
     /// # use std::sync::Arc;
-    /// # use rust_orchestrator::internal::profile::{BrowserProfile, ProfileRuntime};
-    /// # use rust_orchestrator::config::NativeInteractionConfig;
+    /// # use auto::internal::profile::{BrowserProfile, ProfileRuntime};
+    /// # use auto::config::NativeInteractionConfig;
     /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
     /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default());
     /// # }
@@ -1201,7 +1201,7 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use auto::runtime::task_context::TaskContext;
     /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
     /// api.navigate("https://example.com", 30000).await?;
     /// # Ok(())
@@ -1292,7 +1292,7 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use auto::runtime::task_context::TaskContext;
     /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
     /// let outcome = api.focus("#input-field").await?;
     /// println!("Focus status: {:?}", outcome.focus);
@@ -1334,7 +1334,7 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use auto::runtime::task_context::TaskContext;
     /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
     /// api.hover("#menu-item").await?;
     /// # Ok(())
@@ -1431,7 +1431,7 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use auto::runtime::task_context::TaskContext;
     /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
     /// api.click("#submit-button").await?;
     /// # Ok(())
@@ -1935,7 +1935,7 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use auto::runtime::task_context::TaskContext;
     /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
     /// api.r#type("#input-field", "Hello World").await?;
     /// # Ok(())
@@ -1967,7 +1967,7 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::runtime::task_context::TaskContext;
+    /// # use auto::runtime::task_context::TaskContext;
     /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
     /// api.keyboard("#input-field", "Hello World").await?;
     /// # Ok(())

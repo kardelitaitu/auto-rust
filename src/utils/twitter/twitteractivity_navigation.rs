@@ -22,8 +22,8 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use rust_orchestrator::utils::twitter::twitteractivity_navigation::*;
-//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! use auto::utils::twitter::twitteractivity_navigation::*;
+//! # use auto::runtime::task_context::TaskContext;
 //! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Navigate to home timeline

@@ -21,8 +21,8 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use rust_orchestrator::utils::twitter::twitteractivity_feed::*;
-//! # use rust_orchestrator::runtime::task_context::TaskContext;
+//! use auto::utils::twitter::twitteractivity_feed::*;
+//! # use auto::runtime::task_context::TaskContext;
 //! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
 //! // Scroll through feed with reading pauses

@@ -115,7 +115,7 @@ const INTENSIFIERS: &[(&str, f32)] = &[
 ///
 /// # Examples
 /// ```
-/// use rust_orchestrator::utils::twitter::twitteractivity_sentiment_context::is_negated;
+/// use auto::utils::twitter::twitteractivity_sentiment_context::is_negated;
 /// assert!(is_negated("This is not good", "good"));
 /// assert!(!is_negated("This is good", "good"));
 /// ```
@@ -149,7 +149,7 @@ pub fn is_negated(text: &str, target_word: &str) -> bool {
 ///
 /// # Examples
 /// ```
-/// use rust_orchestrator::utils::twitter::twitteractivity_sentiment_context::has_sarcasm_markers;
+/// use auto::utils::twitter::twitteractivity_sentiment_context::has_sarcasm_markers;
 /// assert!(has_sarcasm_markers("oh great, another bug"));
 /// assert!(has_sarcasm_markers("thanks, i hate it"));
 /// assert!(!has_sarcasm_markers("this is genuinely great"));
@@ -184,7 +184,7 @@ pub fn is_excessive_punctuation(text: &str) -> bool {
 ///
 /// # Examples
 /// ```
-/// use rust_orchestrator::utils::twitter::twitteractivity_sentiment_context::get_intensifier_multiplier;
+/// use auto::utils::twitter::twitteractivity_sentiment_context::get_intensifier_multiplier;
 /// assert!(get_intensifier_multiplier("This is very good", "good") > 1.0);
 /// assert_eq!(get_intensifier_multiplier("This is good", "good"), 1.0);
 /// ```

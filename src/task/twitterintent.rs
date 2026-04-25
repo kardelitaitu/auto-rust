@@ -103,6 +103,8 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     if api.visible(home_selector).await? {
         api.click(home_selector).await?;
         info!("[twitterintent] Navigated to home feed");
+        // Wait for home feed to load
+        api.pause(2000).await;
     } else {
         warn!("[twitterintent] Home link not visible, skipping");
     }

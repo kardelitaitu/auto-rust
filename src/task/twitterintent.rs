@@ -17,7 +17,7 @@
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
 use anyhow::Result;
-use log::{info, warn};
+use log::{debug, info, warn};
 use serde_json::Value;
 
 const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
@@ -72,7 +72,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     info!("[twitterintent] Intent URL: {}", url);
 
     let intent_type = IntentType::from_url(&url)?;
-    info!("[twitterintent] Detected intent type: {:?}", intent_type);
+    debug!("[twitterintent] Detected intent type: {:?}", intent_type);
 
     // Navigate to intent URL
     api.navigate(&url, DEFAULT_NAVIGATE_TIMEOUT_MS)
@@ -81,7 +81,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Click confirm button with verification
     let selector = intent_type.confirm_selector();
-    info!("[twitterintent] Clicking button: {}", selector);
+    debug!("[twitterintent] Clicking button: {}", selector);
     
     let click_success = click_with_verification(api, selector, intent_type).await?;
     
@@ -94,15 +94,15 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Random 5-15s pause after intent action (success or failed)
     let post_action_pause = random_in_range(5000, 15000);
-    info!("[twitterintent] Pausing {}ms after intent action", post_action_pause);
+    debug!("[twitterintent] Pausing {}ms after intent action", post_action_pause);
     api.pause(post_action_pause).await;
 
     // Click home link to go to home feed
     let home_selector = "a[href=\"/home\"]";
-    info!("[twitterintent] Clicking home link: {}", home_selector);
+    debug!("[twitterintent] Clicking home link: {}", home_selector);
     if api.visible(home_selector).await? {
         api.click(home_selector).await?;
-        info!("[twitterintent] Navigated to home feed");
+        debug!("[twitterintent] Navigated to home feed");
         // Wait for home feed to load
         api.pause(2000).await;
     } else {
@@ -117,11 +117,11 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Final random 3-5s wait
     let final_wait = random_in_range(3000, 5000);
-    info!("[twitterintent] Final wait {}ms", final_wait);
+    debug!("[twitterintent] Final wait {}ms", final_wait);
     api.pause(final_wait).await;
 
     // Return to previous page using JavaScript
-    info!("[twitterintent] Returning to previous page");
+    debug!("[twitterintent] Returning to previous page");
     api.page().evaluate("window.history.back()").await?;
 
     info!("[twitterintent] Task completed");
@@ -181,12 +181,12 @@ async fn click_with_verification(
 async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<bool> {
     // Random 4-8s pause before clicking (100ms interval)
     let pause_ms = random_in_range(4000, 8000);
-    info!("[twitterintent] Waiting {}ms before clicking", pause_ms);
+    debug!("[twitterintent] Waiting {}ms before clicking", pause_ms);
     api.pause(pause_ms).await;
 
     // Attempt click
     let outcome = api.click(selector).await?;
-    info!("[twitterintent] Click outcome: {}", outcome.summary());
+    debug!("[twitterintent] Click outcome: {}", outcome.summary());
 
     // Wait for action to process
     api.pause(1000).await;

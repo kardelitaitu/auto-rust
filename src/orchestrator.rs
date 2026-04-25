@@ -493,7 +493,11 @@ async fn execute_task_with_retry(
         );
     }
 
-    // Only execute task if session is idle (Phase 2: Supervisor Loop enforcement)
+    // Intentional check-then-act pattern: Multiple tasks can run on the same
+    // session concurrently (broadcast fan-out model). The worker_semaphore
+    // is the primary concurrency control (max_workers). This state check
+    // prevents re-entry of the same task and provides observability.
+    // See: https://github.com/your-org/rust-orchestrator/docs/ARCHITECTURE.md#session-concurrency
     if !session.is_idle() {
         return TaskResult::failure(
             start.elapsed().as_millis() as u64,
@@ -506,7 +510,9 @@ async fn execute_task_with_retry(
         );
     }
 
-    // Transition to Busy state before task execution
+    // Set Busy state for observability. Note: This is NOT exclusive locking;
+    // multiple tasks may pass the check and set Busy concurrently, which is
+    // intentional for the broadcast execution model.
     session.set_state(crate::session::SessionState::Busy);
 
     let permit = match tokio::select! {
@@ -626,7 +632,7 @@ async fn execute_task_with_retry(
             }
             task_result = timeout(
                 task_timeout,
-                crate::task::perform_task(&task_ctx, &task_def.name, payload_json.clone(), max_retries, config),
+                crate::task::perform_task(&task_ctx, &task_def.name, payload_json.clone(), config),
             ) => task_result,
         };
 

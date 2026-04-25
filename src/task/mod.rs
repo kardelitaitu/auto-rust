@@ -62,12 +62,13 @@ pub async fn perform_task(
     api: &TaskContext,
     name: &str,
     payload: Value,
-    _max_retries: u32,
     config: &crate::config::Config,
 ) -> Result<TaskResult> {
     let start = std::time::Instant::now();
     let clean_name = normalize_task_name(name);
 
+    // Note: Single-attempt execution (fail-fast design). Retry is handled at
+    // the orchestrator level via task group re-execution, not per-task retry.
     let result = execute_single_attempt(api, clean_name, &payload, config).await;
 
     match result {
@@ -84,7 +85,7 @@ pub async fn perform_task(
             Ok(TaskResult {
                 status,
                 attempt: 1,
-                max_retries: 0,
+                max_retries: 0,  // Intentional: no per-task retry (fail-fast)
                 last_error: Some(error_msg),
                 error_kind: Some(error_kind),
                 duration_ms: start.elapsed().as_millis() as u64,

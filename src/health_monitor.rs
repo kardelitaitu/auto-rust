@@ -266,7 +266,7 @@ impl HealthMonitor {
 pub struct HealthLogger {
     monitors: Arc<Mutex<Vec<Arc<HealthMonitor>>>>,
     log_interval_ms: u64,
-    shutdown: AtomicBool,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl HealthLogger {
@@ -275,7 +275,7 @@ impl HealthLogger {
         Self {
             monitors: Arc::new(Mutex::new(Vec::new())),
             log_interval_ms,
-            shutdown: AtomicBool::new(false),
+            shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -294,12 +294,18 @@ impl HealthLogger {
     /// Returns a join handle that can be aborted
     pub fn start(&self) -> tokio::task::JoinHandle<()> {
         let monitors = Arc::clone(&self.monitors);
+        let shutdown = Arc::clone(&self.shutdown);
         let interval = Duration::from_millis(self.log_interval_ms);
 
         tokio::spawn(async move {
             let mut interval_timer = tokio::time::interval(interval);
 
             loop {
+                // Check shutdown flag to allow graceful stop
+                if shutdown.load(Ordering::SeqCst) {
+                    break;
+                }
+
                 interval_timer.tick().await;
 
                 let monitors_guard = monitors.lock();

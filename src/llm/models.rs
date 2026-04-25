@@ -117,6 +117,9 @@ pub struct OpenRouterConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
+    /// Fallback models to try if primary fails (timeout or error)
+    #[serde(default)]
+    pub fallback_models: Vec<String>,
 }
 
 impl Default for OpenRouterConfig {
@@ -126,6 +129,7 @@ impl Default for OpenRouterConfig {
             base_url: "https://openrouter.ai/api/v1".into(),
             model: "anthropic/claude-3-haiku".into(),
             timeout_ms: 60000,
+            fallback_models: Vec::new(),
         }
     }
 }
@@ -365,8 +369,51 @@ mod tests {
             base_url: "https://api.example.com".to_string(),
             model: "gpt-4".to_string(),
             timeout_ms: 90000,
+            fallback_models: vec!["gpt-3.5-turbo".to_string()],
         };
         assert_eq!(config.api_key, "key");
+        assert_eq!(config.fallback_models.len(), 1);
+    }
+
+    #[test]
+    fn test_openrouter_fallback_models_empty_by_default() {
+        let config = OpenRouterConfig::default();
+        assert!(config.fallback_models.is_empty());
+    }
+
+    #[test]
+    fn test_openrouter_with_multiple_fallbacks() {
+        let fallbacks = vec![
+            "nvidia/nemotron-3-super-120b-a12b:free".to_string(),
+            "minimax/minimax-m2.5:free".to_string(),
+            "nvidia/nemotron-3-nano-30b-a3b:free".to_string(),
+            "openrouter/free".to_string(),
+        ];
+        let config = OpenRouterConfig {
+            api_key: "test-key".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            model: "tencent/hy3-preview:free".to_string(),
+            timeout_ms: 60000,
+            fallback_models: fallbacks.clone(),
+        };
+        assert_eq!(config.fallback_models.len(), 4);
+        assert_eq!(config.fallback_models, fallbacks);
+    }
+
+    #[test]
+    fn test_llm_config_with_openrouter_fallbacks() {
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig {
+                api_key: "key".to_string(),
+                base_url: "https://openrouter.ai/api/v1".to_string(),
+                model: "primary-model".to_string(),
+                timeout_ms: 60000,
+                fallback_models: vec!["fb1".to_string(), "fb2".to_string()],
+            },
+        };
+        assert_eq!(config.openrouter.fallback_models.len(), 2);
     }
 
     #[test]

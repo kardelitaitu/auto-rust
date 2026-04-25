@@ -7,7 +7,7 @@ pushd "%ROOT%"
 :: ============================================================================
 :: Auto-Rust Windows Setup Script
 :: - Detects CPU threads and optimizes build configuration
-:: - Installs Rust if not present
+:: - Installs LLVM (lld-link) and sccache for faster builds
 :: - Creates .env file with template settings
 :: - Builds release version
 :: ============================================================================
@@ -18,9 +18,36 @@ echo ========================================
 echo.
 
 :: ----------------------------------------------------------------------------
-:: Step 1: CPU Detection and Optimization
+:: Step 1: Install Build Dependencies (LLVM/sccache)
 :: ----------------------------------------------------------------------------
-echo [1/5] Detecting CPU threads...
+echo [1/7] Installing build accelerators (LLVM + sccache)...
+
+:: Check if lld-link is available
+where lld-link >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo   lld-link not found. Installing LLVM...
+    choco install llvm -y
+) else (
+    echo   lld-link found: OK
+)
+
+:: Check if sccache is available
+where sccache >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo   sccache not found. Installing...
+    choco install sccache -y
+) else (
+    echo   sccache found: OK
+)
+
+:: Refresh PATH to ensure new tools are available
+refreshenv >nul 2>&1
+echo.
+
+:: ----------------------------------------------------------------------------
+:: Step 2: CPU Detection and Optimization
+:: ----------------------------------------------------------------------------
+echo [2/7] Detecting CPU threads...
 
 :: Get number of logical processors
 for /f "tokens=2" %%a in ('wmic cpu get NumberOfLogicalProcessors /value ^| find "NumberOfLogicalProcessors"') do (
@@ -33,15 +60,15 @@ if not defined THREADS set THREADS=4
 set /a JOBS=THREADS-1
 if !JOBS! lss 1 set JOBS=1
 
-echo Detected CPU threads: %THREADS%
-echo Setting build jobs to: %JOBS% (threads - 1)
+echo   Detected CPU threads: %THREADS%
+echo   Setting build jobs to: %JOBS%
 echo.
 
 :: Create .cargo directory
 if not exist ".cargo" mkdir .cargo
 
 :: Create or update .cargo/config.toml
-echo [2/5] Configuring Cargo for optimal builds...
+echo [3/7] Configuring Cargo for optimal builds...
 
 (
     echo # Cargo configuration for faster builds with automatic CPU detection
@@ -49,20 +76,19 @@ echo [2/5] Configuring Cargo for optimal builds...
     echo.
     echo [build]
     echo jobs = %JOBS%
+    echo # Enable sccache for rustc compilation caching
+    echo rustc-wrapper = "sccache"
     echo.
-    echo # Windows-specific: use lld linker for faster builds
-    echo # Install LLVM: choco install llvm
-    echo # Then uncomment:
-    echo # [target.x86_64-pc-windows-msvc]
-    echo # linker = "lld-link.exe"
-    echo.
-    echo # Optional: Enable sccache for build caching
-    echo # rustc-wrapper = "sccache"
+    echo # Windows-specific: use lld linker (much faster than default MSVC linker)
+    echo # Requires: choco install llvm
+    echo [target.x86_64-pc-windows-msvc]
+    echo linker = "lld-link.exe"
     echo.
     echo [profile.dev]
     echo debug = "line-tables-only"
     echo opt-level = 1
-    echo codegen-units = 256
+    echo lto = "off"
+    echo codegen-units = 32
     echo incremental = true
     echo.
     echo [profile.dev.build-override]
@@ -71,7 +97,7 @@ echo [2/5] Configuring Cargo for optimal builds...
     echo.
     echo [profile.release]
     echo lto = "thin"
-    echo codegen-units = 64
+    echo codegen-units = 32
     echo debug = "line-tables-only"
     echo opt-level = 3
     echo.
@@ -87,58 +113,56 @@ echo [2/5] Configuring Cargo for optimal builds...
     echo opt-level = 2
 ) > .cargo\config.toml
 
-echo Created .cargo/config.toml with %JOBS% parallel jobs
+echo   Created .cargo/config.toml with %JOBS% parallel jobs, sccache, lld-link
 echo.
 
-:: Set environment variable for current session
-set CARGO_BUILD_JOBS=%JOBS%
-setx CARGO_BUILD_JOBS %JOBS% >nul 2>&1
-echo Set CARGO_BUILD_JOBS=%JOBS% in user environment
+:: Set environment variables for current and future sessions
+setx RUSTC_WRAPPER "sccache" >nul 2>&1
+echo   Set RUSTC_WRAPPER=sccache in user environment
 echo.
 
 :: ----------------------------------------------------------------------------
-:: Step 2: Check Rust Installation
+:: Step 3: Check Rust Installation
 :: ----------------------------------------------------------------------------
-echo [3/5] Checking Rust installation...
+echo [4/7] Checking Rust installation...
 
 rustc --version >nul 2>&1
 if errorlevel 1 (
-    echo Rust not found. Installing via rustup...
-    curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    echo   Rust not found. Installing via rustup...
+    curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh /c
     call "%USERPROFILE%\.cargo\env"
 ) else (
     rustc --version
-    echo Rust is already installed
+    echo   Rust is already installed
 )
 echo.
 
 :: ----------------------------------------------------------------------------
-:: Step 3: Install auto launcher on PATH
+:: Step 4: Install auto launcher on PATH
 :: ----------------------------------------------------------------------------
-echo [4/6] Installing auto launcher on PATH...
+echo [5/8] Installing auto launcher on PATH...
 
 set "AUTO_LAUNCHER_DIR=%ROOT%config"
 if not exist "%AUTO_LAUNCHER_DIR%\auto.cmd" (
-    echo auto launcher not found at %AUTO_LAUNCHER_DIR%\auto.cmd
-    echo Please create config\auto.cmd first.
+    echo   auto launcher not found at %AUTO_LAUNCHER_DIR%\auto.cmd
+    echo   Please create config\auto.cmd first.
     exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$root = (Resolve-Path '%AUTO_LAUNCHER_DIR%').Path; $path = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @(); if ($path) { $parts = $path -split ';' | Where-Object { $_ -and (-not (Test-Path (Join-Path $_ 'auto.cmd'))) -and (-not (Test-Path (Join-Path $_ 'auto.bat'))) -and (-not (Test-Path (Join-Path $_ 'auto.exe'))) } }; $newPath = @($root) + $parts | Select-Object -Unique; [Environment]::SetEnvironmentVariable('Path', ($newPath -join ';'), 'User'); Write-Host ('Rebuilt PATH and moved ' + $root + ' to the front')"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root = (Resolve-Path '%AUTO_LAUNCHER_DIR%').Path; $path = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @(); if ($path) { $parts = $path -split ';' ^| Where-Object { $_ -and (-not (Test-Path (Join-Path $_ 'auto.cmd')) -and -not (Test-Path (Join-Path $_ 'auto.bat')) -and -not (Test-Path (Join-Path $_ 'auto.exe'))) } }; $newPath = @($root) + $parts ^| Select-Object -Unique; [Environment]::SetEnvironmentVariable('Path', ($newPath -join ';'), 'User'); Write-Host ('Rebuilt PATH and moved ' + $root + ' to front')"
 if errorlevel 1 (
-    echo Failed to update user PATH.
+    echo   Failed to update user PATH.
     exit /b 1
 )
-
 echo.
 
 :: ----------------------------------------------------------------------------
-:: Step 4: Create .env File
+:: Step 5: Create .env File
 :: ----------------------------------------------------------------------------
-echo [5/6] Creating .env file...
+echo [6/8] Creating .env file...
 
 if exist ".env" (
-    echo .env file already exists, skipping...
+    echo   .env file already exists, skipping...
 ) else (
     (
         echo # Auto-Rust Environment Configuration
@@ -150,11 +174,11 @@ if exist ".env" (
         echo # Provider: "ollama" or "openrouter"
         echo LLM_PROVIDER=ollama
         echo.
-        echo # OpenRouter Settings (get key from https://openrouter.ai/keys)
+        echo # OpenRouter Settings ^(get key from https://openrouter.ai/keys^)
         echo OPENROUTER_API_KEY=
         echo OPENROUTER_MODEL=anthropic/claude-3-haiku
         echo.
-        echo # Ollama Settings (local)
+        echo # Ollama Settings ^(local^)
         echo OLLAMA_URL=http://localhost:11434
         echo OLLAMA_MODEL=llama3.2:3b
         echo.
@@ -190,17 +214,38 @@ if exist ".env" (
         echo TASK_TIMEOUT_MS=600000
         echo MAX_RETRIES=2
     ) > .env
-    echo Created .env file with template settings
+    echo   Created .env file with template settings
 )
 echo.
 
 :: ----------------------------------------------------------------------------
-:: Step 5: Build Project
+:: Step 6: Verify Build Configuration
 :: ----------------------------------------------------------------------------
-echo [6/6] Building project...
+echo [7/8] Verifying build configuration...
+
+where sccache >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    echo   sccache: OK
+    sccache --version
+) else (
+    echo   WARNING: sccache not in PATH. Build caching disabled.
+)
+
+where lld-link >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    echo   lld-link: OK
+) else (
+    echo   WARNING: lld-link not in PATH. Linker speedup disabled.
+)
 echo.
 
-:: Clean previous builds
+:: ----------------------------------------------------------------------------
+:: Step 7: Build Project
+:: ----------------------------------------------------------------------------
+echo [8/8] Building project...
+echo.
+
+:: Clean previous builds to start fresh with new config
 call cargo clean
 
 :: Build release version
@@ -220,17 +265,21 @@ echo Setup Complete!
 echo ========================================
 echo.
 echo Configuration:
-echo - CPU threads detected: %THREADS%
-echo - Build jobs: %JOBS% (using %THREADS% - 1 for system stability)
-echo - Build profile: release (optimized)
+echo   CPU threads detected: %THREADS%
+echo   Build jobs: %JOBS%
+echo   sccache: ENABLED
+echo   lld-link: ENABLED
+echo   Build profile: release ^(optimized with thin LTO^
+echo.
+echo Build Tips:
+echo   - Subsequent builds will be MUCH faster with sccache
+echo   - Run 'sccache --show-stats' to see cache effectiveness
+echo   - Run 'sccache -z' to zero stats, 'sccache --reset' to clear cache
+echo   - Run 'sccache --stop-server' to disable sccache temporarily
 echo.
 echo Next steps:
-echo 1. Add your API keys to .env file
-echo 2. Run: auto task1 task2 then task3
-echo.
-echo On your other machines:
-echo - 24-thread PC: Run this script (will auto-detect and use 23 jobs)
-echo - 12-thread VPS: Run this script (will auto-detect and use 11 jobs)
+echo   1. Add your API keys to .env file
+echo   2. Run: auto task1 task2 then task3
 echo.
 
 :: Keep window open if run directly

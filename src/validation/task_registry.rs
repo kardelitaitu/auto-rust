@@ -181,8 +181,6 @@ mod tests {
 
     #[test]
     fn test_validate_task_groups_logs_warnings() {
-        use serde_json::json;
-        
         let groups = vec![vec![
             TaskDefinition {
                 name: "cookiebot".to_string(),

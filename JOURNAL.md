@@ -2,11 +2,64 @@
 
 **New journal entries should be at the top for easy indexing**
 ```
-**Date - Title - commit number**
+**yyyy-mm-dd (hh:mm) - Title - commit number**
 - filename : Description
 ```
 
 ---
+
+## 2026-04-26 (05:58) - OpenRouter Model Fallback Chain
+
+**Feature:** Automatic model fallback when OpenRouter primary model fails or times out
+
+- `src/llm/models.rs` : Added `fallback_models: Vec<String>` to `OpenRouterConfig` struct with serde default
+- `src/llm/client.rs` : Updated `create_llm_client_from_config()` to load fallback models from env vars `OPENROUTER_MODEL_FALLBACK`, `OPENROUTER_MODEL_FALLBACK_2`, `OPENROUTER_MODEL_FALLBACK_3`, `OPENROUTER_MODEL_FALLBACK_4`
+- `src/llm/client.rs` : Rewrote `openrouter_chat()` with retry loop: tries primary model, then each fallback on timeout/error/empty response, logs each attempt, returns first successful response
+
+**Environment Variables:**
+```
+OPENROUTER_MODEL=tencent/hy3-preview:free
+OPENROUTER_MODEL_FALLBACK=nvidia/nemotron-3-super-120b-a12b:free
+OPENROUTER_MODEL_FALLBACK_2=minimax/minimax-m2.5:free
+OPENROUTER_MODEL_FALLBACK_3=nvidia/nemotron-3-nano-30b-a3b:free
+OPENROUTER_MODEL_FALLBACK_4=openrouter/free
+```
+
+**Validation:** `cargo check` clean
+
+## 2026-04-26 - Build Performance: sccache + lld-link Enabled
+
+**Installations**
+- `choco install llvm` → LLVM 22.1.0 (provides `lld-link.exe` at `C:\Program Files\LLVM\bin`)
+- `choco install sccache` → sccache 0.14.0
+
+**`.cargo/config.toml`** — Enabled:
+- `rustc-wrapper = "sccache"` in `[build]` section
+- `linker = "lld-link.exe"` under `[target.x86_64-pc-windows-msvc]`
+
+**`setup-windows.bat`** — Rewritten:
+- Auto-installs `llvm` + `sccache` via choco before configuring
+- Generates aligned config matching current `.cargo/config.toml`
+- Sets `RUSTC_WRAPPER=sccache` via `setx`
+- Added verification step checking both tools post-install
+- Fixed stale codegen-units (was 256, now 32)
+
+**`measure-build.ps1`** — Improved:
+- Sets `RUSTC_WRAPPER=sccache` and refreshes PATH in-session
+- Starts `sccache --start-server` before build
+- Fixed regex: now uses `^\s*` anchor to only match uncommented lines
+- Reports per-profile codegen-units (dev=32, release=32) instead of first-match
+- Shows sccache `--show-stats` after build
+- Measures `cargo build --release` (not `cargo test`)
+
+**Results**
+| Metric | Before | After |
+|--------|--------|-------|
+| Warm build time | ~4m 11s | **~2m 19s** |
+| Cache hit rate (rebuild) | 0% | **90.22%** |
+| Linker | MSVC default | **lld-link** |
+
+Note: lld-link requires LLVM in PATH — restart shell or run `$env:Path = [System]::GetEnvironmentVariable("Path","Machine") + ";" + [System]::GetEnvironmentVariable("Path","User")` to refresh.
 
 ## 2026-04-25 - Phase 3 Completion - eed0a61
 - `browser.rs` : Added integration tests for `discover_browsers_with_filters`:

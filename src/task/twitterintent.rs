@@ -103,10 +103,11 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         warn!("[twitterintent] Home link not visible, skipping");
     }
 
-    // Simulate reading home feeds for random 30-120s
-    let read_pause = random_in_range(30000, 120000);
-    info!("[twitterintent] Reading home feeds for {}ms", read_pause);
-    api.pause(read_pause).await;
+    // Simulate reading home feeds with scroll
+    let pause_count = random_in_range(5, 10) as u32;
+    let scroll_amount = 400;
+    info!("[twitterintent] Reading home feeds with {} pauses", pause_count);
+    api.scroll_read(pause_count, scroll_amount, true, false).await?;
 
     // Final random 3-5s wait
     let final_wait = random_in_range(3000, 5000);

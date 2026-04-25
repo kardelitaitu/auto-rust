@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use log::{info, warn, LevelFilter};
-use rust_orchestrator::session::Session;
-use rust_orchestrator::{browser, cli, config, health_logger, logger, metrics, orchestrator};
+use auto::session::Session;
+use auto::{browser, cli, config, health_logger, logger, metrics, orchestrator};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 

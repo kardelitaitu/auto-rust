@@ -377,7 +377,7 @@ fn default_otlp_endpoint() -> String {
 }
 
 fn default_service_name() -> String {
-    "rust-orchestrator".to_string()
+    "auto".to_string()
 }
 
 /// Engagement limits configuration for Twitter automation.

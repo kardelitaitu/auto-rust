@@ -15,7 +15,7 @@ Thank you for contributing to the Rust Orchestrator!
 ```bash
 # Clone
 git clone <repository-url>
-cd rust-orchestrator
+cd auto
 
 # Build
 cargo build --all-features

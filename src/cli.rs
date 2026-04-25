@@ -16,7 +16,7 @@ use std::path::Path;
 use crate::error::{ConfigError, Result};
 
 #[derive(Parser, Debug)]
-#[command(name = "rust-orchestrator")]
+#[command(name = "auto")]
 #[command(about = "Multi-browser automation orchestrator")]
 pub struct Args {
     /// Tasks to run, separated by 'then' for sequential groups

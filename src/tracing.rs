@@ -48,7 +48,7 @@ pub fn init_tracing(endpoint: &str, service_name: &str) -> Result<(), TraceError
 
     // Initialize subscriber with both console and telemetry layers
     let env_filter = EnvFilter::from_default_env()
-        .add_directive("rust_orchestrator=debug".parse().unwrap())
+        .add_directive("auto=debug".parse().unwrap())
         .add_directive("chromiumoxide=off".parse().unwrap());
 
     tracing_subscriber::registry()
@@ -65,7 +65,7 @@ pub fn init_tracing(endpoint: &str, service_name: &str) -> Result<(), TraceError
 /// Use this when OTLP endpoint is not available.
 pub fn init_console_tracing() {
     let env_filter = EnvFilter::from_default_env()
-        .add_directive("rust_orchestrator=debug".parse().unwrap())
+        .add_directive("auto=debug".parse().unwrap())
         .add_directive("chromiumoxide=off".parse().unwrap());
 
     tracing_subscriber::registry()
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_env_filter_directives() {
         // Test that the env filter directives parse correctly
-        let directive1 = "rust_orchestrator=debug".parse::<tracing_subscriber::EnvFilter>();
+        let directive1 = "auto=debug".parse::<tracing_subscriber::EnvFilter>();
         let directive2 = "chromiumoxide=off".parse::<tracing_subscriber::EnvFilter>();
         assert!(directive1.is_ok());
         assert!(directive2.is_ok());

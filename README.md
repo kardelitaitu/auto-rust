@@ -1,4 +1,4 @@
-# Rust Orchestrator
+# Auto
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 ![Tokio](https://img.shields.io/badge/Tokio-000000?style=for-the-badge&logo=rust&logoColor=white)
@@ -8,7 +8,7 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 
 ## 📑 Table of Contents
 
-- [Why Rust Orchestrator?](#why-rust-orchestrator)
+- [Why Auto?](#why-auto)
 - [Quick Start](#quick-start)
 - [Key Features](#key-features)
 - [Installation](#installation)
@@ -20,7 +20,7 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 
-## Why Rust Orchestrator?
+## Why Auto?
 
 **From Node.js to Rust:** A port of an existing Node.js browser automation system, delivering:
 
@@ -75,7 +75,7 @@ cargo run cookiebot then pageview=reddit.com then twitteractivity
 
 ```bash
 git clone <repository-url>
-cd rust-orchestrator
+cd auto
 cargo build --release
 ```
 

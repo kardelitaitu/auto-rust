@@ -483,8 +483,10 @@ mod tests {
         let start = std::time::Instant::now();
         human_pause(50, 25).await;
         let elapsed = start.elapsed();
-        // With 25% variance, should be in reasonable range
-        assert!(elapsed.as_millis() >= 30 && elapsed.as_millis() < 100);
+        // With 25% variance (std_dev=12.5), values mostly in 25-75 range
+        // but Gaussian tails can go lower; min clamp is 10ms
+        assert!(elapsed.as_millis() >= 10, "elapsed too short: {}ms", elapsed.as_millis());
+        assert!(elapsed.as_millis() < 200, "elapsed too long: {}ms", elapsed.as_millis());
     }
 
     #[tokio::test]
@@ -492,8 +494,10 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(50, 25).await;
         let elapsed = start.elapsed();
-        // With 25% variance, should be in reasonable range
-        assert!(elapsed.as_millis() >= 30 && elapsed.as_millis() < 100);
+        // Uniform range: 37.5ms to 62.5ms (50 ± 25%)
+        // Allow some scheduler jitter with wider bounds
+        assert!(elapsed.as_millis() >= 30, "elapsed too short: {}ms", elapsed.as_millis());
+        assert!(elapsed.as_millis() < 150, "elapsed too long: {}ms", elapsed.as_millis());
     }
 
     #[tokio::test]

@@ -88,8 +88,8 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         warn!("[twitterintent] Click verification failed - button may have already been clicked or action already performed");
     }
 
-    // Random 5-10s pause after intent action (success or failed)
-    let post_action_pause = random_in_range(5000, 10000);
+    // Random 5-15s pause after intent action (success or failed)
+    let post_action_pause = random_in_range(5000, 15000);
     info!("[twitterintent] Pausing {}ms after intent action", post_action_pause);
     api.pause(post_action_pause).await;
 

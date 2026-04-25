@@ -50,33 +50,60 @@ Automatically detects intent type from URL path:
 
 ### Follow
 ```
+# Basic follow
 https://x.com/intent/follow?screen_name=elonmusk
+
+# Follow with underscore
+https://x.com/intent/follow?screen_name=user_name
 ```
 
 ### Like
 ```
+# Like a specific tweet
 https://x.com/intent/like?tweet_id=2047854858305405321
+
+# Like another tweet
+https://x.com/intent/like?tweet_id=1234567890123456789
 ```
 
 ### Post
 ```
+# Simple post
 https://x.com/intent/tweet?text=Hello%20world
+
+# Post with spaces
+https://x.com/intent/tweet?text=This%20is%20a%20test%20tweet
+
+# Post with emoji
+https://x.com/intent/tweet?text=Hello%20world%F0%9F%9A%80
 ```
 
 ### Quote
 ```
+# Quote a tweet with text
 https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Great%20tweet
+
+# Quote with hashtag
+https://x.com/intent/tweet?url=https://x.com/elonmusk/status/123456&text=Amazing%20%23tech
 ```
 
 ### Quote with Reply (Multi-line)
 ```
+# Multi-line reply
 https://x.com/intent/tweet?text=this+is+example+reply%0Athis+is+second+line&in_reply_to=2047854858305405321
+
+# Reply with mention
+https://x.com/intent/tweet?text=@username%20Thanks%20for%20sharing%0AGreat%20post&in_reply_to=2047854858305405321
 ```
 - `%0A` represents line break
 
 ### Retweet
 ```
+# Retweet a tweet
 https://x.com/intent/retweet?tweet_id=2047854858305405321
+
+# Retweet another tweet
+https://x.com/intent/retweet?tweet_id=1234567890123456789
 ```
 
 ## Usage

@@ -1,6 +1,0 @@
-# Start comment
-https://example.com/page1
-
-# Middle comment
-https://example.com/page2
-  # End comment with spaces

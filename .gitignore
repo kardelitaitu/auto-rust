@@ -18,6 +18,7 @@ Thumbs.db
 
 # Logs and generated reports
 JOURNAL.md
+TODO.md
 *.log
 logs/
 auto-rust.log

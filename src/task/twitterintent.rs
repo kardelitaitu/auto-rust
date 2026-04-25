@@ -1,5 +1,14 @@
 //! Twitter intent task.
 //! Handles Twitter intent URLs for follow, like, post, quote, and retweet actions.
+//!
+//! # Intent URL Examples
+//!
+//! - Follow: `https://x.com/intent/follow?screen_name=username`
+//! - Like: `https://x.com/intent/like?tweet_id=123456789`
+//! - Post: `https://x.com/intent/tweet?text=Hello%20world`
+//! - Quote: `https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Great`
+//! - Quote with reply: `https://x.com/intent/tweet?text=this+is+example+reply%0Athis+is+second+line&in_reply_to=2047854858305405321`
+//! - Retweet: `https://x.com/intent/retweet?tweet_id=123456789`
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;

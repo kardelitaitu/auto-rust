@@ -190,6 +190,12 @@ All functions include detailed rustdoc with Arguments, Returns, Errors, Behavior
 
 When improving the codebase, follow this systematic procedure to ensure quality and prevent regressions:
 
+### 0. Baseline Check
+- **Run cargo check** - verify clean compilation state before starting
+- **Check git status** - ensure no uncommitted changes that could interfere
+- **Record baseline** - note current test results if relevant
+- **This provides a clean rollback point** if fixes introduce unexpected issues
+
 ### 1. Identify Problems
 - Review code for bugs, performance issues, code smells, or violations of best practices
 - Use grep/search to find patterns across the codebase
@@ -222,6 +228,11 @@ When improving the codebase, follow this systematic procedure to ensure quality 
 - **Ask for approval** - do not make changes until user confirms
 - **Be prepared to adjust** - user may have different priorities or constraints
 
+**Follow this order: Present → Approve → Execute**
+- First present the findings and proposed fix
+- Wait for explicit user approval
+- Only then execute the changes
+
 ### 6. Fix Files (After Confirmation)
 - **Make minimal changes** - fix only what's necessary
 - **Follow existing style** - match the surrounding code conventions
@@ -246,6 +257,12 @@ When improving the codebase, follow this systematic procedure to ensure quality 
 - **Include context** - mention the issue addressed and the impact
 - **git commit** - commit with proper message
 - **git push** - push to remote repository
+
+### 9.5. Rollback Checkpoint
+- **Create a git tag** or note the commit hash after successful push
+- **This provides a safety net** if the fix introduces issues in production
+- **Quick rollback reference** - easy to revert if problems emerge
+- **Tag format example**: `git tag rollback-safe-YYYYMMDD`
 
 ### 10. Update Journal
 

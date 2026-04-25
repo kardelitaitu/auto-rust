@@ -143,8 +143,8 @@ async fn acquire_global_execution_slot(
 /// # Examples
 ///
 /// ```no_run
-/// # use rust_orchestrator::orchestrator::Orchestrator;
-/// # use rust_orchestrator::config::Config;
+/// # use auto::orchestrator::Orchestrator;
+/// # use auto::config::Config;
 /// # async fn example(config: Config) {
 /// let mut orchestrator = Orchestrator::new(config);
 /// // Execute task groups across sessions
@@ -177,8 +177,8 @@ impl Orchestrator {
     /// # Examples
     ///
     /// ```no_run
-    /// # use rust_orchestrator::orchestrator::Orchestrator;
-    /// # use rust_orchestrator::config::Config;
+    /// # use auto::orchestrator::Orchestrator;
+    /// # use auto::config::Config;
     /// # let config: Config = todo!();
     /// let orchestrator = Orchestrator::new(config);
     /// ```
@@ -539,40 +539,15 @@ async fn execute_task_with_retry(
         }
     };
 
-    let page = if task_def.name == "pageview" {
-        let target_url = match crate::validation::task::resolve_pageview_target(&payload_json) {
-            Ok(url) => url,
-            Err(e) => {
-                drop(permit);
-                return TaskResult::failure(
-                    start.elapsed().as_millis() as u64,
-                    e.to_string(),
-                    TaskErrorKind::Validation,
-                );
-            }
-        };
-        match session.acquire_page_at(&target_url).await {
-            Ok(page) => page,
-            Err(e) => {
-                drop(permit);
-                return TaskResult::failure(
-                    start.elapsed().as_millis() as u64,
-                    e.to_string(),
-                    TaskErrorKind::Browser,
-                );
-            }
-        }
-    } else {
-        match session.acquire_page().await {
-            Ok(page) => page,
-            Err(e) => {
-                drop(permit);
-                return TaskResult::failure(
-                    start.elapsed().as_millis() as u64,
-                    e.to_string(),
-                    TaskErrorKind::Browser,
-                );
-            }
+    let page = match session.acquire_page().await {
+        Ok(page) => page,
+        Err(e) => {
+            drop(permit);
+            return TaskResult::failure(
+                start.elapsed().as_millis() as u64,
+                e.to_string(),
+                TaskErrorKind::Browser,
+            );
         }
     };
 

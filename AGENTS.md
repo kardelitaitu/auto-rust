@@ -1,3 +1,8 @@
+**AI Assistant Operating Manual for rust-orchestrator**
+*Last Updated: April 25, 2026*
+
+---
+
 **PRIORITY ORDER: MCP tools FIRST, shell commands ONLY as fallback.**
 
 ### When to use which MCP tool:
@@ -176,32 +181,6 @@ All functions include detailed rustdoc with Arguments, Returns, Errors, Behavior
 - `tavily_search`, `tavily_extract`, `tavily_research`, `tavily_skill` - All working
 - `tavily_map`, `tavily_crawl` - May return invalid start URL errors
   - **Fallback:** Use `tavily_search` + `tavily_extract` combination
-
-## Development Status
-
-All core orchestration features have been implemented and are production-ready:
-
-### Completed Features
-- ✅ Unified result types and error typing
-- ✅ Per-task timeout and group timeout with cancellation
-- ✅ Retry policy with exponential backoff and jitter
-- ✅ Session lifecycle management with health scoring
-- ✅ Config loader (TOML + environment variables)
-- ✅ Task parser parity with Node.js reference
-- ✅ HTTP client with retry and circuit breaker
-- ✅ Metrics collector and run-summary export
-- ✅ Periodic health and memory monitoring
-- ✅ Integration tests for core tasks
-
-### Optional Features (Not Required)
-- ⏸️ Provider fallback strategy (OpenRouter multi-model + API key rotation)
-
-### Commands
-- Test: `cargo test`
-- Clippy lint: `cargo clippy --all-targets --all-features > rust-analyzer-problems.log 2>&1`
-- Build: `cargo build --all-features`
-- Generate documentation: `cargo doc --all-features`
-- View documentation: `cargo doc --open`
 
 ## Code Improvement Workflow
 

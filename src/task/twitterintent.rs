@@ -370,4 +370,35 @@ mod tests {
         let info = parse_intent_info(url, IntentType::Post);
         assert_eq!(info.description, "Posted 'empty text'");
     }
+
+    #[test]
+    fn test_intent_type_reply_vs_quote_both_have_url() {
+        // Both Reply and Quote have url= parameter, both detected as Quote
+        let reply_url = "https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Reply";
+        let quote_url = "https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Quote";
+        
+        assert!(matches!(IntentType::from_url(reply_url), Ok(IntentType::Quote)));
+        assert!(matches!(IntentType::from_url(quote_url), Ok(IntentType::Quote)));
+    }
+
+    #[test]
+    fn test_extract_param_multiline_text() {
+        let url = "https://x.com/intent/tweet?text=this+is+example+reply%0Athis+is+second+line";
+        assert_eq!(extract_param(url, "text"), Some("this+is+example+reply%0Athis+is+second+line".to_string()));
+    }
+
+    #[test]
+    fn test_extract_param_complex_url() {
+        let url = "https://x.com/intent/tweet?text=Hello&url=https://x.com/user/status/123&in_reply_to=456";
+        assert_eq!(extract_param(url, "text"), Some("Hello".to_string()));
+        assert_eq!(extract_param(url, "url"), Some("https://x.com/user/status/123".to_string()));
+        assert_eq!(extract_param(url, "in_reply_to"), Some("456".to_string()));
+    }
+
+    #[test]
+    fn test_parse_intent_info_multiline() {
+        let url = "https://x.com/intent/tweet?text=this+is+example+reply%0Athis+is+second+line&url=https://x.com/user/status/123";
+        let info = parse_intent_info(url, IntentType::Quote);
+        assert_eq!(info.description, "Quoted https://x.com/user/status/123");
+    }
 }

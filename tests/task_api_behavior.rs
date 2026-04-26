@@ -572,3 +572,154 @@ async fn nativeclick_mapping_failure_returns_expected_error_class() -> Result<()
     session.graceful_shutdown().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn screenshot_auto_saves_jpg_with_correct_filename() -> Result<()> {
+    let Some(session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Screenshot</title></head><body><div id=\"content\">Screenshot test</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    
+    // Create custom policy with screenshot permission and leak it for static lifetime
+    let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
+        max_duration_ms: 60_000,
+        permissions: auto::task::policy::TaskPermissions {
+            allow_screenshot: true,
+            ..Default::default()
+        },
+    }));
+    
+    let api = TaskContext::new(
+        session.id.clone(),
+        page.clone(),
+        session.behavior_profile.clone(),
+        session.behavior_runtime,
+        NativeInteractionConfig::default(),
+        policy,
+    );
+
+    // Take screenshot
+    let screenshot_path = api.screenshot().await?;
+    
+    // Verify file exists
+    assert!(std::path::Path::new(&screenshot_path).exists(), "Screenshot file should exist");
+    
+    // Verify file is in correct directory
+    assert!(screenshot_path.starts_with("data/screenshot/"), "Screenshot should be in data/screenshot/");
+    
+    // Verify filename format: yyyy-mm-dd-hh-mm-sessionid.jpg
+    assert!(screenshot_path.ends_with(".jpg"), "Screenshot should be JPG");
+    assert!(screenshot_path.contains(&session.id), "Filename should contain session ID");
+    
+    // Verify file is valid JPG by reading it
+    let file_content = std::fs::read(&screenshot_path)?;
+    assert!(file_content.len() > 0, "Screenshot file should not be empty");
+    
+    // JPG files start with FF D8
+    assert_eq!(file_content[0], 0xFF, "JPG should start with FF");
+    assert_eq!(file_content[1], 0xD8, "JPG should start with FF D8");
+    
+    // Cleanup
+    let _ = std::fs::remove_file(&screenshot_path);
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    drop(session);
+    Ok(())
+}
+
+#[tokio::test]
+async fn screenshot_permission_denied_without_allow_screenshot() -> Result<()> {
+    let Some(session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Screenshot Deny</title></head><body><div id=\"content\">No permission</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    
+    // Use DEFAULT_TASK_POLICY which has allow_screenshot = false
+    let api = build_task_context(&session, page.clone());
+
+    // Screenshot should fail with permission denied
+    let err: anyhow::Error = api
+        .screenshot()
+        .await
+        .expect_err("expected permission denied error");
+    
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Permission denied") || msg.contains("allow_screenshot"),
+        "error should mention permission denied: {}",
+        msg
+    );
+    
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    drop(session);
+    Ok(())
+}
+
+#[tokio::test]
+async fn screenshot_creates_directory_if_not_exists() -> Result<()> {
+    let Some(session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Screenshot Dir</title></head><body><div id=\"content\">Directory test</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    
+    // Remove directory if it exists
+    let screenshot_dir = std::path::Path::new("data/screenshot");
+    if screenshot_dir.exists() {
+        let _ = std::fs::remove_dir_all(screenshot_dir);
+    }
+    
+    // Create custom policy with screenshot permission and leak it for static lifetime
+    let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
+        max_duration_ms: 60_000,
+        permissions: auto::task::policy::TaskPermissions {
+            allow_screenshot: true,
+            ..Default::default()
+        },
+    }));
+    
+    let api = TaskContext::new(
+        session.id.clone(),
+        page.clone(),
+        session.behavior_profile.clone(),
+        session.behavior_runtime,
+        NativeInteractionConfig::default(),
+        policy,
+    );
+
+    // Take screenshot - should create directory
+    let screenshot_path = api.screenshot().await?;
+    
+    // Verify directory was created
+    assert!(screenshot_dir.exists(), "Screenshot directory should be created");
+    assert!(screenshot_dir.is_dir(), "Should be a directory");
+    
+    // Cleanup
+    let _ = std::fs::remove_file(&screenshot_path);
+    let _ = std::fs::remove_dir_all(screenshot_dir);
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    drop(session);
+    Ok(())
+}

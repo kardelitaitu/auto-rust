@@ -4,11 +4,10 @@
 //! without requiring a live browser.
 
 use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
-use auto::task::{twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS, select_entry_point}};
+use auto::task::{twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS}};
 use auto::utils::twitter::{
     twitteractivity_persona::select_persona_weights,
     twitteractivity_sentiment::{analyze_tweet_sentiment, sentiment_score, Sentiment},
-    twitteractivity_limits::{EngagementCounters, EngagementLimits},
 };
 use serde_json::json;
 use std::time::Duration;

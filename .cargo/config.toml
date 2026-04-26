@@ -27,7 +27,7 @@ debug = "none"                   # 0, 1, 2, "none", "limited", "full", "line-tab
 split-debuginfo = "unpacked"     # Helps reduce linking time (works on Windows)
 incremental = true               # Keep this for fast edit-compile cycles
 lto = "off"                      # Disable all LTO for dev speed
-codegen-units = 768              # Higher = better parallelism on 32 cores
+codegen-units = 256              # Higher = better parallelism on 32 cores
                                  # (try 256 → 1024 and benchmark)
 overflow-checks = false          # Small extra speedup (optional)
 

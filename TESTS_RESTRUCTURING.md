@@ -22,9 +22,9 @@ These tests scan the codebase for pattern violations - they are NOT typical unit
 
 | File | Purpose | Target Location |
 |------|---------|-----------------|
-| `click_policy_tests.rs` | Forbid `page.click(` and prefer selector clicks | `tests/policy/click_policy_tests.rs` |
-| `page_manager_policy_tests.rs` | Ensure `PageManager` not re-exported publicly | `tests/policy/page_manager_policy_tests.rs` |
-| `blockmedia_policy_tests.rs` | Restrict `block_heavy_resources_for_cookiebot(` usage | `tests/policy/blockmedia_policy_tests.rs` |
+| `click_policy_tests.rs` | Forbid `page.click(` and prefer selector clicks | `tests/click_policy_tests.rs` |
+| `page_manager_policy_tests.rs` | Ensure `PageManager` not re-exported publicly | `tests/page_manager_policy_tests.rs` |
+| `blockmedia_policy_tests.rs` | Restrict `block_heavy_resources_for_cookiebot(` usage | `tests/blockmedia_policy_tests.rs` |
 
 ---
 

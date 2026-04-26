@@ -1387,22 +1387,9 @@ impl TaskContext {
                 self.session_id
             ));
         }
-        // Validate path is within config/ or data/
-        let base_dirs = [std::path::Path::new("config"), std::path::Path::new("data")];
-        let mut final_path = None;
-        for base in &base_dirs {
-            let path = base.join(relative_path);
-            if path.exists() {
-                final_path = Some(path);
-                break;
-            }
-        }
-        let path = final_path.ok_or_else(|| anyhow::anyhow!("File not found: {}", relative_path))?;
-        // Simple path validation: reject absolute paths and traversal
-        let path_str = path.to_string_lossy();
-        if path.is_absolute() || path_str.contains("..") {
-            return Err(anyhow::anyhow!("Invalid path: Path not allowed"));
-        }
+        // Validate and resolve path using security helper
+        let path = crate::task::security::validate_data_path(relative_path)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         std::fs::read_to_string(&path)
             .map_err(|e| anyhow::anyhow!("Failed to read file: {}", e))
     }
@@ -1416,22 +1403,20 @@ impl TaskContext {
                 self.session_id
             ));
         }
-        let base_dirs = [std::path::Path::new("config"), std::path::Path::new("data")];
-        let mut final_path = None;
-        for base in &base_dirs {
-            let path = base.join(relative_path);
-            if let Some(parent) = path.parent() {
-                if parent.exists() || std::fs::create_dir_all(parent).is_ok() {
-                    final_path = Some(path);
-                    break;
-                }
-            }
+        // Validate path is safe using security helper
+        if !crate::task::security::is_safe_path(relative_path) {
+            return Err(anyhow::anyhow!(
+                "Invalid path: Path contains unsafe components"
+            ));
         }
-        let path = final_path.ok_or_else(|| anyhow::anyhow!("Cannot determine write path"))?;
-        let path_str = path.to_string_lossy();
-        if path.is_absolute() || path_str.contains("..") {
-            return Err(anyhow::anyhow!("Invalid path: Path not allowed"));
+
+        // Construct path in config/ (create parent dirs if needed)
+        let path = std::path::Path::new("config").join(relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("Failed to create directory: {}", e))?;
         }
+
         std::fs::write(&path, content)
             .map_err(|e| anyhow::anyhow!("Failed to write file: {}", e))
     }

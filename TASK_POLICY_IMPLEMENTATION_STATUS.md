@@ -35,7 +35,7 @@ This document tracks the implementation status of the Task Policy Enforcement sy
 - [x] **3.9** ✅ `write_data_file()` - Already implemented with permission check + path validation
 
 ### Helper Functions
-- [ ] **3.10** Implement `validate_data_path()` helper (traversal, symlink, absolute path checks)
+- [x] **3.10** ✅ Implement `validate_data_path()` helper - DONE (16 tests passing)
 - [x] **3.11** ✅ Implement `map_cdp_error()` helper - DONE
 - [x] **3.12** ✅ Implement `check_page_connected()` helper - DONE
 

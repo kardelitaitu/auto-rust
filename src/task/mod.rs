@@ -16,6 +16,7 @@ use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 pub mod cdp_utils;
 pub mod cookiebot;
 pub mod demo_keyboard;
+pub mod security;
 pub mod demo_mouse;
 pub mod demoqa;
 pub mod pageview;

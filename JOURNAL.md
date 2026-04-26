@@ -1,10 +1,11 @@
 # Agents Journal
 
 **New journal entries should be at the top for easy indexing**
-```
-**yyyy-mm-dd (hh:mm) - Title - commit number**
-- filename : Description
-```
+````
+## yyyy-mm-dd (hh:mm) - Title - commit number ##
+- **filename** : Description
+**validation : cargo check and cargo test clean**
+````
 
 ---
 
@@ -210,38 +211,3 @@ cookiebot, pageview, demo-keyboard, demo-mouse, demoqa, twitterfollow, twitterre
 
 ### Phase 6 - Utility Hardening
 - [x] JS fallback path, deterministic utility tests, integration tests
-
-## 2026-04-22 - Next 8-Phase Reliability Agenda (Task List)
-
-### Phase 1 - Fan-Out Concurrency Bounding
-- [x] Enforce global concurrency using `tasks x sessions` execution tokens (not per-task-only throttling).
-- [x] Add tests proving hard upper bound under broadcast fan-out.
-
-### Phase 2 - Session Supervisor Loop
-- [ ] Add supervisor loop that enforces `Idle/Busy/Failed` state transitions for scheduling.
-- [ ] Prevent task dispatch to non-idle or failed sessions by policy, not convention.
-
-### Phase 3 - Zero-Match Browser Filter Hard Fail
-- [x] Treat `--browsers` filter with zero matched sessions as startup error.
-- [x] Add startup test coverage for valid/invalid filter scenarios.
-
-### Phase 4 - Structured Run Report Upgrades
-- [ ] Add run summary fields for planned vs executed fan-out.
-- [ ] Add structured cancellation-cause breakdown (shutdown, timeout, worker wait, etc.).
-
-### Phase 5 - Chaos Testing
-- [ ] Add chaos tests for browser disconnect mid-task.
-- [ ] Add chaos tests for page creation failures and timeout storms.
-
-### Phase 6 - Deterministic Shutdown SLO Checks
-- [ ] Add shutdown SLO assertions: pages closed, handler tasks aborted, no zombie process leftovers.
-- [ ] Add deterministic tests for graceful completion and forced interruption paths.
-
-### Phase 7 - CI Quality Gates
-- [ ] Add CI gates for `cargo fmt --all -- --check`.
-- [ ] Add CI gates for `cargo clippy --all-targets --all-features -D warnings`.
-- [ ] Add CI gates for full test suite, doctests, and smoke run.
-
-### Phase 8 - Node Parity Contract Tests
-- [ ] Add compatibility contract tests against `.nodejs-reference` behavior for key orchestrator flows.
-- [ ] Track parity drift in assertions for task parsing, dispatch, retry, and summary outputs.

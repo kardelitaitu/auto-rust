@@ -1338,10 +1338,12 @@ impl TaskContext {
 
     // --- Permission-gated operations ---
 
-    /// Capture screenshot and save as compressed JPG.
+    /// Capture screenshot and save as compressed JPG with default 40% quality.
     ///
-    /// Takes a screenshot of the current page, converts it to JPG with 60% quality,
+    /// Takes a screenshot of the current page, converts it to JPG with 40% quality,
     /// and saves it to `data/screenshot/` with filename format: `yyyy-mm-dd-hh-mm-sessionid.jpg`
+    ///
+    /// For custom quality, use `screenshot_with_quality()`.
     ///
     /// # Returns
     ///
@@ -1362,6 +1364,44 @@ impl TaskContext {
     /// // Returns: "data/screenshot/2026-04-26-15-30-session-123.jpg"
     /// ```
     pub async fn screenshot(&self) -> Result<String> {
+        self.screenshot_with_quality(40).await
+    }
+
+    /// Capture screenshot and save as compressed JPG with custom quality.
+    ///
+    /// Takes a screenshot of the current page, converts it to JPG with the specified quality,
+    /// and saves it to `data/screenshot/` with filename format: `yyyy-mm-dd-hh-mm-sessionid.jpg`
+    ///
+    /// # Arguments
+    ///
+    /// * `quality` - JPG quality percentage (1-100). Higher = better quality, larger file.
+    ///   Recommended: 40-80. Below 30 may have visible artifacts.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(String)` with the full file path to the saved screenshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - `allow_screenshot` permission is denied
+    /// - CDP screenshot fails
+    /// - Image conversion fails
+    /// - File write fails
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// // High quality for detailed verification
+    /// let path = api.screenshot_with_quality(80).await?;
+    ///
+    /// // Balanced quality (default)
+    /// let path = api.screenshot_with_quality(40).await?;
+    ///
+    /// // Low quality for quick audit trail
+    /// let path = api.screenshot_with_quality(20).await?;
+    /// ```
+    pub async fn screenshot_with_quality(&self, quality: u8) -> Result<String> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_screenshot {
             return Err(anyhow::anyhow!(
@@ -1370,6 +1410,9 @@ impl TaskContext {
             ));
         }
 
+        // Clamp quality to valid range
+        let quality = quality.clamp(1, 100);
+
         // CDP: Page.captureScreenshot (returns PNG bytes)
         let png_bytes = self
             .page
@@ -1377,13 +1420,13 @@ impl TaskContext {
             .await
             .map_err(|e| anyhow::anyhow!("CDP error: Page.captureScreenshot - {}", e))?;
 
-        // Convert PNG to JPG with 60% quality
+        // Convert PNG to JPG with specified quality
         let img = image::load_from_memory(&png_bytes)
             .map_err(|e| anyhow::anyhow!("Failed to load PNG image: {}", e))?;
 
         let mut jpg_buffer = Vec::new();
         let mut cursor = std::io::Cursor::new(&mut jpg_buffer);
-        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 60);
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, quality);
         img.write_with_encoder(encoder)
             .map_err(|e| anyhow::anyhow!("Failed to convert to JPG: {}", e))?;
 

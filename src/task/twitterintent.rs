@@ -82,12 +82,15 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     // Click confirm button with verification
     let selector = intent_type.confirm_selector();
     debug!("[twitterintent] Clicking button: {}", selector);
-    
-    let click_success = click_with_verification(api, selector, intent_type).await?;
-    
+
+    let (click_success, screenshot_path) = click_with_verification(api, selector, intent_type).await?;
+
     if click_success {
         let intent_info = parse_intent_info(&url, intent_type);
         info!("[twitterintent] SUCCESS {}", intent_info.description);
+        if let Some(path) = screenshot_path {
+            info!("[twitterintent] Proof screenshot: {}", path);
+        }
     } else {
         warn!("[twitterintent] Click verification failed - button may have already been clicked or action already performed");
     }
@@ -168,17 +171,17 @@ async fn click_with_verification(
     api: &TaskContext,
     selector: &str,
     _intent_type: IntentType,
-) -> Result<bool> {
+) -> Result<(bool, Option<String>)> {
     // Check if button is visible
     if !api.visible(selector).await? {
         warn!("[twitterintent] Button not visible - may already be clicked");
-        return Ok(false);
+        return Ok((false, None));
     }
 
     click_and_verify(api, selector).await
 }
 
-async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<bool> {
+async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<(bool, Option<String>)> {
     // Random 4-8s pause before clicking (100ms interval)
     let pause_ms = random_in_range(4000, 8000);
     debug!("[twitterintent] Waiting {}ms before clicking", pause_ms);
@@ -193,7 +196,20 @@ async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<bool> {
 
     // Verify success: confirm button should disappear for all intents
     let button_gone = !api.visible(selector).await?;
-    Ok(button_gone)
+
+    // Take screenshot 2s after click for audit trail
+    let screenshot_path = match api.screenshot().await {
+        Ok(path) => {
+            info!("[twitterintent] Screenshot captured: {}", path);
+            Some(path)
+        }
+        Err(e) => {
+            warn!("[twitterintent] Screenshot failed (permission may be denied): {}", e);
+            None
+        }
+    };
+
+    Ok((button_gone, screenshot_path))
 }
 
 fn parse_intent_info(url: &str, intent_type: IntentType) -> IntentInfo {

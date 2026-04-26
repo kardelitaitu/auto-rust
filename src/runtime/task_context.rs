@@ -1338,13 +1338,13 @@ impl TaskContext {
 
     // --- Permission-gated operations ---
 
-    /// Capture screenshot and save as compressed WebP with default lossless quality.
+    /// Capture screenshot and save as compressed WebP with default 50% quality.
     ///
-    /// Takes a screenshot of the current page, converts it to WebP lossless format,
+    /// Takes a screenshot of the current page, converts it to WebP with 50% quality,
     /// and saves it to `data/screenshot/` with filename format: `yyyy-mm-dd-hh-mm-sessionid.webp`
     ///
-    /// WebP lossless provides 25-35% better compression than PNG.
-    /// For lossy WebP with quality control, use `screenshot_with_quality()`.
+    /// WebP at 50% quality provides excellent compression while maintaining readable text.
+    /// For custom quality, use `screenshot_with_quality()`.
     ///
     /// # Returns
     ///
@@ -1365,7 +1365,7 @@ impl TaskContext {
     /// // Returns: "data/screenshot/2026-04-26-15-30-session-123.webp"
     /// ```
     pub async fn screenshot(&self) -> Result<String> {
-        self.screenshot_with_quality(75).await
+        self.screenshot_with_quality(50).await
     }
 
     /// Capture screenshot and save as compressed WebP with custom quality.
@@ -1378,9 +1378,9 @@ impl TaskContext {
     /// # Arguments
     ///
     /// * `quality` - WebP quality factor (1-100). Higher = better quality, larger file.
-    ///   Recommended: 60-90 for lossy. 100 = lossless.
+    ///   Recommended: 50-85. Below 40 may have visible artifacts.
     ///   - 1-99: Lossy compression with quality factor
-    ///   - 100: Lossless compression (default in screenshot())
+    ///   - 100: Lossless compression (larger file)
     ///
     /// # Returns
     ///
@@ -1400,11 +1400,11 @@ impl TaskContext {
     /// // High quality lossy (smaller file, good visuals)
     /// let path = api.screenshot_with_quality(85).await?;
     ///
-    /// // Balanced quality (recommended)
-    /// let path = api.screenshot_with_quality(75).await?;
+    /// // Balanced quality (default - recommended)
+    /// let path = api.screenshot_with_quality(50).await?;
     ///
     /// // Maximum compression (smallest file)
-    /// let path = api.screenshot_with_quality(60).await?;
+    /// let path = api.screenshot_with_quality(40).await?;
     ///
     /// // Lossless (best quality, larger file)
     /// let path = api.screenshot_with_quality(100).await?;

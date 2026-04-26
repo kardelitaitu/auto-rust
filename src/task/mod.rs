@@ -13,6 +13,7 @@ use serde_json::Value;
 use crate::prelude::TaskContext;
 use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 
+pub mod cdp_utils;
 pub mod cookiebot;
 pub mod demo_keyboard;
 pub mod demo_mouse;

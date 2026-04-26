@@ -462,6 +462,16 @@ async fn execute_task_with_retry(
     let start = std::time::Instant::now();
     let max_retries = 0;
     let policy = crate::task::policy::get_policy(&task_def.name);
+
+    // Validate policy before use
+    if let Err(e) = policy.validate() {
+        return TaskResult::failure(
+            0,
+            format!("Invalid policy for task '{}': {}", task_def.name, e),
+            TaskErrorKind::Validation,
+        );
+    }
+
     let task_timeout = Duration::from_millis(policy.max_duration_ms);
     metrics.task_started();
 
@@ -643,11 +653,20 @@ async fn execute_task_with_retry(
                 drop(task_ctx);
                 last_failure = Some((
                     format!(
-                        "Task timed out after {}ms",
-                        config.orchestrator.task_timeout_ms
+                        "Task '{}' exceeded policy timeout of {}ms",
+                        task_def.name,
+                        policy.max_duration_ms
                     ),
                     TaskErrorKind::Timeout,
                 ));
+                // Audit log timeout enforcement
+                log::warn!(
+                    target: "task_policy_audit",
+                    "Task killed due to policy timeout | task={} session={} timeout_ms={} event=timeout_enforced",
+                    task_def.name,
+                    session.id,
+                    policy.max_duration_ms
+                );
             }
         }
 

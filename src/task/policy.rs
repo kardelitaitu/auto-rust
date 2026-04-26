@@ -45,6 +45,29 @@ impl TaskPolicy {
 
         perms
     }
+
+    /// Validate that the policy is valid for use.
+    ///
+    /// Checks:
+    /// - `max_duration_ms` must be > 0
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if valid, `Err(String)` with error message if invalid.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.max_duration_ms == 0 {
+            return Err(format!(
+                "max_duration_ms must be > 0, got {}",
+                self.max_duration_ms
+            ));
+        }
+
+        // Future validations can be added here:
+        // - Permissions conflicts
+        // - Timeout bounds (e.g., max 1 hour)
+
+        Ok(())
+    }
 }
 
 impl Default for TaskPolicy {
@@ -369,5 +392,168 @@ mod tests {
     fn test_get_policy_unknown_task() {
         let policy = get_policy("unknown_task");
         assert_eq!(policy.max_duration_ms, 60_000);
+    }
+
+    #[test]
+    fn test_policy_validation_zero_timeout_fails() {
+        let policy = TaskPolicy {
+            max_duration_ms: 0,
+            permissions: TaskPermissions::default(),
+        };
+        assert!(policy.validate().is_err());
+    }
+
+    #[test]
+    fn test_policy_validation_valid_timeout_passes() {
+        let policy = TaskPolicy {
+            max_duration_ms: 60_000,
+            permissions: TaskPermissions::default(),
+        };
+        assert!(policy.validate().is_ok());
+    }
+
+    #[test]
+    fn test_effective_permissions_export_session_implies_export_cookies() {
+        let mut policy = DEFAULT_TASK_POLICY;
+        policy.permissions.allow_export_session = true;
+        policy.permissions.allow_export_cookies = false; // explicitly false
+        let eff = policy.effective_permissions();
+        assert!(eff.allow_export_cookies); // implied by export_session
+    }
+
+    #[test]
+    fn test_effective_permissions_import_session_implies_import_cookies() {
+        let mut policy = DEFAULT_TASK_POLICY;
+        policy.permissions.allow_import_session = true;
+        policy.permissions.allow_import_cookies = false; // explicitly false
+        let eff = policy.effective_permissions();
+        assert!(eff.allow_import_cookies); // implied by import_session
+    }
+
+    #[test]
+    fn test_effective_permissions_no_implications_when_base_false() {
+        let policy = DEFAULT_TASK_POLICY;
+        let eff = policy.effective_permissions();
+        // All should remain false when base permissions are false
+        assert!(!eff.allow_screenshot);
+        assert!(!eff.allow_write_data); // not implied because screenshot is false
+    }
+
+    #[test]
+    fn test_all_task_policies_have_valid_timeouts() {
+        // Verify all registered policies have valid timeouts
+        let task_names = [
+            "cookiebot", "pageview", "twitteractivity", "demo-keyboard",
+            "demo-mouse", "demoqa", "task-example", "twitterdive",
+            "twitterfollow", "twitterintent", "twitterlike", "twitterquote",
+            "twitterreply", "twitterretweet", "twittertest",
+        ];
+
+        for task_name in &task_names {
+            let policy = get_policy(task_name);
+            assert!(
+                policy.max_duration_ms > 0,
+                "Task '{}' has invalid timeout: {}",
+                task_name,
+                policy.max_duration_ms
+            );
+            assert!(
+                policy.validate().is_ok(),
+                "Task '{}' policy validation failed",
+                task_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_twitter_tasks_inherit_base_policy() {
+        // Twitter tasks should inherit base permissions
+        let twitter_tasks = [
+            "twitterlike", "twitterquote", "twitterreply",
+            "twitterdive", "twitterfollow", "twitterintent",
+            "twitterretweet", "twittertest",
+        ];
+
+        for task_name in &twitter_tasks {
+            let policy = get_policy(task_name);
+            // All should have screenshot enabled (from base)
+            assert!(
+                policy.permissions.allow_screenshot,
+                "Task '{}' missing screenshot permission",
+                task_name
+            );
+            // All should have export_cookies enabled (from base)
+            assert!(
+                policy.permissions.allow_export_cookies,
+                "Task '{}' missing export_cookies permission",
+                task_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_twitteractivity_has_extended_permissions() {
+        let policy = get_policy("twitteractivity");
+        // Should have all the extended permissions
+        assert!(policy.permissions.allow_export_cookies);
+        assert!(policy.permissions.allow_session_clipboard);
+        assert!(policy.permissions.allow_read_data);
+        assert!(policy.permissions.allow_screenshot);
+        // 5 minute timeout
+        assert_eq!(policy.max_duration_ms, 300_000);
+    }
+
+    #[test]
+    fn test_demo_tasks_have_no_permissions() {
+        let demo_tasks = ["demo-keyboard", "demo-mouse", "demoqa"];
+
+        for task_name in &demo_tasks {
+            let policy = get_policy(task_name);
+            assert!(!policy.permissions.allow_screenshot);
+            assert!(!policy.permissions.allow_export_cookies);
+            assert!(!policy.permissions.allow_session_clipboard);
+        }
+    }
+
+    #[test]
+    fn test_session_data_serialization_roundtrip() {
+        let data = SessionData {
+            cookies: vec![
+                serde_json::json!({"name": "session", "value": "abc123"}),
+            ],
+            local_storage: {
+                let mut map = std::collections::HashMap::new();
+                map.insert("key".to_string(), "value".to_string());
+                map
+            },
+            exported_at: Utc::now(),
+            url: "https://example.com/dashboard".to_string(),
+        };
+
+        let json = serde_json::to_string(&data).expect("serialize");
+        let restored: SessionData = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.url, data.url);
+        assert_eq!(restored.cookies.len(), data.cookies.len());
+    }
+
+    #[test]
+    fn test_permissions_default_all_false() {
+        let perms = TaskPermissions::default();
+        assert!(!perms.allow_screenshot);
+        assert!(!perms.allow_export_cookies);
+        assert!(!perms.allow_import_cookies);
+        assert!(!perms.allow_export_session);
+        assert!(!perms.allow_import_session);
+        assert!(!perms.allow_session_clipboard);
+        assert!(!perms.allow_read_data);
+        assert!(!perms.allow_write_data);
+    }
+
+    #[test]
+    fn test_policy_implements_clone() {
+        let policy = DEFAULT_TASK_POLICY.clone();
+        let cloned = policy.clone();
+        assert_eq!(policy.max_duration_ms, cloned.max_duration_ms);
     }
 }

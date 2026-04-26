@@ -1239,6 +1239,51 @@ impl TaskContext {
         Ok(())
     }
 
+    // --- Permission checking ---
+
+    /// Check if a specific permission is granted.
+    ///
+    /// Returns `Ok(())` if permission is granted, `Err(TaskError::PermissionDenied)` if not.
+    /// Uses effective_permissions() to account for implied permissions.
+    ///
+    /// # Arguments
+    ///
+    /// * `permission` - The permission name to check (e.g., "allow_screenshot")
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// self.check_permission("allow_screenshot")?;
+    /// ```
+    pub fn check_permission(&self, permission: &'static str) -> crate::error::Result<()> {
+        let perms = self.policy.effective_permissions();
+
+        let has_permission = match permission {
+            "allow_screenshot" => perms.allow_screenshot,
+            "allow_export_cookies" => perms.allow_export_cookies,
+            "allow_import_cookies" => perms.allow_import_cookies,
+            "allow_export_session" => perms.allow_export_session,
+            "allow_import_session" => perms.allow_import_session,
+            "allow_session_clipboard" => perms.allow_session_clipboard,
+            "allow_read_data" => perms.allow_read_data,
+            "allow_write_data" => perms.allow_write_data,
+            _ => {
+                log::warn!("Unknown permission '{}' requested", permission);
+                false
+            }
+        };
+
+        if has_permission {
+            Ok(())
+        } else {
+            Err(crate::error::TaskError::PermissionDenied {
+                permission,
+                task_name: self.session_id.clone(),
+            }
+            .into())
+        }
+    }
+
     // --- Permission-gated operations ---
 
     /// Check if task has screenshot permission.

@@ -58,6 +58,7 @@ use crate::metrics::{
     RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, RUN_COUNTER_CLICK_SUCCESS,
 };
 use crate::state::ClipboardState;
+use crate::task::policy::TaskPolicy;
 use crate::utils::mouse::{ClickOutcome, CursorMovementConfig, HoverOutcome, NativeCursorOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1037,8 +1038,9 @@ mod tests {
 /// # use std::sync::Arc;
 /// # use auto::internal::profile::{BrowserProfile, ProfileRuntime};
 /// # use auto::config::NativeInteractionConfig;
+/// # use auto::task::policy::DEFAULT_TASK_POLICY;
 /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-/// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default());
+/// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY);
 /// // Use the API for browser automation
 /// # }
 /// ```
@@ -1053,6 +1055,7 @@ pub struct TaskContext {
     metrics: Option<Arc<MetricsCollector>>,
     click_learning: Arc<Mutex<ClickLearningState>>,
     click_learning_path: Option<PathBuf>,
+    policy: &'static TaskPolicy,
 }
 
 impl TaskContext {
@@ -1078,8 +1081,9 @@ impl TaskContext {
     /// # use std::sync::Arc;
     /// # use auto::internal::profile::{BrowserProfile, ProfileRuntime};
     /// # use auto::config::NativeInteractionConfig;
+    /// # use auto::task::policy::DEFAULT_TASK_POLICY;
     /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default());
+    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY);
     /// # }
     /// ```
     pub fn new(
@@ -1088,6 +1092,7 @@ impl TaskContext {
         behavior_profile: BrowserProfile,
         behavior_runtime: ProfileRuntime,
         native_interaction: NativeInteractionConfig,
+        policy: &'static TaskPolicy,
     ) -> Self {
         let session_id = session_id.into();
         let clipboard = ClipboardState::new(session_id.clone());
@@ -1106,6 +1111,7 @@ impl TaskContext {
             metrics: None,
             click_learning: Arc::new(Mutex::new(click_learning)),
             click_learning_path,
+            policy,
         }
     }
 
@@ -1116,6 +1122,7 @@ impl TaskContext {
         behavior_runtime: ProfileRuntime,
         native_interaction: NativeInteractionConfig,
         metrics: Arc<MetricsCollector>,
+        policy: &'static TaskPolicy,
     ) -> Self {
         let mut ctx = Self::new(
             session_id,
@@ -1123,6 +1130,7 @@ impl TaskContext {
             behavior_profile,
             behavior_runtime,
             native_interaction,
+            policy,
         );
         ctx.metrics = Some(metrics);
         ctx
@@ -1227,6 +1235,278 @@ impl TaskContext {
         let settle_ms = timeout_ms.min(3_000);
         let _ = self.wait_for_load(settle_ms).await;
         self.post_interaction_pause().await;
+
+        Ok(())
+    }
+
+    // --- Permission-gated operations ---
+
+    /// Check if task has screenshot permission.
+    pub async fn screenshot(&self) -> Result<Vec<u8>> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_screenshot {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_screenshot' permission",
+                self.session_id
+            ));
+        }
+        // CDP: Page.captureScreenshot
+        self.page
+            .screenshot(chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotParams::default())
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Page.captureScreenshot - {}", e))
+    }
+
+    /// Check if task has cookie export permission.
+    pub async fn export_cookies(&self, _url: &str) -> Result<Vec<serde_json::Value>> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_export_cookies {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_export_cookies' permission",
+                self.session_id
+            ));
+        }
+        // CDP: Network.getCookies
+        let cookies = self
+            .page
+            .execute(chromiumoxide::cdp::browser_protocol::network::GetCookiesParams::default())
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Network.getCookies - {}", e))?;
+        // Convert cookies to serde_json::Value for portability
+        let json = serde_json::to_value(&cookies.cookies)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize cookies: {}", e))?;
+        Ok(json.as_array().unwrap_or(&vec![]).clone())
+    }
+
+    /// Check if task has clipboard read permission.
+    pub fn read_clipboard(&self) -> Result<String> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_session_clipboard {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_session_clipboard' permission",
+                self.session_id
+            ));
+        }
+        crate::state::ClipboardState::new(self.session_id.clone())
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("Clipboard empty or session not found"))
+    }
+
+    /// Check if task has clipboard write permission.
+    pub fn write_clipboard(&self, text: &str) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_session_clipboard {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_session_clipboard' permission",
+                self.session_id
+            ));
+        }
+        crate::state::ClipboardState::new(self.session_id.clone()).set(text);
+        Ok(())
+    }
+
+    /// Check if task has read data permission.
+    pub fn read_data_file(&self, relative_path: &str) -> Result<String> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_read_data {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_read_data' permission",
+                self.session_id
+            ));
+        }
+        // Validate path is within config/ or data/
+        let base_dirs = [std::path::Path::new("config"), std::path::Path::new("data")];
+        let mut final_path = None;
+        for base in &base_dirs {
+            let path = base.join(relative_path);
+            if path.exists() {
+                final_path = Some(path);
+                break;
+            }
+        }
+        let path = final_path.ok_or_else(|| anyhow::anyhow!("File not found: {}", relative_path))?;
+        // Simple path validation: reject absolute paths and traversal
+        let path_str = path.to_string_lossy();
+        if path.is_absolute() || path_str.contains("..") {
+            return Err(anyhow::anyhow!("Invalid path: Path not allowed"));
+        }
+        std::fs::read_to_string(&path)
+            .map_err(|e| anyhow::anyhow!("Failed to read file: {}", e))
+    }
+
+    /// Check if task has write data permission.
+    pub fn write_data_file(&self, relative_path: &str, content: &[u8]) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_write_data {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_write_data' permission",
+                self.session_id
+            ));
+        }
+        let base_dirs = [std::path::Path::new("config"), std::path::Path::new("data")];
+        let mut final_path = None;
+        for base in &base_dirs {
+            let path = base.join(relative_path);
+            if let Some(parent) = path.parent() {
+                if parent.exists() || std::fs::create_dir_all(parent).is_ok() {
+                    final_path = Some(path);
+                    break;
+                }
+            }
+        }
+        let path = final_path.ok_or_else(|| anyhow::anyhow!("Cannot determine write path"))?;
+        let path_str = path.to_string_lossy();
+        if path.is_absolute() || path_str.contains("..") {
+            return Err(anyhow::anyhow!("Invalid path: Path not allowed"));
+        }
+        std::fs::write(&path, content)
+            .map_err(|e| anyhow::anyhow!("Failed to write file: {}", e))
+    }
+
+    /// Import cookies from a Vec<serde_json::Value> (each must have name, value, domain).
+    pub async fn import_cookies(&self, cookies: &[serde_json::Value]) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_import_cookies {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_import_cookies' permission",
+                self.session_id
+            ));
+        }
+
+        for cookie in cookies {
+            let name = cookie.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let value = cookie.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let domain = cookie.get("domain").and_then(|v| v.as_str());
+            let path = cookie.get("path").and_then(|v| v.as_str());
+            if name.is_empty() || value.is_empty() {
+                continue;
+            }
+            let mut params = chromiumoxide::cdp::browser_protocol::network::SetCookieParams::builder()
+                .name(name)
+                .value(value);
+            if let Some(d) = domain {
+                params = params.domain(d);
+            }
+            if let Some(p) = path {
+                params = params.path(p);
+            }
+            let params = params.build().map_err(|e| {
+                anyhow::anyhow!("Failed to build SetCookieParams: {}", e)
+            })?;
+            self.page.execute(params).await.map_err(|e| {
+                anyhow::anyhow!("CDP error: Network.setCookie - {}", e)
+            })?;
+        }
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} count={}",
+            self.session_id, "allow_import_cookies", cookies.len()
+        );
+        Ok(())
+    }
+
+    /// Export session data (cookies + localStorage) as SessionData.
+    pub async fn export_session(&self, url: &str) -> Result<crate::task::policy::SessionData> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_export_session {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_export_session' permission",
+                self.session_id
+            ));
+        }
+
+        // Export cookies via CDP
+        let cookies_result = self
+            .page
+            .execute(chromiumoxide::cdp::browser_protocol::network::GetCookiesParams::default())
+            .await;
+        let cookies_json = match cookies_result {
+            Ok(cookies) => {
+                serde_json::to_value(&cookies.cookies).unwrap_or(serde_json::Value::Array(vec![]))
+            }
+            Err(e) => {
+                log::warn!("Failed to export cookies: {}", e);
+                serde_json::Value::Array(vec![])
+            }
+        };
+        let cookies = cookies_json
+            .as_array()
+            .unwrap_or(&vec![])
+            .clone();
+
+        // Export localStorage via JavaScript
+        let local_storage_js = r#"
+            (function() {
+                const data = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    data[key] = localStorage.getItem(key);
+                }
+                return JSON.stringify(data);
+            })()
+        "#;
+        let local_storage_str = self
+            .page
+            .evaluate(local_storage_js)
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+        let local_storage_value = local_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
+        let local_storage: std::collections::HashMap<String, String> =
+            serde_json::from_value(local_storage_value)
+                .unwrap_or_default();
+
+        let session_data = crate::task::policy::SessionData {
+            cookies,
+            local_storage,
+            exported_at: chrono::Utc::now(),
+            url: url.to_string(),
+        };
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} count={}",
+            self.session_id, "allow_export_session", url, session_data.cookies.len()
+        );
+
+        Ok(session_data)
+    }
+
+    /// Import session data (cookies + localStorage) from SessionData.
+    pub async fn import_session(&self, session_data: &crate::task::policy::SessionData) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_import_session {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_import_session' permission",
+                self.session_id
+            ));
+        }
+
+        // Import cookies
+        self.import_cookies(&session_data.cookies).await?;
+
+        // Import localStorage via JavaScript
+        let local_storage_json = serde_json::to_string(&session_data.local_storage)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage: {}", e))?;
+        let js_code = format!(
+            r#"
+            (function() {{
+                const data = {};
+                Object.entries(data).forEach(([k, v]) => {{
+                    localStorage.setItem(k, v);
+                }});
+                return 'localStorage restored';
+            }})()
+            "#,
+            local_storage_json
+        );
+        self.page
+            .evaluate(js_code)
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} count={}",
+            self.session_id, "allow_import_session", session_data.url, session_data.cookies.len()
+        );
 
         Ok(())
     }

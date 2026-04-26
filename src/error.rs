@@ -119,6 +119,28 @@ pub enum TaskError {
     /// Retry exhausted
     #[error("Retry exhausted after {max_retries} attempts for {task_name}")]
     RetryExhausted { max_retries: u32, task_name: String },
+
+    /// Permission denied for task operation
+    #[error("Permission denied: task '{task_name}' lacks '{permission}' permission")]
+    PermissionDenied {
+        permission: &'static str,
+        task_name: String,
+    },
+
+    /// Invalid path for data file operation
+    #[error("Invalid path: {0}")]
+    InvalidPath(String),
+
+    /// CDP/browser operation failed
+    #[error("CDP error: {operation} - {reason}")]
+    CdpError {
+        operation: String,
+        reason: String,
+    },
+
+    /// Clipboard operation failed
+    #[error("Clipboard error: {0}")]
+    ClipboardError(String),
 }
 
 /// Configuration errors.

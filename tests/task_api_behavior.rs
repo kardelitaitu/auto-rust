@@ -3,6 +3,7 @@ use chromiumoxide::Browser;
 use auto::config::{NativeInteractionConfig, NativeClickCalibrationMode};
 use auto::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
 use auto::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
+use auto::task::policy::DEFAULT_TASK_POLICY;
 use auto::session::Session;
 use auto::utils::mouse::{
     clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
@@ -106,6 +107,7 @@ fn build_task_context(session: &Session, page: Arc<chromiumoxide::Page>) -> Task
         session.behavior_profile.clone(),
         session.behavior_runtime,
         NativeInteractionConfig::default(),
+        &DEFAULT_TASK_POLICY,
     )
 }
 
@@ -121,6 +123,7 @@ fn build_task_context_with_metrics(
         session.behavior_runtime,
         NativeInteractionConfig::default(),
         metrics,
+        &DEFAULT_TASK_POLICY,
     )
 }
 

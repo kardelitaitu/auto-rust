@@ -9,7 +9,36 @@
 
 ---
 
-## 2026-04-26 (05:58) - OpenRouter Model Fallback Chain
+## 2026-04-26 (09:35) - Task Policy Enforcement Implementation
+
+**Feature:** Implemented task policy enforcement system from `IMPROVEMENT_PROPOSAL_task_policy.md`.
+
+**Phase 1: Core Data Structures**
+- Created `src/task/policy.rs` with `TaskPolicy`, `TaskPermissions`, `SessionData`, `DEFAULT_TASK_POLICY`
+- Extended `src/error.rs` with `PermissionDenied`, `InvalidPath`, `CdpError`, `ClipboardError` variants
+- Added `pub mod policy;` to `src/task/mod.rs`
+
+**Phase 2: Policies to Tasks**
+- Added policies to 15 task files:
+  - `COOKIEBOT_POLICY`, `PAGEVIEW_POLICY`, `TWITTERACTIVITY_POLICY`
+  - `TWITTER_BASE_POLICY` (base for Twitter tasks)
+  - `DEMO_KEYBOARD_POLICY`, `DEMO_MOUSE_POLICY`, `DEMO_QA_POLICY`
+  - `TWITTERDIVE_POLICY`, `TWITTERFOLLOW_POLICY`, `TWITTERINTENT_POLICY`
+  - `TWITTERLIKE_POLICY`, `TWITTERQUOTE_POLICY`, `TWITTERREPLY_POLICY`
+  - `TWITTERRETWEET_POLICY`, `TWITTERTEST_POLICY`, `TASK_EXAMPLE_POLICY`
+
+**Phase 3: Permission Gates**
+- Added `policy` field to `TaskContext` with `&'static TaskPolicy`
+- Updated `TaskContext::new` and `new_with_metrics` to accept policy
+- Updated orchestrator to pass policy when creating `TaskContext`
+- Replaced config-based timeout with policy's `max_duration_ms`
+- Added permission-gated methods: `screenshot()`, `export_cookies()`, `import_cookies()`, `export_session()`, `import_session()`, `read_clipboard()`, `write_clipboard()`, `read_data_file()`, `write_data_file()`
+- Implemented `effective_permissions()` with implied permissions logic
+- Added audit logging for session operations (`task_policy_audit` target)
+
+**Validation:** `cargo check` clean ✅ (no errors)
+
+**Integration Note:** This implements the core policy enforcement system. Remaining work: add unit tests for permission checks, add policies to remaining task files (if any), update documentation.
 
 **Feature:** Automatic model fallback when OpenRouter primary model fails or times out
 

@@ -461,7 +461,8 @@ async fn execute_task_with_retry(
 ) -> TaskResult {
     let start = std::time::Instant::now();
     let max_retries = 0;
-    let task_timeout = Duration::from_millis(config.orchestrator.task_timeout_ms);
+    let policy = crate::task::policy::get_policy(&task_def.name);
+    let task_timeout = Duration::from_millis(policy.max_duration_ms);
     metrics.task_started();
 
     // Create retry policy with exponential backoff and jitter
@@ -583,6 +584,7 @@ async fn execute_task_with_retry(
 
         attempt = current_attempt;
 
+        let policy = crate::task::policy::get_policy(&task_def.name);
         let task_ctx = crate::runtime::task_context::TaskContext::new_with_metrics(
             session.id.clone(),
             page.clone(),
@@ -590,6 +592,7 @@ async fn execute_task_with_retry(
             session.behavior_runtime,
             config.browser.native_interaction.clone(),
             metrics.clone(),
+            policy,
         );
 
         let task_result = tokio::select! {

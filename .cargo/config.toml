@@ -1,35 +1,66 @@
-﻿# Build Performance Benchmark Config
-
+# ========================================
+# Global build settings (.cargo/config.toml)
+# ========================================
 [build]
+# Use all your cores
 jobs = 32
-# rustc-wrapper = "sccache"
 
+# sccache: Good for caching dependencies across projects and clean builds.
+# Note: It can conflict slightly with incremental compilation in some cases.
+# Test both with and without it on your workflow.
+rustc-wrapper = "sccache"
+
+# Faster linker on Windows (lld-link is usually the best stable choice)
 [target.x86_64-pc-windows-msvc]
-# linker = "lld-link.exe"
+linker = "lld-link.exe"
+
+# Optional: Extra rustflags for even more speed (uncomment if you want to experiment)
+# rustflags = ["-C", "link-arg=/STACK:8388608"]  # larger stack if needed
+
+# ========================================
+# Profiles (Cargo.toml)
+# ========================================
 
 [profile.dev]
-debug = "line-tables-only"
-opt-level = 1
-lto = "off"
-codegen-units = 32
-incremental = true
+opt-level = 0                    # No optimizations → fastest codegen
+debug = "none"                   # 0, 1, 2, "none", "limited", "full", "line-tables-only", or "line-directives-only"
+split-debuginfo = "unpacked"     # Helps reduce linking time (works on Windows)
+incremental = true               # Keep this for fast edit-compile cycles
+lto = "off"                      # Disable all LTO for dev speed
+codegen-units = 768              # Higher = better parallelism on 32 cores
+                                 # (try 256 → 1024 and benchmark)
+overflow-checks = false          # Small extra speedup (optional)
 
+# Minimal debug info for all dependencies (big win!)
+[profile.dev.package."*"]
+debug = false
+opt-level = 0
+
+# ========================================
+# Build dependencies (proc macros, build.rs, etc.)
+# Compile them with optimizations for faster builds
 [profile.dev.build-override]
 opt-level = 3
 codegen-units = 16
 
+# ========================================
+# Release profiles (kept reasonable)
 [profile.release]
-lto = "thin"
-codegen-units = 32
-debug = "line-tables-only"
 opt-level = 3
+lto = "thin"                     # Best balance for most projects (fast compile + good perf)
+codegen-units = 1                # ← Changed: Best optimizations with LTO
+debug = false
+strip = "debuginfo"              # Or change to `true` if you want smaller binaries
+panic = "unwind"                 # Explicit (default); change to "abort" if you don't need unwinding
+overflow-checks = false          # Default, but good to be explicit
 
 [profile.release.build-override]
 opt-level = 3
 codegen-units = 16
 
+# Fast but lighter release (for quick testing)
 [profile.fast-release]
 inherits = "release"
 lto = "off"
-codegen-units = 128
+codegen-units = 64
 opt-level = 2

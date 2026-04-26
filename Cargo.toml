@@ -60,6 +60,9 @@ rand_distr = "0.4"
 tokio-stream = "0.1"
 glob = "0.3"
 
+# Image Processing
+image = "0.24"
+
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 humantime = "2"

@@ -250,7 +250,7 @@ println!("Allow screenshot: {}", policy.permissions.allow_screenshot);
 
 | Permission | Purpose | Used By |
 |------------|---------|---------|
-| `allow_screenshot` | Capture page screenshots | `context.screenshot()` |
+| `allow_screenshot` | Capture page screenshots (auto-saved as JPG) | `context.screenshot()` |
 | `allow_export_cookies` | Read browser cookies | `context.export_cookies()` |
 | `allow_import_cookies` | Set browser cookies | `context.import_cookies()` |
 | `allow_export_session` | Export cookies + localStorage | `context.export_session()` |
@@ -272,7 +272,8 @@ The following operations require explicit permissions:
 
 ```rust
 // Requires allow_screenshot
-let img = context.screenshot().await?;
+// Returns file path: "data/screenshot/2026-04-26-15-30-session-123.jpg"
+let screenshot_path = context.screenshot().await?;
 
 // Requires allow_export_cookies
 let cookies = context.export_cookies("").await?;

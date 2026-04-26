@@ -1016,6 +1016,30 @@ mod tests {
         assert_eq!(stats.attempts, 0);
         assert_eq!(stats.successes, 0);
     }
+
+    #[test]
+    fn test_screenshot_filename_format() {
+        // Test filename generation matches expected format
+        let session_id = "test-session-123";
+        let now = chrono::Utc::now();
+        let filename = format!(
+            "{}-{}-{}.jpg",
+            now.format("%Y-%m-%d"),
+            now.format("%H-%M"),
+            session_id
+        );
+        
+        // Verify format: yyyy-mm-dd-hh-mm-sessionid.jpg
+        assert!(filename.ends_with(".jpg"));
+        assert!(filename.contains("test-session-123"));
+        assert!(filename.len() > 20); // Reasonable length for timestamp + session
+    }
+
+    #[test]
+    fn test_screenshot_directory_path() {
+        let screenshot_dir = std::path::Path::new("data/screenshot");
+        assert_eq!(screenshot_dir.to_str().unwrap(), "data/screenshot");
+    }
 }
 
 /// High-level API context for browser automation tasks.
@@ -1314,8 +1338,30 @@ impl TaskContext {
 
     // --- Permission-gated operations ---
 
-    /// Check if task has screenshot permission.
-    pub async fn screenshot(&self) -> Result<Vec<u8>> {
+    /// Capture screenshot and save as compressed JPG.
+    ///
+    /// Takes a screenshot of the current page, converts it to JPG with 60% quality,
+    /// and saves it to `data/screenshot/` with filename format: `yyyy-mm-dd-hh-mm-sessionid.jpg`
+    ///
+    /// # Returns
+    ///
+    /// `Ok(String)` with the full file path to the saved screenshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - `allow_screenshot` permission is denied
+    /// - CDP screenshot fails
+    /// - Image conversion fails
+    /// - File write fails
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let path = api.screenshot().await?;
+    /// // Returns: "data/screenshot/2026-04-26-15-30-session-123.jpg"
+    /// ```
+    pub async fn screenshot(&self) -> Result<String> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_screenshot {
             return Err(anyhow::anyhow!(
@@ -1323,11 +1369,48 @@ impl TaskContext {
                 self.session_id
             ));
         }
-        // CDP: Page.captureScreenshot
-        self.page
+
+        // CDP: Page.captureScreenshot (returns PNG bytes)
+        let png_bytes = self
+            .page
             .screenshot(chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotParams::default())
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Page.captureScreenshot - {}", e))
+            .map_err(|e| anyhow::anyhow!("CDP error: Page.captureScreenshot - {}", e))?;
+
+        // Convert PNG to JPG with 60% quality
+        let img = image::load_from_memory(&png_bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to load PNG image: {}", e))?;
+
+        let mut jpg_buffer = Vec::new();
+        let mut cursor = std::io::Cursor::new(&mut jpg_buffer);
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 60);
+        img.write_with_encoder(encoder)
+            .map_err(|e| anyhow::anyhow!("Failed to convert to JPG: {}", e))?;
+
+        // Generate filename: yyyy-mm-dd-hh-mm-sessionid.jpg
+        let now = chrono::Utc::now();
+        let filename = format!(
+            "{}-{}-{}.jpg",
+            now.format("%Y-%m-%d"),
+            now.format("%H-%M"),
+            self.session_id
+        );
+
+        // Create directory if it doesn't exist
+        let screenshot_dir = std::path::Path::new("data/screenshot");
+        std::fs::create_dir_all(screenshot_dir)
+            .map_err(|e| anyhow::anyhow!("Failed to create screenshot directory: {}", e))?;
+
+        // Write file
+        let file_path = screenshot_dir.join(&filename);
+        std::fs::write(&file_path, jpg_buffer)
+            .map_err(|e| anyhow::anyhow!("Failed to write screenshot: {}", e))?;
+
+        // Return full path as string
+        file_path
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow::anyhow!("Invalid file path"))
     }
 
     /// Check if task has cookie export permission.

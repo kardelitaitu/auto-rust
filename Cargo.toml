@@ -61,7 +61,8 @@ tokio-stream = "0.1"
 glob = "0.3"
 
 # Image Processing
-image = "0.24"
+image = { version = "0.24", features = ["webp"] }
+webp = "0.2"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }

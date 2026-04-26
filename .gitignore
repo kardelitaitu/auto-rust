@@ -46,4 +46,4 @@ TODO.md
 
 
 # Ignore all improvement proposals (they are generated and should not be committed)
-IMPROVEMENT_PROPOSAL*
+IMPROVEMENT*

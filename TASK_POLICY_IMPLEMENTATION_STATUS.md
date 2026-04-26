@@ -37,7 +37,7 @@ This document tracks the implementation status of the Task Policy Enforcement sy
 ### Helper Functions
 - [ ] **3.10** Implement `validate_data_path()` helper (traversal, symlink, absolute path checks)
 - [x] **3.11** ✅ Implement `map_cdp_error()` helper - DONE
-- [ ] **3.12** Implement `check_page_connected()` helper for pre-flight checks
+- [x] **3.12** ✅ Implement `check_page_connected()` helper - DONE
 
 ### Testing
 - [x] **4.1** ✅ Policy validation tests (timeout > 0)

@@ -1284,6 +1284,34 @@ impl TaskContext {
         }
     }
 
+    /// Check if the browser page is still connected.
+    ///
+    /// Performs a lightweight connectivity check before CDP operations.
+    /// Uses the browser handle as a proxy for connection state.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if page appears connected, `Err(TaskError::CdpError)` if not.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// self.check_page_connected().await?;
+    /// let cookies = self.export_cookies("").await?;
+    /// ```
+    pub async fn check_page_connected(&self) -> crate::error::Result<()> {
+        // Try a lightweight JS evaluation to verify actual connectivity
+        // This detects if the page has been closed or the browser disconnected
+        match self.page.evaluate("1").await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(crate::error::TaskError::CdpError {
+                operation: "Page.connection_check".to_string(),
+                reason: format!("Page not responding to CDP: {}", e),
+            }
+            .into()),
+        }
+    }
+
     // --- Permission-gated operations ---
 
     /// Check if task has screenshot permission.

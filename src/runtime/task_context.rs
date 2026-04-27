@@ -2331,6 +2331,24 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_export_cookies` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Export cookies for a specific domain
+    let cookies = ctx.export_cookies_for_domain("example.com").await?;
+    ///
+    /// // Check if any authentication cookies exist
+    let has_auth = cookies.iter().any(|c| {
+    ///     c.get("name").and_then(|n| n.as_str()) == Some("session_token")
+    /// });
+    ///
+    /// println!("Found {} cookies, auth: {}", cookies.len(), has_auth);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn export_cookies_for_domain(&self, domain: &str) -> Result<Vec<serde_json::Value>> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_export_cookies {
@@ -2374,6 +2392,20 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_export_cookies` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Export only session (non-persistent) cookies
+    /// let session_cookies = ctx.export_session_cookies("").await?;
+    ///
+    /// // These cookies will be deleted when browser closes
+    /// println!("Found {} session cookies", session_cookies.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn export_session_cookies(&self, _url: &str) -> Result<Vec<serde_json::Value>> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_export_cookies {
@@ -2423,6 +2455,25 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_export_cookies` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Check if user is logged in by looking for session cookie
+    /// if ctx.has_cookie("session_id", Some("example.com")).await? {
+    ///     println!("User is logged in");
+    /// } else {
+    ///     println!("No session found - need to login");
+    /// }
+    ///
+    /// // Check for any cookie across all domains
+    /// let has_tracking = ctx.has_cookie("_ga", None).await?;
+    /// println!("Analytics cookie present: {}", has_tracking);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn has_cookie(&self, name: &str, domain: Option<&str>) -> Result<bool> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_export_cookies {
@@ -2607,6 +2658,24 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_read_data` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // List all files in data directory
+    /// let files = ctx.list_data_files(None)?;
+    /// println!("Found {} data files", files.len());
+    ///
+    /// // List files in a subdirectory
+    /// let csv_files = ctx.list_data_files(Some("exports"))?;
+    /// for file in csv_files {
+    ///     println!("Export file: {}", file);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn list_data_files(&self, subdir: Option<&str>) -> Result<Vec<String>> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_read_data {
@@ -3120,6 +3189,24 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_dom_inspection` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Get background color of an element
+    /// let bg_color = ctx.get_computed_style("#header", "background-color").await?;
+    /// println!("Header background: {}", bg_color);
+    ///
+    /// // Check if element is visible by checking display property
+    /// let display = ctx.get_computed_style("#modal", "display").await?;
+    /// if display == "none" {
+    ///     println!("Modal is hidden");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_computed_style(&self, selector: &str, property: &str) -> Result<String> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_dom_inspection {
@@ -3171,6 +3258,24 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_dom_inspection` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Get position and size of a button
+    /// let rect = ctx.get_element_rect("#submit-btn").await?;
+    /// println!("Button at ({}, {}), size: {}x{}",
+    ///     rect.x, rect.y, rect.width, rect.height);
+    ///
+    /// // Check if element is in viewport
+    /// if rect.y >= 0.0 && rect.y + rect.height <= 1080.0 {
+    ///     println!("Element is visible on screen");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_element_rect(&self, selector: &str) -> Result<Rect> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_dom_inspection {
@@ -3221,6 +3326,23 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_dom_inspection` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Get current scroll position
+    /// let (x, y) = ctx.get_scroll_position().await?;
+    /// println!("Scrolled to ({}, {})", x, y);
+    ///
+    /// // Check if we're at the top
+    /// if y == 0 {
+    ///     println!("At top of page");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_scroll_position(&self) -> Result<(u32, u32)> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_dom_inspection {
@@ -3264,6 +3386,23 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_dom_inspection` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Count all buttons on the page
+    /// let button_count = ctx.count_elements("button").await?;
+    /// println!("Found {} buttons", button_count);
+    ///
+    /// // Check if any items exist in a list
+    /// if ctx.count_elements(".product-item").await? > 0 {
+    ///     println!("Products are displayed");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn count_elements(&self, selector: &str) -> Result<usize> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_dom_inspection {
@@ -3311,6 +3450,22 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_dom_inspection` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Check if a lazy-loaded image is visible
+    /// if ctx.is_in_viewport("#hero-image").await? {
+    ///     println!("Hero image is visible to user");
+    /// } else {
+    ///     println!("Image is below the fold - needs scroll");
+    ///     ctx.scroll_to("#hero-image").await?;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn is_in_viewport(&self, selector: &str) -> Result<bool> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_dom_inspection {
@@ -3647,6 +3802,26 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_export_session` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Export localStorage data
+    /// let storage = ctx.export_local_storage("").await?;
+    ///
+    /// // Check for user preferences
+    /// if let Some(theme) = storage.get("theme") {
+    ///     println!("User prefers {} theme", theme);
+    /// }
+    ///
+    /// // Get all keys
+    /// let keys: Vec<_> = storage.keys().collect();
+    /// println!("localStorage has {} entries", keys.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn export_local_storage(&self, _url: &str) -> Result<std::collections::HashMap<String, String>> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_export_session {
@@ -3696,6 +3871,24 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_import_session` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # use std::collections::HashMap;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Prepare localStorage data to import
+    /// let mut storage_data = HashMap::new();
+    /// storage_data.insert("theme".to_string(), "dark".to_string());
+    /// storage_data.insert("language".to_string(), "en".to_string());
+    ///
+    /// // Import into browser
+    /// ctx.import_local_storage("", &storage_data).await?;
+    /// println!("localStorage imported successfully");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn import_local_storage(
         &self,
         _url: &str,
@@ -3747,6 +3940,32 @@ impl TaskContext {
     ///
     /// # Errors
     /// Returns error if data structure is fundamentally invalid
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # use std::collections::HashMap;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Create session data to validate
+    /// let session = auto::task::policy::SessionData {
+    ///     cookies: vec![],
+    ///     local_storage: HashMap::new(),
+    ///     exported_at: chrono::Utc::now(),
+    ///     url: "https://example.com".to_string(),
+    /// };
+    ///
+    /// // Validate before importing
+    /// let warnings = ctx.validate_session_data(&session)?;
+    ///
+    /// if warnings.is_empty() {
+    ///     println!("Session data is valid");
+    /// } else {
+    ///     println!("Warnings: {:?}", warnings);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn validate_session_data(&self, data: &crate::task::policy::SessionData) -> Result<Vec<String>> {
         let mut warnings = Vec::new();
 

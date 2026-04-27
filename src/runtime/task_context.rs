@@ -2336,14 +2336,15 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Export cookies for a specific domain
     /// let cookies = ctx.export_cookies_for_domain("example.com").await?;
     ///
     /// // Check if any authentication cookies exist
     /// let has_auth = cookies.iter().any(|c| {
     ///     c.get("name").and_then(|n| n.as_str()) == Some("session_token")
-    /// }).unwrap_or(false);
+    /// });
     ///
     /// println!("Found {} cookies, auth: {}", cookies.len(), has_auth);
     /// # Ok(())
@@ -2397,7 +2398,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Export only session (non-persistent) cookies
     /// let session_cookies = ctx.export_session_cookies("").await?;
     ///
@@ -2460,7 +2462,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Check if user is logged in by looking for session cookie
     /// if ctx.has_cookie("session_id", Some("example.com")).await? {
     ///     println!("User is logged in");
@@ -2539,7 +2542,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Clear clipboard before sensitive operations
     /// ctx.clear_clipboard()?;
     ///
@@ -2578,7 +2582,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Check if clipboard has content before accessing
     /// if ctx.has_clipboard_content()? {
     ///     println!("Clipboard has data");
@@ -2619,7 +2624,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Append to existing clipboard content
     /// ctx.append_clipboard("\n---\n", None)?;
     ///
@@ -2715,7 +2721,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // List all files in data directory
     /// let files = ctx.list_data_files(None)?;
     /// println!("Found {} data files", files.len());
@@ -2781,7 +2788,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Check if configuration file exists
     /// if ctx.data_file_exists("config/settings.json")? {
     ///     println!("Settings file found");
@@ -2827,7 +2835,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Clean up temporary file
     /// ctx.delete_data_file("temp/download.tmp")?;
     ///
@@ -2877,7 +2886,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Append to a log file
     /// let entry = format!("{} - Action performed\n", chrono::Utc::now());
     /// ctx.append_data_file("logs/activity.log", entry.as_bytes())?;
@@ -2941,7 +2951,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Read configuration from JSON file
     /// #[derive(serde::Deserialize)]
     /// struct Config {
@@ -2985,7 +2996,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// #[derive(serde::Serialize)]
     /// struct UserData {
     ///     username: String,
@@ -3032,7 +3044,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Get file metadata
     /// let metadata = ctx.data_file_metadata("exports/data.json")?;
     ///
@@ -3131,7 +3144,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Make a GET request to an API
     /// let response = ctx.http_get("https://api.example.com/data").await?;
     ///
@@ -3205,7 +3219,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // POST JSON data to an API
     /// let payload = serde_json::json!({
     ///     "username": "alice",
@@ -3282,7 +3297,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Download a file from URL
     /// let bytes_downloaded = ctx
     ///     .download_file("https://example.com/data.csv", "downloads/data.csv")
@@ -3436,7 +3452,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Get background color of an element
     /// let bg_color = ctx.get_computed_style("#header", "background-color").await?;
     /// println!("Header background: {}", bg_color);
@@ -3505,7 +3522,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Get position and size of a button
     /// let rect = ctx.get_element_rect("#submit-btn").await?;
     /// println!("Button at ({}, {}), size: {}x{}",
@@ -3573,7 +3591,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Get current scroll position
     /// let (x, y) = ctx.get_scroll_position().await?;
     /// println!("Scrolled to ({}, {})", x, y);
@@ -3633,7 +3652,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Count all buttons on the page
     /// let button_count = ctx.count_elements("button").await?;
     /// println!("Found {} buttons", button_count);
@@ -3697,7 +3717,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Check if a lazy-loaded image is visible
     /// if ctx.is_in_viewport("#hero-image").await? {
     ///     println!("Hero image is visible to user");
@@ -3806,7 +3827,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Export complete browser state
     /// let browser_data = ctx.export_browser("https://example.com").await?;
     ///
@@ -3974,7 +3996,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Load previously saved browser state
     /// let json = std::fs::read_to_string("backup/session.json")?;
     /// let browser_data: auto::task::policy::BrowserData = serde_json::from_str(&json)?;
@@ -3983,8 +4006,7 @@ impl TaskContext {
     /// ctx.import_browser(&browser_data).await?;
     /// println!("Browser state restored from backup");
     ///
-    /// // Now navigate to the site - should be logged in
-    /// ctx.page.goto("https://example.com/dashboard").await?;
+    /// // Session is now active - navigate to authenticated page
     /// # Ok(())
     /// # }
     /// ```
@@ -4086,7 +4108,8 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # use auto::TaskContext;
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Export localStorage data
     /// let storage = ctx.export_local_storage("").await?;
     ///
@@ -4155,8 +4178,9 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
+    /// # use auto::TaskContext;
     /// # use std::collections::HashMap;
-    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # async fn example(ctx: &TaskContext) -> Result<()> {
     /// // Prepare localStorage data to import
     /// let mut storage_data = HashMap::new();
     /// storage_data.insert("theme".to_string(), "dark".to_string());
@@ -4224,8 +4248,9 @@ impl TaskContext {
     ///
     /// ```rust,no_run
     /// # use anyhow::Result;
+    /// # use auto::TaskContext;
     /// # use std::collections::HashMap;
-    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Create session data to validate
     /// let session = auto::task::policy::SessionData {
     ///     cookies: vec![],

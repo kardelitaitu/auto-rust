@@ -256,6 +256,7 @@ impl Default for RunSummary {
 }
 
 #[cfg(test)]
+#[allow(missing_docs)]
 mod tests {
     use super::*;
 

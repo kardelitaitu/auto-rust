@@ -1623,7 +1623,7 @@ mod tests {
     fn test_sanitize_path_component_with_special_chars() {
         assert_eq!(super::sanitize_path_component("test/file"), "test_file");
         assert_eq!(super::sanitize_path_component("test..file"), "test__file");
-        assert_eq!(super::sanitize_path_component("test\\file"), "test__file");
+        assert_eq!(super::sanitize_path_component("test\\file"), "test_file"); // Single \ becomes single _
     }
 
     #[test]
@@ -1631,7 +1631,7 @@ mod tests {
         // Unicode chars become underscores, then trimmed, empty becomes "default"
         assert_eq!(super::sanitize_path_component("测试"), "default"); // All unicode -> "__" -> trim -> "default"
         // Mixed content: ascii parts preserved, unicode becomes underscores
-        assert_eq!(super::sanitize_path_component("test日本語file"), "test____file");
+        assert_eq!(super::sanitize_path_component("test日本語file"), "test___file"); // 3 Japanese chars = 3 underscores
         assert_eq!(super::sanitize_path_component("日本語test"), "test"); // Leading underscores trimmed
         assert_eq!(super::sanitize_path_component("test日本語"), "test"); // Trailing underscores trimmed
     }

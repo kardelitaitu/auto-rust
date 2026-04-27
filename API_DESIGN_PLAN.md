@@ -127,10 +127,9 @@ pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
 #### Clipboard Management
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
-| ☐ | `api.clear_clipboard()` | Clear clipboard content | ✅ 95% | Set empty string using existing clipboard module |
-| ☐ | `api.read_clipboard_with_timeout(ms)` | Wait for clipboard update | 🔍 60% | Would need polling or platform-specific watcher |
-| ☐ | `api.has_clipboard_content()` | Check if clipboard non-empty | ✅ 95% | Check if read_clipboard returns non-empty |
-| ☐ | `api.append_clipboard(text, sep)` | Append text to clipboard | ✅ 95% | Read + write combo using existing methods |
+| ☑ | `api.clear_clipboard()` | Clear clipboard content | ✅ 95% | Set empty string using existing clipboard module |
+| ☑ | `api.has_clipboard_content()` | Check if clipboard non-empty | ✅ 95% | Check if read_clipboard returns non-empty |
+| ☑ | `api.append_clipboard(text, sep)` | Append text to clipboard | ✅ 95% | Read + write combo using existing methods |
 
 #### Data File Management
 | Status | API | Description | Confidence | Notes |

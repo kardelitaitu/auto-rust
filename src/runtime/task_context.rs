@@ -1645,6 +1645,81 @@ impl TaskContext {
         Ok(())
     }
 
+    /// Clear clipboard content.
+    ///
+    /// # Errors
+    /// Returns error if `allow_session_clipboard` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_session_clipboard` permission
+    pub fn clear_clipboard(&self) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_session_clipboard {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_session_clipboard' permission",
+                self.session_id
+            ));
+        }
+        crate::state::ClipboardState::new(self.session_id.clone()).set("");
+        Ok(())
+    }
+
+    /// Check if clipboard has content.
+    ///
+    /// # Returns
+    /// true if clipboard is not empty, false otherwise
+    ///
+    /// # Errors
+    /// Returns error if `allow_session_clipboard` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_session_clipboard` permission
+    pub fn has_clipboard_content(&self) -> Result<bool> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_session_clipboard {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_session_clipboard' permission",
+                self.session_id
+            ));
+        }
+        let has_content = crate::state::ClipboardState::new(self.session_id.clone())
+            .get()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        Ok(has_content)
+    }
+
+    /// Append text to clipboard with optional separator.
+    ///
+    /// # Arguments
+    /// * `text` - Text to append
+    /// * `separator` - Optional separator to insert between existing and new text
+    ///
+    /// # Errors
+    /// Returns error if `allow_session_clipboard` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_session_clipboard` permission
+    pub fn append_clipboard(&self, text: &str, separator: Option<&str>) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_session_clipboard {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_session_clipboard' permission",
+                self.session_id
+            ));
+        }
+        let current = crate::state::ClipboardState::new(self.session_id.clone())
+            .get()
+            .unwrap_or_default();
+        let new_content = if current.is_empty() {
+            text.to_string()
+        } else {
+            format!("{}{}{}", current, separator.unwrap_or(""), text)
+        };
+        crate::state::ClipboardState::new(self.session_id.clone()).set(&new_content);
+        Ok(())
+    }
+
     /// Check if task has read data permission.
     pub fn read_data_file(&self, relative_path: &str) -> Result<String> {
         let perms = self.policy.effective_permissions();

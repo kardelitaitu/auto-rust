@@ -120,9 +120,9 @@ pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
 #### Session Management
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
-| ☐ | `api.export_local_storage(url)` | Export only localStorage | ✅ 95% | Extract from existing export_session logic |
-| ☐ | `api.import_local_storage(url, data)` | Import only localStorage | ✅ 95% | Extract from existing import_session logic |
-| ☐ | `api.validate_session_data(data)` | Validate without importing | ✅ 98% | Pure JSON validation, no browser needed |
+| ☑ | `api.export_local_storage(url)` | Export only localStorage | ✅ 95% | Extract from existing export_session logic |
+| ☑ | `api.import_local_storage(url, data)` | Import only localStorage | ✅ 95% | Extract from existing import_session logic |
+| ☑ | `api.validate_session_data(data)` | Validate without importing | ✅ 98% | Pure JSON validation, no browser needed |
 
 #### Clipboard Management
 | Status | API | Description | Confidence | Notes |

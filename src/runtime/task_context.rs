@@ -1836,6 +1836,154 @@ impl TaskContext {
         Ok(())
     }
 
+    /// Export localStorage data from the current page.
+    ///
+    /// # Arguments
+    /// * `_url` - URL context (for consistency with other methods)
+    ///
+    /// # Returns
+    /// HashMap of localStorage key-value pairs
+    ///
+    /// # Errors
+    /// Returns error if `allow_export_session` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_export_session` permission
+    pub async fn export_local_storage(&self, _url: &str) -> Result<std::collections::HashMap<String, String>> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_export_session {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_export_session' permission",
+                self.session_id
+            ));
+        }
+
+        // Export localStorage via JavaScript
+        let local_storage_js = r#"
+            (function() {
+                const data = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    data[key] = localStorage.getItem(key);
+                }
+                return JSON.stringify(data);
+            })()
+        "#;
+        let local_storage_str = self
+            .page
+            .evaluate(local_storage_js)
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+        let local_storage_value = local_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
+        let local_storage: std::collections::HashMap<String, String> =
+            serde_json::from_value(local_storage_value)
+                .unwrap_or_default();
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} count={}",
+            self.session_id, "allow_export_session", _url, local_storage.len()
+        );
+
+        Ok(local_storage)
+    }
+
+    /// Import localStorage data to the current page.
+    ///
+    /// # Arguments
+    /// * `_url` - URL context (for consistency with other methods)
+    /// * `data` - HashMap of key-value pairs to set in localStorage
+    ///
+    /// # Errors
+    /// Returns error if `allow_import_session` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_import_session` permission
+    pub async fn import_local_storage(
+        &self,
+        _url: &str,
+        data: &std::collections::HashMap<String, String>,
+    ) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_import_session {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_import_session' permission",
+                self.session_id
+            ));
+        }
+
+        // Import localStorage via JavaScript
+        let local_storage_json = serde_json::to_string(data)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage: {}", e))?;
+        let js_code = format!(
+            r#"
+            (function() {{
+                const data = {};
+                Object.entries(data).forEach(([k, v]) => {{
+                    localStorage.setItem(k, v);
+                }});
+                return 'localStorage imported: ' + Object.keys(data).length + ' items';
+            }})()
+            "#,
+            local_storage_json
+        );
+        self.page
+            .evaluate(js_code)
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} count={}",
+            self.session_id, "allow_import_session", _url, data.len()
+        );
+
+        Ok(())
+    }
+
+    /// Validate SessionData structure without importing.
+    ///
+    /// # Arguments
+    /// * `data` - SessionData to validate
+    ///
+    /// # Returns
+    /// Vec of validation warnings (empty if valid)
+    ///
+    /// # Errors
+    /// Returns error if data structure is fundamentally invalid
+    pub fn validate_session_data(&self, data: &crate::task::policy::SessionData) -> Result<Vec<String>> {
+        let mut warnings = Vec::new();
+
+        // Validate cookies array
+        if data.cookies.is_empty() && data.local_storage.is_empty() {
+            warnings.push("SessionData has no cookies and no localStorage".to_string());
+        }
+
+        // Validate cookie structure
+        for (i, cookie) in data.cookies.iter().enumerate() {
+            if let Some(obj) = cookie.as_object() {
+                if !obj.contains_key("name") {
+                    warnings.push(format!("Cookie[{}] missing 'name' field", i));
+                }
+                if !obj.contains_key("value") {
+                    warnings.push(format!("Cookie[{}] missing 'value' field", i));
+                }
+            } else {
+                warnings.push(format!("Cookie[{}] is not a JSON object", i));
+            }
+        }
+
+        // Validate local_storage
+        if data.local_storage.len() > 1000 {
+            warnings.push(format!("localStorage has {} items (very large)", data.local_storage.len()));
+        }
+
+        // Validate URL is not empty
+        if data.url.is_empty() {
+            warnings.push("SessionData url is empty".to_string());
+        }
+
+        Ok(warnings)
+    }
+
     /// Set custom user agent string for subsequent navigations.
     pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {
         navigation::set_user_agent(self.page(), user_agent).await

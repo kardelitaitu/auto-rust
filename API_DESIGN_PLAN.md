@@ -134,13 +134,13 @@ pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
 #### Data File Management
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
-| ☐ | `api.list_data_files(subdir)` | List files in data directory | ✅ 98% | Standard Rust std::fs::read_dir |
-| ☐ | `api.append_data_file(path, content)` | Append to file | ✅ 98% | OpenOptions::append() - standard Rust |
-| ☐ | `api.data_file_exists(path)` | Check if file exists | ✅ 100% | std::path::Path::exists() |
-| ☐ | `api.delete_data_file(path)` | Delete file | ✅ 98% | std::fs::remove_file() |
-| ☐ | `api.read_json_data<T>(path)` | Read and parse JSON | ✅ 95% | serde_json::from_str after read_data_file |
-| ☐ | `api.write_json_data<T>(path, data)` | Write JSON (pretty) | ✅ 95% | serde_json::to_string_pretty then write |
-| ☐ | `api.data_file_metadata(path)` | Get file size/modified time | ✅ 98% | std::fs::metadata() |
+| ☑ | `api.list_data_files(subdir)` | List files in data directory | ✅ 98% | Standard Rust std::fs::read_dir |
+| ☑ | `api.append_data_file(path, content)` | Append to file | ✅ 98% | OpenOptions::append() - standard Rust |
+| ☑ | `api.data_file_exists(path)` | Check if file exists | ✅ 100% | std::path::Path::exists() |
+| ☑ | `api.delete_data_file(path)` | Delete file | ✅ 98% | std::fs::remove_file() |
+| ☑ | `api.read_json_data<T>(path)` | Read and parse JSON | ✅ 95% | serde_json::from_str after read_data_file |
+| ☑ | `api.write_json_data<T>(path, data)` | Write JSON (pretty) | ✅ 95% | serde_json::to_string_pretty then write |
+| ☑ | `api.data_file_metadata(path)` | Get file size/modified time | ✅ 98% | std::fs::metadata() |
 
 #### Network/HTTP (new permission: `allow_http_requests`)
 | Status | API | Description | Confidence | Notes |

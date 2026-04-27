@@ -451,18 +451,19 @@ fn twitteractivity_action_chaining_overwrites_previous() {
 fn twitteractivity_entry_point_selection_distribution() {
     use auto::task::twitteractivity::select_entry_point;
 
-    // Sample many times to check distribution (reduced from 1000 for speed)
+    // Sample many times to check distribution
     let mut counts = std::collections::HashMap::new();
-    for _ in 0..100 {
+    for _ in 0..200 {
         let entry_url = select_entry_point();
         *counts.entry(entry_url).or_insert(0) += 1;
     }
 
     // Home should be the most common (59% weight)
+    // With 200 samples, expect ~118; allow variance down to 100 (50%)
     let home_count = counts.get("https://x.com/").unwrap_or(&0);
     assert!(
-        *home_count > 50,
-        "home should appear in >50% of samples (got {})",
+        *home_count >= 100,
+        "home should appear in >=50% of samples (got {} out of 200)",
         home_count
     );
 

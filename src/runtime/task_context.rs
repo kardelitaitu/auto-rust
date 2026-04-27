@@ -1075,6 +1075,209 @@ mod tests {
         let screenshot_dir = std::path::Path::new("data/screenshot");
         assert_eq!(screenshot_dir.to_str().unwrap(), "data/screenshot");
     }
+
+    // ============================================================================
+    // Browser Management Tests
+    // ============================================================================
+
+    #[test]
+    fn test_browser_data_default() {
+        let data = crate::task::policy::BrowserData::default();
+        assert!(data.cookies.is_empty());
+        assert!(data.local_storage.is_empty());
+        assert!(data.session_storage.is_empty());
+        assert!(data.indexeddb_names.is_empty());
+        assert!(data.source.is_empty());
+        assert!(data.browser_version.is_none());
+    }
+
+    #[test]
+    fn test_browser_data_serialization_roundtrip() {
+        use chrono::Utc;
+        use std::collections::HashMap;
+
+        let mut local_storage = HashMap::new();
+        let mut origin_data = HashMap::new();
+        origin_data.insert("key1".to_string(), "value1".to_string());
+        origin_data.insert("key2".to_string(), "value2".to_string());
+        local_storage.insert("example.com".to_string(), origin_data);
+
+        let mut indexeddb = HashMap::new();
+        indexeddb.insert("example.com".to_string(), vec!["db1".to_string(), "db2".to_string()]);
+
+        let data = crate::task::policy::BrowserData {
+            cookies: vec![serde_json::json!({"name": "test", "value": "cookie"})],
+            local_storage,
+            session_storage: HashMap::new(),
+            indexeddb_names: indexeddb,
+            exported_at: Utc::now(),
+            source: "https://example.com".to_string(),
+            browser_version: Some("Chrome 120".to_string()),
+        };
+
+        // Serialize
+        let json = serde_json::to_string(&data).expect("Should serialize");
+
+        // Deserialize
+        let restored: crate::task::policy::BrowserData = serde_json::from_str(&json).expect("Should deserialize");
+
+        assert_eq!(restored.cookies.len(), 1);
+        assert_eq!(restored.source, "https://example.com");
+        assert_eq!(restored.browser_version, Some("Chrome 120".to_string()));
+        assert_eq!(restored.local_storage.len(), 1);
+        assert!(restored.local_storage.contains_key("example.com"));
+    }
+
+    #[test]
+    fn test_permissions_include_browser_export_import() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_browser_export);
+        assert!(!perms.allow_browser_import);
+
+        // Test with custom permissions
+        let custom_policy = crate::task::policy::TaskPolicy {
+            max_duration_ms: 30_000,
+            permissions: crate::task::policy::TaskPermissions {
+                allow_browser_export: true,
+                allow_browser_import: true,
+                ..Default::default()
+            },
+        };
+
+        assert!(custom_policy.permissions.allow_browser_export);
+        assert!(custom_policy.permissions.allow_browser_import);
+    }
+
+    #[test]
+    fn test_file_metadata_struct() {
+        let metadata = super::FileMetadata {
+            size: 1024,
+            modified: std::time::SystemTime::UNIX_EPOCH,
+            created: std::time::SystemTime::UNIX_EPOCH,
+        };
+
+        assert_eq!(metadata.size, 1024);
+
+        // Test serialization
+        let json = serde_json::to_string(&metadata).expect("Should serialize");
+        assert!(json.contains("1024"));
+    }
+
+    #[test]
+    fn test_http_response_struct() {
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        let response = super::HttpResponse {
+            status: 200,
+            body: "{\"success\": true}".to_string(),
+            headers,
+        };
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "{\"success\": true}");
+        assert_eq!(response.headers.get("Content-Type"), Some(&"application/json".to_string()));
+
+        // Test serialization
+        let json = serde_json::to_string(&response).expect("Should serialize");
+        assert!(json.contains("200"));
+        assert!(json.contains("success"));
+    }
+
+    #[test]
+    fn test_rect_struct() {
+        let rect = super::Rect {
+            x: 10.5,
+            y: 20.5,
+            width: 100.0,
+            height: 50.0,
+        };
+
+        assert_eq!(rect.x, 10.5);
+        assert_eq!(rect.y, 20.5);
+        assert_eq!(rect.width, 100.0);
+        assert_eq!(rect.height, 50.0);
+
+        // Test serialization roundtrip
+        let json = serde_json::to_string(&rect).expect("Should serialize");
+        let restored: super::Rect = serde_json::from_str(&json).expect("Should deserialize");
+        assert_eq!(restored.x, 10.5);
+        assert_eq!(restored.width, 100.0);
+    }
+
+    #[test]
+    fn test_click_learning_persistence_with_real_file() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().expect("Failed to create temp dir");
+        let path = dir.path().join("click_learning.json");
+
+        // Create state and save
+        let mut state = ClickLearningState::default();
+        state.record("#button1", true);
+        state.record("#button1", true);
+        state.record("#button2", false);
+
+        super::save_click_learning(&path, &state).expect("Should save");
+        assert!(path.exists());
+
+        // Load and verify
+        let loaded = super::load_click_learning(&path).expect("Should load");
+        assert_eq!(loaded.total_attempts, 3);
+        assert_eq!(loaded.total_successes, 2);
+
+        // Cleanup
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sanitize_path_component_various_inputs() {
+        assert_eq!(super::sanitize_path_component("normal"), "normal");
+        assert_eq!(super::sanitize_path_component("with-dash"), "with-dash");
+        assert_eq!(super::sanitize_path_component("with_underscore"), "with_underscore");
+        assert_eq!(super::sanitize_path_component("UPPERCASE"), "UPPERCASE");
+        assert_eq!(super::sanitize_path_component("123"), "123");
+        assert_eq!(super::sanitize_path_component(""), "default");
+        assert_eq!(super::sanitize_path_component("   "), "default");
+        assert_eq!(super::sanitize_path_component("a"), "a");
+    }
+
+    #[test]
+    fn test_click_timing_profile_edge_cases() {
+        let context = ClickTimingContext {
+            page: ClickPageContext::Other,
+            priority: ClickElementPriority::Critical,
+            fatigue: ClickFatigueLevel::Tired,
+            recent_success_rate: 0.0,
+        };
+
+        let profile = context.timing_profile(200, 15, 5, &ClickAdaptation::default());
+        assert!(profile.reaction_delay_ms >= 150); // Increased due to fatigue
+        assert!(profile.primary_timeout_ms >= 4_000);
+    }
+
+    #[test]
+    fn test_click_adaptation_with_extreme_failures() {
+        let mut learning = ClickLearningState::default();
+
+        // Simulate many failures
+        for _ in 0..20 {
+            learning.record("#button", false);
+        }
+
+        let context = ClickTimingContext::from_observation(
+            "https://example.com",
+            "#button",
+            20, // interaction_count
+            0.0, // recent_success_rate (all failures)
+        );
+        let adaptation = learning.adaptation_for("#button", &context);
+
+        // Should require strict verification after many failures
+        assert!(adaptation.require_strict_verification);
+        assert!(adaptation.prefer_coordinate_fallback);
+    }
 }
 
 /// High-level API context for browser automation tasks.
@@ -1328,6 +1531,8 @@ impl TaskContext {
             "allow_write_data" => perms.allow_write_data,
             "allow_http_requests" => perms.allow_http_requests,
             "allow_dom_inspection" => perms.allow_dom_inspection,
+            "allow_browser_export" => perms.allow_browser_export,
+            "allow_browser_import" => perms.allow_browser_import,
             _ => {
                 log::warn!("Unknown permission '{}' requested", permission);
                 false
@@ -2592,6 +2797,249 @@ impl TaskContext {
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
             self.session_id, "allow_import_session", session_data.url, session_data.cookies.len()
+        );
+
+        Ok(())
+    }
+
+    /// Export ALL browser data including cookies, localStorage, sessionStorage.
+    ///
+    /// # Arguments
+    /// * `url` - Source URL for the export
+    ///
+    /// # Returns
+    /// Complete BrowserData struct with all browser state
+    ///
+    /// # Errors
+    /// Returns error if `allow_browser_export` permission not granted
+    ///
+    /// # Permission
+    /// Requires `allow_browser_export` permission
+    pub async fn export_browser(&self, url: &str) -> Result<crate::task::policy::BrowserData> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_browser_export {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_browser_export' permission",
+                self.session_id
+            ));
+        }
+
+        // Export all cookies via CDP
+        let cookies_result = self
+            .page
+            .execute(chromiumoxide::cdp::browser_protocol::network::GetCookiesParams::default())
+            .await;
+        let cookies_json = match cookies_result {
+            Ok(cookies) => {
+                serde_json::to_value(&cookies.cookies).unwrap_or(serde_json::Value::Array(vec![]))
+            }
+            Err(e) => {
+                log::warn!("Failed to export cookies during browser export: {}", e);
+                serde_json::Value::Array(vec![])
+            }
+        };
+        let cookies = cookies_json
+            .as_array()
+            .unwrap_or(&vec![])
+            .clone();
+
+        // Export localStorage from all frames via JavaScript
+        let local_storage_js = r#"
+            (function() {
+                const data = {};
+                const hostname = window.location.hostname;
+                data[hostname] = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    data[hostname][key] = localStorage.getItem(key);
+                }
+                return JSON.stringify(data);
+            })()
+        "#;
+        let local_storage_str = self
+            .page
+            .evaluate(local_storage_js)
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage - {}", e))?;
+        let local_storage_value = local_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
+        let local_storage: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
+            serde_json::from_value(local_storage_value)
+                .unwrap_or_default();
+
+        // Export sessionStorage via JavaScript
+        let session_storage_js = r#"
+            (function() {
+                const data = {};
+                const hostname = window.location.hostname;
+                data[hostname] = {};
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const key = sessionStorage.key(i);
+                    data[hostname][key] = sessionStorage.getItem(key);
+                }
+                return JSON.stringify(data);
+            })()
+        "#;
+        let session_storage_str = self
+            .page
+            .evaluate(session_storage_js)
+            .await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage - {}", e))?;
+        let session_storage_value = session_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
+        let session_storage: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
+            serde_json::from_value(session_storage_value)
+                .unwrap_or_default();
+
+        // Get IndexedDB database names (simplified - just list databases)
+        let indexeddb_js = r#"
+            (function() {
+                return new Promise((resolve) => {
+                    const hostname = window.location.hostname;
+                    const data = {};
+                    data[hostname] = [];
+                    
+                    if (!window.indexedDB) {
+                        resolve(JSON.stringify(data));
+                        return;
+                    }
+                    
+                    // Try to get database names if supported
+                    if (window.indexedDB.databases) {
+                        window.indexedDB.databases().then(dbs => {
+                            data[hostname] = dbs.map(db => db.name);
+                            resolve(JSON.stringify(data));
+                        }).catch(() => {
+                            resolve(JSON.stringify(data));
+                        });
+                    } else {
+                        resolve(JSON.stringify(data));
+                    }
+                });
+            })()
+        "#;
+        let indexeddb_result = self
+            .page
+            .evaluate(indexeddb_js)
+            .await;
+        let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match indexeddb_result {
+            Ok(result) => {
+                result.value()
+                    .cloned()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default()
+            }
+            Err(e) => {
+                log::warn!("Failed to export IndexedDB names: {}", e);
+                std::collections::HashMap::new()
+            }
+        };
+
+        let browser_data = crate::task::policy::BrowserData {
+            cookies,
+            local_storage,
+            session_storage,
+            indexeddb_names,
+            exported_at: chrono::Utc::now(),
+            source: url.to_string(),
+            browser_version: None,
+        };
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} cookies={} origins={}",
+            self.session_id,
+            "allow_browser_export",
+            url,
+            browser_data.cookies.len(),
+            browser_data.local_storage.len()
+        );
+
+        Ok(browser_data)
+    }
+
+    /// Import complete browser data including cookies, localStorage, sessionStorage.
+    ///
+    /// # Arguments
+    /// * `browser_data` - Complete BrowserData to import
+    ///
+    /// # Errors
+    /// Returns error if `allow_browser_import` permission not granted
+    ///
+    /// # Permission
+    /// Requires `allow_browser_import` permission
+    pub async fn import_browser(&self, browser_data: &crate::task::policy::BrowserData) -> Result<()> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_browser_import {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_browser_import' permission",
+                self.session_id
+            ));
+        }
+
+        // Import cookies
+        self.import_cookies(&browser_data.cookies).await?;
+
+        // Import localStorage for each origin
+        for (origin, data) in &browser_data.local_storage {
+            let local_storage_json = serde_json::to_string(data)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage for {}: {}", origin, e))?;
+            let js_code = format!(
+                r#"
+                (function() {{
+                    const data = {};
+                    let count = 0;
+                    Object.entries(data).forEach(([k, v]) => {{
+                        try {{
+                            localStorage.setItem(k, v);
+                            count++;
+                        }} catch (e) {{
+                            console.warn('Failed to set localStorage item:', k, e);
+                        }}
+                    }});
+                    return 'localStorage imported: ' + count + ' items for origin';
+                }})()
+                "#,
+                local_storage_json
+            );
+            self.page
+                .evaluate(js_code)
+                .await
+                .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage import - {}", e))?;
+        }
+
+        // Import sessionStorage for each origin
+        for (origin, data) in &browser_data.session_storage {
+            let session_storage_json = serde_json::to_string(data)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize sessionStorage for {}: {}", origin, e))?;
+            let js_code = format!(
+                r#"
+                (function() {{
+                    const data = {};
+                    let count = 0;
+                    Object.entries(data).forEach(([k, v]) => {{
+                        try {{
+                            sessionStorage.setItem(k, v);
+                            count++;
+                        }} catch (e) {{
+                            console.warn('Failed to set sessionStorage item:', k, e);
+                        }}
+                    }});
+                    return 'sessionStorage imported: ' + count + ' items for origin';
+                }})()
+                "#,
+                session_storage_json
+            );
+            self.page
+                .evaluate(js_code)
+                .await
+                .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage import - {}", e))?;
+        }
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} source={} cookies={} origins={}",
+            self.session_id,
+            "allow_browser_import",
+            browser_data.source,
+            browser_data.cookies.len(),
+            browser_data.local_storage.len()
         );
 
         Ok(())

@@ -161,8 +161,8 @@ pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
 #### Browser Management (new permissions: `allow_browser_export`, `allow_browser_import`)
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
-| ☐ | `api.export_browser()` | Export ALL browser data | 🔍 65% | CDP Storage.getStorageKeyForFrame? Complex |
-| ☐ | `api.import_browser(data)` | Import complete browser state | ⚠️ 75% | Multiple import operations combined 
+| ☑ | `api.export_browser()` | Export ALL browser data | 🔍 65% | CDP Storage.getStorageKeyForFrame? Complex |
+| ☑ | `api.import_browser(data)` | Import complete browser state | ⚠️ 75% | Multiple import operations combined 
 
 **Implementation Workflow:**
 1. Implement method in `src/runtime/task_context.rs`

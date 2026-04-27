@@ -111,6 +111,12 @@ pub struct TaskPermissions {
 
     /// Allow DOM inspection operations (get styles, positions, etc).
     pub allow_dom_inspection: bool,
+
+    /// Allow exporting complete browser data (cookies + storage + more).
+    pub allow_browser_export: bool,
+
+    /// Allow importing complete browser data (cookies + storage + more).
+    pub allow_browser_import: bool,
 }
 
 impl Default for TaskPermissions {
@@ -126,6 +132,8 @@ impl Default for TaskPermissions {
             allow_write_data: false,
             allow_http_requests: false,
             allow_dom_inspection: false,
+            allow_browser_export: false,
+            allow_browser_import: false,
         }
     }
 }
@@ -144,6 +152,8 @@ pub const DEFAULT_TASK_POLICY: TaskPolicy = TaskPolicy {
         allow_write_data: false,
         allow_http_requests: false,
         allow_dom_inspection: false,
+        allow_browser_export: false,
+        allow_browser_import: false,
     },
 };
 
@@ -163,6 +173,47 @@ pub struct SessionData {
 
     /// Source URL for the session.
     pub url: String,
+}
+
+/// Complete browser data for export/import operations.
+///
+/// Includes all persistent and session storage data from the browser.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BrowserData {
+    /// All browser cookies.
+    pub cookies: Vec<serde_json::Value>,
+
+    /// localStorage data keyed by origin (hostname -> key/value pairs).
+    pub local_storage: HashMap<String, HashMap<String, String>>,
+
+    /// sessionStorage data keyed by origin (hostname -> key/value pairs).
+    pub session_storage: HashMap<String, HashMap<String, String>>,
+
+    /// IndexedDB database names by origin (simplified - just names for now).
+    pub indexeddb_names: HashMap<String, Vec<String>>,
+
+    /// Export timestamp for versioning.
+    pub exported_at: DateTime<Utc>,
+
+    /// Source URL or identifier.
+    pub source: String,
+
+    /// Browser version info for compatibility checks.
+    pub browser_version: Option<String>,
+}
+
+impl Default for BrowserData {
+    fn default() -> Self {
+        Self {
+            cookies: Vec::new(),
+            local_storage: HashMap::new(),
+            session_storage: HashMap::new(),
+            indexeddb_names: HashMap::new(),
+            exported_at: Utc::now(),
+            source: String::new(),
+            browser_version: None,
+        }
+    }
 }
 
 // ============================================================================

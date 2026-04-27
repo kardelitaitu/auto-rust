@@ -1707,12 +1707,13 @@ mod tests {
     #[test]
     fn test_error_permission_denied_format() {
         let err = crate::error::TaskError::PermissionDenied {
-            permission: "allow_test".to_string(),
-            task_name: Some("test-task".to_string()),
+            permission: "allow_test",  // &'static str
+            task_name: "test-task".to_string(),  // String
         };
 
         let msg = format!("{}", err);
         assert!(msg.contains("allow_test"));
+        assert!(msg.contains("test-task"));
     }
 
     #[test]

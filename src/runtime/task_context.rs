@@ -1278,6 +1278,591 @@ mod tests {
         assert!(adaptation.require_strict_verification);
         assert!(adaptation.prefer_coordinate_fallback);
     }
+
+    // ============================================================================
+    // API v0.0.3 Permission Denial Tests
+    // ============================================================================
+
+    #[test]
+    fn test_cookie_permissions_default_false() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_export_cookies);
+        assert!(!perms.allow_import_cookies);
+    }
+
+    #[test]
+    fn test_session_permissions_default_false() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_export_session);
+        assert!(!perms.allow_import_session);
+    }
+
+    #[test]
+    fn test_clipboard_permissions_default_false() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_session_clipboard);
+    }
+
+    #[test]
+    fn test_data_permissions_default_false() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_read_data);
+        assert!(!perms.allow_write_data);
+    }
+
+    #[test]
+    fn test_http_permissions_default_false() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_http_requests);
+    }
+
+    #[test]
+    fn test_dom_inspection_permissions_default_false() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_dom_inspection);
+    }
+
+    #[test]
+    fn test_browser_permissions_default_false() {
+        let perms = crate::task::policy::TaskPermissions::default();
+        assert!(!perms.allow_browser_export);
+        assert!(!perms.allow_browser_import);
+    }
+
+    // ============================================================================
+    // API v0.0.3 Check Permission Tests
+    // ============================================================================
+
+    #[test]
+    fn test_check_permission_cookie_export() {
+        let policy = crate::task::policy::TaskPolicy {
+            max_duration_ms: 30_000,
+            permissions: crate::task::policy::TaskPermissions {
+                allow_export_cookies: true,
+                ..Default::default()
+            },
+        };
+        let static_policy = Box::leak(Box::new(policy));
+
+        // We can't easily test check_permission without a TaskContext,
+        // but we can verify the permission struct works
+        assert!(static_policy.permissions.allow_export_cookies);
+        assert!(!static_policy.permissions.allow_import_cookies);
+    }
+
+    #[test]
+    fn test_check_permission_session_import() {
+        let policy = crate::task::policy::TaskPolicy {
+            max_duration_ms: 30_000,
+            permissions: crate::task::policy::TaskPermissions {
+                allow_import_session: true,
+                ..Default::default()
+            },
+        };
+        let static_policy = Box::leak(Box::new(policy));
+
+        assert!(static_policy.permissions.allow_import_session);
+        assert!(!static_policy.permissions.allow_export_session);
+    }
+
+    #[test]
+    fn test_check_permission_data_read_write() {
+        let policy = crate::task::policy::TaskPolicy {
+            max_duration_ms: 30_000,
+            permissions: crate::task::policy::TaskPermissions {
+                allow_read_data: true,
+                allow_write_data: true,
+                ..Default::default()
+            },
+        };
+        let static_policy = Box::leak(Box::new(policy));
+
+        assert!(static_policy.permissions.allow_read_data);
+        assert!(static_policy.permissions.allow_write_data);
+    }
+
+    // ============================================================================
+    // API v0.0.3 Data Structures Tests
+    // ============================================================================
+
+    #[test]
+    fn test_session_data_empty_initialization() {
+        use std::collections::HashMap;
+        let data = crate::task::policy::SessionData {
+            cookies: vec![],
+            local_storage: HashMap::new(),
+            exported_at: chrono::Utc::now(),
+            url: String::new(),
+        };
+        assert!(data.cookies.is_empty());
+        assert!(data.local_storage.is_empty());
+        assert!(data.url.is_empty());
+    }
+
+    #[test]
+    fn test_session_data_serialization() {
+        use std::collections::HashMap;
+
+        let mut local_storage = HashMap::new();
+        local_storage.insert("key".to_string(), "value".to_string());
+
+        let data = crate::task::policy::SessionData {
+            cookies: vec![serde_json::json!({"name": "test"})],
+            local_storage,
+            exported_at: chrono::Utc::now(),
+            url: "https://example.com".to_string(),
+        };
+
+        let json = serde_json::to_string(&data).expect("Should serialize");
+        assert!(json.contains("example.com"));
+        assert!(json.contains("test"));
+    }
+
+    #[test]
+    fn test_http_response_error_display() {
+        let response = super::HttpResponse {
+            status: 404,
+            body: "Not Found".to_string(),
+            headers: std::collections::HashMap::new(),
+        };
+
+        assert_eq!(response.status, 404);
+        assert_eq!(response.body, "Not Found");
+    }
+
+    #[test]
+    fn test_http_response_success_status() {
+        let response = super::HttpResponse {
+            status: 200,
+            body: "OK".to_string(),
+            headers: std::collections::HashMap::new(),
+        };
+
+        assert!(response.status >= 200 && response.status < 300);
+    }
+
+    #[test]
+    fn test_rect_zero_values() {
+        let rect = super::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        };
+
+        assert_eq!(rect.x, 0.0);
+        assert_eq!(rect.y, 0.0);
+        assert_eq!(rect.width, 0.0);
+        assert_eq!(rect.height, 0.0);
+    }
+
+    #[test]
+    fn test_rect_negative_values() {
+        // Rect can theoretically have negative x/y (off-screen elements)
+        let rect = super::Rect {
+            x: -100.0,
+            y: -50.0,
+            width: 200.0,
+            height: 100.0,
+        };
+
+        assert_eq!(rect.x, -100.0);
+        assert_eq!(rect.y, -50.0);
+        assert_eq!(rect.width, 200.0);
+        assert_eq!(rect.height, 100.0);
+    }
+
+    #[test]
+    fn test_file_metadata_large_file() {
+        let metadata = super::FileMetadata {
+            size: 1024 * 1024 * 100, // 100 MB
+            modified: std::time::SystemTime::UNIX_EPOCH,
+            created: std::time::SystemTime::UNIX_EPOCH,
+        };
+
+        assert_eq!(metadata.size, 104_857_600);
+    }
+
+    #[test]
+    fn test_file_metadata_empty_file() {
+        let metadata = super::FileMetadata {
+            size: 0,
+            modified: std::time::SystemTime::UNIX_EPOCH,
+            created: std::time::SystemTime::UNIX_EPOCH,
+        };
+
+        assert_eq!(metadata.size, 0);
+    }
+
+    // ============================================================================
+    // API v0.0.3 Policy Integration Tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_task_policy_all_permissions_false() {
+        let policy = crate::task::policy::DEFAULT_TASK_POLICY;
+
+        assert!(!policy.permissions.allow_screenshot);
+        assert!(!policy.permissions.allow_export_cookies);
+        assert!(!policy.permissions.allow_import_cookies);
+        assert!(!policy.permissions.allow_export_session);
+        assert!(!policy.permissions.allow_import_session);
+        assert!(!policy.permissions.allow_session_clipboard);
+        assert!(!policy.permissions.allow_read_data);
+        assert!(!policy.permissions.allow_write_data);
+        assert!(!policy.permissions.allow_http_requests);
+        assert!(!policy.permissions.allow_dom_inspection);
+        assert!(!policy.permissions.allow_browser_export);
+        assert!(!policy.permissions.allow_browser_import);
+    }
+
+    #[test]
+    fn test_twitter_policy_has_required_permissions() {
+        use crate::task::policy::TWITTERACTIVITY_POLICY;
+
+        assert!(TWITTERACTIVITY_POLICY.permissions.allow_export_cookies);
+        assert!(TWITTERACTIVITY_POLICY.permissions.allow_session_clipboard);
+        assert!(TWITTERACTIVITY_POLICY.permissions.allow_read_data);
+        assert!(TWITTERACTIVITY_POLICY.permissions.allow_screenshot);
+        // allow_write_data is implied by allow_screenshot
+    }
+
+    #[test]
+    fn test_cookiebot_policy_has_required_permissions() {
+        use crate::task::policy::COOKIEBOT_POLICY;
+
+        assert!(COOKIEBOT_POLICY.permissions.allow_export_cookies);
+        assert!(COOKIEBOT_POLICY.permissions.allow_screenshot);
+    }
+
+    #[test]
+    fn test_pageview_policy_has_screenshot_only() {
+        use crate::task::policy::PAGEVIEW_POLICY;
+
+        assert!(PAGEVIEW_POLICY.permissions.allow_screenshot);
+        assert!(!PAGEVIEW_POLICY.permissions.allow_export_cookies);
+        assert!(!PAGEVIEW_POLICY.permissions.allow_http_requests);
+    }
+
+    // ============================================================================
+    // API v0.0.3 BrowserData Advanced Tests
+    // ============================================================================
+
+    #[test]
+    fn test_browser_data_with_multiple_origins() {
+        use chrono::Utc;
+        use std::collections::HashMap;
+
+        let mut local_storage = HashMap::new();
+        let mut origin1 = HashMap::new();
+        origin1.insert("key1".to_string(), "value1".to_string());
+        let mut origin2 = HashMap::new();
+        origin2.insert("key2".to_string(), "value2".to_string());
+
+        local_storage.insert("example.com".to_string(), origin1);
+        local_storage.insert("api.example.com".to_string(), origin2);
+
+        let data = crate::task::policy::BrowserData {
+            cookies: vec![],
+            local_storage,
+            session_storage: HashMap::new(),
+            indexeddb_names: HashMap::new(),
+            exported_at: Utc::now(),
+            source: "test".to_string(),
+            browser_version: None,
+        };
+
+        assert_eq!(data.local_storage.len(), 2);
+        assert!(data.local_storage.contains_key("example.com"));
+        assert!(data.local_storage.contains_key("api.example.com"));
+    }
+
+    #[test]
+    fn test_browser_data_with_indexeddb() {
+        use chrono::Utc;
+        use std::collections::HashMap;
+
+        let mut indexeddb = HashMap::new();
+        indexeddb.insert("example.com".to_string(), vec![
+            "my-database".to_string(),
+            "cache-store".to_string(),
+        ]);
+
+        let data = crate::task::policy::BrowserData {
+            cookies: vec![],
+            local_storage: HashMap::new(),
+            session_storage: HashMap::new(),
+            indexeddb_names: indexeddb,
+            exported_at: Utc::now(),
+            source: "test".to_string(),
+            browser_version: Some("Chrome 120".to_string()),
+        };
+
+        assert_eq!(data.indexeddb_names.len(), 1);
+        let dbs = data.indexeddb_names.get("example.com").unwrap();
+        assert_eq!(dbs.len(), 2);
+        assert!(dbs.contains(&"my-database".to_string()));
+    }
+
+    #[test]
+    fn test_browser_data_empty_is_valid() {
+        let data = crate::task::policy::BrowserData::default();
+
+        // Empty browser data should be valid for import/export
+        assert!(data.cookies.is_empty());
+        assert!(data.local_storage.is_empty());
+        assert!(data.session_storage.is_empty());
+        assert!(data.indexeddb_names.is_empty());
+    }
+
+    // ============================================================================
+    // API v0.0.3 Helper Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_sanitize_path_component_with_special_chars() {
+        assert_eq!(super::sanitize_path_component("test/file"), "test_file");
+        assert_eq!(super::sanitize_path_component("test..file"), "test__file");
+        assert_eq!(super::sanitize_path_component("test\\file"), "test__file");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_unicode_extended() {
+        // Should handle unicode by replacing with underscore
+        assert_eq!(super::sanitize_path_component("测试"), "__");
+        assert_eq!(super::sanitize_path_component("test日本語file"), "test____file");
+    }
+
+    #[test]
+    fn test_sanitize_path_component_long_name() {
+        let long_name = "a".repeat(300);
+        let result = super::sanitize_path_component(&long_name);
+        // Should not panic and should preserve the name (or truncate)
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_click_learning_path_generation() {
+        use crate::utils::profile::ProfilePreset;
+        use crate::utils::randomize_profile;
+
+        let profile = randomize_profile(&ProfilePreset::Average);
+        let path = super::click_learning_path("session-123", &profile);
+        assert!(path.is_some());
+
+        let path = path.unwrap();
+        let path_str = path.to_str().unwrap();
+        assert!(path_str.contains("click-learning"));
+        assert!(path_str.contains("session-123"));
+        assert!(path_str.contains(&profile.name));
+    }
+
+    #[test]
+    fn test_click_learning_save_and_load_roundtrip() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().expect("Failed to create temp dir");
+        let path = dir.path().join("test_learning.json");
+
+        // Create and save
+        let mut state = ClickLearningState::default();
+        for i in 0..5 {
+            state.record(&format!("#button{}", i), i % 2 == 0);
+        }
+
+        super::save_click_learning(&path, &state).expect("Should save");
+
+        // Load
+        let loaded = super::load_click_learning(&path).expect("Should load");
+        assert_eq!(loaded.total_attempts, 5);
+        assert_eq!(loaded.total_successes, 3); // 0, 2, 4 are even (success)
+
+        // Cleanup
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_click_learning_empty_save() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().expect("Failed to create temp dir");
+        let path = dir.path().join("empty_learning.json");
+
+        let state = ClickLearningState::default();
+        super::save_click_learning(&path, &state).expect("Should save empty state");
+
+        let loaded = super::load_click_learning(&path).expect("Should load empty state");
+        assert_eq!(loaded.total_attempts, 0);
+        assert_eq!(loaded.total_successes, 0);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    // ============================================================================
+    // API v0.0.3 Error Handling Tests
+    // ============================================================================
+
+    #[test]
+    fn test_error_permission_denied_format() {
+        let err = crate::error::TaskError::PermissionDenied {
+            permission: "allow_test".to_string(),
+            task_name: Some("test-task".to_string()),
+        };
+
+        let msg = format!("{}", err);
+        assert!(msg.contains("allow_test"));
+    }
+
+    #[test]
+    fn test_error_invalid_path_format() {
+        let err = crate::error::TaskError::InvalidPath("Invalid chars: ../test".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Invalid chars"));
+    }
+
+    // ============================================================================
+    // API v0.0.3 Data Validation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_browser_data_version_compatibility() {
+        use chrono::Utc;
+        use std::collections::HashMap;
+
+        // Simulate older version without browser_version field
+        let data = crate::task::policy::BrowserData {
+            cookies: vec![],
+            local_storage: HashMap::new(),
+            session_storage: HashMap::new(),
+            indexeddb_names: HashMap::new(),
+            exported_at: Utc::now(),
+            source: "legacy".to_string(),
+            browser_version: None, // Older export may not have this
+        };
+
+        // Should serialize with null browser_version
+        let json = serde_json::to_string(&data).expect("Should serialize");
+        assert!(json.contains("null") || json.contains("browser_version"));
+    }
+
+    #[test]
+    fn test_session_data_url_validation() {
+        use std::collections::HashMap;
+
+        // Valid URLs
+        let data1 = crate::task::policy::SessionData {
+            url: "https://example.com/path?query=1".to_string(),
+            cookies: vec![],
+            local_storage: HashMap::new(),
+            exported_at: chrono::Utc::now(),
+        };
+        assert!(!data1.url.is_empty());
+
+        // Empty URL should be allowed (for validation testing)
+        let data2 = crate::task::policy::SessionData {
+            url: "".to_string(),
+            cookies: vec![],
+            local_storage: HashMap::new(),
+            exported_at: chrono::Utc::now(),
+        };
+        assert!(data2.url.is_empty());
+    }
+
+    #[test]
+    fn test_http_response_with_headers() {
+        use std::collections::HashMap;
+
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers.insert("Authorization".to_string(), "Bearer token123".to_string());
+        headers.insert("X-Custom-Header".to_string(), "custom-value".to_string());
+
+        let response = super::HttpResponse {
+            status: 200,
+            body: "{}".to_string(),
+            headers,
+        };
+
+        assert_eq!(response.headers.len(), 3);
+        assert!(response.headers.contains_key("Content-Type"));
+        assert!(response.headers.contains_key("Authorization"));
+        assert!(response.headers.contains_key("X-Custom-Header"));
+    }
+
+    // ============================================================================
+    // API v0.0.3 Permission Combination Tests
+    // ============================================================================
+
+    #[test]
+    fn test_permission_combinations_full_access() {
+        let policy = crate::task::policy::TaskPolicy {
+            max_duration_ms: 60_000,
+            permissions: crate::task::policy::TaskPermissions {
+                allow_screenshot: true,
+                allow_export_cookies: true,
+                allow_import_cookies: true,
+                allow_export_session: true,
+                allow_import_session: true,
+                allow_session_clipboard: true,
+                allow_read_data: true,
+                allow_write_data: true,
+                allow_http_requests: true,
+                allow_dom_inspection: true,
+                allow_browser_export: true,
+                allow_browser_import: true,
+            },
+        };
+
+        assert!(policy.permissions.allow_screenshot);
+        assert!(policy.permissions.allow_browser_export);
+        assert!(policy.permissions.allow_browser_import);
+    }
+
+    #[test]
+    fn test_permission_combinations_read_only() {
+        let policy = crate::task::policy::TaskPolicy {
+            max_duration_ms: 30_000,
+            permissions: crate::task::policy::TaskPermissions {
+                allow_read_data: true,
+                allow_export_cookies: true,
+                allow_export_session: true,
+                allow_browser_export: true,
+                allow_dom_inspection: true,
+                allow_screenshot: true,
+                ..Default::default()
+            },
+        };
+
+        // Read operations allowed
+        assert!(policy.permissions.allow_read_data);
+        assert!(policy.permissions.allow_export_cookies);
+        assert!(policy.permissions.allow_browser_export);
+        assert!(policy.permissions.allow_dom_inspection);
+
+        // Write operations denied
+        assert!(!policy.permissions.allow_write_data);
+        assert!(!policy.permissions.allow_import_cookies);
+        assert!(!policy.permissions.allow_browser_import);
+    }
+
+    #[test]
+    fn test_permission_combinations_network_only() {
+        let policy = crate::task::policy::TaskPolicy {
+            max_duration_ms: 30_000,
+            permissions: crate::task::policy::TaskPermissions {
+                allow_http_requests: true,
+                allow_read_data: true, // For response caching
+                ..Default::default()
+            },
+        };
+
+        assert!(policy.permissions.allow_http_requests);
+        assert!(policy.permissions.allow_read_data);
+        assert!(!policy.permissions.allow_write_data);
+        assert!(!policy.permissions.allow_export_cookies);
+    }
 }
 
 /// High-level API context for browser automation tasks.

@@ -417,6 +417,242 @@ context.wait_for_visible("#load-more")?;
 3. Add validation in `src/validation/task.rs` if needed
 4. Register task in CLI if needed (see `src/cli.rs`)
 
+## Complete Task Example: Data Extraction Task
+
+Here's a complete task that demonstrates using multiple v0.0.3 APIs:
+
+### `src/task/data_extract.rs`
+
+```rust
+use crate::runtime::task_context::TaskContext;
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Serialize)]
+struct ExtractionResult {
+    url: String,
+    timestamp: String,
+    products: Vec<Product>,
+    cookies_saved: usize,
+}
+
+#[derive(Serialize)]
+struct Product {
+    name: String,
+    price: String,
+}
+
+/// Extract product data from an e-commerce page
+pub async fn data_extract(ctx: &TaskContext) -> Result<()> {
+    // 1. Check if we have a saved session
+    let session_file = "sessions/shop_session.json";
+    if ctx.data_file_exists(session_file)? {
+        println!("Restoring previous session...");
+        let session: auto::task::policy::SessionData = 
+            ctx.read_json_data(session_file)?;
+        ctx.import_local_storage("", &session.local_storage).await?;
+    }
+    
+    // 2. Navigate to products page
+    ctx.page.goto("https://shop.example.com/products").await?;
+    ctx.wait_for_visible(".product-list").await?;
+    
+    // 3. Check how many products are present
+    let product_count = ctx.count_elements(".product-item").await?;
+    println!("Found {} products", product_count);
+    
+    // 4. Extract product data
+    let mut products = Vec::new();
+    for i in 0..product_count.min(10) { // Limit to 10 products
+        let selector = format!(".product-item:nth-child({})", i + 1);
+        
+        // Check if element is visible
+        if !ctx.is_in_viewport(&selector).await? {
+            ctx.scroll_to(&selector).await?;
+        }
+        
+        // Get product details
+        let name = ctx.text(&format!("{} .product-name", selector)).await?;
+        let price = ctx.text(&format!("{} .product-price", selector)).await?;
+        
+        products.push(Product { name, price });
+    }
+    
+    // 5. Export cookies for future sessions
+    let cookies = ctx.export_cookies_for_domain("shop.example.com").await?;
+    let local_storage = ctx.export_local_storage("").await?;
+    
+    let session = auto::task::policy::SessionData {
+        cookies,
+        local_storage,
+        exported_at: chrono::Utc::now(),
+        url: "https://shop.example.com".to_string(),
+    };
+    
+    ctx.write_json_data(session_file, &session)?;
+    println!("Session saved with {} cookies", session.cookies.len());
+    
+    // 6. Save results to data file
+    let result = ExtractionResult {
+        url: ctx.url().await?,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        products,
+        cookies_saved: session.cookies.len(),
+    };
+    
+    let output_file = format!(
+        "results/extraction_{}.json",
+        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+    );
+    ctx.write_json_data(&output_file, &result)?;
+    println!("Results saved to {}", output_file);
+    
+    // 7. Log activity
+    let log_entry = format!(
+        "Extracted {} products from {}\n",
+        result.products.len(),
+        result.url
+    );
+    ctx.append_data_file("logs/extractions.log", log_entry.as_bytes())?;
+    
+    Ok(())
+}
+```
+
+## API Selection Guide
+
+Use this guide to select the right API for common scenarios:
+
+| Task | Recommended API | Alternative |
+|------|-----------------|-------------|
+| Check if user logged in | `has_cookie("session", None).await` | `export_cookies_for_domain()` |
+| Save login state | `export_cookies_for_domain()` + write to file | `export_browser()` for complete state |
+| Read configuration | `read_json_data::<Config>("config/app.json")` | Load from env vars |
+| Save results | `write_json_data()` | `append_data_file()` for logs |
+| Check element visible | `is_in_viewport(selector).await` | `get_element_rect()` + manual check |
+| Get element position | `get_element_rect(selector).await` | JavaScript evaluation |
+| Count items | `count_elements(".item").await` | JavaScript evaluation |
+| Get computed style | `get_computed_style(selector, "display").await` | Direct JavaScript |
+| Scroll position | `get_scroll_position().await` | `scroll_to()` + verify |
+| Call REST API | `http_get()` or `http_post_json()` | Use reqwest directly |
+| Download file | `download_file(url, path).await` | `http_get()` + write manually |
+
+## Error Handling Patterns
+
+### Permission Error Handling
+
+Always handle permission errors gracefully:
+
+```rust
+async fn safe_data_operation(ctx: &TaskContext) -> Result<()> {
+    match ctx.read_json_data::<Config>("config/app.json") {
+        Ok(config) => {
+            // Use config
+            Ok(())
+        }
+        Err(e) if e.to_string().contains("Permission denied") => {
+            eprintln!("Warning: No read permission. Using defaults.");
+            // Fall back to defaults
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+```
+
+### Graceful Degradation
+
+When APIs fail, fall back to alternatives:
+
+```rust
+async fn get_user_prefs(ctx: &TaskContext) -> Result<HashMap<String, String>> {
+    // Try localStorage first
+    if let Ok(storage) = ctx.export_local_storage("").await {
+        return Ok(storage);
+    }
+    
+    // Fall back to default values
+    let mut defaults = HashMap::new();
+    defaults.insert("theme".to_string(), "light".to_string());
+    defaults.insert("lang".to_string(), "en".to_string());
+    Ok(defaults)
+}
+```
+
+### Timeout Handling
+
+Handle slow operations with timeouts:
+
+```rust
+use tokio::time::{timeout, Duration};
+
+async fn download_with_timeout(ctx: &TaskContext) -> Result<u64> {
+    match timeout(
+        Duration::from_secs(30),
+        ctx.download_file("https://example.com/large.zip", "downloads/file.zip")
+    ).await {
+        Ok(Ok(bytes)) => {
+            println!("Downloaded {} bytes", bytes);
+            Ok(bytes)
+        }
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(anyhow::anyhow!("Download timeout after 30s")),
+    }
+}
+```
+
+## Testing Tasks
+
+### Unit Testing Task Logic
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_product_parsing() {
+        // Test your data parsing logic without browser
+        let json = r#"{"name": "Widget", "price": "$9.99"}"#;
+        let product: Product = serde_json::from_str(json).unwrap();
+        
+        assert_eq!(product.name, "Widget");
+        assert_eq!(product.price, "$9.99");
+    }
+    
+    #[test]
+    fn test_extraction_result_serialization() {
+        let result = ExtractionResult {
+            url: "https://example.com".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            products: vec![],
+            cookies_saved: 5,
+        };
+        
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("example.com"));
+    }
+}
+```
+
+### Integration Testing
+
+```rust
+#[tokio::test]
+async fn test_data_extract_mock() {
+    // Use mock context for testing
+    use auto::runtime::task_context::tests::MockTaskContext;
+    
+    let ctx = MockTaskContext::new()
+        .with_data_file("config/app.json", r#"{"timeout": 30}"#);
+    
+    // Test task logic
+    let result = data_extract(&ctx).await;
+    assert!(result.is_ok());
+}
+```
+
 ## See Also
 
 - [API Reference](#) - Full TaskContext API documentation

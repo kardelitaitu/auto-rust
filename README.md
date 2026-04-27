@@ -119,6 +119,28 @@ cargo run 'twitteractivity,duration_ms=120000,scroll_count=12'
 cargo run cookiebot.js pageview.js
 ```
 
+### API Quick Examples (v0.0.3)
+
+```rust
+// Cookie Management - Check if logged in
+let has_session = ctx.has_cookie("session_id", Some("example.com")).await?;
+
+// Data File - Read configuration
+let config: serde_json::Value = ctx.read_json_data("config/app.json")?;
+
+// Network - Call REST API
+let response = ctx.http_get("https://api.example.com/data").await?;
+
+// DOM Inspection - Check element visibility
+let rect = ctx.get_element_rect("#submit-btn").await?;
+let visible = ctx.is_in_viewport("#hero-image").await?;
+
+// Browser Management - Export complete state
+let browser_data = ctx.export_browser("https://example.com").await?;
+```
+
+See [API Usage Guide](docs/API_USAGE_GUIDE.md) for complete examples.
+
 ### Common Patterns
 
 ```bash
@@ -175,7 +197,28 @@ cargo run -- --config path/to/config.toml cookiebot
 
 ### Production Ready ✅
 
-Last verified: April 23, 2026
+This project is actively maintained and used in production environments.
+
+### v0.0.3 Features (Latest)
+
+**26 New TaskContext APIs** with permission-based security:
+
+| Category | APIs | Use Cases |
+|----------|------|-----------|
+| **Cookie Management** | 3 APIs | Export by domain, session cookies, existence check |
+| **Session Management** | 3 APIs | localStorage export/import, validation |
+| **Clipboard Management** | 3 APIs | Clear, check content, append text |
+| **Data File Management** | 7 APIs | Read/write JSON, list, delete, metadata |
+| **Network/HTTP** | 3 APIs | GET, POST JSON, download files |
+| **DOM Inspection** | 5 APIs | Computed styles, element rect, scroll position, count, viewport check |
+| **Browser Management** | 2 APIs | Complete state export/import |
+
+**Security:** All APIs require explicit permissions via `TaskPolicy` - secure by default.
+
+**Documentation:**
+- [API Usage Guide](docs/API_USAGE_GUIDE.md) - Practical recipes and patterns
+- [API Reference](docs/API_REFERENCE.md) - Complete API documentation
+- Rustdoc examples in IDE - See examples when using auto-complete
 
 | Feature | Status |
 |---------|--------|

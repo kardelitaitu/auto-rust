@@ -1246,9 +1246,23 @@ pub async fn hover_selector_human(
     hover_delay_variance_pct: u32,
     click_offset_px: i32,
 ) -> Result<HoverOutcome> {
+    // Phase1: Visual clickability confirmation
+    if !is_element_clickable(page, selector).await? {
+        return Err(anyhow::anyhow!("Element '{}' not hoverable", selector));
+    }
+
     scroll::scroll_into_view(page, selector).await?;
 
-    let bbox = resolve_selector_bbox(page, selector).await?;
+    // Phase2: Verify element is in viewport after scroll
+    if !is_in_viewport_internal(page, selector).await? {
+        return Err(anyhow::anyhow!(
+            "Element '{}' not in viewport after scroll",
+            selector
+        ));
+    }
+
+    // Phase2: Re-resolve bbox after scroll (may have shifted, with retry for stale selectors)
+    let bbox = resolve_selector_bbox_with_retry(page, selector, 3).await?;
     let (x, y) = choose_click_point(&bbox, click_offset_px);
     cursor_move_to(page, x, y).await?;
     human_pause(hover_delay_ms, hover_delay_variance_pct).await;
@@ -1958,9 +1972,18 @@ pub async fn native_click_selector_human(
     nativeclick_debug(session_id, trace_id, selector, "scroll-into-view", "start");
     scroll::scroll_into_view(page, selector).await?;
 
+    // Phase2: Verify element is in viewport after scroll (matching click_selector_human)
+    if !is_in_viewport_internal(page, selector).await? {
+        return Err(anyhow::anyhow!(
+            "trace={} nativeclick element '{}' not in viewport after scroll",
+            trace_id,
+            selector
+        ));
+    }
+
     let bbox = timeout(
         Duration::from_millis(native_interaction.resolve_timeout_ms.clamp(250, 30_000)),
-        resolve_selector_bbox(page, selector),
+        resolve_selector_bbox_with_retry(page, selector, 3),
     )
     .await
     .map_err(|_| {
@@ -2482,9 +2505,23 @@ async fn click_selector_with_button(
     click_offset_px: i32,
     button: MouseButton,
 ) -> Result<ClickOutcome> {
+    // Phase1: Visual clickability confirmation
+    if !is_element_clickable(page, selector).await? {
+        return Err(anyhow::anyhow!("Element '{}' not clickable", selector));
+    }
+
     scroll::scroll_into_view(page, selector).await?;
 
-    let bbox = resolve_selector_bbox(page, selector).await?;
+    // Phase2: Verify element is in viewport after scroll
+    if !is_in_viewport_internal(page, selector).await? {
+        return Err(anyhow::anyhow!(
+            "Element '{}' not in viewport after scroll",
+            selector
+        ));
+    }
+
+    // Phase2: Re-resolve bbox after scroll (may have shifted, with retry for stale selectors)
+    let bbox = resolve_selector_bbox_with_retry(page, selector, 3).await?;
     let (x, y) = choose_click_point(&bbox, click_offset_px);
     cursor_move_to(page, x, y).await?;
 

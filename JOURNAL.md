@@ -9,7 +9,21 @@
 
 ---
 
+## 2026-04-27 - API Improvements: Click/Hover/Keyboard/Scroll Edge Cases ##
+- **src/utils/mouse.rs**: Added `is_in_viewport_internal()` helper function for viewport checks without permission requirement
+- **src/utils/mouse.rs**: Added `resolve_selector_bbox_with_retry()` for stale selector handling with retry logic
+- **src/utils/mouse.rs**: Fixed `click_selector_human()` - added viewport check after scroll + retry logic for stale selectors
+- **src/utils/timing.rs**: Fixed `human_pause()` to use `variance_pct` correctly for min/max bounds (was using fixed 10%/3x multipliers)
+- **src/utils/timing.rs**: Updated test assertions in `test_human_pause_base_150` and `test_uniform_pause_base_150` to match correct expected range
+- **src/utils/mouse.rs**: Fixed `native_click_selector_human()` - added viewport check after scroll + retry logic for stale selectors
+- **src/utils/mouse.rs**: Fixed `click_selector_with_button()` - added element clickable check, viewport check, and stale selector retry (affects `double_click()`, `right_click()`)
+- **src/utils/mouse.rs**: Fixed `hover_selector_human()` - added element clickable check, viewport check, and stale selector retry
+- **src/runtime/task_context.rs**: Fixed `api.keyboard()` / `api.r#type()` - added element existence check and text entry verification
+- **src/runtime/task_context.rs**: Fixed `api.scroll_to()` - added viewport verification after scroll
+**validation: cargo check clean, cargo test blocked by environment linker issue (unrelated to changes)**
+
 ---
+
 
 ## 2026-04-27 (20:30) - v0.0.3 RELEASED 🎉
 

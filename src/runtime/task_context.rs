@@ -5017,9 +5017,47 @@ impl TaskContext {
     /// ```
     pub async fn r#type(&self, selector: &str, text: &str) -> Result<()> {
         info!("[task-api] keyboard {} -> {}", selector, text);
+
+        // Phase2: Verify element exists and is focusable before focusing
+        if !self.exists(selector).await? {
+            return Err(anyhow::anyhow!(
+                "[task-api] keyboard failed: element '{}' not found",
+                selector
+            ));
+        }
+
         let _ = self.focus(selector).await?;
         let typing = &self.behavior_runtime.typing;
         keyboard::type_text_profiled(self.page(), text, typing).await?;
+
+        // Phase2: Verify text was entered (check value after typing)
+        let verification_js = format!(
+            r#"(() => {{
+                const el = document.querySelector({});
+                if (!el) return false;
+                const value = el.value || el.textContent || '';
+                return value.length > 0;
+            }})()"#,
+            serde_json::to_string(selector)?
+        );
+        match self.page().evaluate(verification_js).await {
+            Ok(result) => {
+                let text_entered = result
+                    .value()
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if !text_entered {
+                    warn!(
+                        "[task-api] keyboard: text may not have been entered for '{}'",
+                        selector
+                    );
+                }
+            }
+            Err(e) => {
+                debug!("[task-api] keyboard verification failed for '{}': {}", selector, e);
+            }
+        }
+
         self.post_interaction_pause().await;
         Ok(())
     }
@@ -5072,6 +5110,15 @@ impl TaskContext {
     /// Scroll selector into view with post-scroll pause.
     pub async fn scroll_to(&self, selector: &str) -> Result<()> {
         scroll::scroll_into_view(self.page(), selector).await?;
+
+        // Phase2: Verify element is in viewport after scroll
+        if !self.is_in_viewport(selector).await? {
+            return Err(anyhow::anyhow!(
+                "[task-api] scroll_to: element '{}' not in viewport after scroll",
+                selector
+            ));
+        }
+
         self.post_interaction_pause().await;
         Ok(())
     }

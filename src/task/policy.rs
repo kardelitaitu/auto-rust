@@ -105,6 +105,9 @@ pub struct TaskPermissions {
 
     /// Allow writing data files to `config/` or `data/` folders.
     pub allow_write_data: bool,
+
+    /// Allow making HTTP requests (GET, POST, download).
+    pub allow_http_requests: bool,
 }
 
 impl Default for TaskPermissions {
@@ -118,6 +121,7 @@ impl Default for TaskPermissions {
             allow_session_clipboard: false,
             allow_read_data: false,
             allow_write_data: false,
+            allow_http_requests: false,
         }
     }
 }
@@ -134,6 +138,7 @@ pub const DEFAULT_TASK_POLICY: TaskPolicy = TaskPolicy {
         allow_session_clipboard: false,
         allow_read_data: false,
         allow_write_data: false,
+        allow_http_requests: false,
     },
 };
 

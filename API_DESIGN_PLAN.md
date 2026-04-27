@@ -145,9 +145,9 @@ pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
 #### Network/HTTP (new permission: `allow_http_requests`)
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
-| ☐ | `api.http_get(url)` | HTTP GET request | ✅ 90% | reqwest already in dependencies |
-| ☐ | `api.http_post_json(url, body)` | HTTP POST with JSON | ✅ 90% | reqwest with json feature available |
-| ☐ | `api.download_file(url, path)` | Download to data directory | ✅ 90% | reqwest + write_data_file combo |
+| ☑ | `api.http_get(url)` | HTTP GET request | ✅ 90% | reqwest already in dependencies |
+| ☑ | `api.http_post_json(url, body)` | HTTP POST with JSON | ✅ 90% | reqwest with json feature available |
+| ☑ | `api.download_file(url, path)` | Download to data directory | ✅ 90% | reqwest + write_data_file combo |
 
 #### DOM Inspection (new permission: `allow_dom_inspection`)
 | Status | API | Description | Confidence | Notes |

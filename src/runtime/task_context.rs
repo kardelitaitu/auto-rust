@@ -61,6 +61,17 @@ use crate::state::ClipboardState;
 use crate::task::policy::TaskPolicy;
 use crate::utils::mouse::{ClickOutcome, CursorMovementConfig, HoverOutcome, NativeCursorOutcome};
 
+/// HTTP response structure for network operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpResponse {
+    /// HTTP status code
+    pub status: u16,
+    /// Response body as string
+    pub body: String,
+    /// Response headers
+    pub headers: HashMap<String, String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum ClickPageContext {
     Home,
@@ -1302,6 +1313,7 @@ impl TaskContext {
             "allow_session_clipboard" => perms.allow_session_clipboard,
             "allow_read_data" => perms.allow_read_data,
             "allow_write_data" => perms.allow_write_data,
+            "allow_http_requests" => perms.allow_http_requests,
             _ => {
                 log::warn!("Unknown permission '{}' requested", permission);
                 false
@@ -2040,6 +2052,185 @@ impl TaskContext {
             self.session_id, "allow_import_cookies", cookies.len()
         );
         Ok(())
+    }
+
+    /// Perform HTTP GET request.
+    ///
+    /// # Arguments
+    /// * `url` - URL to request
+    ///
+    /// # Returns
+    /// HttpResponse with status, body, and headers
+    ///
+    /// # Errors
+    /// Returns error if `allow_http_requests` permission not granted or request fails
+    ///
+    /// # Permission
+    /// Requires `allow_http_requests` permission
+    pub async fn http_get(&self, url: &str) -> Result<HttpResponse> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_http_requests {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_http_requests' permission",
+                self.session_id
+            ));
+        }
+
+        let response = reqwest::get(url)
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP GET failed: {}", e))?;
+
+        let status = response.status().as_u16();
+        let headers: HashMap<String, String> = response
+            .headers()
+            .iter()
+            .filter_map(|(k, v)| {
+                v.to_str().ok().map(|val| (k.to_string(), val.to_string()))
+            })
+            .collect();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} status={}",
+            self.session_id, "allow_http_requests", url, status
+        );
+
+        Ok(HttpResponse {
+            status,
+            body,
+            headers,
+        })
+    }
+
+    /// Perform HTTP POST request with JSON body.
+    ///
+    /// # Type Parameters
+    /// * `T` - Type of the request body (must implement Serialize)
+    ///
+    /// # Arguments
+    /// * `url` - URL to POST to
+    /// * `body` - Request body to serialize as JSON
+    ///
+    /// # Returns
+    /// HttpResponse with status, body, and headers
+    ///
+    /// # Errors
+    /// Returns error if `allow_http_requests` permission not granted or request fails
+    ///
+    /// # Permission
+    /// Requires `allow_http_requests` permission
+    pub async fn http_post_json<T: serde::Serialize>(&self, url: &str, body: &T) -> Result<HttpResponse> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_http_requests {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_http_requests' permission",
+                self.session_id
+            ));
+        }
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(url)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP POST failed: {}", e))?;
+
+        let status = response.status().as_u16();
+        let headers: HashMap<String, String> = response
+            .headers()
+            .iter()
+            .filter_map(|(k, v)| {
+                v.to_str().ok().map(|val| (k.to_string(), val.to_string()))
+            })
+            .collect();
+        let body_text = response
+            .text()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} status={}",
+            self.session_id, "allow_http_requests", url, status
+        );
+
+        Ok(HttpResponse {
+            status,
+            body: body_text,
+            headers,
+        })
+    }
+
+    /// Download file from URL to data directory.
+    ///
+    /// # Arguments
+    /// * `url` - URL to download from
+    /// * `relative_path` - Relative path within config/ directory to save to
+    ///
+    /// # Returns
+    /// Number of bytes downloaded
+    ///
+    /// # Errors
+    /// Returns error if permissions not granted or download fails
+    ///
+    /// # Permissions
+    /// Requires both `allow_http_requests` and `allow_write_data`
+    pub async fn download_file(&self, url: &str, relative_path: &str) -> Result<u64> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_http_requests {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_http_requests' permission",
+                self.session_id
+            ));
+        }
+        if !perms.allow_write_data {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_write_data' permission",
+                self.session_id
+            ));
+        }
+
+        // Validate path
+        if !crate::task::security::is_safe_path(relative_path) {
+            return Err(anyhow::anyhow!("Invalid path: Path contains unsafe components"));
+        }
+
+        // Download
+        let response = reqwest::get(url)
+            .await
+            .map_err(|e| anyhow::anyhow!("Download failed: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(anyhow::anyhow!("Download failed with status: {}", status));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to read download: {}", e))?;
+
+        let byte_count = bytes.len() as u64;
+
+        // Save to file
+        let path = std::path::Path::new("config").join(relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("Failed to create directory: {}", e))?;
+        }
+
+        std::fs::write(&path, &bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to write downloaded file: {}", e))?;
+
+        log::warn!(
+            "task_policy_audit: task={} permissions={}+{} url={} path={} bytes={}",
+            self.session_id, "allow_http_requests", "allow_write_data", url, relative_path, byte_count
+        );
+
+        Ok(byte_count)
     }
 
     /// Export session data (cookies + localStorage) as SessionData.

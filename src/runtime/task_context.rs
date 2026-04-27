@@ -1487,6 +1487,137 @@ impl TaskContext {
         Ok(json.as_array().unwrap_or(&vec![]).clone())
     }
 
+    /// Export cookies for a specific domain.
+    ///
+    /// # Arguments
+    /// * `domain` - Domain to filter cookies (e.g., "example.com", ".example.com")
+    ///
+    /// # Returns
+    /// Vector of cookies matching the domain as JSON values
+    ///
+    /// # Errors
+    /// Returns error if `allow_export_cookies` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_export_cookies` permission
+    pub async fn export_cookies_for_domain(&self, domain: &str) -> Result<Vec<serde_json::Value>> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_export_cookies {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_export_cookies' permission",
+                self.session_id
+            ));
+        }
+
+        let all_cookies = self.export_cookies("").await?;
+
+        let filtered: Vec<serde_json::Value> = all_cookies
+            .into_iter()
+            .filter(|cookie| {
+                cookie
+                    .get("domain")
+                    .and_then(|d| d.as_str())
+                    .map(|d| d == domain || d == &format!(".{}", domain))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} domain={} count={}",
+            self.session_id, "allow_export_cookies", domain, filtered.len()
+        );
+
+        Ok(filtered)
+    }
+
+    /// Export session cookies (non-persistent cookies without expiry).
+    ///
+    /// # Arguments
+    /// * `_url` - URL context (for consistency with export_cookies)
+    ///
+    /// # Returns
+    /// Vector of session cookies as JSON values
+    ///
+    /// # Errors
+    /// Returns error if `allow_export_cookies` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_export_cookies` permission
+    pub async fn export_session_cookies(&self, _url: &str) -> Result<Vec<serde_json::Value>> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_export_cookies {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_export_cookies' permission",
+                self.session_id
+            ));
+        }
+
+        let all_cookies = self.export_cookies("").await?;
+
+        let session_cookies: Vec<serde_json::Value> = all_cookies
+            .into_iter()
+            .filter(|cookie| {
+                // Session cookies have session=true or no expires field
+                cookie
+                    .get("session")
+                    .and_then(|s| s.as_bool())
+                    .unwrap_or(false)
+                    || cookie.get("expires").is_none()
+                    || cookie
+                        .get("expires")
+                        .map(|e| e.is_null() || e.as_f64() == Some(0.0) || e.as_f64() == Some(-1.0))
+                        .unwrap_or(true)
+            })
+            .collect();
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} url={} count={}",
+            self.session_id, "allow_export_cookies", _url, session_cookies.len()
+        );
+
+        Ok(session_cookies)
+    }
+
+    /// Check if a specific cookie exists.
+    ///
+    /// # Arguments
+    /// * `name` - Cookie name to search for
+    /// * `domain` - Domain to search in (optional filtering)
+    ///
+    /// # Returns
+    /// true if cookie exists, false otherwise
+    ///
+    /// # Errors
+    /// Returns error if `allow_export_cookies` permission is not granted
+    ///
+    /// # Permission
+    /// Requires `allow_export_cookies` permission
+    pub async fn has_cookie(&self, name: &str, domain: Option<&str>) -> Result<bool> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_export_cookies {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_export_cookies' permission",
+                self.session_id
+            ));
+        }
+
+        let cookies = if let Some(d) = domain {
+            self.export_cookies_for_domain(d).await?
+        } else {
+            self.export_cookies("").await?
+        };
+
+        let exists = cookies.iter().any(|cookie| {
+            cookie
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(|n| n == name)
+                .unwrap_or(false)
+        });
+
+        Ok(exists)
+    }
+
     /// Check if task has clipboard read permission.
     pub fn read_clipboard(&self) -> Result<String> {
         let perms = self.policy.effective_permissions();

@@ -113,9 +113,9 @@ pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
 #### Cookie Management
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
-| ☐ | `api.export_cookies_for_domain(domain)` | Export cookies matching domain | ✅ 95% | Filter existing Network.getCookies result |
-| ☐ | `api.export_session_cookies(url)` | Export only session cookies | ✅ 90% | Check cookie.session flag from CDP |
-| ☐ | `api.has_cookie(name, domain)` | Check if cookie exists | ✅ 95% | Check result of export_cookies_for_domain |
+| ☑ | `api.export_cookies_for_domain(domain)` | Export cookies matching domain | ✅ 95% | Filter existing Network.getCookies result |
+| ☑ | `api.export_session_cookies(url)` | Export only session cookies | ✅ 90% | Check cookie.session flag from CDP |
+| ☑ | `api.has_cookie(name, domain)` | Check if cookie exists | ✅ 95% | Check result of export_cookies_for_domain |
 
 #### Session Management
 | Status | API | Description | Confidence | Notes |

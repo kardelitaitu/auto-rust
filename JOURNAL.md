@@ -9,7 +9,42 @@
 
 ---
 
-## 2026-04-27 (16:15) - API Design Plan v0.0.3 Implementation Complete - 90cb589
+## 2026-04-27 (17:10) - Mock Browser Integration Tests - [commit pending]
+
+**Feature:** Added 38 mock-based browser integration tests for v0.0.3 APIs.
+
+### Test Infrastructure
+- `tests/api_mock_integration.rs` - New test file with 38 integration tests
+- `MockPageContext` - Simulates browser page without real browser
+- `MockHttpResponse` - Simulates HTTP responses
+- `MockClipboard` - Simulates clipboard operations
+- HTML fixtures for DOM testing scenarios
+
+### Test Coverage (38 tests)
+
+| Category | Count | Tests |
+|----------|-------|-------|
+| Cookie Management | 4 | Domain filtering, cookie existence, session filtering |
+| Session Management | 4 | localStorage export, sessionStorage export, JSON validation |
+| DOM Inspection | 6 | Computed style, element rect, scroll position, counting, viewport |
+| Browser Management | 3 | Data aggregation, JS generation, empty data handling |
+| Data File | 3 | File not found, roundtrip, metadata |
+| HTTP/Network | 5 | GET success/error, POST JSON, invalid JSON |
+| Clipboard | 5 | Read/write, clear, has_content, append |
+| Permission Denial | 4 | Cookie export, session import, HTTP, browser export |
+| Edge Cases | 5 | Unicode, large cookies, negative coordinates, large body, timestamps |
+| **Total** | **38** | **100% mock-based, no real browser** |
+
+### Test Characteristics
+- ✅ Local HTML fixtures (no external dependencies)
+- ✅ No real browser required (all interactions mocked)
+- ✅ Parallel execution (each test isolated)
+- ✅ Isolated state (temp directories, no shared resources)
+
+### Files Added
+- `tests/api_mock_integration.rs` - 966 lines of test code
+
+**Validation:** Tests use mock objects to simulate browser behavior without requiring actual browser instances.
 
 **Feature:** Implemented all 26 planned APIs from `API_DESIGN_PLAN.md` with permission gates and comprehensive tests.
 

@@ -1628,9 +1628,12 @@ mod tests {
 
     #[test]
     fn test_sanitize_path_component_unicode_extended() {
-        // Should handle unicode by replacing with underscore
-        assert_eq!(super::sanitize_path_component("测试"), "__");
+        // Unicode chars become underscores, then trimmed, empty becomes "default"
+        assert_eq!(super::sanitize_path_component("测试"), "default"); // All unicode -> "__" -> trim -> "default"
+        // Mixed content: ascii parts preserved, unicode becomes underscores
         assert_eq!(super::sanitize_path_component("test日本語file"), "test____file");
+        assert_eq!(super::sanitize_path_component("日本語test"), "test"); // Leading underscores trimmed
+        assert_eq!(super::sanitize_path_component("test日本語"), "test"); // Trailing underscores trimmed
     }
 
     #[test]

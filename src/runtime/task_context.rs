@@ -2338,12 +2338,12 @@ impl TaskContext {
     /// # use anyhow::Result;
     /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
     /// // Export cookies for a specific domain
-    let cookies = ctx.export_cookies_for_domain("example.com").await?;
+    /// let cookies = ctx.export_cookies_for_domain("example.com").await?;
     ///
     /// // Check if any authentication cookies exist
-    let has_auth = cookies.iter().any(|c| {
+    /// let has_auth = cookies.iter().any(|c| {
     ///     c.get("name").and_then(|n| n.as_str()) == Some("session_token")
-    /// });
+    /// }).unwrap_or(false);
     ///
     /// println!("Found {} cookies, auth: {}", cookies.len(), has_auth);
     /// # Ok(())

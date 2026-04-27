@@ -2534,6 +2534,23 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_session_clipboard` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Clear clipboard before sensitive operations
+    /// ctx.clear_clipboard()?;
+    ///
+    /// // Copy sensitive data
+    /// // ... clipboard operations ...
+    ///
+    /// // Clear again when done
+    /// ctx.clear_clipboard()?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn clear_clipboard(&self) -> Result<()> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_session_clipboard {
@@ -2556,6 +2573,21 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_session_clipboard` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Check if clipboard has content before accessing
+    /// if ctx.has_clipboard_content()? {
+    ///     println!("Clipboard has data");
+    /// } else {
+    ///     println!("Clipboard is empty");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn has_clipboard_content(&self) -> Result<bool> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_session_clipboard {
@@ -2582,6 +2614,26 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_session_clipboard` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Append to existing clipboard content
+    /// ctx.append_clipboard("\n---\n", None)?;
+    ///
+    /// // Append with newline separator
+    /// ctx.append_clipboard("Additional text", Some("\n"))?;
+    ///
+    /// // Build a list in clipboard
+    /// ctx.clear_clipboard()?;
+    /// ctx.append_clipboard("Item 1", Some("\n"))?;
+    /// ctx.append_clipboard("Item 2", Some("\n"))?;
+    /// ctx.append_clipboard("Item 3", Some("\n"))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn append_clipboard(&self, text: &str, separator: Option<&str>) -> Result<()> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_session_clipboard {
@@ -2724,6 +2776,27 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_read_data` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Check if configuration file exists
+    /// if ctx.data_file_exists("config/settings.json")? {
+    ///     println!("Settings file found");
+    /// } else {
+    ///     println!("Using default settings");
+    /// }
+    ///
+    /// // Check before reading
+    /// let path = "data/results.csv";
+    /// if ctx.data_file_exists(path)? {
+    ///     // Safe to read
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn data_file_exists(&self, relative_path: &str) -> Result<bool> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_read_data {
@@ -2749,6 +2822,25 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_write_data` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Clean up temporary file
+    /// ctx.delete_data_file("temp/download.tmp")?;
+    ///
+    /// // Delete old exports
+    /// let files = ctx.list_data_files(Some("exports"))?;
+    /// for file in files {
+    ///     if file.starts_with("old_") {
+    ///         ctx.delete_data_file(&format!("exports/{}", file))?;
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn delete_data_file(&self, relative_path: &str) -> Result<()> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_write_data {
@@ -2780,6 +2872,22 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_write_data` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Append to a log file
+    /// let entry = format!("{} - Action performed\n", chrono::Utc::now());
+    /// ctx.append_data_file("logs/activity.log", entry.as_bytes())?;
+    ///
+    /// // Append data to CSV
+    /// let row = "user123,click,2024-01-01\n";
+    /// ctx.append_data_file("data/events.csv", row.as_bytes())?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn append_data_file(&self, relative_path: &str, content: &[u8]) -> Result<()> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_write_data {
@@ -2828,6 +2936,30 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_read_data` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Read configuration from JSON file
+    /// #[derive(serde::Deserialize)]
+    /// struct Config {
+    ///     api_key: String,
+    ///     timeout: u64,
+    /// }
+    ///
+    /// let config: Config = ctx.read_json_data("config/app.json")?;
+    /// println!("API timeout: {}s", config.timeout);
+    ///
+    /// // Read arbitrary JSON data
+    /// let data: serde_json::Value = ctx.read_json_data("data/results.json")?;
+    /// if let Some(items) = data.get("items").and_then(|v| v.as_array()) {
+    ///     println!("Found {} items", items.len());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn read_json_data<T: serde::de::DeserializeOwned>(&self, relative_path: &str) -> Result<T> {
         let content = self.read_data_file(relative_path)?;
         serde_json::from_str(&content)
@@ -2848,6 +2980,34 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_write_data` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// #[derive(serde::Serialize)]
+    /// struct UserData {
+    ///     username: String,
+    ///     score: u32,
+    /// }
+    ///
+    /// // Write structured data
+    /// let user = UserData {
+    ///     username: "alice".to_string(),
+    ///     score: 100,
+    /// };
+    /// ctx.write_json_data("users/alice.json", &user)?;
+    ///
+    /// // Write dynamic JSON value
+    /// let data = serde_json::json!({
+    ///     "timestamp": "2024-01-01",
+    ///     "results": [1, 2, 3]
+    /// });
+    /// ctx.write_json_data("results/run_1.json", &data)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn write_json_data<T: serde::Serialize>(&self, relative_path: &str, data: &T) -> Result<()> {
         let json = serde_json::to_string_pretty(data)
             .map_err(|e| anyhow::anyhow!("Failed to serialize to JSON: {}", e))?;
@@ -2867,6 +3027,28 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_read_data` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Get file metadata
+    /// let metadata = ctx.data_file_metadata("exports/data.json")?;
+    ///
+    /// // Check file size before processing
+    /// if metadata.size > 1024 * 1024 {
+    ///     println!("File is large: {} MB", metadata.size / 1024 / 1024);
+    /// }
+    ///
+    /// // Check modification time
+    /// let age = std::time::SystemTime::now()
+    ///     .duration_since(metadata.modified)
+    ///     .unwrap_or_default();
+    /// println!("File modified {} seconds ago", age.as_secs());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn data_file_metadata(&self, relative_path: &str) -> Result<FileMetadata> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_read_data {
@@ -2944,6 +3126,25 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_http_requests` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Make a GET request to an API
+    /// let response = ctx.http_get("https://api.example.com/data").await?;
+    ///
+    /// if response.status == 200 {
+    ///     // Parse JSON response
+    ///     let data: serde_json::Value = serde_json::from_str(&response.body)?;
+    ///     println!("API response: {}", data);
+    /// } else {
+    ///     println!("Request failed: {}", response.status);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn http_get(&self, url: &str) -> Result<HttpResponse> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_http_requests {
@@ -2999,6 +3200,27 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_http_requests` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // POST JSON data to an API
+    /// let payload = serde_json::json!({
+    ///     "username": "alice",
+    ///     "action": "click",
+    ///     "timestamp": "2024-01-01T00:00:00Z"
+    /// });
+    ///
+    /// let response = ctx.http_post_json("https://api.example.com/events", &payload).await?;
+    ///
+    /// if response.status == 201 {
+    ///     println!("Event recorded successfully");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn http_post_json<T: serde::Serialize>(&self, url: &str, body: &T) -> Result<HttpResponse> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_http_requests {
@@ -3055,6 +3277,26 @@ impl TaskContext {
     ///
     /// # Permissions
     /// Requires both `allow_http_requests` and `allow_write_data`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Download a file from URL
+    /// let bytes_downloaded = ctx
+    ///     .download_file("https://example.com/data.csv", "downloads/data.csv")
+    ///     .await?;
+    ///
+    /// println!("Downloaded {} bytes", bytes_downloaded);
+    ///
+    /// // Download with timestamped filename
+    /// let filename = format!("downloads/report_{}.pdf", chrono::Utc::now().format("%Y%m%d"));
+    /// let size = ctx.download_file("https://api.example.com/report", &filename).await?;
+    /// println!("Report saved: {} bytes", size);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn download_file(&self, url: &str, relative_path: &str) -> Result<u64> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_http_requests {
@@ -3559,6 +3801,24 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_browser_export` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Export complete browser state
+    /// let browser_data = ctx.export_browser("https://example.com").await?;
+    ///
+    /// println!("Exported {} cookies", browser_data.cookies.len());
+    /// println!("Local storage origins: {}", browser_data.local_storage.len());
+    ///
+    /// // Save to file for later restoration
+    /// let json = serde_json::to_string(&browser_data)?;
+    /// std::fs::write("backup/session.json", json)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn export_browser(&self, url: &str) -> Result<crate::task::policy::BrowserData> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_browser_export {
@@ -3709,6 +3969,25 @@ impl TaskContext {
     ///
     /// # Permission
     /// Requires `allow_browser_import` permission
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use anyhow::Result;
+    /// # async fn example(ctx: &auto::runtime::TaskContext) -> Result<()> {
+    /// // Load previously saved browser state
+    /// let json = std::fs::read_to_string("backup/session.json")?;
+    /// let browser_data: auto::task::policy::BrowserData = serde_json::from_str(&json)?;
+    ///
+    /// // Restore browser state (cookies, localStorage, etc.)
+    /// ctx.import_browser(&browser_data).await?;
+    /// println!("Browser state restored from backup");
+    ///
+    /// // Now navigate to the site - should be logged in
+    /// ctx.page.goto("https://example.com/dashboard").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn import_browser(&self, browser_data: &crate::task::policy::BrowserData) -> Result<()> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_browser_import {

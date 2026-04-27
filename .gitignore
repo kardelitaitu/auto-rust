@@ -46,7 +46,7 @@ TODO.md
 data/screenshot/
 
 # Keep Cargo.lock committed for reproducible binary builds
-
+# (Cargo.lock is NOT ignored - see comment above)
 
 # Ignore all improvement proposals (they are generated and should not be committed)
 IMPROVEMENT*

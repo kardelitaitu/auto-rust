@@ -38,7 +38,6 @@
 |--------|-----|-------------|------------|-------|
 | ☐ | `api.export_cookies_for_domain(domain)` | Export cookies matching domain | ✅ 95% | Filter existing Network.getCookies result |
 | ☐ | `api.export_session_cookies(url)` | Export only session cookies | ✅ 90% | Check cookie.session flag from CDP |
-| ☐ | `api.clear_cookies_for_domain(domain)` | Clear cookies for domain | ⚠️ 80% | Needs Network.deleteCookies or JS workaround |
 | ☐ | `api.has_cookie(name, domain)` | Check if cookie exists | ✅ 95% | Check result of export_cookies_for_domain |
 
 #### Session Management
@@ -47,7 +46,6 @@
 | ☐ | `api.export_local_storage(url)` | Export only localStorage | ✅ 95% | Extract from existing export_session logic |
 | ☐ | `api.import_local_storage(url, data)` | Import only localStorage | ✅ 95% | Extract from existing import_session logic |
 | ☐ | `api.validate_session_data(data)` | Validate without importing | ✅ 98% | Pure JSON validation, no browser needed |
-| ☐ | `api.is_session_valid(url)` | Check if session fresh | ⚠️ 75% | Check cookie expiry dates, complex |
 
 #### Clipboard Management
 | Status | API | Description | Confidence | Notes |
@@ -88,9 +86,7 @@
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
 | ☐ | `api.export_browser()` | Export ALL browser data | 🔍 65% | CDP Storage.getStorageKeyForFrame? Complex |
-| ☐ | `api.export_browser_for_domain(domain)` | Export single domain data | ⚠️ 85% | Filter export_cookies + localStorage by domain |
-| ☐ | `api.import_browser(data)` | Import complete browser state | ⚠️ 75% | Multiple import operations combined |
-| ☐ | `api.clear_browser_data()` | Clear all cookies and storage | 🔍 60% | CDP Storage.clearDataForOrigin? Needs research |
+| ☐ | `api.import_browser(data)` | Import complete browser state | ⚠️ 75% | Multiple import operations combined 
 
 **Implementation Workflow:**
 1. Implement method in `src/runtime/task_context.rs`

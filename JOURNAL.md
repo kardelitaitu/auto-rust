@@ -9,7 +9,156 @@
 
 ---
 
-## 2026-04-27 (17:10) - Mock Browser Integration Tests - [commit pending]
+---
+
+## 2026-04-27 (20:30) - v0.0.3 RELEASED 🎉
+
+**Release:** v0.0.3 - Browser Management APIs
+
+### Release Checklist Complete ✅
+
+| Step | Status | Details |
+|------|--------|---------|
+| Fix compilation | ✅ | Fixed rustdoc example in `export_cookies_for_domain` |
+| Run tests | ✅ | **1743 tests passing** |
+| Version bump | ✅ | 0.0.2 → 0.0.3 in `Cargo.toml` |
+| Check docs | ✅ | Built with 11 warnings (expected internal links) |
+| Git tag | ✅ | `v0.0.3` created |
+| Release notes | ✅ | `RELEASE_NOTES_v0.0.3.md` complete |
+
+### What's in v0.0.3
+
+**26 New TaskContext APIs:**
+- Cookie Management (3): export by domain, session cookies, existence check
+- Session Management (3): localStorage export/import, validation
+- Clipboard Management (3): clear, check, append
+- Data File Management (7): JSON read/write, list, delete, metadata
+- Network/HTTP (3): GET, POST JSON, download
+- DOM Inspection (5): styles, rect, scroll, count, viewport check
+- Browser Management (2): complete state export/import
+
+**Documentation (975+ lines):**
+- Rustdoc examples for all 26 APIs
+- New API_USAGE_GUIDE.md with practical recipes
+- Enhanced TASK_AUTHORING_GUIDE.md with complete examples
+- Updated API_REFERENCE.md with permissions
+- README.md v0.0.3 features section
+
+**Security:**
+- 12 new TaskPolicy permissions
+- Fine-grained access control
+- Permission-based API gating
+
+**Testing:**
+- 1743 unit tests passing
+- 38 mock-based integration tests
+
+### Git Commands for Release
+```bash
+git log v0.0.2..v0.0.3 --oneline  # View changes since v0.0.2
+git push origin v0.0.3            # Push tag to remote
+git checkout v0.0.3               # Switch to release
+```
+
+### Files Created/Modified
+- `Cargo.toml` - Version bump
+- `src/runtime/task_context.rs` - 26 APIs + rustdoc
+- `docs/API_USAGE_GUIDE.md` - NEW
+- `docs/API_REFERENCE.md` - UPDATED
+- `docs/TASK_AUTHORING_GUIDE.md` - ENHANCED
+- `README.md` - UPDATED
+- `RELEASE_NOTES_v0.0.3.md` - NEW
+- `tests/api_mock_integration.rs` - 38 tests NEW
+
+**Release complete and ready for distribution!**
+
+---
+
+## 2026-04-27 (18:20) - Documentation Enhancement Complete - [commit pending]
+
+**Feature:** Comprehensive documentation update for v0.0.3 APIs.
+
+### Phase 1: Rustdoc Examples (26 APIs)
+All v0.0.3 APIs now have comprehensive # Examples sections in `src/runtime/task_context.rs`:
+
+| Category | APIs | Examples Added |
+|----------|------|----------------|
+| Cookie Management | 3 | export_cookies_for_domain, export_session_cookies, has_cookie |
+| Session Management | 3 | export_local_storage, import_local_storage, validate_session_data |
+| Clipboard Management | 3 | clear_clipboard, has_clipboard_content, append_clipboard |
+| Data File Management | 7 | list_data_files, data_file_exists, delete_data_file, read_json_data, write_json_data, append_data_file, data_file_metadata |
+| Network/HTTP | 3 | http_get, http_post_json, download_file |
+| DOM Inspection | 5 | get_computed_style, get_element_rect, get_scroll_position, count_elements, is_in_viewport |
+| Browser Management | 2 | export_browser, import_browser |
+
+**Total:** 26 methods with working code examples
+
+### Phase 2: API Usage Guide (NEW FILE)
+Created `docs/API_USAGE_GUIDE.md` with practical recipes:
+
+- **8 sections** covering all API categories
+- **Cookie Management Recipes** (3): Login check, persistence, validation
+- **Session Management Recipes** (2): Save/restore, transfer between pages
+- **Data File Patterns** (4): Config reading, results writing, logging, cleanup
+- **Network Integration** (3): REST APIs, POST JSON, file downloads
+- **DOM Inspection Workflows** (4): Styles, positioning, counting, scrolling
+- **Browser State Management** (2): Complete export/import for testing
+- **Error Handling Patterns** (3): Permission errors, graceful degradation, retry
+
+**Total:** 200+ lines of practical code examples
+
+### Phase 3: README v0.0.3 Update
+Updated `README.md` with:
+
+- **v0.0.3 Features section** with 7 API categories table
+- **API Quick Examples** code block with 5 practical examples
+- Links to new API Usage Guide
+- Security note about TaskPolicy permissions
+
+### Phase 4: Task Authoring Guide Enhancement
+Enhanced `docs/TASK_AUTHORING_GUIDE.md` with:
+
+- **Complete Task Example:** data_extract.rs using 9 APIs
+- **API Selection Guide:** Table of 11 common tasks with recommendations
+- **Error Handling Patterns:** Permission handling, graceful degradation, timeouts
+- **Testing Tasks:** Unit tests and integration tests examples
+
+**Total:** 250+ lines of new task authoring content
+
+### Phase 5: API Reference Update
+Updated `docs/API_REFERENCE.md` with:
+
+- **26 API signatures** with full documentation
+- **Data structures:** HttpResponse, Rect, BrowserData
+- **Permission Requirements Summary:** Table mapping 12 permissions to API categories
+- **7 API category sections** with usage examples
+
+### Documentation Impact
+
+| Document | Lines Added | Purpose |
+|----------|-------------|---------|
+| rustdoc examples (task_context.rs) | 300+ | IDE auto-completion support |
+| API_USAGE_GUIDE.md | 200+ | Practical recipes |
+| README.md updates | 50+ | Project overview |
+| TASK_AUTHORING_GUIDE.md | 250+ | Task development |
+| API_REFERENCE.md | 175+ | Complete API reference |
+| **Total** | **975+** | **Comprehensive coverage** |
+
+**Benefits:**
+- Developers see examples when using auto-complete
+- Practical recipes for common scenarios
+- Clear permission requirements
+- Testing patterns for task authors
+- Complete API signature reference
+
+### Files Modified
+- `src/runtime/task_context.rs` - 26 rustdoc examples
+- `docs/API_USAGE_GUIDE.md` - NEW (complete guide)
+- `README.md` - v0.0.3 features and quick examples
+- `docs/TASK_AUTHORING_GUIDE.md` - Enhanced with patterns
+- `docs/API_REFERENCE.md` - Complete API documentation
+
+**Validation:** All documentation reviewed for accuracy and completeness.
 
 **Feature:** Added 38 mock-based browser integration tests for v0.0.3 APIs.
 

@@ -1863,9 +1863,18 @@ pub async fn click_selector_human(
     use crate::utils::scroll;
     scroll::scroll_into_view(page, selector).await?;
 
+    // Phase 2: Verify element is in viewport after scroll
+    if !is_in_viewport_internal(page, selector).await? {
+        return Err(anyhow::anyhow!(
+            "Element '{}' not in viewport after scroll",
+            selector
+        ));
+    }
+
+    // Phase 2: Re-resolve bbox after scroll (may have shifted, with retry for stale selectors)
     let bbox = timeout(
         Duration::from_secs(2),
-        resolve_selector_bbox(page, selector),
+        resolve_selector_bbox_with_retry(page, selector, 3),
     )
     .await
     .map_err(|_| {
@@ -2368,6 +2377,67 @@ async fn resolve_selector_bbox(page: &Page, selector: &str) -> Result<BoundingBo
         Some(bbox) => Ok(bbox),
         None => get_selector_bbox_once(page, selector).await,
     }
+}
+
+/// Check if element is in viewport (internal helper, no permissions required).
+/// Unlike TaskContext::is_in_viewport(), this doesn't require allow_dom_inspection permission.
+async fn is_in_viewport_internal(page: &Page, selector: &str) -> Result<bool> {
+    let selector_js = serde_json::to_string(selector)?;
+    let js = format!(
+        r#"(() => {{
+            const el = document.querySelector({selector_js});
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+            const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+            return rect.top < windowHeight && rect.bottom > 0 &&
+                   rect.left < windowWidth && rect.right > 0;
+        }})()"#
+    );
+
+    let result = page
+        .evaluate(js)
+        .await?
+        .value()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    Ok(result)
+}
+
+/// Resolve selector bbox with retry logic (handles stale selectors after scroll).
+async fn resolve_selector_bbox_with_retry(
+    page: &Page,
+    selector: &str,
+    max_retries: u32,
+) -> Result<BoundingBox> {
+    let mut last_err: Option<anyhow::Error> = None;
+
+    for attempt in 0..=max_retries {
+        match resolve_selector_bbox(page, selector).await {
+            Ok(bbox) => {
+                // Verify bbox is valid (non-zero dimensions)
+                if bbox.width > 0.0 && bbox.height > 0.0 {
+                    return Ok(bbox);
+                }
+                if attempt < max_retries {
+                    human_pause(50, 20).await;
+                    continue;
+                }
+                anyhow::bail!("Element '{}' has invalid bounds after {} retries", selector, max_retries);
+            }
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < max_retries {
+                    human_pause(50, 20).await;
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        anyhow::anyhow!("Failed to resolve bbox for '{}' after {} retries", selector, max_retries)
+    }))
 }
 
 async fn get_selector_bbox_once(page: &Page, selector: &str) -> Result<BoundingBox> {

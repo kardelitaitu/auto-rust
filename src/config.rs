@@ -1357,6 +1357,12 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 /// Performs startup-time validation of critical configuration values to prevent
 /// runtime issues. Logs warnings for potentially problematic values.
 ///
+/// Validates the configuration for correctness and consistency.
+///
+/// Performs comprehensive validation across all config sections including
+/// orchestrator settings, browser configuration, circuit breaker settings,
+/// Twitter Activity settings, LLM configuration, and tracing settings.
+///
 /// # Arguments
 /// * `config` - The configuration to validate
 ///
@@ -1365,6 +1371,17 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 ///
 /// # Errors
 /// Returns an error if any required values are zero or invalid
+///
+/// # Examples
+/// ```rust,no_run
+/// # use auto::config::{load_config, validate_config};
+/// # fn example() -> anyhow::Result<()> {
+/// let config = load_config()?;
+/// validate_config(&config)?;
+/// println!("Configuration is valid");
+/// # Ok(())
+/// # }
+/// ```
 pub fn validate_config(config: &Config) -> Result<()> {
     let report = ConfigValidationReport::new();
 

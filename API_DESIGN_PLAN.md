@@ -60,6 +60,12 @@
 - `api.count_elements(selector)` - Count matching elements
 - `api.is_in_viewport(selector)` - Check if element visible
 
+**Browser Management** (new permission: `allow_browser_export`, `allow_browser_import`)
+- `api.export_browser()` - Export ALL browser data (cookies + storage for all domains)
+- `api.import_browser(data)` - Import complete browser state
+- `api.export_browser_for_domain(domain)` - Export data for single domain
+- `api.clear_browser_data()` - Clear all cookies and storage
+
 ---
 
 ## Design Principles
@@ -246,6 +252,48 @@ pub async fn count_elements(&self, selector: &str) -> Result<usize>
 pub async fn is_in_viewport(&self, selector: &str) -> Result<bool>
     requires: allow_dom_inspection
 ```
+
+### 7. Browser Management (New)
+
+**Current Gap**: No way to export/import complete browser state across sessions
+**Use Case**: Move data from Browser A to Browser B, backup/restore full state
+
+```rust
+// New permissions: allow_browser_export, allow_browser_import
+
+// Export ALL browser data (all domains, all storage types)
+pub async fn export_browser(&self) -> Result<BrowserData>
+    requires: allow_browser_export
+    
+// Export data for single domain only
+pub async fn export_browser_for_domain(&self, domain: &str) -> Result<BrowserData>
+    requires: allow_browser_export
+
+// Import complete browser state (replaces current state)
+pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
+    requires: allow_browser_import
+
+// Clear all browser data (cookies, localStorage, sessionStorage, cache)
+pub async fn clear_browser_data(&self) -> Result<()>
+    requires: allow_browser_export + allow_browser_import (implied)
+```
+
+**BrowserData Structure**:
+```rust
+pub struct BrowserData {
+    pub exported_at: DateTime<Utc>,
+    pub cookies: Vec<serde_json::Value>,           // All cookies across domains
+    pub local_storage: HashMap<String, HashMap<String, String>>,  // domain -> key-value
+    pub session_storage: HashMap<String, HashMap<String, String>>, // domain -> key-value
+    pub indexed_db: Vec<IndexedDBData>,           // Future: IndexedDB contents
+}
+```
+
+**Security Considerations**:
+- `allow_browser_export` is HIGH RISK - exports ALL sites' data
+- `allow_browser_import` is HIGH RISK - can inject malicious state
+- These should be separate permissions from session-level export/import
+- Consider requiring both permissions for `clear_browser_data()`
 
 ---
 

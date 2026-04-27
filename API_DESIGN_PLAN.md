@@ -23,72 +23,82 @@
 | `api.read_data_file(path)` | Read file from data/ or config/ | ✅ 100% |
 | `api.write_data_file(path, content)` | Write file to data/ or config/ | ✅ 100% |
 
-### Planned APIs (v0.0.3) - Implementation Confidence
+### Planned APIs (v0.0.3) - Implementation Checklist
 
 **Legend:**
+- ☐ = Not implemented
+- ☑ = Implemented + tested + `cargo test` passing
 - ✅ **90-100%** - Can implement now, clear path
 - ⚠️ **70-89%** - Implementable, some complexity
 - 🔍 **50-69%** - Needs investigation/research
 - ❓ **<50%** - Unclear if feasible
 
 #### Cookie Management
-| API | Description | Confidence | Notes |
-|-----|-------------|------------|-------|
-| `api.export_cookies_for_domain(domain)` | Export cookies matching domain | ✅ 95% | Filter existing Network.getCookies result |
-| `api.export_session_cookies(url)` | Export only session cookies | ✅ 90% | Check cookie.session flag from CDP |
-| `api.clear_cookies_for_domain(domain)` | Clear cookies for domain | ⚠️ 80% | Needs Network.deleteCookies or JS workaround |
-| `api.has_cookie(name, domain)` | Check if cookie exists | ✅ 95% | Check result of export_cookies_for_domain |
+| Status | API | Description | Confidence | Notes |
+|--------|-----|-------------|------------|-------|
+| ☐ | `api.export_cookies_for_domain(domain)` | Export cookies matching domain | ✅ 95% | Filter existing Network.getCookies result |
+| ☐ | `api.export_session_cookies(url)` | Export only session cookies | ✅ 90% | Check cookie.session flag from CDP |
+| ☐ | `api.clear_cookies_for_domain(domain)` | Clear cookies for domain | ⚠️ 80% | Needs Network.deleteCookies or JS workaround |
+| ☐ | `api.has_cookie(name, domain)` | Check if cookie exists | ✅ 95% | Check result of export_cookies_for_domain |
 
 #### Session Management
-| API | Description | Confidence | Notes |
-|-----|-------------|------------|-------|
-| `api.export_local_storage(url)` | Export only localStorage | ✅ 95% | Extract from existing export_session logic |
-| `api.import_local_storage(url, data)` | Import only localStorage | ✅ 95% | Extract from existing import_session logic |
-| `api.validate_session_data(data)` | Validate without importing | ✅ 98% | Pure JSON validation, no browser needed |
-| `api.is_session_valid(url)` | Check if session fresh | ⚠️ 75% | Check cookie expiry dates, complex |
+| Status | API | Description | Confidence | Notes |
+|--------|-----|-------------|------------|-------|
+| ☐ | `api.export_local_storage(url)` | Export only localStorage | ✅ 95% | Extract from existing export_session logic |
+| ☐ | `api.import_local_storage(url, data)` | Import only localStorage | ✅ 95% | Extract from existing import_session logic |
+| ☐ | `api.validate_session_data(data)` | Validate without importing | ✅ 98% | Pure JSON validation, no browser needed |
+| ☐ | `api.is_session_valid(url)` | Check if session fresh | ⚠️ 75% | Check cookie expiry dates, complex |
 
 #### Clipboard Management
-| API | Description | Confidence | Notes |
-|-----|-------------|------------|-------|
-| `api.clear_clipboard()` | Clear clipboard content | ✅ 95% | Set empty string using existing clipboard module |
-| `api.read_clipboard_with_timeout(ms)` | Wait for clipboard update | 🔍 60% | Would need polling or platform-specific watcher |
-| `api.has_clipboard_content()` | Check if clipboard non-empty | ✅ 95% | Check if read_clipboard returns non-empty |
-| `api.append_clipboard(text, sep)` | Append text to clipboard | ✅ 95% | Read + write combo using existing methods |
+| Status | API | Description | Confidence | Notes |
+|--------|-----|-------------|------------|-------|
+| ☐ | `api.clear_clipboard()` | Clear clipboard content | ✅ 95% | Set empty string using existing clipboard module |
+| ☐ | `api.read_clipboard_with_timeout(ms)` | Wait for clipboard update | 🔍 60% | Would need polling or platform-specific watcher |
+| ☐ | `api.has_clipboard_content()` | Check if clipboard non-empty | ✅ 95% | Check if read_clipboard returns non-empty |
+| ☐ | `api.append_clipboard(text, sep)` | Append text to clipboard | ✅ 95% | Read + write combo using existing methods |
 
 #### Data File Management
-| API | Description | Confidence | Notes |
-|-----|-------------|------------|-------|
-| `api.list_data_files(subdir)` | List files in data directory | ✅ 98% | Standard Rust std::fs::read_dir |
-| `api.append_data_file(path, content)` | Append to file | ✅ 98% | OpenOptions::append() - standard Rust |
-| `api.data_file_exists(path)` | Check if file exists | ✅ 100% | std::path::Path::exists() |
-| `api.delete_data_file(path)` | Delete file | ✅ 98% | std::fs::remove_file() |
-| `api.read_json_data<T>(path)` | Read and parse JSON | ✅ 95% | serde_json::from_str after read_data_file |
-| `api.write_json_data<T>(path, data)` | Write JSON (pretty) | ✅ 95% | serde_json::to_string_pretty then write |
-| `api.data_file_metadata(path)` | Get file size/modified time | ✅ 98% | std::fs::metadata() |
+| Status | API | Description | Confidence | Notes |
+|--------|-----|-------------|------------|-------|
+| ☐ | `api.list_data_files(subdir)` | List files in data directory | ✅ 98% | Standard Rust std::fs::read_dir |
+| ☐ | `api.append_data_file(path, content)` | Append to file | ✅ 98% | OpenOptions::append() - standard Rust |
+| ☐ | `api.data_file_exists(path)` | Check if file exists | ✅ 100% | std::path::Path::exists() |
+| ☐ | `api.delete_data_file(path)` | Delete file | ✅ 98% | std::fs::remove_file() |
+| ☐ | `api.read_json_data<T>(path)` | Read and parse JSON | ✅ 95% | serde_json::from_str after read_data_file |
+| ☐ | `api.write_json_data<T>(path, data)` | Write JSON (pretty) | ✅ 95% | serde_json::to_string_pretty then write |
+| ☐ | `api.data_file_metadata(path)` | Get file size/modified time | ✅ 98% | std::fs::metadata() |
 
 #### Network/HTTP (new permission: `allow_http_requests`)
-| API | Description | Confidence | Notes |
-|-----|-------------|------------|-------|
-| `api.http_get(url)` | HTTP GET request | ✅ 90% | reqwest already in dependencies |
-| `api.http_post_json(url, body)` | HTTP POST with JSON | ✅ 90% | reqwest with json feature available |
-| `api.download_file(url, path)` | Download to data directory | ✅ 90% | reqwest + write_data_file combo |
+| Status | API | Description | Confidence | Notes |
+|--------|-----|-------------|------------|-------|
+| ☐ | `api.http_get(url)` | HTTP GET request | ✅ 90% | reqwest already in dependencies |
+| ☐ | `api.http_post_json(url, body)` | HTTP POST with JSON | ✅ 90% | reqwest with json feature available |
+| ☐ | `api.download_file(url, path)` | Download to data directory | ✅ 90% | reqwest + write_data_file combo |
 
 #### DOM Inspection (new permission: `allow_dom_inspection`)
-| API | Description | Confidence | Notes |
-|-----|-------------|------------|-------|
-| `api.get_computed_style(selector, property)` | Get CSS property | ✅ 95% | window.getComputedStyle via page.evaluate |
-| `api.get_element_rect(selector)` | Get element position/size | ✅ 95% | getBoundingClientRect already used in codebase |
-| `api.get_scroll_position()` | Get page scroll position | ✅ 95% | window.scrollX / scrollY via page.evaluate |
-| `api.count_elements(selector)` | Count matching elements | ✅ 95% | document.querySelectorAll().length via evaluate |
-| `api.is_in_viewport(selector)` | Check if element visible | ✅ 90% | getBoundingClientRect + window dimensions comparison |
+| Status | API | Description | Confidence | Notes |
+|--------|-----|-------------|------------|-------|
+| ☐ | `api.get_computed_style(selector, property)` | Get CSS property | ✅ 95% | window.getComputedStyle via page.evaluate |
+| ☐ | `api.get_element_rect(selector)` | Get element position/size | ✅ 95% | getBoundingClientRect already used in codebase |
+| ☐ | `api.get_scroll_position()` | Get page scroll position | ✅ 95% | window.scrollX / scrollY via page.evaluate |
+| ☐ | `api.count_elements(selector)` | Count matching elements | ✅ 95% | document.querySelectorAll().length via evaluate |
+| ☐ | `api.is_in_viewport(selector)` | Check if element visible | ✅ 90% | getBoundingClientRect + window dimensions comparison |
 
 #### Browser Management (new permissions: `allow_browser_export`, `allow_browser_import`)
-| API | Description | Confidence | Notes |
-|-----|-------------|------------|-------|
-| `api.export_browser()` | Export ALL browser data | 🔍 65% | CDP Storage.getStorageKeyForFrame? Complex |
-| `api.export_browser_for_domain(domain)` | Export single domain data | ⚠️ 85% | Filter export_cookies + localStorage by domain |
-| `api.import_browser(data)` | Import complete browser state | ⚠️ 75% | Multiple import operations combined |
-| `api.clear_browser_data()` | Clear all cookies and storage | 🔍 60% | CDP Storage.clearDataForOrigin? Needs research |
+| Status | API | Description | Confidence | Notes |
+|--------|-----|-------------|------------|-------|
+| ☐ | `api.export_browser()` | Export ALL browser data | 🔍 65% | CDP Storage.getStorageKeyForFrame? Complex |
+| ☐ | `api.export_browser_for_domain(domain)` | Export single domain data | ⚠️ 85% | Filter export_cookies + localStorage by domain |
+| ☐ | `api.import_browser(data)` | Import complete browser state | ⚠️ 75% | Multiple import operations combined |
+| ☐ | `api.clear_browser_data()` | Clear all cookies and storage | 🔍 60% | CDP Storage.clearDataForOrigin? Needs research |
+
+**Implementation Workflow:**
+1. Implement method in `src/runtime/task_context.rs`
+2. Add unit tests for permission denial
+3. Add integration tests with browser fixture
+4. Run `cargo test` and verify all tests pass
+5. Mark checkbox as ☑ in this document
+6. Commit with message: `feat: add api.xxx() for [purpose]`
 
 ---
 

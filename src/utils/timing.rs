@@ -46,9 +46,10 @@ pub async fn random_delay(min_ms: u64, max_ms: u64) {
 /// ```
 #[allow(dead_code)]
 pub async fn human_pause(base_ms: u64, variance_pct: u32) {
-    let std_dev = (base_ms as f64) * (variance_pct as f64 / 100.0);
-    let min_delay = (base_ms as f64 * 0.1).max(10.0); // Minimum 10ms
-    let max_delay = (base_ms as f64 * 3.0).min(30000.0); // Maximum 30s
+    let variance = (variance_pct as f64 / 100.0).clamp(0.0, 1.0);
+    let std_dev = (base_ms as f64) * variance;
+    let min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
+    let max_delay = (base_ms as f64 * (1.0 + variance)).min(30000.0);
 
     let delay = gaussian(base_ms as f64, std_dev, min_delay, max_delay);
     sleep(Duration::from_millis(delay as u64)).await;
@@ -767,8 +768,8 @@ mod tests {
         let start = std::time::Instant::now();
         human_pause(150, 10).await;
         let elapsed = start.elapsed();
-        // With 10% variance: 150 * 0.9 = 135, 150 * 1.1 = 165
-        assert!(elapsed.as_millis() >= 125 && elapsed.as_millis() < 200);
+        // With 10% variance: range is [135, 165] with gaussian distribution
+        assert!(elapsed.as_millis() >= 130 && elapsed.as_millis() < 170);
     }
 
     #[tokio::test]
@@ -776,8 +777,8 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(150, 10).await;
         let elapsed = start.elapsed();
-        // With 10% variance: 150 * 0.9 = 135, 150 * 1.1 = 165
-        assert!(elapsed.as_millis() >= 125 && elapsed.as_millis() < 200);
+        // With 10% variance: range is [135, 165]
+        assert!(elapsed.as_millis() >= 130 && elapsed.as_millis() < 170);
     }
 
     #[tokio::test]

@@ -10,8 +10,9 @@
 //! - Isolated state (temp directories, no shared resources)
 
 use std::collections::HashMap;
-use std::time::SystemTime;
 use tempfile::tempdir;
+
+use auto::runtime::task_context::Rect;
 
 // ============================================================================
 // Test Fixtures
@@ -181,9 +182,9 @@ impl MockPageContext {
     }
 
     /// Simulates getting element rect
-    fn get_element_rect(&self, selector: &str) -> Option<auto::runtime::Rect> {
+    fn get_element_rect(&self, selector: &str) -> Option<Rect> {
         if selector == "#test-box" {
-            Some(auto::runtime::Rect {
+            Some(Rect {
                 x: 50.0,
                 y: 100.0,
                 width: 200.0,
@@ -449,10 +450,14 @@ fn test_browser_data_aggregates_all_sources_mock() {
     let cookies = mock_cdp_cookies();
     
     let mut local_storage = HashMap::new();
-    local_storage.insert("ls_key".to_string(), "ls_value".to_string());
+    let mut origin_storage = HashMap::new();
+    origin_storage.insert("ls_key".to_string(), "ls_value".to_string());
+    local_storage.insert("example.com".to_string(), origin_storage);
     
     let mut session_storage = HashMap::new();
-    session_storage.insert("ss_key".to_string(), "ss_value".to_string());
+    let mut origin_session = HashMap::new();
+    origin_session.insert("ss_key".to_string(), "ss_value".to_string());
+    session_storage.insert("example.com".to_string(), origin_session);
     
     let mut indexeddb = HashMap::new();
     indexeddb.insert("example.com".to_string(), vec!["db1".to_string()]);
@@ -903,7 +908,7 @@ fn test_browser_data_with_large_cookies() {
 
 #[test]
 fn test_rect_with_negative_coordinates() {
-    let rect = auto::runtime::Rect {
+    let rect = Rect {
         x: -100.0,
         y: -50.0,
         width: 200.0,
@@ -942,7 +947,6 @@ fn test_empty_selector_count_returns_zero() {
 #[tokio::test]
 async fn test_browser_data_serialization_preserves_timestamps() {
     use chrono::Utc;
-    use std::time::Duration;
     
     let now = Utc::now();
     let data = auto::task::policy::BrowserData {

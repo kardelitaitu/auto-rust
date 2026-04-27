@@ -3,68 +3,204 @@
 **Document Purpose**: Define consistent, discoverable API methods for all permission-gated operations in TaskContext.
 
 **Target Version**: v0.0.3
-**Status**: Draft
+**Status**: Draft with Implementation Confidence Assessment
 
-## Quick Reference: Planned API Methods
+---
 
-### Current APIs (v0.0.2)
-- `api.screenshot()` - Capture WebP screenshot at 50% quality
-- `api.screenshot_with_quality(q)` - Screenshot with custom quality (1-100)
-- `api.export_cookies(url)` - Export cookies for URL
-- `api.import_cookies(cookies)` - Import cookies into browser
-- `api.export_session(url)` - Export cookies + localStorage
-- `api.import_session(data)` - Import cookies + localStorage
-- `api.read_clipboard()` - Read system clipboard
-- `api.write_clipboard(text)` - Write to system clipboard
-- `api.read_data_file(path)` - Read file from data/ or config/
-- `api.write_data_file(path, content)` - Write file to data/ or config/
+## Quick Reference: All APIs
 
-### Planned APIs (v0.0.3)
+### Current APIs (v0.0.2) - ✅ Implemented
+| API | Description | Confidence |
+|-----|-------------|------------|
+| `api.screenshot()` | Capture WebP screenshot at 50% quality | ✅ 100% |
+| `api.screenshot_with_quality(q)` | Screenshot with custom quality (1-100) | ✅ 100% |
+| `api.export_cookies(url)` | Export cookies for URL | ✅ 100% |
+| `api.import_cookies(cookies)` | Import cookies into browser | ✅ 100% |
+| `api.export_session(url)` | Export cookies + localStorage | ✅ 100% |
+| `api.import_session(data)` | Import cookies + localStorage | ✅ 100% |
+| `api.read_clipboard()` | Read system clipboard | ✅ 100% |
+| `api.write_clipboard(text)` | Write to system clipboard | ✅ 100% |
+| `api.read_data_file(path)` | Read file from data/ or config/ | ✅ 100% |
+| `api.write_data_file(path, content)` | Write file to data/ or config/ | ✅ 100% |
 
-**Cookie Management**
-- `api.export_cookies_for_domain(domain)` - Export cookies matching domain
-- `api.export_session_cookies(url)` - Export only session cookies
-- `api.clear_cookies_for_domain(domain)` - Clear cookies for domain
-- `api.has_cookie(name, domain)` - Check if specific cookie exists
+### Planned APIs (v0.0.3) - Implementation Confidence
 
-**Session Management**
-- `api.export_local_storage(url)` - Export only localStorage
-- `api.import_local_storage(url, data)` - Import only localStorage
-- `api.validate_session_data(data)` - Validate session without importing
-- `api.is_session_valid(url)` - Check if session is fresh
+**Legend:**
+- ✅ **90-100%** - Can implement now, clear path
+- ⚠️ **70-89%** - Implementable, some complexity
+- 🔍 **50-69%** - Needs investigation/research
+- ❓ **<50%** - Unclear if feasible
 
-**Clipboard Management**
-- `api.clear_clipboard()` - Clear clipboard content
-- `api.read_clipboard_with_timeout(ms)` - Wait for clipboard update
-- `api.has_clipboard_content()` - Check if clipboard non-empty
-- `api.append_clipboard(text, sep)` - Append text to clipboard
+#### Cookie Management
+| API | Description | Confidence | Notes |
+|-----|-------------|------------|-------|
+| `api.export_cookies_for_domain(domain)` | Export cookies matching domain | ✅ 95% | Filter existing Network.getCookies result |
+| `api.export_session_cookies(url)` | Export only session cookies | ✅ 90% | Check cookie.session flag from CDP |
+| `api.clear_cookies_for_domain(domain)` | Clear cookies for domain | ⚠️ 80% | Needs Network.deleteCookies or JS workaround |
+| `api.has_cookie(name, domain)` | Check if cookie exists | ✅ 95% | Check result of export_cookies_for_domain |
 
-**Data File Management**
-- `api.list_data_files(subdir)` - List files in data directory
-- `api.append_data_file(path, content)` - Append to file
-- `api.data_file_exists(path)` - Check if file exists
-- `api.delete_data_file(path)` - Delete file
-- `api.read_json_data(path)` - Read and parse JSON
-- `api.write_json_data(path, data)` - Write JSON (pretty)
-- `api.data_file_metadata(path)` - Get file size/modified time
+#### Session Management
+| API | Description | Confidence | Notes |
+|-----|-------------|------------|-------|
+| `api.export_local_storage(url)` | Export only localStorage | ✅ 95% | Extract from existing export_session logic |
+| `api.import_local_storage(url, data)` | Import only localStorage | ✅ 95% | Extract from existing import_session logic |
+| `api.validate_session_data(data)` | Validate without importing | ✅ 98% | Pure JSON validation, no browser needed |
+| `api.is_session_valid(url)` | Check if session fresh | ⚠️ 75% | Check cookie expiry dates, complex |
 
-**Network/HTTP** (new permission: `allow_http_requests`)
-- `api.http_get(url)` - HTTP GET request
-- `api.http_post_json(url, body)` - HTTP POST with JSON
-- `api.download_file(url, path)` - Download to data directory
+#### Clipboard Management
+| API | Description | Confidence | Notes |
+|-----|-------------|------------|-------|
+| `api.clear_clipboard()` | Clear clipboard content | ✅ 95% | Set empty string using existing clipboard module |
+| `api.read_clipboard_with_timeout(ms)` | Wait for clipboard update | 🔍 60% | Would need polling or platform-specific watcher |
+| `api.has_clipboard_content()` | Check if clipboard non-empty | ✅ 95% | Check if read_clipboard returns non-empty |
+| `api.append_clipboard(text, sep)` | Append text to clipboard | ✅ 95% | Read + write combo using existing methods |
 
-**DOM Inspection** (new permission: `allow_dom_inspection`)
-- `api.get_computed_style(selector, property)` - Get CSS property
-- `api.get_element_rect(selector)` - Get element position/size
-- `api.get_scroll_position()` - Get page scroll position
-- `api.count_elements(selector)` - Count matching elements
-- `api.is_in_viewport(selector)` - Check if element visible
+#### Data File Management
+| API | Description | Confidence | Notes |
+|-----|-------------|------------|-------|
+| `api.list_data_files(subdir)` | List files in data directory | ✅ 98% | Standard Rust std::fs::read_dir |
+| `api.append_data_file(path, content)` | Append to file | ✅ 98% | OpenOptions::append() - standard Rust |
+| `api.data_file_exists(path)` | Check if file exists | ✅ 100% | std::path::Path::exists() |
+| `api.delete_data_file(path)` | Delete file | ✅ 98% | std::fs::remove_file() |
+| `api.read_json_data<T>(path)` | Read and parse JSON | ✅ 95% | serde_json::from_str after read_data_file |
+| `api.write_json_data<T>(path, data)` | Write JSON (pretty) | ✅ 95% | serde_json::to_string_pretty then write |
+| `api.data_file_metadata(path)` | Get file size/modified time | ✅ 98% | std::fs::metadata() |
 
-**Browser Management** (new permission: `allow_browser_export`, `allow_browser_import`)
-- `api.export_browser()` - Export ALL browser data (cookies + storage for all domains)
-- `api.import_browser(data)` - Import complete browser state
-- `api.export_browser_for_domain(domain)` - Export data for single domain
-- `api.clear_browser_data()` - Clear all cookies and storage
+#### Network/HTTP (new permission: `allow_http_requests`)
+| API | Description | Confidence | Notes |
+|-----|-------------|------------|-------|
+| `api.http_get(url)` | HTTP GET request | ✅ 90% | reqwest already in dependencies |
+| `api.http_post_json(url, body)` | HTTP POST with JSON | ✅ 90% | reqwest with json feature available |
+| `api.download_file(url, path)` | Download to data directory | ✅ 90% | reqwest + write_data_file combo |
+
+#### DOM Inspection (new permission: `allow_dom_inspection`)
+| API | Description | Confidence | Notes |
+|-----|-------------|------------|-------|
+| `api.get_computed_style(selector, property)` | Get CSS property | ✅ 95% | window.getComputedStyle via page.evaluate |
+| `api.get_element_rect(selector)` | Get element position/size | ✅ 95% | getBoundingClientRect already used in codebase |
+| `api.get_scroll_position()` | Get page scroll position | ✅ 95% | window.scrollX / scrollY via page.evaluate |
+| `api.count_elements(selector)` | Count matching elements | ✅ 95% | document.querySelectorAll().length via evaluate |
+| `api.is_in_viewport(selector)` | Check if element visible | ✅ 90% | getBoundingClientRect + window dimensions comparison |
+
+#### Browser Management (new permissions: `allow_browser_export`, `allow_browser_import`)
+| API | Description | Confidence | Notes |
+|-----|-------------|------------|-------|
+| `api.export_browser()` | Export ALL browser data | 🔍 65% | CDP Storage.getStorageKeyForFrame? Complex |
+| `api.export_browser_for_domain(domain)` | Export single domain data | ⚠️ 85% | Filter export_cookies + localStorage by domain |
+| `api.import_browser(data)` | Import complete browser state | ⚠️ 75% | Multiple import operations combined |
+| `api.clear_browser_data()` | Clear all cookies and storage | 🔍 60% | CDP Storage.clearDataForOrigin? Needs research |
+
+---
+
+## Implementation Feasibility Analysis
+
+### High Confidence (90-100%) - Phase 1 Candidates
+These can be implemented immediately using existing patterns:
+
+1. **data_file_exists()** - Standard Rust, zero risk
+2. **delete_data_file()** - Standard Rust, zero risk
+3. **list_data_files()** - Standard Rust, zero risk
+4. **read_json_data() / write_json_data()** - Serde already used
+5. **data_file_metadata()** - Standard Rust
+6. **append_data_file()** - Standard Rust
+7. **clear_clipboard()** - Trivial wrapper
+8. **has_clipboard_content()** - Trivial wrapper
+9. **append_clipboard()** - Combine existing read+write
+10. **get_element_rect()** - Already doing this in twitter tasks
+11. **count_elements()** - Simple JS via evaluate
+12. **get_scroll_position()** - Simple JS via evaluate
+
+### Medium Confidence (70-89%) - Phase 2 Candidates
+Implementable but need some investigation:
+
+1. **export_cookies_for_domain()** - Need to filter CDP results
+2. **export_session_cookies()** - Check session flag in cookie objects
+3. **clear_cookies_for_domain()** - May need JS workaround
+4. **export_local_storage()** - Extract from existing code
+5. **http_get() / http_post()** - reqwest available but need error handling design
+6. **get_computed_style()** - JS execution, straightforward
+7. **is_in_viewport()** - Math calculation on rect
+
+### Lower Confidence (50-69%) - Phase 3 Candidates
+Need significant research:
+
+1. **export_browser()** - Full browser export complex, may need multiple CDP calls
+2. **clear_browser_data()** - CDP Storage.clearDataForOrigin needs testing
+3. **read_clipboard_with_timeout()** - Platform-specific clipboard watching
+4. **is_session_valid()** - Cookie expiry checking is non-trivial
+
+---
+
+## Recommended Implementation Order
+
+### Phase 1: Quick Wins (Week 1) - Data Files & Clipboard
+All 90%+ confidence, minimal risk:
+
+```rust
+// Data File Operations (8 methods)
+pub fn data_file_exists(&self, path: &str) -> Result<bool>
+pub fn delete_data_file(&self, path: &str) -> Result<()>
+pub fn list_data_files(&self, subdir: &str) -> Result<Vec<String>>
+pub fn data_file_metadata(&self, path: &str) -> Result<FileMetadata>
+pub fn append_data_file(&self, path: &str, content: &[u8]) -> Result<()>
+pub fn read_json_data<T: DeserializeOwned>(&self, path: &str) -> Result<T>
+pub fn write_json_data<T: Serialize>(&self, path: &str, data: &T) -> Result<()>
+
+// Clipboard Operations (3 methods)
+pub fn clear_clipboard(&self) -> Result<()>
+pub fn has_clipboard_content(&self) -> Result<bool>
+pub fn append_clipboard(&self, text: &str, separator: &str) -> Result<()>
+```
+
+### Phase 2: DOM Inspection (Week 2)
+All 90%+ confidence, build on existing patterns:
+
+```rust
+// DOM Inspection (5 methods)
+pub async fn get_computed_style(&self, selector: &str, property: &str) -> Result<String>
+pub async fn get_element_rect(&self, selector: &str) -> Result<Rect>
+pub async fn get_scroll_position(&self) -> Result<(u32, u32)>
+pub async fn count_elements(&self, selector: &str) -> Result<usize>
+pub async fn is_in_viewport(&self, selector: &str) -> Result<bool>
+```
+
+### Phase 3: Cookie/Session Enhancement (Week 3)
+Medium complexity:
+
+```rust
+// Cookie Management (4 methods)
+pub async fn export_cookies_for_domain(&self, domain: &str) -> Result<Vec<serde_json::Value>>
+pub async fn export_session_cookies(&self, url: &str) -> Result<Vec<serde_json::Value>>
+pub async fn clear_cookies_for_domain(&self, domain: &str) -> Result<usize>
+pub async fn has_cookie(&self, name: &str, domain: &str) -> Result<bool>
+
+// Session Management (4 methods)
+pub async fn export_local_storage(&self, url: &str) -> Result<HashMap<String, String>>
+pub async fn import_local_storage(&self, url: &str, data: &HashMap<String, String>) -> Result<()>
+pub fn validate_session_data(&self, data: &SessionData) -> Result<Vec<String>>
+pub async fn is_session_valid(&self, url: &str) -> Result<bool>
+```
+
+### Phase 4: Network Operations (Week 4)
+New permission needed:
+
+```rust
+// Network/HTTP (3 methods) - requires allow_http_requests permission
+pub async fn http_get(&self, url: &str) -> Result<HttpResponse>
+pub async fn http_post_json<T: Serialize>(&self, url: &str, body: &T) -> Result<HttpResponse>
+pub async fn download_file(&self, url: &str, relative_path: &str) -> Result<u64>
+```
+
+### Phase 5: Browser Management (Week 5-6)
+Complex, needs research:
+
+```rust
+// Browser Management (4 methods) - requires allow_browser_export/import
+pub async fn export_browser(&self) -> Result<BrowserData>
+pub async fn export_browser_for_domain(&self, domain: &str) -> Result<BrowserData>
+pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
+pub async fn clear_browser_data(&self) -> Result<()>
+```
 
 ---
 
@@ -79,221 +215,368 @@
 
 ---
 
-## Current API State
-
-| Permission | Current Method | Status | Issues |
-|------------|---------------|--------|--------|
-| `allow_screenshot` | `screenshot()` | ✅ Implemented | Good |
-| `allow_screenshot` | `screenshot_with_quality(q)` | ✅ Implemented | Good |
-| `allow_export_cookies` | `export_cookies(url)` | ✅ Implemented | Good |
-| `allow_import_cookies` | `import_cookies(cookies)` | ✅ Implemented | Good |
-| `allow_export_session` | `export_session(url)` | ✅ Implemented | Good |
-| `allow_import_session` | `import_session(data)` | ✅ Implemented | Good |
-| `allow_session_clipboard` | `read_clipboard()` | ✅ Implemented | Good |
-| `allow_session_clipboard` | `write_clipboard(text)` | ✅ Implemented | Good |
-| `allow_read_data` | `read_data_file(path)` | ✅ Implemented | Good |
-| `allow_write_data` | `write_data_file(path, content)` | ✅ Implemented | Good |
-
----
-
-## Proposed API Additions for v0.0.3
+## Detailed Method Specifications
 
 ### 1. Cookie Management (Enhanced)
 
-**Current**: Basic export/import
-**Gap**: No bulk operations, no filtering
-
+#### `export_cookies_for_domain()` - ✅ 95% Confidence
 ```rust
-// Export cookies for specific domain
 pub async fn export_cookies_for_domain(&self, domain: &str) -> Result<Vec<serde_json::Value>>
-    requires: allow_export_cookies
-
-// Export only session cookies (no persistent)
-pub async fn export_session_cookies(&self, url: &str) -> Result<Vec<serde_json::Value>>
-    requires: allow_export_cookies
-
-// Clear all cookies for domain
-pub async fn clear_cookies_for_domain(&self, domain: &str) -> Result<usize>  // returns count cleared
-    requires: allow_export_cookies + allow_import_cookies (implied)
-
-// Check if specific cookie exists
-pub async fn has_cookie(&self, name: &str, domain: &str) -> Result<bool>
-    requires: allow_export_cookies
 ```
+**Implementation**: Filter result of Network.getCookies by domain field.
+**Requires**: `allow_export_cookies`
+**Feasibility**: CDP returns all cookies, filter in Rust by checking cookie["domain"].
+**Risk**: Low - just filtering existing data.
+
+#### `export_session_cookies()` - ✅ 90% Confidence
+```rust
+pub async fn export_session_cookies(&self, url: &str) -> Result<Vec<serde_json::Value>>
+```
+**Implementation**: Filter cookies where session=true or expires is None.
+**Requires**: `allow_export_cookies`
+**Feasibility**: Cookie object has session flag from CDP.
+**Risk**: Low - need to verify CDP cookie structure.
+
+#### `clear_cookies_for_domain()` - ⚠️ 80% Confidence
+```rust
+pub async fn clear_cookies_for_domain(&self, domain: &str) -> Result<usize>
+```
+**Implementation**: Either Network.deleteCookies (if available) or JS workaround.
+**Requires**: `allow_export_cookies` + `allow_import_cookies` (implied)
+**Feasibility**: Chromiumoxide may not expose Network.deleteCookies directly.
+**Risk**: Medium - may need JS execution with document.cookie manipulation.
+**Alternative**: Execute JS: `document.cookie = "name=; expires=Thu, 01 Jan 1970...; domain=..."`
+
+#### `has_cookie()` - ✅ 95% Confidence
+```rust
+pub async fn has_cookie(&self, name: &str, domain: &str) -> Result<bool>
+```
+**Implementation**: Check if any cookie in filtered list matches name.
+**Requires**: `allow_export_cookies`
+**Feasibility**: Trivial wrapper around export_cookies_for_domain.
+**Risk**: None.
+
+---
 
 ### 2. Session Management (Enhanced)
 
-**Current**: Full session export/import
-**Gap**: No partial operations, no validation
-
+#### `export_local_storage()` - ✅ 95% Confidence
 ```rust
-// Export only localStorage (no cookies)
-pub async fn export_local_storage(&self, url: &str) -> Result<HashMap<String, String>>
-    requires: allow_export_session
-
-// Import only localStorage
-pub async fn import_local_storage(&self, url: &str, data: &HashMap<String, String>) -> Result<()>
-    requires: allow_import_session
-
-// Validate session data without importing
-pub fn validate_session_data(&self, data: &SessionData) -> Result<Vec<String>>  // returns warnings
-    requires: none (read-only validation)
-
-// Check if session is "fresh" (not expired)
-pub async fn is_session_valid(&self, url: &str) -> Result<bool>
-    requires: allow_export_session
+pub async fn export_local_storage(&self, _url: &str) -> Result<HashMap<String, String>>
 ```
+**Implementation**: Extract JS localStorage loop from existing export_session.
+**Requires**: `allow_export_session`
+**Feasibility**: Already have working code in export_session, just separate it.
+**Risk**: None - code already proven.
+
+#### `import_local_storage()` - ✅ 95% Confidence
+```rust
+pub async fn import_local_storage(&self, _url: &str, data: &HashMap<String, String>) -> Result<()>
+```
+**Implementation**: Extract JS localStorage.setItem loop from import_session.
+**Requires**: `allow_import_session`
+**Feasibility**: Code already works in import_session.
+**Risk**: None - code already proven.
+
+#### `validate_session_data()` - ✅ 98% Confidence
+```rust
+pub fn validate_session_data(&self, data: &SessionData) -> Result<Vec<String>>
+```
+**Implementation**: Check JSON structure, required fields, data types.
+**Requires**: None (read-only validation)
+**Feasibility**: Pure Rust validation, no browser needed.
+**Risk**: None - just struct validation.
+**Returns**: Vec of warning strings (empty if valid).
+
+#### `is_session_valid()` - ⚠️ 75% Confidence
+```rust
+pub async fn is_session_valid(&self, url: &str) -> Result<bool>
+```
+**Implementation**: Export cookies, check if any session cookies expired.
+**Requires**: `allow_export_session`
+**Feasibility**: Need to parse cookie expiry dates, compare with current time.
+**Risk**: Medium - cookie date parsing can be tricky (multiple formats).
+**Note**: May not be 100% accurate - just checks cookie expiry, not server-side session.
+
+---
 
 ### 3. Clipboard Management (Enhanced)
 
-**Current**: Basic read/write
-**Gap**: No clear, no append, no format detection
-
+#### `clear_clipboard()` - ✅ 95% Confidence
 ```rust
-// Clear clipboard
 pub fn clear_clipboard(&self) -> Result<()>
-    requires: allow_session_clipboard
-
-// Read clipboard with timeout (wait for new content)
-pub async fn read_clipboard_with_timeout(&self, timeout_ms: u64) -> Result<Option<String>>
-    requires: allow_session_clipboard
-
-// Check if clipboard has content (non-empty)
-pub fn has_clipboard_content(&self) -> Result<bool>
-    requires: allow_session_clipboard
-
-// Append to clipboard (read + write combined)
-pub fn append_clipboard(&self, text: &str, separator: &str) -> Result<()>
-    requires: allow_session_clipboard
 ```
+**Implementation**: Call existing write_clipboard with empty string.
+**Requires**: `allow_session_clipboard`
+**Feasibility**: One-line wrapper.
+**Risk**: None.
+
+#### `read_clipboard_with_timeout()` - 🔍 60% Confidence
+```rust
+pub async fn read_clipboard_with_timeout(&self, timeout_ms: u64) -> Result<Option<String>>
+```
+**Implementation**: Poll clipboard every 100ms until content changes or timeout.
+**Requires**: `allow_session_clipboard`
+**Feasibility**: Tricky - clipboard module may not support change detection.
+**Risk**: High - could miss rapid changes, inefficient polling.
+**Alternative**: Could skip this and just use read_clipboard for now.
+**Platform Issues**: Clipboard watching is platform-specific.
+
+#### `has_clipboard_content()` - ✅ 95% Confidence
+```rust
+pub fn has_clipboard_content(&self) -> Result<bool>
+```
+**Implementation**: Call read_clipboard, check if result is non-empty.
+**Requires**: `allow_session_clipboard`
+**Feasibility**: Trivial wrapper.
+**Risk**: None.
+
+#### `append_clipboard()` - ✅ 95% Confidence
+```rust
+pub fn append_clipboard(&self, text: &str, separator: &str) -> Result<()>
+```
+**Implementation**: Read current, append with separator, write back.
+**Requires**: `allow_session_clipboard`
+**Feasibility**: Combine existing read + write.
+**Risk**: Low - race condition if clipboard changes between read/write.
+
+---
 
 ### 4. Data File Management (Enhanced)
 
-**Current**: Read/write single files
-**Gap**: No directory listing, no append, no JSON helpers
+All data file operations are **✅ 95-100% confidence** - they use standard Rust std::fs.
 
+#### `list_data_files()` - ✅ 98% Confidence
 ```rust
-// List files in data directory (non-recursive)
 pub fn list_data_files(&self, subdir: &str) -> Result<Vec<String>>
-    requires: allow_read_data
+```
+**Implementation**: std::fs::read_dir, filter to files, return relative paths.
+**Requires**: `allow_read_data`
+**Feasibility**: Standard Rust.
+**Risk**: None.
 
-// Append to file (create if not exists)
+#### `append_data_file()` - ✅ 98% Confidence
+```rust
 pub fn append_data_file(&self, relative_path: &str, content: &[u8]) -> Result<()>
-    requires: allow_write_data
+```
+**Implementation**: OpenOptions::append().open(path), write content.
+**Requires**: `allow_write_data`
+**Feasibility**: Standard Rust.
+**Risk**: None.
 
-// Check if file exists
+#### `data_file_exists()` - ✅ 100% Confidence
+```rust
 pub fn data_file_exists(&self, relative_path: &str) -> Result<bool>
-    requires: allow_read_data
+```
+**Implementation**: std::path::Path::exists()
+**Requires**: `allow_read_data`
+**Feasibility**: Trivial.
+**Risk**: None.
 
-// Read and parse JSON
-pub fn read_json_data<T: DeserializeOwned>(&self, relative_path: &str) -> Result<T>
-    requires: allow_read_data
-
-// Write JSON (pretty-printed)
-pub fn write_json_data<T: Serialize>(&self, relative_path: &str, data: &T) -> Result<()>
-    requires: allow_write_data
-
-// Delete file
+#### `delete_data_file()` - ✅ 98% Confidence
+```rust
 pub fn delete_data_file(&self, relative_path: &str) -> Result<()>
-    requires: allow_write_data
+```
+**Implementation**: std::fs::remove_file() after path validation.
+**Requires**: `allow_write_data`
+**Feasibility**: Standard Rust.
+**Risk**: None.
 
-// Get file metadata (size, modified time)
+#### `read_json_data()` - ✅ 95% Confidence
+```rust
+pub fn read_json_data<T: DeserializeOwned>(&self, relative_path: &str) -> Result<T>
+```
+**Implementation**: Read file as string, serde_json::from_str.
+**Requires**: `allow_read_data`
+**Feasibility**: Serde already used in codebase.
+**Risk**: Low - type T must match JSON structure.
+
+#### `write_json_data()` - ✅ 95% Confidence
+```rust
+pub fn write_json_data<T: Serialize>(&self, relative_path: &str, data: &T) -> Result<()>
+```
+**Implementation**: serde_json::to_string_pretty, then write_data_file.
+**Requires**: `allow_write_data`
+**Feasibility**: Serde already used.
+**Risk**: None.
+
+#### `data_file_metadata()` - ✅ 98% Confidence
+```rust
 pub fn data_file_metadata(&self, relative_path: &str) -> Result<FileMetadata>
-    requires: allow_read_data
 ```
-
-### 5. New Permission: Network/HTTP (Proposed)
-
-**Rationale**: Tasks often need to make HTTP requests
-**Risk**: Could be abused for spam/DDoS
-**Mitigation**: Separate permission, rate limiting
-
+**Implementation**: std::fs::metadata(), extract size, modified time.
+**Requires**: `allow_read_data`
+**Feasibility**: Standard Rust.
+**Risk**: None.
+**Returns**:
 ```rust
-// New permission: allow_http_requests
-
-// Simple GET request
-pub async fn http_get(&self, url: &str) -> Result<HttpResponse>
-    requires: allow_http_requests
-
-// POST with JSON body
-pub async fn http_post_json<T: Serialize>(&self, url: &str, body: &T) -> Result<HttpResponse>
-    requires: allow_http_requests
-
-// Download file to data directory
-pub async fn download_file(&self, url: &str, relative_path: &str) -> Result<u64>  // bytes downloaded
-    requires: allow_http_requests + allow_write_data (implied)
-```
-
-### 6. New Permission: DOM Inspection (Proposed)
-
-**Rationale**: Advanced tasks need to read page state
-**Current Gap**: Only `api.html()`, `api.text()` exist
-
-```rust
-// New permission: allow_dom_inspection
-
-// Get computed CSS property for element
-pub async fn get_computed_style(&self, selector: &str, property: &str) -> Result<String>
-    requires: allow_dom_inspection
-
-// Get element bounding box (position + size)
-pub async fn get_element_rect(&self, selector: &str) -> Result<Rect>
-    requires: allow_dom_inspection
-
-// Get page scroll position
-pub async fn get_scroll_position(&self) -> Result<(u32, u32)>  // (x, y)
-    requires: allow_dom_inspection
-
-// Count elements matching selector
-pub async fn count_elements(&self, selector: &str) -> Result<usize>
-    requires: allow_dom_inspection
-
-// Check if element is in viewport
-pub async fn is_in_viewport(&self, selector: &str) -> Result<bool>
-    requires: allow_dom_inspection
-```
-
-### 7. Browser Management (New)
-
-**Current Gap**: No way to export/import complete browser state across sessions
-**Use Case**: Move data from Browser A to Browser B, backup/restore full state
-
-```rust
-// New permissions: allow_browser_export, allow_browser_import
-
-// Export ALL browser data (all domains, all storage types)
-pub async fn export_browser(&self) -> Result<BrowserData>
-    requires: allow_browser_export
-    
-// Export data for single domain only
-pub async fn export_browser_for_domain(&self, domain: &str) -> Result<BrowserData>
-    requires: allow_browser_export
-
-// Import complete browser state (replaces current state)
-pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
-    requires: allow_browser_import
-
-// Clear all browser data (cookies, localStorage, sessionStorage, cache)
-pub async fn clear_browser_data(&self) -> Result<()>
-    requires: allow_browser_export + allow_browser_import (implied)
-```
-
-**BrowserData Structure**:
-```rust
-pub struct BrowserData {
-    pub exported_at: DateTime<Utc>,
-    pub cookies: Vec<serde_json::Value>,           // All cookies across domains
-    pub local_storage: HashMap<String, HashMap<String, String>>,  // domain -> key-value
-    pub session_storage: HashMap<String, HashMap<String, String>>, // domain -> key-value
-    pub indexed_db: Vec<IndexedDBData>,           // Future: IndexedDB contents
+pub struct FileMetadata {
+    pub size: u64,
+    pub modified: SystemTime,
+    pub created: SystemTime,
 }
 ```
 
-**Security Considerations**:
-- `allow_browser_export` is HIGH RISK - exports ALL sites' data
-- `allow_browser_import` is HIGH RISK - can inject malicious state
-- These should be separate permissions from session-level export/import
-- Consider requiring both permissions for `clear_browser_data()`
+---
+
+### 5. Network/HTTP (New Permission: `allow_http_requests`)
+
+#### `http_get()` - ✅ 90% Confidence
+```rust
+pub async fn http_get(&self, url: &str) -> Result<HttpResponse>
+```
+**Implementation**: reqwest::get(url), return status + body.
+**Requires**: `allow_http_requests`
+**Feasibility**: reqwest already in dependencies (v0.11).
+**Risk**: Low - standard HTTP client.
+**Returns**:
+```rust
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: String,
+    pub headers: HashMap<String, String>,
+}
+```
+
+#### `http_post_json()` - ✅ 90% Confidence
+```rust
+pub async fn http_post_json<T: Serialize>(&self, url: &str, body: &T) -> Result<HttpResponse>
+```
+**Implementation**: reqwest::Client::post().json(body).send().
+**Requires**: `allow_http_requests`
+**Feasibility**: reqwest has json() method.
+**Risk**: Low.
+
+#### `download_file()` - ✅ 90% Confidence
+```rust
+pub async fn download_file(&self, url: &str, relative_path: &str) -> Result<u64>
+```
+**Implementation**: reqwest GET, stream to file, return bytes downloaded.
+**Requires**: `allow_http_requests` + `allow_write_data` (implied)
+**Feasibility**: reqwest supports streaming.
+**Risk**: Low - just combining reqwest + write_data_file.
+**Returns**: Number of bytes downloaded.
+
+---
+
+### 6. DOM Inspection (New Permission: `allow_dom_inspection`)
+
+All DOM inspection methods use `page.evaluate()` with JavaScript.
+
+#### `get_computed_style()` - ✅ 95% Confidence
+```rust
+pub async fn get_computed_style(&self, selector: &str, property: &str) -> Result<String>
+```
+**Implementation**: JS: `window.getComputedStyle(document.querySelector(sel))[prop]`
+**Requires**: `allow_dom_inspection`
+**Feasibility**: Standard browser API via evaluate.
+**Risk**: None.
+
+#### `get_element_rect()` - ✅ 95% Confidence
+```rust
+pub async fn get_element_rect(&self, selector: &str) -> Result<Rect>
+```
+**Implementation**: JS: `document.querySelector(sel).getBoundingClientRect()`
+**Requires**: `allow_dom_inspection`
+**Feasibility**: Already using this pattern in twitter tasks.
+**Risk**: None.
+**Returns**:
+```rust
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+```
+
+#### `get_scroll_position()` - ✅ 95% Confidence
+```rust
+pub async fn get_scroll_position(&self) -> Result<(u32, u32)>
+```
+**Implementation**: JS: `({x: window.scrollX, y: window.scrollY})`
+**Requires**: `allow_dom_inspection`
+**Feasibility**: Simple evaluate call.
+**Risk**: None.
+**Returns**: (scrollX, scrollY) in pixels.
+
+#### `count_elements()` - ✅ 95% Confidence
+```rust
+pub async fn count_elements(&self, selector: &str) -> Result<usize>
+```
+**Implementation**: JS: `document.querySelectorAll(sel).length`
+**Requires**: `allow_dom_inspection`
+**Feasibility**: Simple evaluate.
+**Risk**: None.
+
+#### `is_in_viewport()` - ✅ 90% Confidence
+```rust
+pub async fn is_in_viewport(&self, selector: &str) -> Result<bool>
+```
+**Implementation**: 
+```javascript
+const rect = el.getBoundingClientRect();
+return rect.top >= 0 && rect.left >= 0 && 
+       rect.bottom <= window.innerHeight && 
+       rect.right <= window.innerWidth;
+```
+**Requires**: `allow_dom_inspection`
+**Feasibility**: Combine getBoundingClientRect with window dimensions.
+**Risk**: Low - standard viewport calculation.
+
+---
+
+### 7. Browser Management (New Permissions: `allow_browser_export`, `allow_browser_import`)
+
+#### `export_browser()` - 🔍 65% Confidence
+```rust
+pub async fn export_browser(&self) -> Result<BrowserData>
+```
+**Implementation**: Combine multiple CDP calls:
+1. Network.getAllCookies (all domains)
+2. For each frame: DOMStorage.getDOMStorageItems (localStorage)
+3. For each frame: DOMStorage.getDOMStorageItems (sessionStorage)
+**Requires**: `allow_browser_export`
+**Feasibility**: Complex - need to enumerate all frames/storage areas.
+**Risk**: High - may miss some storage areas, slow on browsers with many tabs.
+**Alternative**: Start with export_browser_for_domain which is simpler.
+
+#### `export_browser_for_domain()` - ⚠️ 85% Confidence
+```rust
+pub async fn export_browser_for_domain(&self, domain: &str) -> Result<BrowserData>
+```
+**Implementation**: 
+1. Filter cookies by domain (existing pattern)
+2. Navigate to domain, export localStorage via JS
+3. Export sessionStorage via JS
+**Requires**: `allow_browser_export`
+**Feasibility**: Easier than full export - just one domain.
+**Risk**: Low-medium - need to navigate to domain first if not already there.
+
+#### `import_browser()` - ⚠️ 75% Confidence
+```rust
+pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
+```
+**Implementation**: For each domain in data:
+1. Import cookies
+2. Navigate to domain
+3. Import localStorage via JS
+4. Import sessionStorage via JS
+**Requires**: `allow_browser_import`
+**Feasibility**: Multiple operations, may be slow.
+**Risk**: Medium - complex multi-step operation, may leave browser in partial state if fails.
+
+#### `clear_browser_data()` - 🔍 60% Confidence
+```rust
+pub async fn clear_browser_data(&self) -> Result<()>
+```
+**Implementation**: 
+**Option A**: CDP Storage.clearDataForOrigin (if available in chromiumoxide)
+**Option B**: Clear cookies via Network.deleteCookies, clear storage via JS
+**Requires**: `allow_browser_export` + `allow_browser_import` (implied)
+**Feasibility**: Depends on CDP method availability.
+**Risk**: High - may not clear all data types (IndexedDB, cache, etc.).
+**Research Needed**: Check if chromiumoxide exposes Storage.clearDataForOrigin.
 
 ---
 
@@ -310,6 +593,8 @@ pub struct BrowserData {
 - `download_*` - Network → file operations
 - `append_*` - Add to existing data
 - `validate_*` - Check without modifying
+- `list_*` - Enumerate items
+- `delete_*` - Remove single item
 
 ### Nouns (Resources)
 - `*_cookies` - Browser cookies
@@ -318,6 +603,12 @@ pub struct BrowserData {
 - `*_clipboard` - System clipboard
 - `*_data_file` / `*_data` - File system (data/ config/)
 - `*_storage` / `*_cache` - Future: IndexedDB, etc.
+- `*_browser` - Complete browser state
+- `*_json` - JSON data
+- `*_metadata` - File information
+- `*_element` / `*_rect` - DOM elements
+- `*_style` - CSS properties
+- `*_position` / `*_scroll` - Viewport information
 
 ---
 
@@ -328,11 +619,13 @@ pub struct BrowserData {
 Result<()>              // Operation succeeded, no return value
 Result<bool>            // Yes/no answer
 Result<usize>           // Count of items affected
+Result<u64>             // Large count (bytes downloaded)
 Result<String>          // Single text value
 Result<Vec<T>>          // List of items
 Result<HashMap<K, V>>   // Key-value data
 Result<Option<T>>       // May or may not exist
 Result<T>               // Specific struct (SessionData, FileMetadata, etc.)
+Result<(u32, u32)>      // Tuple returns (coordinates, scroll position)
 ```
 
 ### Error Handling
@@ -342,34 +635,8 @@ All methods return `anyhow::Result<T>` with descriptive errors:
 - `CdpError` - Browser/CDP operation failed
 - `NotFound` - Element/file not found
 - `Timeout` - Operation timed out
-
----
-
-## Implementation Priority for v0.0.3
-
-### Phase 1: Core Enhancements (Week 1)
-1. `clear_clipboard()`
-2. `data_file_exists()`
-3. `delete_data_file()`
-4. `read_json_data()` / `write_json_data()`
-
-### Phase 2: Cookie/Session Expansion (Week 2)
-1. `export_cookies_for_domain()`
-2. `clear_cookies_for_domain()`
-3. `export_local_storage()`
-4. `validate_session_data()`
-
-### Phase 3: Advanced Data Operations (Week 3)
-1. `list_data_files()`
-2. `append_data_file()`
-3. `data_file_metadata()`
-4. `download_file()` (new permission)
-
-### Phase 4: DOM Inspection (Week 4)
-1. `get_computed_style()`
-2. `get_element_rect()`
-3. `count_elements()`
-4. `is_in_viewport()`
+- `HttpError` - Network request failed
+- `ValidationError` - Data validation failed
 
 ---
 
@@ -411,20 +678,55 @@ Every new method needs:
 
 ---
 
-## Open Questions
+## Open Questions & Risks
 
-1. **Rate Limiting**: Should `http_*` methods have built-in rate limiting?
-2. **File Size Limits**: Should data file operations have size caps?
-3. **Async vs Sync**: Should clipboard operations stay sync (they use internal cache)?
-4. **Batch Operations**: Should we add `export_cookies_batch(urls: &[&str])`?
-5. **Caching**: Should DOM inspection results be cached briefly?
+### High Risk / Needs Research
+1. **Browser Management**: Complex multi-domain operations
+   - Research: CDP Storage.clearDataForOrigin availability
+   - Alternative: Implement single-domain versions first
+
+2. **Clipboard Polling**: `read_clipboard_with_timeout()`
+   - Problem: Platform-specific, inefficient polling
+   - Alternative: Skip for now, use simple read_clipboard
+
+3. **Session Validity**: `is_session_valid()`
+   - Problem: Cookie date parsing complexity
+   - Alternative: Document limitations clearly
+
+### Medium Risk
+1. **Cookie Clearing**: `clear_cookies_for_domain()`
+   - May need JS workaround if CDP method unavailable
+   - Can be implemented but may be fragile
+
+2. **HTTP Operations**: reqwest dependency already present
+   - Need good error handling design
+   - Consider timeout configuration
+
+### Low Risk
+1. **Data File Operations**: Standard Rust
+2. **DOM Inspection**: Already doing this in tasks
+3. **JSON Data**: Serde already used
 
 ---
 
 ## Summary
 
-**v0.0.3 Goal**: Add 15-20 new API methods following consistent naming conventions, all permission-gated, all well-documented.
+### v0.0.3 Implementation Scope
 
-**Impact**: Makes the task API comprehensive for advanced automation scenarios while maintaining security through permissions.
+**Total New APIs**: 28 methods
 
-**Success Metric**: New tasks can be written without reaching into raw CDP or internal utilities.
+**By Confidence Level**:
+- ✅ **90-100%** (High Confidence): 17 methods - **Implement first**
+- ⚠️ **70-89%** (Medium Confidence): 6 methods - **Phase 2**
+- 🔍 **50-69%** (Low Confidence): 5 methods - **Research first**
+
+**By Category**:
+- Data File Management: 7 methods (all high confidence)
+- DOM Inspection: 5 methods (all high confidence)
+- Cookie Management: 4 methods (mostly high)
+- Session Management: 4 methods (mostly high)
+- Clipboard Management: 4 methods (1 low confidence)
+- Network/HTTP: 3 methods (medium confidence)
+- Browser Management: 4 methods (mostly low confidence)
+
+**Recommendation**: Start with Phase 1 (Data Files + DOM Inspection) for quick wins, then tackle Cookie/Session enhancement, defer Browser Management until more research done.

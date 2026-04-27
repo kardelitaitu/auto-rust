@@ -19,6 +19,7 @@ use auto::runtime::task_context::Rect;
 // ============================================================================
 
 /// HTML fixture with various elements for DOM inspection tests
+#[allow(dead_code)]
 const HTML_FIXTURE_DOM_INSPECTION: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -40,6 +41,7 @@ const HTML_FIXTURE_DOM_INSPECTION: &str = r#"
 "#;
 
 /// HTML fixture with storage for session management tests
+#[allow(dead_code)]
 const HTML_FIXTURE_STORAGE: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -56,6 +58,7 @@ const HTML_FIXTURE_STORAGE: &str = r#"
 "#;
 
 /// HTML fixture with scrollable content
+#[allow(dead_code)]
 const HTML_FIXTURE_SCROLLABLE: &str = r#"
 <!DOCTYPE html>
 <html>
@@ -80,6 +83,7 @@ const HTML_FIXTURE_SCROLLABLE: &str = r#"
 
 /// Mock page context for testing without real browser
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 struct MockPageContext {
     /// Simulated localStorage data (origin -> key/value)
     local_storage: HashMap<String, HashMap<String, String>>,
@@ -110,11 +114,13 @@ impl MockPageContext {
         self
     }
 
+    #[allow(dead_code)]
     fn with_cookie(mut self, cookie: serde_json::Value) -> Self {
         self.cookies.push(cookie);
         self
     }
 
+    #[allow(dead_code)]
     fn with_dom_element(mut self, selector: &str, data: serde_json::Value) -> Self {
         self.dom_data.insert(selector.to_string(), data);
         self
@@ -605,6 +611,7 @@ fn test_data_file_metadata_correct_values() {
 
 /// Mock HTTP response for testing
 #[derive(Debug)]
+#[allow(dead_code)]
 struct MockHttpResponse {
     status: u16,
     body: String,

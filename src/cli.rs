@@ -54,6 +54,28 @@ pub struct TaskDefinition {
 }
 
 /// Parse the `--browsers` CLI filter into normalized tokens.
+///
+/// Normalizes browser names by converting to lowercase and removing duplicates.
+/// Used to filter which browser sessions should receive tasks.
+///
+/// # Arguments
+/// * `value` - Comma-separated browser names from CLI (e.g., "chrome,firefox")
+///
+/// # Returns
+/// Vector of normalized browser name tokens
+///
+/// # Examples
+/// ```
+/// use auto::cli::parse_browser_filters;
+///
+/// // Parse multiple browsers
+/// let filters = parse_browser_filters(Some("chrome,firefox,chrome"));
+/// assert_eq!(filters, vec!["chrome", "firefox"]);
+///
+/// // Empty filter matches all browsers
+/// let all = parse_browser_filters(None);
+/// assert!(all.is_empty());
+/// ```
 pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
     let mut seen = HashSet::new();
 
@@ -66,8 +88,41 @@ pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
         .collect()
 }
 
-/// Parse CLI args into task groups for sequential execution
-/// Mirrors the Node.js task-parser.js logic
+/// Parse CLI args into task groups for sequential execution.
+///
+/// Mirrors the Node.js task-parser.js logic, handling complex CLI patterns:
+/// - Tasks with parameters: `task1 key=value`
+/// - Sequential groups: `task1 then task2`
+/// - Multiple tasks per group: `task1 task2 then task3`
+///
+/// # Arguments
+/// * `task_args` - Raw CLI arguments (e.g., from `std::env::args()`)
+///
+/// # Returns
+/// Vector of task groups, where each group is a vector of task definitions.
+/// Groups are executed sequentially, tasks within a group run in parallel.
+///
+/// # Examples
+/// ```
+/// use auto::cli::parse_task_groups;
+///
+/// // Single task
+/// let groups = parse_task_groups(&["cookiebot".to_string()]);
+/// assert_eq!(groups.len(), 1);
+/// assert_eq!(groups[0][0].name, "cookiebot");
+///
+/// // Sequential groups with "then"
+/// let groups = parse_task_groups(&[
+///     "cookiebot".to_string(),
+///     "then".to_string(),
+///     "pageview".to_string()
+/// ]);
+/// assert_eq!(groups.len(), 2);
+///
+/// // Task with parameters
+/// let groups = parse_task_groups(&["pageview=www.example.com".to_string()]);
+/// assert_eq!(groups[0][0].name, "pageview");
+/// ```
 pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
     let mut groups: Vec<Vec<TaskDefinition>> = Vec::new();
     let mut current_group: Vec<TaskDefinition> = Vec::new();

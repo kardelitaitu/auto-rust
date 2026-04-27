@@ -300,10 +300,12 @@ async fn test_export_session_cookies_filters_persistent_mock() {
         })
         .collect();
     
-    assert_eq!(session_cookies.len(), 1);
-    assert_eq!(
-        session_cookies[0].get("name").and_then(|n| n.as_str()),
-        Some("session_id")
+    // Two session cookies: "session_id" (session=true) and "other_cookie" (no expires field)
+    assert_eq!(session_cookies.len(), 2);
+    assert!(
+        session_cookies.iter().any(|c| {
+            c.get("name").and_then(|n| n.as_str()) == Some("session_id")
+        })
     );
 }
 

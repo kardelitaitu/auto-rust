@@ -72,6 +72,19 @@ pub struct HttpResponse {
     pub headers: HashMap<String, String>,
 }
 
+/// Rectangle for element position and size.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Rect {
+    /// X coordinate (left edge)
+    pub x: f64,
+    /// Y coordinate (top edge)
+    pub y: f64,
+    /// Width in pixels
+    pub width: f64,
+    /// Height in pixels
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum ClickPageContext {
     Home,
@@ -1314,6 +1327,7 @@ impl TaskContext {
             "allow_read_data" => perms.allow_read_data,
             "allow_write_data" => perms.allow_write_data,
             "allow_http_requests" => perms.allow_http_requests,
+            "allow_dom_inspection" => perms.allow_dom_inspection,
             _ => {
                 log::warn!("Unknown permission '{}' requested", permission);
                 false
@@ -2296,6 +2310,250 @@ impl TaskContext {
         );
 
         Ok(session_data)
+    }
+
+    /// Get computed CSS style property for an element.
+    ///
+    /// # Arguments
+    /// * `selector` - CSS selector for the element
+    /// * `property` - CSS property name (e.g., "color", "font-size")
+    ///
+    /// # Returns
+    /// String value of the computed style property
+    ///
+    /// # Errors
+    /// Returns error if `allow_dom_inspection` permission not granted or element not found
+    ///
+    /// # Permission
+    /// Requires `allow_dom_inspection` permission
+    pub async fn get_computed_style(&self, selector: &str, property: &str) -> Result<String> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_dom_inspection {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_dom_inspection' permission",
+                self.session_id
+            ));
+        }
+
+        let js = format!(
+            r#"
+            (function() {{
+                const el = document.querySelector('{}');
+                if (!el) return null;
+                const style = window.getComputedStyle(el);
+                return style.getPropertyValue('{}');
+            }})()
+            "#,
+            selector.replace("'", "\\'"),
+            property.replace("'", "\\'")
+        );
+
+        let result = self.page.evaluate(js).await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+
+        let value = result.value()
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} selector={} property={}",
+            self.session_id, "allow_dom_inspection", selector, property
+        );
+
+        Ok(value)
+    }
+
+    /// Get element's position and size (bounding rectangle).
+    ///
+    /// # Arguments
+    /// * `selector` - CSS selector for the element
+    ///
+    /// # Returns
+    /// Rect struct with x, y, width, height
+    ///
+    /// # Errors
+    /// Returns error if `allow_dom_inspection` permission not granted or element not found
+    ///
+    /// # Permission
+    /// Requires `allow_dom_inspection` permission
+    pub async fn get_element_rect(&self, selector: &str) -> Result<Rect> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_dom_inspection {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_dom_inspection' permission",
+                self.session_id
+            ));
+        }
+
+        let js = format!(
+            r#"
+            (function() {{
+                const el = document.querySelector('{}');
+                if (!el) return null;
+                const rect = el.getBoundingClientRect();
+                return {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }};
+            }})()
+            "#,
+            selector.replace("'", "\\'")
+        );
+
+        let result = self.page.evaluate(js).await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+
+        let value = result.value()
+            .ok_or_else(|| anyhow::anyhow!("Element not found: {}", selector))?;
+
+        let x = value.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let y = value.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let width = value.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let height = value.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} selector={}",
+            self.session_id, "allow_dom_inspection", selector
+        );
+
+        Ok(Rect { x, y, width, height })
+    }
+
+    /// Get current scroll position of the page.
+    ///
+    /// # Returns
+    /// (scroll_x, scroll_y) in pixels as (u32, u32)
+    ///
+    /// # Errors
+    /// Returns error if `allow_dom_inspection` permission not granted
+    ///
+    /// # Permission
+    /// Requires `allow_dom_inspection` permission
+    pub async fn get_scroll_position(&self) -> Result<(u32, u32)> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_dom_inspection {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_dom_inspection' permission",
+                self.session_id
+            ));
+        }
+
+        let js = r#"
+            (function() {
+                return { x: window.scrollX || window.pageXOffset, y: window.scrollY || window.pageYOffset };
+            })()
+        "#;
+
+        let result = self.page.evaluate(js).await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+
+        let value = result.value().cloned().unwrap_or_else(|| serde_json::json!({"x": 0, "y": 0}));
+        let x = value.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+        let y = value.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+
+        log::warn!(
+            "task_policy_audit: task={} permission={}",
+            self.session_id, "allow_dom_inspection"
+        );
+
+        Ok((x, y))
+    }
+
+    /// Count elements matching a CSS selector.
+    ///
+    /// # Arguments
+    /// * `selector` - CSS selector to match
+    ///
+    /// # Returns
+    /// Number of matching elements
+    ///
+    /// # Errors
+    /// Returns error if `allow_dom_inspection` permission not granted
+    ///
+    /// # Permission
+    /// Requires `allow_dom_inspection` permission
+    pub async fn count_elements(&self, selector: &str) -> Result<usize> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_dom_inspection {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_dom_inspection' permission",
+                self.session_id
+            ));
+        }
+
+        let js = format!(
+            r#"
+            (function() {{
+                return document.querySelectorAll('{}').length;
+            }})()
+            "#,
+            selector.replace("'", "\\'")
+        );
+
+        let result = self.page.evaluate(js).await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+
+        let count = result.value()
+            .and_then(|v| v.as_f64())
+            .map(|n| n as usize)
+            .unwrap_or(0);
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} selector={} count={}",
+            self.session_id, "allow_dom_inspection", selector, count
+        );
+
+        Ok(count)
+    }
+
+    /// Check if element is visible in the viewport.
+    ///
+    /// # Arguments
+    /// * `selector` - CSS selector for the element
+    ///
+    /// # Returns
+    /// true if element is at least partially visible in viewport
+    ///
+    /// # Errors
+    /// Returns error if `allow_dom_inspection` permission not granted or element not found
+    ///
+    /// # Permission
+    /// Requires `allow_dom_inspection` permission
+    pub async fn is_in_viewport(&self, selector: &str) -> Result<bool> {
+        let perms = self.policy.effective_permissions();
+        if !perms.allow_dom_inspection {
+            return Err(anyhow::anyhow!(
+                "Permission denied: task '{}' lacks 'allow_dom_inspection' permission",
+                self.session_id
+            ));
+        }
+
+        let js = format!(
+            r#"
+            (function() {{
+                const el = document.querySelector('{}');
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+                const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+                return rect.top < windowHeight && rect.bottom > 0 &&
+                       rect.left < windowWidth && rect.right > 0;
+            }})()
+            "#,
+            selector.replace("'", "\\'")
+        );
+
+        let result = self.page.evaluate(js).await
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+
+        let visible = result.value()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        log::warn!(
+            "task_policy_audit: task={} permission={} selector={} visible={}",
+            self.session_id, "allow_dom_inspection", selector, visible
+        );
+
+        Ok(visible)
     }
 
     /// Import session data (cookies + localStorage) from SessionData.

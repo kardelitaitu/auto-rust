@@ -108,6 +108,9 @@ pub struct TaskPermissions {
 
     /// Allow making HTTP requests (GET, POST, download).
     pub allow_http_requests: bool,
+
+    /// Allow DOM inspection operations (get styles, positions, etc).
+    pub allow_dom_inspection: bool,
 }
 
 impl Default for TaskPermissions {
@@ -122,6 +125,7 @@ impl Default for TaskPermissions {
             allow_read_data: false,
             allow_write_data: false,
             allow_http_requests: false,
+            allow_dom_inspection: false,
         }
     }
 }
@@ -139,6 +143,7 @@ pub const DEFAULT_TASK_POLICY: TaskPolicy = TaskPolicy {
         allow_read_data: false,
         allow_write_data: false,
         allow_http_requests: false,
+        allow_dom_inspection: false,
     },
 };
 

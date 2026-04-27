@@ -152,11 +152,11 @@ pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
 #### DOM Inspection (new permission: `allow_dom_inspection`)
 | Status | API | Description | Confidence | Notes |
 |--------|-----|-------------|------------|-------|
-| ☐ | `api.get_computed_style(selector, property)` | Get CSS property | ✅ 95% | window.getComputedStyle via page.evaluate |
-| ☐ | `api.get_element_rect(selector)` | Get element position/size | ✅ 95% | getBoundingClientRect already used in codebase |
-| ☐ | `api.get_scroll_position()` | Get page scroll position | ✅ 95% | window.scrollX / scrollY via page.evaluate |
-| ☐ | `api.count_elements(selector)` | Count matching elements | ✅ 95% | document.querySelectorAll().length via evaluate |
-| ☐ | `api.is_in_viewport(selector)` | Check if element visible | ✅ 90% | getBoundingClientRect + window dimensions comparison |
+| ☑ | `api.get_computed_style(selector, property)` | Get CSS property | ✅ 95% | window.getComputedStyle via page.evaluate |
+| ☑ | `api.get_element_rect(selector)` | Get element position/size | ✅ 95% | getBoundingClientRect already used in codebase |
+| ☑ | `api.get_scroll_position()` | Get page scroll position | ✅ 95% | window.scrollX / scrollY via page.evaluate |
+| ☑ | `api.count_elements(selector)` | Count matching elements | ✅ 95% | document.querySelectorAll().length via evaluate |
+| ☑ | `api.is_in_viewport(selector)` | Check if element visible | ✅ 90% | getBoundingClientRect + window dimensions comparison |
 
 #### Browser Management (new permissions: `allow_browser_export`, `allow_browser_import`)
 | Status | API | Description | Confidence | Notes |

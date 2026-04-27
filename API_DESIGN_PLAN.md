@@ -5,6 +5,61 @@
 **Target Version**: v0.0.3
 **Status**: Draft
 
+## Quick Reference: Planned API Methods
+
+### Current APIs (v0.0.2)
+- `api.screenshot()` - Capture WebP screenshot at 50% quality
+- `api.screenshot_with_quality(q)` - Screenshot with custom quality (1-100)
+- `api.export_cookies(url)` - Export cookies for URL
+- `api.import_cookies(cookies)` - Import cookies into browser
+- `api.export_session(url)` - Export cookies + localStorage
+- `api.import_session(data)` - Import cookies + localStorage
+- `api.read_clipboard()` - Read system clipboard
+- `api.write_clipboard(text)` - Write to system clipboard
+- `api.read_data_file(path)` - Read file from data/ or config/
+- `api.write_data_file(path, content)` - Write file to data/ or config/
+
+### Planned APIs (v0.0.3)
+
+**Cookie Management**
+- `api.export_cookies_for_domain(domain)` - Export cookies matching domain
+- `api.export_session_cookies(url)` - Export only session cookies
+- `api.clear_cookies_for_domain(domain)` - Clear cookies for domain
+- `api.has_cookie(name, domain)` - Check if specific cookie exists
+
+**Session Management**
+- `api.export_local_storage(url)` - Export only localStorage
+- `api.import_local_storage(url, data)` - Import only localStorage
+- `api.validate_session_data(data)` - Validate session without importing
+- `api.is_session_valid(url)` - Check if session is fresh
+
+**Clipboard Management**
+- `api.clear_clipboard()` - Clear clipboard content
+- `api.read_clipboard_with_timeout(ms)` - Wait for clipboard update
+- `api.has_clipboard_content()` - Check if clipboard non-empty
+- `api.append_clipboard(text, sep)` - Append text to clipboard
+
+**Data File Management**
+- `api.list_data_files(subdir)` - List files in data directory
+- `api.append_data_file(path, content)` - Append to file
+- `api.data_file_exists(path)` - Check if file exists
+- `api.delete_data_file(path)` - Delete file
+- `api.read_json_data(path)` - Read and parse JSON
+- `api.write_json_data(path, data)` - Write JSON (pretty)
+- `api.data_file_metadata(path)` - Get file size/modified time
+
+**Network/HTTP** (new permission: `allow_http_requests`)
+- `api.http_get(url)` - HTTP GET request
+- `api.http_post_json(url, body)` - HTTP POST with JSON
+- `api.download_file(url, path)` - Download to data directory
+
+**DOM Inspection** (new permission: `allow_dom_inspection`)
+- `api.get_computed_style(selector, property)` - Get CSS property
+- `api.get_element_rect(selector)` - Get element position/size
+- `api.get_scroll_position()` - Get page scroll position
+- `api.count_elements(selector)` - Count matching elements
+- `api.is_in_viewport(selector)` - Check if element visible
+
 ---
 
 ## Design Principles

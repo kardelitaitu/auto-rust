@@ -5,6 +5,83 @@
 **Target Version**: v0.0.3
 **Status**: Draft with Implementation Confidence Assessment
 
+## Browser Management Research Update
+
+### Research Date: April 27, 2026
+
+#### CDP Methods Discovered
+
+**Storage Domain (Available in chromiumoxide):**
+- `Storage.getCookies` - Returns **ALL** browser cookies across all domains ✅
+- `Storage.setCookies` - Sets multiple cookies at once ✅
+- `Storage.clearCookies` - Clears all cookies ✅
+- `Storage.clearDataForOrigin` - Clears storage (localStorage, sessionStorage, IndexedDB, cache) for specific origin ✅
+- `Storage.getStorageKeyForFrame` - Gets storage key for frame (deprecated, use getStorageKey) ⚠️
+
+**DOMStorage Domain (Available):**
+- `DOMStorage.getDOMStorageItems` - Gets localStorage/sessionStorage items for a storage ID ✅
+- `DOMStorage.setDOMStorageItem` - Sets a storage item ✅
+- `DOMStorage.clear` - Clears all items for a storage ID ✅
+
+**Implementation Strategy:**
+
+#### `api.export_browser()` - Revised Confidence: ⚠️ 80%
+```rust
+pub async fn export_browser(&self) -> Result<BrowserData>
+```
+
+**Implementation Plan:**
+1. **Cookies**: Use `Storage.getCookies` (no URL param = all cookies) ✅
+2. **Storage Areas**: More complex - need to:
+   - Get all frame IDs from Page domain
+   - For each frame, call `Storage.getStorageKeyForFrame` to get storage key
+   - Use `DOMStorage.getDOMStorageItems` with storage ID (localStorage = 0, sessionStorage = 1)
+   
+**Challenges:**
+- Enumerating all frames/storage areas is complex
+- Need to discover unique origins first
+- May miss storage for frames that haven't been loaded
+
+**Alternative Simpler Approach:**
+- Export cookies via `Storage.getCookies` (all domains)
+- Export localStorage/sessionStorage only for CURRENT page via JavaScript
+- Document limitation: only exports visible frame's storage
+
+#### `api.import_browser()` - Revised Confidence: ✅ 85%
+```rust
+pub async fn import_browser(&self, data: &BrowserData) -> Result<()>
+```
+
+**Implementation Plan:**
+1. **Cookies**: Use `Storage.setCookies` - can set all at once ✅
+2. **Storage**: Navigate to each domain, inject JavaScript to set localStorage/sessionStorage
+   - Navigate to domain URL
+   - Execute JS: `localStorage.setItem(key, value)` for each item
+   - Execute JS: `sessionStorage.setItem(key, value)` for each item
+
+**Challenges:**
+- Slow - requires navigation to each domain
+- sessionStorage is per-tab, may not persist across sessions
+- Race conditions if pages load async
+
+**Revised Confidence Levels:**
+
+| API | Original | Revised | Notes |
+|-----|----------|---------|-------|
+| `api.export_browser()` | 🔍 65% | ⚠️ 80% | Can use Storage.getCookies for all cookies, JS for current page storage |
+| `api.import_browser()` | ⚠️ 75% | ✅ 85% | Storage.setCookies handles all cookies efficiently, JS for storage |
+
+**Implementation Priority:**
+- **Phase 1**: Implement simpler version that exports:
+  - All cookies (all domains)
+  - Only current page's localStorage/sessionStorage
+- **Phase 2**: Consider full multi-frame export if needed
+
+**Security Note:**
+- These methods expose ALL browser data across ALL domains
+- High security risk - requires strict `allow_browser_export`/`allow_browser_import` permissions
+- Should audit log these operations
+
 ---
 
 ## Quick Reference: All APIs

@@ -104,8 +104,9 @@ pub fn random_position_with_edge_ratio(viewport: &Viewport, edge_ratio: f64) -> 
     let clamped_ratio = edge_ratio.clamp(0.0, 0.45);
     let min_x = (viewport.width * clamped_ratio).max(1.0);
     let min_y = (viewport.height * clamped_ratio).max(1.0);
-    let max_x = (viewport.width * (1.0 - clamped_ratio)).max(min_x + 1.0);
-    let max_y = (viewport.height * (1.0 - clamped_ratio)).max(min_y + 1.0);
+    // Keep 1px margin from viewport edges to avoid boundary issues
+    let max_x = (viewport.width * (1.0 - clamped_ratio) - 1.0).max(min_x + 1.0);
+    let max_y = (viewport.height * (1.0 - clamped_ratio) - 1.0).max(min_y + 1.0);
 
     let x = random_in_range(min_x as u64, max_x as u64) as f64;
     let y = random_in_range(min_y as u64, max_y as u64) as f64;

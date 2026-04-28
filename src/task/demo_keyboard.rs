@@ -245,3 +245,113 @@ fn extract_typo_rate(payload: &Value) -> Option<f64> {
         .and_then(|v| v.as_f64())
         .map(|v| v.clamp(0.0, 1.0))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // =========================================================================
+    // extract_url_from_payload Tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_url_from_payload_with_url_field() {
+        let payload = json!({"url": "https://example.com"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://example.com");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_with_value_field() {
+        let payload = json!({"value": "https://test.com/page"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://test.com/page");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_with_default_url_field() {
+        let payload = json!({"default_url": "https://default.example.com"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://default.example.com");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_url_priority_over_value() {
+        // url field takes priority over value
+        let payload = json!({
+            "url": "https://priority.com",
+            "value": "https://secondary.com"
+        });
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://priority.com");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_uses_default_when_empty() {
+        let payload = json!({});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://textarea.online/");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_invalid_url_type() {
+        // URL is a number, should fall back to default
+        let payload = json!({"url": 12345});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://textarea.online/");
+    }
+
+    // =========================================================================
+    // extract_typo_rate Tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_typo_rate_valid() {
+        let payload = json!({"typo_rate": 0.5});
+        let result = extract_typo_rate(&payload);
+        assert_eq!(result, Some(0.5));
+    }
+
+    #[test]
+    fn test_extract_typo_rate_zero() {
+        let payload = json!({"typo_rate": 0.0});
+        let result = extract_typo_rate(&payload);
+        assert_eq!(result, Some(0.0));
+    }
+
+    #[test]
+    fn test_extract_typo_rate_one() {
+        let payload = json!({"typo_rate": 1.0});
+        let result = extract_typo_rate(&payload);
+        assert_eq!(result, Some(1.0));
+    }
+
+    #[test]
+    fn test_extract_typo_rate_clamps_above_one() {
+        let payload = json!({"typo_rate": 2.5});
+        let result = extract_typo_rate(&payload);
+        assert_eq!(result, Some(1.0));
+    }
+
+    #[test]
+    fn test_extract_typo_rate_clamps_below_zero() {
+        let payload = json!({"typo_rate": -0.5});
+        let result = extract_typo_rate(&payload);
+        assert_eq!(result, Some(0.0));
+    }
+
+    #[test]
+    fn test_extract_typo_rate_missing() {
+        let payload = json!({"other_field": "value"});
+        let result = extract_typo_rate(&payload);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_typo_rate_wrong_type() {
+        let payload = json!({"typo_rate": "not a number"});
+        let result = extract_typo_rate(&payload);
+        assert_eq!(result, None);
+    }
+}

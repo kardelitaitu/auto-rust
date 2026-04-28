@@ -26,3 +26,13 @@ pub mod orchestrator {
 
 pub mod execution;
 pub mod task_context;
+
+#[cfg(test)]
+mod tests {
+    /// Smoke test to verify runtime module structure compiles.
+    #[test]
+    fn test_runtime_module_compiles() {
+        // All re-exports are just aliases - verify structure
+        assert!(true);
+    }
+}

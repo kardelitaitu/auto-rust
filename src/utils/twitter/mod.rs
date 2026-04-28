@@ -54,3 +54,13 @@ pub use twitteractivity_sentiment_domains::*;
 pub use twitteractivity_sentiment_emoji::*;
 #[allow(unused_imports)]
 pub use twitteractivity_sentiment_llm::*;
+
+#[cfg(test)]
+mod tests {
+    /// Smoke test to verify twitter utils module compiles.
+    #[test]
+    fn test_twitter_utils_module_compiles() {
+        // All re-exports are just aliases - verify structure
+        assert!(true);
+    }
+}

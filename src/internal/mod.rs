@@ -45,3 +45,13 @@ pub mod blockmedia {
 pub mod page_size {
     pub use crate::utils::page_size::*;
 }
+
+#[cfg(test)]
+mod tests {
+    /// Smoke test to verify internal module structure compiles.
+    #[test]
+    fn test_internal_module_compiles() {
+        // All re-exports are just aliases to utils - verify structure
+        assert!(true);
+    }
+}

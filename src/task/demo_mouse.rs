@@ -152,3 +152,60 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // =========================================================================
+    // extract_url_from_payload Tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_url_from_payload_with_url_field() {
+        let payload = json!({"url": "https://example.com"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://example.com");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_with_value_field() {
+        let payload = json!({"value": "https://test.com/page"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://test.com/page");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_with_default_url_field() {
+        let payload = json!({"default_url": "https://default.example.com"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://default.example.com");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_url_priority_over_value() {
+        // url field takes priority over value
+        let payload = json!({
+            "url": "https://priority.com",
+            "value": "https://secondary.com"
+        });
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://priority.com");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_uses_default_when_empty() {
+        let payload = json!({});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://uvi.gg/keyboard-tester/");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_invalid_url_type() {
+        // URL is a number, should fall back to default
+        let payload = json!({"url": 12345});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://uvi.gg/keyboard-tester/");
+    }
+}

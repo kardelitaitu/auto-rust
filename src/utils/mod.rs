@@ -41,3 +41,13 @@ pub use text::*;
 pub use timing::*;
 #[allow(unused_imports)]
 pub use zoom::*;
+
+#[cfg(test)]
+mod tests {
+    /// Smoke test to verify utils module compiles.
+    #[test]
+    fn test_utils_module_compiles() {
+        // Module structure verification - just needs to compile
+        assert!(true);
+    }
+}

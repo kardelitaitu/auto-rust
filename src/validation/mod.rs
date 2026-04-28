@@ -9,3 +9,19 @@ pub use task_registry::{
     is_known_task, task_file_exists, validate_task as validate_task_name, validate_task_groups,
     validate_task_groups_strict, TaskValidationResult,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Smoke test to verify validation re-exports are accessible.
+    #[test]
+    fn test_validation_re_exports_exist() {
+        // These just need to compile - verifies module structure
+        let _: Option<TaskValidationResult> = None;
+
+        // Verify functions are accessible
+        let _: fn(&str) -> bool = is_known_task;
+        let _: fn(&str) -> bool = task_file_exists;
+    }
+}

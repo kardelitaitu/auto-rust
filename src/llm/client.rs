@@ -1172,4 +1172,204 @@ mod tests {
             elapsed.as_millis()
         );
     }
+
+    // ============================================================================
+    // Error Handling Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_openrouter_rate_limit_429_triggers_fallback() {
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Primary returns 429 rate limit
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_string_contains(r#""model":"primary-model""#))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .set_body_json(serde_json::json!({
+                        "error": {"message": "Rate limit exceeded", "code": 429}
+                    })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        // Fallback succeeds
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_string_contains(r#""model":"fallback-model""#))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "rate-limit-fallback",
+                    "model": "fallback-model",
+                    "choices": [{"message": {"role": "assistant", "content": "Fallback after rate limit"}}]
+                })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig {
+                api_key: "test-key".to_string(),
+                base_url: mock_server.uri(),
+                model: "primary-model".to_string(),
+                timeout_ms: 5000,
+                fallback_models: vec!["fallback-model".to_string()],
+            },
+        };
+
+        let client = LlmClient::with_http_client(config, Client::new());
+        let result = client.chat(vec![ChatMessage::user("test")]).await;
+
+        assert!(result.is_ok(), "Should fallback after 429 rate limit");
+        assert_eq!(result.unwrap(), "Fallback after rate limit");
+    }
+
+    #[tokio::test]
+    async fn test_openrouter_server_error_503_triggers_fallback() {
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Primary returns 503 server error
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_string_contains(r#""model":"primary-model""#))
+            .respond_with(
+                ResponseTemplate::new(503)
+                    .set_body_json(serde_json::json!({
+                        "error": {"message": "Service unavailable", "code": 503}
+                    })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        // Fallback succeeds
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_string_contains(r#""model":"fallback-model""#))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "server-error-fallback",
+                    "model": "fallback-model",
+                    "choices": [{"message": {"role": "assistant", "content": "Fallback after server error"}}]
+                })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig {
+                api_key: "test-key".to_string(),
+                base_url: mock_server.uri(),
+                model: "primary-model".to_string(),
+                timeout_ms: 5000,
+                fallback_models: vec!["fallback-model".to_string()],
+            },
+        };
+
+        let client = LlmClient::with_http_client(config, Client::new());
+        let result = client.chat(vec![ChatMessage::user("test")]).await;
+
+        assert!(result.is_ok(), "Should fallback after 503 server error");
+        assert_eq!(result.unwrap(), "Fallback after server error");
+    }
+
+    #[tokio::test]
+    async fn test_openrouter_auth_failure_401_no_retry() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Return 401 auth error for all requests (no fallbacks should be tried)
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(401)
+                    .set_body_json(serde_json::json!({
+                        "error": {"message": "Invalid API key", "code": 401}
+                    })),
+            )
+            .expect(1) // Should only try once (no fallbacks for auth errors in this implementation)
+            .mount(&mock_server)
+            .await;
+
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig {
+                api_key: "invalid-key".to_string(),
+                base_url: mock_server.uri(),
+                model: "primary-model".to_string(),
+                timeout_ms: 5000,
+                fallback_models: vec![], // No fallbacks
+            },
+        };
+
+        let client = LlmClient::with_http_client(config, Client::new());
+        let result = client.chat(vec![ChatMessage::user("test")]).await;
+
+        assert!(result.is_err(), "Should fail with 401 auth error");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("401") || err_msg.contains("Invalid API key") || err_msg.contains("OpenRouter API error"),
+            "Error should indicate auth failure: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openrouter_malformed_json_response() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Return invalid JSON
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("{invalid json}"),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig {
+                api_key: "test-key".to_string(),
+                base_url: mock_server.uri(),
+                model: "primary-model".to_string(),
+                timeout_ms: 5000,
+                fallback_models: vec![], // No fallbacks
+            },
+        };
+
+        let client = LlmClient::with_http_client(config, Client::new());
+        let result = client.chat(vec![ChatMessage::user("test")]).await;
+
+        assert!(result.is_err(), "Should fail with parse error for malformed JSON");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("parse") || err_msg.contains("JSON") || err_msg.contains("All OpenRouter models failed"),
+            "Error should indicate JSON parse failure: {}",
+            err_msg
+        );
+    }
 }

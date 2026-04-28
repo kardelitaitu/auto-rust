@@ -1365,7 +1365,6 @@ async fn test_concurrent_clipboard_operations() {
 
 #[tokio::test]
 async fn test_concurrent_data_file_operations() {
-    use std::sync::Arc;
     use tokio::task;
 
     let dir = tempdir().expect("Failed to create temp dir");

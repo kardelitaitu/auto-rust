@@ -1,5 +1,5 @@
 **AI Assistant Operating Manual for rust-orchestrator**
-*Last Updated: April 25, 2026*
+*Last Updated: April 28, 2026*
 
 ---
 
@@ -139,14 +139,16 @@ Need external app integration (GitHub, Slack)?
 ### Codebase rules
 - `TaskContext` is the task-api entry point; task code should stay thin and compose shared capabilities.
 - Use short task verbs in examples: `api.click(...)`, `api.pause(...)`, `api.focus(...)`, and `api.keyboard(...)` (with `api.r#type(...)` as the Rust-safe alias).
-- `api.pause(base_ms)` uses a uniform 20% deviation; high-level task-api verbs already add a post-action settle pause, so tasks should not duplicate it unless they need a special case.
+- `api.pause(base_ms)` uses a **uniform** ±20% random delay; `api.pause_with_variance(base_ms, pct)` uses the same **uniform** model with a custom spread; `api.pause_human(base_ms, pct)` uses a **Gaussian** delay for human-like variance. Do not rely on exact wall-clock pause duration when a cancel token is wired: pauses may end early on cooperative shutdown.
+- `TaskContext::new` and `new_with_metrics` take a final `Option<CancellationToken>`; the orchestrator passes `Some(token)` so the pause family can wake early on group cancel. Tests and ad-hoc construction typically pass `None`.
+- High-level task-api verbs already add a post-action settle pause, so tasks should not duplicate `pause` unless they need a special case.
 - `api.click(selector)` is the default interaction path; it runs the selector pipeline with scroll + move + click. Use coordinate clicks only when a task explicitly needs them.
 - Task groups are intentionally broadcast to every active browser session; parallel fan-out is the default execution model.
 - Validation and task execution should share one payload resolver for alias handling and normalization.
 - Keep task-specific parsing out of orchestrator code when a shared validation helper can own it.
 - Run summaries should include active, healthy, and unhealthy session counts plus per-task/per-session breakdowns.
 - If healthy sessions drop below the operational threshold, emit a warning so batch degradation is visible in logs.
-- Prefer task-api verbs that stay on the API surface: `api.click(...)`, `api.click_and_wait(...)`, `api.hover(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.keyboard(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
+- Prefer task-api verbs that stay on the API surface: `api.click(...)`, `api.click_and_wait(...)`, `api.hover(...)`, `api.double_click(...)`, `api.middle_click(...)`, `api.right_click(...)`, `api.drag(...)`, `api.focus(...)`, `api.keyboard(...)`, `api.pause(...)`, `api.pause_with_variance(...)`, `api.pause_human(...)`, `api.randomcursor()`, `api.clear(...)`, `api.select_all(...)`, `api.exists(...)`, `api.visible(...)`, `api.text(...)`, `api.html(...)`, `api.attr(...)`, `api.wait_for(...)`, `api.wait_for_visible(...)`, `api.scroll_to(...)`, `api.url()`, and `api.title()`.
 - Keep shared UTF-8-safe text helpers in the internal/text utility layer instead of duplicating truncation logic in tasks.
 - Keep X/Twitter selectors scoped to the target container or captured node; avoid page-wide button scans when a task can bind a single element.
 - Prefer deterministic verification of the same target element that was clicked or inspected.

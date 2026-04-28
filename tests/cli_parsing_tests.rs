@@ -210,14 +210,11 @@ fn parse_task_groups_preserves_task_name_case() {
 /// Test task group parsing with "then" at start (should handle gracefully)
 #[test]
 fn parse_task_groups_then_at_start() {
-    let args = vec![
-        "then".to_string(),
-        "task1".to_string(),
-    ];
+    let args = vec!["then".to_string(), "task1".to_string()];
     let groups = parse_task_groups(&args);
-    
+
     // Should create empty first group + second group with task
-    assert!(groups.len() >= 1);
+    assert!(!groups.is_empty());
 }
 
 /// Test task group parsing with payload value containing equals
@@ -226,10 +223,10 @@ fn parse_task_groups_payload_with_equals() {
     // The format task=value=rest treats "value=rest" as the value
     let args = vec!["task=key=value1".to_string()];
     let groups = parse_task_groups(&args);
-    
+
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0][0].name, "task");
-    // The value "key=value1" is stored as "url" 
+    // The value "key=value1" is stored as "url"
     assert!(groups[0][0].payload.contains_key("url"));
 }
 
@@ -238,12 +235,14 @@ fn parse_task_groups_payload_with_equals() {
 fn parse_task_groups_task_url_format() {
     let args = vec!["pageview=url=https://example.com".to_string()];
     let groups = parse_task_groups(&args);
-    
+
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0][0].name, "pageview");
     assert_eq!(
         groups[0][0].payload.get("url"),
-        Some(&serde_json::Value::String("https://example.com".to_string()))
+        Some(&serde_json::Value::String(
+            "https://example.com".to_string()
+        ))
     );
 }
 
@@ -252,7 +251,7 @@ fn parse_task_groups_task_url_format() {
 fn parse_browser_filters_special_chars() {
     let input = Some("chrome-beta, firefox-esr");
     let filters = parse_browser_filters(input);
-    
+
     assert_eq!(filters.len(), 2);
     assert!(filters.contains(&"chrome-beta".to_string()));
     assert!(filters.contains(&"firefox-esr".to_string()));
@@ -263,7 +262,7 @@ fn parse_browser_filters_special_chars() {
 fn parse_task_groups_numeric_task_name() {
     let args = vec!["123".to_string()];
     let groups = parse_task_groups(&args);
-    
+
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0][0].name, "123");
 }
@@ -271,13 +270,9 @@ fn parse_task_groups_numeric_task_name() {
 /// Test that "then" is case-insensitive
 #[test]
 fn parse_task_groups_then_case_insensitive() {
-    let args = vec![
-        "task1".to_string(),
-        "THEN".to_string(),
-        "task2".to_string(),
-    ];
+    let args = vec!["task1".to_string(), "THEN".to_string(), "task2".to_string()];
     let groups = parse_task_groups(&args);
-    
+
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0][0].name, "task1");
     assert_eq!(groups[1][0].name, "task2");

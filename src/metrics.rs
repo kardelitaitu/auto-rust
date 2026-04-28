@@ -581,6 +581,7 @@ impl MetricsCollector {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn export_summary_to<P: AsRef<Path>>(
         &self,
         path: P,

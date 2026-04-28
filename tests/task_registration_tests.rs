@@ -238,7 +238,7 @@ fn validate_task_groups_empty_task() {
         name: "".to_string(),
         payload: std::collections::HashMap::new(),
     }]];
-    
+
     let results = validate_task_groups(&groups);
     assert!(!results.is_empty());
     assert!(!results[0].is_known);
@@ -250,7 +250,7 @@ fn task_file_exists_various_tasks() {
     // Known tasks should have files
     assert!(task_file_exists("cookiebot"));
     assert!(task_file_exists("pageview"));
-    
+
     // Unknown tasks should not have files
     assert!(!task_file_exists("unknown_task"));
 }

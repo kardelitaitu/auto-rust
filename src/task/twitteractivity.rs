@@ -698,13 +698,14 @@ fn handle_engagement_decision(
 /// * `counters` - Engagement counters (mutable)
 /// * `actions_this_scan` - Actions taken in current scan
 /// * `next_scroll` - Next scroll time (mutable)
-
 /// * `_actions_taken` - Total actions taken (mutable)
+///
 /// Context for processing a single tweet candidate.
 /// Groups configuration and mutable state for candidate processing.
 ///
 /// # Returns
 /// Result<(bool, Instant, u32, u32, Option<ThreadCache>)> - (should_break, next_scroll, actions_this_scan, _actions_taken, thread_cache)
+#[allow(clippy::too_many_arguments)]
 async fn process_candidate(
     tweet: &Value,
     persona: &PersonaWeights,

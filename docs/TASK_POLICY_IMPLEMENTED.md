@@ -144,7 +144,7 @@ if !perms.allow_X {
 ### Current State
 Tasks created with policies, all sensitive operations use gated methods:
 ```rust
-let api = TaskContext::new(..., &COOKIEBOT_POLICY);
+let api = TaskContext::new(..., &COOKIEBOT_POLICY, None);
 let screenshot = api.screenshot().await?; // Checks allow_screenshot
 ```
 
@@ -174,6 +174,7 @@ let api = TaskContext::new(
     runtime,
     native_interaction,
     policy,
+    None,
 );
 
 // Permission-gated operation

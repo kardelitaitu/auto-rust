@@ -77,7 +77,7 @@ impl Default for TaskPolicy {
 }
 
 /// Simple boolean permissions that control task capabilities.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TaskPermissions {
     /// Allow capturing screenshots.
     /// NOTE: Implies `allow_write_data` capability (screenshots must be saved).
@@ -117,25 +117,6 @@ pub struct TaskPermissions {
 
     /// Allow importing complete browser data (cookies + storage + more).
     pub allow_browser_import: bool,
-}
-
-impl Default for TaskPermissions {
-    fn default() -> Self {
-        Self {
-            allow_screenshot: false,
-            allow_export_cookies: false,
-            allow_import_cookies: false,
-            allow_export_session: false,
-            allow_import_session: false,
-            allow_session_clipboard: false,
-            allow_read_data: false,
-            allow_write_data: false,
-            allow_http_requests: false,
-            allow_dom_inspection: false,
-            allow_browser_export: false,
-            allow_browser_import: false,
-        }
-    }
 }
 
 /// Default task policy – safe defaults (all permissions off, 60 s timeout).
@@ -300,34 +281,22 @@ pub static TASK_EXAMPLE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 /// TwitterDive policy - extends Twitter base policy.
 pub static TWITTERDIVE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
     permissions: crate::task::policy::TaskPermissions {
+        allow_read_data: true, // Read persona files
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
-    ..*TWITTER_BASE_POLICY
+    max_duration_ms: TWITTER_BASE_POLICY.max_duration_ms,
 });
 
-/// TwitterFollow policy - extends Twitter base policy.
-pub static TWITTERFOLLOW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    permissions: crate::task::policy::TaskPermissions {
-        ..TWITTER_BASE_POLICY.permissions.clone()
-    },
-    ..*TWITTER_BASE_POLICY
-});
+/// TwitterFollow policy - same as Twitter base policy.
+pub static TWITTERFOLLOW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TWITTER_BASE_POLICY.clone());
 
-/// TwitterIntent policy - extends Twitter base policy.
-pub static TWITTERINTENT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    permissions: crate::task::policy::TaskPermissions {
-        ..TWITTER_BASE_POLICY.permissions.clone()
-    },
-    ..*TWITTER_BASE_POLICY
-});
+/// TwitterIntent policy - same as Twitter base policy.
+pub static TWITTERINTENT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TWITTER_BASE_POLICY.clone());
 
 /// TwitterLike policy - extends Twitter base policy.
 pub static TWITTERLIKE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
     max_duration_ms: 30_000, // Override: faster timeout
-    permissions: crate::task::policy::TaskPermissions {
-        ..TWITTER_BASE_POLICY.permissions.clone()
-    },
-    ..*TWITTER_BASE_POLICY
+    permissions: TWITTER_BASE_POLICY.permissions.clone(),
 });
 
 /// TwitterQuote policy - extends Twitter base policy.
@@ -336,7 +305,7 @@ pub static TWITTERQUOTE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
         allow_read_data: true, // Read persona files
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
-    ..*TWITTER_BASE_POLICY
+    max_duration_ms: TWITTER_BASE_POLICY.max_duration_ms,
 });
 
 /// TwitterReply policy - extends Twitter base policy.
@@ -345,16 +314,11 @@ pub static TWITTERREPLY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
         allow_read_data: true, // Read persona files
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
-    ..*TWITTER_BASE_POLICY
+    max_duration_ms: TWITTER_BASE_POLICY.max_duration_ms,
 });
 
-/// TwitterRetweet policy - extends Twitter base policy.
-pub static TWITTERRETWEET_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    permissions: crate::task::policy::TaskPermissions {
-        ..TWITTER_BASE_POLICY.permissions.clone()
-    },
-    ..*TWITTER_BASE_POLICY
-});
+/// TwitterRetweet policy - same as Twitter base policy.
+pub static TWITTERRETWEET_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TWITTER_BASE_POLICY.clone());
 
 /// TwitterTest policy - extends Twitter base policy (allows all read operations).
 pub static TWITTERTEST_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
@@ -364,9 +328,8 @@ pub static TWITTERTEST_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
         allow_export_cookies: true,
         allow_session_clipboard: true,
         allow_read_data: true,
-        ..TWITTER_BASE_POLICY.permissions.clone()
+        ..Default::default()
     },
-    ..*TWITTER_BASE_POLICY
 });
 
 /// Return the policy for a given task name.

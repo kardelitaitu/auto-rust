@@ -5,8 +5,8 @@ Scope: `src/runtime/task_context.rs`
 Goal: review every public `TaskContext` API one by one for correctness, reliability, scalability, and ease of use.
 
 ## Constructors and Core State
-- [x] `new()`
-- [x] `new_with_metrics()`
+- [x] `new()` (last arg: `Option<CancellationToken>` for cooperative pause cancel)
+- [x] `new_with_metrics()` (orchestrator passes `Some(cancel_token)`)
 - [x] `session_id()`
 - [x] `clipboard()`
 - [x] `behavior_profile()`
@@ -61,48 +61,48 @@ Goal: review every public `TaskContext` API one by one for correctness, reliabil
 - [x] `data_file_metadata()`
 
 ## Network and Remote Data
-- [ ] `http_get()`
-- [ ] `download_file()`
+- [x] `http_get()`
+- [x] `download_file()`
 
 ## DOM Inspection and Element State
-- [ ] `get_computed_style()`
-- [ ] `get_element_rect()`
-- [ ] `get_scroll_position()`
-- [ ] `count_elements()`
-- [ ] `is_in_viewport()`
-- [ ] `exists()`
-- [ ] `visible()`
-- [ ] `text()`
-- [ ] `html()`
-- [ ] `attr()`
-- [ ] `value()`
-- [ ] `wait_for()`
-- [ ] `wait_for_visible()`
+- [x] `get_computed_style()`
+- [x] `get_element_rect()`
+- [x] `get_scroll_position()`
+- [x] `count_elements()`
+- [x] `is_in_viewport()`
+- [x] `exists()`
+- [x] `visible()`
+- [x] `text()`
+- [x] `html()`
+- [x] `attr()`
+- [x] `value()`
+- [x] `wait_for()`
+- [x] `wait_for_visible()`
 
 ## Focus, Hover, and Pointer Movement
-- [ ] `focus()`
-- [ ] `hover()`
-- [ ] `move_mouse_to()`
-- [ ] `move_mouse_fast()`
-- [ ] `randomcursor()`
-- [ ] `sync_cursor_overlay()`
+- [x] `focus()`
+- [x] `hover()`
+- [x] `move_mouse_to()`
+- [x] `move_mouse_fast()`
+- [x] `randomcursor()`
+- [x] `sync_cursor_overlay()`
 
 ## Clicking and Dragging
-- [ ] `click_at()`
-- [ ] `click()`
-- [ ] `click_and_wait()`
-- [ ] `double_click()`
-- [ ] `middle_click()`
-- [ ] `left_click()`
-- [ ] `nativeclick()`
-- [ ] `nativecursor()`
-- [ ] `nativecursor_query()`
-- [ ] `nativecursor_selector()`
-- [ ] `left_click_fast()`
-- [ ] `right_click_at()`
-- [ ] `right_click_fast()`
-- [ ] `right_click()`
-- [ ] `drag()`
+- [x] `click_at()`
+- [x] `click()`
+- [x] `click_and_wait()`
+- [x] `double_click()`
+- [x] `middle_click()`
+- [x] `left_click()`
+- [x] `nativeclick()`
+- [x] `nativecursor()`
+- [x] `nativecursor_query()`
+- [x] `nativecursor_selector()`
+- [x] `left_click_fast()`
+- [x] `right_click_at()`
+- [x] `right_click_fast()`
+- [x] `right_click()`
+- [x] `drag()`
 
 ## Keyboard and Text Input
 - [ ] `press()`
@@ -127,49 +127,28 @@ Goal: review every public `TaskContext` API one by one for correctness, reliabil
 ## Pause and Timing
 - [x] `pause()`
 - [x] `pause_with_variance()`
+- [x] `pause_human()`
 
 ### Pause and Timing — audit notes
 
-Implementation (`src/runtime/task_context.rs`):
+Implementation (`src/runtime/task_context.rs`); optional `CancellationToken` from orchestrator (`new` / `new_with_metrics` last arg):
 
 | API | Behavior | Delegates to |
 |-----|----------|--------------|
-| `pause(base_ms)` | Fixed **20%** spread, **uniform** random delay in `[base*(1-0.2), base*(1+0.2)]` (clamped 10ms–30s). | `timing::uniform_pause(base_ms, 20)` |
-| `pause_with_variance(base_ms, variance_pct)` | Custom `variance_pct` (0–100% as fraction of base for bounds), **Gaussian**-sampled delay (clamped same 10ms–30s). | `timing::human_pause(base_ms, variance_pct)` |
+| `pause(base_ms)` | Fixed **20%** spread, **uniform** random delay (clamped 10ms–30s). Ends early if cancel token set and cancelled. | `timing::uniform_pause_with_cancel(..., 20)` |
+| `pause_with_variance(base_ms, variance_pct)` | Same **uniform** model as `pause`, custom spread `variance_pct`. Cancel-aware. | `timing::uniform_pause_with_cancel` |
+| `pause_human(base_ms, variance_pct)` | **Gaussian** delay (human-like). Cancel-aware. | `timing::human_pause_with_cancel` |
 
-Findings:
+Resolved (2026-04):
 
-- **Naming vs behavior**: `pause` is uniform ±20%; `pause_with_variance` is Gaussian, not uniform. Callers who expect “variance” to mean the same distribution as `pause` may be surprised. Consider documenting explicitly or aligning implementations (e.g. `pause_with_variance` → `uniform_pause` for parity, or rename / add `pause_gaussian`).
-- **AGENTS.md alignment**: “`api.pause(base_ms)` uses uniform 20% deviation” matches code.
-- **Shutdown**: both use `tokio::time::sleep` only; pauses are **not** tied to orchestrator shutdown/cancel (long `pause` can delay exit). Note for graceful-shutdown work if desired.
-- **Edge cases**: `base_ms == 0` still yields clamped minimum ~10ms via `uniform_pause` / `human_pause` helpers in `src/utils/timing.rs`.
+- **Uniform vs Gaussian**: `pause` / `pause_with_variance` are uniform; `pause_human` is Gaussian. Twitter humanized helpers use `pause_human` where Gaussian was intended.
+- **Shutdown**: orchestrator passes `Some(cancel_token)` into `TaskContext::new_with_metrics`; pause family uses `timing::sleep_interruptible`.
+- **Edge cases**: `base_ms == 0` still yields clamped minimum ~10ms via helpers in `src/utils/timing.rs`.
 
-### Pause and Timing — improvement strategy
+### Pause and Timing — improvement strategy (status)
 
-**Goal:** predictable semantics for task authors, minimal surprise, optional faster shutdown, docs that match behavior.
-
-1. **Clarify contract (low risk, do first)**  
-   - In `TaskContext` rustdoc: state explicitly **uniform vs Gaussian**, clamp range, and that `pause` is always 20% uniform.  
-   - In `TASK_AUTHORING_GUIDE.md` / AGENTS: one short table mirroring the audit table so examples use the right API on purpose.
-
-2. **Reduce naming/behavior mismatch (pick one path)**  
-   - **Path A — document only:** keep signatures; add `pause_gaussian` alias only if you want discoverability without breaking callers.  
-   - **Path B — align behavior:** change `pause_with_variance` to call `uniform_pause(base_ms, variance_pct)` so “variance” means the same family as `pause`; add **new** `pause_human` (or keep internal `human_pause` behind that name) for Gaussian. Requires grep for `pause_with_variance` usages and a changelog note.  
-   - **Path C — deprecate:** mark `pause_with_variance` deprecated with migration message to the chosen split APIs; remove in a later major.
-
-3. **Shutdown-aware waits (medium effort, high UX)**  
-   - Thread a cancel token (or `watch` shutdown flag) into `TaskContext` where feasible; implement `pause` / variants with `tokio::select!` on `sleep` vs shutdown so long pauses truncate on graceful shutdown.  
-   - Document: “pause may end early during shutdown” to avoid tasks relying on exact wall-clock duration for correctness.
-
-4. **Caps and policy (optional)**  
-   - Optional max single-pause cap (config) to prevent accidental `pause(600000)` from blocking sessions.  
-   - Optional metrics: count total paused ms per run for tuning.
-
-5. **Verification**  
-   - Unit tests: distribution bounds (min/max clamp), `base_ms == 0`, and if Path B: that uniform vs Gaussian are covered by distinct tests.  
-   - If shutdown-aware: integration test that shutdown completes within N ms while a long pause is pending.
-
-**Recommended order:** (1) → choose **Path A or B** → (3) if graceful shutdown is a priority → (4)(5) as needed.
+- **Done:** (1) rustdoc + AGENTS + authoring guide table alignment; **Path B** (uniform `pause_with_variance`, new `pause_human`); (3) cancel-aware pauses + orchestrator wiring; (5) `sleep_interruptible` unit test in `timing.rs`.
+- **Deferred:** (4) max-pause cap / per-run pause metrics; integration test “cancel during long pause” (optional follow-up).
 
 ## Review Notes
 - [ ] Confirm each API has a single responsibility.

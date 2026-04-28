@@ -8,6 +8,7 @@ use auto::task::policy::{TaskPermissions, TaskPolicy, DEFAULT_TASK_POLICY};
 use auto::utils::mouse::{
     clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
     set_nativeclick_forced_calibration_for_tests, take_nativeclick_trace_hooks, ClickStatus,
+    HoverStatus,
 };
 use chromiumoxide::Browser;
 use std::env;
@@ -530,6 +531,157 @@ async fn data_file_operations_roundtrip_and_cleanup() -> Result<()> {
 }
 
 #[tokio::test]
+async fn http_get_returns_status_body_and_headers() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Http</title></head><body><div id=\"ready\">ok</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_http_requests: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    let response = api.http_get(server.url()).await?;
+    assert_eq!(response.status, 200);
+    assert!(response.body.contains("Http"));
+    assert_eq!(
+        response.headers.get("content-type").map(String::as_str),
+        Some("text/html; charset=utf-8")
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn download_file_saves_response_bytes_and_cleans_up() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start("download payload").await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_http_requests: true,
+            allow_write_data: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    let unique = format!(
+        "task-api-download-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let relative = format!("{}/payload.txt", unique);
+    let file_path = std::path::Path::new("config").join(&relative);
+
+    let size = api.download_file(server.url(), &relative).await?;
+    assert_eq!(size, "download payload".len() as u64);
+    assert!(file_path.exists());
+    assert_eq!(std::fs::read_to_string(&file_path)?, "download payload");
+
+    let _ = std::fs::remove_file(&file_path);
+    let _ = std::fs::remove_dir_all(std::path::Path::new("config").join(&unique));
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn dom_inspection_helpers_report_live_page_state() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>DOM</title><style>body{margin:0;} #target{color: rgb(12, 34, 56); width: 120px; height: 40px; } #hidden{display:none;}</style></head><body><div class=\"item\">one</div><div class=\"item\">two</div><div class=\"item\">three</div><div id=\"target\" data-role=\"hero\">Hello <span>world</span></div><input id=\"input\" value=\"typed value\" /><div id=\"hidden\">secret</div><div style=\"height:1800px\"></div><div id=\"offscreen\">below fold</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_dom_inspection: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    assert_eq!(
+        api.get_computed_style("#target", "color").await?,
+        "rgb(12, 34, 56)"
+    );
+
+    let rect = api.get_element_rect("#target").await?;
+    assert!(rect.width > 0.0);
+    assert!(rect.height > 0.0);
+
+    assert_eq!(api.get_scroll_position().await?, (0, 0));
+    page.evaluate("window.scrollTo(0, 180)").await?;
+    let (scroll_x, scroll_y) = api.get_scroll_position().await?;
+    assert_eq!(scroll_x, 0);
+    assert!(scroll_y >= 180);
+
+    assert_eq!(api.count_elements(".item").await?, 3);
+    assert!(api.is_in_viewport("#target").await?);
+    assert!(!api.is_in_viewport("#offscreen").await?);
+
+    assert!(api.exists("#target").await?);
+    assert!(!api.exists("#missing").await?);
+    assert!(api.visible("#target").await?);
+    assert!(!api.visible("#hidden").await?);
+
+    assert_eq!(api.text("#target").await?, Some("Hello world".to_string()));
+    assert_eq!(
+        api.html("#target").await?,
+        Some("Hello <span>world</span>".to_string())
+    );
+    assert_eq!(
+        api.attr("#target", "data-role").await?,
+        Some("hero".to_string())
+    );
+    assert_eq!(api.value("#input").await?, Some("typed value".to_string()));
+
+    assert!(api.wait_for("#target", 500).await?);
+    assert!(api.wait_for_visible("#target", 500).await?);
+    assert!(!api.wait_for_visible("#hidden", 500).await?);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn check_permission_respects_effective_policy() -> Result<()> {
     let Some(mut session): Option<Session> = connect_test_session().await? else {
         return Ok(());
@@ -639,6 +791,166 @@ async fn focus_reports_success_and_focus_event() -> Result<()> {
         api.attr("body", "data-focused").await?,
         Some("yes".to_string())
     );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pointer_helpers_cover_focus_hover_and_movement() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Pointer</title><style>body{margin:0;min-height:2000px;} #focus-target,#hover-target{display:block;margin:48px;width:220px;height:60px;line-height:60px;background:#ddd;} #hover-target{margin-top:32px;}</style></head><body onmousemove=\"document.body.setAttribute('data-moved','yes')\"><input id=\"focus-target\" value=\"focus\" onfocus=\"document.body.setAttribute('data-focused','yes')\" /><div id=\"hover-target\" onmouseover=\"document.body.setAttribute('data-hovered','yes')\">hover me</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    let focus_outcome = api.focus("#focus-target").await?;
+    assert!(matches!(focus_outcome.focus, FocusStatus::Success));
+    assert_eq!(
+        api.attr("body", "data-focused").await?,
+        Some("yes".to_string())
+    );
+
+    let hover_outcome = api.hover("#hover-target").await?;
+    assert!(matches!(hover_outcome.hover, HoverStatus::Success));
+    assert_eq!(
+        api.attr("body", "data-hovered").await?,
+        Some("yes".to_string())
+    );
+
+    api.move_mouse_to(12.0, 12.0).await?;
+    assert_eq!(
+        api.attr("body", "data-moved").await?,
+        Some("yes".to_string())
+    );
+
+    api.move_mouse_fast(24.0, 24.0).await?;
+    api.sync_cursor_overlay().await?;
+    assert!(api.exists("#__auto_rust_mouse_overlay").await?);
+
+    let random = api.randomcursor().await?;
+    let viewport = api.viewport().await?;
+    assert!(random.x >= 0.0 && random.x <= viewport.width);
+    assert!(random.y >= 0.0 && random.y <= viewport.height);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn click_variants_trigger_selector_and_coordinate_events() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Clicks</title><style>body{margin:0;min-height:1200px;} button{position:absolute;width:120px;height:42px;} #click-at{left:20px;top:20px;} #left-click{left:170px;top:20px;} #left-fast{left:320px;top:20px;} #double{left:20px;top:100px;} #middle{left:170px;top:100px;} #right-at{left:320px;top:100px;} #right-fast{left:20px;top:180px;} #right-selector{left:170px;top:180px;}</style></head><body><button id=\"click-at\" onclick=\"document.body.setAttribute('data-click-at','yes')\">click at</button><button id=\"left-click\" onclick=\"document.body.setAttribute('data-left-click','yes')\">left click</button><button id=\"left-fast\" onclick=\"document.body.setAttribute('data-left-fast','yes')\">left fast</button><button id=\"double\" ondblclick=\"document.body.setAttribute('data-double','yes')\">double</button><button id=\"middle\" onauxclick=\"if (event.button===1) document.body.setAttribute('data-middle','yes')\">middle</button><button id=\"right-at\" oncontextmenu=\"event.preventDefault(); document.body.setAttribute('data-right-at','yes')\">right at</button><button id=\"right-fast\" oncontextmenu=\"event.preventDefault(); document.body.setAttribute('data-right-fast','yes')\">right fast</button><button id=\"right-selector\" oncontextmenu=\"event.preventDefault(); document.body.setAttribute('data-right-selector','yes')\">right selector</button></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    api.click_at(80.0, 41.0).await?;
+    assert_eq!(
+        api.attr("body", "data-click-at").await?,
+        Some("yes".to_string())
+    );
+
+    api.left_click(230.0, 41.0).await?;
+    assert_eq!(
+        api.attr("body", "data-left-click").await?,
+        Some("yes".to_string())
+    );
+
+    api.left_click_fast(380.0, 41.0).await?;
+    assert_eq!(
+        api.attr("body", "data-left-fast").await?,
+        Some("yes".to_string())
+    );
+
+    let double = api.double_click("#double").await?;
+    assert!(matches!(double.click, ClickStatus::Success));
+    assert_eq!(
+        api.attr("body", "data-double").await?,
+        Some("yes".to_string())
+    );
+
+    let middle = api.middle_click("#middle").await?;
+    assert!(matches!(middle.click, ClickStatus::Success));
+    assert_eq!(
+        api.attr("body", "data-middle").await?,
+        Some("yes".to_string())
+    );
+
+    api.right_click_at(380.0, 121.0).await?;
+    assert_eq!(
+        api.attr("body", "data-right-at").await?,
+        Some("yes".to_string())
+    );
+
+    api.right_click_fast(80.0, 201.0).await?;
+    assert_eq!(
+        api.attr("body", "data-right-fast").await?,
+        Some("yes".to_string())
+    );
+
+    let right = api.right_click("#right-selector").await?;
+    assert!(matches!(right.click, ClickStatus::Success));
+    assert_eq!(
+        api.attr("body", "data-right-selector").await?,
+        Some("yes".to_string())
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn drag_and_nativecursor_selector_report_expected_state() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Drag</title><style>body{margin:0;min-height:1200px;} #drag-source,#drop-target,#native-target{position:absolute;width:140px;height:56px;line-height:56px;text-align:center;} #drag-source{left:20px;top:20px;background:#cce; } #drop-target{left:220px;top:20px;background:#cec;} #native-target{left:20px;top:120px;background:#eee;}</style></head><body><div id=\"drag-source\" draggable=\"true\" ondragstart=\"event.dataTransfer.setData('text/plain','dragged')\">drag me</div><div id=\"drop-target\" ondragover=\"event.preventDefault()\" ondrop=\"event.preventDefault(); document.body.setAttribute('data-dropped', event.dataTransfer.getData('text/plain'))\">drop here</div><button id=\"native-target\">native target</button></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    api.drag("#drag-source", "#drop-target").await?;
+    assert_eq!(
+        api.attr("body", "data-dropped").await?,
+        Some("dragged".to_string())
+    );
+
+    let native = api.nativecursor_selector("#native-target").await?;
+    assert_eq!(native.target, "button#native-target");
+    assert!(native.x > 0.0);
+    assert!(native.y > 0.0);
+    assert!(native.screen_x.is_some());
+    assert!(native.screen_y.is_some());
+    assert!(api.exists("#__auto_rust_mouse_overlay").await?);
 
     drop(api);
     session.release_page(page).await;
@@ -1032,7 +1344,7 @@ async fn screenshot_auto_saves_webp_with_correct_filename() -> Result<()> {
     // Verify file is valid JPG by reading it
     let file_content = std::fs::read(&screenshot_path)?;
     assert!(
-        file_content.len() > 0,
+        !file_content.is_empty(),
         "Screenshot file should not be empty"
     );
 

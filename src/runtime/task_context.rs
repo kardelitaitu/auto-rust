@@ -2044,6 +2044,7 @@ impl TaskContext {
     /// Like [`Self::new`] but attaches metrics. Pass the same `cancel_token` as the orchestrator
     /// uses for the task attempt so [`Self::pause`] / [`Self::pause_with_variance`] / [`Self::pause_human`]
     /// return early on group cancellation.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_metrics(
         session_id: impl Into<String>,
         page: Arc<Page>,
@@ -2449,7 +2450,7 @@ impl TaskContext {
                 cookie
                     .get("domain")
                     .and_then(|d| d.as_str())
-                    .map(|d| d == domain || d == &format!(".{}", domain))
+                    .map(|d| d == domain || d == format!(".{}", domain).as_str())
                     .unwrap_or(false)
             })
             .collect();

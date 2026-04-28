@@ -102,6 +102,7 @@ mod config_tests {
 #[cfg(test)]
 mod metrics_tests {
     use crate::metrics::{MetricsCollector, TaskMetrics, TaskStatus};
+    use std::sync::Arc;
 
     #[test]
     fn test_metrics_collector_new() {
@@ -116,10 +117,10 @@ mod metrics_tests {
         let mc = MetricsCollector::new(100);
         mc.task_started();
         mc.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Success,
             duration_ms: 100,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: None,

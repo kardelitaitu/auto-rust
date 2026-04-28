@@ -261,10 +261,10 @@ mod tests {
         // Add some metrics
         metrics.task_started();
         metrics.task_completed(crate::metrics::TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: crate::metrics::TaskStatus::Success,
             duration_ms: 100,
-            session_id: "test-session".to_string(),
+            session_id: Arc::new("test-session".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: None,

@@ -38,10 +38,10 @@ async fn simulate_task(metrics: Arc<MetricsCollector>, task_id: usize) -> Result
     // Simulate occasional failures (1% failure rate)
     if task_id.is_multiple_of(100) {
         metrics.task_completed(TaskMetrics {
-            task_name: "simulated_task".to_string(),
+            task_name: Arc::new("simulated_task".to_string()),
             status: TaskStatus::Failed,
             duration_ms: delay_ms as u64,
-            session_id: "soak-test".to_string(),
+            session_id: Arc::new("soak-test".to_string()),
             attempt: 1,
             error_kind: Some(TaskErrorKind::Unknown),
             last_error: Some("Simulated failure".to_string()),
@@ -50,10 +50,10 @@ async fn simulate_task(metrics: Arc<MetricsCollector>, task_id: usize) -> Result
     }
 
     metrics.task_completed(TaskMetrics {
-        task_name: "simulated_task".to_string(),
+        task_name: Arc::new("simulated_task".to_string()),
         status: TaskStatus::Success,
         duration_ms: delay_ms as u64,
-        session_id: "soak-test".to_string(),
+        session_id: Arc::new("soak-test".to_string()),
         attempt: 1,
         error_kind: None,
         last_error: None,

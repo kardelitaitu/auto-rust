@@ -63,16 +63,19 @@ pub const RUN_COUNTER_DIVE_FAILURE: &str = "dive_failure";
 /// Records detailed metrics for a single task execution.
 /// Captures timing, outcome, and execution context for performance analysis
 /// and debugging purposes.
+///
+/// Uses `Arc<String>` for task_name and session_id to enable cheap cloning
+/// (O(1) ref count increment vs O(n) string copy) when recording metrics.
 #[derive(Debug, Clone)]
 pub struct TaskMetrics {
     /// Name of the task that was executed
-    pub task_name: String,
+    pub task_name: Arc<String>,
     /// Final status of the task execution
     pub status: TaskStatus,
     /// Time taken to execute the task in milliseconds
     pub duration_ms: u64,
     /// ID of the session that executed the task
-    pub session_id: String,
+    pub session_id: Arc<String>,
     /// Which attempt number this execution represents
     pub attempt: u32,
     /// Classified error kind for failed outcomes
@@ -177,10 +180,10 @@ pub struct MetricsCollector {
     task_history: Arc<RwLock<VecDeque<TaskMetrics>>>,
     /// Breakdown of failures by error kind
     failure_breakdown: Arc<RwLock<FxHashMap<TaskErrorKind, usize>>>,
-    /// Outcome breakdown by task name
-    task_breakdown: Arc<RwLock<FxHashMap<String, OutcomeBreakdown>>>,
-    /// Outcome breakdown by session id
-    session_breakdown: Arc<RwLock<FxHashMap<String, OutcomeBreakdown>>>,
+    /// Outcome breakdown by task name (Arc<String> for O(1) clone)
+    task_breakdown: Arc<RwLock<FxHashMap<Arc<String>, OutcomeBreakdown>>>,
+    /// Outcome breakdown by session id (Arc<String> for O(1) clone)
+    session_breakdown: Arc<RwLock<FxHashMap<Arc<String>, OutcomeBreakdown>>>,
     /// Structured run counters emitted by tasks during execution
     run_counters: Arc<RwLock<FxHashMap<String, usize>>>,
     /// Maximum number of historical records to keep
@@ -239,16 +242,18 @@ impl MetricsCollector {
 
         {
             let mut task_breakdown = self.task_breakdown.write();
+            // Arc::clone() is O(1) vs String::clone() which is O(n)
             task_breakdown
-                .entry(metrics.task_name.clone())
+                .entry(Arc::clone(&metrics.task_name))
                 .or_default()
                 .record(metrics.status);
         }
 
         {
             let mut session_breakdown = self.session_breakdown.write();
+            // Arc::clone() is O(1) vs String::clone() which is O(n)
             session_breakdown
-                .entry(metrics.session_id.clone())
+                .entry(Arc::clone(&metrics.session_id))
                 .or_default()
                 .record(metrics.status);
         }
@@ -295,10 +300,10 @@ impl MetricsCollector {
         };
 
         self.task_completed(TaskMetrics {
-            task_name,
+            task_name: Arc::new(task_name),
             status,
             duration_ms: result.duration_ms,
-            session_id,
+            session_id: Arc::new(session_id),
             attempt: result.attempt,
             error_kind: result.error_kind,
             last_error: result.last_error.clone(),
@@ -319,8 +324,19 @@ impl MetricsCollector {
                 (kind_str.to_string(), *count)
             })
             .collect();
-        let task_breakdown = self.task_breakdown.read().clone();
-        let session_breakdown = self.session_breakdown.read().clone();
+        // Convert Arc<String> keys to String for serialization compatibility
+        let task_breakdown = self
+            .task_breakdown
+            .read()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        let session_breakdown = self
+            .session_breakdown
+            .read()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
 
         // Acquire ordering ensures we see all updates from other threads
         // when reading the final snapshot
@@ -521,9 +537,9 @@ pub struct MetricsSnapshot {
     pub total_duration_ms: u64,
     /// Failure counts grouped by error kind
     pub failure_breakdown: FxHashMap<String, usize>,
-    /// Outcome counts grouped by task name
+    /// Outcome counts grouped by task name (converted from Arc<String>)
     pub task_breakdown: FxHashMap<String, OutcomeBreakdown>,
-    /// Outcome counts grouped by session id
+    /// Outcome counts grouped by session id (converted from Arc<String>)
     pub session_breakdown: FxHashMap<String, OutcomeBreakdown>,
 }
 
@@ -562,9 +578,9 @@ pub struct RunSummary {
     pub total_duration_ms: usize,
     /// Failure counts grouped by error kind
     pub failure_breakdown: FxHashMap<String, usize>,
-    /// Outcome counts grouped by task name
+    /// Outcome counts grouped by task name (converted from Arc<String>)
     pub task_breakdown: FxHashMap<String, OutcomeBreakdown>,
-    /// Outcome counts grouped by session id
+    /// Outcome counts grouped by session id (converted from Arc<String>)
     pub session_breakdown: FxHashMap<String, OutcomeBreakdown>,
     /// Structured counters emitted from twitteractivity task execution
     pub twitteractivity_counters: TwitterActivityRunCounters,
@@ -758,10 +774,10 @@ mod tests {
         let collector = MetricsCollector::new(100);
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Success,
             duration_ms: 100,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: None,
@@ -776,10 +792,10 @@ mod tests {
         let collector = MetricsCollector::new(100);
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Failed,
             duration_ms: 50,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: Some(TaskErrorKind::Browser),
             last_error: Some("error".to_string()),
@@ -793,10 +809,10 @@ mod tests {
         let collector = MetricsCollector::new(100);
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Timeout,
             duration_ms: 30000,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: None,
@@ -810,10 +826,10 @@ mod tests {
         let collector = MetricsCollector::new(100);
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Cancelled,
             duration_ms: 15,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: Some("cancelled".to_string()),
@@ -827,20 +843,20 @@ mod tests {
         let collector = MetricsCollector::new(100);
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Success,
             duration_ms: 100,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: None,
         });
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Failed,
             duration_ms: 50,
-            session_id: "s2".to_string(),
+            session_id: Arc::new("s2".to_string()),
             attempt: 1,
             error_kind: Some(TaskErrorKind::Browser),
             last_error: Some("e".to_string()),
@@ -870,20 +886,20 @@ mod tests {
         let collector = MetricsCollector::new(100);
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Failed,
             duration_ms: 50,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: Some(TaskErrorKind::Timeout),
             last_error: Some("timeout".to_string()),
         });
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "test".to_string(),
+            task_name: Arc::new("test".to_string()),
             status: TaskStatus::Failed,
             duration_ms: 50,
-            session_id: "s1".to_string(),
+            session_id: Arc::new("s1".to_string()),
             attempt: 1,
             error_kind: Some(TaskErrorKind::Timeout),
             last_error: Some("timeout".to_string()),
@@ -898,10 +914,10 @@ mod tests {
 
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "pageview".to_string(),
+            task_name: Arc::new("pageview".to_string()),
             status: TaskStatus::Success,
             duration_ms: 20,
-            session_id: "brave-1".to_string(),
+            session_id: Arc::new("brave-1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: None,
@@ -909,10 +925,10 @@ mod tests {
 
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "pageview".to_string(),
+            task_name: Arc::new("pageview".to_string()),
             status: TaskStatus::Timeout,
             duration_ms: 40,
-            session_id: "brave-1".to_string(),
+            session_id: Arc::new("brave-1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: Some("timeout".to_string()),
@@ -920,10 +936,10 @@ mod tests {
 
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "pageview".to_string(),
+            task_name: Arc::new("pageview".to_string()),
             status: TaskStatus::Cancelled,
             duration_ms: 10,
-            session_id: "brave-2".to_string(),
+            session_id: Arc::new("brave-2".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: Some("cancelled".to_string()),
@@ -931,10 +947,10 @@ mod tests {
 
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "twitterreply".to_string(),
+            task_name: Arc::new("twitterreply".to_string()),
             status: TaskStatus::Failed,
             duration_ms: 60,
-            session_id: "brave-2".to_string(),
+            session_id: Arc::new("brave-2".to_string()),
             attempt: 1,
             error_kind: Some(TaskErrorKind::Browser),
             last_error: Some("browser".to_string()),
@@ -959,10 +975,10 @@ mod tests {
         let collector = MetricsCollector::new(100);
         collector.task_started();
         collector.task_completed(TaskMetrics {
-            task_name: "pageview".to_string(),
+            task_name: Arc::new("pageview".to_string()),
             status: TaskStatus::Success,
             duration_ms: 20,
-            session_id: "brave-1".to_string(),
+            session_id: Arc::new("brave-1".to_string()),
             attempt: 1,
             error_kind: None,
             last_error: None,

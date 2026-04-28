@@ -20,7 +20,9 @@
 //! - `text()` - Get element text
 //! - `html()` - Get element HTML
 //! - `attr()` - Get element attribute
-//! - `pause()` - Pause for a duration
+//! - `pause()` - Uniform-random pause (~20% spread), ends early on task cancel when wired
+//! - `pause_with_variance()` - Uniform-random pause with custom spread
+//! - `pause_human()` - Gaussian pause for human-like timing
 //!
 //! # Examples
 //!
@@ -45,8 +47,9 @@ use std::time::Duration;
 
 use anyhow::Result;
 use log::{debug, info, warn};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
 use crate::config::NativeInteractionConfig;
@@ -292,6 +295,13 @@ fn click_learning_path(session_id: &str, behavior_profile: &BrowserProfile) -> O
 fn load_click_learning(path: &Path) -> Option<ClickLearningState> {
     let content = fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()
+}
+
+fn deserialize_evaluated_json<T: DeserializeOwned>(value: serde_json::Value) -> Result<T> {
+    match value {
+        serde_json::Value::String(s) => Ok(serde_json::from_str(&s)?),
+        other => Ok(serde_json::from_value(other)?),
+    }
 }
 
 fn save_click_learning(path: &Path, state: &ClickLearningState) -> Result<()> {
@@ -705,6 +715,51 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_deserialize_evaluated_json_from_string() {
+        let value = serde_json::Value::String(r#"{"theme":"dark","fontSize":"14"}"#.to_string());
+        let parsed: std::collections::HashMap<String, String> =
+            deserialize_evaluated_json(value).expect("deserialize stringified json");
+
+        assert_eq!(parsed.get("theme"), Some(&"dark".to_string()));
+        assert_eq!(parsed.get("fontSize"), Some(&"14".to_string()));
+    }
+
+    #[test]
+    fn test_deserialize_evaluated_json_from_object() {
+        let value = serde_json::json!({
+            "theme": "dark",
+            "fontSize": "14"
+        });
+        let parsed: std::collections::HashMap<String, String> =
+            deserialize_evaluated_json(value).expect("deserialize object json");
+
+        assert_eq!(parsed.get("theme"), Some(&"dark".to_string()));
+        assert_eq!(parsed.get("fontSize"), Some(&"14".to_string()));
+    }
+
+    #[test]
+    fn test_validate_session_data_flags_invalid_payloads() {
+        let data = crate::task::policy::SessionData {
+            cookies: vec![serde_json::json!({"value": "abc"})],
+            local_storage: std::collections::HashMap::new(),
+            exported_at: chrono::Utc::now(),
+            url: String::new(),
+        };
+
+        let warnings = validate_session_data_for_tests(&data);
+
+        assert!(warnings
+            .iter()
+            .any(|warning| warning == "Cookie[0] missing 'name' field"));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning == "SessionData url is empty"));
+        assert!(!warnings
+            .iter()
+            .any(|warning| warning == "SessionData has no cookies and no localStorage"));
     }
 
     #[test]
@@ -1906,7 +1961,7 @@ mod tests {
 /// # use auto::config::NativeInteractionConfig;
 /// # use auto::task::policy::DEFAULT_TASK_POLICY;
 /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-/// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY);
+/// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY, None);
 /// // Use the API for browser automation
 /// # }
 /// ```
@@ -1922,6 +1977,8 @@ pub struct TaskContext {
     click_learning: Arc<Mutex<ClickLearningState>>,
     click_learning_path: Option<PathBuf>,
     policy: &'static TaskPolicy,
+    /// When set (orchestrated runs), `pause`/`pause_with_variance`/`pause_human` return early on cancel.
+    cancel_token: Option<CancellationToken>,
 }
 
 impl TaskContext {
@@ -1934,6 +1991,7 @@ impl TaskContext {
     /// * `behavior_profile` - The behavior profile for human-like interactions
     /// * `behavior_runtime` - The runtime behavior configuration
     /// * `native_interaction` - Native OS input calibration and timing settings
+    /// * `cancel_token` - When `Some`, [`Self::pause`] family returns early if the token is cancelled
     ///
     /// # Returns
     ///
@@ -1949,7 +2007,7 @@ impl TaskContext {
     /// # use auto::config::NativeInteractionConfig;
     /// # use auto::task::policy::DEFAULT_TASK_POLICY;
     /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY);
+    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY, None);
     /// # }
     /// ```
     pub fn new(
@@ -1959,6 +2017,7 @@ impl TaskContext {
         behavior_runtime: ProfileRuntime,
         native_interaction: NativeInteractionConfig,
         policy: &'static TaskPolicy,
+        cancel_token: Option<CancellationToken>,
     ) -> Self {
         let session_id = session_id.into();
         let clipboard = ClipboardState::new(session_id.clone());
@@ -1978,6 +2037,7 @@ impl TaskContext {
             click_learning: Arc::new(Mutex::new(click_learning)),
             click_learning_path,
             policy,
+            cancel_token,
         }
     }
 
@@ -1989,6 +2049,7 @@ impl TaskContext {
         native_interaction: NativeInteractionConfig,
         metrics: Arc<MetricsCollector>,
         policy: &'static TaskPolicy,
+        cancel_token: Option<CancellationToken>,
     ) -> Self {
         let mut ctx = Self::new(
             session_id,
@@ -1997,6 +2058,7 @@ impl TaskContext {
             behavior_runtime,
             native_interaction,
             policy,
+            cancel_token,
         );
         ctx.metrics = Some(metrics);
         ctx
@@ -3462,7 +3524,7 @@ impl TaskContext {
             .cloned()
             .unwrap_or(serde_json::Value::Null);
         let local_storage: std::collections::HashMap<String, String> =
-            serde_json::from_value(local_storage_value).unwrap_or_default();
+            deserialize_evaluated_json(local_storage_value).unwrap_or_default();
 
         let session_data = crate::task::policy::SessionData {
             cookies,
@@ -3981,7 +4043,7 @@ impl TaskContext {
         let local_storage: std::collections::HashMap<
             String,
             std::collections::HashMap<String, String>,
-        > = serde_json::from_value(local_storage_value).unwrap_or_default();
+        > = deserialize_evaluated_json(local_storage_value).unwrap_or_default();
 
         // Export sessionStorage via JavaScript
         let session_storage_js = r#"
@@ -4006,7 +4068,7 @@ impl TaskContext {
         let session_storage: std::collections::HashMap<
             String,
             std::collections::HashMap<String, String>,
-        > = serde_json::from_value(session_storage_value).unwrap_or_default();
+        > = deserialize_evaluated_json(session_storage_value).unwrap_or_default();
 
         // Get IndexedDB database names (simplified - just list databases)
         let indexeddb_js = r#"
@@ -4256,7 +4318,7 @@ impl TaskContext {
             .cloned()
             .unwrap_or(serde_json::Value::Null);
         let local_storage: std::collections::HashMap<String, String> =
-            serde_json::from_value(local_storage_value).unwrap_or_default();
+            deserialize_evaluated_json(local_storage_value).unwrap_or_default();
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
@@ -4380,45 +4442,8 @@ impl TaskContext {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn validate_session_data(
-        &self,
-        data: &crate::task::policy::SessionData,
-    ) -> Result<Vec<String>> {
-        let mut warnings = Vec::new();
-
-        // Validate cookies array
-        if data.cookies.is_empty() && data.local_storage.is_empty() {
-            warnings.push("SessionData has no cookies and no localStorage".to_string());
-        }
-
-        // Validate cookie structure
-        for (i, cookie) in data.cookies.iter().enumerate() {
-            if let Some(obj) = cookie.as_object() {
-                if !obj.contains_key("name") {
-                    warnings.push(format!("Cookie[{}] missing 'name' field", i));
-                }
-                if !obj.contains_key("value") {
-                    warnings.push(format!("Cookie[{}] missing 'value' field", i));
-                }
-            } else {
-                warnings.push(format!("Cookie[{}] is not a JSON object", i));
-            }
-        }
-
-        // Validate local_storage
-        if data.local_storage.len() > 1000 {
-            warnings.push(format!(
-                "localStorage has {} items (very large)",
-                data.local_storage.len()
-            ));
-        }
-
-        // Validate URL is not empty
-        if data.url.is_empty() {
-            warnings.push("SessionData url is empty".to_string());
-        }
-
-        Ok(warnings)
+    pub fn validate_session_data_for_tests(data: &crate::task::policy::SessionData) -> Vec<String> {
+        validate_session_data_impl(data)
     }
 
     /// Set custom user agent string for subsequent navigations.
@@ -5255,9 +5280,7 @@ impl TaskContext {
                 ));
             }
             "not_editable" => {
-                warn!(
-                    "[task-api] type_text: focused element may not be editable"
-                );
+                warn!("[task-api] type_text: focused element may not be editable");
             }
             _ => {}
         }
@@ -5373,14 +5396,27 @@ impl TaskContext {
         clipboard::paste_from_clipboard(self.session_id(), self.page()).await
     }
 
-    /// Wait for base_ms with 20% variance (uniform distribution).
+    /// Wait for `base_ms` with **20% uniform** spread (same family as [`Self::pause_with_variance`]).
+    ///
+    /// When this context was built with a cancel token (orchestrated runs), the sleep ends early
+    /// if the task group is cancelled, so shutdown does not wait for the full sampled duration.
     pub async fn pause(&self, base_ms: u64) {
-        timing::uniform_pause(base_ms, 20).await;
+        timing::uniform_pause_with_cancel(self.cancel_token.as_ref(), base_ms, 20).await;
     }
 
-    /// Wait with custom variance percentage (e.g., 20 for 20%).
+    /// Uniform random wait around `base_ms` with spread `variance_pct` (0–100, e.g. 20 for ±20%).
+    ///
+    /// Same distribution model as [`Self::pause`] but with a configurable spread. For Gaussian
+    /// (human-like) delays, use [`Self::pause_human`].
     pub async fn pause_with_variance(&self, base_ms: u64, variance_pct: u32) {
-        timing::human_pause(base_ms, variance_pct).await;
+        timing::uniform_pause_with_cancel(self.cancel_token.as_ref(), base_ms, variance_pct).await;
+    }
+
+    /// Gaussian (human-like) pause around `base_ms` with `variance_pct` shaping the distribution.
+    ///
+    /// Respects the same optional cancel token as [`Self::pause`].
+    pub async fn pause_human(&self, base_ms: u64, variance_pct: u32) {
+        timing::human_pause_with_cancel(self.cancel_token.as_ref(), base_ms, variance_pct).await;
     }
 
     /// Check if selector exists in DOM (may be hidden).
@@ -5441,6 +5477,39 @@ impl TaskContext {
     /// Select all text in element (Ctrl+A).
     pub async fn select_all(&self, selector: &str) -> Result<()> {
         let _ = self.focus(selector).await?;
+
+        // Phase2: Check for readonly/disabled before attempting select all
+        let check_js = format!(
+            r#"(() => {{
+                const el = document.querySelector({});
+                if (!el) return 'not_found';
+                if (el.readOnly) return 'readonly';
+                if (el.disabled) return 'disabled';
+                return 'ok';
+            }})()"#,
+            serde_json::to_string(selector)?
+        );
+        let status = match self.page().evaluate(check_js).await {
+            Ok(result) => result
+                .value()
+                .and_then(|v| v.as_str())
+                .unwrap_or("check_failed")
+                .to_string(),
+            Err(_) => "check_failed".to_string(),
+        };
+        if status == "readonly" {
+            return Err(anyhow::anyhow!(
+                "[task-api] select_all: element '{}' is readonly",
+                selector
+            ));
+        }
+        if status == "disabled" {
+            return Err(anyhow::anyhow!(
+                "[task-api] select_all: element '{}' is disabled",
+                selector
+            ));
+        }
+
         self.press_with_modifiers("a", &["Control"]).await
     }
 
@@ -5511,4 +5580,43 @@ impl TaskContext {
         self.post_interaction_pause().await;
         Ok(outcome)
     }
+}
+
+fn validate_session_data_impl(data: &crate::task::policy::SessionData) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    if data.cookies.is_empty() && data.local_storage.is_empty() {
+        warnings.push("SessionData has no cookies and no localStorage".to_string());
+    }
+
+    for (i, cookie) in data.cookies.iter().enumerate() {
+        if let Some(obj) = cookie.as_object() {
+            if !obj.contains_key("name") {
+                warnings.push(format!("Cookie[{}] missing 'name' field", i));
+            }
+            if !obj.contains_key("value") {
+                warnings.push(format!("Cookie[{}] missing 'value' field", i));
+            }
+        } else {
+            warnings.push(format!("Cookie[{}] is not a JSON object", i));
+        }
+    }
+
+    if data.local_storage.len() > 1000 {
+        warnings.push(format!(
+            "localStorage has {} items (very large)",
+            data.local_storage.len()
+        ));
+    }
+
+    if data.url.is_empty() {
+        warnings.push("SessionData url is empty".to_string());
+    }
+
+    warnings
+}
+
+#[cfg(test)]
+fn validate_session_data_for_tests(data: &crate::task::policy::SessionData) -> Vec<String> {
+    validate_session_data_impl(data)
 }

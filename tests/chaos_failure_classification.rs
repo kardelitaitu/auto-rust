@@ -1,3 +1,19 @@
+//! Tests for chaos engineering and failure classification.
+//! 
+//! This module tests that various error messages are correctly
+//! classified into appropriate TaskErrorKind variants.
+//! 
+//! # Test Strategy
+//! - Provide error messages that mimic real failure scenarios
+//! - Verify correct TaskErrorKind classification
+//! - Ensure TaskResult status is set correctly
+//! 
+//! # Coverage
+//! - Browser failures (Target closed, WebSocket errors)
+//! - Session failures (receiver gone, disconnected)
+//! - Network failures (timeout, connection reset)
+//! - Validation failures (invalid input)
+
 use auto::result::{TaskErrorKind, TaskResult, TaskStatus};
 
 #[test]

@@ -9,10 +9,12 @@
 //!
 //! Usage: cargo test --test soak_test -- --ignored --nocapture
 
-use log::{info, warn};
 use auto::{
-    health_monitor::HealthMonitor, metrics::{MetricsCollector, TaskMetrics, TaskStatus}, result::TaskErrorKind,
+    health_monitor::HealthMonitor,
+    metrics::{MetricsCollector, TaskMetrics, TaskStatus},
+    result::TaskErrorKind,
 };
+use log::{info, warn};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

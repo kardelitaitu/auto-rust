@@ -203,17 +203,23 @@ async fn connect_to_browser(
     let connect_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
     let (browser, handler) = match tokio::time::timeout(
         connect_timeout,
-        chromiumoxide::Browser::connect(ws_endpoint)
-    ).await {
+        chromiumoxide::Browser::connect(ws_endpoint),
+    )
+    .await
+    {
         Ok(Ok((browser, handler))) => (browser, handler),
         Ok(Err(e)) => {
             return Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
-                format!("Failed to connect to {}: {}", profile.name, e)
+                format!("Failed to connect to {}: {}", profile.name, e),
             )));
         }
         Err(_) => {
             return Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
-                format!("Connection timeout to {} after {}ms", profile.name, connect_timeout.as_millis())
+                format!(
+                    "Connection timeout to {} after {}ms",
+                    profile.name,
+                    connect_timeout.as_millis()
+                ),
             )));
         }
     };
@@ -292,11 +298,14 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                         info!("Found Brave browser on port {port}");
 
                         // Try to connect to chromiumoxide with timeout
-                        let brave_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+                        let brave_timeout =
+                            Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
                         match tokio::time::timeout(
                             brave_timeout,
-                            chromiumoxide::Browser::connect(ws_str)
-                        ).await {
+                            chromiumoxide::Browser::connect(ws_str),
+                        )
+                        .await
+                        {
                             Ok(Ok((browser, handler))) => {
                                 let session = Session::new(
                                     format!("brave-{port}"),
@@ -314,7 +323,10 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                                 warn!("Failed to connect to Brave on port {port}: {e}");
                             }
                             Err(_) => {
-                                warn!("Connection timeout to Brave on port {port} after {}ms", brave_timeout.as_millis());
+                                warn!(
+                                    "Connection timeout to Brave on port {port} after {}ms",
+                                    brave_timeout.as_millis()
+                                );
                             }
                         }
                     }
@@ -433,7 +445,10 @@ async fn discover_roxybrowser(config: &Config) -> Result<Vec<Session>> {
                 warn!("Failed to connect to Roxybrowser {profile_name}: {e}");
             }
             Err(_) => {
-                warn!("Connection timeout to Roxybrowser {profile_name} after {}ms", roxy_timeout.as_millis());
+                warn!(
+                    "Connection timeout to Roxybrowser {profile_name} after {}ms",
+                    roxy_timeout.as_millis()
+                );
             }
         }
     }
@@ -777,8 +792,8 @@ mod tests {
         // Test: No filters, no browsers available - should return empty vec (warns but doesn't error)
         let config = crate::config::Config {
             browser: crate::config::BrowserConfig {
-                profiles: vec![],  // Empty profiles to avoid actual connections
-                max_discovery_retries: 0,  // Skip discovery attempts
+                profiles: vec![],         // Empty profiles to avoid actual connections
+                max_discovery_retries: 0, // Skip discovery attempts
                 ..Default::default()
             },
             orchestrator: crate::config::OrchestratorConfig::default(),
@@ -786,9 +801,9 @@ mod tests {
             tracing: crate::config::TracingConfig::default(),
         };
         let filters: Vec<String> = vec![];
-        
+
         let result = discover_browsers_with_filters(&config, &filters).await;
-        
+
         // Should succeed with empty sessions (warns but continues)
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
@@ -799,8 +814,8 @@ mod tests {
         // Test: Filters active but no browsers available - should return error
         let config = crate::config::Config {
             browser: crate::config::BrowserConfig {
-                profiles: vec![],  // Empty profiles to avoid actual connections
-                max_discovery_retries: 0,  // Skip discovery attempts
+                profiles: vec![],         // Empty profiles to avoid actual connections
+                max_discovery_retries: 0, // Skip discovery attempts
                 ..Default::default()
             },
             orchestrator: crate::config::OrchestratorConfig::default(),
@@ -808,9 +823,9 @@ mod tests {
             tracing: crate::config::TracingConfig::default(),
         };
         let filters = vec!["brave".to_string()];
-        
+
         let result = discover_browsers_with_filters(&config, &filters).await;
-        
+
         // Should fail with connection error due to zero matches
         match result {
             Ok(_) => panic!("Should return error when filters active but no matches"),
@@ -827,18 +842,18 @@ mod tests {
         // Test: Empty filter string treated as no filter - should not error
         let config = crate::config::Config {
             browser: crate::config::BrowserConfig {
-                profiles: vec![],  // Empty profiles to avoid actual connections
-                max_discovery_retries: 0,  // Skip discovery attempts
+                profiles: vec![],         // Empty profiles to avoid actual connections
+                max_discovery_retries: 0, // Skip discovery attempts
                 ..Default::default()
             },
             orchestrator: crate::config::OrchestratorConfig::default(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
         };
-        let filters: Vec<String> = vec![];  // Empty filters
-        
+        let filters: Vec<String> = vec![]; // Empty filters
+
         let result = discover_browsers_with_filters(&config, &filters).await;
-        
+
         // Should succeed with empty sessions (no error when filters empty)
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());

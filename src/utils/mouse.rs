@@ -2447,7 +2447,11 @@ async fn resolve_selector_bbox_with_retry(
                     human_pause(50, 20).await;
                     continue;
                 }
-                anyhow::bail!("Element '{}' has invalid bounds after {} retries", selector, max_retries);
+                anyhow::bail!(
+                    "Element '{}' has invalid bounds after {} retries",
+                    selector,
+                    max_retries
+                );
             }
             Err(e) => {
                 last_err = Some(e);
@@ -2459,7 +2463,11 @@ async fn resolve_selector_bbox_with_retry(
     }
 
     Err(last_err.unwrap_or_else(|| {
-        anyhow::anyhow!("Failed to resolve bbox for '{}' after {} retries", selector, max_retries)
+        anyhow::anyhow!(
+            "Failed to resolve bbox for '{}' after {} retries",
+            selector,
+            max_retries
+        )
     }))
 }
 

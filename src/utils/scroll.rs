@@ -26,7 +26,7 @@ pub async fn read_by_duration(page: &Page, duration_ms: u64) -> Result<()> {
     // Average pause time ~800ms (500-1100ms range with 45% variance)
     let avg_pause_ms = 800;
     let pauses = (duration_ms / avg_pause_ms).max(2) as u32;
-    
+
     read(
         page,
         pauses,
@@ -535,7 +535,7 @@ mod tests {
     fn test_scroll_easing_function() {
         // Test easing function: 1 - (1 - progress)^3
         let ease = |progress: f64| 1.0 - (1.0 - progress).powi(3);
-        
+
         assert_eq!(ease(0.0), 0.0);
         assert_eq!(ease(1.0), 1.0);
         assert!(ease(0.5) > 0.0 && ease(0.5) < 1.0);

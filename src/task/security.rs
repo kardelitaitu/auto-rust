@@ -31,10 +31,9 @@ use std::path::{Path, PathBuf};
 pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> {
     // Check 1: Reject empty paths
     if relative_path.is_empty() {
-        return Err(crate::error::TaskError::InvalidPath(
-            "Path cannot be empty".to_string(),
-        )
-        .into());
+        return Err(
+            crate::error::TaskError::InvalidPath("Path cannot be empty".to_string()).into(),
+        );
     }
 
     // Check 2: Reject absolute paths (including Unix-style / and Windows-style C:)

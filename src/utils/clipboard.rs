@@ -238,7 +238,10 @@ mod tests {
     #[test]
     fn test_set_session_clipboard() {
         set_session_clipboard("session-3", "session content");
-        assert_eq!(get_session_clipboard("session-3"), Some("session content".to_string()));
+        assert_eq!(
+            get_session_clipboard("session-3"),
+            Some("session content".to_string())
+        );
     }
 
     #[test]

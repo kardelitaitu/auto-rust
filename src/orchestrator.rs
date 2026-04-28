@@ -603,6 +603,7 @@ async fn execute_task_with_retry(
             config.browser.native_interaction.clone(),
             metrics.clone(),
             policy,
+            Some(cancel_token.clone()),
         );
 
         let task_result = tokio::select! {
@@ -654,8 +655,7 @@ async fn execute_task_with_retry(
                 last_failure = Some((
                     format!(
                         "Task '{}' exceeded policy timeout of {}ms",
-                        task_def.name,
-                        policy.max_duration_ms
+                        task_def.name, policy.max_duration_ms
                     ),
                     TaskErrorKind::Timeout,
                 ));
@@ -1141,16 +1141,16 @@ mod tests {
         };
 
         let orchestrator = Orchestrator::new(original_config.clone());
-        assert_eq!(
-            orchestrator.config.orchestrator.max_global_concurrency,
-            15
-        );
+        assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 15);
         assert_eq!(orchestrator.config.orchestrator.group_timeout_ms, 10000);
     }
 
     #[test]
     fn test_should_mark_session_unhealthy_unknown_error() {
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, false));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Unknown,
+            false
+        ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
     }
 
@@ -1221,17 +1221,29 @@ mod tests {
 
     #[test]
     fn test_should_mark_session_unhealthy_validation_error() {
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, false));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            false
+        ));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            true
+        ));
     }
 
     #[test]
     fn test_should_mark_session_unhealthy_cancelled_all_kinds() {
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Navigation, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Navigation,
+            true
+        ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Session, true));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            true
+        ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
     }
 

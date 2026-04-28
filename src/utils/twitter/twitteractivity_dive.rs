@@ -574,7 +574,10 @@ mod tests {
         let mut cache = ThreadCache::default();
         cache.add_reply("user1".to_string(), "reply1".to_string());
         assert_eq!(cache.replies.len(), 1);
-        assert_eq!(cache.replies[0], ("user1".to_string(), "reply1".to_string()));
+        assert_eq!(
+            cache.replies[0],
+            ("user1".to_string(), "reply1".to_string())
+        );
     }
 
     #[test]

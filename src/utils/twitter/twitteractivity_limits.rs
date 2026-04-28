@@ -565,7 +565,10 @@ mod tests {
     fn test_session_limit_reached_check() {
         let check = EngagementCheck::SessionLimitReached;
         assert!(!check.is_allowed());
-        assert_eq!(check.reason(), Some("Session engagement limit reached".to_string()));
+        assert_eq!(
+            check.reason(),
+            Some("Session engagement limit reached".to_string())
+        );
     }
 
     #[test]

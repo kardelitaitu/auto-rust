@@ -14,8 +14,8 @@ use std::collections::{HashMap, HashSet};
 
 // Re-export validation functions from validation layer
 pub use crate::validation::{
-    is_known_task, task_file_exists, validate_task_name as validate_task, TaskValidationResult,
-    validate_task_groups, validate_task_groups_strict,
+    is_known_task, task_file_exists, validate_task_groups, validate_task_groups_strict,
+    validate_task_name as validate_task, TaskValidationResult,
 };
 
 #[derive(Parser, Debug)]

@@ -75,15 +75,15 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     debug!("[twitterintent] Detected intent type: {:?}", intent_type);
 
     // Navigate to intent URL
-    api.navigate(&url, DEFAULT_NAVIGATE_TIMEOUT_MS)
-        .await?;
+    api.navigate(&url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
     api.pause(POST_NAVIGATE_WAIT_MS).await;
 
     // Click confirm button with verification
     let selector = intent_type.confirm_selector();
     debug!("[twitterintent] Clicking button: {}", selector);
 
-    let (click_success, screenshot_path) = click_with_verification(api, selector, intent_type).await?;
+    let (click_success, screenshot_path) =
+        click_with_verification(api, selector, intent_type).await?;
 
     if click_success {
         let intent_info = parse_intent_info(&url, intent_type);
@@ -97,7 +97,10 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Random 5-15s pause after intent action (success or failed)
     let post_action_pause = random_in_range(5000, 15000);
-    debug!("[twitterintent] Pausing {}ms after intent action", post_action_pause);
+    debug!(
+        "[twitterintent] Pausing {}ms after intent action",
+        post_action_pause
+    );
     api.pause(post_action_pause).await;
 
     // Click home link to go to home feed
@@ -154,7 +157,10 @@ fn extract_url_from_payload(payload: &Value) -> Result<String> {
             // CLI splits on '=' in query strings, so "screen_name=snsnokyoufu" becomes "snsnokyoufu"
             if !url_str.contains('/') && !url_str.contains('.') {
                 // Looks like a username or ID, assume follow intent
-                return Ok(format!("https://x.com/intent/follow?screen_name={}", url_str));
+                return Ok(format!(
+                    "https://x.com/intent/follow?screen_name={}",
+                    url_str
+                ));
             }
         }
     }
@@ -204,7 +210,10 @@ async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<(bool, Op
             Some(path)
         }
         Err(e) => {
-            warn!("[twitterintent] Screenshot failed (permission may be denied): {}", e);
+            warn!(
+                "[twitterintent] Screenshot failed (permission may be denied): {}",
+                e
+            );
             None
         }
     };
@@ -215,7 +224,8 @@ async fn click_and_verify(api: &TaskContext, selector: &str) -> Result<(bool, Op
 fn parse_intent_info(url: &str, intent_type: IntentType) -> IntentInfo {
     match intent_type {
         IntentType::Follow => {
-            let username = extract_param(url, "screen_name").unwrap_or_else(|| "unknown".to_string());
+            let username =
+                extract_param(url, "screen_name").unwrap_or_else(|| "unknown".to_string());
             IntentInfo {
                 description: format!("Followed @{}", username),
             }
@@ -227,8 +237,7 @@ fn parse_intent_info(url: &str, intent_type: IntentType) -> IntentInfo {
             }
         }
         IntentType::Post => {
-            let text = extract_param(url, "text")
-                .unwrap_or_else(|| "empty text".to_string());
+            let text = extract_param(url, "text").unwrap_or_else(|| "empty text".to_string());
             IntentInfo {
                 description: format!("Posted '{}'", text),
             }
@@ -252,7 +261,10 @@ fn extract_param(url: &str, param: &str) -> Option<String> {
     let pattern = format!("{}=", param);
     if let Some(start) = url.find(&pattern) {
         let start = start + pattern.len();
-        let end = url[start..].find('&').map(|e| start + e).unwrap_or(url.len());
+        let end = url[start..]
+            .find('&')
+            .map(|e| start + e)
+            .unwrap_or(url.len());
         Some(url[start..end].to_string())
     } else {
         None
@@ -354,25 +366,37 @@ mod tests {
     #[test]
     fn test_extract_param_screen_name() {
         let url = "https://x.com/intent/follow?screen_name=elonmusk";
-        assert_eq!(extract_param(url, "screen_name"), Some("elonmusk".to_string()));
+        assert_eq!(
+            extract_param(url, "screen_name"),
+            Some("elonmusk".to_string())
+        );
     }
 
     #[test]
     fn test_extract_param_tweet_id() {
         let url = "https://x.com/intent/like?tweet_id=123456789";
-        assert_eq!(extract_param(url, "tweet_id"), Some("123456789".to_string()));
+        assert_eq!(
+            extract_param(url, "tweet_id"),
+            Some("123456789".to_string())
+        );
     }
 
     #[test]
     fn test_extract_param_text() {
         let url = "https://x.com/intent/tweet?text=Hello%20world";
-        assert_eq!(extract_param(url, "text"), Some("Hello%20world".to_string()));
+        assert_eq!(
+            extract_param(url, "text"),
+            Some("Hello%20world".to_string())
+        );
     }
 
     #[test]
     fn test_extract_param_url() {
         let url = "https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Great";
-        assert_eq!(extract_param(url, "url"), Some("https://x.com/user/status/123".to_string()));
+        assert_eq!(
+            extract_param(url, "url"),
+            Some("https://x.com/user/status/123".to_string())
+        );
     }
 
     #[test]
@@ -435,22 +459,34 @@ mod tests {
         // Both Reply and Quote have url= parameter, both detected as Quote
         let reply_url = "https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Reply";
         let quote_url = "https://x.com/intent/tweet?url=https://x.com/user/status/123&text=Quote";
-        
-        assert!(matches!(IntentType::from_url(reply_url), Ok(IntentType::Quote)));
-        assert!(matches!(IntentType::from_url(quote_url), Ok(IntentType::Quote)));
+
+        assert!(matches!(
+            IntentType::from_url(reply_url),
+            Ok(IntentType::Quote)
+        ));
+        assert!(matches!(
+            IntentType::from_url(quote_url),
+            Ok(IntentType::Quote)
+        ));
     }
 
     #[test]
     fn test_extract_param_multiline_text() {
         let url = "https://x.com/intent/tweet?text=this+is+example+reply%0Athis+is+second+line";
-        assert_eq!(extract_param(url, "text"), Some("this+is+example+reply%0Athis+is+second+line".to_string()));
+        assert_eq!(
+            extract_param(url, "text"),
+            Some("this+is+example+reply%0Athis+is+second+line".to_string())
+        );
     }
 
     #[test]
     fn test_extract_param_complex_url() {
         let url = "https://x.com/intent/tweet?text=Hello&url=https://x.com/user/status/123&in_reply_to=456";
         assert_eq!(extract_param(url, "text"), Some("Hello".to_string()));
-        assert_eq!(extract_param(url, "url"), Some("https://x.com/user/status/123".to_string()));
+        assert_eq!(
+            extract_param(url, "url"),
+            Some("https://x.com/user/status/123".to_string())
+        );
         assert_eq!(extract_param(url, "in_reply_to"), Some("456".to_string()));
     }
 

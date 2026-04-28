@@ -557,10 +557,7 @@ mod tests {
         for i in 0..5 {
             let msg = format!("message {}", i);
             let args = format_args!("{}", msg);
-            let record = Record::builder()
-                .args(args)
-                .level(log::Level::Info)
-                .build();
+            let record = Record::builder().args(args).level(log::Level::Info).build();
             logger.log(&record);
         }
         logger.flush();
@@ -580,10 +577,7 @@ mod tests {
 
         let long_msg = "a".repeat(1000);
         let args = format_args!("{}", long_msg);
-        let record = Record::builder()
-            .args(args)
-            .level(log::Level::Info)
-            .build();
+        let record = Record::builder().args(args).level(log::Level::Info).build();
 
         logger.log(&record);
         logger.flush();
@@ -618,10 +612,10 @@ mod tests {
     #[test]
     fn test_file_logger_truncates_existing_file() {
         let temp_file = NamedTempFile::new().unwrap();
-        
+
         // Write some initial content
         std::fs::write(temp_file.path(), "old content").unwrap();
-        
+
         let logger = FileLogger::new(temp_file.path()).unwrap();
         let record = Record::builder()
             .args(format_args!("new content"))

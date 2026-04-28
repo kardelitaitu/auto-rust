@@ -307,4 +307,152 @@ mod tests {
         assert!(validate_task("unknown-task", json!([])).is_ok());
         assert!(validate_task("unknown-task", json!(null)).is_ok());
     }
+
+    #[test]
+    fn cookiebot_accepts_object_payload() {
+        // cookiebot accepts any object payload
+        assert!(validate_task("cookiebot", json!({})).is_ok());
+        assert!(validate_task("cookiebot", json!({"data_file":"custom.txt"})).is_ok());
+        // cookiebot rejects non-object payloads
+        assert!(validate_task("cookiebot", json!([])).is_err());
+        assert!(validate_task("cookiebot", json!("string")).is_err());
+    }
+
+    #[test]
+    fn pageview_requires_url_or_value() {
+        // Empty object should fail
+        assert!(validate_task("pageview", json!({})).is_err());
+        // Whitespace-only should fail
+        assert!(validate_task("pageview", json!({"url":"   "})).is_err());
+        assert!(validate_task("pageview", json!({"value":"   "})).is_err());
+        // Valid URL should pass
+        assert!(validate_task("pageview", json!({"url":"https://example.com"})).is_ok());
+        // Value alias should also work
+        assert!(validate_task("pageview", json!({"value":"https://example.com"})).is_ok());
+    }
+
+    #[test]
+    fn twitterquote_requires_url_or_value() {
+        assert!(validate_task("twitterquote", json!({})).is_err());
+        assert!(validate_task("twitterquote", json!({"url":"https://x.com/a/status/1"})).is_ok());
+        assert!(validate_task("twitterquote", json!({"value":"https://x.com/a/status/1"})).is_ok());
+    }
+
+    #[test]
+    fn twitterquote_enforces_280_char_limit() {
+        let long_text = "a".repeat(281);
+        assert!(validate_task(
+            "twitterquote",
+            json!({
+                "url": "https://x.com/a/status/1",
+                "quote_text": long_text
+            })
+        )
+        .is_err());
+
+        // Exactly 280 chars should pass
+        let exact_text = "a".repeat(280);
+        assert!(validate_task(
+            "twitterquote",
+            json!({
+                "url": "https://x.com/a/status/1",
+                "quote_text": exact_text
+            })
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn twitterfollow_accepts_url_instead_of_username() {
+        // Should accept URL as alternative to username
+        assert!(validate_task("twitterfollow", json!({"url":"https://x.com/user"})).is_ok());
+        // Should accept value alias
+        assert!(validate_task("twitterfollow", json!({"value":"https://x.com/user"})).is_ok());
+    }
+
+    #[test]
+    fn validate_task_payload_new() {
+        use super::TaskPayload;
+        let payload = TaskPayload::new("test-task".to_string(), json!({"key": "value"}));
+        assert_eq!(payload.name, "test-task");
+        assert!(payload.payload.is_object());
+    }
+
+    #[test]
+    fn twitterretweet_requires_object() {
+        assert!(validate_task("twitterretweet", json!([])).is_err());
+        assert!(validate_task("twitterretweet", json!({})).is_ok());
+    }
+
+    #[test]
+    fn twitterlike_requires_object() {
+        assert!(validate_task("twitterlike", json!("string")).is_err());
+        assert!(validate_task("twitterlike", json!({})).is_ok());
+    }
+
+    #[test]
+    fn twitterdive_requires_object() {
+        assert!(validate_task("twitterdive", json!(123)).is_err());
+        assert!(validate_task("twitterdive", json!({"depth": 5})).is_ok());
+    }
+
+    #[test]
+    fn demo_keyboard_requires_object() {
+        assert!(validate_task("demo-keyboard", json!(null)).is_err());
+        assert!(validate_task("demo-keyboard", json!({})).is_ok());
+    }
+
+    #[test]
+    fn demo_mouse_requires_object() {
+        assert!(validate_task("demo-mouse", json!(true)).is_err());
+        assert!(validate_task("demo-mouse", json!({})).is_ok());
+    }
+
+    #[test]
+    fn resolve_pageview_target_prefers_url_over_value() {
+        // When both provided, url should be preferred
+        let result = resolve_pageview_target(&json!({
+            "url": "https://example.com",
+            "value": "https://other.com"
+        }))
+        .unwrap();
+        assert_eq!(result, "https://example.com");
+    }
+
+    #[test]
+    fn resolve_pageview_target_empty_object_fails() {
+        assert!(resolve_pageview_target(&json!({})).is_err());
+    }
+
+    #[test]
+    fn validate_non_object_payload_fails_for_all_tasks() {
+        // All tasks that require object payload should reject arrays
+        let tasks = [
+            "cookiebot",
+            "pageview",
+            "twitterfollow",
+            "twitterquote",
+            "twitterreply",
+            "twitteractivity",
+            "demoqa",
+            "demo-keyboard",
+            "demo-mouse",
+            "twitterlike",
+            "twitterretweet",
+            "twitterdive",
+        ];
+
+        for task in tasks {
+            assert!(
+                validate_task(task, json!([])).is_err(),
+                "Task {} should reject array payload",
+                task
+            );
+            assert!(
+                validate_task(task, json!("string")).is_err(),
+                "Task {} should reject string payload",
+                task
+            );
+        }
+    }
 }

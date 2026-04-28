@@ -811,7 +811,8 @@ mod tests {
 
     #[test]
     fn test_root_tweet_button_center_js_with_complex_selector() {
-        let js = root_tweet_button_center_js(r#"[data-testid="tweet"] button[aria-label="Like"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"[data-testid="tweet"] button[aria-label="Like"]"#)
+            .unwrap();
         assert!(js.contains("data-testid"));
         assert!(js.contains("aria-label"));
     }

@@ -107,7 +107,12 @@ impl LlmClient {
             let attempt = idx + 1;
 
             if is_fallback {
-                info!("OpenRouter fallback attempt {}/{} using model: {}", attempt, models_to_try.len(), model);
+                info!(
+                    "OpenRouter fallback attempt {}/{} using model: {}",
+                    attempt,
+                    models_to_try.len(),
+                    model
+                );
             } else {
                 info!("Calling OpenRouter: {}", model);
             }
@@ -142,8 +147,14 @@ impl LlmClient {
                                 Ok(openrouter_response) => {
                                     // Check for API-level errors
                                     if let Some(err) = openrouter_response.error {
-                                        warn!("OpenRouter API error on attempt {} with model {}: {}", attempt, model, err.message);
-                                        last_error = Some(anyhow::anyhow!("OpenRouter API error: {}", err.message));
+                                        warn!(
+                                            "OpenRouter API error on attempt {} with model {}: {}",
+                                            attempt, model, err.message
+                                        );
+                                        last_error = Some(anyhow::anyhow!(
+                                            "OpenRouter API error: {}",
+                                            err.message
+                                        ));
                                         continue; // Try next fallback
                                     }
 
@@ -163,21 +174,37 @@ impl LlmClient {
                                         }
                                         return Ok(content);
                                     } else {
-                                        warn!("OpenRouter empty response on attempt {} with model {}", attempt, model);
-                                        last_error = Some(anyhow::anyhow!("Empty response from model: {}", model));
+                                        warn!(
+                                            "OpenRouter empty response on attempt {} with model {}",
+                                            attempt, model
+                                        );
+                                        last_error = Some(anyhow::anyhow!(
+                                            "Empty response from model: {}",
+                                            model
+                                        ));
                                         continue; // Try next fallback
                                     }
                                 }
                                 Err(parse_err) => {
                                     warn!("OpenRouter JSON parse error on attempt {} with model {}: {}", attempt, model, parse_err);
-                                    last_error = Some(anyhow::anyhow!("JSON parse error: {} - Body: {}", parse_err, body_text));
+                                    last_error = Some(anyhow::anyhow!(
+                                        "JSON parse error: {} - Body: {}",
+                                        parse_err,
+                                        body_text
+                                    ));
                                     continue; // Try next fallback
                                 }
                             }
                         }
                         Err(body_err) => {
-                            warn!("OpenRouter body read error on attempt {} with model {}: {}", attempt, model, body_err);
-                            last_error = Some(anyhow::anyhow!("Failed to read response body: {}", body_err));
+                            warn!(
+                                "OpenRouter body read error on attempt {} with model {}: {}",
+                                attempt, model, body_err
+                            );
+                            last_error = Some(anyhow::anyhow!(
+                                "Failed to read response body: {}",
+                                body_err
+                            ));
                             continue; // Try next fallback
                         }
                     }
@@ -185,18 +212,33 @@ impl LlmClient {
                 Err(req_err) => {
                     let is_timeout = req_err.is_timeout();
                     if is_timeout {
-                        warn!("OpenRouter timeout on attempt {} with model {} (timeout_ms: {})", attempt, model, self.config.openrouter.timeout_ms);
+                        warn!(
+                            "OpenRouter timeout on attempt {} with model {} (timeout_ms: {})",
+                            attempt, model, self.config.openrouter.timeout_ms
+                        );
                     } else {
-                        warn!("OpenRouter request error on attempt {} with model {}: {}", attempt, model, req_err);
+                        warn!(
+                            "OpenRouter request error on attempt {} with model {}: {}",
+                            attempt, model, req_err
+                        );
                     }
-                    last_error = Some(anyhow::anyhow!("Request failed for model {}: {}", model, req_err));
+                    last_error = Some(anyhow::anyhow!(
+                        "Request failed for model {}: {}",
+                        model,
+                        req_err
+                    ));
                     continue; // Try next fallback
                 }
             }
         }
 
         // All models exhausted
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All OpenRouter models failed (primary + {} fallbacks)", self.config.openrouter.fallback_models.len())))
+        Err(last_error.unwrap_or_else(|| {
+            anyhow::anyhow!(
+                "All OpenRouter models failed (primary + {} fallbacks)",
+                self.config.openrouter.fallback_models.len()
+            )
+        }))
     }
 
     pub async fn health_check(&self) -> bool {
@@ -275,7 +317,12 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
 
     // Load fallback models from env vars
     let mut fallbacks = Vec::new();
-    for key in ["OPENROUTER_MODEL_FALLBACK", "OPENROUTER_MODEL_FALLBACK_2", "OPENROUTER_MODEL_FALLBACK_3", "OPENROUTER_MODEL_FALLBACK_4"] {
+    for key in [
+        "OPENROUTER_MODEL_FALLBACK",
+        "OPENROUTER_MODEL_FALLBACK_2",
+        "OPENROUTER_MODEL_FALLBACK_3",
+        "OPENROUTER_MODEL_FALLBACK_4",
+    ] {
         if let Ok(fb_model) = std::env::var(key) {
             if !fb_model.is_empty() {
                 fallbacks.push(fb_model);
@@ -561,15 +608,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_primary_succeeds_no_fallback_needed() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, header};
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
         // Primary model succeeds
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
-            .and(header("authorization", format!("Bearer {}", "test-key").as_str()))
+            .and(header(
+                "authorization",
+                format!("Bearer {}", "test-key").as_str(),
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "id": "test-1",
                 "model": "primary-model",
@@ -600,8 +650,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_primary_falls_back_to_first_fallback() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -650,8 +700,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_chains_through_all_models() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -711,8 +761,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_empty_response_triggers_fallback() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -763,8 +813,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_api_error_in_response_triggers_fallback() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -813,8 +863,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_all_models_fail_returns_error() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -846,13 +896,15 @@ mod tests {
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("All OpenRouter models failed") || err_msg.contains("Server error"));
+        assert!(
+            err_msg.contains("All OpenRouter models failed") || err_msg.contains("Server error")
+        );
     }
 
     #[tokio::test]
     async fn test_openrouter_fallback_uses_correct_model_in_request_body() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -898,15 +950,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_with_realistic_model_names() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
         // Primary fails (matched by model name)
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
-            .and(body_string_contains("\"model\":\"tencent/hy3-preview:free\""))
+            .and(body_string_contains(
+                "\"model\":\"tencent/hy3-preview:free\"",
+            ))
             .respond_with(ResponseTemplate::new(429))
             .mount(&mock_server)
             .await;
@@ -947,8 +1001,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_fallback_no_fallbacks_configured_fails_on_primary_error() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 

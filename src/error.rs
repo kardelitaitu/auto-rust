@@ -133,10 +133,7 @@ pub enum TaskError {
 
     /// CDP/browser operation failed
     #[error("CDP error: {operation} - {reason}")]
-    CdpError {
-        operation: String,
-        reason: String,
-    },
+    CdpError { operation: String, reason: String },
 
     /// Clipboard operation failed
     #[error("Clipboard error: {0}")]
@@ -556,7 +553,10 @@ mod tests {
             url: "https://example.com".to_string(),
             status: "".to_string(),
         };
-        assert_eq!(err.to_string(), "HTTP request failed: https://example.com - ");
+        assert_eq!(
+            err.to_string(),
+            "HTTP request failed: https://example.com - "
+        );
     }
 
     #[test]
@@ -752,7 +752,10 @@ mod tests {
         let _browser_errors = [
             BrowserError::ConnectionFailed("".to_string()),
             BrowserError::PageError("".to_string()),
-            BrowserError::ElementError { selector: "".to_string(), reason: "".to_string() },
+            BrowserError::ElementError {
+                selector: "".to_string(),
+                reason: "".to_string(),
+            },
             BrowserError::SelectorNotFound("".to_string()),
             BrowserError::Disconnected("".to_string()),
             BrowserError::Timeout("".to_string()),
@@ -765,24 +768,48 @@ mod tests {
             SessionError::ShutdownFailed("".to_string()),
         ];
         let _task_errors = [
-            TaskError::ValidationFailed { task_name: "".to_string(), reason: "".to_string() },
-            TaskError::Timeout { task_name: "".to_string(), timeout_ms: 0 },
-            TaskError::ExecutionFailed { task_name: "".to_string(), reason: "".to_string() },
+            TaskError::ValidationFailed {
+                task_name: "".to_string(),
+                reason: "".to_string(),
+            },
+            TaskError::Timeout {
+                task_name: "".to_string(),
+                timeout_ms: 0,
+            },
+            TaskError::ExecutionFailed {
+                task_name: "".to_string(),
+                reason: "".to_string(),
+            },
             TaskError::NotFound("".to_string()),
             TaskError::Cancelled("".to_string()),
-            TaskError::RetryExhausted { max_retries: 0, task_name: "".to_string() },
+            TaskError::RetryExhausted {
+                max_retries: 0,
+                task_name: "".to_string(),
+            },
         ];
         let _config_errors = [
-            ConfigError::LoadFailed { path: "".to_string(), reason: "".to_string() },
+            ConfigError::LoadFailed {
+                path: "".to_string(),
+                reason: "".to_string(),
+            },
             ConfigError::ValidationFailed("".to_string()),
             ConfigError::MissingField("".to_string()),
-            ConfigError::InvalidValue { field: "".to_string(), value: "".to_string(), reason: "".to_string() },
+            ConfigError::InvalidValue {
+                field: "".to_string(),
+                value: "".to_string(),
+                reason: "".to_string(),
+            },
             ConfigError::EnvVar("".to_string()),
         ];
         let _network_errors = [
-            NetworkError::HttpError { url: "".to_string(), status: "".to_string() },
+            NetworkError::HttpError {
+                url: "".to_string(),
+                status: "".to_string(),
+            },
             NetworkError::Timeout("".to_string()),
-            NetworkError::CircuitBreakerOpen { service: "".to_string() },
+            NetworkError::CircuitBreakerOpen {
+                service: "".to_string(),
+            },
             NetworkError::Connection("".to_string()),
             NetworkError::ApiKey("".to_string()),
         ];

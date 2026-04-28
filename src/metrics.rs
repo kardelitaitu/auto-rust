@@ -1058,7 +1058,7 @@ mod tests {
         breakdown.record(TaskStatus::Failed);
         breakdown.record(TaskStatus::Timeout);
         breakdown.record(TaskStatus::Cancelled);
-        
+
         assert_eq!(breakdown.succeeded, 1);
         assert_eq!(breakdown.failed, 1);
         assert_eq!(breakdown.timed_out, 1);
@@ -1072,7 +1072,7 @@ mod tests {
         breakdown.record(TaskStatus::Timeout);
         breakdown.record(TaskStatus::Cancelled);
         breakdown.record(TaskStatus::Success);
-        
+
         assert_eq!(breakdown.failure_count(), 3);
     }
 

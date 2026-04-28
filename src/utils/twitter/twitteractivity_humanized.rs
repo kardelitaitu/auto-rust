@@ -16,7 +16,7 @@ use super::twitteractivity_selectors::*;
 #[instrument(skip(api))]
 pub async fn human_pause(api: &TaskContext, base_ms: u64) {
     let runtime = api.behavior_runtime();
-    api.pause_with_variance(base_ms, runtime.action_delay.variance_pct.round() as u32)
+    api.pause_human(base_ms, runtime.action_delay.variance_pct.round() as u32)
         .await;
 }
 
@@ -43,7 +43,7 @@ pub async fn after_click_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let base = runtime.click.reaction_delay_ms;
     let variance = 30;
-    api.pause_with_variance(base, variance).await;
+    api.pause_human(base, variance).await;
 }
 
 /// Sleep using Tokio directly (blocking sleep for fixed periods).
@@ -107,7 +107,7 @@ pub async fn read_content_for(api: &TaskContext, duration_ms: u64) -> Result<(),
 pub async fn scroll_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let base = runtime.action_delay.min_ms * 2;
-    api.pause_with_variance(base, runtime.action_delay.variance_pct.round() as u32)
+    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
         .await;
 }
 
@@ -115,7 +115,7 @@ pub async fn scroll_pause(api: &TaskContext) {
 pub async fn engagement_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let base = runtime.action_delay.min_ms * 3;
-    api.pause_with_variance(base, runtime.action_delay.variance_pct.round() as u32)
+    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
         .await;
 }
 
@@ -123,7 +123,7 @@ pub async fn engagement_pause(api: &TaskContext) {
 pub async fn reply_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let base = runtime.action_delay.min_ms * 4;
-    api.pause_with_variance(base, runtime.action_delay.variance_pct.round() as u32)
+    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
         .await;
 }
 
@@ -152,7 +152,7 @@ pub async fn clustered_reply_pause(api: &TaskContext) {
 pub async fn click_prep_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let base = runtime.click.reaction_delay_ms * 4;
-    api.pause_with_variance(base, runtime.action_delay.variance_pct.round() as u32)
+    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
         .await;
 }
 
@@ -160,7 +160,7 @@ pub async fn click_prep_pause(api: &TaskContext) {
 pub async fn click_post_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let base = runtime.click.reaction_delay_ms * 8;
-    api.pause_with_variance(base, runtime.action_delay.variance_pct.round() as u32)
+    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
         .await;
 }
 

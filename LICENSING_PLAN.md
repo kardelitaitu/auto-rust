@@ -274,18 +274,22 @@ Target result:
 - task logic is loaded at runtime from external files/packages,
 - task execution remains safe, validated, and observable.
 
+## Locked Decisions (MVP)
+
+- Task files are YAML only (`.yaml`, `.yml`) for MVP.
+- Runtime task execution is TaskContext-only (closed opcode list mapped to TaskContext APIs).
+- Task discovery is allowlist-only via configured scan folders (supports multiple folders).
+- No scripted plugin runtime (JS/WASM) in MVP; reconsider after stable v1 rollout.
+- Signatures are required for official/premium task packs; unsigned local tasks are allowed by policy flag.
+
 ## Recommended Architecture
 
-Use a two-layer task model:
+Use a declarative task model for MVP:
+- task files in YAML define steps and parameters,
+- compiler maps each opcode to existing TaskContext methods,
+- orchestrator retains ownership of retries/timeouts/session fan-out.
 
-- Layer 1: Declarative Task Specs (primary)
-  - task files in JSON/YAML/TOML describe steps and parameters.
-  - good for most automation flows and easier licensing control.
-- Layer 2: Scripted Task Plugins (optional, advanced)
-  - sandboxed JS/WASM for custom logic where declarative steps are insufficient.
-  - available only for higher tiers if desired.
-
-This keeps the default path deterministic while allowing advanced extensibility.
+Script/plugin extensibility is explicitly deferred until post-MVP.
 
 ## Directory and Package Layout
 
@@ -294,9 +298,23 @@ Proposed runtime locations:
 - `tasks/custom/` - user-defined or downloaded tasks.
 - `tasks/registry.json` - local index with metadata, version, checksum, signature state.
 
+Configuration contract (supports multiple folders):
+- `task_scan_folders`: ordered list of folders to scan for task YAML files.
+- `task_scan_globs`: fixed to `["*.yaml", "*.yml"]` for MVP.
+- `task_policy.allow_unsigned_local`: boolean for local development.
+
+Example config:
+
+```toml
+[tasks]
+task_scan_folders = ["tasks/builtin", "tasks/custom", "D:/team-shared/auto-rust-tasks"]
+task_scan_globs = ["*.yaml", "*.yml"]
+allow_unsigned_local = true
+```
+
 Task package format:
 - `task.toml` (metadata)
-- `steps.yaml` or `steps.json` (declarative flow)
+- `steps.yaml` (declarative flow)
 - optional assets (templates/selectors/prompts)
 - optional signature file (`.sig`)
 
@@ -395,6 +413,13 @@ Opcode mapping for this example:
 - `TaskStore`
   - optional remote sync/update channel for signed task packages.
 
+## Non-Goals (MVP)
+
+- No arbitrary script execution from task files.
+- No direct CDP primitives exposed in task schema.
+- No auto-discovery outside explicit task scan folders.
+- No dynamic remote code execution during run start.
+
 ## CLI Surface Additions
 
 - `auto-rust task list`
@@ -416,6 +441,11 @@ These commands make runtime tasks operable without touching Rust code.
 - Enforce max step count, recursion depth, and per-step timeout.
 - Require signatures for official/premium task packages.
 - Keep optional script plugins sandboxed (no raw filesystem/network by default unless explicitly granted).
+
+Additional controls:
+- Canonicalize and normalize scan paths before traversal to block path traversal/symlink escape.
+- Enforce max YAML file size and max includes/references to avoid resource abuse.
+- Cache validated task fingerprints to avoid repeated parse/validate overhead on every run.
 
 ## Licensing Integration for Runtime Tasks
 
@@ -454,6 +484,10 @@ Phase D - Default External Tasks
 - new tasks must be external by default.
 - Rust task implementations reserved for engine-level capabilities.
 
+Rollback strategy:
+- keep feature flag `runtime_tasks_enabled` defaulting to `false` until pilot passes.
+- support immediate rollback to compiled task resolution if runtime validation errors spike.
+
 ## Testing Strategy for Task Handler
 
 - Schema tests: invalid files rejected with deterministic errors.
@@ -480,8 +514,29 @@ Phase D - Default External Tasks
 - Week 3: registry/install/update commands + signature verification.
 - Week 4: licensing hooks + dual-runtime rollout + docs.
 
+## Phase Exit Criteria (Go/No-Go Gates)
+
+Week 1 gate:
+- schema validator rejects invalid tasks with deterministic error codes,
+- path allowlist and YAML-only scan constraints are enforced by tests.
+
+Week 2 gate:
+- pilot runtime task matches compiled-task behavior in shadow mode for at least 50 runs,
+- no critical regressions in session health metrics.
+
+Week 3 gate:
+- signature verification works for signed packs,
+- install/update commands are idempotent and recover from interrupted installs.
+
+Week 4 gate:
+- entitlement enforcement works for runtime tasks across Free/Pro/Team,
+- docs are complete and one fresh machine can onboard end-to-end in under 15 minutes.
+
 ## Immediate Next Step for Task Handler
 
 Create two specs before coding:
 - `TASK_SCHEMA.md` (fields, step opcodes, validation rules),
 - `TASK_HANDLER_ARCHITECTURE.md` (registry/loader/compiler/executor contracts).
+
+Then create a third implementation tracker:
+- `TASK_HANDLER_MVP_CHECKLIST.md` with owner, status, and evidence links per exit criterion.

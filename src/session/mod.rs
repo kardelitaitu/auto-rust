@@ -1260,10 +1260,7 @@ mod tests {
         // With large timeout, circuit should stay open for a long time
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(
-            is_open,
-            "Circuit breaker should be open with large timeout"
-        );
+        assert!(is_open, "Circuit breaker should be open with large timeout");
     }
 
     #[test]
@@ -1322,7 +1319,10 @@ mod tests {
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
         // With saturating_sub, future failure time results in 0 difference, which is < timeout
-        assert!(is_open, "Future failure time with saturating_sub results in circuit open");
+        assert!(
+            is_open,
+            "Future failure time with saturating_sub results in circuit open"
+        );
     }
 
     #[test]
@@ -1342,7 +1342,10 @@ mod tests {
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
         // Should be closed at exact boundary (strict inequality)
-        assert!(!is_open, "Circuit should be closed at exact timeout boundary");
+        assert!(
+            !is_open,
+            "Circuit should be closed at exact timeout boundary"
+        );
     }
 
     #[test]
@@ -1387,7 +1390,10 @@ mod tests {
 
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(is_open, "Circuit should open on first failure with threshold=1");
+        assert!(
+            is_open,
+            "Circuit should open on first failure with threshold=1"
+        );
     }
 
     #[test]
@@ -1404,7 +1410,10 @@ mod tests {
 
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(!is_open, "Circuit should recover after timeout with threshold=1");
+        assert!(
+            !is_open,
+            "Circuit should recover after timeout with threshold=1"
+        );
     }
 
     #[test]
@@ -1438,7 +1447,10 @@ mod tests {
 
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(!is_open, "Circuit should be closed below very large threshold");
+        assert!(
+            !is_open,
+            "Circuit should be closed below very large threshold"
+        );
     }
 
     #[test]
@@ -1560,7 +1572,10 @@ mod tests {
 
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(is_open, "Circuit should be open with simultaneous failures at threshold");
+        assert!(
+            is_open,
+            "Circuit should be open with simultaneous failures at threshold"
+        );
     }
 
     #[test]
@@ -1579,7 +1594,10 @@ mod tests {
 
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(!is_open, "Circuit should recover after timeout regardless of failure count");
+        assert!(
+            !is_open,
+            "Circuit should recover after timeout regardless of failure count"
+        );
     }
 
     #[test]
@@ -1597,7 +1615,10 @@ mod tests {
 
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(!is_open, "Circuit should be closed just beyond timeout boundary");
+        assert!(
+            !is_open,
+            "Circuit should be closed just beyond timeout boundary"
+        );
     }
 
     #[test]
@@ -1615,6 +1636,9 @@ mod tests {
 
         let is_open = failure_count >= failure_threshold
             && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(is_open, "Circuit should be open just before timeout boundary");
+        assert!(
+            is_open,
+            "Circuit should be open just before timeout boundary"
+        );
     }
 }

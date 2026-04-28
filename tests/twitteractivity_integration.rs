@@ -4,7 +4,7 @@
 //! without requiring a live browser.
 
 use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
-use auto::task::{twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS}};
+use auto::task::twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
 use auto::utils::twitter::{
     twitteractivity_persona::select_persona_weights,
     twitteractivity_sentiment::{analyze_tweet_sentiment, sentiment_score, Sentiment},
@@ -119,9 +119,7 @@ fn twitteractivity_action_chaining_prevention_works() {
 /// Tests that TweetActionTracker allows actions on different tweets.
 #[test]
 fn twitteractivity_action_chaining_different_tweets_allowed() {
-    let mut tracker = TweetActionTracker::new(
-        MIN_ACTION_CHAIN_DELAY_MS,
-    );
+    let mut tracker = TweetActionTracker::new(MIN_ACTION_CHAIN_DELAY_MS);
     let tweet_id_1 = "test_tweet_1";
     let tweet_id_2 = "test_tweet_2";
 
@@ -195,9 +193,7 @@ fn twitteractivity_entry_point_selection_includes_home() {
 /// Tests that engagement limits prevent actions when limits are reached.
 #[test]
 fn twitteractivity_engagement_limits_prevent_actions() {
-    use auto::utils::twitter::twitteractivity_limits::{
-        EngagementCounters, EngagementLimits,
-    };
+    use auto::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
 
     let limits = EngagementLimits::default();
     let mut counters = EngagementCounters::new();
@@ -233,9 +229,7 @@ fn twitteractivity_engagement_limits_prevent_actions() {
 /// Tests that engagement limits track total actions correctly.
 #[test]
 fn twitteractivity_engagement_limits_total_actions() {
-    use auto::utils::twitter::twitteractivity_limits::{
-        EngagementCounters, EngagementLimits,
-    };
+    use auto::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
 
     let limits = EngagementLimits::default();
     let mut counters = EngagementCounters::new();
@@ -263,9 +257,7 @@ fn twitteractivity_engagement_limits_total_actions() {
 /// Tests that engagement limits remaining calculation is correct.
 #[test]
 fn twitteractivity_engagement_limits_remaining_calculation() {
-    use auto::utils::twitter::twitteractivity_limits::{
-        EngagementCounters, EngagementLimits,
-    };
+    use auto::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
 
     let limits = EngagementLimits::default();
     let mut counters = EngagementCounters::new();
@@ -285,9 +277,7 @@ fn twitteractivity_engagement_limits_remaining_calculation() {
 /// Tests that engagement limits work for all action types.
 #[test]
 fn twitteractivity_engagement_limits_all_action_types() {
-    use auto::utils::twitter::twitteractivity_limits::{
-        EngagementCounters, EngagementLimits,
-    };
+    use auto::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
 
     let limits = EngagementLimits::default();
     let mut counters = EngagementCounters::new();

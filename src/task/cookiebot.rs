@@ -102,7 +102,7 @@ async fn perform_browsing_behavior(api: &TaskContext) -> Result<()> {
     Ok(())
 }
 
-fn read_cookiebot_urls(data_file: &str) -> Result<Vec<String>> {
+pub fn read_cookiebot_urls(data_file: &str) -> Result<Vec<String>> {
     let content = fs::read_to_string(data_file).map_err(|e| {
         OrchestratorError::Task(TaskError::ExecutionFailed {
             task_name: "cookiebot".to_string(),

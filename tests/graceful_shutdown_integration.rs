@@ -3,12 +3,12 @@
 //! and cleans up resources gracefully.
 
 use auto::{
+    browser::discover_browsers,
     cli, config,
     metrics::MetricsCollector,
     orchestrator::Orchestrator,
     result::{TaskErrorKind, TaskResult},
     session::Session,
-    browser::discover_browsers,
 };
 use std::sync::Arc;
 use tokio::sync::broadcast;

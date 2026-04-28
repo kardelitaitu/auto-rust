@@ -1,8 +1,8 @@
 use anyhow::Result;
-use log::{info, warn, LevelFilter};
-use auto::session::cleanup::cleanup_managed_tabs;
 use auto::runtime::execution::{execute_task_groups_with_shutdown, RuntimeGroupRunner};
+use auto::session::cleanup::cleanup_managed_tabs;
 use auto::{browser, cli, config, health_logger, logger, metrics, orchestrator};
+use log::{info, warn, LevelFilter};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 

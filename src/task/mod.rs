@@ -16,11 +16,11 @@ use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 pub mod cdp_utils;
 pub mod cookiebot;
 pub mod demo_keyboard;
-pub mod security;
 pub mod demo_mouse;
 pub mod demoqa;
 pub mod pageview;
 pub mod policy;
+pub mod security;
 pub mod task_example;
 pub mod twitteractivity;
 pub mod twitterdive;
@@ -33,7 +33,7 @@ pub mod twitterretweet;
 pub mod twittertest;
 
 // Re-exports for twitteractivity test access
-pub use twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS, select_entry_point};
+pub use twitteractivity::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
 
 pub const TASK_NAMES: &[&str] = &[
     "cookiebot",
@@ -93,7 +93,7 @@ pub async fn perform_task(
             Ok(TaskResult {
                 status,
                 attempt: 1,
-                max_retries: 0,  // Intentional: no per-task retry (fail-fast)
+                max_retries: 0, // Intentional: no per-task retry (fail-fast)
                 last_error: Some(error_msg),
                 error_kind: Some(error_kind),
                 duration_ms: start.elapsed().as_millis() as u64,

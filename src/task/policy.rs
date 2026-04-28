@@ -224,8 +224,8 @@ impl Default for BrowserData {
 pub static COOKIEBOT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
     max_duration_ms: 30_000, // 30 seconds max for consent handling
     permissions: TaskPermissions {
-        allow_export_cookies: true,   // Export to verify consent state
-        allow_screenshot: true,       // Capture consent dialog for debugging
+        allow_export_cookies: true, // Export to verify consent state
+        allow_screenshot: true,     // Capture consent dialog for debugging
         // allow_write_data implied by allow_screenshot
         ..Default::default()
     },
@@ -235,7 +235,7 @@ pub static COOKIEBOT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 pub static PAGEVIEW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
     max_duration_ms: 30_000, // Page load timeout
     permissions: TaskPermissions {
-        allow_screenshot: true,       // Verify page loaded correctly
+        allow_screenshot: true, // Verify page loaded correctly
         // allow_write_data implied by allow_screenshot
         ..Default::default()
     },
@@ -245,10 +245,10 @@ pub static PAGEVIEW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 pub static TWITTERACTIVITY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
     max_duration_ms: 300_000, // 5 minutes for feed scanning
     permissions: TaskPermissions {
-        allow_export_cookies: true,       // Verify login session
-        allow_session_clipboard: true,     // Copy tweet text, paste replies
-        allow_read_data: true,            // Read persona files from config/
-        allow_screenshot: true,           // Debug screenshots
+        allow_export_cookies: true,    // Verify login session
+        allow_session_clipboard: true, // Copy tweet text, paste replies
+        allow_read_data: true,         // Read persona files from config/
+        allow_screenshot: true,        // Debug screenshots
         // allow_write_data implied by allow_screenshot
         ..Default::default()
     },
@@ -258,9 +258,9 @@ pub static TWITTERACTIVITY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 pub static TWITTER_BASE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
     max_duration_ms: 45_000, // 45 seconds default for Twitter tasks
     permissions: TaskPermissions {
-        allow_screenshot: true,           // Debug failures
-        allow_export_cookies: true,       // Auth verification
-        allow_session_clipboard: true,    // Copy/paste tweets
+        allow_screenshot: true,        // Debug failures
+        allow_export_cookies: true,    // Auth verification
+        allow_session_clipboard: true, // Copy/paste tweets
         ..Default::default()
     },
 });
@@ -323,7 +323,7 @@ pub static TWITTERINTENT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// TwitterLike policy - extends Twitter base policy.
 pub static TWITTERLIKE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 30_000,  // Override: faster timeout
+    max_duration_ms: 30_000, // Override: faster timeout
     permissions: crate::task::policy::TaskPermissions {
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
@@ -333,7 +333,7 @@ pub static TWITTERLIKE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 /// TwitterQuote policy - extends Twitter base policy.
 pub static TWITTERQUOTE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
     permissions: crate::task::policy::TaskPermissions {
-        allow_read_data: true,  // Read persona files
+        allow_read_data: true, // Read persona files
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
     ..*TWITTER_BASE_POLICY
@@ -358,7 +358,7 @@ pub static TWITTERRETWEET_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// TwitterTest policy - extends Twitter base policy (allows all read operations).
 pub static TWITTERTEST_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 120_000,  // Longer timeout for comprehensive tests
+    max_duration_ms: 120_000, // Longer timeout for comprehensive tests
     permissions: crate::task::policy::TaskPermissions {
         allow_screenshot: true,
         allow_export_cookies: true,
@@ -504,10 +504,21 @@ mod tests {
     fn test_all_task_policies_have_valid_timeouts() {
         // Verify all registered policies have valid timeouts
         let task_names = [
-            "cookiebot", "pageview", "twitteractivity", "demo-keyboard",
-            "demo-mouse", "demoqa", "task-example", "twitterdive",
-            "twitterfollow", "twitterintent", "twitterlike", "twitterquote",
-            "twitterreply", "twitterretweet", "twittertest",
+            "cookiebot",
+            "pageview",
+            "twitteractivity",
+            "demo-keyboard",
+            "demo-mouse",
+            "demoqa",
+            "task-example",
+            "twitterdive",
+            "twitterfollow",
+            "twitterintent",
+            "twitterlike",
+            "twitterquote",
+            "twitterreply",
+            "twitterretweet",
+            "twittertest",
         ];
 
         for task_name in &task_names {
@@ -530,9 +541,14 @@ mod tests {
     fn test_twitter_tasks_inherit_base_policy() {
         // Twitter tasks should inherit base permissions
         let twitter_tasks = [
-            "twitterlike", "twitterquote", "twitterreply",
-            "twitterdive", "twitterfollow", "twitterintent",
-            "twitterretweet", "twittertest",
+            "twitterlike",
+            "twitterquote",
+            "twitterreply",
+            "twitterdive",
+            "twitterfollow",
+            "twitterintent",
+            "twitterretweet",
+            "twittertest",
         ];
 
         for task_name in &twitter_tasks {
@@ -579,9 +595,7 @@ mod tests {
     #[test]
     fn test_session_data_serialization_roundtrip() {
         let data = SessionData {
-            cookies: vec![
-                serde_json::json!({"name": "session", "value": "abc123"}),
-            ],
+            cookies: vec![serde_json::json!({"name": "session", "value": "abc123"})],
             local_storage: {
                 let mut map = std::collections::HashMap::new();
                 map.insert("key".to_string(), "value".to_string());

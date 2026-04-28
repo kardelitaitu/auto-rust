@@ -8,8 +8,8 @@
 //! This module handles task name/presence validation, while `task.rs`
 //! handles task payload validation.
 
-use crate::error::{ConfigError, Result};
 use crate::cli::TaskDefinition;
+use crate::error::{ConfigError, Result};
 use log::warn;
 use std::collections::HashSet;
 use std::path::Path;

@@ -160,7 +160,7 @@ mod tests {
         // Test that resource key-value pairs are correctly structured
         let service_name = "test-service";
         let version = env!("CARGO_PKG_VERSION");
-        
+
         assert!(!service_name.is_empty());
         assert!(!version.is_empty());
         assert!(version.contains('.'));

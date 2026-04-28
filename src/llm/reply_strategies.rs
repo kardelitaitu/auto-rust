@@ -492,7 +492,7 @@ mod tests {
             conversation_type: "tech".to_string(),
             engagement_level: "high".to_string(),
         };
-        
+
         assert_eq!(context.sentiment, "humorous");
         assert_eq!(context.conversation_type, "tech");
         assert_eq!(context.engagement_level, "high");
@@ -505,13 +505,13 @@ mod tests {
             conversation_type: "tech".to_string(),
             engagement_level: "high".to_string(),
         };
-        
+
         let ctx2 = StrategyContext {
             sentiment: "humorous".to_string(),
             conversation_type: "tech".to_string(),
             engagement_level: "high".to_string(),
         };
-        
+
         assert_eq!(ctx1, ctx2);
     }
 
@@ -519,7 +519,7 @@ mod tests {
     fn test_build_reply_prompt_no_replies() {
         let context = StrategyContext::default();
         let prompt = build_reply_prompt("Test tweet", "user", &[], &context);
-        
+
         assert!(prompt.contains("(no other replies visible)"));
     }
 
@@ -527,9 +527,9 @@ mod tests {
     fn test_build_reply_prompt_filters_emoji() {
         let context = StrategyContext::default();
         let replies = vec![("user1".to_string(), "Great! 😂🎉".to_string())];
-        
+
         let prompt = build_reply_prompt("Test", "user", &replies, &context);
-        
+
         // Emoji should be filtered out
         assert!(!prompt.contains("😂"));
         assert!(!prompt.contains("🎉"));
@@ -540,9 +540,9 @@ mod tests {
     fn test_build_reply_prompt_filters_hashtags() {
         let context = StrategyContext::default();
         let replies = vec![("user1".to_string(), "Great #test #hashtag".to_string())];
-        
+
         let prompt = build_reply_prompt("Test", "user", &replies, &context);
-        
+
         // Hashtags should be removed
         assert!(!prompt.contains("#test"));
         assert!(!prompt.contains("#hashtag"));
@@ -555,9 +555,9 @@ mod tests {
         let many_replies: Vec<(String, String)> = (0..25)
             .map(|i| (format!("user{}", i), format!("Reply {}", i)))
             .collect();
-        
+
         let prompt = build_reply_prompt("Test", "user", &many_replies, &context);
-        
+
         // Should only include first 20 replies
         assert!(prompt.contains("@user0:"));
         assert!(prompt.contains("@user19:"));
@@ -588,10 +588,16 @@ mod tests {
     #[test]
     fn test_strategy_instructions_format() {
         for (strategy, instruction) in STRATEGY_INSTRUCTIONS {
-            assert!(instruction.contains("CRITICAL INSTRUCTION"), 
-                "Strategy {} missing CRITICAL INSTRUCTION marker", strategy);
-            assert!(instruction.contains("NEVER write \"Okay\" or \"Yes\""),
-                "Strategy {} missing NEVER instruction", strategy);
+            assert!(
+                instruction.contains("CRITICAL INSTRUCTION"),
+                "Strategy {} missing CRITICAL INSTRUCTION marker",
+                strategy
+            );
+            assert!(
+                instruction.contains("NEVER write \"Okay\" or \"Yes\""),
+                "Strategy {} missing NEVER instruction",
+                strategy
+            );
         }
     }
 
@@ -602,7 +608,7 @@ mod tests {
             conversation_type: "gaming".to_string(),
             engagement_level: "viral".to_string(),
         };
-        
+
         let instruction = get_strategy_instruction(&context);
         assert!(instruction.contains("CRITICAL INSTRUCTION"));
     }
@@ -614,7 +620,7 @@ mod tests {
             conversation_type: String::new(),
             engagement_level: String::new(),
         };
-        
+
         let instruction = get_strategy_instruction(&context);
         assert!(instruction.contains("CRITICAL INSTRUCTION"));
     }
@@ -626,7 +632,7 @@ mod tests {
             conversation_type: String::new(),
             engagement_level: String::new(),
         };
-        
+
         let instruction = get_strategy_instruction(&context);
         assert!(instruction.contains("CRITICAL INSTRUCTION"));
     }

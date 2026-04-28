@@ -817,7 +817,10 @@ mod tests {
         let config = BrowserConfig::default();
         let cloned = config.clone();
         assert_eq!(cloned.max_discovery_retries, config.max_discovery_retries);
-        assert_eq!(cloned.discovery_retry_delay_ms, config.discovery_retry_delay_ms);
+        assert_eq!(
+            cloned.discovery_retry_delay_ms,
+            config.discovery_retry_delay_ms
+        );
     }
 
     #[test]
@@ -933,9 +936,14 @@ mod tests {
     #[test]
     fn test_browser_config_with_extra_headers() {
         let mut config = BrowserConfig::default();
-        config.extra_http_headers.insert("X-Custom".to_string(), "Value".to_string());
+        config
+            .extra_http_headers
+            .insert("X-Custom".to_string(), "Value".to_string());
         assert_eq!(config.extra_http_headers.len(), 1);
-        assert_eq!(config.extra_http_headers.get("X-Custom"), Some(&"Value".to_string()));
+        assert_eq!(
+            config.extra_http_headers.get("X-Custom"),
+            Some(&"Value".to_string())
+        );
     }
 
     #[test]

@@ -7,6 +7,23 @@
 
 use crate::utils::math::{gaussian, random_in_range};
 use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
+
+/// Sleep for `ms` milliseconds; returns early if `cancel` is triggered.
+pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
+    if ms == 0 {
+        return;
+    }
+    match cancel {
+        None => sleep(Duration::from_millis(ms)).await,
+        Some(token) => {
+            tokio::select! {
+                _ = token.cancelled() => {}
+                _ = sleep(Duration::from_millis(ms)) => {}
+            }
+        }
+    }
+}
 
 /// Pauses execution for a random duration within the specified range.
 /// Useful for simulating human-like timing variations in automated tasks.
@@ -46,13 +63,23 @@ pub async fn random_delay(min_ms: u64, max_ms: u64) {
 /// ```
 #[allow(dead_code)]
 pub async fn human_pause(base_ms: u64, variance_pct: u32) {
+    human_pause_with_cancel(None, base_ms, variance_pct).await;
+}
+
+/// Gaussian pause (same distribution as [`human_pause`]) with optional cooperative cancel.
+#[allow(dead_code)]
+pub async fn human_pause_with_cancel(
+    cancel: Option<&CancellationToken>,
+    base_ms: u64,
+    variance_pct: u32,
+) {
     let variance = (variance_pct as f64 / 100.0).clamp(0.0, 1.0);
     let std_dev = (base_ms as f64) * variance;
     let min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
     let max_delay = (base_ms as f64 * (1.0 + variance)).min(30000.0);
 
     let delay = gaussian(base_ms as f64, std_dev, min_delay, max_delay);
-    sleep(Duration::from_millis(delay as u64)).await;
+    sleep_interruptible(cancel, delay as u64).await;
 }
 
 /// Pauses execution for a uniform random duration around a base value.
@@ -61,11 +88,21 @@ pub async fn human_pause(base_ms: u64, variance_pct: u32) {
 /// `base_ms * (1 - variance_pct)` .. `base_ms * (1 + variance_pct)`
 #[allow(dead_code)]
 pub async fn uniform_pause(base_ms: u64, variance_pct: u32) {
+    uniform_pause_with_cancel(None, base_ms, variance_pct).await;
+}
+
+/// Uniform random pause (same distribution as [`uniform_pause`]) with optional cooperative cancel.
+#[allow(dead_code)]
+pub async fn uniform_pause_with_cancel(
+    cancel: Option<&CancellationToken>,
+    base_ms: u64,
+    variance_pct: u32,
+) {
     let variance = (variance_pct as f64 / 100.0).clamp(0.0, 1.0);
     let min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
     let max_delay = (base_ms as f64 * (1.0 + variance)).min(30000.0);
     let delay = random_in_range(min_delay.round() as u64, max_delay.round() as u64);
-    sleep(Duration::from_millis(delay)).await;
+    sleep_interruptible(cancel, delay).await;
 }
 
 /// Pauses execution in clustered segments with optional micro-movements.
@@ -115,6 +152,24 @@ pub async fn clustered_pause(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+
+    #[tokio::test]
+    async fn sleep_interruptible_returns_promptly_on_cancel() {
+        let token = CancellationToken::new();
+        let t2 = token.clone();
+        let handle = tokio::spawn(async move {
+            sleep_interruptible(Some(&t2), 60_000).await;
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        token.cancel();
+        let start = Instant::now();
+        handle.await.expect("join");
+        assert!(
+            start.elapsed().as_millis() < 2_000,
+            "cancel should end long sleep early"
+        );
+    }
 
     #[tokio::test]
     async fn test_random_delay_bounds() {

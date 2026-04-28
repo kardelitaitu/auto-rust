@@ -1,15 +1,15 @@
 use anyhow::Result;
-use chromiumoxide::Browser;
-use auto::config::{NativeInteractionConfig, NativeClickCalibrationMode};
+use auto::config::{NativeClickCalibrationMode, NativeInteractionConfig};
 use auto::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
+use auto::result::{TaskErrorKind, TaskResult, TaskStatus};
 use auto::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
-use auto::task::policy::DEFAULT_TASK_POLICY;
 use auto::session::Session;
+use auto::task::policy::{TaskPermissions, TaskPolicy, DEFAULT_TASK_POLICY};
 use auto::utils::mouse::{
     clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
     set_nativeclick_forced_calibration_for_tests, take_nativeclick_trace_hooks, ClickStatus,
 };
-use auto::{result::{TaskErrorKind, TaskResult, TaskStatus}};
+use chromiumoxide::Browser;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -108,6 +108,7 @@ fn build_task_context(session: &Session, page: Arc<chromiumoxide::Page>) -> Task
         session.behavior_runtime,
         NativeInteractionConfig::default(),
         &DEFAULT_TASK_POLICY,
+        None,
     )
 }
 
@@ -124,6 +125,23 @@ fn build_task_context_with_metrics(
         NativeInteractionConfig::default(),
         metrics,
         &DEFAULT_TASK_POLICY,
+        None,
+    )
+}
+
+fn build_task_context_with_policy(
+    session: &Session,
+    page: Arc<chromiumoxide::Page>,
+    policy: &'static auto::task::policy::TaskPolicy,
+) -> TaskContext {
+    TaskContext::new(
+        session.id.clone(),
+        page,
+        session.behavior_profile.clone(),
+        session.behavior_runtime,
+        NativeInteractionConfig::default(),
+        policy,
+        None,
     )
 }
 
@@ -203,6 +221,393 @@ async fn navigate_loads_expected_content() -> Result<()> {
 
     assert_eq!(api.title().await?, "Task API");
     assert!(api.exists("#loaded").await?);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn page_state_helpers_report_live_values() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>State</title></head><body><main id=\"root\">state</main></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    assert_eq!(api.url().await?, server.url());
+    assert_eq!(api.title().await?, "State");
+
+    let viewport = api.viewport().await?;
+    assert!(viewport.width > 0.0);
+    assert!(viewport.height > 0.0);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn session_export_import_roundtrip_restores_cookie_and_local_storage() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Session</title><script>localStorage.setItem('theme','dark'); document.cookie='session_token=abc123; path=/';</script></head><body><div id=\"ready\">ok</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_export_session: true,
+            allow_import_session: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    let exported = api.export_session(server.url()).await?;
+    assert_eq!(exported.url, server.url());
+    assert_eq!(
+        exported.local_storage.get("theme").map(String::as_str),
+        Some("dark")
+    );
+    assert!(exported
+        .cookies
+        .iter()
+        .any(|cookie| cookie.get("name").and_then(|v| v.as_str()) == Some("session_token")));
+    assert!(api.has_cookie("session_token", None).await?);
+
+    page.evaluate(
+        r#"(function() {
+            localStorage.clear();
+            document.cookie = 'session_token=; Max-Age=0; path=/';
+            return true;
+        })()"#,
+    )
+    .await?;
+
+    let cleared = api.export_session(server.url()).await?;
+    assert!(cleared.local_storage.is_empty());
+    assert!(!cleared
+        .cookies
+        .iter()
+        .any(|cookie| cookie.get("name").and_then(|v| v.as_str()) == Some("session_token")));
+
+    api.import_session(&exported).await?;
+
+    let restored = api.export_session(server.url()).await?;
+    assert_eq!(
+        restored.local_storage.get("theme").map(String::as_str),
+        Some("dark")
+    );
+    assert!(restored
+        .cookies
+        .iter()
+        .any(|cookie| cookie.get("name").and_then(|v| v.as_str()) == Some("session_token")));
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn browser_export_import_roundtrip_restores_storage_and_cookie() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Browser</title><script>localStorage.setItem('theme','dark'); sessionStorage.setItem('phase','one'); document.cookie='session_token=abc123; path=/';</script></head><body><div id=\"ready\">ok</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_browser_export: true,
+            allow_browser_import: true,
+            allow_import_cookies: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    let exported = api.export_browser(server.url()).await?;
+    assert!(exported
+        .cookies
+        .iter()
+        .any(|cookie| cookie.get("name").and_then(|v| v.as_str()) == Some("session_token")));
+    assert_eq!(
+        exported
+            .local_storage
+            .get("127.0.0.1")
+            .and_then(|origin| origin.get("theme").map(String::as_str)),
+        Some("dark")
+    );
+    assert_eq!(
+        exported
+            .session_storage
+            .get("127.0.0.1")
+            .and_then(|origin| origin.get("phase").map(String::as_str)),
+        Some("one")
+    );
+
+    page.evaluate(
+        r#"(function() {
+            localStorage.clear();
+            sessionStorage.clear();
+            document.cookie = 'session_token=; Max-Age=0; path=/';
+            return true;
+        })()"#,
+    )
+    .await?;
+
+    let cleared = api.export_browser(server.url()).await?;
+    assert!(cleared
+        .cookies
+        .iter()
+        .all(|cookie| cookie.get("name").and_then(|v| v.as_str()) != Some("session_token")));
+    assert!(cleared
+        .local_storage
+        .get("127.0.0.1")
+        .map(|origin| origin.is_empty())
+        .unwrap_or(true));
+    assert!(cleared
+        .session_storage
+        .get("127.0.0.1")
+        .map(|origin| origin.is_empty())
+        .unwrap_or(true));
+
+    api.import_browser(&exported).await?;
+
+    let restored = api.export_browser(server.url()).await?;
+    assert!(restored
+        .cookies
+        .iter()
+        .any(|cookie| cookie.get("name").and_then(|v| v.as_str()) == Some("session_token")));
+    assert_eq!(
+        restored
+            .local_storage
+            .get("127.0.0.1")
+            .and_then(|origin| origin.get("theme").map(String::as_str)),
+        Some("dark")
+    );
+    assert_eq!(
+        restored
+            .session_storage
+            .get("127.0.0.1")
+            .and_then(|origin| origin.get("phase").map(String::as_str)),
+        Some("one")
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn clipboard_session_state_roundtrip_uses_session_scope() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Clipboard</title></head><body><input id=\"field\" value=\"ready\" /></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_session_clipboard: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    api.write_clipboard("alpha")?;
+    assert!(api.has_clipboard_content()?);
+    assert_eq!(api.read_clipboard()?, "alpha");
+
+    api.append_clipboard("beta", Some("|"))?;
+    assert_eq!(api.read_clipboard()?, "alpha|beta");
+
+    api.clear_clipboard()?;
+    assert!(!api.has_clipboard_content()?);
+    assert!(api.read_clipboard().is_err());
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn data_file_operations_roundtrip_and_cleanup() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Data</title></head><body><div id=\"ready\">ok</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_read_data: true,
+            allow_write_data: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    let unique = format!(
+        "task-api-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let relative = format!("{}/sample.txt", unique);
+    let data_root = std::path::Path::new("config").join(&unique);
+    let file_path = data_root.join("sample.txt");
+
+    api.write_data_file(&relative, b"hello")?;
+    assert!(api.data_file_exists(&relative)?);
+    assert_eq!(api.read_data_file(&relative)?, "hello");
+
+    api.append_data_file(&relative, b" world")?;
+    assert_eq!(api.read_data_file(&relative)?, "hello world");
+
+    let metadata = api.data_file_metadata(&relative)?;
+    assert!(metadata.size >= 11);
+
+    let listed = api.list_data_files(Some(&unique))?;
+    assert_eq!(listed, vec!["sample.txt".to_string()]);
+
+    api.delete_data_file(&relative)?;
+    assert!(!api.data_file_exists(&relative)?);
+
+    let _ = fs::remove_file(&file_path);
+    let _ = fs::remove_dir_all(&data_root);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_permission_respects_effective_policy() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Policy</title></head><body><div id=\"ready\">ok</div></body></html>",
+    )
+    .await?;
+
+    let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: auto::task::policy::TaskPermissions {
+            allow_screenshot: true,
+            allow_session_clipboard: true,
+            ..Default::default()
+        },
+    }));
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    assert!(api.check_permission("allow_screenshot").is_ok());
+    assert!(api.check_permission("allow_session_clipboard").is_ok());
+    assert!(api.check_permission("allow_export_cookies").is_err());
+    assert!(api.check_permission("allow_unknown_permission").is_err());
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_page_connected_succeeds_on_live_page() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Connected</title></head><body><div id=\"ready\">ok</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    api.check_page_connected().await?;
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn wait_helpers_cover_visibility_and_load() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Wait</title></head><body><div id=\"hidden\" style=\"display:none\">no</div><div id=\"visible\">yes</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    api.wait_for_load(2_000).await?;
+    assert!(
+        api.wait_for_any_visible_selector(&["#hidden", "#visible"], 2_000)
+            .await?
+    );
 
     drop(api);
     session.release_page(page).await;
@@ -344,10 +749,7 @@ async fn cancelled_run_releases_page_for_reuse() -> Result<()> {
         "Task cancelled during group shutdown".to_string(),
         TaskErrorKind::Timeout,
     );
-    assert!(matches!(
-        cancelled.status,
-        TaskStatus::Cancelled
-    ));
+    assert!(matches!(cancelled.status, TaskStatus::Cancelled));
     drop(api);
     session.release_page(page).await;
 
@@ -467,10 +869,7 @@ async fn nativeclick_pipeline_orders_scroll_before_dispatch() -> Result<()> {
     clear_nativeclick_trace_hooks(&session.id);
 
     let outcome = api.nativeclick("#target").await?;
-    assert!(matches!(
-        outcome.click,
-        ClickStatus::Success
-    ));
+    assert!(matches!(outcome.click, ClickStatus::Success));
     assert_eq!(
         api.attr("body", "data-native-clicked").await?,
         Some("yes".to_string())
@@ -574,7 +973,7 @@ async fn nativeclick_mapping_failure_returns_expected_error_class() -> Result<()
 }
 
 #[tokio::test]
-async fn screenshot_auto_saves_jpg_with_correct_filename() -> Result<()> {
+async fn screenshot_auto_saves_webp_with_correct_filename() -> Result<()> {
     let Some(session): Option<Session> = connect_test_session().await? else {
         return Ok(());
     };
@@ -585,7 +984,7 @@ async fn screenshot_auto_saves_jpg_with_correct_filename() -> Result<()> {
     .await?;
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
-    
+
     // Create custom policy with screenshot permission and leak it for static lifetime
     let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
         max_duration_ms: 60_000,
@@ -594,7 +993,7 @@ async fn screenshot_auto_saves_jpg_with_correct_filename() -> Result<()> {
             ..Default::default()
         },
     }));
-    
+
     let api = TaskContext::new(
         session.id.clone(),
         page.clone(),
@@ -602,29 +1001,45 @@ async fn screenshot_auto_saves_jpg_with_correct_filename() -> Result<()> {
         session.behavior_runtime,
         NativeInteractionConfig::default(),
         policy,
+        None,
     );
 
     // Take screenshot
     let screenshot_path = api.screenshot().await?;
-    
+
     // Verify file exists
-    assert!(std::path::Path::new(&screenshot_path).exists(), "Screenshot file should exist");
-    
+    assert!(
+        std::path::Path::new(&screenshot_path).exists(),
+        "Screenshot file should exist"
+    );
+
     // Verify file is in correct directory
-    assert!(screenshot_path.starts_with("data/screenshot/"), "Screenshot should be in data/screenshot/");
-    
-    // Verify filename format: yyyy-mm-dd-hh-mm-sessionid.jpg
-    assert!(screenshot_path.ends_with(".jpg"), "Screenshot should be JPG");
-    assert!(screenshot_path.contains(&session.id), "Filename should contain session ID");
-    
+    assert!(
+        screenshot_path.starts_with("data/screenshot/"),
+        "Screenshot should be in data/screenshot/"
+    );
+
+    // Verify filename format: yyyy-mm-dd-hh-mm-sessionid.webp
+    assert!(
+        screenshot_path.ends_with(".webp"),
+        "Screenshot should be WebP"
+    );
+    assert!(
+        screenshot_path.contains(&session.id),
+        "Filename should contain session ID"
+    );
+
     // Verify file is valid JPG by reading it
     let file_content = std::fs::read(&screenshot_path)?;
-    assert!(file_content.len() > 0, "Screenshot file should not be empty");
-    
-    // JPG files start with FF D8
-    assert_eq!(file_content[0], 0xFF, "JPG should start with FF");
-    assert_eq!(file_content[1], 0xD8, "JPG should start with FF D8");
-    
+    assert!(
+        file_content.len() > 0,
+        "Screenshot file should not be empty"
+    );
+
+    // WebP files start with RIFF ... WEBP
+    assert_eq!(&file_content[0..4], b"RIFF");
+    assert_eq!(&file_content[8..12], b"WEBP");
+
     // Cleanup
     let _ = std::fs::remove_file(&screenshot_path);
     drop(api);
@@ -646,7 +1061,7 @@ async fn screenshot_permission_denied_without_allow_screenshot() -> Result<()> {
     .await?;
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
-    
+
     // Use DEFAULT_TASK_POLICY which has allow_screenshot = false
     let api = build_task_context(&session, page.clone());
 
@@ -655,14 +1070,14 @@ async fn screenshot_permission_denied_without_allow_screenshot() -> Result<()> {
         .screenshot()
         .await
         .expect_err("expected permission denied error");
-    
+
     let msg = err.to_string();
     assert!(
         msg.contains("Permission denied") || msg.contains("allow_screenshot"),
         "error should mention permission denied: {}",
         msg
     );
-    
+
     drop(api);
     session.release_page(page).await;
     server.shutdown().await;
@@ -682,13 +1097,13 @@ async fn screenshot_creates_directory_if_not_exists() -> Result<()> {
     .await?;
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
-    
+
     // Remove directory if it exists
     let screenshot_dir = std::path::Path::new("data/screenshot");
     if screenshot_dir.exists() {
         let _ = std::fs::remove_dir_all(screenshot_dir);
     }
-    
+
     // Create custom policy with screenshot permission and leak it for static lifetime
     let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
         max_duration_ms: 60_000,
@@ -697,7 +1112,7 @@ async fn screenshot_creates_directory_if_not_exists() -> Result<()> {
             ..Default::default()
         },
     }));
-    
+
     let api = TaskContext::new(
         session.id.clone(),
         page.clone(),
@@ -705,18 +1120,69 @@ async fn screenshot_creates_directory_if_not_exists() -> Result<()> {
         session.behavior_runtime,
         NativeInteractionConfig::default(),
         policy,
+        None,
     );
 
     // Take screenshot - should create directory
     let screenshot_path = api.screenshot().await?;
-    
+
     // Verify directory was created
-    assert!(screenshot_dir.exists(), "Screenshot directory should be created");
+    assert!(
+        screenshot_dir.exists(),
+        "Screenshot directory should be created"
+    );
     assert!(screenshot_dir.is_dir(), "Should be a directory");
-    
+
     // Cleanup
     let _ = std::fs::remove_file(&screenshot_path);
     let _ = std::fs::remove_dir_all(screenshot_dir);
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    drop(session);
+    Ok(())
+}
+
+#[tokio::test]
+async fn screenshot_with_quality_clamps_and_writes_webp() -> Result<()> {
+    let Some(session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Screenshot Clamp</title></head><body><div id=\"content\">Clamp test</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+
+    let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
+        max_duration_ms: 60_000,
+        permissions: auto::task::policy::TaskPermissions {
+            allow_screenshot: true,
+            ..Default::default()
+        },
+    }));
+
+    let api = TaskContext::new(
+        session.id.clone(),
+        page.clone(),
+        session.behavior_profile.clone(),
+        session.behavior_runtime,
+        NativeInteractionConfig::default(),
+        policy,
+        None,
+    );
+
+    let screenshot_path = api.screenshot_with_quality(0).await?;
+    assert!(screenshot_path.ends_with(".webp"));
+    assert!(std::path::Path::new(&screenshot_path).exists());
+
+    let file_content = std::fs::read(&screenshot_path)?;
+    assert_eq!(&file_content[0..4], b"RIFF");
+    assert_eq!(&file_content[8..12], b"WEBP");
+
+    let _ = std::fs::remove_file(&screenshot_path);
     drop(api);
     session.release_page(page).await;
     server.shutdown().await;

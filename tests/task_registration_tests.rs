@@ -1,13 +1,9 @@
 //! Integration tests for task registration and validation.
 //! Tests task discovery, validation, and registry functionality.
 
-use auto::task::{
-    is_known_task, known_task_names, normalize_task_name, TASK_NAMES,
-};
+use auto::task::{is_known_task, known_task_names, normalize_task_name, TASK_NAMES};
 use auto::validation::{
-    is_known_task as validate_is_known_task,
-    task_file_exists,
-    validate_task_groups,
+    is_known_task as validate_is_known_task, task_file_exists, validate_task_groups,
     validate_task_groups_strict,
 };
 
@@ -23,10 +19,10 @@ fn task_names_are_valid() {
     for name in TASK_NAMES.iter() {
         // Should not be empty
         assert!(!name.is_empty(), "Task name cannot be empty");
-        
+
         // Should not contain spaces
         assert!(!name.contains(' '), "Task name '{}' contains spaces", name);
-        
+
         // Should be lowercase
         assert_eq!(
             *name,
@@ -90,7 +86,7 @@ fn is_known_task_with_js_suffix() {
 #[test]
 fn known_task_names_contains_expected() {
     let names = known_task_names();
-    
+
     assert!(names.contains(&"cookiebot"));
     assert!(names.contains(&"pageview"));
     assert!(names.contains(&"twitteractivity"));
@@ -129,14 +125,12 @@ fn task_file_exists_unknown_tasks() {
 #[test]
 fn validate_task_groups_valid() {
     use auto::cli::TaskDefinition;
-    
-    let groups = vec![vec![
-        TaskDefinition {
-            name: "cookiebot".to_string(),
-            payload: std::collections::HashMap::new(),
-        },
-    ]];
-    
+
+    let groups = vec![vec![TaskDefinition {
+        name: "cookiebot".to_string(),
+        payload: std::collections::HashMap::new(),
+    }]];
+
     let results = validate_task_groups(&groups);
     assert_eq!(results.len(), 1);
     assert!(results[0].is_known);
@@ -147,14 +141,12 @@ fn validate_task_groups_valid() {
 #[test]
 fn validate_task_groups_invalid_task() {
     use auto::cli::TaskDefinition;
-    
-    let groups = vec![vec![
-        TaskDefinition {
-            name: "unknown_task".to_string(),
-            payload: std::collections::HashMap::new(),
-        },
-    ]];
-    
+
+    let groups = vec![vec![TaskDefinition {
+        name: "unknown_task".to_string(),
+        payload: std::collections::HashMap::new(),
+    }]];
+
     let results = validate_task_groups(&groups);
     assert_eq!(results.len(), 1);
     // Unknown task should not be known and file should not exist
@@ -166,7 +158,7 @@ fn validate_task_groups_invalid_task() {
 #[test]
 fn validate_task_groups_strict_valid() {
     use auto::cli::TaskDefinition;
-    
+
     let groups = vec![vec![
         TaskDefinition {
             name: "cookiebot".to_string(),
@@ -177,7 +169,7 @@ fn validate_task_groups_strict_valid() {
             payload: std::collections::HashMap::new(),
         },
     ]];
-    
+
     let result = validate_task_groups_strict(&groups);
     assert!(result.is_ok());
 }
@@ -186,14 +178,12 @@ fn validate_task_groups_strict_valid() {
 #[test]
 fn validate_task_groups_strict_invalid() {
     use auto::cli::TaskDefinition;
-    
-    let groups = vec![vec![
-        TaskDefinition {
-            name: "unknown_task".to_string(),
-            payload: std::collections::HashMap::new(),
-        },
-    ]];
-    
+
+    let groups = vec![vec![TaskDefinition {
+        name: "unknown_task".to_string(),
+        payload: std::collections::HashMap::new(),
+    }]];
+
     let result = validate_task_groups_strict(&groups);
     assert!(result.is_err());
 }
@@ -202,7 +192,7 @@ fn validate_task_groups_strict_invalid() {
 #[test]
 fn validate_task_groups_strict_empty_groups() {
     let groups: Vec<Vec<auto::cli::TaskDefinition>> = vec![];
-    
+
     let result = validate_task_groups_strict(&groups);
     assert!(result.is_ok());
 }
@@ -211,4 +201,56 @@ fn validate_task_groups_strict_empty_groups() {
 #[test]
 fn task_names_count_consistent() {
     assert_eq!(TASK_NAMES.len(), known_task_names().len());
+}
+
+// ============================================================================
+// Edge Case Tests
+// ============================================================================
+
+/// Test normalize_task_name with special characters
+#[test]
+fn normalize_task_name_special_chars() {
+    // Special characters should be preserved (not stripped)
+    assert_eq!(normalize_task_name("task-name"), "task-name");
+    assert_eq!(normalize_task_name("task_name"), "task_name");
+}
+
+/// Test normalize_task_name with multiple dots
+#[test]
+fn normalize_task_name_multiple_dots() {
+    assert_eq!(normalize_task_name("task..js"), "task.");
+    assert_eq!(normalize_task_name(".js"), "");
+}
+
+/// Test is_known_task with whitespace
+#[test]
+fn is_known_task_with_whitespace() {
+    // Task names with whitespace should not be known
+    assert!(!is_known_task("cookiebot "));
+    assert!(!is_known_task(" cookiebot"));
+    assert!(!is_known_task("cookie bot"));
+}
+
+/// Test validate_task_groups with empty task definition
+#[test]
+fn validate_task_groups_empty_task() {
+    let groups = vec![vec![auto::cli::TaskDefinition {
+        name: "".to_string(),
+        payload: std::collections::HashMap::new(),
+    }]];
+    
+    let results = validate_task_groups(&groups);
+    assert!(!results.is_empty());
+    assert!(!results[0].is_known);
+}
+
+/// Test task_file_exists with various tasks
+#[test]
+fn task_file_exists_various_tasks() {
+    // Known tasks should have files
+    assert!(task_file_exists("cookiebot"));
+    assert!(task_file_exists("pageview"));
+    
+    // Unknown tasks should not have files
+    assert!(!task_file_exists("unknown_task"));
 }

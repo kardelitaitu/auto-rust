@@ -117,6 +117,13 @@ pub async fn selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
             if (rect.width <= 0 || rect.height <= 0) return false;
             const style = getComputedStyle(el);
             if (style.display === 'none' || style.visibility === 'hidden') return false;
+
+            // Phase2: Check if element is actually in the viewport
+            const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+            const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+            if (rect.top >= windowHeight || rect.bottom <= 0) return false;
+            if (rect.left >= windowWidth || rect.right <= 0) return false;
+
             return true;
         }})()"#,
     );
@@ -222,14 +229,9 @@ pub async fn wait_for_visible_selector(
     timeout_ms: u64,
 ) -> Result<bool> {
     timeout(Duration::from_millis(timeout_ms), async {
-        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
         loop {
             if selector_is_visible(page, selector).await.unwrap_or(false) {
                 return Ok(true);
-            }
-
-            if std::time::Instant::now() >= deadline {
-                return Ok(false);
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;

@@ -1015,12 +1015,9 @@ async fn process_candidate(
                     {
                         Ok(true) => {
                             let quote_text = if task_config.llm_enabled {
-                                let (author, text, replies) = get_tweet_context_for_llm(
-                                    api,
-                                    &current_thread_cache,
-                                    "quote",
-                                )
-                                .await;
+                                let (author, text, replies) =
+                                    get_tweet_context_for_llm(api, &current_thread_cache, "quote")
+                                        .await;
                                 match generate_quote_commentary(api, &author, &text, replies).await
                                 {
                                     Ok(commentary) => {
@@ -1105,12 +1102,9 @@ async fn process_candidate(
                     {
                         Ok(true) => {
                             let reply_text = if task_config.llm_enabled {
-                                let (author, text, replies) = get_tweet_context_for_llm(
-                                    api,
-                                    &current_thread_cache,
-                                    "reply",
-                                )
-                                .await;
+                                let (author, text, replies) =
+                                    get_tweet_context_for_llm(api, &current_thread_cache, "reply")
+                                        .await;
                                 match generate_reply(api, &author, &text, replies).await {
                                     Ok(reply) => {
                                         info!("Generated LLM reply: {}", reply);
@@ -1478,10 +1472,7 @@ async fn get_tweet_context_for_llm(
     match extract_tweet_context(api).await {
         Ok(data) => data,
         Err(e) => {
-            warn!(
-                "Failed to extract tweet context for {}: {}",
-                action_name, e
-            );
+            warn!("Failed to extract tweet context for {}: {}", action_name, e);
             ("unknown".to_string(), String::new(), Vec::new())
         }
     }

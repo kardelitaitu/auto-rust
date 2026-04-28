@@ -1037,4 +1037,139 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    // ============================================================================
+    // Timeout Handling Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_ollama_timeout_triggers_error() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::{method, path};
+        use std::time::Duration;
+
+        let mock_server = MockServer::start().await;
+
+        // Mock responds with a delay longer than the timeout
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "message": {"role": "assistant", "content": "Delayed response"}
+                    }))
+                    .set_delay(Duration::from_millis(500)), // 500ms delay
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = LlmConfig {
+            provider: LlmProvider::Ollama,
+            ollama: OllamaConfig {
+                base_url: mock_server.uri(),
+                model: "test-model".to_string(),
+                timeout_ms: 100, // 100ms timeout (shorter than delay)
+            },
+            openrouter: OpenRouterConfig::default(),
+        };
+
+        let client = LlmClient::with_http_client(config, Client::new());
+        let start = std::time::Instant::now();
+        let result = client.chat(vec![ChatMessage::user("test")]).await;
+        let elapsed = start.elapsed();
+
+        // Should fail due to timeout
+        assert!(result.is_err(), "Should timeout when response is slower than timeout_ms");
+
+        // Should fail quickly (not wait for the full 500ms delay)
+        assert!(
+            elapsed.as_millis() < 400,
+            "Should fail fast on timeout, but took {}ms",
+            elapsed.as_millis()
+        );
+
+        // Error should indicate timeout (reqwest returns "error sending request" for timeout)
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("error sending request") || err_msg.contains("timeout") || err_msg.contains("deadline"),
+            "Error should indicate timeout or request error, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openrouter_timeout_triggers_fallback() {
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use std::time::Duration;
+
+        let mock_server = MockServer::start().await;
+
+        // Primary model responds slowly (triggers timeout)
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_string_contains(r#""model":"primary-model""#))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "id": "slow",
+                        "model": "primary-model",
+                        "choices": [{"message": {"role": "assistant", "content": "Slow response"}}]
+                    }))
+                    .set_delay(Duration::from_millis(500)), // 500ms delay
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        // Fallback model responds quickly
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_string_contains(r#""model":"fast-fallback""#))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "id": "fast",
+                        "model": "fast-fallback",
+                        "choices": [{"message": {"role": "assistant", "content": "Fast fallback response"}}]
+                    }))
+                    // No delay - responds immediately
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter,
+            ollama: OllamaConfig::default(),
+            openrouter: OpenRouterConfig {
+                api_key: "test-key".to_string(),
+                base_url: mock_server.uri(),
+                model: "primary-model".to_string(),
+                timeout_ms: 100, // 100ms timeout (shorter than primary delay)
+                fallback_models: vec!["fast-fallback".to_string()],
+            },
+        };
+
+        let client = LlmClient::with_http_client(config, Client::new());
+        let start = std::time::Instant::now();
+        let result = client.chat(vec![ChatMessage::user("test")]).await;
+        let elapsed = start.elapsed();
+
+        // Should succeed with fallback response
+        assert!(
+            result.is_ok(),
+            "Should fallback to fast model when primary times out"
+        );
+        assert_eq!(result.unwrap(), "Fast fallback response");
+
+        // Should complete in reasonable time (primary timeout + fallback success)
+        // Primary timeout: ~100ms, Fallback: immediate, Overhead: ~50ms
+        assert!(
+            elapsed.as_millis() < 300,
+            "Should complete quickly with fallback, but took {}ms",
+            elapsed.as_millis()
+        );
+    }
 }

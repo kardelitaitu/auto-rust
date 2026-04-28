@@ -5,13 +5,26 @@
 //! - URL shuffling behavior (randomization)
 //! - Empty URL handling
 //! - Error handling for missing files
+//!
+//! # Test Categories
+//! - URL File Parsing (6 tests)
+//! - Edge Cases (4 tests)
+//!
+//! # Usage
+//! Tests use TempTestDir from tests/common/mod.rs for temp file handling.
 
 use std::io::Write;
 use tempfile::tempdir;
 
+// Use common test utilities
+#[path = "common/mod.rs"]
+mod common;
+use common::*;
+
 /// Helper to create a temporary URL file with given content
-fn create_temp_url_file(content: &str) -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempdir().expect("Failed to create temp dir");
+/// Uses TempTestDir from common utilities
+fn create_temp_url_file(content: &str) -> (TempTestDir, std::path::PathBuf) {
+    let dir = TempTestDir::new();
     let file_path = dir.path().join("test_urls.txt");
     let mut file = std::fs::File::create(&file_path).expect("Failed to create file");
     file.write_all(content.as_bytes()).expect("Failed to write");
@@ -133,6 +146,67 @@ fn test_read_cookiebot_urls_duplicate_removal_not_performed() {
     let urls = read_cookiebot_urls(path.to_str().unwrap()).expect("Should read URLs");
 
     assert_eq!(urls.len(), 3, "Current implementation keeps duplicates");
+}
+
+// ============================================================================
+// Edge Case Tests
+// ============================================================================
+
+/// Test URL with special characters
+#[test]
+fn test_read_cookiebot_urls_special_chars() {
+    use auto::task::cookiebot::read_cookiebot_urls;
+
+    let content = "https://example.com/path?q=hello&sort=asc#section\n";
+
+    let (_dir, path) = create_temp_url_file(content);
+    let urls = read_cookiebot_urls(path.to_str().unwrap()).expect("Should read URLs");
+
+    assert_eq!(urls.len(), 1);
+    assert!(urls[0].contains("?q=hello"));
+    assert!(urls[0].contains("#section"));
+}
+
+/// Test URL with port number
+#[test]
+fn test_read_cookiebot_urls_with_port() {
+    use auto::task::cookiebot::read_cookiebot_urls;
+
+    let content = "https://localhost:8080/api\nhttps://127.0.0.1:3000/test\n";
+
+    let (_dir, path) = create_temp_url_file(content);
+    let urls = read_cookiebot_urls(path.to_str().unwrap()).expect("Should read URLs");
+
+    assert_eq!(urls.len(), 2);
+    assert!(urls[0].contains(":8080"));
+    assert!(urls[1].contains(":3000"));
+}
+
+/// Test file with only whitespace
+#[test]
+fn test_read_cookiebot_urls_only_whitespace() {
+    use auto::task::cookiebot::read_cookiebot_urls;
+
+    let content = "   \n\t\n   \n";
+
+    let (_dir, path) = create_temp_url_file(content);
+    let urls = read_cookiebot_urls(path.to_str().unwrap()).expect("Should handle whitespace-only file");
+
+    assert!(urls.is_empty());
+}
+
+/// Test URL with international characters
+#[test]
+fn test_read_cookiebot_urls_unicode() {
+    use auto::task::cookiebot::read_cookiebot_urls;
+
+    // Note: URLs should be ASCII, but test robustness
+    let content = "https://example.com/路径\n";
+
+    let (_dir, path) = create_temp_url_file(content);
+    let urls = read_cookiebot_urls(path.to_str().unwrap()).expect("Should read URLs");
+
+    assert_eq!(urls.len(), 1);
 }
 
 #[test]

@@ -27,6 +27,9 @@ where lld-link >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo   lld-link not found. Installing LLVM...
     choco install llvm -y
+    :: Add LLVM to PATH permanently
+    setx PATH "%PATH%;C:\Program Files\LLVM\bin" >nul 2>&1
+    echo   Added LLVM to PATH
 ) else (
     echo   lld-link found: OK
 )
@@ -82,7 +85,7 @@ echo [3/7] Configuring Cargo for optimal builds...
     echo # Windows-specific: use lld linker (much faster than default MSVC linker)
     echo # Requires: choco install llvm
     echo [target.x86_64-pc-windows-msvc]
-    echo linker = "lld-link.exe"
+    echo linker = "C:\\Program Files\\LLVM\\bin\\lld-link.exe"
     echo.
     echo [profile.dev]
     echo debug = "line-tables-only"

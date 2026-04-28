@@ -650,4 +650,78 @@ mod tests {
         monitor.mark_healthy();
         assert_eq!(monitor.get_stats().total_successes, 1);
     }
+
+    // ========================================================================
+    // Health Monitor Sliding Window and Recovery Tests
+    // ========================================================================
+
+    #[test]
+    fn test_health_sliding_window_decay_simulation() {
+        // Simulate time-based decay of failure count
+        // Note: HealthMonitor uses record_failure() to increment consecutive_failures
+        // mark_unhealthy() only sets the health flag
+
+        let monitor = HealthMonitor::new("test".to_string());
+
+        // Record multiple failures using record_failure()
+        for _ in 0..5 {
+            monitor.record_failure();
+        }
+
+        let stats_after_failures = monitor.get_stats();
+        assert_eq!(stats_after_failures.consecutive_failures, 5);
+
+        // Simulate "decay" by marking healthy (which resets consecutive failures)
+        monitor.mark_healthy();
+
+        let stats_after_recovery = monitor.get_stats();
+        assert_eq!(stats_after_recovery.consecutive_failures, 0);
+        assert_eq!(stats_after_recovery.total_successes, 1);
+
+        // Note: Real sliding window would require timestamp tracking per failure
+        // This test documents current behavior: consecutive counter resets on success
+    }
+
+    #[test]
+    fn test_health_recovery_detection_unhealthy_to_healthy() {
+        // Test the full recovery cycle: Healthy -> Degraded -> Unhealthy -> Healthy
+        let monitor = HealthMonitor::new("test".to_string());
+
+        // Initially healthy
+        assert!(monitor.is_healthy());
+        let initial_stats = monitor.get_stats();
+        assert_eq!(initial_stats.health_score, 100);
+
+        // Record failures to degrade health
+        for _ in 0..3 {
+            monitor.record_failure();
+        }
+
+        // Should be degraded
+        let degraded_stats = monitor.get_stats();
+        assert!(degraded_stats.health_score < 100);
+        assert_eq!(degraded_stats.consecutive_failures, 3);
+
+        // More failures to make clearly unhealthy
+        for _ in 0..10 {
+            monitor.record_failure();
+        }
+
+        let unhealthy_stats = monitor.get_stats();
+        assert!(unhealthy_stats.health_score < 50);
+        assert_eq!(unhealthy_stats.consecutive_failures, 13);
+
+        // Recovery: mark healthy (resets consecutive failures)
+        monitor.mark_healthy();
+
+        // Add more successes to improve health score
+        for _ in 0..4 {
+            monitor.mark_healthy();
+        }
+
+        let recovered_stats = monitor.get_stats();
+        assert_eq!(recovered_stats.consecutive_failures, 0); // Reset on first success
+        assert_eq!(recovered_stats.total_successes, 5);
+        assert!(recovered_stats.health_score > 50); // Should improve
+    }
 }

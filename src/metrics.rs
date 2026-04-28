@@ -210,14 +210,16 @@ impl MetricsCollector {
     }
 
     pub fn task_started(&self) {
-        self.active_tasks.fetch_add(1, Ordering::SeqCst);
-        self.total_tasks.fetch_add(1, Ordering::SeqCst);
+        // Use Relaxed ordering for metrics - we only need eventual consistency
+        self.active_tasks.fetch_add(1, Ordering::Relaxed);
+        self.total_tasks.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn task_completed(&self, metrics: TaskMetrics) {
-        self.active_tasks.fetch_sub(1, Ordering::SeqCst);
+        // Use Relaxed ordering for metrics counters - strict ordering not required
+        self.active_tasks.fetch_sub(1, Ordering::Relaxed);
         self.total_duration_ms
-            .fetch_add(metrics.duration_ms as usize, Ordering::SeqCst);
+            .fetch_add(metrics.duration_ms as usize, Ordering::Relaxed);
 
         {
             let mut task_breakdown = self.task_breakdown.write();
@@ -237,22 +239,22 @@ impl MetricsCollector {
 
         match metrics.status {
             TaskStatus::Success => {
-                self.succeeded.fetch_add(1, Ordering::SeqCst);
+                self.succeeded.fetch_add(1, Ordering::Relaxed);
             }
             TaskStatus::Failed => {
-                self.failed.fetch_add(1, Ordering::SeqCst);
+                self.failed.fetch_add(1, Ordering::Relaxed);
                 if let Some(kind) = metrics.error_kind {
                     let mut breakdown = self.failure_breakdown.write();
                     *breakdown.entry(kind).or_insert(0) += 1;
                 }
             }
             TaskStatus::Timeout => {
-                self.timed_out.fetch_add(1, Ordering::SeqCst);
+                self.timed_out.fetch_add(1, Ordering::Relaxed);
                 let mut breakdown = self.failure_breakdown.write();
                 *breakdown.entry(TaskErrorKind::Timeout).or_insert(0) += 1;
             }
             TaskStatus::Cancelled => {
-                self.cancelled.fetch_add(1, Ordering::SeqCst);
+                self.cancelled.fetch_add(1, Ordering::Relaxed);
             }
         }
 
@@ -297,14 +299,16 @@ impl MetricsCollector {
         let task_breakdown = self.task_breakdown.read().clone();
         let session_breakdown = self.session_breakdown.read().clone();
 
+        // Acquire ordering ensures we see all updates from other threads
+        // when reading the final snapshot
         MetricsSnapshot {
-            total_tasks: self.total_tasks.load(Ordering::SeqCst),
-            succeeded: self.succeeded.load(Ordering::SeqCst),
-            failed: self.failed.load(Ordering::SeqCst),
-            timed_out: self.timed_out.load(Ordering::SeqCst),
-            cancelled: self.cancelled.load(Ordering::SeqCst),
-            active_tasks: self.active_tasks.load(Ordering::SeqCst),
-            total_duration_ms: self.total_duration_ms.load(Ordering::SeqCst) as u64,
+            total_tasks: self.total_tasks.load(Ordering::Acquire),
+            succeeded: self.succeeded.load(Ordering::Acquire),
+            failed: self.failed.load(Ordering::Acquire),
+            timed_out: self.timed_out.load(Ordering::Acquire),
+            cancelled: self.cancelled.load(Ordering::Acquire),
+            active_tasks: self.active_tasks.load(Ordering::Acquire),
+            total_duration_ms: self.total_duration_ms.load(Ordering::Acquire) as u64,
             failure_breakdown,
             task_breakdown,
             session_breakdown,

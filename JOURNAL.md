@@ -9,7 +9,15 @@
 
 ---
 
-## 2026-04-28 (20:30) - Linker Fix + Test Validation ##
+## 2026-04-28 (09:15) - Test File Improvements Complete ##
+- **tests/cookiebot_integration.rs**: Added 4 edge case tests (special_chars, with_port, only_whitespace, unicode)
+- **tests/cookiebot_integration.rs**: Updated to use TempTestDir from common/mod.rs
+- **tests/twitteractivity_integration.rs**: Added 6 edge case tests (emoji sentiment, zero delay, empty persona override, zero max limits, mixed signals)
+- **tests/task_api_behavior.rs**: Reviewed - requires live browser (TASK_API_TEST_WS), already comprehensive
+- **tests/soak_test.rs**: Reviewed - contains long-running soak tests (ignored), added infrastructure tests
+**validation: cargo test passes (1930+ tests)**
+
+---
 - **.cargo/config.toml**: Fixed linker path to full LLVM path (`C:\Program Files\LLVM\bin\lld-link.exe`) to resolve `lld-link.exe not found` error
 - **All 1930 tests passed**: 1784 lib + 65 api_mock_integration + 22 cli_parsing_tests + 24 task_registration_tests + 3 chaos_failure_classification + 32 task_api_behavior
 - **validation: cargo check clean, cargo test clean (1930/1930)**

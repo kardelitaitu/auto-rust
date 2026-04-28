@@ -2,13 +2,18 @@
 # Global build settings (.cargo/config.toml)
 # ========================================
 [build]
-# Use all your cores
-jobs = 32
+# Use physical cores for CPU-intensive compilation (16 physical = 16 jobs)
+# Logical processors (32) can cause context switching overhead
+jobs = 16
+
+# sccache: DISABLED - was causing cache write errors (127 errors, 0% hit rate)
+# To re-enable: uncomment below and run sccache --start-server
+# rustc-wrapper = "sccache"
 
 # sccache: Good for caching dependencies across projects and clean builds.
 # Note: It can conflict slightly with incremental compilation in some cases.
 # Test both with and without it on your workflow.
-rustc-wrapper = "sccache"
+# rustc-wrapper = "sccache"
 
 # Faster linker on Windows (lld-link is usually the best stable choice)
 [target.x86_64-pc-windows-msvc]
@@ -27,8 +32,7 @@ debug = "none"                   # 0, 1, 2, "none", "limited", "full", "line-tab
 split-debuginfo = "unpacked"     # Helps reduce linking time (works on Windows)
 incremental = true               # Keep this for fast edit-compile cycles
 lto = "off"                      # Disable all LTO for dev speed
-codegen-units = 256              # Higher = better parallelism on 32 cores
-                                 # (try 256 → 1024 and benchmark)
+codegen-units = 16               # Optimal for 16-32 threads (256 was too high)
 overflow-checks = false          # Small extra speedup (optional)
 
 # Minimal debug info for all dependencies (big win!)

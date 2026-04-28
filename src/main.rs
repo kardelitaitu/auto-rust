@@ -152,3 +152,4 @@ async fn run_async() -> Result<()> {
 async fn wait_for_shutdown(mut shutdown_rx: broadcast::Receiver<()>) {
     let _ = shutdown_rx.recv().await;
 }
+ 

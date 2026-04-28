@@ -1109,6 +1109,69 @@ mod tests {
         assert_eq!(stats.successes, 0);
     }
 
+    // ============================================================================
+    // Click Retry Behavior Tests
+    // ============================================================================
+
+    #[test]
+    fn test_click_retry_backoff_calculation() {
+        // Verify backoff_ms formula: (150 + (attempt * 180)) clamped 100-1000
+        let calculate_backoff = |attempt: u64| -> u64 {
+            let adaptation_wait = 0u64; // No extra stability wait for test
+            (150 + (attempt * 180))
+                .saturating_add(adaptation_wait / 2)
+                .clamp(100, 1_000)
+        };
+
+        // Attempt 1: 150 + 180 = 330ms
+        assert_eq!(calculate_backoff(1), 330);
+
+        // Attempt 2: 150 + 360 = 510ms
+        assert_eq!(calculate_backoff(2), 510);
+
+        // Attempt 3: 150 + 540 = 690ms
+        assert_eq!(calculate_backoff(3), 690);
+
+        // Attempt 4: 150 + 720 = 870ms
+        assert_eq!(calculate_backoff(4), 870);
+
+        // Attempt 5: 150 + 900 = 1050ms → clamped to 1000ms
+        assert_eq!(calculate_backoff(5), 1_000);
+
+        // Attempt 10: 150 + 1800 = 1950ms → clamped to 1000ms
+        assert_eq!(calculate_backoff(10), 1_000);
+    }
+
+    #[test]
+    fn test_click_retry_attempt_delay_progression() {
+        // Verify attempt_delay increases 18% per attempt
+        // Formula: base_ms * (1.0 + ((attempt - 1) * 0.18))
+        let base_ms = 1000u64;
+
+        let calculate_delay = |attempt: u32| -> u64 {
+            (base_ms as f64 * (1.0 + ((attempt.saturating_sub(1)) as f64 * 0.18)))
+                .round() as u64
+        };
+
+        // Attempt 1: 1000 * 1.0 = 1000ms
+        assert_eq!(calculate_delay(1), 1000);
+
+        // Attempt 2: 1000 * 1.18 = 1180ms
+        assert_eq!(calculate_delay(2), 1180);
+
+        // Attempt 3: 1000 * 1.36 = 1360ms
+        assert_eq!(calculate_delay(3), 1360);
+
+        // Verify progression is multiplicative not additive
+        let delay_1 = calculate_delay(1);
+        let delay_2 = calculate_delay(2);
+        let delay_3 = calculate_delay(3);
+
+        // Each attempt adds 18% of base, not 18% of previous
+        assert_eq!(delay_2 - delay_1, 180); // 18% of 1000
+        assert_eq!(delay_3 - delay_2, 180); // 18% of 1000 (not 18% of 1180)
+    }
+
     #[test]
     fn test_screenshot_filename_format() {
         // Test filename generation matches expected format

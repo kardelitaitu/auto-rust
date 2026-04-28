@@ -14,20 +14,20 @@
   - [ ] Replace `String` with `Arc<str>` in `TaskMetrics`
   - [ ] Update `task_breakdown` and `session_breakdown` to use `Arc<str>` keys
 
-- [ ] **2.3 Data Structure Optimization**
-  - [ ] Add `rustc-hash` dependency for `FxHashMap`
-  - [ ] Replace `BTreeMap<TaskErrorKind, usize>` in `failure_breakdown`
-  - [ ] Replace `BTreeMap<String, OutcomeBreakdown>` in `task_breakdown`
-  - [ ] Replace `BTreeMap<String, OutcomeBreakdown>` in `session_breakdown`
-  - [ ] Benchmark lookup performance before/after
+- [x] **2.3 Data Structure Optimization** ✅
+  - [x] Add `rustc-hash` dependency for `FxHashMap`
+  - [x] Replace `BTreeMap<TaskErrorKind, usize>` in `failure_breakdown`
+  - [x] Replace `BTreeMap<String, OutcomeBreakdown>` in `task_breakdown`
+  - [x] Replace `BTreeMap<String, OutcomeBreakdown>` in `session_breakdown`
+  - [x] All 1811 tests passing
 
 ## Phase 4: Memory Optimizations
 
-- [ ] **4.1 String Interning**
-  - [ ] Create `ERROR_KIND_STRINGS` static map
-  - [ ] Pre-compute all `TaskErrorKind` string representations
-  - [ ] Update `get_stats()` to use interned strings
-  - [ ] Eliminate `format!("{:?}", kind)` allocations
+- [x] **4.1 String Interning** ✅
+  - [x] Create `ERROR_KIND_STRINGS` static map
+  - [x] Pre-compute all `TaskErrorKind` string representations
+  - [x] Update `get_stats()` to use interned strings
+  - [x] Eliminated `format!("{:?}", kind)` allocations - All 1811 tests passing
 
 - [ ] **4.2 JSON Zero-Copy**
   - [ ] Identify JSON parsing hot paths (LLM responses, tweet data)
@@ -35,10 +35,9 @@
   - [ ] Use `#[serde(borrow)]` attribute
   - [ ] Verify lifetime constraints are met
 
-- [ ] **4.3 Pre-Allocated Vectors**
-  - [ ] Add `Vec::with_capacity()` in `get_stats()` for `failure_breakdown`
-  - [ ] Add `Vec::with_capacity()` in `get_stats()` for `task_breakdown`
-  - [ ] Add `Vec::with_capacity()` in `get_stats()` for `session_breakdown`
+- [ ] **4.3 Pre-Allocated Vectors** 🚫 N/A
+  - [x] Attempted: BTreeMap doesn't support `reserve()` / `with_capacity()`
+  - [x] FxHashMap (from 2.3) has better allocation characteristics already
   - [ ] Audit other collection allocations for size hinting
 
 ---

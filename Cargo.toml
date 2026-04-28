@@ -76,6 +76,9 @@ sysinfo = "0.30"
 # Regex
 regex = "1"
 
+# Fast HashMap
+rustc-hash = "2"
+
 # Lazy Static / Once Cell
 once_cell = "1"
 lazy_static = "1.4"

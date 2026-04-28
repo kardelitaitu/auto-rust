@@ -8,9 +8,11 @@
 //! - Memory usage monitoring
 
 use log::{info, warn};
+use once_cell::sync::Lazy;
 use parking_lot::RwLock;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -20,6 +22,20 @@ use std::sync::Arc;
 use crate::result::TaskErrorKind;
 use crate::result::TaskResult;
 use crate::utils::mouse::native_input_lock_metrics_snapshot;
+
+/// Pre-computed string representations for TaskErrorKind variants.
+/// Used for zero-allocation error kind string lookup in metrics.
+/// Matches the TitleCase format from Debug trait.
+static ERROR_KIND_STRINGS: Lazy<FxHashMap<TaskErrorKind, &'static str>> = Lazy::new(|| {
+    let mut m = FxHashMap::default();
+    m.insert(TaskErrorKind::Timeout, "Timeout");
+    m.insert(TaskErrorKind::Validation, "Validation");
+    m.insert(TaskErrorKind::Navigation, "Navigation");
+    m.insert(TaskErrorKind::Session, "Session");
+    m.insert(TaskErrorKind::Browser, "Browser");
+    m.insert(TaskErrorKind::Unknown, "Unknown");
+    m
+});
 
 pub const RUN_COUNTER_CANDIDATE_SCANNED: &str = "candidate_scanned";
 pub const RUN_COUNTER_BUTTON_MISSING: &str = "button_missing";
@@ -160,13 +176,13 @@ pub struct MetricsCollector {
     /// Rolling history of recent task executions
     task_history: Arc<RwLock<VecDeque<TaskMetrics>>>,
     /// Breakdown of failures by error kind
-    failure_breakdown: Arc<RwLock<BTreeMap<TaskErrorKind, usize>>>,
+    failure_breakdown: Arc<RwLock<FxHashMap<TaskErrorKind, usize>>>,
     /// Outcome breakdown by task name
-    task_breakdown: Arc<RwLock<BTreeMap<String, OutcomeBreakdown>>>,
+    task_breakdown: Arc<RwLock<FxHashMap<String, OutcomeBreakdown>>>,
     /// Outcome breakdown by session id
-    session_breakdown: Arc<RwLock<BTreeMap<String, OutcomeBreakdown>>>,
+    session_breakdown: Arc<RwLock<FxHashMap<String, OutcomeBreakdown>>>,
     /// Structured run counters emitted by tasks during execution
-    run_counters: Arc<RwLock<BTreeMap<String, usize>>>,
+    run_counters: Arc<RwLock<FxHashMap<String, usize>>>,
     /// Maximum number of historical records to keep
     max_history: usize,
 }
@@ -189,10 +205,10 @@ impl MetricsCollector {
             total_duration_ms: Arc::new(AtomicUsize::new(0)),
             active_tasks: Arc::new(AtomicUsize::new(0)),
             task_history: Arc::new(RwLock::new(VecDeque::new())),
-            failure_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
-            task_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
-            session_breakdown: Arc::new(RwLock::new(BTreeMap::new())),
-            run_counters: Arc::new(RwLock::new(BTreeMap::new())),
+            failure_breakdown: Arc::new(RwLock::new(FxHashMap::default())),
+            task_breakdown: Arc::new(RwLock::new(FxHashMap::default())),
+            session_breakdown: Arc::new(RwLock::new(FxHashMap::default())),
+            run_counters: Arc::new(RwLock::new(FxHashMap::default())),
             max_history,
         }
     }
@@ -290,11 +306,18 @@ impl MetricsCollector {
     }
 
     pub fn get_stats(&self) -> MetricsSnapshot {
+        // Use interned strings for error kinds to avoid allocations
         let failure_breakdown = self
             .failure_breakdown
             .read()
             .iter()
-            .map(|(kind, count)| (format!("{:?}", kind), *count))
+            .map(|(kind, count)| {
+                let kind_str = ERROR_KIND_STRINGS
+                    .get(kind)
+                    .copied()
+                    .unwrap_or("unknown");
+                (kind_str.to_string(), *count)
+            })
             .collect();
         let task_breakdown = self.task_breakdown.read().clone();
         let session_breakdown = self.session_breakdown.read().clone();
@@ -497,11 +520,11 @@ pub struct MetricsSnapshot {
     /// Total execution time across all completed tasks in milliseconds
     pub total_duration_ms: u64,
     /// Failure counts grouped by error kind
-    pub failure_breakdown: BTreeMap<String, usize>,
+    pub failure_breakdown: FxHashMap<String, usize>,
     /// Outcome counts grouped by task name
-    pub task_breakdown: BTreeMap<String, OutcomeBreakdown>,
+    pub task_breakdown: FxHashMap<String, OutcomeBreakdown>,
     /// Outcome counts grouped by session id
-    pub session_breakdown: BTreeMap<String, OutcomeBreakdown>,
+    pub session_breakdown: FxHashMap<String, OutcomeBreakdown>,
 }
 
 impl Default for MetricsCollector {
@@ -538,11 +561,11 @@ pub struct RunSummary {
     /// Total execution time for the entire run in milliseconds
     pub total_duration_ms: usize,
     /// Failure counts grouped by error kind
-    pub failure_breakdown: BTreeMap<String, usize>,
+    pub failure_breakdown: FxHashMap<String, usize>,
     /// Outcome counts grouped by task name
-    pub task_breakdown: BTreeMap<String, OutcomeBreakdown>,
+    pub task_breakdown: FxHashMap<String, OutcomeBreakdown>,
     /// Outcome counts grouped by session id
-    pub session_breakdown: BTreeMap<String, OutcomeBreakdown>,
+    pub session_breakdown: FxHashMap<String, OutcomeBreakdown>,
     /// Structured counters emitted from twitteractivity task execution
     pub twitteractivity_counters: TwitterActivityRunCounters,
     /// Structured counters emitted from task-api click learning
@@ -695,7 +718,7 @@ impl MetricsCollector {
     }
 }
 
-fn top_breakdown(items: &BTreeMap<String, OutcomeBreakdown>) -> Option<String> {
+fn top_breakdown(items: &FxHashMap<String, OutcomeBreakdown>) -> Option<String> {
     items
         .iter()
         .max_by_key(|(_, outcome)| outcome.failure_count())

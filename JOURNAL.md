@@ -1,11 +1,18 @@
 # Agents Journal
 
 **New journal entries should be at the top for easy indexing**
-````
+```
 ## yyyy-mm-dd (hh:mm) - Title - commit number ##
 - **filename** : Description
 **validation : cargo check and cargo test clean**
-````
+```
+
+---
+
+## 2026-04-28 (20:30) - Linker Fix + Test Validation ##
+- **.cargo/config.toml**: Fixed linker path to full LLVM path (`C:\Program Files\LLVM\bin\lld-link.exe`) to resolve `lld-link.exe not found` error
+- **All 1930 tests passed**: 1784 lib + 65 api_mock_integration + 22 cli_parsing_tests + 24 task_registration_tests + 3 chaos_failure_classification + 32 task_api_behavior
+- **validation: cargo check clean, cargo test clean (1930/1930)**
 
 ---
 

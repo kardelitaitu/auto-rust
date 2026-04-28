@@ -2041,6 +2041,9 @@ impl TaskContext {
         }
     }
 
+    /// Like [`Self::new`] but attaches metrics. Pass the same `cancel_token` as the orchestrator
+    /// uses for the task attempt so [`Self::pause`] / [`Self::pause_with_variance`] / [`Self::pause_human`]
+    /// return early on group cancellation.
     pub fn new_with_metrics(
         session_id: impl Into<String>,
         page: Arc<Page>,
@@ -4419,10 +4422,7 @@ impl TaskContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use anyhow::Result;
-    /// # use auto::TaskContext;
     /// # use std::collections::HashMap;
-    /// # fn example(ctx: &TaskContext) -> Result<()> {
     /// // Create session data to validate
     /// let session = auto::task::policy::SessionData {
     ///     cookies: vec![],
@@ -4431,16 +4431,14 @@ impl TaskContext {
     ///     url: "https://example.com".to_string(),
     /// };
     ///
-    /// // Validate before importing
-    /// let warnings = ctx.validate_session_data(&session)?;
+    /// // Validate the session data
+    /// let warnings = auto::runtime::task_context::validate_session_data_impl(&session);
     ///
     /// if warnings.is_empty() {
     ///     println!("Session data is valid");
     /// } else {
     ///     println!("Warnings: {:?}", warnings);
     /// }
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn validate_session_data_for_tests(data: &crate::task::policy::SessionData) -> Vec<String> {
         validate_session_data_impl(data)
@@ -5582,7 +5580,7 @@ impl TaskContext {
     }
 }
 
-fn validate_session_data_impl(data: &crate::task::policy::SessionData) -> Vec<String> {
+pub fn validate_session_data_impl(data: &crate::task::policy::SessionData) -> Vec<String> {
     let mut warnings = Vec::new();
 
     if data.cookies.is_empty() && data.local_storage.is_empty() {

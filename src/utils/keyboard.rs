@@ -207,6 +207,12 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
             const el = document.activeElement;
             if (!el || el.tagName === 'IFRAME') return;
 
+            // Phase2: Check readonly/disabled before attempting to type
+            if (el.readOnly || el.disabled) {{
+                console.warn('dispatch_input_event: element is readonly or disabled');
+                return;
+            }}
+
             const text = {text_json};
             if (el.isContentEditable) {{
                 document.execCommand('insertText', false, text);
@@ -228,7 +234,8 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
                 }} else {{
                     el.value = (el.value || '') + text;
                 }}
-                el.dispatchEvent(new InputEvent('input', {{ bubbles: true, data: text }}));
+                const opts = {{ bubbles: true, data: text }};
+                el.dispatchEvent(new InputEvent('input', opts));
             }}
         }})();"
     );

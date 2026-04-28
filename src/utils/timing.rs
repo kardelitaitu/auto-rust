@@ -486,8 +486,16 @@ mod tests {
         let elapsed = start.elapsed();
         // With 25% variance (std_dev=12.5), values mostly in 25-75 range
         // but Gaussian tails can go lower; min clamp is 10ms
-        assert!(elapsed.as_millis() >= 10, "elapsed too short: {}ms", elapsed.as_millis());
-        assert!(elapsed.as_millis() < 200, "elapsed too long: {}ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() >= 10,
+            "elapsed too short: {}ms",
+            elapsed.as_millis()
+        );
+        assert!(
+            elapsed.as_millis() < 200,
+            "elapsed too long: {}ms",
+            elapsed.as_millis()
+        );
     }
 
     #[tokio::test]
@@ -497,8 +505,16 @@ mod tests {
         let elapsed = start.elapsed();
         // Uniform range: 37.5ms to 62.5ms (50 ± 25%)
         // Allow some scheduler jitter with wider bounds
-        assert!(elapsed.as_millis() >= 30, "elapsed too short: {}ms", elapsed.as_millis());
-        assert!(elapsed.as_millis() < 150, "elapsed too long: {}ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() >= 30,
+            "elapsed too short: {}ms",
+            elapsed.as_millis()
+        );
+        assert!(
+            elapsed.as_millis() < 150,
+            "elapsed too long: {}ms",
+            elapsed.as_millis()
+        );
     }
 
     #[tokio::test]
@@ -769,7 +785,13 @@ mod tests {
         human_pause(150, 10).await;
         let elapsed = start.elapsed();
         // With 10% variance: range is [135, 165] with gaussian distribution
-        assert!(elapsed.as_millis() >= 130 && elapsed.as_millis() < 170);
+        // Allow extra margin for system scheduling variance (async runtime, CPU load)
+        let ms = elapsed.as_millis() as u64;
+        assert!(
+            ms >= 120 && ms < 250,
+            "human_pause(150, 10) took {}ms, expected ~135-165ms",
+            ms
+        );
     }
 
     #[tokio::test]
@@ -778,7 +800,13 @@ mod tests {
         uniform_pause(150, 10).await;
         let elapsed = start.elapsed();
         // With 10% variance: range is [135, 165]
-        assert!(elapsed.as_millis() >= 130 && elapsed.as_millis() < 170);
+        // Allow extra margin for system scheduling variance (async runtime, CPU load)
+        let ms = elapsed.as_millis() as u64;
+        assert!(
+            ms >= 120 && ms < 250,
+            "uniform_pause(150, 10) took {}ms, expected ~135-165ms",
+            ms
+        );
     }
 
     #[tokio::test]

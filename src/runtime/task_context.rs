@@ -716,9 +716,15 @@ mod tests {
 
     #[test]
     fn test_click_element_priority_variants() {
-        assert_eq!(ClickElementPriority::Critical, ClickElementPriority::Critical);
+        assert_eq!(
+            ClickElementPriority::Critical,
+            ClickElementPriority::Critical
+        );
         assert_eq!(ClickElementPriority::Normal, ClickElementPriority::Normal);
-        assert_eq!(ClickElementPriority::Optional, ClickElementPriority::Optional);
+        assert_eq!(
+            ClickElementPriority::Optional,
+            ClickElementPriority::Optional
+        );
     }
 
     #[test]
@@ -950,12 +956,8 @@ mod tests {
 
     #[test]
     fn test_click_timing_profile_from_observation() {
-        let context = ClickTimingContext::from_observation(
-            "https://example.com",
-            "#button",
-            10,
-            0.8,
-        );
+        let context =
+            ClickTimingContext::from_observation("https://example.com", "#button", 10, 0.8);
         assert_eq!(context.page, ClickPageContext::Home);
         assert_eq!(context.priority, ClickElementPriority::Normal);
         assert_eq!(context.fatigue, ClickFatigueLevel::Rested);
@@ -1063,7 +1065,7 @@ mod tests {
             now.format("%H-%M"),
             session_id
         );
-        
+
         // Verify format: yyyy-mm-dd-hh-mm-sessionid.jpg
         assert!(filename.ends_with(".jpg"));
         assert!(filename.contains("test-session-123"));
@@ -1103,7 +1105,10 @@ mod tests {
         local_storage.insert("example.com".to_string(), origin_data);
 
         let mut indexeddb = HashMap::new();
-        indexeddb.insert("example.com".to_string(), vec!["db1".to_string(), "db2".to_string()]);
+        indexeddb.insert(
+            "example.com".to_string(),
+            vec!["db1".to_string(), "db2".to_string()],
+        );
 
         let data = crate::task::policy::BrowserData {
             cookies: vec![serde_json::json!({"name": "test", "value": "cookie"})],
@@ -1119,7 +1124,8 @@ mod tests {
         let json = serde_json::to_string(&data).expect("Should serialize");
 
         // Deserialize
-        let restored: crate::task::policy::BrowserData = serde_json::from_str(&json).expect("Should deserialize");
+        let restored: crate::task::policy::BrowserData =
+            serde_json::from_str(&json).expect("Should deserialize");
 
         assert_eq!(restored.cookies.len(), 1);
         assert_eq!(restored.source, "https://example.com");
@@ -1176,7 +1182,10 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(response.body, "{\"success\": true}");
-        assert_eq!(response.headers.get("Content-Type"), Some(&"application/json".to_string()));
+        assert_eq!(
+            response.headers.get("Content-Type"),
+            Some(&"application/json".to_string())
+        );
 
         // Test serialization
         let json = serde_json::to_string(&response).expect("Should serialize");
@@ -1235,7 +1244,10 @@ mod tests {
     fn test_sanitize_path_component_various_inputs() {
         assert_eq!(super::sanitize_path_component("normal"), "normal");
         assert_eq!(super::sanitize_path_component("with-dash"), "with-dash");
-        assert_eq!(super::sanitize_path_component("with_underscore"), "with_underscore");
+        assert_eq!(
+            super::sanitize_path_component("with_underscore"),
+            "with_underscore"
+        );
         assert_eq!(super::sanitize_path_component("UPPERCASE"), "UPPERCASE");
         assert_eq!(super::sanitize_path_component("123"), "123");
         assert_eq!(super::sanitize_path_component(""), "default");
@@ -1269,7 +1281,7 @@ mod tests {
         let context = ClickTimingContext::from_observation(
             "https://example.com",
             "#button",
-            20, // interaction_count
+            20,  // interaction_count
             0.0, // recent_success_rate (all failures)
         );
         let adaptation = learning.adaptation_for("#button", &context);
@@ -1583,10 +1595,10 @@ mod tests {
         use std::collections::HashMap;
 
         let mut indexeddb = HashMap::new();
-        indexeddb.insert("example.com".to_string(), vec![
-            "my-database".to_string(),
-            "cache-store".to_string(),
-        ]);
+        indexeddb.insert(
+            "example.com".to_string(),
+            vec!["my-database".to_string(), "cache-store".to_string()],
+        );
 
         let data = crate::task::policy::BrowserData {
             cookies: vec![],
@@ -1630,8 +1642,11 @@ mod tests {
     fn test_sanitize_path_component_unicode_extended() {
         // Unicode chars become underscores, then trimmed, empty becomes "default"
         assert_eq!(super::sanitize_path_component("测试"), "default"); // All unicode -> "__" -> trim -> "default"
-        // Mixed content: ascii parts preserved, unicode becomes underscores
-        assert_eq!(super::sanitize_path_component("test日本語file"), "test___file"); // 3 Japanese chars = 3 underscores
+                                                                       // Mixed content: ascii parts preserved, unicode becomes underscores
+        assert_eq!(
+            super::sanitize_path_component("test日本語file"),
+            "test___file"
+        ); // 3 Japanese chars = 3 underscores
         assert_eq!(super::sanitize_path_component("日本語test"), "test"); // Leading underscores trimmed
         assert_eq!(super::sanitize_path_component("test日本語"), "test"); // Trailing underscores trimmed
     }
@@ -1710,8 +1725,8 @@ mod tests {
     #[test]
     fn test_error_permission_denied_format() {
         let err = crate::error::TaskError::PermissionDenied {
-            permission: "allow_test",  // &'static str
-            task_name: "test-task".to_string(),  // String
+            permission: "allow_test",           // &'static str
+            task_name: "test-task".to_string(), // String
         };
 
         let msg = format!("{}", err);
@@ -2255,7 +2270,9 @@ impl TaskContext {
         // CDP: Page.captureScreenshot (returns PNG bytes)
         let png_bytes = self
             .page
-            .screenshot(chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotParams::default())
+            .screenshot(
+                chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotParams::default(),
+            )
             .await
             .map_err(|e| anyhow::anyhow!("CDP error: Page.captureScreenshot - {}", e))?;
 
@@ -2266,7 +2283,7 @@ impl TaskContext {
         // Convert to RGB8 for WebP encoding
         let rgb_img = img.to_rgb8();
         let (width, height) = (rgb_img.width(), rgb_img.height());
-        
+
         // Encode with quality using webp crate (quality 0-100)
         let encoder = webp::Encoder::new(rgb_img.as_raw(), webp::PixelLayout::Rgb, width, height);
         let webp_data = encoder.encode(quality as f32);
@@ -2374,7 +2391,10 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} domain={} count={}",
-            self.session_id, "allow_export_cookies", domain, filtered.len()
+            self.session_id,
+            "allow_export_cookies",
+            domain,
+            filtered.len()
         );
 
         Ok(filtered)
@@ -2437,7 +2457,10 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
-            self.session_id, "allow_export_cookies", _url, session_cookies.len()
+            self.session_id,
+            "allow_export_cookies",
+            _url,
+            session_cookies.len()
         );
 
         Ok(session_cookies)
@@ -2672,8 +2695,7 @@ impl TaskContext {
         // Validate and resolve path using security helper
         let path = crate::task::security::validate_data_path(relative_path)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
-        std::fs::read_to_string(&path)
-            .map_err(|e| anyhow::anyhow!("Failed to read file: {}", e))
+        std::fs::read_to_string(&path).map_err(|e| anyhow::anyhow!("Failed to read file: {}", e))
     }
 
     /// Check if task has write data permission.
@@ -2699,8 +2721,7 @@ impl TaskContext {
                 .map_err(|e| anyhow::anyhow!("Failed to create directory: {}", e))?;
         }
 
-        std::fs::write(&path, content)
-            .map_err(|e| anyhow::anyhow!("Failed to write file: {}", e))
+        std::fs::write(&path, content).map_err(|e| anyhow::anyhow!("Failed to write file: {}", e))
     }
 
     /// List files in the data/config directory.
@@ -2757,7 +2778,8 @@ impl TaskContext {
         let mut files = Vec::new();
         if base_path.exists() {
             for entry in std::fs::read_dir(&base_path)
-                .map_err(|e| anyhow::anyhow!("Failed to read directory: {}", e))? {
+                .map_err(|e| anyhow::anyhow!("Failed to read directory: {}", e))?
+            {
                 let entry = entry.map_err(|e| anyhow::anyhow!("Directory entry error: {}", e))?;
                 if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                     if let Some(name) = entry.file_name().to_str() {
@@ -2866,8 +2888,7 @@ impl TaskContext {
             return Err(anyhow::anyhow!("File not found: {}", relative_path));
         }
 
-        std::fs::remove_file(&path)
-            .map_err(|e| anyhow::anyhow!("Failed to delete file: {}", e))
+        std::fs::remove_file(&path).map_err(|e| anyhow::anyhow!("Failed to delete file: {}", e))
     }
 
     /// Append content to a data file.
@@ -2908,7 +2929,9 @@ impl TaskContext {
         }
 
         if !crate::task::security::is_safe_path(relative_path) {
-            return Err(anyhow::anyhow!("Invalid path: Path contains unsafe components"));
+            return Err(anyhow::anyhow!(
+                "Invalid path: Path contains unsafe components"
+            ));
         }
 
         let path = std::path::Path::new("config").join(relative_path);
@@ -2973,8 +2996,7 @@ impl TaskContext {
     /// ```
     pub fn read_json_data<T: serde::de::DeserializeOwned>(&self, relative_path: &str) -> Result<T> {
         let content = self.read_data_file(relative_path)?;
-        serde_json::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))
+        serde_json::from_str(&content).map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))
     }
 
     /// Write data as pretty-printed JSON to a file.
@@ -3020,7 +3042,11 @@ impl TaskContext {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn write_json_data<T: serde::Serialize>(&self, relative_path: &str, data: &T) -> Result<()> {
+    pub fn write_json_data<T: serde::Serialize>(
+        &self,
+        relative_path: &str,
+        data: &T,
+    ) -> Result<()> {
         let json = serde_json::to_string_pretty(data)
             .map_err(|e| anyhow::anyhow!("Failed to serialize to JSON: {}", e))?;
         self.write_data_file(relative_path, json.as_bytes())
@@ -3079,8 +3105,12 @@ impl TaskContext {
 
         Ok(FileMetadata {
             size: metadata.len(),
-            modified: metadata.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
-            created: metadata.created().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            modified: metadata
+                .modified()
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            created: metadata
+                .created()
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
         })
     }
 
@@ -3102,26 +3132,30 @@ impl TaskContext {
             if name.is_empty() || value.is_empty() {
                 continue;
             }
-            let mut params = chromiumoxide::cdp::browser_protocol::network::SetCookieParams::builder()
-                .name(name)
-                .value(value);
+            let mut params =
+                chromiumoxide::cdp::browser_protocol::network::SetCookieParams::builder()
+                    .name(name)
+                    .value(value);
             if let Some(d) = domain {
                 params = params.domain(d);
             }
             if let Some(p) = path {
                 params = params.path(p);
             }
-            let params = params.build().map_err(|e| {
-                anyhow::anyhow!("Failed to build SetCookieParams: {}", e)
-            })?;
-            self.page.execute(params).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Network.setCookie - {}", e)
-            })?;
+            let params = params
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to build SetCookieParams: {}", e))?;
+            self.page
+                .execute(params)
+                .await
+                .map_err(|e| anyhow::anyhow!("CDP error: Network.setCookie - {}", e))?;
         }
 
         log::warn!(
             "task_policy_audit: task={} permission={} count={}",
-            self.session_id, "allow_import_cookies", cookies.len()
+            self.session_id,
+            "allow_import_cookies",
+            cookies.len()
         );
         Ok(())
     }
@@ -3176,9 +3210,7 @@ impl TaskContext {
         let headers: HashMap<String, String> = response
             .headers()
             .iter()
-            .filter_map(|(k, v)| {
-                v.to_str().ok().map(|val| (k.to_string(), val.to_string()))
-            })
+            .filter_map(|(k, v)| v.to_str().ok().map(|val| (k.to_string(), val.to_string())))
             .collect();
         let body = response
             .text()
@@ -3187,7 +3219,10 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} status={}",
-            self.session_id, "allow_http_requests", url, status
+            self.session_id,
+            "allow_http_requests",
+            url,
+            status
         );
 
         Ok(HttpResponse {
@@ -3236,7 +3271,11 @@ impl TaskContext {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn http_post_json<T: serde::Serialize>(&self, url: &str, body: &T) -> Result<HttpResponse> {
+    pub async fn http_post_json<T: serde::Serialize>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> Result<HttpResponse> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_http_requests {
             return Err(anyhow::anyhow!(
@@ -3257,9 +3296,7 @@ impl TaskContext {
         let headers: HashMap<String, String> = response
             .headers()
             .iter()
-            .filter_map(|(k, v)| {
-                v.to_str().ok().map(|val| (k.to_string(), val.to_string()))
-            })
+            .filter_map(|(k, v)| v.to_str().ok().map(|val| (k.to_string(), val.to_string())))
             .collect();
         let body_text = response
             .text()
@@ -3268,7 +3305,10 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} status={}",
-            self.session_id, "allow_http_requests", url, status
+            self.session_id,
+            "allow_http_requests",
+            url,
+            status
         );
 
         Ok(HttpResponse {
@@ -3330,7 +3370,9 @@ impl TaskContext {
 
         // Validate path
         if !crate::task::security::is_safe_path(relative_path) {
-            return Err(anyhow::anyhow!("Invalid path: Path contains unsafe components"));
+            return Err(anyhow::anyhow!(
+                "Invalid path: Path contains unsafe components"
+            ));
         }
 
         // Download
@@ -3362,7 +3404,12 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permissions={}+{} url={} path={} bytes={}",
-            self.session_id, "allow_http_requests", "allow_write_data", url, relative_path, byte_count
+            self.session_id,
+            "allow_http_requests",
+            "allow_write_data",
+            url,
+            relative_path,
+            byte_count
         );
 
         Ok(byte_count)
@@ -3392,10 +3439,7 @@ impl TaskContext {
                 serde_json::Value::Array(vec![])
             }
         };
-        let cookies = cookies_json
-            .as_array()
-            .unwrap_or(&vec![])
-            .clone();
+        let cookies = cookies_json.as_array().unwrap_or(&vec![]).clone();
 
         // Export localStorage via JavaScript
         let local_storage_js = r#"
@@ -3413,10 +3457,12 @@ impl TaskContext {
             .evaluate(local_storage_js)
             .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
-        let local_storage_value = local_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
+        let local_storage_value = local_storage_str
+            .value()
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let local_storage: std::collections::HashMap<String, String> =
-            serde_json::from_value(local_storage_value)
-                .unwrap_or_default();
+            serde_json::from_value(local_storage_value).unwrap_or_default();
 
         let session_data = crate::task::policy::SessionData {
             cookies,
@@ -3427,7 +3473,10 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
-            self.session_id, "allow_export_session", url, session_data.cookies.len()
+            self.session_id,
+            "allow_export_session",
+            url,
+            session_data.cookies.len()
         );
 
         Ok(session_data)
@@ -3488,17 +3537,24 @@ impl TaskContext {
             property.replace("'", "\\'")
         );
 
-        let result = self.page.evaluate(js).await
+        let result = self
+            .page
+            .evaluate(js)
+            .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
 
-        let value = result.value()
+        let value = result
+            .value()
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_default();
 
         log::warn!(
             "task_policy_audit: task={} permission={} selector={} property={}",
-            self.session_id, "allow_dom_inspection", selector, property
+            self.session_id,
+            "allow_dom_inspection",
+            selector,
+            property
         );
 
         Ok(value)
@@ -3557,10 +3613,14 @@ impl TaskContext {
             selector.replace("'", "\\'")
         );
 
-        let result = self.page.evaluate(js).await
+        let result = self
+            .page
+            .evaluate(js)
+            .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
 
-        let value = result.value()
+        let value = result
+            .value()
             .ok_or_else(|| anyhow::anyhow!("Element not found: {}", selector))?;
 
         let x = value.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -3570,10 +3630,17 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} selector={}",
-            self.session_id, "allow_dom_inspection", selector
+            self.session_id,
+            "allow_dom_inspection",
+            selector
         );
 
-        Ok(Rect { x, y, width, height })
+        Ok(Rect {
+            x,
+            y,
+            width,
+            height,
+        })
     }
 
     /// Get current scroll position of the page.
@@ -3619,16 +3686,23 @@ impl TaskContext {
             })()
         "#;
 
-        let result = self.page.evaluate(js).await
+        let result = self
+            .page
+            .evaluate(js)
+            .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
 
-        let value = result.value().cloned().unwrap_or_else(|| serde_json::json!({"x": 0, "y": 0}));
+        let value = result
+            .value()
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"x": 0, "y": 0}));
         let x = value.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
         let y = value.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
 
         log::warn!(
             "task_policy_audit: task={} permission={}",
-            self.session_id, "allow_dom_inspection"
+            self.session_id,
+            "allow_dom_inspection"
         );
 
         Ok((x, y))
@@ -3683,17 +3757,24 @@ impl TaskContext {
             selector.replace("'", "\\'")
         );
 
-        let result = self.page.evaluate(js).await
+        let result = self
+            .page
+            .evaluate(js)
+            .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
 
-        let count = result.value()
+        let count = result
+            .value()
             .and_then(|v| v.as_f64())
             .map(|n| n as usize)
             .unwrap_or(0);
 
         log::warn!(
             "task_policy_audit: task={} permission={} selector={} count={}",
-            self.session_id, "allow_dom_inspection", selector, count
+            self.session_id,
+            "allow_dom_inspection",
+            selector,
+            count
         );
 
         Ok(count)
@@ -3753,23 +3834,30 @@ impl TaskContext {
             selector.replace("'", "\\'")
         );
 
-        let result = self.page.evaluate(js).await
+        let result = self
+            .page
+            .evaluate(js)
+            .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
 
-        let visible = result.value()
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let visible = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
 
         log::warn!(
             "task_policy_audit: task={} permission={} selector={} visible={}",
-            self.session_id, "allow_dom_inspection", selector, visible
+            self.session_id,
+            "allow_dom_inspection",
+            selector,
+            visible
         );
 
         Ok(visible)
     }
 
     /// Import session data (cookies + localStorage) from SessionData.
-    pub async fn import_session(&self, session_data: &crate::task::policy::SessionData) -> Result<()> {
+    pub async fn import_session(
+        &self,
+        session_data: &crate::task::policy::SessionData,
+    ) -> Result<()> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_import_session {
             return Err(anyhow::anyhow!(
@@ -3803,7 +3891,10 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
-            self.session_id, "allow_import_session", session_data.url, session_data.cookies.len()
+            self.session_id,
+            "allow_import_session",
+            session_data.url,
+            session_data.cookies.len()
         );
 
         Ok(())
@@ -3864,10 +3955,7 @@ impl TaskContext {
                 serde_json::Value::Array(vec![])
             }
         };
-        let cookies = cookies_json
-            .as_array()
-            .unwrap_or(&vec![])
-            .clone();
+        let cookies = cookies_json.as_array().unwrap_or(&vec![]).clone();
 
         // Export localStorage from all frames via JavaScript
         let local_storage_js = r#"
@@ -3882,15 +3970,18 @@ impl TaskContext {
                 return JSON.stringify(data);
             })()
         "#;
-        let local_storage_str = self
-            .page
-            .evaluate(local_storage_js)
-            .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage - {}", e))?;
-        let local_storage_value = local_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
-        let local_storage: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
-            serde_json::from_value(local_storage_value)
-                .unwrap_or_default();
+        let local_storage_str =
+            self.page.evaluate(local_storage_js).await.map_err(|e| {
+                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage - {}", e)
+            })?;
+        let local_storage_value = local_storage_str
+            .value()
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let local_storage: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = serde_json::from_value(local_storage_value).unwrap_or_default();
 
         // Export sessionStorage via JavaScript
         let session_storage_js = r#"
@@ -3905,15 +3996,17 @@ impl TaskContext {
                 return JSON.stringify(data);
             })()
         "#;
-        let session_storage_str = self
-            .page
-            .evaluate(session_storage_js)
-            .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage - {}", e))?;
-        let session_storage_value = session_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
-        let session_storage: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
-            serde_json::from_value(session_storage_value)
-                .unwrap_or_default();
+        let session_storage_str = self.page.evaluate(session_storage_js).await.map_err(|e| {
+            anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage - {}", e)
+        })?;
+        let session_storage_value = session_storage_str
+            .value()
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let session_storage: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = serde_json::from_value(session_storage_value).unwrap_or_default();
 
         // Get IndexedDB database names (simplified - just list databases)
         let indexeddb_js = r#"
@@ -3942,17 +4035,14 @@ impl TaskContext {
                 });
             })()
         "#;
-        let indexeddb_result = self
-            .page
-            .evaluate(indexeddb_js)
-            .await;
-        let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match indexeddb_result {
-            Ok(result) => {
-                result.value()
-                    .cloned()
-                    .and_then(|v| serde_json::from_value(v).ok())
-                    .unwrap_or_default()
-            }
+        let indexeddb_result = self.page.evaluate(indexeddb_js).await;
+        let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match indexeddb_result
+        {
+            Ok(result) => result
+                .value()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
             Err(e) => {
                 log::warn!("Failed to export IndexedDB names: {}", e);
                 std::collections::HashMap::new()
@@ -4010,7 +4100,10 @@ impl TaskContext {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn import_browser(&self, browser_data: &crate::task::policy::BrowserData) -> Result<()> {
+    pub async fn import_browser(
+        &self,
+        browser_data: &crate::task::policy::BrowserData,
+    ) -> Result<()> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_browser_import {
             return Err(anyhow::anyhow!(
@@ -4024,8 +4117,9 @@ impl TaskContext {
 
         // Import localStorage for each origin
         for (origin, data) in &browser_data.local_storage {
-            let local_storage_json = serde_json::to_string(data)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage for {}: {}", origin, e))?;
+            let local_storage_json = serde_json::to_string(data).map_err(|e| {
+                anyhow::anyhow!("Failed to serialize localStorage for {}: {}", origin, e)
+            })?;
             let js_code = format!(
                 r#"
                 (function() {{
@@ -4044,16 +4138,19 @@ impl TaskContext {
                 "#,
                 local_storage_json
             );
-            self.page
-                .evaluate(js_code)
-                .await
-                .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage import - {}", e))?;
+            self.page.evaluate(js_code).await.map_err(|e| {
+                anyhow::anyhow!(
+                    "CDP error: Runtime.evaluate for localStorage import - {}",
+                    e
+                )
+            })?;
         }
 
         // Import sessionStorage for each origin
         for (origin, data) in &browser_data.session_storage {
-            let session_storage_json = serde_json::to_string(data)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize sessionStorage for {}: {}", origin, e))?;
+            let session_storage_json = serde_json::to_string(data).map_err(|e| {
+                anyhow::anyhow!("Failed to serialize sessionStorage for {}: {}", origin, e)
+            })?;
             let js_code = format!(
                 r#"
                 (function() {{
@@ -4072,10 +4169,12 @@ impl TaskContext {
                 "#,
                 session_storage_json
             );
-            self.page
-                .evaluate(js_code)
-                .await
-                .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage import - {}", e))?;
+            self.page.evaluate(js_code).await.map_err(|e| {
+                anyhow::anyhow!(
+                    "CDP error: Runtime.evaluate for sessionStorage import - {}",
+                    e
+                )
+            })?;
         }
 
         log::warn!(
@@ -4124,7 +4223,10 @@ impl TaskContext {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn export_local_storage(&self, _url: &str) -> Result<std::collections::HashMap<String, String>> {
+    pub async fn export_local_storage(
+        &self,
+        _url: &str,
+    ) -> Result<std::collections::HashMap<String, String>> {
         let perms = self.policy.effective_permissions();
         if !perms.allow_export_session {
             return Err(anyhow::anyhow!(
@@ -4149,14 +4251,19 @@ impl TaskContext {
             .evaluate(local_storage_js)
             .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
-        let local_storage_value = local_storage_str.value().cloned().unwrap_or(serde_json::Value::Null);
+        let local_storage_value = local_storage_str
+            .value()
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let local_storage: std::collections::HashMap<String, String> =
-            serde_json::from_value(local_storage_value)
-                .unwrap_or_default();
+            serde_json::from_value(local_storage_value).unwrap_or_default();
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
-            self.session_id, "allow_export_session", _url, local_storage.len()
+            self.session_id,
+            "allow_export_session",
+            _url,
+            local_storage.len()
         );
 
         Ok(local_storage)
@@ -4227,7 +4334,10 @@ impl TaskContext {
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
-            self.session_id, "allow_import_session", _url, data.len()
+            self.session_id,
+            "allow_import_session",
+            _url,
+            data.len()
         );
 
         Ok(())
@@ -4270,7 +4380,10 @@ impl TaskContext {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn validate_session_data(&self, data: &crate::task::policy::SessionData) -> Result<Vec<String>> {
+    pub fn validate_session_data(
+        &self,
+        data: &crate::task::policy::SessionData,
+    ) -> Result<Vec<String>> {
         let mut warnings = Vec::new();
 
         // Validate cookies array
@@ -4294,7 +4407,10 @@ impl TaskContext {
 
         // Validate local_storage
         if data.local_storage.len() > 1000 {
-            warnings.push(format!("localStorage has {} items (very large)", data.local_storage.len()));
+            warnings.push(format!(
+                "localStorage has {} items (very large)",
+                data.local_storage.len()
+            ));
         }
 
         // Validate URL is not empty
@@ -4375,6 +4491,15 @@ impl TaskContext {
     /// ```
     pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
         scroll::scroll_into_view(self.page(), selector).await?;
+
+        // Phase2: Verify element is in viewport after scroll
+        if !self.is_in_viewport(selector).await? {
+            return Err(anyhow::anyhow!(
+                "[task-api] focus: element '{}' not in viewport after scroll",
+                selector
+            ));
+        }
+
         let (x, y) = page_size::get_element_center(self.page(), selector).await?;
         navigation::focus(self.page(), selector).await?;
         self.post_interaction_pause().await;
@@ -5042,10 +5167,7 @@ impl TaskContext {
         );
         match self.page().evaluate(verification_js).await {
             Ok(result) => {
-                let text_entered = result
-                    .value()
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+                let text_entered = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
                 if !text_entered {
                     warn!(
                         "[task-api] keyboard: text may not have been entered for '{}'",
@@ -5054,7 +5176,10 @@ impl TaskContext {
                 }
             }
             Err(e) => {
-                debug!("[task-api] keyboard verification failed for '{}': {}", selector, e);
+                debug!(
+                    "[task-api] keyboard verification failed for '{}': {}",
+                    selector, e
+                );
             }
         }
 
@@ -5096,6 +5221,47 @@ impl TaskContext {
 
     /// Type text directly without focusing. Applies to currently focused element.
     pub async fn type_text(&self, text: &str) -> Result<()> {
+        // Phase2: Verify something is focused and is editable
+        let focus_check_js = r#"(() => {
+            const el = document.activeElement;
+            if (!el) return 'no_focus';
+            if (el.readOnly) return 'readonly';
+            if (el.disabled) return 'disabled';
+            if (el.isContentEditable) return 'editable';
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return 'input';
+            return 'not_editable';
+        }})()"#;
+        let status = match self.page().evaluate(focus_check_js).await {
+            Ok(result) => result
+                .value()
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            Err(_) => "check_failed".to_string(),
+        };
+        let status = status.as_str();
+        match status {
+            "no_focus" => {
+                warn!("[task-api] type_text: no element is focused");
+            }
+            "readonly" => {
+                return Err(anyhow::anyhow!(
+                    "[task-api] type_text: focused element is readonly"
+                ));
+            }
+            "disabled" => {
+                return Err(anyhow::anyhow!(
+                    "[task-api] type_text: focused element is disabled"
+                ));
+            }
+            "not_editable" => {
+                warn!(
+                    "[task-api] type_text: focused element may not be editable"
+                );
+            }
+            _ => {}
+        }
+
         let typing = &self.behavior_runtime.typing;
         keyboard::type_text_profiled(self.page(), text, typing).await?;
         self.post_interaction_pause().await;

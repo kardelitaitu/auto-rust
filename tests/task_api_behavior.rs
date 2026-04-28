@@ -15,9 +15,11 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 struct TestServer {
     url: String,
@@ -143,6 +145,22 @@ fn build_task_context_with_policy(
         NativeInteractionConfig::default(),
         policy,
         None,
+    )
+}
+
+fn build_task_context_with_cancel_token(
+    session: &Session,
+    page: Arc<chromiumoxide::Page>,
+    cancel_token: Option<CancellationToken>,
+) -> TaskContext {
+    TaskContext::new(
+        session.id.clone(),
+        page,
+        session.behavior_profile.clone(),
+        session.behavior_runtime,
+        NativeInteractionConfig::default(),
+        &DEFAULT_TASK_POLICY,
+        cancel_token,
     )
 }
 
@@ -1714,5 +1732,142 @@ async fn screenshot_with_quality_clamps_and_writes_webp() -> Result<()> {
     session.release_page(page).await;
     server.shutdown().await;
     drop(session);
+    Ok(())
+}
+
+// ============================================================================
+// Click Retry Cancellation and Error Propagation Tests
+// ============================================================================
+
+#[tokio::test]
+async fn click_cancels_promptly_during_retry_loop() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    // Page with element that will cause click failures (rapidly moving)
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Cancel Test</title></head><body><button id=\"target\" style=\"position:relative; left:0px; top:0px\">Move</button><script>let d=1; setInterval(()=>{ const t=document.getElementById('target'); if (!t) return; t.style.left = (d*25)+'px'; d = d * -1; }, 25);</script></body></html>",
+    )
+    .await?;
+
+    // Seed learning with high consecutive failures to force coordinate fallback
+    let learning_path = seed_click_learning(
+        &session.behavior_profile.name,
+        &session.id,
+        "#target",
+        5,
+        0,
+        4,
+    )?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+
+    // Create cancellation token
+    let cancel_token = CancellationToken::new();
+    let api = build_task_context_with_cancel_token(&session, page.clone(), Some(cancel_token.clone()));
+
+    // Start click operation
+    let click_future = api.click("#target");
+
+    // Cancel after brief delay (during first retry attempt)
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+        cancel_token.cancel();
+    });
+
+    let start = Instant::now();
+    let result = click_future.await;
+
+    // Should complete quickly due to cancellation (not wait for full 12s timeout)
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_millis() < 3000,
+        "Click should cancel promptly, but took {}ms",
+        elapsed.as_millis()
+    );
+
+    // Result should be an error (cancelled or click failure)
+    assert!(result.is_err(), "Cancelled click should return error");
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    let _ = fs::remove_file(&learning_path);
+    if let Some(parent) = learning_path.parent() {
+        let _ = fs::remove_dir(parent);
+        if let Some(grand) = parent.parent() {
+            let _ = fs::remove_dir(grand);
+        }
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn click_returns_last_error_after_all_attempts_fail() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    // Page with element that will definitely fail all click attempts
+    // Element removes itself on hover, causing consistent failures
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Error Propagation</title></head><body><button id=\"target\" onmouseover=\"this.remove(); document.body.setAttribute('data-error', 'removed')\">Remove</button></body></html>",
+    )
+    .await?;
+
+    // Seed learning to force retry behavior
+    let learning_path = seed_click_learning(
+        &session.behavior_profile.name,
+        &session.id,
+        "#target",
+        3,
+        0,
+        3,
+    )?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let metrics = Arc::new(MetricsCollector::new(100));
+    let api = build_task_context_with_metrics(&session, page.clone(), metrics.clone());
+
+    // Attempt click - all 3 attempts should fail, returning last error
+    let start = Instant::now();
+    let result = api.click("#target").await;
+    let elapsed = start.elapsed();
+
+    // Should take at least 2 backoffs (attempt 1 succeeds quickly, attempts 2-3 have backoffs)
+    // But we're primarily checking error propagation, not timing
+    assert!(result.is_err(), "All attempts should fail");
+
+    // Error message should indicate the final failure cause
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("removed") || err_msg.contains("detach") || err_msg.contains("element"),
+        "Error should indicate element removal/detachment, got: {}",
+        err_msg
+    );
+
+    // Should have attempted fallback after exhaustion
+    assert!(
+        metrics.run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT) >= 1,
+        "Fallback should be triggered after retry exhaustion"
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    let _ = fs::remove_file(&learning_path);
+    if let Some(parent) = learning_path.parent() {
+        let _ = fs::remove_dir(parent);
+        if let Some(grand) = parent.parent() {
+            let _ = fs::remove_dir(grand);
+        }
+    }
+
     Ok(())
 }

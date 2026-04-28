@@ -397,6 +397,11 @@ impl Session {
         self.cb_failure_threshold
     }
 
+    /// Get circuit breaker timeout in seconds (for testing)
+    pub fn get_circuit_breaker_timeout_secs(&self) -> u64 {
+        self.cb_timeout_secs
+    }
+
     /// Check if circuit breaker is currently open (for testing)
     pub fn is_circuit_breaker_open(&self) -> bool {
         let current_time = std::time::SystemTime::now()
@@ -410,14 +415,19 @@ impl Session {
             && current_time.saturating_sub(last_failure) < self.cb_timeout_secs as usize
     }
 
+    /// Reset circuit breaker state (for testing)
+    pub fn reset_circuit_breaker(&self) {
+        self.cb_failure_count.store(0, Ordering::SeqCst);
+        self.cb_last_failure_time.store(0, Ordering::SeqCst);
+        self.mark_healthy();
+    }
+
     /// Set circuit breaker failure count (for testing only)
-    #[cfg(test)]
     pub fn set_circuit_breaker_failure_count(&self, count: usize) {
         self.cb_failure_count.store(count, Ordering::SeqCst);
     }
 
     /// Set circuit breaker last failure time (for testing only)
-    #[cfg(test)]
     pub fn set_circuit_breaker_last_failure_time(&self, time: usize) {
         self.cb_last_failure_time.store(time, Ordering::SeqCst);
     }

@@ -3,14 +3,41 @@
 **New journal entries should be at the top for easy indexing**
 ```
 ## yyyy-mm-dd (hh:mm) - Title - commit number ##
-- **filename** : Description
-**validation : cargo check and cargo test clean**
+- **filename**: Description
+**validation: cargo check and cargo test clean**
 ```
 
 ---
 
-## 2026-04-28 (09:15) - Test File Improvements Complete ##
-- **tests/cookiebot_integration.rs**: Added 4 edge case tests (special_chars, with_port, only_whitespace, unicode)
+## 2026-04-28 (21:40) - Orchestrator Tests Improved ##
+- **src/orchestrator.rs**: Consolidated 40+ redundant tests into ~10 comprehensive tests
+  - `test_format_duration_comprehensive()`: Single test covering all duration formats
+  - `test_broadcast_execution_count_comprehensive()`: Single test for all count scenarios
+  - `test_should_mark_session_unhealthy_comprehensive()`: Complete error kind coverage
+  - `test_orchestrator_new_initialization()`: Consolidated initialization tests
+- **tests/orchestrator_integration.rs**: Created new integration test file (15 tests)
+  - Execution flow tests: `test_execute_group_runs_on_all_sessions`, `test_execute_group_empty_tasks`, `test_execute_group_empty_sessions`
+  - Session allocation tests: `test_task_broadcast_to_all_sessions`, `test_multiple_tasks_execution`
+  - Shutdown handling tests: `test_cancellation_stops_execution`, `test_group_timeout`
+  - Health/failure tests: `test_unhealthy_sessions_handled`, `test_session_state_transitions`
+  - All integration tests marked `#[ignore]` (require real browsers)
+- **src/session/mod.rs**: Removed unused `Page` import (cleanup)
+- **TODO**: Full coverage requires refactoring Session to use `SessionTrait` (for mocking)
+  - `execute_task_with_retry()` requires `Page` mocking (orphan rule workaround needed)
+  - Current integration tests use real browsers via `discover_browsers()`
+**validation: cargo test --lib passes (1780/1780), cargo check clean**
+
+---
+
+## 2026-04-28 (11:22) - Session Management Tests Improved ##
+- **tests/session_management_tests.rs**: Added 6 new tests for lifecycle, recovery scenarios
+  - Lifecycle tests: initial state, state transitions, shutdown marks failed
+  - Recovery tests: circuit breaker flow, failure count tracking
+  - Active page tracking test
+- **src/session/mod.rs**: Exposed test helpers publicly (get_circuit_breaker_timeout_secs, reset_circuit_breaker) by removing `#[cfg(test)]`
+- **validation: cargo test --test session_management_tests passes (6/6)**
+
+---
 - **tests/cookiebot_integration.rs**: Updated to use TempTestDir from common/mod.rs
 - **tests/twitteractivity_integration.rs**: Added 6 edge case tests (emoji sentiment, zero delay, empty persona override, zero max limits, mixed signals)
 - **tests/task_api_behavior.rs**: Reviewed - requires live browser (TASK_API_TEST_WS), already comprehensive

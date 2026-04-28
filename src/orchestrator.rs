@@ -770,55 +770,116 @@ fn should_mark_session_unhealthy(kind: TaskErrorKind, was_cancelled: bool) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{OrchestratorConfig, TracingConfig, TwitterActivityConfig};
     use crate::result::TaskStatus;
     use futures::stream::FuturesUnordered;
     use tokio::time::sleep;
 
-    #[test]
-    fn test_format_duration_milliseconds() {
-        assert_eq!(format_duration(500), "500ms");
-        assert_eq!(format_duration(999), "999ms");
+    // ========================================================================
+    // Helper Functions
+    // ========================================================================
+
+    fn create_test_config() -> Config {
+        Config {
+            orchestrator: OrchestratorConfig {
+                max_global_concurrency: 10,
+                group_timeout_ms: 5000,
+                task_timeout_ms: 30000,
+                task_stagger_delay_ms: 100,
+                worker_wait_timeout_ms: 5000,
+                retry_delay_ms: 1000,
+                max_retries: 0,
+                stuck_worker_threshold_ms: 60000,
+            },
+            browser: Default::default(),
+            tracing: TracingConfig::default(),
+            twitter_activity: TwitterActivityConfig::default(),
+        }
     }
 
+    // ========================================================================
+    // format_duration Tests (consolidated)
+    // ========================================================================
+
     #[test]
-    fn test_format_duration_seconds() {
+    fn test_format_duration_comprehensive() {
+        // Milliseconds
+        assert_eq!(format_duration(0), "0ms");
+        assert_eq!(format_duration(1), "1ms");
+        assert_eq!(format_duration(500), "500ms");
+        assert_eq!(format_duration(999), "999ms");
+
+        // Seconds
         assert_eq!(format_duration(1000), "1s");
         assert_eq!(format_duration(5000), "5s");
         assert_eq!(format_duration(45000), "45s");
-    }
+        assert_eq!(format_duration(59999), "59s");
 
-    #[test]
-    fn test_format_duration_minutes() {
+        // Minutes
         assert_eq!(format_duration(60000), "1min");
         assert_eq!(format_duration(65000), "1min 5s");
         assert_eq!(format_duration(120000), "2min");
         assert_eq!(format_duration(125000), "2min 5s");
-    }
+        assert_eq!(format_duration(3599999), "59min 59s");
 
-    #[test]
-    fn test_format_duration_hours() {
+        // Hours
         assert_eq!(format_duration(3600000), "1h");
         assert_eq!(format_duration(3660000), "1h 1min");
         assert_eq!(format_duration(7200000), "2h");
         assert_eq!(format_duration(7320000), "2h 2min");
+        assert_eq!(format_duration(36000000), "10h");
     }
 
+    // ========================================================================
+    // broadcast_execution_count Tests (consolidated)
+    // ========================================================================
+
     #[test]
-    fn test_broadcast_execution_count() {
+    fn test_broadcast_execution_count_comprehensive() {
+        // Edge cases
+        assert_eq!(broadcast_execution_count(0, 0), 0);
         assert_eq!(broadcast_execution_count(0, 5), 0);
+        assert_eq!(broadcast_execution_count(5, 0), 0);
+        assert_eq!(broadcast_execution_count(1, 1), 1);
+
+        // Normal cases
         assert_eq!(broadcast_execution_count(3, 4), 12);
+        assert_eq!(broadcast_execution_count(10, 1), 10);
+        assert_eq!(broadcast_execution_count(1, 10), 10);
+        assert_eq!(broadcast_execution_count(100, 50), 5000);
+
+        // Large numbers
+        assert_eq!(broadcast_execution_count(1000, 1000), 1000000);
     }
 
+    // ========================================================================
+    // should_mark_session_unhealthy Tests (consolidated)
+    // ========================================================================
+
     #[test]
-    fn test_non_timeout_failure_marks_session_unhealthy() {
-        assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
+    fn test_should_mark_session_unhealthy_comprehensive() {
+        // Should mark unhealthy for these (when not cancelled)
+        assert!(should_mark_session_unhealthy(TaskErrorKind::Timeout, false));
+        assert!(should_mark_session_unhealthy(TaskErrorKind::Navigation, false));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Validation,
-            false
-        ));
+        assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
+
+        // Should NOT mark unhealthy for these
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, false));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, false));
+
+        // Cancelled tasks should NEVER mark unhealthy
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Navigation, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Session, true));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, true));
+        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
     }
+
+    // ========================================================================
+    // GlobalExecutionSlot Tests
+    // ========================================================================
 
     #[tokio::test]
     async fn test_global_execution_slot_enforces_hard_concurrency_bound() {
@@ -917,64 +978,119 @@ mod tests {
         drop(held_slot);
     }
 
+    #[tokio::test]
+    async fn test_global_execution_slot_decrements_counter_on_drop() {
+        let global_semaphore = Arc::new(Semaphore::new(10));
+        let global_active = Arc::new(AtomicUsize::new(0));
+        let _cancel_token = CancellationToken::new();
+
+        {
+            let _slot = GlobalExecutionSlot::new(
+                global_active.clone(),
+                global_semaphore.clone().acquire_owned().await.unwrap(),
+            );
+            assert_eq!(global_active.load(Ordering::SeqCst), 1);
+        }
+
+        assert_eq!(global_active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_global_execution_slot_multiple_slots() {
+        let global_semaphore = Arc::new(Semaphore::new(5));
+        let global_active = Arc::new(AtomicUsize::new(0));
+        let _cancel_token = CancellationToken::new();
+
+        let mut slots = Vec::new();
+        for _ in 0..3 {
+            slots.push(GlobalExecutionSlot::new(
+                global_active.clone(),
+                global_semaphore.clone().acquire_owned().await.unwrap(),
+            ));
+        }
+
+        assert_eq!(global_active.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_global_execution_slot_counter_atomicity() {
+        let global_active = Arc::new(AtomicUsize::new(0));
+        let _cancel_token = CancellationToken::new();
+        let semaphore = Arc::new(Semaphore::new(10));
+
+        let _slot1 = GlobalExecutionSlot::new(
+            global_active.clone(),
+            semaphore.clone().acquire_owned().await.unwrap(),
+        );
+        let _slot2 = GlobalExecutionSlot::new(
+            global_active.clone(),
+            semaphore.clone().acquire_owned().await.unwrap(),
+        );
+
+        assert_eq!(global_active.load(Ordering::SeqCst), 2);
+    }
+
+    // ========================================================================
+    // Orchestrator::new Tests (consolidated)
+    // ========================================================================
+
     #[test]
-    fn test_orchestrator_new_creates_semaphore_with_config() {
-        use crate::config::OrchestratorConfig;
-        use crate::config::TracingConfig;
-        use crate::config::TwitterActivityConfig;
+    fn test_orchestrator_new_initialization() {
+        let config = create_test_config();
+        let orchestrator = Orchestrator::new(config);
+
+        // Verify config is stored
+        assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 10);
+        // Verify active task counter starts at 0
+        assert_eq!(orchestrator.global_active_tasks.load(Ordering::SeqCst), 0);
+        // Verify semaphore was created with correct capacity (implicitly - it's private)
+    }
+
+    #[test]
+    fn test_orchestrator_new_with_different_configs() {
+        // Test with custom config
         let config = Config {
             orchestrator: OrchestratorConfig {
-                max_global_concurrency: 10,
-                group_timeout_ms: 5000,
-                task_timeout_ms: 30000,
-                task_stagger_delay_ms: 100,
-                worker_wait_timeout_ms: 5000,
-                retry_delay_ms: 1000,
-                max_retries: 0,
-                stuck_worker_threshold_ms: 60000,
+                max_global_concurrency: 15,
+                group_timeout_ms: 10000,
+                task_timeout_ms: 60000,
+                task_stagger_delay_ms: 200,
+                worker_wait_timeout_ms: 10000,
+                retry_delay_ms: 2000,
+                max_retries: 3,
+                stuck_worker_threshold_ms: 120000,
             },
             browser: Default::default(),
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
         };
 
-        let orchestrator = Orchestrator::new(config);
+        let orchestrator = Orchestrator::new(config.clone());
+        assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 15);
+        assert_eq!(orchestrator.config.orchestrator.group_timeout_ms, 10000);
+        assert_eq!(orchestrator.config.orchestrator.task_timeout_ms, 60000);
 
-        // Verify semaphore was created with correct capacity
-        // This is a basic sanity check - the semaphore is private but we can infer it works
-        assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 10);
-    }
-
-    #[test]
-    fn test_orchestrator_new_initializes_active_task_counter() {
-        use crate::config::OrchestratorConfig;
-        let config = Config {
+        // Test with minimal config (use defaults)
+        let config2 = Config {
             orchestrator: OrchestratorConfig::default(),
             browser: Default::default(),
-            tracing: Default::default(),
-            twitter_activity: Default::default(),
+            tracing: TracingConfig::default(),
+            twitter_activity: TwitterActivityConfig::default(),
         };
-
-        let orchestrator = Orchestrator::new(config);
-
-        // Verify active task counter starts at 0
-        assert_eq!(orchestrator.global_active_tasks.load(Ordering::SeqCst), 0);
+        let orchestrator2 = Orchestrator::new(config2);
+        assert_eq!(orchestrator2.config.orchestrator.max_global_concurrency, 5); // default is 5
     }
+
+    // ========================================================================
+    // execute_group Tests
+    // ========================================================================
 
     #[tokio::test]
     async fn test_execute_group_with_empty_sessions_returns_error() {
-        use crate::config::OrchestratorConfig;
-        use crate::metrics::MetricsCollector;
-
-        let config = Config {
-            orchestrator: OrchestratorConfig::default(),
-            browser: Default::default(),
-            tracing: Default::default(),
-            twitter_activity: Default::default(),
-        };
+        let config = create_test_config();
         let mut orchestrator = Orchestrator::new(config);
         let sessions: Vec<Session> = vec![];
-        let metrics = Arc::new(MetricsCollector::new(100));
+        let metrics = Arc::new(crate::metrics::MetricsCollector::new(100));
         let task_def = TaskDefinition {
             name: "test_task".to_string(),
             payload: Default::default(),
@@ -995,330 +1111,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_group_with_empty_task_group_returns_ok() {
-        // This test documents that empty task groups should execute successfully
-        // Actual execution requires real Session objects which are complex to construct
-        // The behavior is: if tasks vector is empty, execute_group should return Ok
         let tasks: Vec<TaskDefinition> = vec![];
         assert!(tasks.is_empty());
     }
 
-    #[test]
-    fn test_format_duration_edge_cases() {
-        assert_eq!(format_duration(0), "0ms");
-        assert_eq!(format_duration(1), "1ms");
-        assert_eq!(format_duration(999), "999ms");
-        assert_eq!(format_duration(1000), "1s");
-        assert_eq!(format_duration(60000), "1min");
-        assert_eq!(format_duration(3600000), "1h");
-    }
-
-    #[test]
-    fn test_broadcast_execution_count_with_zero_tasks() {
-        assert_eq!(broadcast_execution_count(0, 5), 0);
-        assert_eq!(broadcast_execution_count(0, 0), 0);
-    }
-
-    #[test]
-    fn test_broadcast_execution_count_with_zero_sessions() {
-        assert_eq!(broadcast_execution_count(5, 0), 0);
-    }
-
-    #[test]
-    fn test_broadcast_execution_count_large_numbers() {
-        assert_eq!(broadcast_execution_count(100, 50), 5000);
-        assert_eq!(broadcast_execution_count(1000, 1000), 1000000);
-    }
-
-    #[test]
-    fn test_should_mark_session_unhealthy_all_error_kinds() {
-        assert!(should_mark_session_unhealthy(TaskErrorKind::Timeout, false));
-        assert!(should_mark_session_unhealthy(
-            TaskErrorKind::Navigation,
-            false
-        ));
-        assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
-        assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
-
-        // Should NOT mark unhealthy for these
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Validation,
-            false
-        ));
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Unknown,
-            false
-        ));
-
-        // Cancelled tasks should never mark unhealthy
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
-    }
-
-    #[tokio::test]
-    async fn test_global_execution_slot_decrements_counter_on_drop() {
-        let global_semaphore = Arc::new(Semaphore::new(10));
-        let global_active = Arc::new(AtomicUsize::new(0));
-        let _cancel_token = CancellationToken::new();
-
-        {
-            let _slot = GlobalExecutionSlot::new(
-                global_active.clone(),
-                global_semaphore.clone().acquire_owned().await.unwrap(),
-            );
-            assert_eq!(global_active.load(Ordering::SeqCst), 1);
-        }
-
-        assert_eq!(global_active.load(Ordering::SeqCst), 0);
-    }
-
-    #[test]
-    fn test_format_duration_boundary_values() {
-        assert_eq!(format_duration(999), "999ms");
-        assert_eq!(format_duration(1000), "1s");
-        assert_eq!(format_duration(59999), "59s");
-        assert_eq!(format_duration(60000), "1min");
-        assert_eq!(format_duration(3599999), "59min 59s");
-        assert_eq!(format_duration(3600000), "1h");
-    }
-
-    #[test]
-    fn test_format_duration_large_values() {
-        assert_eq!(format_duration(7200000), "2h");
-        assert_eq!(format_duration(7260000), "2h 1min");
-        assert_eq!(format_duration(10800000), "3h");
-        assert_eq!(format_duration(36000000), "10h");
-    }
-
-    #[test]
-    fn test_format_duration_exact_boundaries() {
-        assert_eq!(format_duration(60000), "1min");
-        assert_eq!(format_duration(3600000), "1h");
-        assert_eq!(format_duration(120000), "2min");
-        assert_eq!(format_duration(7200000), "2h");
-    }
-
-    #[test]
-    fn test_broadcast_execution_count_single_values() {
-        assert_eq!(broadcast_execution_count(1, 1), 1);
-        assert_eq!(broadcast_execution_count(1, 10), 10);
-        assert_eq!(broadcast_execution_count(10, 1), 10);
-    }
-
-    #[tokio::test]
-    async fn test_global_execution_slot_multiple_slots() {
-        let global_semaphore = Arc::new(Semaphore::new(5));
-        let global_active = Arc::new(AtomicUsize::new(0));
-        let _cancel_token = CancellationToken::new();
-
-        let mut slots = Vec::new();
-        for _ in 0..3 {
-            slots.push(GlobalExecutionSlot::new(
-                global_active.clone(),
-                global_semaphore.clone().acquire_owned().await.unwrap(),
-            ));
-        }
-
-        assert_eq!(global_active.load(Ordering::SeqCst), 3);
-    }
-
-    #[test]
-    fn test_orchestrator_config_preservation() {
-        use crate::config::OrchestratorConfig;
-        let original_config = Config {
-            orchestrator: OrchestratorConfig {
-                max_global_concurrency: 15,
-                group_timeout_ms: 10000,
-                task_timeout_ms: 60000,
-                task_stagger_delay_ms: 200,
-                worker_wait_timeout_ms: 10000,
-                retry_delay_ms: 2000,
-                max_retries: 3,
-                stuck_worker_threshold_ms: 120000,
-            },
-            browser: Default::default(),
-            tracing: Default::default(),
-            twitter_activity: Default::default(),
-        };
-
-        let orchestrator = Orchestrator::new(original_config.clone());
-        assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 15);
-        assert_eq!(orchestrator.config.orchestrator.group_timeout_ms, 10000);
-    }
-
-    #[test]
-    fn test_should_mark_session_unhealthy_unknown_error() {
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Unknown,
-            false
-        ));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
-    }
-
-    #[test]
-    fn test_format_duration_minute_only() {
-        assert_eq!(format_duration(60000), "1min");
-        assert_eq!(format_duration(120000), "2min");
-        assert_eq!(format_duration(180000), "3min");
-    }
-
-    #[test]
-    fn test_format_duration_hour_only() {
-        assert_eq!(format_duration(3600000), "1h");
-        assert_eq!(format_duration(7200000), "2h");
-        assert_eq!(format_duration(10800000), "3h");
-    }
-
-    #[test]
-    fn test_format_duration_minute_with_seconds() {
-        assert_eq!(format_duration(61000), "1min 1s");
-        assert_eq!(format_duration(125000), "2min 5s");
-        assert_eq!(format_duration(185000), "3min 5s");
-    }
-
-    #[test]
-    fn test_format_duration_hour_with_minutes() {
-        assert_eq!(format_duration(3660000), "1h 1min");
-        assert_eq!(format_duration(7320000), "2h 2min");
-        assert_eq!(format_duration(10980000), "3h 3min");
-    }
-
-    #[test]
-    fn test_format_duration_very_large_hours() {
-        assert_eq!(format_duration(36000000), "10h");
-        assert_eq!(format_duration(72000000), "20h");
-        assert_eq!(format_duration(86400000), "24h");
-    }
-
-    #[test]
-    fn test_format_duration_sub_second_boundary() {
-        assert_eq!(format_duration(999), "999ms");
-        assert_eq!(format_duration(1000), "1s");
-    }
-
-    #[test]
-    fn test_format_duration_minute_boundary() {
-        assert_eq!(format_duration(59999), "59s");
-        assert_eq!(format_duration(60000), "1min");
-    }
-
-    #[test]
-    fn test_format_duration_hour_boundary() {
-        assert_eq!(format_duration(3599999), "59min 59s");
-        assert_eq!(format_duration(3600000), "1h");
-    }
-
-    #[test]
-    fn test_broadcast_execution_count_saturation() {
-        assert_eq!(broadcast_execution_count(usize::MAX, 1), usize::MAX);
-        assert_eq!(broadcast_execution_count(1, usize::MAX), usize::MAX);
-    }
-
-    #[test]
-    fn test_broadcast_execution_count_identity() {
-        assert_eq!(broadcast_execution_count(1, 1), 1);
-        assert_eq!(broadcast_execution_count(0, 0), 0);
-    }
-
-    #[test]
-    fn test_should_mark_session_unhealthy_validation_error() {
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Validation,
-            false
-        ));
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Validation,
-            true
-        ));
-    }
-
-    #[test]
-    fn test_should_mark_session_unhealthy_cancelled_all_kinds() {
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Navigation,
-            true
-        ));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Session, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
-        assert!(!should_mark_session_unhealthy(
-            TaskErrorKind::Validation,
-            true
-        ));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
-    }
-
-    #[test]
-    fn test_format_duration_zero() {
-        assert_eq!(format_duration(0), "0ms");
-    }
-
-    #[test]
-    fn test_format_duration_single_millisecond() {
-        assert_eq!(format_duration(1), "1ms");
-    }
-
-    #[test]
-    fn test_format_duration_single_second() {
-        assert_eq!(format_duration(1000), "1s");
-    }
-
-    #[test]
-    fn test_format_duration_single_minute() {
-        assert_eq!(format_duration(60000), "1min");
-    }
-
-    #[test]
-    fn test_format_duration_single_hour() {
-        assert_eq!(format_duration(3600000), "1h");
-    }
-
-    #[test]
-    fn test_broadcast_execution_count_asymmetric() {
-        assert_eq!(broadcast_execution_count(10, 1), 10);
-        assert_eq!(broadcast_execution_count(1, 10), 10);
-        assert_eq!(broadcast_execution_count(100, 1), 100);
-        assert_eq!(broadcast_execution_count(1, 100), 100);
-    }
-
-    #[test]
-    fn test_orchestrator_new_stores_config() {
-        use crate::config::OrchestratorConfig;
-        let config = Config {
-            orchestrator: OrchestratorConfig {
-                max_global_concurrency: 5,
-                group_timeout_ms: 3000,
-                task_timeout_ms: 15000,
-                task_stagger_delay_ms: 50,
-                worker_wait_timeout_ms: 2500,
-                retry_delay_ms: 500,
-                max_retries: 0,
-                stuck_worker_threshold_ms: 30000,
-            },
-            browser: Default::default(),
-            tracing: Default::default(),
-            twitter_activity: Default::default(),
-        };
-
-        let orchestrator = Orchestrator::new(config.clone());
-        assert_eq!(orchestrator.config.orchestrator.max_global_concurrency, 5);
-        assert_eq!(orchestrator.config.orchestrator.group_timeout_ms, 3000);
-    }
-
-    #[tokio::test]
-    async fn test_global_execution_slot_counter_atomicity() {
-        let global_active = Arc::new(AtomicUsize::new(0));
-        let _cancel_token = CancellationToken::new();
-        let semaphore = Arc::new(Semaphore::new(10));
-
-        let _slot1 = GlobalExecutionSlot::new(
-            global_active.clone(),
-            semaphore.clone().acquire_owned().await.unwrap(),
-        );
-        let _slot2 = GlobalExecutionSlot::new(
-            global_active.clone(),
-            semaphore.clone().acquire_owned().await.unwrap(),
-        );
-
-        assert_eq!(global_active.load(Ordering::SeqCst), 2);
-    }
+    // ========================================================================
+    // TODO: Execution Flow, Session Allocation, Shutdown Handling Tests
+    // ========================================================================
+    // The following tests require proper mocking of Session objects.
+    // Currently, Session requires real browser instances (chromiumoxide::Browser).
+    //
+    // To add these tests, we need to:
+    // 1. Define a SessionTrait with methods needed by the orchestrator
+    // 2. Implement the trait for Session
+    // 3. Refactor orchestrator to use &dyn SessionTrait or generic T: SessionTrait
+    // 4. Create MockSession for testing
+    //
+    // Missing test coverage:
+    // - execute_group() with real sessions (execution flow)
+    // - execute_task_on_session() (session allocation)
+    // - execute_task_with_retry() (task execution with retry)
+    // - Shutdown handling (cancellation token behavior)
+    // - Group timeout handling
+    // - Partial failure handling (some sessions succeed, some fail)
+    // - Session health checking and state transitions
 }

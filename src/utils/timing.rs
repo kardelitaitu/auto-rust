@@ -993,4 +993,70 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(elapsed.as_millis() >= 75 && elapsed.as_millis() < 140);
     }
+
+    // ============================================================================
+    // Cancellation Token Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn human_pause_with_cancel_ends_early_on_cancel() {
+        let token = CancellationToken::new();
+        let t2 = token.clone();
+
+        // Start a long human_pause with cancellation token
+        let handle = tokio::spawn(async move {
+            human_pause_with_cancel(Some(&t2), 60_000, 10).await;
+        });
+
+        // Cancel after a short delay
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        token.cancel();
+
+        // Should complete promptly after cancellation
+        let start = std::time::Instant::now();
+        handle.await.expect("join");
+        assert!(
+            start.elapsed().as_millis() < 500,
+            "cancel should end long human_pause early"
+        );
+    }
+
+    #[tokio::test]
+    async fn uniform_pause_with_cancel_ends_early_on_cancel() {
+        let token = CancellationToken::new();
+        let t2 = token.clone();
+
+        // Start a long uniform_pause with cancellation token
+        // Use 10s base (with 10% variance: 9s-11s, both under 30s cap)
+        let handle = tokio::spawn(async move {
+            uniform_pause_with_cancel(Some(&t2), 10_000, 10).await;
+        });
+
+        // Cancel after a short delay
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        token.cancel();
+
+        // Should complete promptly after cancellation
+        let start = std::time::Instant::now();
+        handle.await.expect("join");
+        assert!(
+            start.elapsed().as_millis() < 500,
+            "cancel should end long uniform_pause early"
+        );
+    }
+
+    #[tokio::test]
+    async fn pause_with_cancel_none_runs_to_completion() {
+        // When cancel is None, pause should run normally
+        let start = std::time::Instant::now();
+        human_pause_with_cancel(None, 50, 0).await;
+        let elapsed = start.elapsed();
+
+        // Should complete normally (approximately 50ms)
+        assert!(
+            elapsed.as_millis() >= 40 && elapsed.as_millis() < 150,
+            "pause with None cancel should run to completion, took {}ms",
+            elapsed.as_millis()
+        );
+    }
 }

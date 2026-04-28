@@ -827,6 +827,128 @@ mod tests {
         let delay = policy.delay_for_attempt(100);
         assert_eq!(delay, Duration::from_secs(10));
     }
+
+    // ========================================================================
+    // HTTP Integration Tests (using WireMock)
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_api_client_get_success() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::{method, path};
+        use serde::Deserialize;
+
+        #[derive(Debug, Deserialize)]
+        struct TestResponse {
+            message: String,
+            status: u32,
+        }
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "message": "Hello, World!",
+                        "status": 200
+                    })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = ApiClient::new(mock_server.uri());
+        let result: Result<TestResponse> = client.get("/api/test").await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.message, "Hello, World!");
+        assert_eq!(response.status, 200);
+    }
+
+    #[tokio::test]
+    async fn test_api_client_get_with_key_auth_header() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::{header, method, path};
+        use serde::Deserialize;
+
+        #[derive(Debug, Deserialize)]
+        struct TestResponse {
+            authenticated: bool,
+        }
+
+        let mock_server = MockServer::start().await;
+
+        // Verify the X-API-Key header is present (implementation uses X-API-Key, not Authorization)
+        Mock::given(method("GET"))
+            .and(path("/api/protected"))
+            .and(header("X-API-Key", "test-api-key-12345"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "authenticated": true
+                    })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = ApiClient::new(mock_server.uri());
+        let result: Result<TestResponse> = client
+            .get_with_key("/api/protected", "test-api-key-12345")
+            .await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().authenticated);
+    }
+
+    #[tokio::test]
+    async fn test_api_client_retry_on_500_then_success() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+        use serde::Deserialize;
+
+        #[derive(Debug, Deserialize)]
+        struct TestResponse {
+            message: String,
+        }
+
+        let mock_server = MockServer::start().await;
+
+        // First call returns 500, second call succeeds
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(500)
+                    .set_body_json(serde_json::json!({"error": "Server error"}))
+            )
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"message": "Success after retry"}))
+            )
+            .mount(&mock_server)
+            .await;
+
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(10),
+            max_delay: Duration::from_millis(100),
+            factor: 1.0,
+            jitter: 0.0,
+        };
+        let client = ApiClient::with_retry_policy(mock_server.uri(), policy);
+
+        let result: Result<TestResponse> = client.get("/api/retry-test").await;
+
+        assert!(result.is_ok(), "Should succeed after retry");
+        assert_eq!(result.unwrap().message, "Success after retry");
+    }
 }
 
 /// Configuration for exponential backoff retry policy.

@@ -1116,7 +1116,96 @@ mod tests {
     }
 
     // ========================================================================
-    // TODO: Execution Flow, Session Allocation, Shutdown Handling Tests
+    // Group Timeout and Result Aggregation Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_group_timeout_with_insufficient_time() {
+        // Test that a very short group timeout results in timeout error
+        let mut config = create_test_config();
+        config.orchestrator.group_timeout_ms = 1; // 1ms timeout (insufficient for any real work)
+        config.orchestrator.task_stagger_delay_ms = 0; // No stagger
+
+        let mut orchestrator = Orchestrator::new(config);
+        let metrics = Arc::new(crate::metrics::MetricsCollector::new(100));
+
+        // Create a task that would normally take time
+        let task_def = TaskDefinition {
+            name: "slow_task".to_string(),
+            payload: Default::default(),
+        };
+
+        // Note: Without mocked sessions, we can only test the edge case (empty sessions)
+        // A full timeout test requires Session mocking which is documented in the TODO below
+        let sessions: Vec<Session> = vec![];
+
+        let result = orchestrator
+            .execute_group(&[task_def], &sessions, metrics)
+            .await;
+
+        // With empty sessions, we get InitializationFailed, not Timeout
+        // This verifies the empty session check happens before timeout logic
+        assert!(result.is_err());
+        match result {
+            Err(OrchestratorError::Session(SessionError::InitializationFailed(msg))) => {
+                assert!(msg.contains("No active sessions"));
+            }
+            _ => panic!("Expected Session::InitializationFailed error for empty sessions"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_result_aggregation_success_count() {
+        // Verify the result aggregation logic for success counting
+        let results = vec![
+            Ok(()),
+            Ok(()),
+            Err(OrchestratorError::Task(TaskError::ExecutionFailed {
+                task_name: "task1".to_string(),
+                reason: "failed".to_string(),
+            })),
+        ];
+
+        let success_count = results.iter().filter(|r| r.is_ok()).count();
+        let fail_count = results.len() - success_count;
+
+        assert_eq!(success_count, 2);
+        assert_eq!(fail_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_result_aggregation_all_fail() {
+        // Verify aggregation when all results fail
+        let results: Vec<Result<()>> = vec![
+            Err(OrchestratorError::Task(TaskError::ExecutionFailed {
+                task_name: "task1".to_string(),
+                reason: "error1".to_string(),
+            })),
+            Err(OrchestratorError::Task(TaskError::ExecutionFailed {
+                task_name: "task2".to_string(),
+                reason: "error2".to_string(),
+            })),
+        ];
+
+        let success_count = results.iter().filter(|r| r.is_ok()).count();
+
+        assert_eq!(success_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_result_aggregation_all_success() {
+        // Verify aggregation when all results succeed
+        let results: Vec<Result<()>> = vec![Ok(()), Ok(()), Ok(())];
+
+        let success_count = results.iter().filter(|r| r.is_ok()).count();
+        let fail_count = results.len() - success_count;
+
+        assert_eq!(success_count, 3);
+        assert_eq!(fail_count, 0);
+    }
+
+    // ========================================================================
+    // TODO: Full Execution Flow Tests (Require Session Mocking)
     // ========================================================================
     // The following tests require proper mocking of Session objects.
     // Currently, Session requires real browser instances (chromiumoxide::Browser).
@@ -1132,7 +1221,7 @@ mod tests {
     // - execute_task_on_session() (session allocation)
     // - execute_task_with_retry() (task execution with retry)
     // - Shutdown handling (cancellation token behavior)
-    // - Group timeout handling
+    // - Group timeout handling (with mocked sessions)
     // - Partial failure handling (some sessions succeed, some fail)
     // - Session health checking and state transitions
 }

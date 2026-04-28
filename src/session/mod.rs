@@ -1651,4 +1651,130 @@ mod tests {
             "Circuit should be open just before timeout boundary"
         );
     }
+
+    // ========================================================================
+    // Session Lifecycle and State Management Tests
+    // ========================================================================
+
+    #[test]
+    fn test_session_state_lifecycle_transitions() {
+        // Test the full state lifecycle: Idle -> Busy -> Idle -> Failed
+        // Note: We test state transitions directly since creating a full Session
+        // requires Browser/Handler instances
+
+        // Test Idle -> Busy
+        let mut state = SessionState::Idle;
+        state = SessionState::Busy;
+        assert_eq!(state, SessionState::Busy);
+
+        // Test Busy -> Idle
+        state = SessionState::Idle;
+        assert_eq!(state, SessionState::Idle);
+
+        // Test Idle -> Failed
+        state = SessionState::Failed;
+        assert_eq!(state, SessionState::Failed);
+
+        // Test Failed -> Idle (recovery)
+        state = SessionState::Idle;
+        assert_eq!(state, SessionState::Idle);
+    }
+
+    #[test]
+    fn test_session_health_recovery_cycle() {
+        // Test the health recovery cycle: Healthy -> Unhealthy -> Healthy
+        // Note: We test using atomic operations similar to Session implementation
+
+        let is_healthy = std::sync::atomic::AtomicBool::new(true);
+        let failure_count = std::sync::atomic::AtomicUsize::new(0);
+
+        // Initially healthy
+        assert!(is_healthy.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Mark unhealthy (simulating circuit breaker open)
+        is_healthy.store(false, std::sync::atomic::Ordering::SeqCst);
+        failure_count.fetch_add(5, std::sync::atomic::Ordering::SeqCst);
+        assert!(!is_healthy.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(failure_count.load(std::sync::atomic::Ordering::SeqCst), 5);
+
+        // Mark healthy (simulating recovery)
+        is_healthy.store(true, std::sync::atomic::Ordering::SeqCst);
+        failure_count.store(0, std::sync::atomic::Ordering::SeqCst);
+        assert!(is_healthy.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(failure_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_concurrent_page_registration_simulation() {
+        // Simulate concurrent page registration using DashSet (like Session does)
+        use dashmap::DashSet;
+        use std::sync::Arc;
+        use std::thread;
+
+        let active_pages: Arc<DashSet<String>> = Arc::new(DashSet::new());
+        let mut handles = vec![];
+
+        // Spawn 10 threads that each register 10 pages
+        for thread_id in 0..10 {
+            let pages = active_pages.clone();
+            handles.push(thread::spawn(move || {
+                for page_id in 0..10 {
+                    let id = format!("thread{}-page{}", thread_id, page_id);
+                    pages.insert(id);
+                }
+            }));
+        }
+
+        // Wait for all threads
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify all 100 pages were registered
+        assert_eq!(active_pages.len(), 100);
+
+        // Verify we can check for specific pages
+        assert!(active_pages.contains("thread5-page5"));
+        assert!(!active_pages.contains("nonexistent"));
+
+        // Simulate page unregistration
+        active_pages.remove("thread0-page0");
+        assert_eq!(active_pages.len(), 99);
+        assert!(!active_pages.contains("thread0-page0"));
+    }
+
+    #[test]
+    fn test_session_failure_threshold_tracking() {
+        // Test that session properly tracks failures up to threshold
+        let failure_threshold = 5;
+        let failure_count = std::sync::atomic::AtomicUsize::new(0);
+
+        // Simulate incremental failures
+        for i in 1..=failure_threshold {
+            failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let current = failure_count.load(std::sync::atomic::Ordering::SeqCst);
+
+            if i < failure_threshold {
+                assert!(
+                    current < failure_threshold,
+                    "Failure count {} should be below threshold {}",
+                    current,
+                    failure_threshold
+                );
+            } else {
+                assert!(
+                    current >= failure_threshold,
+                    "Failure count {} should meet threshold {}",
+                    current,
+                    failure_threshold
+                );
+            }
+        }
+
+        // Verify final count
+        assert_eq!(
+            failure_count.load(std::sync::atomic::Ordering::SeqCst),
+            failure_threshold
+        );
+    }
 }

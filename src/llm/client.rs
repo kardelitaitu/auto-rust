@@ -19,6 +19,11 @@ impl LlmClient {
     pub fn new(config: LlmConfig) -> Self {
         let http = Client::builder()
             .timeout(Duration::from_secs(60))
+            // Enable HTTP/2 for better throughput with LLM APIs (negotiated)
+            .http2_adaptive_window(true)
+            // Connection pool settings for concurrent requests
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(300))
             .build()
             .unwrap_or_default();
 

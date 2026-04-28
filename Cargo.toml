@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 # CDP Browser Automation
 chromiumoxide = { version = "0.6", features = ["tokio-runtime"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "fs", "signal", "macros"] }
 tokio-util = "0.7"
 
 # CLI Parsing

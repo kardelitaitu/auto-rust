@@ -1836,7 +1836,7 @@ async fn click_returns_last_error_after_all_attempts_fail() -> Result<()> {
     // Attempt click - all 3 attempts should fail, returning last error
     let start = Instant::now();
     let result = api.click("#target").await;
-    let elapsed = start.elapsed();
+    let _elapsed = start.elapsed();
 
     // Should take at least 2 backoffs (attempt 1 succeeds quickly, attempts 2-3 have backoffs)
     // But we're primarily checking error propagation, not timing

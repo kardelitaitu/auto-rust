@@ -1662,16 +1662,13 @@ mod tests {
         // Note: We test state transitions directly since creating a full Session
         // requires Browser/Handler instances
 
-        // Test Idle -> Busy
-        let mut state = SessionState::Idle;
-        state = SessionState::Busy;
+        // Test Idle -> Busy -> Idle -> Failed -> Idle cycle
+        let mut state = SessionState::Busy;
         assert_eq!(state, SessionState::Busy);
 
-        // Test Busy -> Idle
         state = SessionState::Idle;
         assert_eq!(state, SessionState::Idle);
 
-        // Test Idle -> Failed
         state = SessionState::Failed;
         assert_eq!(state, SessionState::Failed);
 

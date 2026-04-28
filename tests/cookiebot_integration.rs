@@ -14,7 +14,6 @@
 //! Tests use TempTestDir from tests/common/mod.rs for temp file handling.
 
 use std::io::Write;
-use tempfile::tempdir;
 
 // Use common test utilities
 #[path = "common/mod.rs"]

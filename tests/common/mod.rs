@@ -62,6 +62,7 @@ impl TempTestDir {
     }
 
     /// Create a subdirectory.
+    #[allow(dead_code)]
     pub fn create_subdir(&self, name: &str) -> PathBuf {
         let path = self.path().join(name);
         std::fs::create_dir_all(&path).expect("Failed to create subdir");
@@ -81,6 +82,7 @@ impl Default for TempTestDir {
 
 /// Mock HTTP response for testing network operations.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MockHttpResponse {
     pub status: u16,
     pub body: String,
@@ -100,6 +102,7 @@ impl MockHttpResponse {
     }
 
     /// Create a successful text response.
+    #[allow(dead_code)]
     pub fn text(status: u16, body: &str) -> Self {
         Self {
             status,
@@ -129,6 +132,7 @@ impl MockHttpResponse {
 
 /// Mock page context for testing browser interactions without a real browser.
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct MockPageContext {
     /// Simulated localStorage data (origin -> key/value)
     pub local_storage: HashMap<String, HashMap<String, String>>,
@@ -153,12 +157,14 @@ impl MockPageContext {
     }
 
     /// Add sessionStorage data.
+    #[allow(dead_code)]
     pub fn with_session_storage(mut self, origin: &str, data: HashMap<String, String>) -> Self {
         self.session_storage.insert(origin.to_string(), data);
         self
     }
 
     /// Add a cookie.
+    #[allow(dead_code)]
     pub fn with_cookie(mut self, cookie: serde_json::Value) -> Self {
         self.cookies.push(cookie);
         self
@@ -183,6 +189,7 @@ impl MockPageContext {
     }
 
     /// Simulate exporting sessionStorage as JSON string.
+    #[allow(dead_code)]
     pub fn export_session_storage_json(&self, origin: &str) -> Result<String, String> {
         let data = self.session_storage.get(origin).cloned().unwrap_or_default();
         let mut result = HashMap::new();
@@ -191,6 +198,7 @@ impl MockPageContext {
     }
 
     /// Count elements by selector (mock implementation).
+    #[allow(dead_code)]
     pub fn count_elements(&self, selector: &str) -> usize {
         match selector {
             "button" | ".button" => 3,
@@ -201,6 +209,7 @@ impl MockPageContext {
     }
 
     /// Check if element is in viewport (mock implementation).
+    #[allow(dead_code)]
     pub fn is_in_viewport(&self, selector: &str) -> bool {
         selector.contains("viewport") || !selector.contains("below-fold")
     }
@@ -306,6 +315,7 @@ pub fn build_local_storage_data() -> HashMap<String, String> {
 }
 
 /// Build test sessionStorage data.
+#[allow(dead_code)]
 pub fn build_session_storage_data() -> HashMap<String, String> {
     build_string_map(&[
         ("temp_data", "cached_value"),
@@ -319,6 +329,7 @@ pub fn build_session_storage_data() -> HashMap<String, String> {
 
 /// Run an async test with a timeout.
 #[cfg(test)]
+#[allow(dead_code)]
 pub async fn run_with_timeout<F, T>(future: F, timeout_ms: u64) -> T
 where
     F: std::future::Future<Output = T>,

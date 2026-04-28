@@ -12,7 +12,7 @@ rustc-wrapper = "sccache"
 
 # Faster linker on Windows (lld-link is usually the best stable choice)
 [target.x86_64-pc-windows-msvc]
-linker = "lld-link.exe"
+linker = "C:\\Program Files\\LLVM\\bin\\lld-link.exe"
 
 # Optional: Extra rustflags for even more speed (uncomment if you want to experiment)
 # rustflags = ["-C", "link-arg=/STACK:8388608"]  # larger stack if needed

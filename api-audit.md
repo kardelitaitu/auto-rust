@@ -105,24 +105,24 @@ Goal: review every public `TaskContext` API one by one for correctness, reliabil
 - [x] `drag()`
 
 ## Keyboard and Text Input
-- [ ] `press()`
-- [ ] `press_with_modifiers()`
-- [ ] `keyboard()`
-- [ ] `type_into()`
-- [ ] `type_text()`
-- [ ] `select_all()`
-- [ ] `clear()`
+- [x] `press()`
+- [x] `press_with_modifiers()`
+- [x] `keyboard()`
+- [x] `type_into()`
+- [x] `type_text()`
+- [x] `select_all()`
+- [x] `clear()`
 
 ## Scrolling and Reading
-- [ ] `random_scroll()`
-- [ ] `scroll_to()`
-- [ ] `scroll_read()`
-- [ ] `scrollread()`
-- [ ] `scroll_read_to()`
-- [ ] `scroll_back()`
-- [ ] `scroll_into_view()`
-- [ ] `scroll_to_top()`
-- [ ] `scroll_to_bottom()`
+- [x] `random_scroll()`
+- [x] `scroll_to()`
+- [x] `scroll_read()`
+- [x] `scrollread()`
+- [x] `scroll_read_to()`
+- [x] `scroll_back()`
+- [x] `scroll_into_view()`
+- [x] `scroll_to_top()`
+- [x] `scroll_to_bottom()`
 
 ## Pause and Timing
 - [x] `pause()`
@@ -151,8 +151,14 @@ Resolved (2026-04):
 - **Deferred:** (4) max-pause cap / per-run pause metrics; integration test “cancel during long pause” (optional follow-up).
 
 ## Review Notes
-- [ ] Confirm each API has a single responsibility.
-- [ ] Confirm errors are clear and actionable.
-- [ ] Confirm defaults are safe for automation tasks.
-- [ ] Confirm public names are short and consistent.
-- [ ] Confirm browser-task behavior stays thin and reusable.
+- [x] Confirm each API has a single responsibility.
+- [x] Confirm errors are clear and actionable.
+- [x] Confirm defaults are safe for automation tasks.
+- [x] Confirm public names are short and consistent.
+- [x] Confirm browser-task behavior stays thin and reusable.
+
+### Review Notes — closure
+
+- `TaskContext` stays thin: each public API delegates to a focused capability module.
+- Timing behavior is consistent: uniform pauses for `pause()` / `pause_with_variance()`, Gaussian for `pause_human()`.
+- Error paths are explicit where callers can act on them, especially permission and visibility checks.

@@ -5509,7 +5509,47 @@ impl TaskContext {
             ));
         }
 
-        self.press_with_modifiers("a", &["Control"]).await
+        let select_js = format!(
+            r#"(() => {{
+                const el = document.querySelector({});
+                if (!el) return 'not_found';
+                if (typeof el.setSelectionRange === 'function' && typeof el.value === 'string') {{
+                    el.setSelectionRange(0, el.value.length);
+                    return 'selected';
+                }}
+                if (el.isContentEditable) {{
+                    const range = document.createRange();
+                    range.selectNodeContents(el);
+                    const selection = window.getSelection();
+                    if (!selection) return 'no_selection';
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    return 'selected';
+                }}
+                return 'unsupported';
+            }})()"#,
+            serde_json::to_string(selector)?
+        );
+
+        match self.page().evaluate(select_js).await {
+            Ok(result) => match result.value().and_then(|v| v.as_str()) {
+                Some("selected") => Ok(()),
+                Some("not_found") => Err(anyhow::anyhow!(
+                    "[task-api] select_all: element '{}' not found",
+                    selector
+                )),
+                Some("readonly") => Err(anyhow::anyhow!(
+                    "[task-api] select_all: element '{}' is readonly",
+                    selector
+                )),
+                Some("disabled") => Err(anyhow::anyhow!(
+                    "[task-api] select_all: element '{}' is disabled",
+                    selector
+                )),
+                _ => self.press_with_modifiers("a", &["Control"]).await,
+            },
+            Err(_) => self.press_with_modifiers("a", &["Control"]).await,
+        }
     }
 
     /// Clear input by selecting all + pressing Backspace.

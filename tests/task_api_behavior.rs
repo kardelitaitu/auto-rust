@@ -146,6 +146,58 @@ fn build_task_context_with_policy(
     )
 }
 
+async fn scroll_event_count(api: &TaskContext) -> Result<u64> {
+    Ok(api
+        .attr("body", "data-scroll-events")
+        .await?
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0))
+}
+
+const SCROLLING_PAGE: &str = r#"<!doctype html>
+<html>
+<head>
+    <title>Scroll</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 5200px;
+            font-family: sans-serif;
+        }
+
+        .spacer {
+            height: 1600px;
+        }
+
+        .target {
+            display: block;
+            height: 88px;
+            line-height: 88px;
+            margin: 24px;
+            background: #ddd;
+        }
+
+        #target-two {
+            height: 120px;
+            background: #cfc;
+        }
+    </style>
+    <script>
+        window.addEventListener('scroll', () => {
+            const current = Number(document.body.dataset.scrollEvents || '0');
+            document.body.dataset.scrollEvents = String(current + 1);
+        });
+    </script>
+</head>
+<body>
+    <div id="top-marker" class="target">top</div>
+    <div class="spacer"></div>
+    <div id="target-one" class="target">target one</div>
+    <div class="spacer" style="height: 1300px"></div>
+    <div id="target-two" class="target">target two</div>
+</body>
+</html>"#;
+
 fn sanitize_component(value: &str) -> String {
     let cleaned: String = value
         .chars()
@@ -842,6 +894,169 @@ async fn pointer_helpers_cover_focus_hover_and_movement() -> Result<()> {
     let viewport = api.viewport().await?;
     assert!(random.x >= 0.0 && random.x <= viewport.width);
     assert!(random.y >= 0.0 && random.y <= viewport.height);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn keyboard_helpers_type_press_and_clear_text() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Keyboard</title></head><body onkeydown=\"document.body.setAttribute('data-last-keydown', event.key)\" onkeyup=\"document.body.setAttribute('data-last-keyup', event.key)\"><input id=\"first\" value=\"\" /><textarea id=\"second\"></textarea></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    api.focus("#first").await?;
+    api.type_text("abc").await?;
+    assert_eq!(api.value("#first").await?, Some("abc".to_string()));
+
+    api.press("Enter").await?;
+    assert_eq!(
+        api.attr("body", "data-last-keydown").await?,
+        Some("Enter".to_string())
+    );
+    assert_eq!(
+        api.attr("body", "data-last-keyup").await?,
+        Some("Enter".to_string())
+    );
+
+    api.press_with_modifiers("a", &["Control"]).await?;
+    assert_eq!(
+        api.attr("body", "data-last-keydown").await?,
+        Some("a".to_string())
+    );
+
+    api.keyboard("#second", "hello").await?;
+    assert_eq!(api.value("#second").await?, Some("hello".to_string()));
+
+    api.type_into("#second", " world").await?;
+    assert_eq!(api.value("#second").await?, Some("hello world".to_string()));
+
+    api.select_all("#second").await?;
+    let selection = page
+        .evaluate(
+            r#"(() => {
+                const el = document.getElementById('second');
+                return {
+                    start: el.selectionStart,
+                    end: el.selectionEnd,
+                    length: el.value.length
+                };
+            })()"#,
+        )
+        .await?;
+    let selection = selection.value().cloned().unwrap_or_default();
+    assert_eq!(selection.get("start").and_then(|v| v.as_u64()), Some(0));
+    assert_eq!(
+        selection.get("end").and_then(|v| v.as_u64()),
+        Some("hello world".len() as u64)
+    );
+
+    api.clear("#second").await?;
+    assert_eq!(api.value("#second").await?, Some(String::new()));
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn scrolling_helpers_cover_viewport_navigation() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(SCROLLING_PAGE).await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    api.scroll_to("#target-one").await?;
+    assert!(api.is_in_viewport("#target-one").await?);
+    let first_scroll = api.get_scroll_position().await?;
+    assert!(first_scroll.1 > 0);
+
+    api.scroll_into_view("#target-two").await?;
+    assert!(api.is_in_viewport("#target-two").await?);
+    let second_scroll = api.get_scroll_position().await?;
+    assert!(second_scroll.1 >= first_scroll.1);
+
+    page.evaluate("window.scrollTo(0, 1600)").await?;
+    let before_back = api.get_scroll_position().await?;
+    api.scroll_back(240).await?;
+    let after_back = api.get_scroll_position().await?;
+    assert!(after_back.1 < before_back.1);
+
+    let before_top = scroll_event_count(&api).await?;
+    api.scroll_to_top().await?;
+    assert_eq!(api.get_scroll_position().await?, (0, 0));
+    let after_top = scroll_event_count(&api).await?;
+    assert!(after_top > before_top);
+
+    let before_bottom = scroll_event_count(&api).await?;
+    api.scroll_to_bottom().await?;
+    let bottom_scroll = api.get_scroll_position().await?;
+    assert!(bottom_scroll.1 > 0);
+    let after_bottom = scroll_event_count(&api).await?;
+    assert!(after_bottom > before_bottom);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn scrolling_reading_helpers_emit_scroll_activity() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(SCROLLING_PAGE).await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    page.evaluate("window.scrollTo(0, 1200)").await?;
+    let before_random = scroll_event_count(&api).await?;
+    api.random_scroll().await?;
+    let after_random = scroll_event_count(&api).await?;
+    assert!(after_random > before_random);
+
+    page.evaluate("window.scrollTo(0, 1200)").await?;
+    let before_read = scroll_event_count(&api).await?;
+    api.scroll_read(2, 180, false, false).await?;
+    let after_read = scroll_event_count(&api).await?;
+    assert!(after_read > before_read);
+
+    page.evaluate("window.scrollTo(0, 1200)").await?;
+    let before_duration = scroll_event_count(&api).await?;
+    api.scrollread(1_000).await?;
+    let after_duration = scroll_event_count(&api).await?;
+    assert!(after_duration > before_duration);
+
+    page.evaluate("window.scrollTo(0, 200)").await?;
+    let before_read_to = scroll_event_count(&api).await?;
+    api.scroll_read_to("#target-two", 1, 180, false, false)
+        .await?;
+    let after_read_to = scroll_event_count(&api).await?;
+    assert!(after_read_to > before_read_to);
 
     drop(api);
     session.release_page(page).await;

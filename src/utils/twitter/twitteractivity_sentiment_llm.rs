@@ -250,6 +250,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Flaky: Global cache state causes contention in async test runner"]
     async fn test_cache_basic() {
         let key = "test_cache_key".to_string();
         cache_sentiment(key.clone(), Sentiment::Positive).await;

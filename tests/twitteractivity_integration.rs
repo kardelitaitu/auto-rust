@@ -550,6 +550,8 @@ fn twitteractivity_engagement_limits_zero_max() {
         max_replies: 0,
         max_thread_dives: 0,
         max_total_actions: 0,
+        max_bookmarks: 0,
+        max_quote_tweets: 0,
     };
     let counters = EngagementCounters::new();
     

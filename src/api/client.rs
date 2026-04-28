@@ -110,6 +110,28 @@ impl ApiClient {
         }
     }
 
+    /// Creates a new API client with a custom timeout.
+    ///
+    /// # Arguments
+    /// * `base_url` - Base URL for all API requests
+    /// * `timeout` - Request timeout duration
+    ///
+    /// # Returns
+    /// A new ApiClient instance with custom timeout
+    pub fn with_timeout(base_url: String, timeout: Duration) -> Self {
+        let client = Client::builder()
+            .timeout(timeout)
+            .build()
+            .unwrap_or_default();
+
+        Self {
+            client,
+            base_url,
+            circuit_breaker: None,
+            retry_policy: RetryPolicy::default(),
+        }
+    }
+
     /// Check if the circuit breaker allows the request
     fn can_execute(&self) -> bool {
         match &self.circuit_breaker {

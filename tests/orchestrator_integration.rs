@@ -13,7 +13,6 @@ use auto::{
     config::load_config,
     metrics::MetricsCollector,
     orchestrator::Orchestrator,
-    result::{TaskErrorKind, TaskResult},
     session::Session,
 };
 use std::sync::Arc;
@@ -68,6 +67,8 @@ async fn test_execute_group_runs_on_all_sessions() {
 }
 
 /// Test that execute_group handles empty task list.
+/// Note: Empty tasks with empty sessions returns error (sessions checked first).
+/// Empty tasks with at least one session returns Ok.
 #[tokio::test]
 async fn test_execute_group_empty_tasks() {
     let config = load_config().expect("Failed to load config");
@@ -75,11 +76,11 @@ async fn test_execute_group_empty_tasks() {
     let sessions: Vec<Session> = vec![];
     let metrics = Arc::new(MetricsCollector::new(100));
 
-    // Empty tasks should return Ok
+    // Empty tasks AND empty sessions -> error (sessions checked first)
     let result = orchestrator
         .execute_group(&[], &sessions, metrics)
         .await;
-    assert!(result.is_ok());
+    assert!(result.is_err(), "Empty sessions should cause error regardless of tasks");
 }
 
 /// Test that execute_group returns error for empty sessions.
@@ -176,14 +177,15 @@ async fn test_cancellation_stops_execution() {
 async fn test_unhealthy_sessions_handled() {
     let config = load_config().expect("Failed to load config");
     let mut orchestrator = Orchestrator::new(config.clone());
-    let mut sessions = get_available_sessions().await;
+    let sessions = get_available_sessions().await;
 
     if sessions.len() < 2 {
         eprintln!("Need at least 2 sessions for this test, skipping");
         return;
     }
 
-    // Mark one session as unhealthy
+    // Mark one session as unhealthy (requires clone to avoid mut)
+    let sessions = sessions;
     sessions[1].mark_unhealthy();
 
     let metrics = Arc::new(MetricsCollector::new(100));

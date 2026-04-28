@@ -2,11 +2,9 @@
 
 ## Phase 2: Code-Level Optimizations
 
-- [ ] **2.1 Metrics Lock Contention**
-  - [ ] Replace `RwLock<VecDeque>` with lock-free ring buffer
-  - [ ] Add `crossbeam` dependency
-  - [ ] Implement `ArrayQueue<TaskMetrics>` for history
-  - [ ] Verify readers are never blocked
+- [ ] **2.1 Metrics Lock Contention** ⏸️ Deferred
+  - Phase 3 skipped - optimizations deemed sufficient
+  - Can revisit if lock contention becomes measurable bottleneck
 
 - [x] **2.2 Clone Reduction (twitteractivity.rs)** ✅
   - [x] Replaced `String` with `Arc<String>` in `TaskMetrics`
@@ -29,11 +27,10 @@
   - [x] Update `get_stats()` to use interned strings
   - [x] Eliminated `format!("{:?}", kind)` allocations - All 1811 tests passing
 
-- [ ] **4.2 JSON Zero-Copy**
-  - [ ] Identify JSON parsing hot paths (LLM responses, tweet data)
-  - [ ] Define borrowed structs with `&'a str` fields
-  - [ ] Use `#[serde(borrow)]` attribute
-  - [ ] Verify lifetime constraints are met
+- [ ] **4.2 JSON Zero-Copy** ⏸️ Deferred
+  - Phase 3 skipped - optimizations deemed sufficient
+  - High complexity (lifetime management) for marginal gain
+  - Can revisit if profiling shows JSON parsing as bottleneck
 
 - [ ] **4.3 Pre-Allocated Vectors** 🚫 N/A
   - [x] Attempted: BTreeMap doesn't support `reserve()` / `with_capacity()`

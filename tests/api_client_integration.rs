@@ -242,19 +242,23 @@ async fn test_base_url_trailing_slash_handling() {
 async fn test_request_timeout() {
     let mock_server = MockServer::start().await;
 
-    // Response that takes too long
+    // Response that takes too long - use shorter delay for faster test
     Mock::given(method("GET"))
         .and(path("/api/slow"))
-        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(35))) // Longer than client timeout
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(3)))
         .mount(&mock_server)
         .await;
 
-    let client = create_test_client(&mock_server);
+    // Create client with short timeout
+    let client = auto::api::client::ApiClient::with_timeout(
+        format!("{}/", mock_server.uri()),
+        std::time::Duration::from_secs(1),
+    );
     let result: Result<TestResponse, _> = client.get("/api/slow").await;
 
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
-    // Should timeout (client has 30s timeout, mock has 35s delay)
+    // Should timeout (client has 1s timeout, mock has 3s delay)
     assert!(err_msg.contains("timeout") || err_msg.contains("API request"));
 }
 

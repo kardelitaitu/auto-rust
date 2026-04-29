@@ -213,6 +213,12 @@ This project is actively maintained and used in production environments.
 | **DOM Inspection** | 5 APIs | Computed styles, element rect, scroll position, count, viewport check |
 | **Browser Management** | 2 APIs | Complete state export/import |
 
+**Accessibility Locator (Feature-Gated):**
+- Internal accessibility-locator parser/resolver behind `--features accessibility-locator`
+- Deterministic locator error taxonomy (`locator_parse_error`, `locator_not_found`, `locator_ambiguous`, `locator_scope_invalid`, `locator_unsupported`)
+- Action-path integration for locator syntax (`click`, `hover`, `focus`, `double_click`, `right_click`, `middle_click`, `drag`)
+- Pilot migration complete for `twitterfollow` with locator-first follow/following detection and safe CSS/JS fallback
+
 **Security:** All APIs require explicit permissions via `TaskPolicy` - secure by default.
 
 **Documentation:**
@@ -234,8 +240,9 @@ This project is actively maintained and used in production environments.
 | Integration tests | ✅ |
 
 **Quality Metrics:**
-- **68 tests** passing (unit + integration + doc tests)
-- **`cargo clippy`** clean (all targets, all features)
+- **Extensive test coverage** across unit, integration, and doc test suites
+- **Feature-on validation**: `cargo check --features accessibility-locator` passing
+- **Pilot suite validation**: `cargo test --features accessibility-locator twitterfollow` passing
 - **Parser parity:** All edge cases verified vs Node.js reference
 
 ### Browser Support

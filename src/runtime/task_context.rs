@@ -62,7 +62,9 @@ use crate::metrics::{
 };
 use crate::state::ClipboardState;
 use crate::task::policy::TaskPolicy;
-use crate::utils::mouse::{ClickOutcome, CursorMovementConfig, HoverOutcome, NativeCursorOutcome};
+use crate::utils::mouse::{
+    ClickOutcome, ClickStatus, CursorMovementConfig, HoverOutcome, HoverStatus, NativeCursorOutcome,
+};
 
 /// HTTP response structure for network operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4577,6 +4579,17 @@ impl TaskContext {
     /// # }
     /// ```
     pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
+        if navigation::selector_uses_accessibility_locator(selector) {
+            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+            navigation::focus_at_point(self.page(), x, y).await?;
+            self.post_interaction_pause().await;
+            return Ok(FocusOutcome {
+                focus: FocusStatus::Success,
+                x,
+                y,
+            });
+        }
+
         scroll::scroll_into_view(self.page(), selector).await?;
 
         // Phase2: Verify element is in viewport after scroll
@@ -4627,6 +4640,17 @@ impl TaskContext {
     /// # }
     /// ```
     pub async fn hover(&self, selector: &str) -> Result<HoverOutcome> {
+        if navigation::selector_uses_accessibility_locator(selector) {
+            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+            mouse::cursor_move_to(self.page(), x, y).await?;
+            self.post_interaction_pause().await;
+            return Ok(HoverOutcome {
+                hover: HoverStatus::Success,
+                x,
+                y,
+            });
+        }
+
         let click = &self.behavior_runtime.click;
         let outcome = mouse::hover_selector_human(
             self.page(),
@@ -4728,6 +4752,20 @@ impl TaskContext {
         const CLICK_MAX_ATTEMPTS: u32 = 3;
         let click = &self.behavior_runtime.click;
         self.increment_run_counter(RUN_COUNTER_CLICK_ATTEMPTED, 1);
+        if navigation::selector_uses_accessibility_locator(selector) {
+            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+            mouse::left_click_at(self.page(), x, y).await?;
+            let outcome = ClickOutcome {
+                click: ClickStatus::Success,
+                x,
+                y,
+                screen_x: None,
+                screen_y: None,
+            };
+            self.increment_run_counter(RUN_COUNTER_CLICK_SUCCESS, 1);
+            self.post_interaction_pause().await;
+            return Ok(outcome);
+        }
         let default_url = String::new();
         let observed_url = self.url().await.unwrap_or(default_url);
         let base_variance = self.behavior_runtime.action_delay.variance_pct.round() as u32;
@@ -5038,6 +5076,22 @@ impl TaskContext {
 
     /// Human-like double click on selector with delay and variance.
     pub async fn double_click(&self, selector: &str) -> Result<ClickOutcome> {
+        if navigation::selector_uses_accessibility_locator(selector) {
+            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+            mouse::left_click_at(self.page(), x, y).await?;
+            timing::human_pause(40, 20).await;
+            mouse::left_click_at(self.page(), x, y).await?;
+            let outcome = ClickOutcome {
+                click: ClickStatus::Success,
+                x,
+                y,
+                screen_x: None,
+                screen_y: None,
+            };
+            self.post_interaction_pause().await;
+            return Ok(outcome);
+        }
+
         let click = &self.behavior_runtime.click;
         let outcome = mouse::double_click_selector_human(
             self.page(),
@@ -5053,6 +5107,20 @@ impl TaskContext {
 
     /// Middle-click (mouse wheel) on selector with human-like behavior.
     pub async fn middle_click(&self, selector: &str) -> Result<ClickOutcome> {
+        if navigation::selector_uses_accessibility_locator(selector) {
+            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+            mouse::middle_click_at(self.page(), x, y).await?;
+            let outcome = ClickOutcome {
+                click: ClickStatus::Success,
+                x,
+                y,
+                screen_x: None,
+                screen_y: None,
+            };
+            self.post_interaction_pause().await;
+            return Ok(outcome);
+        }
+
         let click = &self.behavior_runtime.click;
         let outcome = mouse::middle_click_selector_human(
             self.page(),
@@ -5076,6 +5144,12 @@ impl TaskContext {
     /// 2) native move + click via backend,
     /// 3) public task log with clicked selector and point.
     pub async fn nativeclick(&self, selector: &str) -> Result<ClickOutcome> {
+        if navigation::selector_uses_accessibility_locator(selector) {
+            return Err(anyhow::anyhow!(
+                "locator_unsupported: operation='nativeclick' requires css selector"
+            ));
+        }
+
         let session_id = self.session_id().to_string();
         let click = &self.behavior_runtime.click;
         let outcome = match mouse::native_click_selector_human(
@@ -5163,6 +5237,20 @@ impl TaskContext {
 
     /// Human-like right-click (context menu) on selector.
     pub async fn right_click(&self, selector: &str) -> Result<ClickOutcome> {
+        if navigation::selector_uses_accessibility_locator(selector) {
+            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+            mouse::right_click_at(self.page(), x, y).await?;
+            let outcome = ClickOutcome {
+                click: ClickStatus::Success,
+                x,
+                y,
+                screen_x: None,
+                screen_y: None,
+            };
+            self.post_interaction_pause().await;
+            return Ok(outcome);
+        }
+
         let click = &self.behavior_runtime.click;
         let outcome = mouse::right_click_selector_human(
             self.page(),
@@ -5178,6 +5266,27 @@ impl TaskContext {
 
     /// Drag from one selector to another with human-like behavior.
     pub async fn drag(&self, from_selector: &str, to_selector: &str) -> Result<()> {
+        if navigation::selector_uses_accessibility_locator(from_selector)
+            || navigation::selector_uses_accessibility_locator(to_selector)
+        {
+            let (start_x, start_y) =
+                navigation::selector_action_point(self.page(), from_selector).await?;
+            let (end_x, end_y) = navigation::selector_action_point(self.page(), to_selector).await?;
+            let click = &self.behavior_runtime.click;
+            mouse::drag_between_points_human(
+                self.page(),
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                click.reaction_delay_ms,
+                self.behavior_runtime.action_delay.variance_pct.round() as u32,
+            )
+            .await?;
+            self.post_interaction_pause().await;
+            return Ok(());
+        }
+
         let click = &self.behavior_runtime.click;
         mouse::drag_selector_to_selector(
             self.page(),
@@ -5243,15 +5352,25 @@ impl TaskContext {
         keyboard::type_text_profiled(self.page(), text, typing).await?;
 
         // Phase2: Verify text was entered (check value after typing)
-        let verification_js = format!(
-            r#"(() => {{
-                const el = document.querySelector({});
+        let verification_js = if navigation::selector_uses_accessibility_locator(selector) {
+            r#"(() => {
+                const el = document.activeElement;
                 if (!el) return false;
                 const value = el.value || el.textContent || '';
-                return value.length > 0;
-            }})()"#,
-            serde_json::to_string(selector)?
-        );
+                return String(value).length > 0;
+            })()"#
+                .to_string()
+        } else {
+            format!(
+                r#"(() => {{
+                    const el = document.querySelector({});
+                    if (!el) return false;
+                    const value = el.value || el.textContent || '';
+                    return value.length > 0;
+                }})()"#,
+                serde_json::to_string(selector)?
+            )
+        };
         match self.page().evaluate(verification_js).await {
             Ok(result) => {
                 let text_entered = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
@@ -5539,6 +5658,37 @@ impl TaskContext {
     /// Select all text in element (Ctrl+A).
     pub async fn select_all(&self, selector: &str) -> Result<()> {
         let _ = self.focus(selector).await?;
+
+        if navigation::selector_uses_accessibility_locator(selector) {
+            let check_active_js = r#"(() => {
+                const el = document.activeElement;
+                if (!el) return 'not_found';
+                if (el.readOnly) return 'readonly';
+                if (el.disabled) return 'disabled';
+                return 'ok';
+            })()"#;
+            let status = match self.page().evaluate(check_active_js).await {
+                Ok(result) => result
+                    .value()
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("check_failed")
+                    .to_string(),
+                Err(_) => "check_failed".to_string(),
+            };
+            if status == "readonly" {
+                return Err(anyhow::anyhow!(
+                    "[task-api] select_all: element '{}' is readonly",
+                    selector
+                ));
+            }
+            if status == "disabled" {
+                return Err(anyhow::anyhow!(
+                    "[task-api] select_all: element '{}' is disabled",
+                    selector
+                ));
+            }
+            return self.press_with_modifiers("a", &["Control"]).await;
+        }
 
         // Phase2: Check for readonly/disabled before attempting select all
         let check_js = format!(

@@ -24,13 +24,13 @@ No third selector style should be added in normal task code.
 
 ## 1. Accessibility Locators
 
-Primary choice. Use when the UI exposes a real role or label.
+Primary choice. Use when semantic locator grammar is enabled and the UI exposes a real role and accessible name.
 
 Examples:
 
 ```rust
-api.click("button[aria-label='Like']")
-api.click("[role='button'][aria-label='Follow @user']")
+api.click("role=button[name='Like']")
+api.click("role=button[name='Follow @user'][match=contains]")
 ```
 
 Why this is good:
@@ -38,6 +38,10 @@ Why this is good:
 - Closer to how a user or assistive tech sees the page
 - Usually more stable than raw CSS
 - Easier to read in code
+
+Important:
+- `button[aria-label='Like']` is CSS, not semantic locator grammar.
+- Semantic locator grammar uses `role=...` format and is resolved through CDP Accessibility logic when feature-enabled.
 
 ## 2. DOM Selectors
 
@@ -93,3 +97,6 @@ Why this can fail:
 
 - Use this standard when adding new task selectors.
 - If a selector is repeated across tasks, move it into a shared utility.
+- Follow implementation gates and semantics in:
+  - `PROPOSAL_ACCESSIBILITY_LOCATOR.md`
+  - `docs/ACCESSIBILITY_LOCATOR_SPEC.md`

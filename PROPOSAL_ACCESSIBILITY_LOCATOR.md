@@ -4,37 +4,82 @@ Companion implementation spec: `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
 
 ## Implementation Safety Checklist (Major Change Gate)
 
-- [ ] Approve locator grammar, ambiguity policy, and error taxonomy in `docs/ACCESSIBILITY_LOCATOR_SPEC.md`.
-- [ ] Confirm non-goals (no task API expansion, no hidden fallback from malformed locator syntax).
+- [x] Approve locator grammar, ambiguity policy, and error taxonomy in `docs/ACCESSIBILITY_LOCATOR_SPEC.md`.
+- [x] Confirm non-goals (no task API expansion, no hidden fallback from malformed locator syntax).
 - [x] Baseline current behavior before coding:
   - [x] run `cargo check` (pass)
-  - [x] run `cargo test` (fails before tests execute)
+  - [x] run `cargo test` (pass; integration + doc tests completed, some suites intentionally ignored)
   - [x] record current pass/fail totals and flaky tests (if any)
-- [ ] Add implementation behind a feature flag (default off for first landing).
-- [ ] Implement parser first, with full unit coverage, before resolver wiring.
-- [ ] Implement thin CDP Accessibility resolver in shared navigation path only (single source of truth).
-- [ ] Keep `TaskContext` task-facing `api.*` signatures unchanged.
-- [ ] Add deterministic error mapping (`locator_parse_error`, `locator_not_found`, `locator_ambiguous`, `locator_scope_invalid`).
-- [ ] Add compatibility tests proving CSS selector behavior is unchanged.
-- [ ] Add ambiguity and missing-target tests proving deterministic failure semantics.
-- [ ] Add observability fields (`selector_mode`, `locator_role`, `locator_result`) and validate log output.
-- [ ] Run full verification suite again:
-  - [ ] run `cargo check`
-  - [ ] run `cargo test`
+- [x] Add implementation behind a feature flag (default off for first landing).
+- [x] Implement parser first, with full unit coverage, before resolver wiring.
+- [x] Implement thin CDP Accessibility resolver in shared navigation path only (single source of truth).
+  - Current status: done for shared read helpers + action-point resolution (`selector_action_point`) consumed by action APIs; `nativeclick` remains explicitly CSS-only with deterministic `locator_unsupported`.
+- [x] Keep `TaskContext` task-facing `api.*` signatures unchanged.
+- [x] Add deterministic error mapping (`locator_parse_error`, `locator_not_found`, `locator_ambiguous`, `locator_scope_invalid`).
+- [x] Add explicit unsupported-operation mapping for non-semantic helpers (`locator_unsupported` for `html`/`attr` with a11y locator input).
+- [x] Add compatibility tests proving CSS selector behavior is unchanged.
+  - added CSS-compat regression matrix in parser + navigation routing tests
+- [x] Add ambiguity and missing-target tests proving deterministic failure semantics.
+  - implemented as unit-level resolver classification tests in `src/utils/navigation.rs`
+- [x] Add observability fields (`selector_mode`, `locator_role`, `locator_result`) and validate log output.
+  - implemented with `tracing::debug!` fields in `src/utils/navigation.rs`
+- [x] Run full verification suite again:
+  - [x] run `cargo check`
+  - [x] run `cargo test`
 - [ ] Roll out in phases:
-  - [ ] migrate one high-value task
+  - [x] migrate one high-value task (`twitterfollow` pilot: locator-first follow/following detection with CSS/JS fallback)
   - [ ] monitor telemetry/error rates
   - [ ] expand migration only when stable
 - [ ] Define rollback trigger and rollback action before enabling feature flag by default.
-- [ ] Update `src/task/SELECTOR.md` and cross-reference this proposal + spec.
+- [x] Update `src/task/SELECTOR.md` and cross-reference this proposal + spec.
 
 ### Baseline Snapshot (2026-04-29)
 
 - `cargo check`: pass
-- `cargo test`: blocked by compile errors in examples:
-  - `src/task/demo-interaction-keyboard.rs:12` unresolved import `crate::utils::timing::DEFAULT_DEMO_DURATION_MS`
-  - `src/task/demo-interaction-mouse.rs:12` unresolved import `crate::utils::timing::DEFAULT_DEMO_DURATION_MS`
-- No flaky runtime test signal observed because test run did not start.
+- `cargo test`: pass (unit + integration + doc tests completed in current run)
+- Ignored tests observed (expected in this repo): soak/orchestrator subsets and one overlay-state test marked as ignored
+- Baseline blocker resolved by fixing example imports:
+  - `src/task/demo-interaction-keyboard.rs` now imports `auto::utils::timing::DEFAULT_DEMO_DURATION_MS`
+  - `src/task/demo-interaction-mouse.rs` now imports `auto::utils::timing::DEFAULT_DEMO_DURATION_MS`
+- Gate 2 parser milestone completed:
+  - feature flag added: `accessibility-locator`
+  - parser module added: `src/utils/accessibility_locator.rs`
+  - parser tests under feature flag: 9 passed, 0 failed
+- Feature-on verification rerun:
+  - `cargo check --features accessibility-locator`: pass
+  - `cargo test --features accessibility-locator`: pass
+  - doc-test summary (captured): `test result: ok. 63 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 3.52s`
+
+## Implementation Status (Code-Proven, 2026-04-29)
+
+What is already landed (feature-gated):
+
+| Item | Proof in code | Status |
+|---|---|---|
+| Feature flag exists | `Cargo.toml` contains `accessibility-locator = []` | Done |
+| Parser module exists | `src/utils/accessibility_locator.rs` with `parse_selector_input(...)` | Done |
+| Parser rejects malformed `role=` syntax | `parse_selector_for_navigation(...)` maps to `locator_parse_error: ...` in `src/utils/navigation.rs` | Done |
+| Resolver uses CDP Accessibility domain | `QueryAxTreeParams`, `EnableParams`, `GetDocumentParams` imported/used in `src/utils/navigation.rs` | Done (for current covered helpers) |
+| Resolver wired to shared selector path | `selector_exists`, `selector_is_visible`, `selector_text`, `selector_value` dispatch on `ParsedSelector`; `selector_html`/`selector_attr` parser-aware with explicit unsupported mapping in `src/utils/navigation.rs` | Done |
+| Action-path resolver wired through TaskContext | `selector_action_point(...)` + `selector_uses_accessibility_locator(...)` + `focus_at_point(...)` used by `focus`, `hover`, `click`, `double_click`, `right_click`, `middle_click`, `drag`, typing/select-all verification branches in `src/runtime/task_context.rs` | Done |
+| Ambiguity error mapping exists | error string `locator_ambiguous: role='{}' name='{}' ...` in `src/utils/navigation.rs`; runtime assertions in `tests/task_api_behavior.rs` | Done |
+| Scope error mapping exists | error string `locator_scope_invalid: ...` in `src/utils/navigation.rs`; runtime assertions in `tests/task_api_behavior.rs` | Done |
+| CSS fallback preserved | `ParsedSelector::Css(css) => ...` branches call existing CSS helpers | Done |
+| Task API signatures unchanged | no `TaskContext` selector method signature changes required | Done |
+
+Still pending to reach v1 done:
+- [done] broader browser-runtime compatibility tests now exist in `tests/task_api_behavior.rs`:
+  - `browser_runtime_css_compatibility_matrix_under_feature_flag`
+  - `browser_runtime_accessibility_locator_integration_semantics`
+- [done] selector observability assertions now validate emitted telemetry fields:
+  - unit: `src/utils/navigation.rs::tests::test_selector_observation_logs_css_mode_result_fields`
+  - unit: `src/utils/navigation.rs::tests::test_selector_observation_logs_locator_metadata_fields`
+  - integration: `tests/task_api_behavior.rs::browser_runtime_locator_action_emits_selector_telemetry_fields`
+- [done] pilot task migration completed: `src/task/twitterfollow.rs` now uses locator-first strategy (`Follow @...` / `Following @...`) with safe CSS/JS fallback
+- phased rollout execution remains:
+  - telemetry/error-rate monitoring
+  - rollback trigger/action definition before default-on
+  - expansion gate for additional tasks
 
 
 ## Goal
@@ -128,6 +173,30 @@ If parsing fails, return a clear error and do not silently downgrade malformed l
 | Add internal generic locator resolver behind current API | No task API churn, scalable, aligns with architecture | More plumbing and test surface |
 | Keep CSS-only model | Lowest short-term effort | No true accessibility-locator capability; lower long-term robustness |
 
+## Cargo Dependency Reality Check (2026-04-29)
+
+Live checks performed:
+- `cargo search accessibility --limit 20`
+- `cargo search accesskit --limit 20`
+- `cargo search atspi --limit 20`
+- `cargo search chromiumoxide --limit 20`
+- `cargo search playwright --limit 10`
+- `cargo info accesskit`
+- `cargo info atspi`
+
+What this means for this codebase:
+
+| Candidate | Pros | Cons |
+|---|---|---|
+| Keep `chromiumoxide` + CDP Accessibility domain (`QueryAxTree`) | Already in repo; no runtime migration; direct browser AX query path; keeps `api.*` unchanged | We own thin resolver semantics and tests |
+| `accesskit` ecosystem | Strong for app/UI accessibility infrastructure | Not a drop-in browser CDP AX-tree query engine for remote Chromium pages |
+| `atspi` ecosystem | Mature Linux accessibility protocol tooling | OS accessibility bus focus; not a cross-platform substitute for CDP browser-page AX queries |
+| Rust Playwright crates (`playwright`, `playwright-rs`) | Built-in locator semantics possible after migration | Major framework migration risk, API drift, and larger change surface |
+
+Conclusion:
+- There is no clear Cargo drop-in package that replaces the needed browser-page AX locator resolution while preserving current `chromiumoxide` architecture and `TaskContext` API.
+- Best path remains: thin internal resolver on top of existing CDP Accessibility domain.
+
 ## Recommended Approach
 
 Use internal generic locator resolution behind existing `TaskContext` methods, implemented as a thin adapter over Chromium CDP Accessibility APIs.
@@ -148,12 +217,12 @@ Reason:
 | Change | Confidence | Why |
 |---|---:|---|
 | Keep existing selector methods unchanged | 100% | Already stable, required for compatibility |
-| Add internal locator parser | 80% | Contained implementation, clear entry points |
-| Add role+name resolver semantics | 65% | Ambiguity/visibility semantics require careful design |
+| Add internal locator parser | 95% | Implemented behind feature flag with passing parser tests |
+| Add role+name resolver semantics | 90% | Read helpers + action-path resolver are wired with deterministic mapping; html/attr remain explicit `locator_unsupported` by v1 design |
 | Keep CSS fallback intact | 95% | Existing path already mature |
-| Add role/name test matrix | 90% | Straightforward once grammar is fixed |
+| Add role/name test matrix | 96% | Parser matrix + navigation routing/error tests + browser-runtime compatibility/action-path assertions are landed |
 | Update `src/task/SELECTOR.md` and docs | 95% | Documentation-only change |
-| Migrate high-value tasks incrementally | 78% | Depends on real target DOM stability |
+| Migrate high-value tasks incrementally | 80% | Depends on real target DOM stability and telemetry confidence |
 
 ## Rollout Plan (Phased)
 

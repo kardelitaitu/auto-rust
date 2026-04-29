@@ -1,5 +1,7 @@
 pub mod blockmedia;
 pub mod clipboard;
+#[cfg(feature = "accessibility-locator")]
+pub mod accessibility_locator;
 pub mod geometry;
 pub mod keyboard;
 pub mod math;
@@ -19,6 +21,9 @@ pub mod zoom;
 pub use blockmedia::*;
 #[allow(unused_imports)]
 pub use clipboard::*;
+#[cfg(feature = "accessibility-locator")]
+#[allow(unused_imports)]
+pub use accessibility_locator::*;
 #[allow(unused_imports)]
 pub use geometry::*;
 #[allow(unused_imports)]

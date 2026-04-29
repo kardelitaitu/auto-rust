@@ -2169,6 +2169,27 @@ pub async fn drag_selector_to_selector(
     Ok(())
 }
 
+pub async fn drag_between_points_human(
+    page: &Page,
+    start_x: f64,
+    start_y: f64,
+    end_x: f64,
+    end_y: f64,
+    reaction_delay_ms: u64,
+    reaction_delay_variance_pct: u32,
+) -> Result<()> {
+    cursor_move_to(page, start_x, start_y).await?;
+    human_pause(reaction_delay_ms, reaction_delay_variance_pct).await;
+    dispatch_mouse_action(page, start_x, start_y, 0, "mousedown").await?;
+
+    let mid_x = (start_x + end_x) / 2.0;
+    let mid_y = (start_y + end_y) / 2.0;
+    cursor_move_to(page, mid_x, mid_y).await?;
+    cursor_move_to(page, end_x, end_y).await?;
+    dispatch_mouse_action(page, end_x, end_y, 0, "mouseup").await?;
+    Ok(())
+}
+
 fn choose_click_point(bbox: &BoundingBox, click_offset_px: i32) -> (f64, f64) {
     let center_x = bbox.x + bbox.width / 2.0;
     let center_y = bbox.y + bbox.height / 2.0;

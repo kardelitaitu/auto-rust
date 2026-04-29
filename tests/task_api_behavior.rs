@@ -13,13 +13,16 @@ use auto::utils::mouse::{
 use chromiumoxide::Browser;
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+use tracing::instrument::WithSubscriber;
+use tracing::Level;
 
 struct TestServer {
     url: String,
@@ -162,6 +165,53 @@ fn build_task_context_with_cancel_token(
         &DEFAULT_TASK_POLICY,
         cancel_token,
     )
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[derive(Clone, Default)]
+struct SelectorTelemetryLogSink {
+    bytes: Arc<Mutex<Vec<u8>>>,
+}
+
+#[cfg(feature = "accessibility-locator")]
+struct SelectorTelemetryLogWriter {
+    bytes: Arc<Mutex<Vec<u8>>>,
+}
+
+#[cfg(feature = "accessibility-locator")]
+impl Write for SelectorTelemetryLogWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.bytes
+            .lock()
+            .expect("selector telemetry log mutex poisoned")
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "accessibility-locator")]
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SelectorTelemetryLogSink {
+    type Writer = SelectorTelemetryLogWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        SelectorTelemetryLogWriter {
+            bytes: Arc::clone(&self.bytes),
+        }
+    }
+}
+
+#[cfg(feature = "accessibility-locator")]
+fn selector_telemetry_logs(sink: &SelectorTelemetryLogSink) -> String {
+    let bytes = sink
+        .bytes
+        .lock()
+        .expect("selector telemetry log mutex poisoned")
+        .clone();
+    String::from_utf8(bytes).expect("selector telemetry logs must be utf-8")
 }
 
 async fn scroll_event_count(api: &TaskContext) -> Result<u64> {
@@ -742,6 +792,283 @@ async fn dom_inspection_helpers_report_live_page_state() -> Result<()> {
     assert!(api.wait_for("#target", 500).await?);
     assert!(api.wait_for_visible("#target", 500).await?);
     assert!(!api.wait_for_visible("#hidden", 500).await?);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_css_compatibility_matrix_under_feature_flag() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>CSS Compat</title><style>#hidden-css{display:none;}</style></head><body><div id=\"target\" data-role=\"hero\">Hello <span>world</span></div><input id=\"email\" aria-label=\"Email\" value=\"alice@example.com\" /><button id=\"save-btn\" aria-label=\"Save changes\">Save</button><button id=\"dup-a\" aria-label=\"Duplicate action\">One</button><button id=\"dup-b\" aria-label=\"Duplicate action\">Two</button><button id=\"hidden-css\" aria-label=\"Hidden action\">Hidden</button><div class=\"item\">one</div><div class=\"item\">two</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_dom_inspection: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    let matrix = [
+        ("#target", true, true),
+        ("#hidden-css", true, false),
+        ("button[aria-label='Save changes']", true, true),
+        ("[data-role='hero']", true, true),
+        (".item", true, true),
+    ];
+
+    for (selector, exists_expected, visible_expected) in matrix {
+        assert_eq!(api.exists(selector).await?, exists_expected, "exists mismatch for selector={selector}");
+        assert_eq!(
+            api.visible(selector).await?,
+            visible_expected,
+            "visible mismatch for selector={selector}"
+        );
+    }
+
+    assert_eq!(api.text("#target").await?, Some("Hello world".to_string()));
+    assert_eq!(
+        api.html("#target").await?,
+        Some("Hello <span>world</span>".to_string())
+    );
+    assert_eq!(
+        api.attr("#target", "data-role").await?,
+        Some("hero".to_string())
+    );
+    assert_eq!(
+        api.value("#email").await?,
+        Some("alice@example.com".to_string())
+    );
+
+    assert!(api.wait_for("#target", 600).await?);
+    assert!(api.wait_for_visible("#target", 600).await?);
+    assert!(!api.wait_for_visible("#hidden-css", 600).await?);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_accessibility_locator_integration_semantics() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>A11y Locator</title></head><body><button id=\"save-btn\" aria-label=\"Save changes\">Save</button><button id=\"dup-a\" aria-label=\"Duplicate action\">One</button><button id=\"dup-b\" aria-label=\"Duplicate action\">Two</button><input id=\"email\" aria-label=\"Email\" value=\"alice@example.com\" /></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let policy = Box::leak(Box::new(TaskPolicy {
+        max_duration_ms: 30_000,
+        permissions: TaskPermissions {
+            allow_dom_inspection: true,
+            ..Default::default()
+        },
+    }));
+    let api = build_task_context_with_policy(&session, page.clone(), policy);
+
+    assert!(api.exists("role=button[name='Save changes']").await?);
+    assert!(api.visible("role=button[name='Save changes']").await?);
+    assert_eq!(
+        api.text("role=button[name='Save changes']").await?,
+        Some("Save changes".to_string())
+    );
+    assert_eq!(
+        api.value("role=textbox[name='Email']").await?,
+        Some("alice@example.com".to_string())
+    );
+
+    let not_found = api
+        .exists("role=button[name='Does not exist']")
+        .await
+        .expect_err("expected locator_not_found");
+    assert!(
+        not_found.to_string().contains("locator_not_found"),
+        "unexpected error: {}",
+        not_found
+    );
+
+    let ambiguous = api
+        .text("role=button[name='Duplicate action']")
+        .await
+        .expect_err("expected locator_ambiguous");
+    assert!(
+        ambiguous.to_string().contains("locator_ambiguous"),
+        "unexpected error: {}",
+        ambiguous
+    );
+
+    let parse_err = api
+        .exists("role=button[name=\"Save changes\"]")
+        .await
+        .expect_err("expected locator_parse_error");
+    assert!(
+        parse_err.to_string().contains("locator_parse_error"),
+        "unexpected error: {}",
+        parse_err
+    );
+
+    let unsupported_html = api
+        .html("role=button[name='Save changes']")
+        .await
+        .expect_err("expected locator_unsupported");
+    assert!(
+        unsupported_html
+            .to_string()
+            .contains("locator_unsupported"),
+        "unexpected error: {}",
+        unsupported_html
+    );
+
+    let unsupported_attr = api
+        .attr("role=button[name='Save changes']", "aria-label")
+        .await
+        .expect_err("expected locator_unsupported");
+    assert!(
+        unsupported_attr
+            .to_string()
+            .contains("locator_unsupported"),
+        "unexpected error: {}",
+        unsupported_attr
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_locator_action_paths_surface_errors_and_success() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>A11y Action Paths</title></head><body><button id=\"save-btn\" aria-label=\"Save changes\" ondblclick=\"document.body.setAttribute('data-dbl','yes')\" onmouseover=\"document.body.setAttribute('data-hover','yes')\" oncontextmenu=\"document.body.setAttribute('data-right','yes'); return false;\">Save</button><button id=\"dup-a\" aria-label=\"Duplicate action\">One</button><button id=\"dup-b\" aria-label=\"Duplicate action\">Two</button></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    let clicked = api.click("role=button[name='Save changes']").await?;
+    assert!(matches!(clicked.click, ClickStatus::Success));
+
+    let hovered = api.hover("role=button[name='Save changes']").await?;
+    assert!(matches!(hovered.hover, HoverStatus::Success));
+    assert_eq!(api.attr("body", "data-hover").await?, Some("yes".to_string()));
+
+    let right = api.right_click("role=button[name='Save changes']").await?;
+    assert!(matches!(right.click, ClickStatus::Success));
+    assert_eq!(api.attr("body", "data-right").await?, Some("yes".to_string()));
+
+    let doubled = api.double_click("role=button[name='Save changes']").await?;
+    assert!(matches!(doubled.click, ClickStatus::Success));
+    assert_eq!(api.attr("body", "data-dbl").await?, Some("yes".to_string()));
+
+    let ambiguous = api
+        .click("role=button[name='Duplicate action']")
+        .await
+        .expect_err("expected locator_ambiguous");
+    assert!(
+        ambiguous.to_string().contains("locator_ambiguous"),
+        "unexpected error: {}",
+        ambiguous
+    );
+
+    let bad_scope = api
+        .click("role=button[name='Save changes'][scope='###bad']")
+        .await
+        .expect_err("expected locator_scope_invalid");
+    assert!(
+        bad_scope.to_string().contains("locator_scope_invalid"),
+        "unexpected error: {}",
+        bad_scope
+    );
+
+    let native_unsupported = api
+        .nativeclick("role=button[name='Save changes']")
+        .await
+        .expect_err("expected locator_unsupported for nativeclick");
+    assert!(
+        native_unsupported
+            .to_string()
+            .contains("locator_unsupported"),
+        "unexpected error: {}",
+        native_unsupported
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_locator_action_emits_selector_telemetry_fields() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>A11y Telemetry</title></head><body><button id=\"save-btn\" aria-label=\"Save changes\" onclick=\"document.body.setAttribute('data-clicked','yes')\">Save</button></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    let sink = SelectorTelemetryLogSink::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(sink.clone())
+        .with_max_level(Level::DEBUG)
+        .with_ansi(false)
+        .with_target(false)
+        .without_time()
+        .finish();
+
+    let clicked = async { api.click("role=button[name='Save changes']").await }
+        .with_subscriber(subscriber)
+        .await?;
+    assert!(matches!(clicked.click, ClickStatus::Success));
+    assert_eq!(api.attr("body", "data-clicked").await?, Some("yes".to_string()));
+
+    let logs = selector_telemetry_logs(&sink);
+    assert!(logs.contains("selector resolution"));
+    assert!(logs.contains("selector_mode=a11y") || logs.contains("selector_mode=\"a11y\""));
+    assert!(logs.contains("locator_result=ok") || logs.contains("locator_result=\"ok\""));
+    assert!(logs.contains("locator_role=button") || logs.contains("locator_role=\"button\""));
+    assert!(
+        logs.contains("locator_match_mode=exact") || logs.contains("locator_match_mode=\"exact\"")
+    );
 
     drop(api);
     session.release_page(page).await;

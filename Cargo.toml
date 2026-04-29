@@ -10,6 +10,10 @@ repository = "https://github.com/your-org/rust-orchestrator"
 keywords = ["automation", "browser", "orchestration", "testing"]
 categories = ["development-tools", "web-programming"]
 
+[features]
+default = []
+accessibility-locator = []
+
 [[bin]]
 name = "auto"
 path = "src/main.rs"

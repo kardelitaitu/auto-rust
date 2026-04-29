@@ -618,3 +618,66 @@ cookiebot, pageview, demo-keyboard, demo-mouse, demoqa, twitterfollow, twitterre
 
 ### Phase 6 - Utility Hardening
 - [x] JS fallback path, deterministic utility tests, integration tests
+
+## 2026-04-29 - Accessibility Locator Rollout (Pilot) + Telemetry + Valuation
+
+### Accomplished This Session
+
+#### Accessibility Locator Runtime Integration
+- `src/utils/navigation.rs`:
+  - Added selector action-point resolver path for accessibility locators (`selector_action_point`) and point-focus helper (`focus_at_point`)
+  - Added deterministic mappings for `locator_ambiguous`, `locator_scope_invalid`, and `locator_unsupported`
+  - Added selector observability emission fields (`selector_mode`, `locator_role`, `locator_result`, `locator_match_mode`, `locator_scope_used`)
+- `src/runtime/task_context.rs`:
+  - Routed action APIs through locator-aware preflight when input uses locator grammar
+  - Covered `focus`, `hover`, `click`, `double_click`, `right_click`, `middle_click`, `drag`
+  - Kept `nativeclick` explicitly CSS-only with deterministic `locator_unsupported`
+- `src/utils/mouse.rs`:
+  - Added coordinate drag helper for locator-driven drag path
+
+#### Telemetry Assertion Coverage
+- `src/utils/navigation.rs`:
+  - Added unit log-capture assertions:
+    - `test_selector_observation_logs_css_mode_result_fields`
+    - `test_selector_observation_logs_locator_metadata_fields`
+- `tests/task_api_behavior.rs`:
+  - Added browser-runtime integration telemetry assertion:
+    - `browser_runtime_locator_action_emits_selector_telemetry_fields`
+
+#### Pilot Task Migration: twitterfollow
+- `src/task/twitterfollow.rs`:
+  - Migrated follow flow to locator-first strategy using confirmed live patterns:
+    - not-followed: `Follow @...` / `...-follow`
+    - already-following: `Following @...` / `...-unfollow`
+  - Preserved safe CSS/JS fallback for robustness
+  - Added unit coverage for candidate selector generation:
+    - `test_follow_locator_candidates_include_profile_header_and_generic_fallbacks`
+    - `test_following_locator_candidates_include_verified_patterns`
+
+#### Documentation & Planning Sync
+- Updated `PROPOSAL_ACCESSIBILITY_LOCATOR.md` and `docs/ACCESSIBILITY_LOCATOR_SPEC.md`:
+  - Marked telemetry assertions done (unit + integration)
+  - Marked `twitterfollow` pilot migration done
+  - Left phased rollout items pending (monitoring, rollback gate, expansion gate)
+
+#### Codebase Valuation Deliverable
+- Added root report: `codebase-valuation.md`
+  - USD valuation range with assumptions and repo-derived metrics
+  - Explicitly excludes `/target` artifacts
+
+### Validation
+
+- `cargo check --features accessibility-locator` ✅ pass
+- `cargo test --features accessibility-locator twitterfollow -- --nocapture` ✅ pass (`17 passed, 0 failed`)
+- `cargo test --features accessibility-locator test_selector_observation_logs_ -- --nocapture` ✅ pass (`2 passed, 0 failed`)
+- Runtime browser tests with `TASK_API_TEST_WS` unset: skip cleanly by design
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build (feature-on) | ✅ Pass |
+| twitterfollow pilot tests | ✅ Pass |
+| telemetry unit/integration assertions | ✅ Pass |
+| phased rollout monitoring gate | ⏳ Pending |
+| rollback trigger/action definition | ⏳ Pending |

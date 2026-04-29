@@ -87,7 +87,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     verify_current_profile(api, &username).await?;
 
     // Already following pre-check
-    if is_already_following(api).await? {
+    if is_already_following(api, Some(&username)).await? {
         info!("[twitterfollow] Already following @{}", username);
         return Ok(());
     }
@@ -159,7 +159,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
         }
 
         // Locate and click follow button
-        match find_and_click_follow_button(api).await {
+        match find_and_click_follow_button(api, username).await {
             Ok(true) => {
                 info!("[twitterfollow] Clicked follow button");
             }
@@ -178,7 +178,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
         info!("[twitterfollow] Click successful, verifying...");
 
         // Verify
-        match poll_for_follow_success(api).await {
+        match poll_for_follow_success(api, username).await {
             Ok(true) => {
                 info!("[twitterfollow] ✅ Follow verified");
                 return Ok(true);
@@ -228,7 +228,7 @@ async fn check_soft_error(api: &TaskContext) -> Result<bool> {
 
 /// Handle pending state: if button says "pending", wait 3s and re-check
 async fn handle_pending_state(api: &TaskContext, _username: &str) -> Result<bool> {
-    if is_already_following(api).await? {
+    if is_already_following(api, Some(_username)).await? {
         return Ok(true);
     }
     let info = match get_follow_button_info(api).await? {
@@ -239,7 +239,7 @@ async fn handle_pending_state(api: &TaskContext, _username: &str) -> Result<bool
     if txt.contains("pending") {
         info!("[twitterfollow] Button in 'pending' state, waiting 3s...");
         human_pause(api, 3000).await;
-        if is_already_following(api).await? {
+        if is_already_following(api, Some(_username)).await? {
             info!("[twitterfollow] Pending resolved to following");
             return Ok(true);
         }
@@ -255,7 +255,64 @@ async fn maybe_backoff(api: &TaskContext, attempt: u32) {
     }
 }
 
-async fn find_and_click_follow_button(api: &TaskContext) -> Result<bool> {
+fn follow_locator_candidates(username: &str) -> Vec<String> {
+    vec![
+        format!("role=button[name='Follow @{}'][scope='main header']", username),
+        "role=button[name='Follow @'][match=contains][scope='main header']".to_string(),
+        "role=button[name='Follow'][scope='main header']".to_string(),
+        format!("role=button[name='Follow @{}']", username),
+        "role=button[name='Follow @'][match=contains]".to_string(),
+        "role=button[name='Follow']".to_string(),
+    ]
+}
+
+fn following_locator_candidates(username: Option<&str>) -> Vec<String> {
+    let mut candidates = vec![
+        "role=button[name='Following @'][match=contains][scope='main header']".to_string(),
+        "role=button[name='Following'][scope='main header']".to_string(),
+        "role=button[name='Following @'][match=contains]".to_string(),
+        "role=button[name='Following']".to_string(),
+        "role=button[name='Unfollow @'][match=contains][scope='main header']".to_string(),
+        "role=button[name='Unfollow @'][match=contains]".to_string(),
+    ];
+    if let Some(username) = username {
+        candidates.insert(
+            0,
+            format!("role=button[name='Following @{}'][scope='main header']", username),
+        );
+        candidates.insert(1, format!("role=button[name='Following @{}']", username));
+        candidates.push(format!("role=button[name='Unfollow @{}']", username));
+    }
+    candidates
+}
+
+async fn find_and_click_follow_button(api: &TaskContext, username: &str) -> Result<bool> {
+    for selector in follow_locator_candidates(username) {
+        let visible = match api.visible(&selector).await {
+            Ok(v) => v,
+            Err(_) => false,
+        };
+        if !visible {
+            continue;
+        }
+        if api.click(&selector).await.is_ok() {
+            return Ok(true);
+        }
+    }
+
+    for selector in ["main header button[data-testid$='-follow']", "button[data-testid$='-follow']"] {
+        let visible = match api.visible(selector).await {
+            Ok(v) => v,
+            Err(_) => false,
+        };
+        if !visible {
+            continue;
+        }
+        if api.click(selector).await.is_ok() {
+            return Ok(true);
+        }
+    }
+
     let page = api.page();
 
     // Find follow button: role=button + aria-label="Follow @username" + span="Follow"
@@ -286,7 +343,22 @@ async fn find_and_click_follow_button(api: &TaskContext) -> Result<bool> {
     Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
-async fn is_already_following(api: &TaskContext) -> Result<bool> {
+async fn is_already_following(api: &TaskContext, username: Option<&str>) -> Result<bool> {
+    for selector in following_locator_candidates(username) {
+        if let Ok(true) = api.visible(&selector).await {
+            return Ok(true);
+        }
+    }
+
+    for selector in [
+        "main header button[data-testid$='-unfollow']",
+        "button[data-testid$='-unfollow']",
+    ] {
+        if let Ok(true) = api.visible(selector).await {
+            return Ok(true);
+        }
+    }
+
     let page = api.page();
 
     // Check for multiple "already following" indicators:
@@ -377,9 +449,13 @@ async fn get_follow_button_info(api: &TaskContext) -> Result<Option<ButtonInfo>>
     Ok(None)
 }
 
-async fn poll_for_follow_success(api: &TaskContext) -> Result<bool> {
+async fn poll_for_follow_success(api: &TaskContext, username: &str) -> Result<bool> {
     let deadline = std::time::Instant::now() + Duration::from_millis(VERIFY_TIMEOUT_MS);
     loop {
+        if is_already_following(api, Some(username)).await? {
+            return Ok(true);
+        }
+
         // Check 1: following indicator (unfollow button)
         let js_unfollow = selector_following_indicator();
         let result = api.page().evaluate(js_unfollow.to_string()).await?;
@@ -640,5 +716,33 @@ mod tests {
     fn test_task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
         assert!(duration_ms >= 36_000 && duration_ms <= 54_000);
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_include_profile_header_and_generic_fallbacks() {
+        let selectors = follow_locator_candidates("historyinmemes");
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Follow @historyinmemes'][scope='main header']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Follow @'][match=contains][scope='main header']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Follow']"));
+    }
+
+    #[test]
+    fn test_following_locator_candidates_include_verified_patterns() {
+        let selectors = following_locator_candidates(Some("PopBase"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following @PopBase'][scope='main header']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following @'][match=contains]"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Unfollow @PopBase']"));
     }
 }

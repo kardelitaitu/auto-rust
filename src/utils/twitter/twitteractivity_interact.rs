@@ -772,7 +772,8 @@ mod tests {
 
     #[test]
     fn test_root_tweet_button_center_js_scopes_to_first_visible_tweet() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#)
+            .expect("Failed to generate root tweet JS");
 
         assert!(js.contains("article[data-testid=\"tweet\"]"));
         assert!(js.contains("targetStatusId"));
@@ -783,14 +784,16 @@ mod tests {
 
     #[test]
     fn test_root_tweet_button_center_js_includes_visibility_check() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="like"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="like"]"#)
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains("visible(el)"));
         assert!(js.contains("getBoundingClientRect"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_includes_center_function() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="retweet"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="retweet"]"#)
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains("function center(el)"));
         assert!(js.contains("rect.x + rect.width / 2"));
         assert!(js.contains("rect.y + rect.height / 2"));
@@ -798,40 +801,45 @@ mod tests {
 
     #[test]
     fn test_root_tweet_button_center_js_handles_status_id_extraction() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="bookmark"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="bookmark"]"#)
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains("window.location.pathname"));
         assert!(js.contains("/status/"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_escapes_selector_json() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="test\"quote"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="test\"quote"]"#)
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains("\\\""));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_with_complex_selector() {
         let js = root_tweet_button_center_js(r#"[data-testid="tweet"] button[aria-label="Like"]"#)
-            .unwrap();
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains("data-testid"));
         assert!(js.contains("aria-label"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_returns_null_on_failure() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="test"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="test"]"#)
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains("return null"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_filters_visible_elements() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="follow"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="follow"]"#)
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains(".filter(visible)"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_scopes_to_main_or_body() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#)
+            .expect("Failed to generate root tweet JS");
         assert!(js.contains("document.querySelector('main')"));
         assert!(js.contains("document.body"));
     }

@@ -386,7 +386,7 @@ mod tests {
         let results = processor
             .process_replies_batch("Original tweet text", "author", &replies)
             .await
-            .unwrap();
+            .expect("Failed to process replies batch");
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].reply_index, 0);
@@ -409,7 +409,7 @@ mod tests {
         let result = processor
             .process_quote_with_sentiment("Original tweet", &replies)
             .await
-            .unwrap();
+            .expect("Failed to process replies batch");
 
         assert!(result.confidence > 0.5);
         assert!(!result.content.is_empty());
@@ -418,7 +418,8 @@ mod tests {
     #[test]
     fn test_parse_batch_response_single_line() {
         let response = "This is a great reply!";
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].reply_index, 0);
@@ -428,7 +429,8 @@ mod tests {
     #[test]
     fn test_parse_batch_response_empty() {
         let response = "";
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 0);
     }
@@ -436,7 +438,8 @@ mod tests {
     #[test]
     fn test_parse_batch_response_whitespace() {
         let response = "   \n   \n   ";
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 0);
     }
@@ -444,7 +447,8 @@ mod tests {
     #[test]
     fn test_parse_batch_response_multiple_lines() {
         let response = "First reply here\nSecond reply there\nThird reply somewhere";
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].reply_index, 0);
@@ -455,7 +459,8 @@ mod tests {
     #[test]
     fn test_parse_batch_response_mixed_empty_lines() {
         let response = "First reply\n\n\nSecond reply\n\nThird reply";
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 3);
     }
@@ -596,7 +601,8 @@ mod tests {
             {"content": "Third reply"}
         ]"#;
 
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].reply_index, 0);
@@ -609,7 +615,8 @@ mod tests {
     fn test_parse_json_batch_response_single_object() {
         let response = r#"{"content": "Single reply"}"#;
 
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 1)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 1);
         assert!(results[0].content.contains("Single"));
@@ -619,7 +626,8 @@ mod tests {
     fn test_parse_json_batch_response_empty_array() {
         let response = r#"[]"#;
 
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 0);
     }
@@ -629,7 +637,8 @@ mod tests {
         let response = r#"{"invalid json"#;
 
         // Should fall back to line-based parsing for invalid JSON
-        let _results = UnifiedLLMProcessor::parse_batch_response_static(response, 1).unwrap();
+        let _results = UnifiedLLMProcessor::parse_batch_response_static(response, 1)
+            .expect("Failed to parse batch response");
         // Will parse as line-based, so may have 0 or 1 results depending on content
     }
 
@@ -662,7 +671,8 @@ mod tests {
             ]  
         "#;
 
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 2).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 2)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 2);
     }
@@ -671,7 +681,8 @@ mod tests {
     fn test_parse_batch_response_line_based_fallback() {
         let response = "First reply\nSecond reply\nThird reply";
 
-        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3).unwrap();
+        let results = UnifiedLLMProcessor::parse_batch_response_static(response, 3)
+            .expect("Failed to parse batch response");
 
         assert_eq!(results.len(), 3);
     }

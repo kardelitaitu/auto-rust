@@ -9,6 +9,42 @@
 
 ---
 
+## 2026-04-29 - Navigation Timeout Bug Fix + CI/CD Implementation
+
+### Accomplished This Session
+
+#### Area of Work
+- **Navigation Timeout Bug Fix**: Fixed critical bugs in `src/utils/navigation.rs`:
+  - `wait_for_selector()`: Removed 4000ms timeout cap that was limiting all timeouts
+  - `wait_for_visible_selector()`: Added missing timeout enforcement to prevent infinite loops
+  - `wait_for_any_visible_selector()`: Removed 4000ms timeout cap
+  - Updated associated unit tests to reflect correct behavior
+- **CI/CD Pipeline Implementation**: Added GitHub Actions workflow (`.github/workflows/ci.yml`) to automatically:
+  - Run test suite on push and pull requests
+  - Enforce code formatting with `cargo fmt --all -- --check`
+  - Run clippy with warning-as-errors (`cargo clippy --all-targets --all-features -- -D warnings`)
+  - Check builds in both debug and release modes
+- **Code Quality Improvements**: Fixed clippy warnings in navigation.rs:
+  - Removed unnecessary `clone()` calls on Copy types
+  - Simplified match expressions with `unwrap_or_default()`
+  - Fixed field reassignment patterns
+  - Removed useless `vec!` allocations
+
+#### Files Modified
+- `src/utils/navigation.rs` - Fixed timeout bugs and clippy warnings
+- `.github/workflows/ci.yml` - Added CI/CD pipeline
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass |
+| Tests | ✅ 1839 passed |
+| cargo clippy | ✅ Clean (after fixes) |
+| CI Pipeline | ✅ Configured |
+
+---
+
 ## 2026-04-28 (21:40) - Orchestrator Tests Improved ##
 - **src/orchestrator.rs**: Consolidated 40+ redundant tests into ~10 comprehensive tests
   - `test_format_duration_comprehensive()`: Single test covering all duration formats

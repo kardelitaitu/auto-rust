@@ -123,7 +123,7 @@ pub async fn selector_exists(page: &Page, selector: &str) -> Result<bool> {
                     None,
                     None,
                 );
-                return Ok(found);
+                Ok(found)
             }
             ParsedSelector::Accessibility(locator) => {
                 let nodes = query_ax_nodes(page, &locator).await?;
@@ -136,9 +136,8 @@ pub async fn selector_exists(page: &Page, selector: &str) -> Result<bool> {
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(locator_not_found_error(&locator));
-                }
-                if classification == "ambiguous" {
+                    Err(locator_not_found_error(&locator))
+                } else if classification == "ambiguous" {
                     emit_selector_observation(
                         "a11y",
                         Some(&locator.role),
@@ -146,21 +145,22 @@ pub async fn selector_exists(page: &Page, selector: &str) -> Result<bool> {
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(anyhow::anyhow!(
+                    Err(anyhow::anyhow!(
                         "locator_ambiguous: role='{}' name='{}' matched {} nodes",
                         locator.role,
                         locator.name,
                         nodes.len()
-                    ));
+                    ))
+                } else {
+                    emit_selector_observation(
+                        "a11y",
+                        Some(&locator.role),
+                        classification,
+                        Some(locator_match_mode_name(locator.match_mode)),
+                        locator.scope.as_deref(),
+                    );
+                    Ok(true)
                 }
-                emit_selector_observation(
-                    "a11y",
-                    Some(&locator.role),
-                    classification,
-                    Some(locator_match_mode_name(locator.match_mode)),
-                    locator.scope.as_deref(),
-                );
-                return Ok(true);
             }
         }
     }
@@ -192,7 +192,7 @@ pub async fn selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
                     None,
                     None,
                 );
-                return Ok(found);
+                Ok(found)
             }
             ParsedSelector::Accessibility(locator) => {
                 let nodes = query_ax_nodes(page, &locator).await?;
@@ -206,14 +206,13 @@ pub async fn selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(anyhow::anyhow!(
+                    Err(anyhow::anyhow!(
                         "locator_ambiguous: role='{}' name='{}' matched {} visible nodes",
                         locator.role,
                         locator.name,
                         visible_count
-                    ));
-                }
-                if classification == "not_found" {
+                    ))
+                } else if classification == "not_found" {
                     emit_selector_observation(
                         "a11y",
                         Some(&locator.role),
@@ -221,16 +220,17 @@ pub async fn selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(locator_not_found_error(&locator));
+                    Err(locator_not_found_error(&locator))
+                } else {
+                    emit_selector_observation(
+                        "a11y",
+                        Some(&locator.role),
+                        classification,
+                        Some(locator_match_mode_name(locator.match_mode)),
+                        locator.scope.as_deref(),
+                    );
+                    Ok(true)
                 }
-                emit_selector_observation(
-                    "a11y",
-                    Some(&locator.role),
-                    classification,
-                    Some(locator_match_mode_name(locator.match_mode)),
-                    locator.scope.as_deref(),
-                );
-                return Ok(true);
             }
         }
     }
@@ -262,7 +262,7 @@ pub async fn selector_text(page: &Page, selector: &str) -> Result<Option<String>
                     None,
                     None,
                 );
-                return Ok(value);
+                Ok(value)
             }
             ParsedSelector::Accessibility(locator) => {
                 let nodes = query_ax_nodes(page, &locator).await?;
@@ -276,14 +276,13 @@ pub async fn selector_text(page: &Page, selector: &str) -> Result<Option<String>
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(anyhow::anyhow!(
+                    Err(anyhow::anyhow!(
                         "locator_ambiguous: role='{}' name='{}' matched {} nodes",
                         locator.role,
                         locator.name,
                         nodes.len()
-                    ));
-                }
-                if classification == "not_found" {
+                    ))
+                } else if classification == "not_found" {
                     emit_selector_observation(
                         "a11y",
                         Some(&locator.role),
@@ -291,16 +290,17 @@ pub async fn selector_text(page: &Page, selector: &str) -> Result<Option<String>
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(locator_not_found_error(&locator));
+                    Err(locator_not_found_error(&locator))
+                } else {
+                    emit_selector_observation(
+                        "a11y",
+                        Some(&locator.role),
+                        classification,
+                        Some(locator_match_mode_name(locator.match_mode)),
+                        locator.scope.as_deref(),
+                    );
+                    Ok(value)
                 }
-                emit_selector_observation(
-                    "a11y",
-                    Some(&locator.role),
-                    classification,
-                    Some(locator_match_mode_name(locator.match_mode)),
-                    locator.scope.as_deref(),
-                );
-                return Ok(value);
             }
         }
     }
@@ -463,7 +463,6 @@ async fn ax_locator_action_point(page: &Page, locator: &AccessibilityLocator) ->
 
     let backend_node_id = visible_nodes[0]
         .backend_dom_node_id
-        .clone()
         .ok_or_else(|| locator_not_found_error(locator))?;
     let box_model = page
         .execute(
@@ -563,7 +562,7 @@ async fn query_ax_nodes(page: &Page, locator: &AccessibilityLocator) -> Result<V
 
     if let Some(scope_css) = &locator.scope {
         let scope_result = page
-            .execute(QuerySelectorParams::new(scope_node_id.clone(), scope_css.clone()))
+            .execute(QuerySelectorParams::new(scope_node_id, scope_css))
             .await
             .map_err(|e| anyhow::anyhow!("locator_scope_invalid: {}", e))?;
         scope_node_id = scope_result.node_id;
@@ -652,7 +651,7 @@ pub async fn selector_html(page: &Page, selector: &str) -> Result<Option<String>
                     None,
                     None,
                 );
-                return Ok(value);
+                Ok(value)
             }
             ParsedSelector::Accessibility(locator) => {
                 emit_selector_observation(
@@ -662,7 +661,7 @@ pub async fn selector_html(page: &Page, selector: &str) -> Result<Option<String>
                     Some(locator_match_mode_name(locator.match_mode)),
                     locator.scope.as_deref(),
                 );
-                return Err(locator_unsupported_error("html"));
+                Err(locator_unsupported_error("html"))
             }
         }
     }
@@ -694,7 +693,7 @@ pub async fn selector_attr(page: &Page, selector: &str, name: &str) -> Result<Op
                     None,
                     None,
                 );
-                return Ok(value);
+                Ok(value)
             }
             ParsedSelector::Accessibility(locator) => {
                 emit_selector_observation(
@@ -704,7 +703,7 @@ pub async fn selector_attr(page: &Page, selector: &str, name: &str) -> Result<Op
                     Some(locator_match_mode_name(locator.match_mode)),
                     locator.scope.as_deref(),
                 );
-                return Err(locator_unsupported_error("attr"));
+                Err(locator_unsupported_error("attr"))
             }
         }
     }
@@ -736,7 +735,7 @@ pub async fn selector_value(page: &Page, selector: &str) -> Result<Option<String
                     None,
                     None,
                 );
-                return Ok(value);
+                Ok(value)
             }
             ParsedSelector::Accessibility(locator) => {
                 let nodes = query_ax_nodes(page, &locator).await?;
@@ -750,14 +749,13 @@ pub async fn selector_value(page: &Page, selector: &str) -> Result<Option<String
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(anyhow::anyhow!(
+                    Err(anyhow::anyhow!(
                         "locator_ambiguous: role='{}' name='{}' matched {} nodes",
                         locator.role,
                         locator.name,
                         nodes.len()
-                    ));
-                }
-                if classification == "not_found" {
+                    ))
+                } else if classification == "not_found" {
                     emit_selector_observation(
                         "a11y",
                         Some(&locator.role),
@@ -765,16 +763,17 @@ pub async fn selector_value(page: &Page, selector: &str) -> Result<Option<String
                         Some(locator_match_mode_name(locator.match_mode)),
                         locator.scope.as_deref(),
                     );
-                    return Err(locator_not_found_error(&locator));
+                    Err(locator_not_found_error(&locator))
+                } else {
+                    emit_selector_observation(
+                        "a11y",
+                        Some(&locator.role),
+                        classification,
+                        Some(locator_match_mode_name(locator.match_mode)),
+                        locator.scope.as_deref(),
+                    );
+                    Ok(value)
                 }
-                emit_selector_observation(
-                    "a11y",
-                    Some(&locator.role),
-                    classification,
-                    Some(locator_match_mode_name(locator.match_mode)),
-                    locator.scope.as_deref(),
-                );
-                return Ok(value);
             }
         }
     }
@@ -851,17 +850,15 @@ async fn css_selector_value(page: &Page, selector: &str) -> Result<Option<String
 
 pub async fn wait_for_selector(page: &Page, selector: &str, timeout_ms: u64) -> Result<bool> {
     timeout(Duration::from_millis(timeout_ms), async {
-        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             if selector_exists(page, selector).await.unwrap_or(false) {
                 return Ok(true);
-            }
-
-            if std::time::Instant::now() >= deadline {
+            } else if std::time::Instant::now() >= deadline {
                 return Ok(false);
+            } else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await?
@@ -873,12 +870,15 @@ pub async fn wait_for_visible_selector(
     timeout_ms: u64,
 ) -> Result<bool> {
     timeout(Duration::from_millis(timeout_ms), async {
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             if selector_is_visible(page, selector).await.unwrap_or(false) {
                 return Ok(true);
+            } else if std::time::Instant::now() >= deadline {
+                return Ok(false);
+            } else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await?
@@ -915,7 +915,7 @@ pub async fn wait_for_any_visible_selector(
     timeout_ms: u64,
 ) -> Result<bool> {
     timeout(Duration::from_millis(timeout_ms), async {
-        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.min(4000));
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             for selector in selectors {
                 if selector_is_visible(page, selector).await.unwrap_or(false) {
@@ -925,9 +925,9 @@ pub async fn wait_for_any_visible_selector(
 
             if std::time::Instant::now() >= deadline {
                 return Ok(false);
+            } else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await?
@@ -966,8 +966,9 @@ mod tests {
     use crate::utils::accessibility_locator::{AccessibilityLocator, LocatorMatchMode};
     #[cfg(feature = "accessibility-locator")]
     use super::{
-        classify_locator_exists, classify_locator_text, classify_locator_visible,
+        classify_locator_exists, classify_locator_text, classify_locator_visible, quad_center,
         locator_not_found_error, locator_unsupported_error, parse_selector_for_navigation,
+        selector_uses_accessibility_locator,
     };
     #[cfg(feature = "accessibility-locator")]
     use crate::utils::accessibility_locator::ParsedSelector;
@@ -1153,17 +1154,16 @@ mod tests {
     }
 
     #[test]
-    fn test_wait_timeout_clamp() {
+    fn test_wait_timeout_behavior() {
+        // Test that timeout values are used as-is (no clamping)
         let timeout_ms = 10000;
-        let clamped = timeout_ms.min(4000);
-        assert_eq!(clamped, 4000);
-    }
-
-    #[test]
-    fn test_wait_timeout_no_clamp() {
+        assert_eq!(timeout_ms, 10000);
+        
         let timeout_ms = 2000;
-        let clamped = timeout_ms.min(4000);
-        assert_eq!(clamped, 2000);
+        assert_eq!(timeout_ms, 2000);
+        
+        let timeout_ms = 500;
+        assert_eq!(timeout_ms, 500);
     }
 
     #[test]
@@ -1444,5 +1444,30 @@ mod tests {
             .to_string();
         assert!(err.contains("locator_parse_error"));
         assert!(err.contains("single quotes"));
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_selector_uses_accessibility_locator_trims_leading_whitespace() {
+        assert!(selector_uses_accessibility_locator("role=button[name='Save']"));
+        assert!(selector_uses_accessibility_locator("   role=button[name='Save']"));
+        assert!(!selector_uses_accessibility_locator("button[aria-label='Save']"));
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_quad_center_handles_valid_and_invalid_quads() {
+        let center = quad_center(&[0.0, 0.0, 20.0, 0.0, 20.0, 20.0, 0.0, 20.0]);
+        assert_eq!(center, Some((10.0, 10.0)));
+
+        assert_eq!(quad_center(&[0.0, 0.0, 10.0]), None);
+        assert_eq!(
+            quad_center(&[0.0, 0.0, f64::NAN, 0.0, 20.0, 20.0, 0.0, 20.0]),
+            None
+        );
+        assert_eq!(
+            quad_center(&[0.0, 0.0, f64::INFINITY, 0.0, 20.0, 20.0, 0.0, 20.0]),
+            None
+        );
     }
 }

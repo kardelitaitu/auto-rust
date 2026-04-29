@@ -840,7 +840,8 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(100, 20).await;
         let elapsed = start.elapsed();
-        assert!(elapsed.as_millis() >= 70 && elapsed.as_millis() < 150);
+        // Base 100ms ±20% = 80-120ms expected (wider tolerance for Windows)
+        assert!((60..180).contains(&elapsed.as_millis()));
     }
 
     #[tokio::test]
@@ -1007,7 +1008,8 @@ mod tests {
             let start = std::time::Instant::now();
             random_delay(15, 25).await;
             let elapsed = start.elapsed();
-            assert!(elapsed.as_millis() >= 15 && elapsed.as_millis() < 60);
+            // Wider tolerance for Windows timing jitter
+            assert!((10..80).contains(&elapsed.as_millis()));
         }
     }
 

@@ -1049,21 +1049,21 @@ mod tests {
     #[test]
     fn test_selector_json_serialization() {
         let selector = "div.test";
-        let json = serde_json::to_string(selector).unwrap();
+        let json = serde_json::to_string(selector).expect("Failed to serialize selector");
         assert_eq!(json, "\"div.test\"");
     }
 
     #[test]
     fn test_url_json_serialization() {
         let url = "https://example.com";
-        let json = serde_json::to_string(url).unwrap();
+        let json = serde_json::to_string(url).expect("Failed to serialize URL");
         assert_eq!(json, "\"https://example.com\"");
     }
 
     #[test]
     fn test_visibility_check_js_structure() {
         let selector = ".my-element";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1081,7 +1081,7 @@ mod tests {
     #[test]
     fn test_value_read_js_structure() {
         let selector = "#userEmail";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1116,28 +1116,28 @@ mod tests {
     #[test]
     fn test_selector_json_special_chars() {
         let selector = "div[data-test=\"value\"]";
-        let json = serde_json::to_string(selector).unwrap();
+        let json = serde_json::to_string(selector).expect("Failed to serialize selector");
         assert!(json.contains("data-test"));
     }
 
     #[test]
     fn test_selector_json_unicode() {
         let selector = "div.日本語";
-        let json = serde_json::to_string(selector).unwrap();
+        let json = serde_json::to_string(selector).expect("Failed to serialize selector");
         assert!(json.contains("日本語"));
     }
 
     #[test]
     fn test_selector_json_empty() {
         let selector = "";
-        let json = serde_json::to_string(selector).unwrap();
+        let json = serde_json::to_string(selector).expect("Failed to serialize selector");
         assert_eq!(json, "\"\"");
     }
 
     #[test]
     fn test_focus_js_has_prevent_scroll() {
         let selector = "#input";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1186,21 +1186,21 @@ mod tests {
     #[test]
     fn test_attr_json_serialization() {
         let attr = "data-value";
-        let json = serde_json::to_string(attr).unwrap();
+        let json = serde_json::to_string(attr).expect("Failed to serialize attribute");
         assert_eq!(json, "\"data-value\"");
     }
 
     #[test]
     fn test_attr_json_hyphen() {
         let attr = "aria-label";
-        let json = serde_json::to_string(attr).unwrap();
+        let json = serde_json::to_string(attr).expect("Failed to serialize attribute");
         assert!(json.contains("aria"));
     }
 
     #[test]
     fn test_text_extraction_js_uses_inner_text() {
         let selector = "div.content";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1216,7 +1216,7 @@ mod tests {
     #[test]
     fn test_html_extraction_js_uses_inner_html() {
         let selector = "div.content";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1231,7 +1231,7 @@ mod tests {
     #[test]
     fn test_visibility_checks_display_none() {
         let selector = ".hidden";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1249,7 +1249,7 @@ mod tests {
     #[test]
     fn test_visibility_checks_visibility_hidden() {
         let selector = ".invisible";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1267,7 +1267,7 @@ mod tests {
     #[test]
     fn test_visibility_checks_rect_dimensions() {
         let selector = ".element";
-        let selector_js = serde_json::to_string(selector).unwrap();
+        let selector_js = serde_json::to_string(selector).expect("Failed to serialize selector");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector({selector_js});
@@ -1417,7 +1417,8 @@ mod tests {
         ];
 
         for selector in selectors {
-            let parsed = parse_selector_for_navigation(selector).unwrap();
+            let parsed = parse_selector_for_navigation(selector)
+                .expect("Failed to parse CSS selector");
             assert_eq!(parsed, ParsedSelector::Css(selector.to_string()));
         }
     }
@@ -1425,7 +1426,8 @@ mod tests {
     #[cfg(feature = "accessibility-locator")]
     #[test]
     fn test_navigation_routes_locator_grammar_to_accessibility_mode() {
-        let parsed = parse_selector_for_navigation("role=button[name='Save changes']").unwrap();
+        let parsed = parse_selector_for_navigation("role=button[name='Save changes']")
+            .expect("Failed to parse accessibility locator");
         match parsed {
             ParsedSelector::Accessibility(locator) => {
                 assert_eq!(locator.role, "button");

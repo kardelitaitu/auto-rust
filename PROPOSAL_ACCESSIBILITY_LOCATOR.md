@@ -6,10 +6,10 @@ Companion implementation spec: `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
 
 - [ ] Approve locator grammar, ambiguity policy, and error taxonomy in `docs/ACCESSIBILITY_LOCATOR_SPEC.md`.
 - [ ] Confirm non-goals (no task API expansion, no hidden fallback from malformed locator syntax).
-- [ ] Baseline current behavior before coding:
-  - [ ] run `cargo check`
-  - [ ] run `cargo test`
-  - [ ] record current pass/fail totals and flaky tests (if any)
+- [x] Baseline current behavior before coding:
+  - [x] run `cargo check` (pass)
+  - [x] run `cargo test` (fails before tests execute)
+  - [x] record current pass/fail totals and flaky tests (if any)
 - [ ] Add implementation behind a feature flag (default off for first landing).
 - [ ] Implement parser first, with full unit coverage, before resolver wiring.
 - [ ] Implement thin CDP Accessibility resolver in shared navigation path only (single source of truth).
@@ -27,6 +27,14 @@ Companion implementation spec: `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
   - [ ] expand migration only when stable
 - [ ] Define rollback trigger and rollback action before enabling feature flag by default.
 - [ ] Update `src/task/SELECTOR.md` and cross-reference this proposal + spec.
+
+### Baseline Snapshot (2026-04-29)
+
+- `cargo check`: pass
+- `cargo test`: blocked by compile errors in examples:
+  - `src/task/demo-interaction-keyboard.rs:12` unresolved import `crate::utils::timing::DEFAULT_DEMO_DURATION_MS`
+  - `src/task/demo-interaction-mouse.rs:12` unresolved import `crate::utils::timing::DEFAULT_DEMO_DURATION_MS`
+- No flaky runtime test signal observed because test run did not start.
 
 
 ## Goal

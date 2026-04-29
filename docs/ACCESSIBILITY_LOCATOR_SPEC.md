@@ -174,10 +174,15 @@ Gate 5: Broader adoption
 
 ## 13. Open Decisions (Approve Before Code)
 
-1. Should `name` remain required in v1?
-2. Should hidden elements ever be allowed for non-action APIs?
-3. Should `match=contains` be allowed by default or require explicit opt-in?
-4. Should scope failures return hard errors or soft not-found?
+| Decision | Recommended Default | Reason |
+|---|---|---|
+| Should `name` remain required in v1? | Yes (required) | Reduces ambiguity and improves deterministic matching |
+| Should hidden elements be allowed for non-action APIs? | Yes for read/check APIs (`exists`, `text`), no for action APIs (`click`, `hover`, `type`) | Preserves utility while preventing hidden-element interaction flakiness |
+| Should `match=contains` be default? | No; default is `exact`, `contains` is explicit opt-in | Safer matching and lower false-positive rate |
+| Should scope failures be hard errors or soft not-found? | Hard error `locator_scope_invalid` | Prevents silent mis-targeting and debugging confusion |
+
+Approval checkpoint:
+- These defaults must be explicitly approved before implementation starts.
 
 ## 14. Acceptance Criteria
 

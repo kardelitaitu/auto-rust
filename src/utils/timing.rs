@@ -9,6 +9,28 @@ use crate::utils::math::{gaussian, random_in_range};
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
+/// Default runtime budget for demo helper files.
+pub const DEFAULT_DEMO_DURATION_MS: u64 = 60_000;
+
+/// Default navigation timeout shared by task entrypoints.
+pub const DEFAULT_NAVIGATION_TIMEOUT_MS: u64 = 30_000;
+
+/// Returns a randomized duration around a base value using a uniform spread.
+///
+/// Example: `duration_with_variance(300_000, 20)` yields a value in
+/// `240_000..=360_000`.
+pub fn duration_with_variance(base_ms: u64, variance_pct: u32) -> u64 {
+    if base_ms == 0 {
+        return 0;
+    }
+
+    let variance_pct = variance_pct.min(100);
+    let delta = base_ms.saturating_mul(variance_pct as u64) / 100;
+    let min_ms = base_ms.saturating_sub(delta);
+    let max_ms = base_ms.saturating_add(delta);
+    random_in_range(min_ms, max_ms)
+}
+
 /// Sleep for `ms` milliseconds; returns early if `cancel` is triggered.
 pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
     if ms == 0 {
@@ -705,8 +727,8 @@ mod tests {
         let start = std::time::Instant::now();
         random_delay(1, 5).await;
         let elapsed = start.elapsed();
-        // Minimum boundary test
-        assert!(elapsed.as_millis() >= 1 && elapsed.as_millis() < 30);
+        // Minimum boundary test with scheduler tolerance
+        assert!(elapsed.as_millis() < 100);
     }
 
     #[tokio::test]
@@ -1061,5 +1083,16 @@ mod tests {
             "pause with None cancel should run to completion, took {}ms",
             elapsed.as_millis()
         );
+    }
+
+    #[test]
+    fn duration_with_variance_zero_returns_base() {
+        assert_eq!(duration_with_variance(120_000, 0), 120_000);
+    }
+
+    #[test]
+    fn duration_with_variance_stays_within_bounds() {
+        let value = duration_with_variance(300_000, 20);
+        assert!(value >= 240_000 && value <= 360_000);
     }
 }

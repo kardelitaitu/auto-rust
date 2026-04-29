@@ -2,18 +2,24 @@ use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
 use std::time::Duration;
+use tokio::time::timeout;
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
 use crate::utils::mouse::{ClickOutcome, ClickStatus};
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use crate::utils::twitter::{
     close_active_popup, twitteractivity_humanized::human_pause, twitteractivity_selectors::*,
 };
 
-const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const MAX_ATTEMPTS: u32 = 5;
 const POST_RELOAD_ATTEMPTS: u32 = 2;
 const VERIFY_TIMEOUT_MS: u64 = 20_000;
+pub const DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS: u64 = 45_000;
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS, 20)
+}
 
 /// Retry delay: base 3s + attempt*1s, with ±500ms jitter
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
@@ -55,6 +61,16 @@ fn backoff_delay(attempt: u32) -> u64 {
 }
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[twitterfollow] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let input_url = extract_url_from_payload(&payload)?;
     let username;
 
@@ -64,8 +80,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         username = extract_username_from_payload(&payload)?;
         let profile_url = format!("https://x.com/{}", username);
         info!("[twitterfollow] Starting: target=@{}", username);
-        api.navigate(&profile_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
-            .await?;
+        api.navigate(&profile_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
         info!("[twitterfollow] Navigated to {}", profile_url);
     }
 
@@ -105,11 +120,8 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
                 return Ok(false);
             }
             info!("[twitterfollow] Reloading page for retry...");
-            api.navigate(
-                &format!("https://x.com/{}", username),
-                DEFAULT_NAVIGATE_TIMEOUT_MS,
-            )
-            .await?;
+            api.navigate(&format!("https://x.com/{}", username), DEFAULT_NAVIGATION_TIMEOUT_MS)
+                .await?;
             human_pause(api, random_in_range(5000, 10000)).await;
             has_reloaded = true;
             continue;
@@ -476,7 +488,7 @@ async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &str) -> Result<Str
         .ok_or_else(|| anyhow::anyhow!("Could not extract username from tweet URL"))?;
 
     info!("[twitterfollow] Navigating to tweet: {}", tweet_url);
-    api.navigate(tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.navigate(tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
 
     api.pause(2000).await;
 
@@ -622,5 +634,11 @@ mod tests {
         assert!((3500..=4000).contains(&delay0));
         assert!((4500..=5000).contains(&delay1));
         assert!((5500..=6000).contains(&delay2));
+    }
+
+    #[test]
+    fn test_task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 36_000 && duration_ms <= 54_000);
     }
 }

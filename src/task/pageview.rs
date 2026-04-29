@@ -1,5 +1,6 @@
 use crate::internal::profile::{CursorBehavior, ScrollBehavior};
 use crate::prelude::TaskContext;
+use crate::utils::timing::duration_with_variance;
 use crate::validation::task::resolve_pageview_target;
 use anyhow::Result;
 use log::info;
@@ -7,9 +8,12 @@ use rand::Rng;
 use serde_json::Value;
 use std::env;
 use std::time::{Duration, Instant};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
-const DEFAULT_PAGEVIEW_DURATION_MS: u64 = 120_000;
+// Keep the task runtime budget aligned with the registry policy.
+// Default runtime for the pageview behavior loop.
+// Keep this separate from the policy timeout so timeout enforcement can be tested.
+const PAGEVIEW_TASK_DURATION_MS: u64 = 300_000;
 const DEFAULT_INITIAL_PAUSE_MS: u64 = 1_000;
 const DEFAULT_SELECTOR_WAIT_MS: u64 = 6_000;
 const DEFAULT_CURSOR_INTERVAL_MIN_MS: u64 = 2_000;
@@ -50,7 +54,7 @@ struct PageviewConfig {
 impl Default for PageviewConfig {
     fn default() -> Self {
         Self {
-            duration_ms: DEFAULT_PAGEVIEW_DURATION_MS,
+            duration_ms: PAGEVIEW_TASK_DURATION_MS,
             initial_pause_ms: DEFAULT_INITIAL_PAUSE_MS,
             selector_wait_ms: DEFAULT_SELECTOR_WAIT_MS,
             cursor_interval_min_ms: DEFAULT_CURSOR_INTERVAL_MIN_MS,
@@ -129,7 +133,7 @@ impl PageviewConfig {
     }
 
     fn duration(&self) -> Duration {
-        Duration::from_millis(self.duration_ms)
+        Duration::from_millis(duration_with_variance(self.duration_ms, 20))
     }
 
     fn cursor_interval(&self) -> Duration {
@@ -146,11 +150,23 @@ impl PageviewConfig {
 }
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
-    info!("Task started");
-
     let url = resolve_pageview_target(&payload)?;
     let profile = api.behavior_runtime();
     let config = PageviewConfig::from_payload(&payload, profile.cursor, profile.scroll)?;
+    let duration = config.duration();
+
+    timeout(duration, run_inner(api, url, config, duration))
+        .await
+        .map_err(|_| anyhow::anyhow!("pageview exceeded task duration of {}ms", duration.as_millis()))?
+}
+
+async fn run_inner(
+    api: &TaskContext,
+    url: String,
+    config: PageviewConfig,
+    duration: Duration,
+) -> Result<()> {
+    info!("Task started");
     info!("Visiting URL: {}", url);
     if config.overlay_test_mode {
         crate::utils::mouse::set_overlay_enabled(true);
@@ -182,14 +198,18 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         Err(e) => info!("Selector readiness check skipped: {}", e),
     }
 
-    perform_pageview_behavior(api, &config).await?;
+    perform_pageview_behavior(api, &config, duration).await?;
 
     info!("Task completed successfully for: {}", url);
     Ok(())
 }
 
-async fn perform_pageview_behavior(api: &TaskContext, config: &PageviewConfig) -> Result<()> {
-    let deadline = Instant::now() + config.duration();
+async fn perform_pageview_behavior(
+    api: &TaskContext,
+    config: &PageviewConfig,
+    duration: Duration,
+) -> Result<()> {
+    let deadline = Instant::now() + duration;
     let cursor_interval = config.cursor_interval();
     let scroll_interval = config.scroll_interval();
     let overlay_interval = config.overlay_sync();
@@ -382,7 +402,7 @@ mod tests {
         let config =
             PageviewConfig::from_payload(&payload, cursor_behavior, scroll_behavior).unwrap();
 
-        assert_eq!(config.duration_ms, DEFAULT_PAGEVIEW_DURATION_MS);
+        assert_eq!(config.duration_ms, PAGEVIEW_TASK_DURATION_MS);
         assert_eq!(config.initial_pause_ms, DEFAULT_INITIAL_PAUSE_MS);
         assert_eq!(config.selector_wait_ms, DEFAULT_SELECTOR_WAIT_MS);
         assert_eq!(config.cursor_interval_min_ms, 1_800);

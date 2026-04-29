@@ -14,6 +14,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 use crate::prelude::TaskContext;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 
 // ============================================================================
 // Configuration
@@ -25,8 +26,8 @@ const DEFAULT_URL: &str = "https://example.com";
 /// Enable cursor overlay for debugging/demo purposes
 const SHOW_CURSOR_OVERLAY: bool = true;
 
-/// Navigation timeout in milliseconds
-const NAVIGATION_TIMEOUT_MS: u64 = 30_000;
+/// Default task runtime budget in milliseconds.
+pub const DEFAULT_TASK_EXAMPLE_DURATION_MS: u64 = 60_000;
 
 /// Element visibility timeout in milliseconds
 const VISIBILITY_TIMEOUT_MS: u64 = 15_000;
@@ -45,6 +46,20 @@ const VISIBILITY_TIMEOUT_MS: u64 = 15_000;
 /// * `Ok(())` - Task completed successfully
 /// * `Err(e)` - Task failed with error
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[task-example] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_TASK_EXAMPLE_DURATION_MS, 20)
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Example task started");
 
     // Parse configuration from payload (with defaults)
@@ -62,7 +77,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to target URL
     info!("Navigating to: {}", config.url);
-    api.navigate(&config.url, NAVIGATION_TIMEOUT_MS).await?;
+    api.navigate(&config.url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
 
     // Sync cursor overlay if enabled
     if SHOW_CURSOR_OVERLAY {
@@ -260,7 +275,7 @@ fn read_string(payload: &Value, key: &str, default: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExampleConfig, DEFAULT_URL};
+    use super::{task_duration_ms, ExampleConfig, DEFAULT_URL};
     use serde_json::json;
 
     #[test]
@@ -299,5 +314,11 @@ mod tests {
         assert_eq!(config.username, "Partial User");
         assert_eq!(config.url, DEFAULT_URL);
         assert_eq!(config.action, "auto");
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 48_000 && duration_ms <= 72_000);
     }
 }

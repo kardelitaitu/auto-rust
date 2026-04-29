@@ -3,6 +3,7 @@
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use crate::utils::twitter::{
     close_active_popup, twitteractivity_feed::identify_engagement_candidates,
     twitteractivity_humanized::human_pause, twitteractivity_navigation::goto_home,
@@ -10,11 +11,27 @@ use crate::utils::twitter::{
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::timeout;
 
-const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const POST_WAIT_MS: u64 = 3000;
+pub const DEFAULT_TWITTERLIKE_TASK_DURATION_MS: u64 = 30_000;
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_TWITTERLIKE_TASK_DURATION_MS, 20)
+}
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[twitterlike] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     let max_likes = payload
         .get("max_likes")
@@ -101,8 +118,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     } else {
         // Like specific tweet
         info!("[twitterlike] Navigating to tweet: {}", tweet_url);
-        api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
-            .await?;
+        api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
         api.pause(2000).await;
 
         // Dismiss popups
@@ -206,5 +222,11 @@ mod tests {
         let payload = json!({});
         let result = extract_url_from_payload(&payload).unwrap();
         assert_eq!(result, ""); // Empty means use feed
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 24_000 && duration_ms <= 36_000);
     }
 }

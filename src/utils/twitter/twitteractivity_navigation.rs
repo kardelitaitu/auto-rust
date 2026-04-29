@@ -45,6 +45,7 @@
 //! - These can be adjusted per operation if needed
 
 use crate::prelude::TaskContext;
+use crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS;
 use anyhow::Result;
 use log::info;
 use serde_json::Value;
@@ -52,8 +53,6 @@ use tracing::instrument;
 
 use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
 
-/// Default timeout for navigation operations in milliseconds
-const DEFAULT_NAVIGATION_TIMEOUT_MS: u64 = 30_000;
 /// Default timeout for wait operations in milliseconds
 const DEFAULT_WAIT_TIMEOUT_MS: u64 = 15_000;
 

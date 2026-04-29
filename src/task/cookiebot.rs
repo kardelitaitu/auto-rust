@@ -1,13 +1,34 @@
 use crate::error::{OrchestratorError, Result, TaskError};
 use crate::internal::blockmedia;
 use crate::prelude::TaskContext;
+use crate::utils::timing::duration_with_variance;
 use log::{error, info, warn};
 use rand::seq::SliceRandom;
 use serde_json::Value;
 use std::fs;
 use std::time::Instant;
+use std::time::Duration;
+use tokio::time::timeout;
+
+pub const DEFAULT_COOKIEBOT_TASK_DURATION_MS: u64 = 30_000;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| {
+            OrchestratorError::Task(TaskError::ExecutionFailed {
+                task_name: "cookiebot".to_string(),
+                reason: format!("Task exceeded duration budget of {}ms", duration_ms),
+            })
+        })?
+}
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_COOKIEBOT_TASK_DURATION_MS, 20)
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     blockmedia::block_heavy_resources_for_cookiebot(api.page()).await?;
 
     // Get data file path from payload, default to data/cookiebot.txt
@@ -117,4 +138,15 @@ pub fn read_cookiebot_urls(data_file: &str) -> Result<Vec<String>> {
         .collect();
 
     Ok(urls)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::task_duration_ms;
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 24_000 && duration_ms <= 36_000);
+    }
 }

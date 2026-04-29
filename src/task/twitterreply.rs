@@ -1,22 +1,38 @@
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
 use crate::llm::unified_processor::UnifiedLLMProcessor;
 use crate::prelude::TaskContext;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use anyhow::Result;
 use log::{info, warn};
 use rand::Rng;
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::timeout;
 
-const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const CONTEXT_REPLIES: u32 = 5;
 const POST_WAIT_MS: u64 = 5000;
+pub const DEFAULT_TWITTERREPLY_TASK_DURATION_MS: u64 = 45_000;
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_TWITTERREPLY_TASK_DURATION_MS, 20)
+}
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[twitterreply] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     info!("Task started - target: {}", tweet_url);
 
     info!("Trampoline navigation...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
-        .await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
     api.pause(2000).await;
 
     info!("Scrolling down (10-20s)...");
@@ -304,7 +320,7 @@ async fn scroll_up_faster(api: &TaskContext) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_reply;
+    use super::{sanitize_reply, task_duration_ms};
     use crate::internal::text::preview_chars;
 
     #[test]
@@ -318,5 +334,11 @@ mod tests {
         let out = sanitize_reply(&text);
         assert_eq!(out.chars().count(), 280);
         assert!(out.ends_with("..."));
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 36_000 && duration_ms <= 54_000);
     }
 }

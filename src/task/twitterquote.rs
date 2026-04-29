@@ -4,14 +4,31 @@
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
 use crate::llm::unified_processor::UnifiedLLMProcessor;
 use crate::prelude::TaskContext;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::timeout;
 
-const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const POST_WAIT_MS: u64 = 5000;
+pub const DEFAULT_TWITTERQUOTE_TASK_DURATION_MS: u64 = 45_000;
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_TWITTERQUOTE_TASK_DURATION_MS, 20)
+}
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[twitterquote] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     let custom_quote = payload
         .get("quote_text")
@@ -22,8 +39,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to tweet
     info!("[twitterquote] Navigating to tweet...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
-        .await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
     api.pause(2000).await;
 
     // Extract tweet context
@@ -330,5 +346,11 @@ mod tests {
     fn extract_url_missing() {
         let payload = json!({});
         assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 36_000 && duration_ms <= 54_000);
     }
 }

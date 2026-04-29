@@ -5,15 +5,31 @@ use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
 use crate::utils::twitter::twitteractivity_humanized::human_pause;
 use crate::utils::twitter::twitteractivity_navigation::goto_home;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use anyhow::Result;
 use log::info;
 use serde_json::Value;
 use std::time::{Duration, Instant};
+use tokio::time::timeout;
 
-const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_SCROLLS: u32 = 5;
+pub const DEFAULT_TWITTERDIVE_DURATION_MS: u64 = 60_000;
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_TWITTERDIVE_DURATION_MS, 20)
+}
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[twitterdive] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     let max_scrolls = payload
         .get("max_scrolls")
@@ -22,7 +38,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = payload
         .get("duration_ms")
         .and_then(|v| v.as_u64())
-        .unwrap_or(60_000);
+        .unwrap_or(DEFAULT_TWITTERDIVE_DURATION_MS);
 
     info!("[twitterdive] Task started");
     info!(
@@ -32,8 +48,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to tweet
     info!("[twitterdive] Navigating to tweet...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS)
-        .await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
     api.pause(2000).await;
 
     // Extract initial tweet info
@@ -220,5 +235,11 @@ mod tests {
     fn extract_url_missing() {
         let payload = json!({});
         assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 48_000 && duration_ms <= 72_000);
     }
 }

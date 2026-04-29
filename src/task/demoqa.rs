@@ -11,6 +11,7 @@ use tokio::time::timeout;
 use crate::capabilities::mouse;
 use crate::logger::scoped_log_context;
 use crate::prelude::TaskContext;
+use crate::utils::timing::duration_with_variance;
 
 const DEMO_URL: &str = "https://demoqa.com/text-box";
 const DEMO_FULL_NAME: &str = "Demo QA";
@@ -18,8 +19,23 @@ const DEMO_EMAIL: &str = "demoqa@example.com";
 const DEMO_CURRENT_ADDRESS: &str = "123 Demo Street, Demo City";
 const DEMO_PERMANENT_ADDRESS: &str = "456 Demo Avenue, Demo Town";
 const SHOW_CURSOR_OVERLAY: bool = true;
+pub const DEFAULT_DEMOQA_TASK_DURATION_MS: u64 = 60_000;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[demoqa] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_DEMOQA_TASK_DURATION_MS, 20)
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started");
 
     let config = DemoQaConfig::from_payload(&payload)?;
@@ -240,7 +256,7 @@ fn read_string(payload: &Value, key: &str, default: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{DemoQaConfig, DEMO_EMAIL, DEMO_FULL_NAME, DEMO_URL};
+    use super::{task_duration_ms, DemoQaConfig, DEMO_EMAIL, DEMO_FULL_NAME, DEMO_URL};
     use serde_json::json;
 
     #[test]
@@ -266,5 +282,11 @@ mod tests {
         assert_eq!(config.email, "ada@example.com");
         assert_eq!(config.current_address, "London");
         assert_eq!(config.permanent_address, "Kent");
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 48_000 && duration_ms <= 72_000);
     }
 }

@@ -16,12 +16,15 @@
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use anyhow::Result;
 use log::{debug, info, warn};
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::timeout;
 
-const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
 const POST_NAVIGATE_WAIT_MS: u64 = 2000;
+pub const DEFAULT_TWITTERINTENT_TASK_DURATION_MS: u64 = 120_000;
 
 #[derive(Debug, Clone, Copy)]
 enum IntentType {
@@ -68,6 +71,15 @@ struct IntentInfo {
 }
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = duration_with_variance(DEFAULT_TWITTERINTENT_TASK_DURATION_MS, 20);
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload, duration_ms))
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("twitterintent exceeded task duration of {}ms", duration_ms)
+        })?
+}
+
+async fn run_inner(api: &TaskContext, payload: Value, duration_ms: u64) -> Result<()> {
     let url = extract_url_from_payload(&payload)?;
     info!("[twitterintent] Intent URL: {}", url);
 
@@ -75,7 +87,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     debug!("[twitterintent] Detected intent type: {:?}", intent_type);
 
     // Navigate to intent URL
-    api.navigate(&url, DEFAULT_NAVIGATE_TIMEOUT_MS).await?;
+    api.navigate(&url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
     api.pause(POST_NAVIGATE_WAIT_MS).await;
 
     // Click confirm button with verification
@@ -116,10 +128,9 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     }
 
     // Simulate reading home feeds with scroll
-    let duration = random_in_range(30000, 120000);
-    let duration_sec = duration / 1000;
+    let duration_sec = duration_ms / 1000;
     info!("[twitterintent] Reading home feeds for {}s", duration_sec);
-    api.scrollread(duration).await?;
+    api.scrollread(duration_ms).await?;
 
     // Final random 3-5s wait
     let final_wait = random_in_range(3000, 5000);
@@ -495,5 +506,11 @@ mod tests {
         let url = "https://x.com/intent/tweet?text=this+is+example+reply%0Athis+is+second+line&url=https://x.com/user/status/123";
         let info = parse_intent_info(url, IntentType::Quote);
         assert_eq!(info.description, "Quoted https://x.com/user/status/123");
+    }
+
+    #[test]
+    fn test_task_duration_stays_within_bounds() {
+        let duration = duration_with_variance(DEFAULT_TWITTERINTENT_TASK_DURATION_MS, 20);
+        assert!((96_000..=144_000).contains(&duration));
     }
 }

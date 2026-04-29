@@ -203,7 +203,7 @@ impl Default for BrowserData {
 
 /// CookieBot policy - handles cookie consent dialogs.
 pub static COOKIEBOT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 30_000, // 30 seconds max for consent handling
+    max_duration_ms: crate::task::cookiebot::DEFAULT_COOKIEBOT_TASK_DURATION_MS,
     permissions: TaskPermissions {
         allow_export_cookies: true, // Export to verify consent state
         allow_screenshot: true,     // Capture consent dialog for debugging
@@ -214,17 +214,13 @@ pub static COOKIEBOT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// PageView policy - simple page loading with verification.
 pub static PAGEVIEW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 30_000, // Page load timeout
-    permissions: TaskPermissions {
-        allow_screenshot: true, // Verify page loaded correctly
-        // allow_write_data implied by allow_screenshot
-        ..Default::default()
-    },
+    max_duration_ms: 120_000, // Pageview runtime budget
+    permissions: TaskPermissions::default(),
 });
 
 /// TwitterActivity policy - complex social media automation.
 pub static TWITTERACTIVITY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 300_000, // 5 minutes for feed scanning
+    max_duration_ms: crate::task::twitteractivity::DEFAULT_TWITTERACTIVITY_DURATION_MS,
     permissions: TaskPermissions {
         allow_export_cookies: true,    // Verify login session
         allow_session_clipboard: true, // Copy tweet text, paste replies
@@ -248,7 +244,7 @@ pub static TWITTER_BASE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// DemoKeyboard policy - default policy.
 pub static DEMO_KEYBOARD_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 60_000,
+    max_duration_ms: crate::task::demo_keyboard::DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS,
     permissions: TaskPermissions {
         ..Default::default()
     },
@@ -256,7 +252,7 @@ pub static DEMO_KEYBOARD_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// DemoMouse policy - default policy.
 pub static DEMO_MOUSE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 60_000,
+    max_duration_ms: crate::task::demo_mouse::DEFAULT_DEMO_MOUSE_TASK_DURATION_MS,
     permissions: TaskPermissions {
         ..Default::default()
     },
@@ -264,7 +260,7 @@ pub static DEMO_MOUSE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// DemoQA policy - default policy.
 pub static DEMO_QA_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 60_000,
+    max_duration_ms: crate::task::demoqa::DEFAULT_DEMOQA_TASK_DURATION_MS,
     permissions: TaskPermissions {
         ..Default::default()
     },
@@ -272,7 +268,7 @@ pub static DEMO_QA_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// TaskExample policy - default policy.
 pub static TASK_EXAMPLE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 60_000,
+    max_duration_ms: crate::task::task_example::DEFAULT_TASK_EXAMPLE_DURATION_MS,
     permissions: TaskPermissions {
         ..Default::default()
     },
@@ -284,18 +280,24 @@ pub static TWITTERDIVE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
         allow_read_data: true, // Read persona files
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
-    max_duration_ms: TWITTER_BASE_POLICY.max_duration_ms,
+    max_duration_ms: crate::task::twitterdive::DEFAULT_TWITTERDIVE_DURATION_MS,
 });
 
 /// TwitterFollow policy - same as Twitter base policy.
-pub static TWITTERFOLLOW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TWITTER_BASE_POLICY.clone());
+pub static TWITTERFOLLOW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
+    max_duration_ms: crate::task::twitterfollow::DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS,
+    permissions: TWITTER_BASE_POLICY.permissions.clone(),
+});
 
 /// TwitterIntent policy - same as Twitter base policy.
-pub static TWITTERINTENT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TWITTER_BASE_POLICY.clone());
+pub static TWITTERINTENT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
+    max_duration_ms: crate::task::twitterintent::DEFAULT_TWITTERINTENT_TASK_DURATION_MS,
+    permissions: TWITTER_BASE_POLICY.permissions.clone(),
+});
 
 /// TwitterLike policy - extends Twitter base policy.
 pub static TWITTERLIKE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 30_000, // Override: faster timeout
+    max_duration_ms: crate::task::twitterlike::DEFAULT_TWITTERLIKE_TASK_DURATION_MS,
     permissions: TWITTER_BASE_POLICY.permissions.clone(),
 });
 
@@ -305,7 +307,7 @@ pub static TWITTERQUOTE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
         allow_read_data: true, // Read persona files
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
-    max_duration_ms: TWITTER_BASE_POLICY.max_duration_ms,
+    max_duration_ms: crate::task::twitterquote::DEFAULT_TWITTERQUOTE_TASK_DURATION_MS,
 });
 
 /// TwitterReply policy - extends Twitter base policy.
@@ -314,15 +316,18 @@ pub static TWITTERREPLY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
         allow_read_data: true, // Read persona files
         ..TWITTER_BASE_POLICY.permissions.clone()
     },
-    max_duration_ms: TWITTER_BASE_POLICY.max_duration_ms,
+    max_duration_ms: crate::task::twitterreply::DEFAULT_TWITTERREPLY_TASK_DURATION_MS,
 });
 
 /// TwitterRetweet policy - same as Twitter base policy.
-pub static TWITTERRETWEET_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TWITTER_BASE_POLICY.clone());
+pub static TWITTERRETWEET_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
+    max_duration_ms: crate::task::twitterretweet::DEFAULT_TWITTERRETWEET_TASK_DURATION_MS,
+    permissions: TWITTER_BASE_POLICY.permissions.clone(),
+});
 
 /// TwitterTest policy - extends Twitter base policy (allows all read operations).
 pub static TWITTERTEST_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 120_000, // Longer timeout for comprehensive tests
+    max_duration_ms: crate::task::twittertest::DEFAULT_TWITTERTEST_TASK_DURATION_MS,
     permissions: crate::task::policy::TaskPermissions {
         allow_screenshot: true,
         allow_export_cookies: true,
@@ -365,6 +370,51 @@ mod tests {
     fn test_default_policy_timeout() {
         let policy = DEFAULT_TASK_POLICY;
         assert_eq!(policy.max_duration_ms, 60_000);
+    }
+
+    #[test]
+    fn test_cookiebot_uses_task_duration_constant() {
+        let policy = get_policy("cookiebot");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::cookiebot::DEFAULT_COOKIEBOT_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_demoqa_uses_task_duration_constant() {
+        let policy = get_policy("demoqa");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::demoqa::DEFAULT_DEMOQA_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_task_example_uses_task_duration_constant() {
+        let policy = get_policy("task-example");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::task_example::DEFAULT_TASK_EXAMPLE_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_demo_keyboard_uses_task_duration_constant() {
+        let policy = get_policy("demo-keyboard");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::demo_keyboard::DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_demo_mouse_uses_task_duration_constant() {
+        let policy = get_policy("demo-mouse");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::demo_mouse::DEFAULT_DEMO_MOUSE_TASK_DURATION_MS
+        );
     }
 
     #[test]
@@ -539,8 +589,102 @@ mod tests {
         assert!(policy.permissions.allow_session_clipboard);
         assert!(policy.permissions.allow_read_data);
         assert!(policy.permissions.allow_screenshot);
-        // 5 minute timeout
-        assert_eq!(policy.max_duration_ms, 300_000);
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitteractivity::DEFAULT_TWITTERACTIVITY_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twitterintent_uses_task_duration_constant() {
+        let policy = get_policy("twitterintent");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitterintent::DEFAULT_TWITTERINTENT_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twitterfollow_uses_task_duration_constant() {
+        let policy = get_policy("twitterfollow");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitterfollow::DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twitterreply_uses_task_duration_constant() {
+        let policy = get_policy("twitterreply");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitterreply::DEFAULT_TWITTERREPLY_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twitterdive_uses_task_duration_constant() {
+        let policy = get_policy("twitterdive");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitterdive::DEFAULT_TWITTERDIVE_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twitterlike_uses_task_duration_constant() {
+        let policy = get_policy("twitterlike");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitterlike::DEFAULT_TWITTERLIKE_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twitterquote_uses_task_duration_constant() {
+        let policy = get_policy("twitterquote");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitterquote::DEFAULT_TWITTERQUOTE_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twitterretweet_uses_task_duration_constant() {
+        let policy = get_policy("twitterretweet");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twitterretweet::DEFAULT_TWITTERRETWEET_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_twittertest_uses_task_duration_constant() {
+        let policy = get_policy("twittertest");
+        assert_eq!(
+            policy.max_duration_ms,
+            crate::task::twittertest::DEFAULT_TWITTERTEST_TASK_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn test_pageview_has_default_permissions_and_120s_timeout() {
+        let policy = get_policy("pageview");
+        let perms = &policy.permissions;
+
+        assert_eq!(policy.max_duration_ms, 120_000);
+        assert!(!perms.allow_screenshot);
+        assert!(!perms.allow_export_cookies);
+        assert!(!perms.allow_import_cookies);
+        assert!(!perms.allow_export_session);
+        assert!(!perms.allow_import_session);
+        assert!(!perms.allow_session_clipboard);
+        assert!(!perms.allow_read_data);
+        assert!(!perms.allow_write_data);
+        assert!(!perms.allow_http_requests);
+        assert!(!perms.allow_dom_inspection);
+        assert!(!perms.allow_browser_export);
+        assert!(!perms.allow_browser_import);
     }
 
     #[test]

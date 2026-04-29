@@ -1,11 +1,30 @@
 use crate::capabilities::keyboard;
 use crate::prelude::TaskContext;
+use crate::utils::timing::duration_with_variance;
 use anyhow::Result;
 use chromiumoxide::Page;
 use log::{info, warn};
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::timeout;
+
+pub const DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS: u64 = 60_000;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[demo-keyboard] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS, 20)
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started");
 
     let url = extract_url_from_payload(&payload)?;
@@ -353,5 +372,11 @@ mod tests {
         let payload = json!({"typo_rate": "not a number"});
         let result = extract_typo_rate(&payload);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 48_000 && duration_ms <= 72_000);
     }
 }

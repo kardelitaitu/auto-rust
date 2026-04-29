@@ -3,12 +3,20 @@
 //! This example demonstrates the mouse utilities for human-like cursor movement and clicking.
 //! Run with: cargo run --example demo-interaction-mouse
 //!
+//! Demo runtime budget is configurable here for quick local edits.
+//!
 //! Note: This example shows the API. Since it's in an examples/ folder, it doesn't have
 //! direct access to the crate's internal modules. In actual usage, you would use these
 //! functions with a chromiumoxide Page.
 
+use crate::utils::timing::DEFAULT_DEMO_DURATION_MS;
+
 fn main() {
     println!("=== Mouse Interaction Demo ===\n");
+    println!(
+        "Recommended demo runtime: {}s",
+        DEFAULT_DEMO_DURATION_MS / 1000
+    );
 
     println!("Cursor movement functions:");
     println!("  cursor_move_to(page, x, y) - Move cursor with default bezier path");

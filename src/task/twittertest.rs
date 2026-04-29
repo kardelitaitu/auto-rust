@@ -2,15 +2,32 @@
 //! Runs all Twitter interactions sequentially for validation.
 
 use crate::prelude::TaskContext;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use crate::utils::twitter::twitteractivity_humanized::human_pause;
 use crate::utils::twitter::twitteractivity_navigation::goto_home;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::timeout;
 
-const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 30_000;
+pub const DEFAULT_TWITTERTEST_TASK_DURATION_MS: u64 = 120_000;
+
+fn task_duration_ms() -> u64 {
+    duration_with_variance(DEFAULT_TWITTERTEST_TASK_DURATION_MS, 20)
+}
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
+    let duration_ms = task_duration_ms();
+    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "[twittertest] Task exceeded duration budget of {}ms",
+            duration_ms
+        ))?
+}
+
+async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     let tests = extract_tests_from_payload(&payload);
 
@@ -22,7 +39,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to test tweet
     info!("[twittertest] Navigating to test tweet...");
-    if let Err(e) = api.navigate(&tweet_url, DEFAULT_NAVIGATE_TIMEOUT_MS).await {
+    if let Err(e) = api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await {
         error_test(&mut results, "navigation", &e.to_string());
         return Ok(());
     }
@@ -381,5 +398,11 @@ mod tests {
         let payload = json!({"tests": ["like", "follow"]});
         let tests = extract_tests_from_payload(&payload);
         assert_eq!(tests, vec!["like", "follow"]);
+    }
+
+    #[test]
+    fn task_duration_stays_within_bounds() {
+        let duration_ms = task_duration_ms();
+        assert!(duration_ms >= 96_000 && duration_ms <= 144_000);
     }
 }

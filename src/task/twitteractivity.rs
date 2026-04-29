@@ -29,6 +29,7 @@ use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use tokio::time::timeout;
 
 // Element selectors configuration
 pub const HOME_LOGO_SELECTOR: &str = r#"a[aria-label="X"]"#;
@@ -54,6 +55,7 @@ use crate::metrics::{
 };
 use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
+use crate::utils::timing::duration_with_variance;
 use crate::utils::twitter::{
     twitteractivity_decision::*,
     twitteractivity_dive::*,
@@ -72,9 +74,11 @@ use crate::utils::twitter::{
     },
 };
 
-/// Default feed scan duration range (ms): 5-9 minutes (300-540 seconds)
-fn default_duration_ms(config: &crate::config::TwitterActivityConfig) -> u64 {
-    config.feed_scan_duration_ms
+/// Default feed scan duration budget (ms): 5 minutes.
+pub const DEFAULT_TWITTERACTIVITY_DURATION_MS: u64 = 300_000;
+
+fn default_duration_ms() -> u64 {
+    DEFAULT_TWITTERACTIVITY_DURATION_MS
 }
 /// Minimum delay between feed candidate scans (ms)
 const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;
@@ -418,7 +422,8 @@ struct TaskConfig {
 impl TaskConfig {
     /// Parse task configuration from JSON payload with defaults
     fn from_payload(payload: &Value, config: &crate::config::TwitterActivityConfig) -> Self {
-        let duration_ms = read_u64(payload, "duration_ms", default_duration_ms(config));
+        let duration_ms =
+            duration_with_variance(read_u64(payload, "duration_ms", default_duration_ms()), 20);
         let candidate_count = read_u32(
             payload,
             "candidate_count",
@@ -1262,10 +1267,23 @@ async fn process_candidate(
 /// # Returns
 /// Result<()> - Ok if completed successfully, Err on failure
 pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Config) -> Result<()> {
-    info!("Task started");
-
-    // Parse task configuration from payload
     let task_config = TaskConfig::from_payload(&payload, &config.twitter_activity);
+    let duration_ms = task_config.duration_ms;
+    timeout(
+        Duration::from_millis(duration_ms),
+        run_inner(api, payload, config, task_config),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("twitteractivity exceeded task duration of {}ms", duration_ms))?
+}
+
+async fn run_inner(
+    api: &TaskContext,
+    _payload: Value,
+    config: &crate::config::Config,
+    task_config: TaskConfig,
+) -> Result<()> {
+    info!("Task started");
 
     // Build persona weights
     let mut persona = select_persona_weights(
@@ -1738,7 +1756,7 @@ mod tests {
         });
         let twitter_config = crate::config::TwitterActivityConfig::default();
         let config = TaskConfig::from_payload(&payload, &twitter_config);
-        assert_eq!(config.duration_ms, 120000);
+        assert!(config.duration_ms >= 96_000 && config.duration_ms <= 144_000);
         assert_eq!(config.candidate_count, 10);
         assert_eq!(config.thread_depth, 15);
         assert_eq!(config.max_actions_per_scan, 5);
@@ -1754,8 +1772,10 @@ mod tests {
         let payload = json!({});
         let twitter_config = crate::config::TwitterActivityConfig::default();
         let config = TaskConfig::from_payload(&payload, &twitter_config);
-        // duration_ms has random default, so just check it's non-zero
-        assert!(config.duration_ms > 0);
+        assert!(
+            config.duration_ms >= 240_000 && config.duration_ms <= 360_000,
+            "duration should stay within ±20% of the 5 minute base"
+        );
         assert_eq!(
             config.candidate_count,
             twitter_config.engagement_candidate_count

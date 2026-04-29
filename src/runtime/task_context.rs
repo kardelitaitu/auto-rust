@@ -1666,10 +1666,10 @@ mod tests {
     }
 
     #[test]
-    fn test_pageview_policy_has_screenshot_only() {
+    fn test_pageview_policy_has_default_permissions() {
         use crate::task::policy::PAGEVIEW_POLICY;
 
-        assert!(PAGEVIEW_POLICY.permissions.allow_screenshot);
+        assert!(!PAGEVIEW_POLICY.permissions.allow_screenshot);
         assert!(!PAGEVIEW_POLICY.permissions.allow_export_cookies);
         assert!(!PAGEVIEW_POLICY.permissions.allow_http_requests);
     }

@@ -192,7 +192,7 @@ mod tests {
         // Should return the set position
         let pos = state.cursor_position_snapshot();
         assert!(pos.is_some());
-        let (x, y) = pos.unwrap();
+        let (x, y) = pos.expect("Cursor position should be set");
         assert_eq!(x, 100.5);
         assert_eq!(y, 200.75);
     }
@@ -336,7 +336,7 @@ mod tests {
         // Retrieve overlay
         let retrieved = overlay_for_page(&page_id);
         assert!(retrieved.is_some());
-        assert!(retrieved.unwrap().is_enabled());
+        assert!(retrieved.expect("Overlay should exist").is_enabled());
 
         // Unbind overlay
         unbind_page_overlay(&page_id);
@@ -392,8 +392,8 @@ mod tests {
         // Check that our specific overlays are enabled
         let entry1 = PAGE_OVERLAY_REGISTRY.get(&page_id1);
         let entry2 = PAGE_OVERLAY_REGISTRY.get(&page_id2);
-        assert!(entry1.is_some() && entry1.unwrap().is_enabled());
-        assert!(entry2.is_some() && entry2.unwrap().is_enabled());
+        assert!(entry1.is_some() && entry1.expect("Overlay 1 should exist").is_enabled());
+        assert!(entry2.is_some() && entry2.expect("Overlay 2 should exist").is_enabled());
 
         // Cleanup
         unbind_page_overlay(&page_id1);
@@ -419,7 +419,7 @@ mod tests {
         // Check that the specific overlay we just added (disabled) causes false
         let entry = PAGE_OVERLAY_REGISTRY.get(&page_id2);
         assert!(entry.is_some());
-        assert!(!entry.unwrap().is_enabled());
+        assert!(!entry.expect("Overlay should exist").is_enabled());
 
         // Cleanup
         unbind_page_overlay(&page_id1);
@@ -456,7 +456,7 @@ mod tests {
         }
 
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("Thread panicked during execution");
         }
 
         // Final position should be retrievable
@@ -481,7 +481,7 @@ mod tests {
         }
 
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("Thread panicked during execution");
         }
 
         // Final state should be either enabled or disabled (no panic)
@@ -512,7 +512,7 @@ mod tests {
 
         let mut total_successes = 0;
         for handle in handles {
-            total_successes += handle.join().unwrap();
+            total_successes += handle.join().expect("Thread panicked during execution");
         }
 
         // Each thread should succeed on its own claims
@@ -685,8 +685,8 @@ mod tests {
         assert!(retrieved2.is_some());
 
         // Check they're the same Arc by comparing pointer
-        let ptr1 = Arc::as_ptr(&retrieved1.unwrap());
-        let ptr2 = Arc::as_ptr(&retrieved2.unwrap());
+        let ptr1 = Arc::as_ptr(&retrieved1.expect("Overlay 1 should exist"));
+        let ptr2 = Arc::as_ptr(&retrieved2.expect("Overlay 2 should exist"));
         assert_eq!(ptr1, ptr2);
 
         unbind_page_overlay(&page_id1);
@@ -716,7 +716,7 @@ mod tests {
         state.set_cursor_position(123.456789, 987.654321);
         let pos = state.cursor_position_snapshot();
         assert!(pos.is_some());
-        let (x, y) = pos.unwrap();
+        let (x, y) = pos.expect("Cursor position should be set");
         assert_eq!(x, 123.456789);
         assert_eq!(y, 987.654321);
     }

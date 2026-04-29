@@ -1173,7 +1173,7 @@ mod tests {
     #[tokio::test]
     async fn test_result_aggregation_success_count() {
         // Verify the result aggregation logic for success counting
-        let results = vec![
+        let results = [
             Ok(()),
             Ok(()),
             Err(OrchestratorError::Task(TaskError::ExecutionFailed {

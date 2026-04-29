@@ -1040,7 +1040,7 @@ mod tests {
         // Circuit breaker state should not prevent graceful shutdown
         // The circuit breaker only affects page acquisition, not shutdown
 
-        let expected_shutdown_behavior = vec![
+        let expected_shutdown_behavior = [
             "mark session as Failed",
             "close remaining pages",
             "close browser with timeout",

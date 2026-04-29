@@ -874,23 +874,29 @@ mod tests {
 
     #[test]
     fn test_twitter_activity_config_with_persona_path() {
-        let mut config = TwitterActivityConfig::default();
-        config.persona_file_path = Some("/path/to/persona.json".to_string());
+        let config = TwitterActivityConfig {
+            persona_file_path: Some("/path/to/persona.json".to_string()),
+            ..Default::default()
+        };
         assert!(config.persona_file_path.is_some());
         assert_eq!(config.persona_file_path.unwrap(), "/path/to/persona.json");
     }
 
     #[test]
     fn test_twitter_activity_config_scroll_amount_override() {
-        let mut config = TwitterActivityConfig::default();
-        config.scroll_amount_pixels = 500;
+        let config = TwitterActivityConfig {
+            scroll_amount_pixels: 500,
+            ..Default::default()
+        };
         assert_eq!(config.scroll_amount_pixels, 500);
     }
 
     #[test]
     fn test_twitter_activity_config_candidate_scan_interval() {
-        let mut config = TwitterActivityConfig::default();
-        config.candidate_scan_interval_ms = 3000;
+        let config = TwitterActivityConfig {
+            candidate_scan_interval_ms: 3000,
+            ..Default::default()
+        };
         assert_eq!(config.candidate_scan_interval_ms, 3000);
     }
 
@@ -927,8 +933,10 @@ mod tests {
 
     #[test]
     fn test_browser_config_with_user_agent() {
-        let mut config = BrowserConfig::default();
-        config.user_agent = Some("CustomAgent/1.0".to_string());
+        let config = BrowserConfig {
+            user_agent: Some("CustomAgent/1.0".to_string()),
+            ..Default::default()
+        };
         assert!(config.user_agent.is_some());
         assert_eq!(config.user_agent.unwrap(), "CustomAgent/1.0");
     }
@@ -948,8 +956,10 @@ mod tests {
 
     #[test]
     fn test_browser_config_cursor_overlay_ms() {
-        let mut config = BrowserConfig::default();
-        config.cursor_overlay_ms = 100;
+        let config = BrowserConfig {
+            cursor_overlay_ms: 100,
+            ..Default::default()
+        };
         assert_eq!(config.cursor_overlay_ms, 100);
     }
 

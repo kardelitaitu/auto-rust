@@ -658,7 +658,7 @@ mod tests {
         }
         // All should be in range
         for r in results {
-            assert!(r >= 10 && r < 50);
+            assert!((10..50).contains(&r));
         }
     }
 
@@ -672,7 +672,7 @@ mod tests {
         }
         // All should be in reasonable range
         for r in results {
-            assert!(r >= 20 && r < 80);
+            assert!((20..80).contains(&r));
         }
     }
 
@@ -686,7 +686,7 @@ mod tests {
         }
         // All should be in reasonable range
         for r in results {
-            assert!(r >= 20 && r < 80);
+            assert!((20..80).contains(&r));
         }
     }
 
@@ -700,7 +700,7 @@ mod tests {
         }
         // All should complete in reasonable time
         for r in results {
-            assert!(r >= 15 && r < 150);
+            assert!((15..150).contains(&r));
         }
     }
 
@@ -823,7 +823,7 @@ mod tests {
         }
         // All should complete
         for r in results {
-            assert!(r >= 15 && r < 150);
+            assert!((15..150).contains(&r));
         }
     }
 
@@ -868,7 +868,7 @@ mod tests {
         // Allow extra margin for system scheduling variance (async runtime, CPU load)
         let ms = elapsed.as_millis() as u64;
         assert!(
-            ms >= 120 && ms < 250,
+            (120..250).contains(&ms),
             "human_pause(150, 10) took {}ms, expected ~135-165ms",
             ms
         );
@@ -883,7 +883,7 @@ mod tests {
         // Use very wide tolerance to avoid flaky failures on loaded systems
         let ms = elapsed.as_millis() as u64;
         assert!(
-            ms >= 100 && ms < 1000,
+            (100..1000).contains(&ms),
             "uniform_pause(150, 10) took {}ms, expected ~135-165ms (accepting 100-1000ms)",
             ms
         );
@@ -1093,6 +1093,6 @@ mod tests {
     #[test]
     fn duration_with_variance_stays_within_bounds() {
         let value = duration_with_variance(300_000, 20);
-        assert!(value >= 240_000 && value <= 360_000);
+        assert!((240_000..=360_000).contains(&value));
     }
 }

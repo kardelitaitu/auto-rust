@@ -53,6 +53,6 @@ mod tests {
     #[test]
     fn test_utils_module_compiles() {
         // Module structure verification - just needs to compile
-        assert!(true);
+        // Module tests placeholder
     }
 }

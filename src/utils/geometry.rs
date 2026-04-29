@@ -44,7 +44,7 @@ mod tests {
             width: 100.0,
             height: 50.0,
         };
-        let bbox2 = bbox1.clone();
+        let bbox2 = bbox1;
         assert_eq!(bbox1.x, bbox2.x);
         assert_eq!(bbox1.y, bbox2.y);
         assert_eq!(bbox1.width, bbox2.width);

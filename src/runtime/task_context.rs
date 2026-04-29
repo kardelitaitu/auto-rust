@@ -975,7 +975,7 @@ mod tests {
             state.record("#button", i % 2 == 0);
         }
         let rate = state.recent_success_rate();
-        assert!(rate >= 0.0 && rate <= 1.0);
+        assert!((0.0..=1.0).contains(&rate));
     }
 
     #[test]

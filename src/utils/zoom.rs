@@ -369,7 +369,7 @@ mod tests {
         } else {
             -1.0 + (4.0 - 2.0 * progress) * progress
         };
-        assert!(eased >= 0.0 && eased <= 1.0);
+        assert!((0.0..=1.0).contains(&eased));
     }
 
     #[test]
@@ -393,7 +393,7 @@ mod tests {
         } else {
             -1.0 + (4.0 - 2.0 * progress) * progress
         };
-        assert!(eased >= 0.0 && eased <= 1.0);
+        assert!((0.0..=1.0).contains(&eased));
     }
 
     #[test]

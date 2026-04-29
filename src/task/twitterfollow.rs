@@ -300,10 +300,7 @@ fn following_locator_candidates(username: Option<&str>) -> Vec<String> {
 
 async fn find_and_click_follow_button(api: &TaskContext, username: &str) -> Result<bool> {
     for selector in follow_locator_candidates(username) {
-        let visible = match api.visible(&selector).await {
-            Ok(v) => v,
-            Err(_) => false,
-        };
+        let visible = api.visible(&selector).await.unwrap_or_default();
         if !visible {
             continue;
         }
@@ -316,10 +313,7 @@ async fn find_and_click_follow_button(api: &TaskContext, username: &str) -> Resu
         "main header button[data-testid$='-follow']",
         "button[data-testid$='-follow']",
     ] {
-        let visible = match api.visible(selector).await {
-            Ok(v) => v,
-            Err(_) => false,
-        };
+        let visible = api.visible(selector).await.unwrap_or_default();
         if !visible {
             continue;
         }
@@ -731,7 +725,7 @@ mod tests {
     #[test]
     fn test_task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!(duration_ms >= 36_000 && duration_ms <= 54_000);
+        assert!((36_000..=54_000).contains(&duration_ms));
     }
 
     #[test]

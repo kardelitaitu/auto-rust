@@ -1293,7 +1293,7 @@ mod tests {
 
     #[test]
     fn test_any_visible_selector_logic() {
-        let selectors = vec!["#a", "#b", "#c"];
+        let selectors = ["#a", "#b", "#c"];
         assert_eq!(selectors.len(), 3);
     }
 
@@ -1305,7 +1305,7 @@ mod tests {
 
     #[test]
     fn test_single_selector_array() {
-        let selectors = vec!["#test"];
+        let selectors = ["#test"];
         assert_eq!(selectors.len(), 1);
     }
 

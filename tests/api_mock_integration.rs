@@ -952,10 +952,8 @@ fn test_write_json_data_creates_file_mock() {
 #[test]
 fn test_http_get_timeout_mock() {
     // Simulate timeout
-    let result: Result<MockHttpResponse, String> =
-        Err("Connection timeout after 5000ms".to_string());
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("timeout"));
+    let err = "Connection timeout after 5000ms".to_string();
+    assert!(err.contains("timeout"));
 }
 
 // ============================================================================

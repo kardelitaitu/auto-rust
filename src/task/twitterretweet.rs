@@ -345,6 +345,6 @@ mod tests {
     #[test]
     fn task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!(duration_ms >= 36_000 && duration_ms <= 54_000);
+        assert!((36_000..=54_000).contains(&duration_ms));
     }
 }

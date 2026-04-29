@@ -269,13 +269,13 @@ mod tests {
 
     #[test]
     fn test_timeout_constants_are_positive() {
-        assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > 0);
-        assert!(DEFAULT_WAIT_TIMEOUT_MS > 0);
+        const { assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > 0) }
+        const { assert!(DEFAULT_WAIT_TIMEOUT_MS > 0) }
     }
 
     #[test]
     fn test_navigation_timeout_greater_than_wait_timeout() {
-        assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > DEFAULT_WAIT_TIMEOUT_MS);
+        const { assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > DEFAULT_WAIT_TIMEOUT_MS) }
     }
 
     #[test]

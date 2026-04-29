@@ -61,6 +61,6 @@ mod tests {
     #[test]
     fn test_twitter_utils_module_compiles() {
         // All re-exports are just aliases - verify structure
-        assert!(true);
+        // Module tests placeholder
     }
 }

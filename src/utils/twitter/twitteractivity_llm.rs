@@ -754,7 +754,7 @@ pub async fn extract_tweet_context(
             .unwrap_or_default();
 
         // Sort by text length descending and take top 10 longest replies
-        replies.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        replies.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
         replies.truncate(10);
 
         Ok((author, text, replies))

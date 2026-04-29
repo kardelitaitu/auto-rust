@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_multiple_chat_messages() {
-        let messages = vec![
+        let messages = [
             ChatMessage {
                 role: "system".to_string(),
                 content: "System prompt".to_string(),

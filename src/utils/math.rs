@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn test_random_in_range_max_u64() {
         let result = random_in_range(u64::MAX - 10, u64::MAX);
-        assert!(result >= u64::MAX - 10 && result <= u64::MAX);
+        assert!((u64::MAX - 10..=u64::MAX).contains(&result));
     }
 
     #[test]

@@ -597,15 +597,19 @@ mod tests {
 
     #[test]
     fn test_thread_cache_is_valid_with_author() {
-        let mut cache = ThreadCache::default();
-        cache.tweet_author = "testuser".to_string();
+        let cache = ThreadCache {
+            tweet_author: "testuser".to_string(),
+            ..Default::default()
+        };
         assert!(cache.is_valid());
     }
 
     #[test]
     fn test_thread_cache_is_valid_with_text() {
-        let mut cache = ThreadCache::default();
-        cache.tweet_text = "test tweet".to_string();
+        let cache = ThreadCache {
+            tweet_text: "test tweet".to_string(),
+            ..Default::default()
+        };
         assert!(cache.is_valid());
     }
 

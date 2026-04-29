@@ -22,10 +22,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
-        .map_err(|_| anyhow::anyhow!(
-            "[twitterquote] Task exceeded duration budget of {}ms",
-            duration_ms
-        ))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "[twitterquote] Task exceeded duration budget of {}ms",
+                duration_ms
+            )
+        })?
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -39,7 +41,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to tweet
     info!("[twitterquote] Navigating to tweet...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+        .await?;
     api.pause(2000).await;
 
     // Extract tweet context

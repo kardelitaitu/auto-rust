@@ -500,7 +500,7 @@ fn twitteractivity_sentiment_long_text() {
 fn twitteractivity_sentiment_only_emojis() {
     let emoji_tweet = json!({ "text": "🎉🎊🎈🎁" });
     let result = analyze_tweet_sentiment(&emoji_tweet);
-    
+
     // Emojis alone - should be neutral or positive
     assert!(
         matches!(result, Sentiment::Neutral | Sentiment::Positive),
@@ -513,11 +513,11 @@ fn twitteractivity_sentiment_only_emojis() {
 fn twitteractivity_action_chaining_zero_delay() {
     let mut tracker = TweetActionTracker::new(0);
     let tweet_id = "test_zero_delay";
-    
+
     // First action
     assert!(tracker.can_perform_action(tweet_id, "like"));
     tracker.record_action(tweet_id.to_string(), "like");
-    
+
     // With zero delay, should be allowed immediately
     assert!(
         tracker.can_perform_action(tweet_id, "retweet"),
@@ -529,10 +529,10 @@ fn twitteractivity_action_chaining_zero_delay() {
 #[test]
 fn twitteractivity_persona_weights_empty_override() {
     let config_probs = TwitterProbabilitiesConfig::default();
-    
+
     let empty_override = json!({});
     let weights = select_persona_weights(Some(&empty_override), &config_probs);
-    
+
     // Empty override should use defaults
     assert!((0.0..=1.0).contains(&weights.like_prob));
     assert!((0.0..=1.0).contains(&weights.retweet_prob));
@@ -542,7 +542,7 @@ fn twitteractivity_persona_weights_empty_override() {
 #[test]
 fn twitteractivity_engagement_limits_zero_max() {
     use auto::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
-    
+
     let limits = EngagementLimits {
         max_likes: 0,
         max_retweets: 0,
@@ -554,7 +554,7 @@ fn twitteractivity_engagement_limits_zero_max() {
         max_quote_tweets: 0,
     };
     let counters = EngagementCounters::new();
-    
+
     // With zero limits, nothing should be allowed
     assert!(!limits.can_like(&counters));
     assert!(!limits.can_retweet(&counters));
@@ -566,9 +566,13 @@ fn twitteractivity_engagement_limits_zero_max() {
 /// Test sentiment analysis with mixed positive/negative
 #[test]
 fn twitteractivity_sentiment_mixed_signals() {
-    let mixed_tweet = json!({ "text": "I love it but hate the service, it's amazing yet terrible." });
+    let mixed_tweet =
+        json!({ "text": "I love it but hate the service, it's amazing yet terrible." });
     let result = analyze_tweet_sentiment(&mixed_tweet);
-    
+
     // Mixed signals - could be neutral or based on dominant sentiment
-    assert!(matches!(result, Sentiment::Positive | Sentiment::Negative | Sentiment::Neutral));
+    assert!(matches!(
+        result,
+        Sentiment::Positive | Sentiment::Negative | Sentiment::Neutral
+    ));
 }

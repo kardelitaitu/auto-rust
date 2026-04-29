@@ -336,9 +336,7 @@ pub async fn selector_action_point(page: &Page, selector: &str) -> Result<(f64, 
     {
         match parse_selector_for_navigation(selector)? {
             ParsedSelector::Css(css) => page_size::get_element_center(page, &css).await,
-            ParsedSelector::Accessibility(locator) => {
-                ax_locator_action_point(page, &locator).await
-            }
+            ParsedSelector::Accessibility(locator) => ax_locator_action_point(page, &locator).await,
         }
     }
 
@@ -400,7 +398,10 @@ fn locator_not_found_error(locator: &AccessibilityLocator) -> anyhow::Error {
 
 #[cfg(feature = "accessibility-locator")]
 fn locator_unsupported_error(operation: &str) -> anyhow::Error {
-    anyhow::anyhow!("locator_unsupported: operation='{}' requires css selector", operation)
+    anyhow::anyhow!(
+        "locator_unsupported: operation='{}' requires css selector",
+        operation
+    )
 }
 
 #[cfg(feature = "accessibility-locator")]
@@ -445,7 +446,10 @@ fn classify_locator_text(nodes_len: usize, has_text: bool) -> &'static str {
 }
 
 #[cfg(feature = "accessibility-locator")]
-async fn ax_locator_action_point(page: &Page, locator: &AccessibilityLocator) -> Result<(f64, f64)> {
+async fn ax_locator_action_point(
+    page: &Page,
+    locator: &AccessibilityLocator,
+) -> Result<(f64, f64)> {
     let nodes = query_ax_nodes(page, locator).await?;
     let visible_nodes: Vec<&AxNode> = nodes.iter().filter(|n| ax_node_is_visible(n)).collect();
 
@@ -550,8 +554,7 @@ async fn css_selector_text(page: &Page, selector: &str) -> Result<Option<String>
 
 #[cfg(feature = "accessibility-locator")]
 fn parse_selector_for_navigation(selector: &str) -> Result<ParsedSelector> {
-    parse_selector_input(selector)
-        .map_err(|e| anyhow::anyhow!("locator_parse_error: {}", e))
+    parse_selector_input(selector).map_err(|e| anyhow::anyhow!("locator_parse_error: {}", e))
 }
 
 #[cfg(feature = "accessibility-locator")]
@@ -963,15 +966,15 @@ mod tests {
 
     use super::emit_selector_observation;
     #[cfg(feature = "accessibility-locator")]
-    use crate::utils::accessibility_locator::{AccessibilityLocator, LocatorMatchMode};
-    #[cfg(feature = "accessibility-locator")]
     use super::{
-        classify_locator_exists, classify_locator_text, classify_locator_visible, quad_center,
+        classify_locator_exists, classify_locator_text, classify_locator_visible,
         locator_not_found_error, locator_unsupported_error, parse_selector_for_navigation,
-        selector_uses_accessibility_locator,
+        quad_center, selector_uses_accessibility_locator,
     };
     #[cfg(feature = "accessibility-locator")]
     use crate::utils::accessibility_locator::ParsedSelector;
+    #[cfg(feature = "accessibility-locator")]
+    use crate::utils::accessibility_locator::{AccessibilityLocator, LocatorMatchMode};
 
     #[derive(Clone, Default)]
     struct SharedLogBuffer {
@@ -1158,10 +1161,10 @@ mod tests {
         // Test that timeout values are used as-is (no clamping)
         let timeout_ms = 10000;
         assert_eq!(timeout_ms, 10000);
-        
+
         let timeout_ms = 2000;
         assert_eq!(timeout_ms, 2000);
-        
+
         let timeout_ms = 500;
         assert_eq!(timeout_ms, 500);
     }
@@ -1331,9 +1334,7 @@ mod tests {
         });
 
         assert!(output.contains("selector resolution"));
-        assert!(
-            output.contains("selector_mode=a11y") || output.contains("selector_mode=\"a11y\"")
-        );
+        assert!(output.contains("selector_mode=a11y") || output.contains("selector_mode=\"a11y\""));
         assert!(
             output.contains("locator_result=ambiguous")
                 || output.contains("locator_result=\"ambiguous\"")
@@ -1449,9 +1450,15 @@ mod tests {
     #[cfg(feature = "accessibility-locator")]
     #[test]
     fn test_selector_uses_accessibility_locator_trims_leading_whitespace() {
-        assert!(selector_uses_accessibility_locator("role=button[name='Save']"));
-        assert!(selector_uses_accessibility_locator("   role=button[name='Save']"));
-        assert!(!selector_uses_accessibility_locator("button[aria-label='Save']"));
+        assert!(selector_uses_accessibility_locator(
+            "role=button[name='Save']"
+        ));
+        assert!(selector_uses_accessibility_locator(
+            "   role=button[name='Save']"
+        ));
+        assert!(!selector_uses_accessibility_locator(
+            "button[aria-label='Save']"
+        ));
     }
 
     #[cfg(feature = "accessibility-locator")]

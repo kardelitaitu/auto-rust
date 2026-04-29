@@ -317,10 +317,7 @@ impl MetricsCollector {
             .read()
             .iter()
             .map(|(kind, count)| {
-                let kind_str = ERROR_KIND_STRINGS
-                    .get(kind)
-                    .copied()
-                    .unwrap_or("unknown");
+                let kind_str = ERROR_KIND_STRINGS.get(kind).copied().unwrap_or("unknown");
                 (kind_str.to_string(), *count)
             })
             .collect();

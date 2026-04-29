@@ -1274,7 +1274,12 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
         run_inner(api, payload, config, task_config),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("twitteractivity exceeded task duration of {}ms", duration_ms))?
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "twitteractivity exceeded task duration of {}ms",
+            duration_ms
+        )
+    })?
 }
 
 async fn run_inner(

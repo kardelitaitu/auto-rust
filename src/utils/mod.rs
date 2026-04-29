@@ -1,7 +1,7 @@
-pub mod blockmedia;
-pub mod clipboard;
 #[cfg(feature = "accessibility-locator")]
 pub mod accessibility_locator;
+pub mod blockmedia;
+pub mod clipboard;
 pub mod geometry;
 pub mod keyboard;
 pub mod math;
@@ -17,13 +17,13 @@ pub mod twitter;
 pub mod zoom;
 
 // Internal implementation module; tasks should import `crate::prelude::*` instead.
+#[cfg(feature = "accessibility-locator")]
+#[allow(unused_imports)]
+pub use accessibility_locator::*;
 #[allow(unused_imports)]
 pub use blockmedia::*;
 #[allow(unused_imports)]
 pub use clipboard::*;
-#[cfg(feature = "accessibility-locator")]
-#[allow(unused_imports)]
-pub use accessibility_locator::*;
 #[allow(unused_imports)]
 pub use geometry::*;
 #[allow(unused_imports)]

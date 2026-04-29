@@ -232,8 +232,7 @@ mod tests {
 
     #[test]
     fn fails_for_duplicate_name_field() {
-        let err =
-            parse_selector_input("role=button[name='Save'][name='Again']").unwrap_err();
+        let err = parse_selector_input("role=button[name='Save'][name='Again']").unwrap_err();
         assert_eq!(err, LocatorParseError::DuplicateField("name"));
     }
 
@@ -323,10 +322,7 @@ mod tests {
     #[test]
     fn fails_for_missing_segment_equals() {
         let err = parse_selector_input("role=button[name]").unwrap_err();
-        assert_eq!(
-            err,
-            LocatorParseError::MalformedSegment("name".to_string())
-        );
+        assert_eq!(err, LocatorParseError::MalformedSegment("name".to_string()));
     }
 
     #[test]

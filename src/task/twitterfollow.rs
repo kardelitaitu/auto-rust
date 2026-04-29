@@ -64,10 +64,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
-        .map_err(|_| anyhow::anyhow!(
-            "[twitterfollow] Task exceeded duration budget of {}ms",
-            duration_ms
-        ))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "[twitterfollow] Task exceeded duration budget of {}ms",
+                duration_ms
+            )
+        })?
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -80,7 +82,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         username = extract_username_from_payload(&payload)?;
         let profile_url = format!("https://x.com/{}", username);
         info!("[twitterfollow] Starting: target=@{}", username);
-        api.navigate(&profile_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
+        api.navigate(&profile_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+            .await?;
         info!("[twitterfollow] Navigated to {}", profile_url);
     }
 
@@ -120,8 +123,11 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
                 return Ok(false);
             }
             info!("[twitterfollow] Reloading page for retry...");
-            api.navigate(&format!("https://x.com/{}", username), DEFAULT_NAVIGATION_TIMEOUT_MS)
-                .await?;
+            api.navigate(
+                &format!("https://x.com/{}", username),
+                DEFAULT_NAVIGATION_TIMEOUT_MS,
+            )
+            .await?;
             human_pause(api, random_in_range(5000, 10000)).await;
             has_reloaded = true;
             continue;
@@ -257,7 +263,10 @@ async fn maybe_backoff(api: &TaskContext, attempt: u32) {
 
 fn follow_locator_candidates(username: &str) -> Vec<String> {
     vec![
-        format!("role=button[name='Follow @{}'][scope='main header']", username),
+        format!(
+            "role=button[name='Follow @{}'][scope='main header']",
+            username
+        ),
         "role=button[name='Follow @'][match=contains][scope='main header']".to_string(),
         "role=button[name='Follow'][scope='main header']".to_string(),
         format!("role=button[name='Follow @{}']", username),
@@ -278,7 +287,10 @@ fn following_locator_candidates(username: Option<&str>) -> Vec<String> {
     if let Some(username) = username {
         candidates.insert(
             0,
-            format!("role=button[name='Following @{}'][scope='main header']", username),
+            format!(
+                "role=button[name='Following @{}'][scope='main header']",
+                username
+            ),
         );
         candidates.insert(1, format!("role=button[name='Following @{}']", username));
         candidates.push(format!("role=button[name='Unfollow @{}']", username));
@@ -300,7 +312,10 @@ async fn find_and_click_follow_button(api: &TaskContext, username: &str) -> Resu
         }
     }
 
-    for selector in ["main header button[data-testid$='-follow']", "button[data-testid$='-follow']"] {
+    for selector in [
+        "main header button[data-testid$='-follow']",
+        "button[data-testid$='-follow']",
+    ] {
         let visible = match api.visible(selector).await {
             Ok(v) => v,
             Err(_) => false,
@@ -564,7 +579,8 @@ async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &str) -> Result<Str
         .ok_or_else(|| anyhow::anyhow!("Could not extract username from tweet URL"))?;
 
     info!("[twitterfollow] Navigating to tweet: {}", tweet_url);
-    api.navigate(tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
+    api.navigate(tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+        .await?;
 
     api.pause(2000).await;
 
@@ -727,9 +743,7 @@ mod tests {
         assert!(selectors
             .iter()
             .any(|s| s == "role=button[name='Follow @'][match=contains][scope='main header']"));
-        assert!(selectors
-            .iter()
-            .any(|s| s == "role=button[name='Follow']"));
+        assert!(selectors.iter().any(|s| s == "role=button[name='Follow']"));
     }
 
     #[test]
@@ -757,7 +771,10 @@ mod tests {
             selectors[1],
             "role=button[name='Follow @'][match=contains][scope='main header']"
         );
-        assert_eq!(selectors[2], "role=button[name='Follow'][scope='main header']");
+        assert_eq!(
+            selectors[2],
+            "role=button[name='Follow'][scope='main header']"
+        );
         assert_eq!(selectors[3], "role=button[name='Follow @historyinmemes']");
         assert_eq!(selectors[4], "role=button[name='Follow @'][match=contains]");
         assert_eq!(selectors[5], "role=button[name='Follow']");
@@ -771,7 +788,9 @@ mod tests {
             "role=button[name='Following @PopBase'][scope='main header']"
         );
         assert_eq!(selectors[1], "role=button[name='Following @PopBase']");
-        assert!(selectors.iter().any(|s| s == "role=button[name='Unfollow @PopBase']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Unfollow @PopBase']"));
     }
 
     #[test]

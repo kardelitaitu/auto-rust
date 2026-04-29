@@ -157,7 +157,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
 
     timeout(duration, run_inner(api, url, config, duration))
         .await
-        .map_err(|_| anyhow::anyhow!("pageview exceeded task duration of {}ms", duration.as_millis()))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "pageview exceeded task duration of {}ms",
+                duration.as_millis()
+            )
+        })?
 }
 
 async fn run_inner(

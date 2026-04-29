@@ -6,8 +6,8 @@ use log::{error, info, warn};
 use rand::seq::SliceRandom;
 use serde_json::Value;
 use std::fs;
-use std::time::Instant;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::time::timeout;
 
 pub const DEFAULT_COOKIEBOT_TASK_DURATION_MS: u64 = 30_000;

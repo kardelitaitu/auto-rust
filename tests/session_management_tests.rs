@@ -18,8 +18,8 @@ async fn connect_test_session() -> anyhow::Result<Option<Session>> {
         "brave".to_string(),
         browser,
         handler,
-        5, // max_workers
-        0,  // cursor_overlay_ms
+        5,    // max_workers
+        0,    // cursor_overlay_ms
         None, // circuit_breaker_config
     );
     Ok(Some(session))
@@ -103,9 +103,7 @@ async fn test_circuit_breaker_recovery_flow() -> anyhow::Result<()> {
     assert!(!session.is_healthy());
 
     // Expire timeout
-    session.set_circuit_breaker_last_failure_time(
-        current_time - (timeout_secs as usize + 10)
-    );
+    session.set_circuit_breaker_last_failure_time(current_time - (timeout_secs as usize + 10));
     assert!(!session.is_circuit_breaker_open());
 
     // Reset and recover

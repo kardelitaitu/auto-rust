@@ -860,20 +860,35 @@ mod tests {
     fn test_should_mark_session_unhealthy_comprehensive() {
         // Should mark unhealthy for these (when not cancelled)
         assert!(should_mark_session_unhealthy(TaskErrorKind::Timeout, false));
-        assert!(should_mark_session_unhealthy(TaskErrorKind::Navigation, false));
+        assert!(should_mark_session_unhealthy(
+            TaskErrorKind::Navigation,
+            false
+        ));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
 
         // Should NOT mark unhealthy for these
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, false));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, false));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            false
+        ));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Unknown,
+            false
+        ));
 
         // Cancelled tasks should NEVER mark unhealthy
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Navigation, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Navigation,
+            true
+        ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Session, true));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            true
+        ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
     }
 
@@ -1078,7 +1093,8 @@ mod tests {
             twitter_activity: TwitterActivityConfig::default(),
         };
         let orchestrator2 = Orchestrator::new(config2);
-        assert_eq!(orchestrator2.config.orchestrator.max_global_concurrency, 5); // default is 5
+        assert_eq!(orchestrator2.config.orchestrator.max_global_concurrency, 5);
+        // default is 5
     }
 
     // ========================================================================

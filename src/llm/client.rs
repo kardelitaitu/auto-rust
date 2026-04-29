@@ -1044,9 +1044,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_ollama_timeout_triggers_error() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-        use wiremock::matchers::{method, path};
         use std::time::Duration;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -1080,7 +1080,10 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Should fail due to timeout
-        assert!(result.is_err(), "Should timeout when response is slower than timeout_ms");
+        assert!(
+            result.is_err(),
+            "Should timeout when response is slower than timeout_ms"
+        );
 
         // Should fail quickly (not wait for the full 500ms delay)
         assert!(
@@ -1092,7 +1095,9 @@ mod tests {
         // Error should indicate timeout (reqwest returns "error sending request" for timeout)
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("error sending request") || err_msg.contains("timeout") || err_msg.contains("deadline"),
+            err_msg.contains("error sending request")
+                || err_msg.contains("timeout")
+                || err_msg.contains("deadline"),
             "Error should indicate timeout or request error, got: {}",
             err_msg
         );
@@ -1100,9 +1105,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_openrouter_timeout_triggers_fallback() {
+        use std::time::Duration;
         use wiremock::matchers::{body_string_contains, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
-        use std::time::Duration;
 
         let mock_server = MockServer::start().await;
 
@@ -1188,12 +1193,9 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
             .and(body_string_contains(r#""model":"primary-model""#))
-            .respond_with(
-                ResponseTemplate::new(429)
-                    .set_body_json(serde_json::json!({
-                        "error": {"message": "Rate limit exceeded", "code": 429}
-                    })),
-            )
+            .respond_with(ResponseTemplate::new(429).set_body_json(serde_json::json!({
+                "error": {"message": "Rate limit exceeded", "code": 429}
+            })))
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -1243,12 +1245,9 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
             .and(body_string_contains(r#""model":"primary-model""#))
-            .respond_with(
-                ResponseTemplate::new(503)
-                    .set_body_json(serde_json::json!({
-                        "error": {"message": "Service unavailable", "code": 503}
-                    })),
-            )
+            .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+                "error": {"message": "Service unavailable", "code": 503}
+            })))
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -1297,12 +1296,9 @@ mod tests {
         // Return 401 auth error for all requests (no fallbacks should be tried)
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(401)
-                    .set_body_json(serde_json::json!({
-                        "error": {"message": "Invalid API key", "code": 401}
-                    })),
-            )
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": {"message": "Invalid API key", "code": 401}
+            })))
             .expect(1) // Should only try once (no fallbacks for auth errors in this implementation)
             .mount(&mock_server)
             .await;
@@ -1325,7 +1321,9 @@ mod tests {
         assert!(result.is_err(), "Should fail with 401 auth error");
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("401") || err_msg.contains("Invalid API key") || err_msg.contains("OpenRouter API error"),
+            err_msg.contains("401")
+                || err_msg.contains("Invalid API key")
+                || err_msg.contains("OpenRouter API error"),
             "Error should indicate auth failure: {}",
             err_msg
         );
@@ -1341,10 +1339,7 @@ mod tests {
         // Return invalid JSON
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string("{invalid json}"),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_string("{invalid json}"))
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -1364,10 +1359,15 @@ mod tests {
         let client = LlmClient::with_http_client(config, Client::new());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
-        assert!(result.is_err(), "Should fail with parse error for malformed JSON");
+        assert!(
+            result.is_err(),
+            "Should fail with parse error for malformed JSON"
+        );
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("parse") || err_msg.contains("JSON") || err_msg.contains("All OpenRouter models failed"),
+            err_msg.contains("parse")
+                || err_msg.contains("JSON")
+                || err_msg.contains("All OpenRouter models failed"),
             "Error should indicate JSON parse failure: {}",
             err_msg
         );

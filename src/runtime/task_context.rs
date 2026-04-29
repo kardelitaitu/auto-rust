@@ -1151,8 +1151,7 @@ mod tests {
         let base_ms = 1000u64;
 
         let calculate_delay = |attempt: u32| -> u64 {
-            (base_ms as f64 * (1.0 + ((attempt.saturating_sub(1)) as f64 * 0.18)))
-                .round() as u64
+            (base_ms as f64 * (1.0 + ((attempt.saturating_sub(1)) as f64 * 0.18))).round() as u64
         };
 
         // Attempt 1: 1000 * 1.0 = 1000ms
@@ -5271,7 +5270,8 @@ impl TaskContext {
         {
             let (start_x, start_y) =
                 navigation::selector_action_point(self.page(), from_selector).await?;
-            let (end_x, end_y) = navigation::selector_action_point(self.page(), to_selector).await?;
+            let (end_x, end_y) =
+                navigation::selector_action_point(self.page(), to_selector).await?;
             let click = &self.behavior_runtime.click;
             mouse::drag_between_points_human(
                 self.page(),

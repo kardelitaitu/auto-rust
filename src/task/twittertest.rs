@@ -21,10 +21,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
-        .map_err(|_| anyhow::anyhow!(
-            "[twittertest] Task exceeded duration budget of {}ms",
-            duration_ms
-        ))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "[twittertest] Task exceeded duration budget of {}ms",
+                duration_ms
+            )
+        })?
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -39,7 +41,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to test tweet
     info!("[twittertest] Navigating to test tweet...");
-    if let Err(e) = api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await {
+    if let Err(e) = api
+        .navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+        .await
+    {
         error_test(&mut results, "navigation", &e.to_string());
         return Ok(());
     }

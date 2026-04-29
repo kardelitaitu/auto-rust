@@ -832,7 +832,11 @@ async fn browser_runtime_css_compatibility_matrix_under_feature_flag() -> Result
     ];
 
     for (selector, exists_expected, visible_expected) in matrix {
-        assert_eq!(api.exists(selector).await?, exists_expected, "exists mismatch for selector={selector}");
+        assert_eq!(
+            api.exists(selector).await?,
+            exists_expected,
+            "exists mismatch for selector={selector}"
+        );
         assert_eq!(
             api.visible(selector).await?,
             visible_expected,
@@ -934,9 +938,7 @@ async fn browser_runtime_accessibility_locator_integration_semantics() -> Result
         .await
         .expect_err("expected locator_unsupported");
     assert!(
-        unsupported_html
-            .to_string()
-            .contains("locator_unsupported"),
+        unsupported_html.to_string().contains("locator_unsupported"),
         "unexpected error: {}",
         unsupported_html
     );
@@ -946,9 +948,7 @@ async fn browser_runtime_accessibility_locator_integration_semantics() -> Result
         .await
         .expect_err("expected locator_unsupported");
     assert!(
-        unsupported_attr
-            .to_string()
-            .contains("locator_unsupported"),
+        unsupported_attr.to_string().contains("locator_unsupported"),
         "unexpected error: {}",
         unsupported_attr
     );
@@ -981,11 +981,17 @@ async fn browser_runtime_locator_action_paths_surface_errors_and_success() -> Re
 
     let hovered = api.hover("role=button[name='Save changes']").await?;
     assert!(matches!(hovered.hover, HoverStatus::Success));
-    assert_eq!(api.attr("body", "data-hover").await?, Some("yes".to_string()));
+    assert_eq!(
+        api.attr("body", "data-hover").await?,
+        Some("yes".to_string())
+    );
 
     let right = api.right_click("role=button[name='Save changes']").await?;
     assert!(matches!(right.click, ClickStatus::Success));
-    assert_eq!(api.attr("body", "data-right").await?, Some("yes".to_string()));
+    assert_eq!(
+        api.attr("body", "data-right").await?,
+        Some("yes".to_string())
+    );
 
     let doubled = api.double_click("role=button[name='Save changes']").await?;
     assert!(matches!(doubled.click, ClickStatus::Success));
@@ -1059,7 +1065,10 @@ async fn browser_runtime_locator_action_emits_selector_telemetry_fields() -> Res
         .with_subscriber(subscriber)
         .await?;
     assert!(matches!(clicked.click, ClickStatus::Success));
-    assert_eq!(api.attr("body", "data-clicked").await?, Some("yes".to_string()));
+    assert_eq!(
+        api.attr("body", "data-clicked").await?,
+        Some("yes".to_string())
+    );
 
     let logs = selector_telemetry_logs(&sink);
     assert!(logs.contains("selector resolution"));
@@ -2092,7 +2101,8 @@ async fn click_cancels_promptly_during_retry_loop() -> Result<()> {
 
     // Create cancellation token
     let cancel_token = CancellationToken::new();
-    let api = build_task_context_with_cancel_token(&session, page.clone(), Some(cancel_token.clone()));
+    let api =
+        build_task_context_with_cancel_token(&session, page.clone(), Some(cancel_token.clone()));
 
     // Start click operation
     let click_future = api.click("#target");

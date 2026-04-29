@@ -9,11 +9,8 @@
 //! These tests require real browser instances and may take longer to run.
 
 use auto::{
-    cli::TaskDefinition,
-    config::load_config,
-    metrics::MetricsCollector,
-    orchestrator::Orchestrator,
-    session::Session,
+    cli::TaskDefinition, config::load_config, metrics::MetricsCollector,
+    orchestrator::Orchestrator, session::Session,
 };
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -57,7 +54,9 @@ async fn test_execute_group_runs_on_all_sessions() {
     }];
 
     // Execute the group
-    let result = orchestrator.execute_group(&tasks, &sessions, metrics.clone()).await;
+    let result = orchestrator
+        .execute_group(&tasks, &sessions, metrics.clone())
+        .await;
 
     // Should complete (may succeed or fail depending on browser state)
     // The important thing is it doesn't panic or hang
@@ -77,10 +76,11 @@ async fn test_execute_group_empty_tasks() {
     let metrics = Arc::new(MetricsCollector::new(100));
 
     // Empty tasks AND empty sessions -> error (sessions checked first)
-    let result = orchestrator
-        .execute_group(&[], &sessions, metrics)
-        .await;
-    assert!(result.is_err(), "Empty sessions should cause error regardless of tasks");
+    let result = orchestrator.execute_group(&[], &sessions, metrics).await;
+    assert!(
+        result.is_err(),
+        "Empty sessions should cause error regardless of tasks"
+    );
 }
 
 /// Test that execute_group returns error for empty sessions.
@@ -125,7 +125,9 @@ async fn test_task_broadcast_to_all_sessions() {
         payload: Default::default(),
     }];
 
-    let result = orchestrator.execute_group(&tasks, &sessions, metrics.clone()).await;
+    let result = orchestrator
+        .execute_group(&tasks, &sessions, metrics.clone())
+        .await;
 
     // Should complete without hanging
     if result.is_err() {
@@ -200,7 +202,10 @@ async fn test_unhealthy_sessions_handled() {
     // May succeed (if healthy session succeeds) or fail
     // The important thing is it doesn't panic
     if result.is_err() {
-        eprintln!("execute_group failed (expected possible failure): {:?}", result);
+        eprintln!(
+            "execute_group failed (expected possible failure): {:?}",
+            result
+        );
     }
 }
 

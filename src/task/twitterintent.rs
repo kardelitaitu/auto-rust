@@ -72,11 +72,12 @@ struct IntentInfo {
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = duration_with_variance(DEFAULT_TWITTERINTENT_TASK_DURATION_MS, 20);
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload, duration_ms))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!("twitterintent exceeded task duration of {}ms", duration_ms)
-        })?
+    timeout(
+        Duration::from_millis(duration_ms),
+        run_inner(api, payload, duration_ms),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("twitterintent exceeded task duration of {}ms", duration_ms))?
 }
 
 async fn run_inner(api: &TaskContext, payload: Value, duration_ms: u64) -> Result<()> {

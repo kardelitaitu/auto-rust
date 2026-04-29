@@ -129,5 +129,5 @@ Added accessibility-locator support behind `--features accessibility-locator` wi
 
 ### Migration Notes
 - Feature is still gated (`accessibility-locator`); default behavior remains CSS-only when feature is off.
-- No task API signature changes were introduced.
+- No task API signature changes were introduced..
 - Rollout remains phased: monitor telemetry/error rates before expanding migration to additional tasks.

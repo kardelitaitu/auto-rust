@@ -280,4 +280,79 @@ mod tests {
             ParsedSelector::Css("[data-testid='like']".to_string())
         );
     }
+
+    #[test]
+    fn parses_locator_with_whitespace_inside_segments() {
+        let parsed = parse_selector_input(
+            "role=button[ name = 'Follow @historyinmemes' ][ scope = 'main header' ][ match = contains ]",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Accessibility(AccessibilityLocator {
+                role: "button".to_string(),
+                name: "Follow @historyinmemes".to_string(),
+                scope: Some("main header".to_string()),
+                match_mode: LocatorMatchMode::Contains,
+            })
+        );
+    }
+
+    #[test]
+    fn fails_for_duplicate_scope_field() {
+        let err = parse_selector_input("role=button[name='Save'][scope='main'][scope='dialog']")
+            .unwrap_err();
+        assert_eq!(err, LocatorParseError::DuplicateField("scope"));
+    }
+
+    #[test]
+    fn fails_for_double_quote_scope_in_v1() {
+        let err = parse_selector_input("role=button[name='Save'][scope=\"main\"]").unwrap_err();
+        assert_eq!(err, LocatorParseError::QuoteStyleNotSupported("scope"));
+    }
+
+    #[test]
+    fn fails_for_unknown_segment_key() {
+        let err = parse_selector_input("role=button[name='Save'][foo='bar']").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::MalformedSegment("foo='bar'".to_string())
+        );
+    }
+
+    #[test]
+    fn fails_for_missing_segment_equals() {
+        let err = parse_selector_input("role=button[name]").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::MalformedSegment("name".to_string())
+        );
+    }
+
+    #[test]
+    fn fails_for_missing_closing_bracket() {
+        let err = parse_selector_input("role=button[name='Save'").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::MalformedSegment("[name='Save'".to_string())
+        );
+    }
+
+    #[test]
+    fn fails_for_missing_opening_bracket_before_second_segment() {
+        let err = parse_selector_input("role=button[name='Save']name='Again'").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::MalformedSegment("name='Again'".to_string())
+        );
+    }
+
+    #[test]
+    fn role_prefix_without_equals_stays_css_compatible() {
+        let parsed = parse_selector_input("role[aria-label='button']").unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Css("role[aria-label='button']".to_string())
+        );
+    }
 }

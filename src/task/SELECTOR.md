@@ -100,3 +100,4 @@ Why this can fail:
 - Follow implementation gates and semantics in:
   - `PROPOSAL_ACCESSIBILITY_LOCATOR.md`
   - `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
+  - `docs/TASK_ACCESSIBILITY_LOCATOR_MIGRATION.md`

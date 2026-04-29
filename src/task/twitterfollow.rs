@@ -745,4 +745,62 @@ mod tests {
             .iter()
             .any(|s| s == "role=button[name='Unfollow @PopBase']"));
     }
+
+    #[test]
+    fn test_follow_locator_candidates_prioritize_scoped_then_global_then_generic() {
+        let selectors = follow_locator_candidates("historyinmemes");
+        assert_eq!(
+            selectors[0],
+            "role=button[name='Follow @historyinmemes'][scope='main header']"
+        );
+        assert_eq!(
+            selectors[1],
+            "role=button[name='Follow @'][match=contains][scope='main header']"
+        );
+        assert_eq!(selectors[2], "role=button[name='Follow'][scope='main header']");
+        assert_eq!(selectors[3], "role=button[name='Follow @historyinmemes']");
+        assert_eq!(selectors[4], "role=button[name='Follow @'][match=contains]");
+        assert_eq!(selectors[5], "role=button[name='Follow']");
+    }
+
+    #[test]
+    fn test_following_locator_candidates_prioritize_scoped_exact_first() {
+        let selectors = following_locator_candidates(Some("PopBase"));
+        assert_eq!(
+            selectors[0],
+            "role=button[name='Following @PopBase'][scope='main header']"
+        );
+        assert_eq!(selectors[1], "role=button[name='Following @PopBase']");
+        assert!(selectors.iter().any(|s| s == "role=button[name='Unfollow @PopBase']"));
+    }
+
+    #[test]
+    fn test_following_locator_candidates_without_username_still_cover_unfollow_and_following() {
+        let selectors = following_locator_candidates(None);
+        assert!(!selectors.iter().any(|s| s.contains("@PopBase")));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following @'][match=contains][scope='main header']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Unfollow @'][match=contains]"));
+    }
+
+    #[test]
+    fn test_follow_candidate_policy_does_not_depend_on_pending_or_private_states() {
+        let follow = follow_locator_candidates("historyinmemes");
+        let following = following_locator_candidates(Some("historyinmemes"));
+        let joined = follow
+            .iter()
+            .chain(following.iter())
+            .map(|s| s.to_lowercase())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert!(!joined.contains("pending"));
+        assert!(!joined.contains("private"));
+    }
 }

@@ -9,7 +9,7 @@
 //! direct access to the crate's internal modules. In actual usage, you would use these
 //! functions with a chromiumoxide Page.
 
-use auto::utils::timing::DEFAULT_DEMO_DURATION_MS;
+use crate::utils::timing::DEFAULT_DEMO_DURATION_MS;
 
 fn main() {
     println!("=== Keyboard Interaction Demo ===\n");

@@ -304,8 +304,8 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(10, 20).await;
         let elapsed = start.elapsed();
-        // Should be between 10 and 20ms
-        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 30);
+        // Should be approximately 10-20ms (wider tolerance for Windows timing)
+        assert!((5..40).contains(&elapsed.as_millis()));
     }
 
     #[tokio::test]
@@ -313,8 +313,8 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(10, 20).await;
         let elapsed = start.elapsed();
-        // Should be between 10 and 20ms
-        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 30);
+        // Should be approximately 10-20ms (wider tolerance for Windows timing)
+        assert!((5..40).contains(&elapsed.as_millis()));
     }
 
     #[tokio::test]

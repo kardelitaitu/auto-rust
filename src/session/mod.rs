@@ -406,7 +406,7 @@ impl Session {
     pub fn is_circuit_breaker_open(&self) -> bool {
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
@@ -544,7 +544,7 @@ impl Session {
         // Check circuit breaker state
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
@@ -629,7 +629,7 @@ impl Session {
         // Check circuit breaker state
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
@@ -892,7 +892,7 @@ mod tests {
         let failure_count = failure_threshold; // At threshold
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
         let last_failure = current_time; // Recent failure
 
@@ -923,7 +923,7 @@ mod tests {
 
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         // Simulate circuit breaker state: failures at threshold, old failure time (beyond timeout)
@@ -1002,7 +1002,7 @@ mod tests {
         let failure_count = failure_threshold;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
         let last_failure = current_time;
 
@@ -1084,7 +1084,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         // Test various failure patterns
@@ -1129,7 +1129,7 @@ mod tests {
         for _ in 0..iterations {
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("System time before UNIX epoch")
                 .as_secs() as usize;
             let last_failure = current_time;
             let failure_count = 3;
@@ -1159,7 +1159,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         // Simulate high failure rates (100 consecutive failures)
@@ -1217,7 +1217,7 @@ mod tests {
         let timeout_secs = 0;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = failure_threshold;
@@ -1239,7 +1239,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = 1;
@@ -1261,7 +1261,7 @@ mod tests {
         let timeout_secs = 86400; // 24 hours
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = failure_threshold;
@@ -1282,7 +1282,7 @@ mod tests {
         // Test with very old failure time (before Unix epoch would be negative, but saturating_sub handles it)
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
         let last_failure = 0; // Unix epoch
 
@@ -1299,7 +1299,7 @@ mod tests {
         let timeout_secs = usize::MAX;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = usize::MAX;
@@ -1317,7 +1317,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         // Simulate last_failure being in the future (shouldn't happen in practice but test safety)
@@ -1342,7 +1342,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         // Exactly at timeout boundary
@@ -1392,7 +1392,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = 1;
@@ -1412,7 +1412,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = 1;
@@ -1432,7 +1432,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = 0;
@@ -1449,7 +1449,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = 999; // Just below threshold
@@ -1469,7 +1469,7 @@ mod tests {
         let timeout_secs = 1;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = failure_threshold;
@@ -1486,7 +1486,7 @@ mod tests {
         let timeout_secs = 31536000; // 1 year
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = failure_threshold;
@@ -1504,7 +1504,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         for threshold in thresholds {
@@ -1524,7 +1524,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = usize::MAX;
@@ -1555,7 +1555,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         // Test with 1 second difference
@@ -1574,7 +1574,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let failure_count = 5;
@@ -1595,7 +1595,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         // Start with high failure count
@@ -1617,7 +1617,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let last_failure = current_time - (timeout_secs as usize + 1);
@@ -1638,7 +1638,7 @@ mod tests {
         let timeout_secs = 30;
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch")
             .as_secs() as usize;
 
         let last_failure = current_time - (timeout_secs as usize - 1);
@@ -1724,7 +1724,7 @@ mod tests {
 
         // Wait for all threads
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("Thread panicked during execution");
         }
 
         // Verify all 100 pages were registered

@@ -1194,7 +1194,7 @@ mod tests {
     #[test]
     fn test_screenshot_directory_path() {
         let screenshot_dir = std::path::Path::new("data/screenshot");
-        assert_eq!(screenshot_dir.to_str().unwrap(), "data/screenshot");
+        assert_eq!(screenshot_dir.to_str().expect("Invalid path"), "data/screenshot");
     }
 
     // ============================================================================
@@ -1730,7 +1730,7 @@ mod tests {
         };
 
         assert_eq!(data.indexeddb_names.len(), 1);
-        let dbs = data.indexeddb_names.get("example.com").unwrap();
+        let dbs = data.indexeddb_names.get("example.com").expect("example.com should exist");
         assert_eq!(dbs.len(), 2);
         assert!(dbs.contains(&"my-database".to_string()));
     }
@@ -1787,8 +1787,8 @@ mod tests {
         let path = super::click_learning_path("session-123", &profile);
         assert!(path.is_some());
 
-        let path = path.unwrap();
-        let path_str = path.to_str().unwrap();
+        let path = path.expect("Path should exist");
+        let path_str = path.to_str().expect("Invalid path");
         assert!(path_str.contains("click-learning"));
         assert!(path_str.contains("session-123"));
         assert!(path_str.contains(&profile.name));

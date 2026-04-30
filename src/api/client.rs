@@ -882,7 +882,7 @@ mod tests {
         let result: Result<TestResponse> = client.get("/api/test").await;
 
         assert!(result.is_ok());
-        let response = result.unwrap();
+        let response = result.expect("Should succeed");
         assert_eq!(response.message, "Hello, World!");
         assert_eq!(response.status, 200);
     }
@@ -917,7 +917,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert!(result.unwrap().authenticated);
+        assert!(result.expect("Should succeed").authenticated);
     }
 
     #[tokio::test]
@@ -963,7 +963,7 @@ mod tests {
         let result: Result<TestResponse> = client.get("/api/retry-test").await;
 
         assert!(result.is_ok(), "Should succeed after retry");
-        assert_eq!(result.unwrap().message, "Success after retry");
+        assert_eq!(result.expect("Should succeed").message, "Success after retry");
     }
 }
 
@@ -1041,7 +1041,7 @@ impl RetryPolicy {
                     if attempt >= self.max_retries {
                         break;
                     }
-                    if !is_retryable(last_error.as_ref().unwrap()) {
+                    if !is_retryable(last_error.as_ref().expect("last_error was just set")) {
                         break;
                     }
                     let delay = self.delay_for_attempt(attempt + 1);
@@ -1050,6 +1050,6 @@ impl RetryPolicy {
             }
         }
 
-        Err(last_error.unwrap())
+        Err(last_error.expect("last_error must be Some if we reach here"))
     }
 }

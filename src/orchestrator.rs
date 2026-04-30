@@ -1002,7 +1002,7 @@ mod tests {
         {
             let _slot = GlobalExecutionSlot::new(
                 global_active.clone(),
-                global_semaphore.clone().acquire_owned().await.unwrap(),
+                global_semaphore.clone().acquire_owned().await.expect("Semaphore acquire failed"),
             );
             assert_eq!(global_active.load(Ordering::SeqCst), 1);
         }
@@ -1020,7 +1020,7 @@ mod tests {
         for _ in 0..3 {
             slots.push(GlobalExecutionSlot::new(
                 global_active.clone(),
-                global_semaphore.clone().acquire_owned().await.unwrap(),
+                global_semaphore.clone().acquire_owned().await.expect("Semaphore acquire failed"),
             ));
         }
 
@@ -1035,11 +1035,11 @@ mod tests {
 
         let _slot1 = GlobalExecutionSlot::new(
             global_active.clone(),
-            semaphore.clone().acquire_owned().await.unwrap(),
+            semaphore.clone().acquire_owned().await.expect("Semaphore acquire failed"),
         );
         let _slot2 = GlobalExecutionSlot::new(
             global_active.clone(),
-            semaphore.clone().acquire_owned().await.unwrap(),
+            semaphore.clone().acquire_owned().await.expect("Semaphore acquire failed"),
         );
 
         assert_eq!(global_active.load(Ordering::SeqCst), 2);

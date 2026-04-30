@@ -50,7 +50,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
+use crate::capabilities::{keyboard, mouse, navigation, scroll, timing};
 use crate::config::NativeInteractionConfig;
 use crate::internal::page_size::{self, Viewport};
 use crate::logger::scoped_log_context;
@@ -67,6 +67,7 @@ use crate::ClipboardState;
 
 // Submodules
 pub mod click_learning;
+pub mod interaction;
 pub mod query;
 pub mod types;
 
@@ -4857,12 +4858,12 @@ impl TaskContext {
 
     /// Press a single key (e.g., "Enter", "Tab", "Escape").
     pub async fn press(&self, key: &str) -> Result<()> {
-        keyboard::press(self.page(), key).await
+        interaction::press(self.page(), key).await
     }
 
     /// Press key with modifiers (e.g., Ctrl+C, Shift+A).
     pub async fn press_with_modifiers(&self, key: &str, modifiers: &[&str]) -> Result<()> {
-        keyboard::press_with_modifiers(self.page(), key, modifiers).await
+        interaction::press_with_modifiers(self.page(), key, modifiers).await
     }
 
     /// Types text into a focused element with human-like keystroke timing.
@@ -5034,7 +5035,7 @@ impl TaskContext {
 
     /// Scroll selector into view with post-scroll pause.
     pub async fn scroll_to(&self, selector: &str) -> Result<()> {
-        scroll::scroll_into_view(self.page(), selector).await?;
+        interaction::scroll_into_view(self.page(), selector).await?;
 
         // Phase2: Verify element is in viewport after scroll
         if !self.is_in_viewport(selector).await? {
@@ -5093,7 +5094,7 @@ impl TaskContext {
 
     /// Scroll back by distance in pixels (negative goes forward).
     pub async fn scroll_back(&self, distance: i32) -> Result<()> {
-        scroll::back(self.page(), distance).await?;
+        interaction::back(self.page(), distance).await?;
         self.post_interaction_pause().await;
         Ok(())
     }
@@ -5119,17 +5120,17 @@ impl TaskContext {
 
     /// Select all + copy to clipboard. Returns clipboard content.
     pub async fn copy(&self) -> Result<String> {
-        clipboard::copy(self.session_id(), self.page()).await
+        interaction::copy(self.session_id(), self.page()).await
     }
 
     /// Select all + cut to clipboard. Returns cut content.
     pub async fn cut(&self) -> Result<String> {
-        clipboard::cut(self.session_id(), self.page()).await
+        interaction::cut(self.session_id(), self.page()).await
     }
 
     /// Paste clipboard content into focused element. Returns pasted content.
     pub async fn paste(&self) -> Result<String> {
-        clipboard::paste_from_clipboard(self.session_id(), self.page()).await
+        interaction::paste(self.session_id(), self.page()).await
     }
 
     /// Wait for `base_ms` with **20% uniform** spread (same family as [`Self::pause_with_variance`]).

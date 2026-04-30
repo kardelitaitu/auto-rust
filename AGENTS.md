@@ -135,8 +135,8 @@ Need external app integration (GitHub, Slack)?
    - `feat: add twitterquote task with LLM integration`
    - `fix: handle rate limit in twitterfollow retry logic`
 8. **Never push to remote without running verification commands** - always execute these before `git push`:
-   - `cargo test` (runs `cargo test --all-features` via alias)
-   - `cargo format` (runs `cargo fmt --all -- --check` via alias)
+   - `cargo t` (runs `cargo test --all-features` via alias)
+   - `cargo f` (runs `cargo fmt --all -- --check` via alias)
    - `cargo clippy`
    - Ensure all pass before pushing to remote repository
 

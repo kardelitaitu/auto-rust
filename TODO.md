@@ -92,11 +92,11 @@
       - [x] Move native functions: calibration from metrics, fingerprint generation
       - [x] Move test helpers: `set_nativeclick_forced_calibration_for_tests()`
       - [x] All 63 tests pass, clippy clean
-    - [ ] Phase 4: Core cleanup (Day 4-5)
-      - [ ] `mouse.rs` becomes thin re-export layer
-      - [ ] `core.rs` keeps: `left_click_at()`, `right_click_at()`, `dispatch_click()`
-      - [ ] Keep in core: `click_selector_human()`, `hover_selector_human()`, overlay functions
-      - [ ] Run full test suite, update docs
+    - [x] Phase 4: Core cleanup (Day 4-5) ✅ DONE
+      - [x] `mouse.rs` is now organized re-export layer
+      - [x] Three focused submodules: types, trajectory, native
+      - [x] All public API re-exported for backward compatibility
+      - [x] Run full test suite, update docs - 63 tests pass
   - **Dependencies to watch:**
     - `profile.rs` imports `CursorMovementConfig`, `PathStyle`, `Precision`, `Speed` from mouse
     - `task_context.rs` imports `ClickOutcome`, `HoverOutcome`, `NativeCursorOutcome` from mouse

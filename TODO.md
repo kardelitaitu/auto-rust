@@ -68,11 +68,12 @@
       - [x] Extract scroll: `scroll_to()`, `scroll_back()` use interaction module
       - [x] Complex methods (click, hover, drag, r#type) remain in TaskContext due to state dependencies
       - [x] Run full test suite - 109 passed, clippy clean
-    - [ ] Phase 5: Cleanup (Day 4-5)
-      - [ ] `task_context.rs` becomes thin re-export layer
-      - [ ] Update `src/runtime/mod.rs` exports
-      - [ ] Verify `lib.rs` public API unchanged
-      - [ ] Final commit with descriptive message
+    - [x] Phase 5: Cleanup (Day 4-5) ✅ DONE
+      - [x] `task_context.rs` is now organized layer with re-exports
+      - [x] Added convenient aliases: `dom_query`, `actions`
+      - [x] Verified `runtime/mod.rs` exports task_context correctly
+      - [x] Public API unchanged, fully backward compatible
+      - [x] 109 tests pass, clippy clean
   - `mouse.rs` (3,773 LOC) → 3 focused modules
     - [ ] Phase 1: Create module structure (Day 1)
       - [ ] Create `src/utils/mouse/` directory

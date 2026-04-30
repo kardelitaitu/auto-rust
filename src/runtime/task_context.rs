@@ -71,6 +71,7 @@ pub mod interaction;
 pub mod query;
 pub mod types;
 
+// Re-export submodule contents for convenient access
 pub use click_learning::{
     click_learning_path, load_click_learning, save_click_learning, ClickAdaptation,
     ClickElementPriority, ClickFatigueLevel, ClickLearningState, ClickPageContext,
@@ -80,6 +81,10 @@ pub use types::{
     ClickAndWaitOutcome, FileMetadata, FocusOutcome, FocusStatus, HttpResponse,
     RandomCursorOutcome, Rect, WaitForVisibleStatus,
 };
+
+// Query and interaction modules are public for standalone use
+pub use query as dom_query;
+pub use interaction as actions;
 
 fn nativeclick_public_log_line(selector: &str, x: f64, y: f64) -> String {
     format!("[task-api] clicked ({selector}) at {x:.1},{y:.1}")

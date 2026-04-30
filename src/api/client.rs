@@ -963,7 +963,10 @@ mod tests {
         let result: Result<TestResponse> = client.get("/api/retry-test").await;
 
         assert!(result.is_ok(), "Should succeed after retry");
-        assert_eq!(result.expect("Should succeed").message, "Success after retry");
+        assert_eq!(
+            result.expect("Should succeed").message,
+            "Success after retry"
+        );
     }
 }
 

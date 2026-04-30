@@ -3671,8 +3671,8 @@ mod tests {
             hit_y: 128.0,
         };
 
-        let solved =
-            solve_calibration_from_probe_samples(&metrics, candidate, first, second).expect("Should solve calibration");
+        let solved = solve_calibration_from_probe_samples(&metrics, candidate, first, second)
+            .expect("Should solve calibration");
 
         assert!((solved.scale_x - 2.0).abs() < 0.001);
         assert!((solved.scale_y - 2.0).abs() < 0.001);

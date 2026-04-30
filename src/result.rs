@@ -843,14 +843,16 @@ mod tests {
     #[test]
     fn test_task_status_deserialize() {
         let json = r#"{"Failed":"test error"}"#;
-        let status: TaskStatus = serde_json::from_str(json).expect("Failed to deserialize TaskStatus");
+        let status: TaskStatus =
+            serde_json::from_str(json).expect("Failed to deserialize TaskStatus");
         assert!(matches!(status, TaskStatus::Failed(_)));
     }
 
     #[test]
     fn test_task_result_deserialize() {
         let json = r#"{"status":"Success","attempt":1,"max_retries":0,"last_error":null,"error_kind":null,"duration_ms":100}"#;
-        let result: TaskResult = serde_json::from_str(json).expect("Failed to deserialize TaskResult");
+        let result: TaskResult =
+            serde_json::from_str(json).expect("Failed to deserialize TaskResult");
         assert!(result.is_success());
         assert_eq!(result.duration_ms, 100);
     }
@@ -858,7 +860,8 @@ mod tests {
     #[test]
     fn test_run_summary_deserialize() {
         let json = r#"{"total_tasks":0,"succeeded":0,"failed":0,"timed_out":0,"cancelled":0,"total_duration_ms":0,"results":[]}"#;
-        let summary: RunSummary = serde_json::from_str(json).expect("Failed to deserialize RunSummary");
+        let summary: RunSummary =
+            serde_json::from_str(json).expect("Failed to deserialize RunSummary");
         assert_eq!(summary.total_tasks, 0);
     }
 
@@ -925,7 +928,8 @@ mod tests {
     #[test]
     fn test_task_error_kind_deserialize() {
         let json = r#""Timeout""#;
-        let kind: TaskErrorKind = serde_json::from_str(json).expect("Failed to deserialize TaskErrorKind");
+        let kind: TaskErrorKind =
+            serde_json::from_str(json).expect("Failed to deserialize TaskErrorKind");
         assert_eq!(kind, TaskErrorKind::Timeout);
     }
 

@@ -1194,7 +1194,10 @@ mod tests {
     #[test]
     fn test_screenshot_directory_path() {
         let screenshot_dir = std::path::Path::new("data/screenshot");
-        assert_eq!(screenshot_dir.to_str().expect("Invalid path"), "data/screenshot");
+        assert_eq!(
+            screenshot_dir.to_str().expect("Invalid path"),
+            "data/screenshot"
+        );
     }
 
     // ============================================================================
@@ -1730,7 +1733,10 @@ mod tests {
         };
 
         assert_eq!(data.indexeddb_names.len(), 1);
-        let dbs = data.indexeddb_names.get("example.com").expect("example.com should exist");
+        let dbs = data
+            .indexeddb_names
+            .get("example.com")
+            .expect("example.com should exist");
         assert_eq!(dbs.len(), 2);
         assert!(dbs.contains(&"my-database".to_string()));
     }

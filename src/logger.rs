@@ -172,7 +172,8 @@ mod tests {
     fn read_file_content(path: &std::path::Path) -> String {
         let mut file = std::fs::File::open(path).expect("Failed to open file for reading");
         let mut content = String::new();
-        file.read_to_string(&mut content).expect("Failed to read file content");
+        file.read_to_string(&mut content)
+            .expect("Failed to read file content");
         content
     }
 

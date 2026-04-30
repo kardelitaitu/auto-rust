@@ -1417,8 +1417,8 @@ mod tests {
         ];
 
         for selector in selectors {
-            let parsed = parse_selector_for_navigation(selector)
-                .expect("Failed to parse CSS selector");
+            let parsed =
+                parse_selector_for_navigation(selector).expect("Failed to parse CSS selector");
             assert_eq!(parsed, ParsedSelector::Css(selector.to_string()));
         }
     }

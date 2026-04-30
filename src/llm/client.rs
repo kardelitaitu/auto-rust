@@ -1283,7 +1283,10 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok(), "Should fallback after 503 server error");
-        assert_eq!(result.expect("Should succeed"), "Fallback after server error");
+        assert_eq!(
+            result.expect("Should succeed"),
+            "Fallback after server error"
+        );
     }
 
     #[tokio::test]

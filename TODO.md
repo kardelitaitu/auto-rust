@@ -75,10 +75,11 @@
       - [x] Public API unchanged, fully backward compatible
       - [x] 109 tests pass, clippy clean
   - `mouse.rs` (3,773 LOC) → 3 focused modules
-    - [ ] Phase 1: Create module structure (Day 1)
-      - [ ] Create `src/utils/mouse/` directory
-      - [ ] Extract `types.rs`: `ClickOutcome`, `HoverOutcome`, `NativeCursorOutcome`, `MouseButton`
-      - [ ] Note: `CursorMovementConfig`, `PathStyle`, `Precision`, `Speed` used by `profile.rs`
+    - [x] Phase 1: Create module structure (Day 1) ✅ DONE
+      - [x] Create `src/utils/mouse/` directory
+      - [x] Extract `types.rs`: `ClickOutcome`, `HoverOutcome`, `NativeCursorOutcome`, `MouseButton`
+      - [x] All types properly exported and re-exported
+      - [x] Tests pass, clippy clean
     - [ ] Phase 2: Extract trajectory.rs (Day 1-2)
       - [ ] Move path generation: `generate_bezier_curve_with_config()`, `generate_arc_curve()`
       - [ ] Move curves: `generate_zigzag_curve()`, `generate_overshoot_curve()`, `generate_stopped_curve()`, `generate_muscle_path()`

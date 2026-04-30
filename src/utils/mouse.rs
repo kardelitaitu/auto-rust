@@ -37,67 +37,11 @@ use std::time::UNIX_EPOCH;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::{sleep, timeout, Duration};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClickStatus {
-    Success,
-    Failed,
-}
+// Submodules
+pub mod types;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HoverStatus {
-    Success,
-    Failed,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ClickOutcome {
-    pub click: ClickStatus,
-    pub x: f64,
-    pub y: f64,
-    pub screen_x: Option<i32>,
-    pub screen_y: Option<i32>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct HoverOutcome {
-    pub hover: HoverStatus,
-    pub x: f64,
-    pub y: f64,
-}
-
-#[derive(Debug, Clone)]
-pub struct NativeCursorOutcome {
-    pub target: String,
-    pub x: f64,
-    pub y: f64,
-    pub screen_x: Option<i32>,
-    pub screen_y: Option<i32>,
-}
-
-impl ClickOutcome {
-    pub fn summary(&self) -> String {
-        match self.click {
-            ClickStatus::Success => format!("Clicked ({:.1},{:.1})", self.x, self.y),
-            ClickStatus::Failed => format!("Click failed ({:.1},{:.1})", self.x, self.y),
-        }
-    }
-}
-
-impl HoverOutcome {
-    pub fn summary(&self) -> String {
-        let status = match self.hover {
-            HoverStatus::Success => "success",
-            HoverStatus::Failed => "failed",
-        };
-        format!("hover:{status} ({:.1},{:.1})", self.x, self.y)
-    }
-}
-
-impl NativeCursorOutcome {
-    pub fn summary(&self) -> String {
-        format!("nativecursor {} ({:.1},{:.1})", self.target, self.x, self.y)
-    }
-}
+// Re-export types for backward compatibility
+pub use types::{ClickOutcome, ClickStatus, HoverOutcome, HoverStatus, NativeCursorOutcome, MouseButton};
 
 /// Wait for an element to become stable (not animating/layout-shifting).
 /// Polls the element's bounding box every 100ms; returns when position
@@ -450,15 +394,8 @@ pub enum Speed {
     Slow,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum MouseButton {
-    #[default]
-    Left,
-    Right,
-    Middle,
-}
-
-impl MouseButton {
+// MouseButton impl - enum defined in types.rs
+impl types::MouseButton {
     fn as_button_index(&self) -> u16 {
         match self {
             MouseButton::Left => 0,

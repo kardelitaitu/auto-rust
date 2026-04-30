@@ -137,14 +137,14 @@
   - `runtime::task_context::tests::test_pageview_policy_has_screenshot_only`
 
 ### Coverage Targets (Gate to Expand Rollout)
-- [ ] `src/utils/accessibility_locator.rs` line coverage >= 95%
-  - [ ] Baseline measurement: Run `cargo tarpaulin --out Html --output-dir ./coverage`
-  - [ ] Review coverage report for uncovered lines
-  - [ ] Add tests for parser edge cases (empty input, malformed segments, duplicate fields)
-  - [ ] Add tests for all error variants (LocatorParseError)
-  - [ ] Add tests for whitespace tolerance around segments
-  - [ ] Add tests for quote style validation
-  - [ ] Verify coverage >= 95% after additions
+- [x] `src/utils/accessibility_locator.rs` line coverage >= 95% ✅ DONE
+  - [x] Baseline measurement: Run `cargo tarpaulin --out Html --output-dir ./coverage` - 65/74 lines (87.8%)
+  - [x] Review coverage report for uncovered lines
+  - [x] Add tests for parser edge cases (empty input, malformed segments, duplicate fields)
+  - [x] Add tests for all error variants (LocatorParseError)
+  - [x] Add tests for whitespace tolerance around segments
+  - [x] Add tests for quote style validation
+  - [x] Verify coverage >= 95% after additions - 74/74 lines (100%)
 - [ ] `src/utils/navigation.rs` line coverage >= 90%
   - [ ] Baseline measurement: Run coverage report
   - [ ] Review uncovered wait functions

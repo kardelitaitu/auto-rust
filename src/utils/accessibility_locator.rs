@@ -351,4 +351,104 @@ mod tests {
             ParsedSelector::Css("role[aria-label='button']".to_string())
         );
     }
+
+    #[test]
+    fn display_error_empty_input() {
+        let err = LocatorParseError::EmptyInput;
+        assert_eq!(err.to_string(), "selector is empty");
+    }
+
+    #[test]
+    fn display_error_invalid_role() {
+        let err = LocatorParseError::InvalidRole;
+        assert_eq!(err.to_string(), "role value is invalid");
+    }
+
+    #[test]
+    fn display_error_missing_required_field() {
+        let err = LocatorParseError::MissingRequiredField("name");
+        assert_eq!(err.to_string(), "missing required field: name");
+    }
+
+    #[test]
+    fn display_error_malformed_segment() {
+        let err = LocatorParseError::MalformedSegment("bad[seg".to_string());
+        assert_eq!(err.to_string(), "malformed locator segment: bad[seg");
+    }
+
+    #[test]
+    fn display_error_duplicate_field() {
+        let err = LocatorParseError::DuplicateField("scope");
+        assert_eq!(err.to_string(), "duplicate locator field: scope");
+    }
+
+    #[test]
+    fn display_error_unsupported_match_mode() {
+        let err = LocatorParseError::UnsupportedMatchMode("regex".to_string());
+        assert_eq!(err.to_string(), "unsupported match mode: regex");
+    }
+
+    #[test]
+    fn display_error_quote_style_not_supported() {
+        let err = LocatorParseError::QuoteStyleNotSupported("name");
+        assert_eq!(err.to_string(), "field 'name' must use single quotes in v1");
+    }
+
+    #[test]
+    fn is_valid_role_accepts_valid_characters() {
+        assert!(is_valid_role("button"));
+        assert!(is_valid_role("link"));
+        assert!(is_valid_role("heading"));
+        assert!(is_valid_role("button-1"));
+        assert!(is_valid_role("button_1"));
+        assert!(is_valid_role("button1"));
+    }
+
+    #[test]
+    fn is_valid_role_rejects_empty() {
+        assert!(!is_valid_role(""));
+    }
+
+    #[test]
+    fn is_valid_role_rejects_uppercase() {
+        assert!(!is_valid_role("Button"));
+        assert!(!is_valid_role("BUTTON"));
+    }
+
+    #[test]
+    fn is_valid_role_rejects_special_chars() {
+        assert!(!is_valid_role("button!"));
+        assert!(!is_valid_role("button@"));
+        assert!(!is_valid_role("button#"));
+        assert!(!is_valid_role("button$"));
+        assert!(!is_valid_role("button%"));
+    }
+
+    #[test]
+    fn parse_single_quoted_valid() {
+        assert_eq!(parse_single_quoted("'hello'", "field").unwrap(), "hello");
+        assert_eq!(parse_single_quoted("'world'", "field").unwrap(), "world");
+    }
+
+    #[test]
+    fn parse_single_quoted_empty() {
+        assert_eq!(parse_single_quoted("''", "field").unwrap(), "");
+    }
+
+    #[test]
+    fn parse_single_quoted_single_char() {
+        assert_eq!(parse_single_quoted("'a'", "field").unwrap(), "a");
+    }
+
+    #[test]
+    fn parse_single_quoted_missing_quotes() {
+        assert!(parse_single_quoted("hello", "field").is_err());
+        assert!(parse_single_quoted("'hello", "field").is_err());
+        assert!(parse_single_quoted("hello'", "field").is_err());
+    }
+
+    #[test]
+    fn parse_single_quoted_double_quotes_rejected() {
+        assert!(parse_single_quoted("\"hello\"", "field").is_err());
+    }
 }

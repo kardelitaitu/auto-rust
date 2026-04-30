@@ -58,10 +58,10 @@
       - [x] Move `ClickLearningState`, `ClickTimingContext`, `ClickAdaptation`
       - [x] Move persistence: `save_click_learning()`, `load_click_learning()`
       - [x] Re-export public types, run tests - 109 passed
-    - [ ] Phase 3: Extract query.rs (Day 2)
-      - [ ] Move query methods: `exists()`, `visible()`, `text()`, `html()`, `attr()`, `value()`
-      - [ ] Move `wait_for()`, `wait_for_visible()`, `url()`, `title()`, `viewport()`
-      - [ ] Run tests
+    - [x] Phase 3: Extract query.rs (Day 2) ✅ DONE
+      - [x] Move query methods: `exists()`, `visible()`, `text()`, `html()`, `attr()`, `value()`
+      - [x] Move `wait_for()`, `wait_for_visible()`, `url()`, `title()`, `viewport()`
+      - [x] Run tests - 109 passed
     - [ ] Phase 4: Extract interaction.rs (Day 3-4)
       - [ ] Move click/hover/drag: `click()`, `hover()`, `double_click()`, `right_click()`, `drag()`
       - [ ] Move keyboard: `r#type()`, `keyboard()`, `press()`, `press_with_modifiers()`

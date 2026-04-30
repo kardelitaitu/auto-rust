@@ -67,6 +67,7 @@ use crate::ClipboardState;
 
 // Submodules
 pub mod click_learning;
+pub mod query;
 pub mod types;
 
 pub use click_learning::{
@@ -4099,7 +4100,7 @@ impl TaskContext {
         selectors: &[&str],
         timeout_ms: u64,
     ) -> Result<bool> {
-        navigation::wait_for_any_visible_selector(self.page(), selectors, timeout_ms).await
+        query::wait_for_any_visible(self.page(), selectors, timeout_ms).await
     }
 
     /// Scrolls an element into view, focuses it, and returns the focus outcome.
@@ -5156,57 +5157,57 @@ impl TaskContext {
 
     /// Check if selector exists in DOM (may be hidden).
     pub async fn exists(&self, selector: &str) -> Result<bool> {
-        navigation::selector_exists(self.page(), selector).await
+        query::exists(self.page(), selector).await
     }
 
     /// Check if selector is visible (displayed and not hidden).
     pub async fn visible(&self, selector: &str) -> Result<bool> {
-        navigation::selector_is_visible(self.page(), selector).await
+        query::visible(self.page(), selector).await
     }
 
     /// Get text content of selector. Returns None if not found.
     pub async fn text(&self, selector: &str) -> Result<Option<String>> {
-        navigation::selector_text(self.page(), selector).await
+        query::text(self.page(), selector).await
     }
 
     /// Get inner HTML of selector. Returns None if not found.
     pub async fn html(&self, selector: &str) -> Result<Option<String>> {
-        navigation::selector_html(self.page(), selector).await
+        query::html(self.page(), selector).await
     }
 
     /// Get element attribute by name. Returns None if not found.
     pub async fn attr(&self, selector: &str, name: &str) -> Result<Option<String>> {
-        navigation::selector_attr(self.page(), selector, name).await
+        query::attr(self.page(), selector, name).await
     }
 
     /// Get input/textarea value attribute. Returns None if not found.
     pub async fn value(&self, selector: &str) -> Result<Option<String>> {
-        navigation::selector_value(self.page(), selector).await
+        query::value(self.page(), selector).await
     }
 
     /// Wait for selector to exist in DOM. Returns true if found within timeout.
     pub async fn wait_for(&self, selector: &str, timeout_ms: u64) -> Result<bool> {
-        navigation::wait_for_selector(self.page(), selector, timeout_ms).await
+        query::wait_for(self.page(), selector, timeout_ms).await
     }
 
     /// Wait for selector to be visible. Returns true if visible within timeout.
     pub async fn wait_for_visible(&self, selector: &str, timeout_ms: u64) -> Result<bool> {
-        navigation::wait_for_visible_selector(self.page(), selector, timeout_ms).await
+        query::wait_for_visible(self.page(), selector, timeout_ms).await
     }
 
     /// Get current page URL.
     pub async fn url(&self) -> Result<String> {
-        navigation::page_url(self.page()).await
+        query::url(self.page()).await
     }
 
     /// Get page title from DOM.
     pub async fn title(&self) -> Result<String> {
-        navigation::page_title(self.page()).await
+        query::title(self.page()).await
     }
 
     /// Get viewport dimensions (width, height, device_scale_factor).
     pub async fn viewport(&self) -> Result<Viewport> {
-        page_size::get_viewport(self.page()).await
+        query::viewport(self.page()).await
     }
 
     /// Select all text in element (Ctrl+A).

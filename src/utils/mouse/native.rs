@@ -114,6 +114,10 @@ pub struct NativeClickFingerprint {
     pub screen_y: i32,
     pub outer_width: i32,
     pub outer_height: i32,
+    pub inner_width: i32,
+    pub inner_height: i32,
+    pub device_pixel_ratio_milli: i32,
+    pub visual_viewport_scale_milli: i32,
 }
 
 /// Cache entry combining fingerprint and calibration.
@@ -359,6 +363,10 @@ pub fn native_click_fingerprint(
         screen_y: metrics.screen_y.round() as i32,
         outer_width: metrics.outer_width.round() as i32,
         outer_height: metrics.outer_height.round() as i32,
+        inner_width: metrics.inner_width.round() as i32,
+        inner_height: metrics.inner_height.round() as i32,
+        device_pixel_ratio_milli: (metrics.device_pixel_ratio * 1000.0).round() as i32,
+        visual_viewport_scale_milli: (metrics.visual_viewport_scale * 1000.0).round() as i32,
     }
 }
 

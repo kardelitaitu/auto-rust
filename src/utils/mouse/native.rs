@@ -246,7 +246,7 @@ impl Drop for NativeInputLockGuard {
 /// Acquire native input lock with metrics.
 pub async fn acquire_native_input_lock(
     session_id: &str,
-    trace_id: u64,
+    _trace_id: u64,
     op: &'static str,
 ) -> NativeInputLockGuard {
     let wait_started = Instant::now();

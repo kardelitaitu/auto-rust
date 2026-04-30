@@ -2226,6 +2226,7 @@ async fn verify_click_target(page: &Page, selector: &str, x: f64, y: f64) -> Res
     Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
+#[allow(dead_code)]
 async fn native_click_probe_point(page: &Page) -> Result<Option<(f64, f64)>> {
     let js = format!(
         r#"(function() {{
@@ -2250,10 +2251,12 @@ async fn native_click_probe_point(page: &Page) -> Result<Option<(f64, f64)>> {
     })
 }
 
+#[allow(dead_code)]
 async fn inject_native_click_probe(page: &Page) -> Result<()> {
     inject_native_click_probe_at(page, 64.0, 64.0).await
 }
 
+#[allow(dead_code)]
 async fn inject_native_click_probe_at(page: &Page, left: f64, top: f64) -> Result<()> {
     let js = format!(
         r#"(function() {{
@@ -2304,7 +2307,7 @@ async fn inject_native_click_probe_at(page: &Page, left: f64, top: f64) -> Resul
         top = top,
     );
 
-    let result = timeout(Duration::from_secs(2), page.evaluate(js))
+    let _result = timeout(Duration::from_secs(2), page.evaluate(js))
         .await
         .map_err(|_| anyhow::anyhow!("nativeclick probe injection timeout"))??;
 

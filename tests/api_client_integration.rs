@@ -226,7 +226,7 @@ async fn test_empty_response_body() {
         .mount(&mock_server)
         .await;
 
-    let client = create_test_client(&mock_server);
+    let client = create_test_client_fast_retry(&mock_server);
     let result: Result<TestResponse, _> = client.get("/api/empty").await;
 
     assert!(result.is_err()); // Empty body can't be parsed as JSON

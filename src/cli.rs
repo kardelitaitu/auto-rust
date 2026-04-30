@@ -188,7 +188,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     } else {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     }
-                } else if key == current_task.as_ref().unwrap() {
+                } else if key == current_task.as_ref().expect("current_task should be Some") {
                     if let Some(task_name) = current_task.take() {
                         current_group.push(TaskDefinition {
                             name: task_name,

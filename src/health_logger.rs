@@ -194,7 +194,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_logger_start_returns_handle() {
-        let config = HealthLoggerConfig::default();
+        let config = HealthLoggerConfig {
+            interval: Duration::from_millis(10),
+            memory_warning_percentage: 86.0,
+            verbose: false,
+        };
         let metrics = Arc::new(MetricsCollector::new(100));
         let logger = HealthLogger::new(config, metrics);
 
@@ -204,13 +208,13 @@ mod tests {
 
         // Clean up
         logger.stop();
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let _ = tokio::time::timeout(Duration::from_millis(20), handle).await;
     }
 
     #[tokio::test]
     async fn test_health_logger_stop() {
         let config = HealthLoggerConfig {
-            interval: Duration::from_millis(100), // Short interval for testing
+            interval: Duration::from_millis(10), // Short interval for testing
             memory_warning_percentage: 86.0,
             verbose: false,
         };
@@ -220,7 +224,7 @@ mod tests {
         let handle = logger.start();
 
         // Give it a moment to start
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         // Stop should not panic
         logger.stop();
@@ -233,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn test_health_logger_shutdown_signal() {
         let config = HealthLoggerConfig {
-            interval: Duration::from_secs(60),
+            interval: Duration::from_millis(10),
             memory_warning_percentage: 86.0,
             verbose: false,
         };
@@ -245,14 +249,14 @@ mod tests {
         // Immediate stop should work
         logger.stop();
 
-        let result = tokio::time::timeout(Duration::from_secs(1), handle).await;
+        let result = tokio::time::timeout(Duration::from_millis(200), handle).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_health_logger_with_metrics() {
         let config = HealthLoggerConfig {
-            interval: Duration::from_millis(100),
+            interval: Duration::from_millis(10),
             memory_warning_percentage: 86.0,
             verbose: false,
         };
@@ -274,10 +278,10 @@ mod tests {
         let handle = logger.start();
 
         // Let it run for a bit
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
 
         logger.stop();
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let _ = tokio::time::timeout(Duration::from_millis(20), handle).await;
 
         // Metrics should still be accessible
         let stats = metrics.get_stats();
@@ -286,7 +290,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_logger_multiple_stops() {
-        let config = HealthLoggerConfig::default();
+        let config = HealthLoggerConfig {
+            interval: Duration::from_millis(10),
+            memory_warning_percentage: 86.0,
+            verbose: false,
+        };
         let metrics = Arc::new(MetricsCollector::new(100));
         let logger = HealthLogger::new(config, metrics);
 
@@ -297,7 +305,7 @@ mod tests {
         logger.stop();
         logger.stop();
 
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let _ = tokio::time::timeout(Duration::from_millis(20), handle).await;
     }
 
     #[test]

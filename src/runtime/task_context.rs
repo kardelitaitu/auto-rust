@@ -54,7 +54,7 @@ use tokio_util::sync::CancellationToken;
 use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
 use crate::config::NativeInteractionConfig;
 use crate::internal::page_size::{self, Viewport};
-use crate::internal::profile::{BrowserProfile, ProfileRuntime};
+use crate::utils::profile::{BrowserProfile, ProfileRuntime};
 use crate::logger::scoped_log_context;
 use crate::metrics::{
     MetricsCollector, RUN_COUNTER_CLICK_ATTEMPTED, RUN_COUNTER_CLICK_FALLBACK_HIT,
@@ -68,211 +68,23 @@ use crate::utils::mouse::{
 
 // Submodules
 pub mod types;
+pub mod click_learning;
 
-// Re-export shared types for backward compatibility
+pub use click_learning::{
+    ClickAdaptation, ClickElementPriority, ClickFatigueLevel, ClickLearningState,
+    ClickPageContext, ClickTimingContext, ClickTimingProfile, SelectorLearningStats,
+    click_learning_path, load_click_learning, save_click_learning,
+};
 pub use types::{
     ClickAndWaitOutcome, FileMetadata, FocusOutcome, FocusStatus, HttpResponse, RandomCursorOutcome,
     Rect, WaitForVisibleStatus,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-enum ClickPageContext {
-    Home,
-    Form,
-    Social,
-    Content,
-    Commerce,
-    Other,
+fn nativeclick_public_log_line(selector: &str, x: f64, y: f64) -> String {
+    format!("[task-api] clicked ({selector}) at {x:.1},{y:.1}")
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-enum ClickElementPriority {
-    Critical,
-    Normal,
-    Optional,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-enum ClickFatigueLevel {
-    Rested,
-    Normal,
-    Tired,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct ClickTimingContext {
-    page: ClickPageContext,
-    priority: ClickElementPriority,
-    fatigue: ClickFatigueLevel,
-    recent_success_rate: f64,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct ClickTimingProfile {
-    reaction_delay_ms: u64,
-    reaction_variance_pct: u32,
-    click_offset_px: i32,
-    attention_pause_ms: u64,
-    post_click_pause_ms: u64,
-    primary_timeout_ms: u64,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct ClickAdaptation {
-    extra_stability_wait_ms: u64,
-    reaction_delay_multiplier: f64,
-    reaction_variance_boost_pct: u32,
-    click_offset_adjustment_px: i32,
-    require_strict_verification: bool,
-    prefer_coordinate_fallback: bool,
-}
-
-impl Default for ClickAdaptation {
-    fn default() -> Self {
-        Self {
-            extra_stability_wait_ms: 0,
-            reaction_delay_multiplier: 1.0,
-            reaction_variance_boost_pct: 0,
-            click_offset_adjustment_px: 0,
-            require_strict_verification: false,
-            prefer_coordinate_fallback: false,
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct SelectorLearningStats {
-    attempts: u32,
-    successes: u32,
-    consecutive_failures: u32,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct ClickLearningState {
-    interaction_count: u64,
-    total_attempts: u64,
-    total_successes: u64,
-    recent_results: VecDeque<bool>,
-    selectors: HashMap<String, SelectorLearningStats>,
-}
-
-impl ClickLearningState {
-    const RECENT_WINDOW: usize = 32;
-
-    fn recent_success_rate(&self) -> f64 {
-        if self.recent_results.is_empty() {
-            return 1.0;
-        }
-        let success_count = self.recent_results.iter().filter(|v| **v).count();
-        success_count as f64 / self.recent_results.len() as f64
-    }
-
-    fn record(&mut self, selector: &str, success: bool) {
-        self.interaction_count = self.interaction_count.saturating_add(1);
-        self.total_attempts = self.total_attempts.saturating_add(1);
-        if success {
-            self.total_successes = self.total_successes.saturating_add(1);
-        }
-
-        self.recent_results.push_back(success);
-        if self.recent_results.len() > Self::RECENT_WINDOW {
-            let _ = self.recent_results.pop_front();
-        }
-
-        let entry = self.selectors.entry(selector.to_string()).or_default();
-        entry.attempts = entry.attempts.saturating_add(1);
-        if success {
-            entry.successes = entry.successes.saturating_add(1);
-            entry.consecutive_failures = 0;
-        } else {
-            entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
-        }
-    }
-
-    fn selector_stats(&self, selector: &str) -> SelectorLearningStats {
-        self.selectors.get(selector).cloned().unwrap_or_default()
-    }
-
-    fn adaptation_for(&self, selector: &str, context: &ClickTimingContext) -> ClickAdaptation {
-        let mut adaptation = ClickAdaptation::default();
-        let selector_stats = self.selector_stats(selector);
-
-        let selector_complexity = selector.len() > 45
-            || selector.contains(":nth-child")
-            || selector.contains('>')
-            || selector.contains("data-testid");
-        if selector_complexity {
-            adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(120);
-            adaptation.reaction_delay_multiplier *= 1.08;
-            adaptation.click_offset_adjustment_px += 1;
-        }
-
-        if selector_stats.attempts >= 3 {
-            let selector_success_rate =
-                selector_stats.successes as f64 / selector_stats.attempts as f64;
-            if selector_success_rate < 0.75 {
-                adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(250);
-                adaptation.reaction_delay_multiplier *= 1.20;
-                adaptation.reaction_variance_boost_pct += 8;
-                adaptation.require_strict_verification = true;
-                adaptation.prefer_coordinate_fallback = true;
-            }
-        }
-
-        if selector_stats.consecutive_failures >= 2 {
-            adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(380);
-            adaptation.reaction_delay_multiplier *= 1.22;
-            adaptation.reaction_variance_boost_pct += 10;
-            adaptation.click_offset_adjustment_px += 2;
-            adaptation.require_strict_verification = true;
-            adaptation.prefer_coordinate_fallback = true;
-        }
-
-        if context.fatigue == ClickFatigueLevel::Tired {
-            adaptation.reaction_delay_multiplier *= 1.15;
-            adaptation.reaction_variance_boost_pct += 6;
-            adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(140);
-        }
-
-        adaptation
-    }
-}
-
-fn sanitize_path_component(value: &str) -> String {
-    let cleaned: String = value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let trimmed = cleaned.trim_matches('_').to_string();
-    if trimmed.is_empty() {
-        "default".to_string()
-    } else {
-        trimmed
-    }
-}
-
-fn click_learning_path(session_id: &str, behavior_profile: &BrowserProfile) -> Option<PathBuf> {
-    let base_dir = std::env::current_dir().ok()?.join("click-learning");
-    let profile_component = sanitize_path_component(&behavior_profile.name);
-    let session_component = sanitize_path_component(session_id);
-    Some(
-        base_dir
-            .join(profile_component)
-            .join(format!("{session_component}.json")),
-    )
-}
-
-fn load_click_learning(path: &Path) -> Option<ClickLearningState> {
-    let content = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
+/// Deserialize evaluated JSON value, handling both direct and string-encoded JSON.
 fn deserialize_evaluated_json<T: DeserializeOwned>(value: serde_json::Value) -> Result<T> {
     match value {
         serde_json::Value::String(s) => Ok(serde_json::from_str(&s)?),
@@ -280,170 +92,10 @@ fn deserialize_evaluated_json<T: DeserializeOwned>(value: serde_json::Value) -> 
     }
 }
 
-fn save_click_learning(path: &Path, state: &ClickLearningState) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let json = serde_json::to_string_pretty(state)?;
-    fs::write(path, json)?;
-    Ok(())
-}
-
-impl ClickTimingContext {
-    fn classify_page(url: &str) -> ClickPageContext {
-        if url.contains("x.com") || url.contains("twitter.com") {
-            ClickPageContext::Social
-        } else if url.contains("login") || url.contains("signup") || url.contains("form") {
-            ClickPageContext::Form
-        } else if url.contains("shop") || url.contains("cart") || url.contains("checkout") {
-            ClickPageContext::Commerce
-        } else if url.contains("article") || url.contains("news") || url.contains("blog") {
-            ClickPageContext::Content
-        } else if url.trim_end_matches('/').matches('/').count() <= 2 {
-            ClickPageContext::Home
-        } else {
-            ClickPageContext::Other
-        }
-    }
-
-    fn classify_priority(selector: &str) -> ClickElementPriority {
-        if selector.contains("submit")
-            || selector.contains("confirm")
-            || selector.contains("primary")
-            || selector.contains("cta")
-        {
-            ClickElementPriority::Critical
-        } else if selector.contains("ad")
-            || selector.contains("promo")
-            || selector.contains("secondary")
-        {
-            ClickElementPriority::Optional
-        } else {
-            ClickElementPriority::Normal
-        }
-    }
-
-    fn classify_fatigue(interaction_count: u64) -> ClickFatigueLevel {
-        if interaction_count < 15 {
-            ClickFatigueLevel::Rested
-        } else if interaction_count < 50 {
-            ClickFatigueLevel::Normal
-        } else {
-            ClickFatigueLevel::Tired
-        }
-    }
-
-    fn from_observation(
-        url: &str,
-        selector: &str,
-        interaction_count: u64,
-        recent_success_rate: f64,
-    ) -> Self {
-        Self {
-            page: Self::classify_page(url),
-            priority: Self::classify_priority(selector),
-            fatigue: Self::classify_fatigue(interaction_count),
-            recent_success_rate,
-        }
-    }
-
-    fn timing_profile(
-        &self,
-        base_reaction_delay_ms: u64,
-        base_variance_pct: u32,
-        base_offset_px: i32,
-        adaptation: &ClickAdaptation,
-    ) -> ClickTimingProfile {
-        let page_multiplier = match self.page {
-            ClickPageContext::Home => 0.95,
-            ClickPageContext::Form => 1.20,
-            ClickPageContext::Social => 1.10,
-            ClickPageContext::Content => 1.00,
-            ClickPageContext::Commerce => 1.15,
-            ClickPageContext::Other => 1.00,
-        };
-        let priority_multiplier = match self.priority {
-            ClickElementPriority::Critical => 1.18,
-            ClickElementPriority::Normal => 1.00,
-            ClickElementPriority::Optional => 0.92,
-        };
-        let fatigue_multiplier = match self.fatigue {
-            ClickFatigueLevel::Rested => 0.95,
-            ClickFatigueLevel::Normal => 1.00,
-            ClickFatigueLevel::Tired => 1.22,
-        };
-        let quality_multiplier = if self.recent_success_rate < 0.75 {
-            1.0 + (0.75 - self.recent_success_rate) * 0.50
-        } else {
-            1.0
-        };
-
-        let reaction_multiplier = page_multiplier
-            * priority_multiplier
-            * fatigue_multiplier
-            * quality_multiplier
-            * adaptation.reaction_delay_multiplier;
-        let reaction_delay_ms = (base_reaction_delay_ms as f64 * reaction_multiplier)
-            .round()
-            .clamp(70.0, 6_000.0) as u64;
-
-        let fatigue_variance_boost = match self.fatigue {
-            ClickFatigueLevel::Rested => 0,
-            ClickFatigueLevel::Normal => 4,
-            ClickFatigueLevel::Tired => 10,
-        };
-        let reaction_variance_pct = base_variance_pct
-            .saturating_add(adaptation.reaction_variance_boost_pct)
-            .saturating_add(fatigue_variance_boost)
-            .clamp(8, 80);
-
-        let click_offset_px = (base_offset_px + adaptation.click_offset_adjustment_px).clamp(2, 24);
-
-        let mut attention_pause_ms: u64 = match self.fatigue {
-            ClickFatigueLevel::Rested => 60,
-            ClickFatigueLevel::Normal => 120,
-            ClickFatigueLevel::Tired => 230,
-        };
-        if self.priority == ClickElementPriority::Critical {
-            attention_pause_ms += 80;
-        }
-        attention_pause_ms = attention_pause_ms
-            .saturating_add(adaptation.extra_stability_wait_ms / 3)
-            .clamp(40, 800);
-
-        let mut post_click_pause_ms = match self.page {
-            ClickPageContext::Form => 320,
-            ClickPageContext::Commerce => 280,
-            ClickPageContext::Social => 220,
-            _ => 180,
-        };
-        if self.fatigue == ClickFatigueLevel::Tired {
-            post_click_pause_ms += 80;
-        }
-        post_click_pause_ms = post_click_pause_ms.clamp(120, 900);
-
-        let primary_timeout_ms = (4_000u64)
-            .saturating_add(adaptation.extra_stability_wait_ms)
-            .clamp(3_200, 7_500);
-
-        ClickTimingProfile {
-            reaction_delay_ms,
-            reaction_variance_pct,
-            click_offset_px,
-            attention_pause_ms,
-            post_click_pause_ms,
-            primary_timeout_ms,
-        }
-    }
-}
-
-fn nativeclick_public_log_line(selector: &str, x: f64, y: f64) -> String {
-    format!("[task-api] clicked ({selector}) at {x:.1},{y:.1}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::task_context::click_learning::sanitize_path_component;
     use crate::utils::mouse::CursorMovementConfig;
 
     #[test]
@@ -1264,17 +916,17 @@ mod tests {
 
     #[test]
     fn test_sanitize_path_component_various_inputs() {
-        assert_eq!(super::sanitize_path_component("normal"), "normal");
-        assert_eq!(super::sanitize_path_component("with-dash"), "with-dash");
+        assert_eq!(sanitize_path_component("normal"), "normal");
+        assert_eq!(sanitize_path_component("with-dash"), "with-dash");
         assert_eq!(
-            super::sanitize_path_component("with_underscore"),
+            sanitize_path_component("with_underscore"),
             "with_underscore"
         );
-        assert_eq!(super::sanitize_path_component("UPPERCASE"), "UPPERCASE");
-        assert_eq!(super::sanitize_path_component("123"), "123");
-        assert_eq!(super::sanitize_path_component(""), "default");
-        assert_eq!(super::sanitize_path_component("   "), "default");
-        assert_eq!(super::sanitize_path_component("a"), "a");
+        assert_eq!(sanitize_path_component("UPPERCASE"), "UPPERCASE");
+        assert_eq!(sanitize_path_component("123"), "123");
+        assert_eq!(sanitize_path_component(""), "default");
+        assert_eq!(sanitize_path_component("   "), "default");
+        assert_eq!(sanitize_path_component("a"), "a");
     }
 
     #[test]
@@ -1658,28 +1310,28 @@ mod tests {
 
     #[test]
     fn test_sanitize_path_component_with_special_chars() {
-        assert_eq!(super::sanitize_path_component("test/file"), "test_file");
-        assert_eq!(super::sanitize_path_component("test..file"), "test__file");
-        assert_eq!(super::sanitize_path_component("test\\file"), "test_file"); // Single \ becomes single _
+        assert_eq!(sanitize_path_component("test/file"), "test_file");
+        assert_eq!(sanitize_path_component("test..file"), "test__file");
+        assert_eq!(sanitize_path_component("test\\file"), "test_file"); // Single \ becomes single _
     }
 
     #[test]
     fn test_sanitize_path_component_unicode_extended() {
         // Unicode chars become underscores, then trimmed, empty becomes "default"
-        assert_eq!(super::sanitize_path_component("测试"), "default"); // All unicode -> "__" -> trim -> "default"
+        assert_eq!(sanitize_path_component("测试"), "default"); // All unicode -> "__" -> trim -> "default"
                                                                        // Mixed content: ascii parts preserved, unicode becomes underscores
         assert_eq!(
-            super::sanitize_path_component("test日本語file"),
+            sanitize_path_component("test日本語file"),
             "test___file"
         ); // 3 Japanese chars = 3 underscores
-        assert_eq!(super::sanitize_path_component("日本語test"), "test"); // Leading underscores trimmed
-        assert_eq!(super::sanitize_path_component("test日本語"), "test"); // Trailing underscores trimmed
+        assert_eq!(sanitize_path_component("日本語test"), "test"); // Leading underscores trimmed
+        assert_eq!(sanitize_path_component("test日本語"), "test"); // Trailing underscores trimmed
     }
 
     #[test]
     fn test_sanitize_path_component_long_name() {
         let long_name = "a".repeat(300);
-        let result = super::sanitize_path_component(&long_name);
+        let result = sanitize_path_component(&long_name);
         // Should not panic and should preserve the name (or truncate)
         assert!(!result.is_empty());
     }

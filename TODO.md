@@ -50,14 +50,14 @@
 
 - [ ] **Split Large Files** (~1 week)
   - `task_context.rs` (5,880 LOC) → 4 focused modules
-    - [ ] Phase 1: Create module structure (Day 1)
-      - [ ] Create `src/runtime/task_context/` directory
-      - [ ] Extract shared types to `types.rs` (Rect, HttpResponse, FileMetadata, outcome structs)
-      - [ ] Run tests: `cargo test task_context::`
-    - [ ] Phase 2: Extract click_learning.rs (Day 1-2)
-      - [ ] Move `ClickLearningState`, `ClickTimingContext`, `ClickAdaptation`
-      - [ ] Move persistence: `save_click_learning()`, `load_click_learning()`
-      - [ ] Re-export public types, run tests
+    - [x] Phase 1: Create module structure (Day 1) ✅ DONE
+      - [x] Create `src/runtime/task_context/` directory
+      - [x] Extract shared types to `types.rs` (Rect, HttpResponse, FileMetadata, outcome structs)
+      - [x] Run tests: `cargo test task_context::` - 109 passed
+    - [x] Phase 2: Extract click_learning.rs (Day 1-2) ✅ DONE
+      - [x] Move `ClickLearningState`, `ClickTimingContext`, `ClickAdaptation`
+      - [x] Move persistence: `save_click_learning()`, `load_click_learning()`
+      - [x] Re-export public types, run tests - 109 passed
     - [ ] Phase 3: Extract query.rs (Day 2)
       - [ ] Move query methods: `exists()`, `visible()`, `text()`, `html()`, `attr()`, `value()`
       - [ ] Move `wait_for()`, `wait_for_visible()`, `url()`, `title()`, `viewport()`

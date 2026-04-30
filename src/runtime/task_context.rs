@@ -39,45 +39,44 @@
 //! ```
 
 use chromiumoxide::Page;
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::fs;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
 use log::{debug, info, warn};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::capabilities::{clipboard, keyboard, mouse, navigation, scroll, timing};
 use crate::config::NativeInteractionConfig;
 use crate::internal::page_size::{self, Viewport};
-use crate::utils::profile::{BrowserProfile, ProfileRuntime};
 use crate::logger::scoped_log_context;
 use crate::metrics::{
     MetricsCollector, RUN_COUNTER_CLICK_ATTEMPTED, RUN_COUNTER_CLICK_FALLBACK_HIT,
     RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, RUN_COUNTER_CLICK_SUCCESS,
 };
-use crate::state::ClipboardState;
 use crate::task::policy::TaskPolicy;
-use crate::utils::mouse::{
+use crate::utils::profile::{BrowserProfile, ProfileRuntime};
+use crate::utils::{
     ClickOutcome, ClickStatus, CursorMovementConfig, HoverOutcome, HoverStatus, NativeCursorOutcome,
 };
+use crate::ClipboardState;
 
 // Submodules
-pub mod types;
 pub mod click_learning;
+pub mod types;
 
 pub use click_learning::{
-    ClickAdaptation, ClickElementPriority, ClickFatigueLevel, ClickLearningState,
-    ClickPageContext, ClickTimingContext, ClickTimingProfile, SelectorLearningStats,
-    click_learning_path, load_click_learning, save_click_learning,
+    click_learning_path, load_click_learning, save_click_learning, ClickAdaptation,
+    ClickElementPriority, ClickFatigueLevel, ClickLearningState, ClickPageContext,
+    ClickTimingContext, ClickTimingProfile, SelectorLearningStats,
 };
 pub use types::{
-    ClickAndWaitOutcome, FileMetadata, FocusOutcome, FocusStatus, HttpResponse, RandomCursorOutcome,
-    Rect, WaitForVisibleStatus,
+    ClickAndWaitOutcome, FileMetadata, FocusOutcome, FocusStatus, HttpResponse,
+    RandomCursorOutcome, Rect, WaitForVisibleStatus,
 };
 
 fn nativeclick_public_log_line(selector: &str, x: f64, y: f64) -> String {
@@ -1319,11 +1318,8 @@ mod tests {
     fn test_sanitize_path_component_unicode_extended() {
         // Unicode chars become underscores, then trimmed, empty becomes "default"
         assert_eq!(sanitize_path_component("测试"), "default"); // All unicode -> "__" -> trim -> "default"
-                                                                       // Mixed content: ascii parts preserved, unicode becomes underscores
-        assert_eq!(
-            sanitize_path_component("test日本語file"),
-            "test___file"
-        ); // 3 Japanese chars = 3 underscores
+                                                                // Mixed content: ascii parts preserved, unicode becomes underscores
+        assert_eq!(sanitize_path_component("test日本語file"), "test___file"); // 3 Japanese chars = 3 underscores
         assert_eq!(sanitize_path_component("日本語test"), "test"); // Leading underscores trimmed
         assert_eq!(sanitize_path_component("test日本語"), "test"); // Trailing underscores trimmed
     }

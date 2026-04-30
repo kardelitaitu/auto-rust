@@ -430,8 +430,8 @@ mod tests {
     fn test_jittered_delay_ms_distribution() {
         // Test that delays are distributed across the range
         let delays: Vec<u64> = (0..100).map(|_| jittered_delay_ms(100, 20)).collect();
-        let min = *delays.iter().min().unwrap();
-        let max = *delays.iter().max().unwrap();
+        let min = *delays.iter().min().expect("delays should not be empty");
+        let max = *delays.iter().max().expect("delays should not be empty");
         // Should cover most of the range
         assert!(min <= 85); // Lower bound of range
         assert!(max >= 115); // Upper bound of range

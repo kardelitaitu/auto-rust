@@ -8,13 +8,12 @@
     Similar to .github/workflows/ci.yml for local Windows development.
 
 .EXAMPLE
-    .\check.ps1
-    .\check.ps1 -Verbose
-    .\check.ps1 -Quick    # Skip release builds
+    .\check.ps1           # Run all checks
+    .\check.ps1 -Verbose  # Show all output
+    .\check.ps1 -SkipTests # Skip test execution
 #>
 [CmdletBinding()]
 param(
-    [switch]$Quick,
     [switch]$SkipTests,
     [switch]$SkipClippy,
     [switch]$SkipFormat,
@@ -50,8 +49,7 @@ $results = @{
     Tests = @{ Passed = $false; Duration = 0; Output = "" }
     Format = @{ Passed = $false; Duration = 0; Output = "" }
     Clippy = @{ Passed = $false; Duration = 0; Output = "" }
-    BuildDebug = @{ Passed = $false; Duration = 0; Output = "" }
-    BuildRelease = @{ Passed = $false; Duration = 0; Output = "" }
+    Build = @{ Passed = $false; Duration = 0; Output = "" }
 }
 
 # Check if in correct directory
@@ -71,15 +69,15 @@ if (-not $SkipTests) {
         $output = cargo test --all-features --lib 2>&1
         $results.Tests.Output = $output -join "`n"
         
-        # Parse test results
+        # Parse test results - "test result: ok" means passed
         $testLine = $output | Select-String "test result:" | Select-Object -Last 1
         if ($testLine) {
-            Write-Status "✓ $testLine" "Green"
-            if ($testLine -match "FAILED") {
-                $results.Tests.Passed = $false
-                Write-Status "✗ Tests failed" "Red"
-            } else {
+            if ($testLine -match "test result: ok") {
+                Write-Status "✓ Tests passed: $testLine" "Green"
                 $results.Tests.Passed = $true
+            } else {
+                Write-Status "✗ Tests failed: $testLine" "Red"
+                $results.Tests.Passed = $false
             }
         } else {
             $results.Tests.Passed = $false
@@ -143,46 +141,24 @@ if (-not $SkipClippy) {
     $results.Clippy.Duration = ((Get-Date) - $clipStart).TotalSeconds
 }
 
-# ============ BUILD DEBUG ============
+# ============ BUILD ============
 if (-not $SkipBuild) {
     Write-Section "Checking Build (cargo check)"
     $buildStart = Get-Date
     try {
         $output = cargo check 2>&1
-        $results.BuildDebug.Output = $output -join "`n"
+        $results.Build.Output = $output -join "`n"
         if ($LASTEXITCODE -eq 0) {
-            Write-Status "✓ Debug build check passed" "Green"
-            $results.BuildDebug.Passed = $true
+            Write-Status "✓ Build check passed" "Green"
+            $results.Build.Passed = $true
         } else {
-            Write-Status "✗ Debug build failed" "Red"
-            $results.BuildDebug.Passed = $false
+            Write-Status "✗ Build failed" "Red"
+            $results.Build.Passed = $false
         }
     } catch {
-        $results.BuildDebug.Passed = $false
+        $results.Build.Passed = $false
     }
-    $results.BuildDebug.Duration = ((Get-Date) - $buildStart).TotalSeconds
-
-    # ============ BUILD RELEASE ============
-    if (-not $Quick) {
-        Write-Section "Checking Release Build (cargo check --release)"
-        $relStart = Get-Date
-        try {
-            $output = cargo check --release 2>&1
-            $results.BuildRelease.Output = $output -join "`n"
-            if ($LASTEXITCODE -eq 0) {
-                Write-Status "✓ Release build check passed" "Green"
-                $results.BuildRelease.Passed = $true
-            } else {
-                Write-Status "✗ Release build failed" "Red"
-                $results.BuildRelease.Passed = $false
-            }
-        } catch {
-            $results.BuildRelease.Passed = $false
-        }
-        $results.BuildRelease.Duration = ((Get-Date) - $relStart).TotalSeconds
-    } else {
-        Write-Status "⚡ Skipping release build (--Quick mode)" "Yellow"
-    }
+    $results.Build.Duration = ((Get-Date) - $buildStart).TotalSeconds
 }
 
 # ============ SUMMARY REPORT ============

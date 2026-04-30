@@ -134,7 +134,11 @@ Need external app integration (GitHub, Slack)?
    - `docs: rewrite README with TOC (843 -> 350 lines)`
    - `feat: add twitterquote task with LLM integration`
    - `fix: handle rate limit in twitterfollow retry logic`
-8. **Never commit to main unless `cargo check` and `cargo test` pass** - ensure code compiles and all tests pass before committing to main branch
+8. **Never push to remote without running verification commands** - always execute these before `git push`:
+   - `cargo test` (runs `cargo test --all-features` via alias)
+   - `cargo fmt` (runs `cargo fmt --all -- --check` via alias)
+   - `cargo clippy`
+   - Ensure all pass before pushing to remote repository
 
 ### Codebase rules
 - `TaskContext` is the task-api entry point; task code should stay thin and compose shared capabilities.

@@ -203,3 +203,62 @@
 3. Reduced timeout/sleep durations in health_logger tests (test-only)
 4. Maintained test behavior while significantly reducing execution time
 5. All optimizations are test-only, production code behavior unchanged
+
+## 2026-04-30 - Navigation coverage optimization and Chrome browser support
+
+### Accomplished This Session
+
+#### Unit Tests for Navigation Helpers
+- **src/utils/navigation.rs**: Added unit tests for pure helper functions:
+  - `classify_locator_exists`, `classify_locator_visible`, `classify_locator_text`
+  - `locator_match_mode_name`, `locator_not_found_error`, `locator_unsupported_error`
+  - `selector_uses_accessibility_locator`, `quad_center`
+  - Total: 43 unit tests covering conditionally-compiled helper functions
+
+#### Chrome Browser Support
+- **src/browser.rs**: Added Chrome browser discovery:
+  - `discover_chrome_on_port()`: New function to detect Chrome on ports 9222-9230
+  - `discover_local_browsers()`: Now scans both Brave (9001-9050) and Chrome ports
+  - Chrome profile type: "localChrome" for session identification
+
+#### Integration Tests Fixed
+- **tests/navigation_integration.rs**: Fixed 10 integration tests:
+  - Fixed `connect_test_browser()` to query CDP endpoint for WebSocket URL
+  - Added browser handler task spawning to prevent "ChannelSendError"
+  - Changed `browser.close()` to `page.close()` to avoid killing browser between tests
+  - All 10 tests now passing with Brave on port 9002
+
+#### Bug Fix: Wait Function Timeout Handling
+- **src/utils/navigation.rs**: Fixed critical bug in wait functions:
+  - `wait_for_selector()`: Now returns `Ok(false)` on timeout instead of error
+  - `wait_for_visible_selector()`: Same fix for timeout behavior
+  - `wait_for_any_visible_selector()`: Same fix for timeout behavior
+  - Previously returned `Err(deadline has elapsed)` which broke integration tests
+
+#### Documentation Updates
+- **tests/navigation_integration.rs**: Updated header comments for Chrome support
+- **AGENTS.md**: Updated supported browsers list (Brave, Chrome, Roxybrowser)
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass (cargo check) |
+| Tests | ✅ 2120+ passed |
+| cargo clippy | ✅ Clean (0 warnings) |
+| cargo fmt | ✅ Properly formatted |
+| Unit tests (navigation) | ✅ 43 tests covering helpers |
+| Integration tests | ✅ 10/10 passing |
+| Chrome support | ✅ Ports 9222-9230 scanned |
+
+### Key Decisions Made
+1. Added Chrome support alongside existing Brave/Roxybrowser connectors
+2. Fixed timeout functions to return `Ok(false)` on timeout (not error) for consistent API
+3. Used `page.close()` instead of `browser.close()` in tests to keep browser alive
+4. Connection helper queries CDP endpoint first to get actual WebSocket URL
+5. Integration tests require sequential execution (`--test-threads=1`) to prevent browser conflicts
+
+### Notes
+- tarpaulin coverage for `src/utils/navigation.rs`: 40/435 lines (9.2%) from unit tests only
+- Integration test coverage not measured by tarpaulin (runs against external binary)
+- Full coverage requires both unit tests (pure functions) and integration tests (async browser functions)

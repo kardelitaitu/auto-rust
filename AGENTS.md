@@ -156,7 +156,7 @@ Need external app integration (GitHub, Slack)?
 - Prefer deterministic verification of the same target element that was clicked or inspected.
 - Use `cookiebot` only for its own resource-blocking behavior; do not leak that policy into unrelated tasks.
 - Keep task names canonical and consistent across `task/mod.rs`, `src/cli.rs`, validation, and README.
-- Current supported browsers are Brave and Roxybrowser; other Chromium browsers are future connectors only.
+- Current supported browsers are Brave, Chrome, and Roxybrowser; other Chromium browsers are future connectors only.
 
 ### Twitter Utility Modules
 The Twitter automation utilities are located in `src/utils/twitter/` and have comprehensive rustdoc documentation:

@@ -816,4 +816,113 @@ mod tests {
         assert!(!joined.contains("pending"));
         assert!(!joined.contains("private"));
     }
+
+    #[test]
+    fn test_extract_url_from_payload_url_field() {
+        let payload = json!({"url": "https://x.com/elonmusk"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/elonmusk"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_value_field() {
+        let payload = json!({"value": "x.com/naval"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/naval"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_default_url_field() {
+        let payload = json!({"default_url": "twitter.com/paulg"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://twitter.com/paulg"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_fallback_search() {
+        // No url/value/default_url, but has a field with twitter URL
+        let payload = json!({
+            "other_field": "https://x.com/fallbackuser",
+            "another": "not a url"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/fallbackuser"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_fallback_twitter_com() {
+        // Fallback search finds twitter.com - normalize_url converts www.twitter.com to x.com
+        // Note: normalize_url only handles www.twitter.com/, not plain twitter.com/
+        let payload = json!({"profile": "https://www.twitter.com/jack"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/jack"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_url_priority_over_value() {
+        // url field takes priority over value
+        let payload = json!({
+            "url": "https://x.com/from_url",
+            "value": "https://x.com/from_value"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/from_url"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_value_priority_over_default() {
+        // value field takes priority over default_url
+        let payload = json!({
+            "value": "https://x.com/from_value",
+            "default_url": "https://x.com/from_default"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/from_value"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_not_object_fails() {
+        let payload = json!("not an object");
+        assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_empty_object_fails() {
+        let payload = json!({});
+        assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_no_matching_url_fails() {
+        // Object with no twitter/x.com URLs
+        let payload = json!({"website": "https://example.com/user"});
+        assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_skips_empty_strings_in_fallback() {
+        // Empty strings should be skipped in fallback search
+        let payload = json!({
+            "empty": "",
+            "valid": "https://x.com/validuser"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/validuser"
+        );
+    }
 }

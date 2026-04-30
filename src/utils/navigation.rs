@@ -852,7 +852,7 @@ async fn css_selector_value(page: &Page, selector: &str) -> Result<Option<String
 }
 
 pub async fn wait_for_selector(page: &Page, selector: &str, timeout_ms: u64) -> Result<bool> {
-    timeout(Duration::from_millis(timeout_ms), async {
+    match timeout(Duration::from_millis(timeout_ms), async {
         let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             if selector_exists(page, selector).await.unwrap_or(false) {
@@ -864,7 +864,11 @@ pub async fn wait_for_selector(page: &Page, selector: &str, timeout_ms: u64) -> 
             }
         }
     })
-    .await?
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Ok(false), // Timeout elapsed, selector not found
+    }
 }
 
 pub async fn wait_for_visible_selector(
@@ -872,7 +876,7 @@ pub async fn wait_for_visible_selector(
     selector: &str,
     timeout_ms: u64,
 ) -> Result<bool> {
-    timeout(Duration::from_millis(timeout_ms), async {
+    match timeout(Duration::from_millis(timeout_ms), async {
         let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             if selector_is_visible(page, selector).await.unwrap_or(false) {
@@ -884,7 +888,11 @@ pub async fn wait_for_visible_selector(
             }
         }
     })
-    .await?
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Ok(false), // Timeout elapsed, selector not found
+    }
 }
 
 pub async fn page_url(page: &Page) -> Result<String> {
@@ -917,7 +925,7 @@ pub async fn wait_for_any_visible_selector(
     selectors: &[&str],
     timeout_ms: u64,
 ) -> Result<bool> {
-    timeout(Duration::from_millis(timeout_ms), async {
+    match timeout(Duration::from_millis(timeout_ms), async {
         let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             for selector in selectors {
@@ -933,7 +941,11 @@ pub async fn wait_for_any_visible_selector(
             }
         }
     })
-    .await?
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Ok(false), // Timeout elapsed, no selector found
+    }
 }
 
 async fn wait_for_page_settle(page: &Page) -> Result<()> {
@@ -965,11 +977,12 @@ mod tests {
     use tracing::Level;
 
     use super::emit_selector_observation;
+    use super::selector_uses_accessibility_locator;
     #[cfg(feature = "accessibility-locator")]
     use super::{
         classify_locator_exists, classify_locator_text, classify_locator_visible,
-        locator_not_found_error, locator_unsupported_error, parse_selector_for_navigation,
-        quad_center, selector_uses_accessibility_locator,
+        locator_match_mode_name, locator_not_found_error, locator_unsupported_error,
+        parse_selector_for_navigation, quad_center,
     };
     #[cfg(feature = "accessibility-locator")]
     use crate::utils::accessibility_locator::ParsedSelector;
@@ -1478,5 +1491,103 @@ mod tests {
             quad_center(&[0.0, 0.0, f64::INFINITY, 0.0, 20.0, 20.0, 0.0, 20.0]),
             None
         );
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_classify_locator_exists() {
+        assert_eq!(classify_locator_exists(0), "not_found");
+        assert_eq!(classify_locator_exists(1), "ok");
+        assert_eq!(classify_locator_exists(2), "ambiguous");
+        assert_eq!(classify_locator_exists(10), "ambiguous");
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_locator_match_mode_name() {
+        assert_eq!(locator_match_mode_name(LocatorMatchMode::Exact), "exact");
+        assert_eq!(
+            locator_match_mode_name(LocatorMatchMode::Contains),
+            "contains"
+        );
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_locator_not_found_error() {
+        let locator = AccessibilityLocator {
+            role: "button".to_string(),
+            name: "Submit".to_string(),
+            match_mode: LocatorMatchMode::Exact,
+            scope: None,
+        };
+        let error = locator_not_found_error(&locator);
+        assert!(error.to_string().contains("locator_not_found"));
+        assert!(error.to_string().contains("role='button'"));
+        assert!(error.to_string().contains("name='Submit'"));
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_locator_unsupported_error() {
+        let error = locator_unsupported_error("html");
+        assert!(error.to_string().contains("locator_unsupported"));
+        assert!(error.to_string().contains("operation='html'"));
+        assert!(error.to_string().contains("requires css selector"));
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_classify_locator_visible() {
+        assert_eq!(classify_locator_visible(0, 0), "not_found");
+        assert_eq!(classify_locator_visible(1, 0), "not_found");
+        assert_eq!(classify_locator_visible(0, 1), "not_found");
+        assert_eq!(classify_locator_visible(1, 1), "ok");
+        assert_eq!(classify_locator_visible(2, 2), "ambiguous");
+        assert_eq!(classify_locator_visible(5, 2), "ambiguous");
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn test_classify_locator_text() {
+        assert_eq!(classify_locator_text(0, false), "not_found");
+        assert_eq!(classify_locator_text(1, false), "not_found");
+        assert_eq!(classify_locator_text(0, true), "not_found");
+        assert_eq!(classify_locator_text(1, true), "ok");
+        assert_eq!(classify_locator_text(2, true), "ambiguous");
+        assert_eq!(classify_locator_text(5, true), "ambiguous");
+    }
+
+    #[test]
+    fn test_selector_uses_accessibility_locator() {
+        // CSS selectors should return false
+        assert!(!selector_uses_accessibility_locator("#my-id"));
+        assert!(!selector_uses_accessibility_locator(".my-class"));
+        assert!(!selector_uses_accessibility_locator("div > span"));
+        assert!(!selector_uses_accessibility_locator(
+            "button[type='submit']"
+        ));
+
+        // Accessibility locators should return true when feature is enabled
+        #[cfg(feature = "accessibility-locator")]
+        {
+            assert!(selector_uses_accessibility_locator("role=button"));
+            assert!(selector_uses_accessibility_locator("role=link"));
+            assert!(selector_uses_accessibility_locator("role=textbox"));
+        }
+
+        // With leading whitespace
+        #[cfg(feature = "accessibility-locator")]
+        {
+            assert!(selector_uses_accessibility_locator("  role=button"));
+            assert!(selector_uses_accessibility_locator("\trole=link"));
+        }
+
+        // Case sensitivity (role is lowercase in the check)
+        #[cfg(feature = "accessibility-locator")]
+        {
+            assert!(selector_uses_accessibility_locator("role=Button"));
+            assert!(!selector_uses_accessibility_locator("Role=button"));
+        }
     }
 }

@@ -240,8 +240,10 @@ async fn connect_to_browser(
 
 /// Auto-discovers local browser instances (Brave, Chrome, etc.).
 ///
-/// Scans common CDP (Chrome DevTools Protocol) ports (9001-9050) for local
-/// browser instances that are running with remote debugging enabled.
+/// Scans common CDP (Chrome DevTools Protocol) ports for local
+/// browser instances that are running with remote debugging enabled:
+/// - Brave: ports 9001-9050
+/// - Chrome: ports 9221-9230
 ///
 /// # Arguments
 ///
@@ -251,14 +253,22 @@ async fn connect_to_browser(
 ///
 /// A vector of successfully connected `Session` instances.
 async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
-    let ports: Vec<u16> = (9001..=9050).collect();
+    let brave_ports: Vec<u16> = (9001..=9050).collect();
+    let chrome_ports: Vec<u16> = (9222..=9230).collect();
 
-    let results: Vec<Option<Session>> = stream::iter(ports)
+    let mut results: Vec<Option<Session>> = stream::iter(brave_ports)
         .map(|port| async move { discover_brave_on_port(port, config).await.ok().flatten() })
         .buffer_unordered(50)
         .collect()
         .await;
 
+    let chrome_results: Vec<Option<Session>> = stream::iter(chrome_ports)
+        .map(|port| async move { discover_chrome_on_port(port, config).await.ok().flatten() })
+        .buffer_unordered(50)
+        .collect()
+        .await;
+
+    results.extend(chrome_results);
     let sessions: Vec<Session> = results.into_iter().flatten().collect();
     Ok(sessions)
 }
@@ -326,6 +336,84 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                                 warn!(
                                     "Connection timeout to Brave on port {port} after {}ms",
                                     brave_timeout.as_millis()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // Port not available or no browser, continue silently
+        }
+    }
+
+    Ok(None)
+}
+
+/// Attempts to discover a Chrome browser instance on a specific port.
+///
+/// Checks if a browser is running with remote debugging enabled on the
+/// specified port by querying the CDP version endpoint.
+///
+/// # Arguments
+///
+/// * `port` - The port to check for a browser instance
+/// * `config` - The orchestrator configuration
+///
+/// # Returns
+///
+/// * `Some(Session)` - If a browser is found and connected
+/// * `None` - If no browser is found on this port
+async fn discover_chrome_on_port(port: u16, config: &Config) -> Result<Option<Session>> {
+    let cdp_url = format!("http://127.0.0.1:{port}/json/version");
+
+    debug!("Checking Chrome on port {port}");
+
+    // Try to connect with timeout
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&cdp_url)
+        .timeout(Duration::from_millis(1000))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(version_data) = resp.json::<serde_json::Value>().await {
+                if let Some(ws_url) = version_data.get("webSocketDebuggerUrl") {
+                    if let Some(ws_str) = ws_url.as_str() {
+                        info!("Found Chrome browser on port {port}");
+
+                        // Try to connect to chromiumoxide with timeout
+                        let chrome_timeout =
+                            Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+                        match tokio::time::timeout(
+                            chrome_timeout,
+                            chromiumoxide::Browser::connect(ws_str),
+                        )
+                        .await
+                        {
+                            Ok(Ok((browser, handler))) => {
+                                let session = Session::new(
+                                    format!("chrome-{port}"),
+                                    format!("Chrome on port {port}"),
+                                    "localChrome".to_string(),
+                                    browser,
+                                    handler,
+                                    config.browser.max_workers_per_session,
+                                    config.browser.cursor_overlay_ms,
+                                    Some(config.browser.circuit_breaker.clone()),
+                                );
+                                return Ok(Some(session));
+                            }
+                            Ok(Err(e)) => {
+                                warn!("Failed to connect to Chrome on port {port}: {e}");
+                            }
+                            Err(_) => {
+                                warn!(
+                                    "Connection timeout to Chrome on port {port} after {}ms",
+                                    chrome_timeout.as_millis()
                                 );
                             }
                         }

@@ -6,7 +6,7 @@
 
 A high-performance, multi-browser automation framework built in Rust. Execute automated tasks across multiple browser sessions with advanced concurrency control, session management, and failure recovery.
 
-## 📑 Table of Contents
+## 📑 Table of Contents --
 
 - [Why Auto?](#why-auto)
 - [Quick Start](#quick-start)

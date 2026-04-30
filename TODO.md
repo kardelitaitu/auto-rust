@@ -138,10 +138,39 @@
 
 ### Coverage Targets (Gate to Expand Rollout)
 - [ ] `src/utils/accessibility_locator.rs` line coverage >= 95%
+  - [ ] Baseline measurement: Run `cargo tarpaulin --out Html --output-dir ./coverage`
+  - [ ] Review coverage report for uncovered lines
+  - [ ] Add tests for parser edge cases (empty input, malformed segments, duplicate fields)
+  - [ ] Add tests for all error variants (LocatorParseError)
+  - [ ] Add tests for whitespace tolerance around segments
+  - [ ] Add tests for quote style validation
+  - [ ] Verify coverage >= 95% after additions
 - [ ] `src/utils/navigation.rs` line coverage >= 90%
+  - [ ] Baseline measurement: Run coverage report
+  - [ ] Review uncovered wait functions
+  - [ ] Add tests for timeout edge cases
+  - [ ] Add tests for deadline checking logic
+  - [ ] Add tests for selector parsing failures
+  - [ ] Verify coverage >= 90% after additions
 - [ ] locator paths in `src/runtime/task_context.rs` line coverage >= 85%
+  - [ ] Baseline measurement: Run coverage report
+  - [ ] Identify locator-related code paths (exists, visible, text, html, attr)
+  - [ ] Add integration tests for accessibility locator resolution
+  - [ ] Add tests for error handling in locator resolution
+  - [ ] Verify coverage >= 85% after additions
 - [ ] `src/task/twitterfollow.rs` line coverage >= 90%
+  - [ ] Baseline measurement: Run coverage report
+  - [ ] Review uncovered interaction paths
+  - [ ] Add tests for rate limit handling
+  - [ ] Add tests for retry logic
+  - [ ] Add tests for error recovery
+  - [ ] Verify coverage >= 90% after additions
 - [ ] zero flaky failures across 5 consecutive feature-on CI runs
+  - [ ] Set up CI job to run tests with `--all-features` flag
+  - [ ] Configure test retries in CI (if needed)
+  - [ ] Monitor CI results for 5 consecutive runs
+  - [ ] Fix any flaky tests discovered
+  - [ ] Document flaky test fixes
 
 ### Phase 1: Parser Exhaustiveness (`src/utils/accessibility_locator.rs`)
 - [ ] Positive matrix:

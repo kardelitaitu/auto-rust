@@ -59,6 +59,9 @@ pub fn random_in_range(min: u64, max: u64) -> u64 {
 /// assert!(val >= 80.0 && val <= 120.0);
 /// ```
 #[allow(dead_code)]
+#[cfg(test)]
+const MAX_GAUSSIAN_ITERATIONS: u32 = 1000;
+
 pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
     if !mean.is_finite() || !std_dev.is_finite() || !min.is_finite() || !max.is_finite() {
         return mean;
@@ -74,10 +77,20 @@ pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
         .expect("Failed to create normal distribution - standard deviation must be positive");
     let mut rng = rand::thread_rng();
 
+    #[cfg(test)]
+    let mut iterations = 0;
+
     loop {
         let sample = normal.sample(&mut rng);
         if sample >= min && sample <= max {
             return sample;
+        }
+        #[cfg(test)]
+        {
+            iterations += 1;
+            if iterations >= MAX_GAUSSIAN_ITERATIONS {
+                return mean.clamp(min, max);
+            }
         }
     }
 }

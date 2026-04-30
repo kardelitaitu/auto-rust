@@ -289,10 +289,14 @@ mod tests {
 
     #[test]
     fn test_random_duration_produces_variance() {
-        let d1 = random_duration(100, 200);
-        let d2 = random_duration(100, 200);
-        // Should rarely be exactly the same
-        assert_ne!(d1.as_millis(), d2.as_millis());
+        let mut durations = Vec::new();
+        for _ in 0..10 {
+            durations.push(random_duration(100, 200).as_millis());
+        }
+        // At least some variance should exist across 10 samples
+        let min = *durations.iter().min().unwrap();
+        let max = *durations.iter().max().unwrap();
+        assert!(max > min, "Expected variance across 10 random samples");
     }
 
     #[test]

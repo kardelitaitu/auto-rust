@@ -1,0 +1,11 @@
+[profile.default]
+# Increase timeout for integration tests
+timeout = 90
+
+# Report slowest tests for optimization
+slowest = { threshold = "2s", num = 10 }
+
+[profile.ci]
+# Override for CI-specific settings
+timeout = 60
+fail-fast = true

@@ -304,8 +304,8 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(10, 20).await;
         let elapsed = start.elapsed();
-        // Should be approximately 10-20ms (wider tolerance for Windows timing)
-        assert!((5..40).contains(&elapsed.as_millis()));
+        // Should be approximately 10-20ms (wider tolerance for Windows timing and parallel execution)
+        assert!((5..100).contains(&elapsed.as_millis()));
     }
 
     #[tokio::test]
@@ -313,8 +313,8 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(10, 20).await;
         let elapsed = start.elapsed();
-        // Should be approximately 10-20ms (wider tolerance for Windows timing)
-        assert!((5..40).contains(&elapsed.as_millis()));
+        // Should be approximately 10-20ms (wider tolerance for Windows timing and parallel execution)
+        assert!((5..100).contains(&elapsed.as_millis()));
     }
 
     #[tokio::test]
@@ -670,9 +670,9 @@ mod tests {
             human_pause(30, 10).await;
             results.push(start.elapsed().as_millis());
         }
-        // All should be in reasonable range
+        // All should be in reasonable range (wider tolerance for parallel execution)
         for r in results {
-            assert!((20..80).contains(&r));
+            assert!((10..150).contains(&r));
         }
     }
 

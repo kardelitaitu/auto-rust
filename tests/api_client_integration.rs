@@ -31,6 +31,21 @@ fn create_test_client(mock_server: &MockServer) -> auto::api::client::ApiClient 
     auto::api::client::ApiClient::new(mock_server.uri())
 }
 
+/// Creates a test API client with fast retry policy for integration tests
+/// Reduces retry count and delays to speed up test execution
+fn create_test_client_fast_retry(mock_server: &MockServer) -> auto::api::client::ApiClient {
+    auto::api::client::ApiClient::with_retry_policy(
+        mock_server.uri(),
+        auto::api::client::RetryPolicy {
+            max_retries: 1,
+            initial_delay: std::time::Duration::from_millis(10),
+            max_delay: std::time::Duration::from_millis(50),
+            factor: 2.0,
+            jitter: 0.0,
+        },
+    )
+}
+
 /// Creates a test API client with circuit breaker
 fn create_test_client_with_circuit_breaker(
     mock_server: &MockServer,
@@ -147,7 +162,7 @@ async fn test_http_429_too_many_requests() {
         .mount(&mock_server)
         .await;
 
-    let client = create_test_client(&mock_server);
+    let client = create_test_client_fast_retry(&mock_server);
     let result: Result<TestResponse, _> = client.get("/api/rate-limited").await;
 
     assert!(result.is_err());
@@ -192,7 +207,7 @@ async fn test_malformed_json_response() {
         .mount(&mock_server)
         .await;
 
-    let client = create_test_client(&mock_server);
+    let client = create_test_client_fast_retry(&mock_server);
     let result: Result<TestResponse, _> = client.get("/api/bad-json").await;
 
     assert!(result.is_err());

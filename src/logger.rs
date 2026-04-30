@@ -161,6 +161,21 @@ mod tests {
     use std::io::Read;
     use tempfile::NamedTempFile;
 
+    // Helper function to create a temporary file and logger for testing
+    fn create_test_logger() -> (NamedTempFile, FileLogger) {
+        let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let logger = FileLogger::new(temp_file.path()).expect("Failed to create file logger");
+        (temp_file, logger)
+    }
+
+    // Helper function to read content from a file
+    fn read_file_content(path: &std::path::Path) -> String {
+        let mut file = std::fs::File::open(path).expect("Failed to open file for reading");
+        let mut content = String::new();
+        file.read_to_string(&mut content).expect("Failed to read file content");
+        content
+    }
+
     #[test]
     fn test_log_context_default() {
         let ctx = LogContext::default();
@@ -302,16 +317,14 @@ mod tests {
 
     #[test]
     fn test_file_logger_creation() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
         // Logger should be created successfully
         let _ = logger;
     }
 
     #[test]
     fn test_file_logger_enabled_info() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
         // Default level is Info, so Info should be enabled
         let metadata = Metadata::builder().level(log::Level::Info).build();
         assert!(logger.enabled(&metadata));
@@ -319,8 +332,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_enabled_debug() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
         // Default level is Info, so Debug should not be enabled
         let metadata = Metadata::builder().level(log::Level::Debug).build();
         assert!(!logger.enabled(&metadata));
@@ -328,8 +340,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_enabled_warn() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
         // Default level is Info, so Warn should be enabled
         let metadata = Metadata::builder().level(log::Level::Warn).build();
         assert!(logger.enabled(&metadata));
@@ -337,8 +348,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_log_without_context() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("test message"))
@@ -348,9 +358,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("test message"));
         assert!(content.contains("INFO"));
@@ -358,8 +366,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_log_with_context() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         set_log_context(LogContext {
             session_id: Some("test-session".to_string()),
@@ -375,9 +382,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("test message"));
         assert!(content.contains("[test-session]"));
@@ -385,8 +390,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_filters_chromiumoxide() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("chromiumoxide message"))
@@ -397,9 +401,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         // Chromiumoxide messages should be filtered out
         assert!(!content.contains("chromiumoxide message"));
@@ -407,8 +409,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_flush() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("test message"))
@@ -491,8 +492,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_enabled_error() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
         // Default level is Info, so Error should be enabled
         let metadata = Metadata::builder().level(log::Level::Error).build();
         assert!(logger.enabled(&metadata));
@@ -500,8 +500,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_enabled_trace() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
         // Default level is Info, so Trace should not be enabled
         let metadata = Metadata::builder().level(log::Level::Trace).build();
         assert!(!logger.enabled(&metadata));
@@ -509,8 +508,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_log_error_level() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("error message"))
@@ -520,9 +518,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("error message"));
         assert!(content.contains("ERROR"));
@@ -530,8 +526,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_log_warn_level() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("warn message"))
@@ -541,9 +536,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("warn message"));
         assert!(content.contains("WARN"));
@@ -551,8 +544,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_log_multiple_messages() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         for i in 0..5 {
             let msg = format!("message {}", i);
@@ -562,9 +554,7 @@ mod tests {
         }
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("message 0"));
         assert!(content.contains("message 4"));
@@ -572,8 +562,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_log_with_long_message() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let long_msg = "a".repeat(1000);
         let args = format_args!("{}", long_msg);
@@ -582,17 +571,14 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.len() > 1000);
     }
 
     #[test]
     fn test_file_logger_log_with_special_characters() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("test with \n\t\r special chars"))
@@ -602,21 +588,19 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("test with"));
     }
 
     #[test]
     fn test_file_logger_truncates_existing_file() {
-        let temp_file = NamedTempFile::new().unwrap();
+        let (_temp_file, _) = create_test_logger();
 
         // Write some initial content
-        std::fs::write(temp_file.path(), "old content").unwrap();
+        std::fs::write(_temp_file.path(), "old content").expect("Failed to write initial content");
 
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let logger = FileLogger::new(_temp_file.path()).expect("Failed to create file logger");
         let record = Record::builder()
             .args(format_args!("new content"))
             .level(log::Level::Info)
@@ -624,9 +608,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(_temp_file.path());
 
         assert!(!content.contains("old content"));
         assert!(content.contains("new content"));
@@ -634,8 +616,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_log_with_full_context() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         set_log_context(LogContext {
             session_id: Some("session-123".to_string()),
@@ -651,9 +632,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("[session-123][Brave][pageview]"));
         assert!(content.contains("test message"));
@@ -661,8 +640,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_debug_level_not_logged() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("debug message"))
@@ -672,9 +650,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         // Debug messages should not be logged with default Info level
         assert!(!content.contains("debug message"));
@@ -682,8 +658,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_filters_chromiumoxide_submodules() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("chromiumoxide message"))
@@ -694,17 +669,14 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(!content.contains("chromiumoxide message"));
     }
 
     #[test]
     fn test_file_logger_non_chromiumoxide_logged() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("other message"))
@@ -715,9 +687,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         assert!(content.contains("other message"));
     }
@@ -758,8 +728,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_timestamp_format() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("test"))
@@ -769,9 +738,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         // Timestamp should be in HH:MM:SS format
         assert!(content.chars().any(|c| c == ':'));
@@ -779,8 +746,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_multiple_flushes() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (_temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!("test"))
@@ -808,8 +774,7 @@ mod tests {
 
     #[test]
     fn test_file_logger_empty_message() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let logger = FileLogger::new(temp_file.path()).unwrap();
+        let (temp_file, logger) = create_test_logger();
 
         let record = Record::builder()
             .args(format_args!(""))
@@ -819,9 +784,7 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let mut content = String::new();
-        let mut file = std::fs::File::open(temp_file.path()).unwrap();
-        file.read_to_string(&mut content).unwrap();
+        let content = read_file_content(temp_file.path());
 
         // Should still log even with empty message
         assert!(content.contains("INFO"));

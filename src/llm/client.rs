@@ -650,7 +650,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Primary response");
+        assert_eq!(result.expect("Should succeed"), "Primary response");
     }
 
     #[tokio::test]
@@ -700,7 +700,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Fallback response");
+        assert_eq!(result.expect("Should succeed"), "Fallback response");
     }
 
     #[tokio::test]
@@ -761,7 +761,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Second fallback response");
+        assert_eq!(result.expect("Should succeed"), "Second fallback response");
     }
 
     #[tokio::test]
@@ -813,7 +813,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Valid response");
+        assert_eq!(result.expect("Should succeed"), "Valid response");
     }
 
     #[tokio::test]
@@ -863,7 +863,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Recovered response");
+        assert_eq!(result.expect("Should succeed"), "Recovered response");
     }
 
     #[tokio::test]
@@ -1001,7 +1001,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Realistic model response");
+        assert_eq!(result.expect("Should succeed"), "Realistic model response");
     }
 
     #[tokio::test]
@@ -1167,7 +1167,7 @@ mod tests {
             result.is_ok(),
             "Should fallback to fast model when primary times out"
         );
-        assert_eq!(result.unwrap(), "Fast fallback response");
+        assert_eq!(result.expect("Should succeed"), "Fast fallback response");
 
         // Should complete in reasonable time (primary timeout + fallback success)
         // Primary timeout: ~100ms, Fallback: immediate, Overhead: ~50ms
@@ -1231,7 +1231,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok(), "Should fallback after 429 rate limit");
-        assert_eq!(result.unwrap(), "Fallback after rate limit");
+        assert_eq!(result.expect("Should succeed"), "Fallback after rate limit");
     }
 
     #[tokio::test]
@@ -1283,7 +1283,7 @@ mod tests {
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok(), "Should fallback after 503 server error");
-        assert_eq!(result.unwrap(), "Fallback after server error");
+        assert_eq!(result.expect("Should succeed"), "Fallback after server error");
     }
 
     #[tokio::test]

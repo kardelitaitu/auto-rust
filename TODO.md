@@ -86,11 +86,12 @@
       - [x] Create standalone `Point` struct in trajectory module
       - [x] Keep wrapper functions in mouse.rs delegating to trajectory
       - [x] All 63 tests pass, clippy clean
-    - [ ] Phase 3: Extract native.rs (Day 3-4)
-      - [ ] Move native click infrastructure: `NATIVE_CLICK_LOCK`, calibration cache
-      - [ ] Move calibration: `NativeClickCalibration`, `NativeClickFingerprint`, `solve_calibration_from_probe_samples()`
-      - [ ] Move native functions: `native_click_selector_human()`, `native_move_cursor_human()`
-      - [ ] Move test helpers: `set_nativeclick_forced_calibration_for_tests()`
+    - [x] Phase 3: Extract native.rs (Day 3-4) ✅ DONE
+      - [x] Move native click infrastructure: `NATIVE_CLICK_LOCK`, calibration cache
+      - [x] Move calibration: `NativeClickCalibration`, `NativeClickFingerprint`, `solve_calibration_from_probe_samples()`
+      - [x] Move native functions: calibration from metrics, fingerprint generation
+      - [x] Move test helpers: `set_nativeclick_forced_calibration_for_tests()`
+      - [x] All 63 tests pass, clippy clean
     - [ ] Phase 4: Core cleanup (Day 4-5)
       - [ ] `mouse.rs` becomes thin re-export layer
       - [ ] `core.rs` keeps: `left_click_at()`, `right_click_at()`, `dispatch_click()`

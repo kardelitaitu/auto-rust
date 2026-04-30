@@ -38,10 +38,21 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::time::{sleep, timeout, Duration};
 
 // Submodules
+pub mod native;
 pub mod trajectory;
 pub mod types;
 
 // Re-export types for backward compatibility
+pub use native::{
+    browser_content_origin, browser_scale, cached_native_click_calibration,
+    clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
+    get_forced_calibration, native_click_calibration_from_metrics, native_click_fingerprint,
+    screen_point_from_calibration, set_nativeclick_forced_calibration_for_tests,
+    solve_calibration_from_probe_samples, store_native_click_calibration,
+    take_nativeclick_trace_hooks, validate_native_calibration, BrowserWindowMetrics,
+    NativeClickCalibration, NativeClickFingerprint, NativeClickProbeSample,
+    NativeCursorCandidate, ScreenPoint, NATIVE_CLICK_LOCK,
+};
 pub use trajectory::Point;
 pub use types::{ClickOutcome, ClickStatus, HoverOutcome, HoverStatus, NativeCursorOutcome, MouseButton};
 
@@ -149,24 +160,82 @@ static OVERLAY_SIZE_PX: Lazy<f64> = Lazy::new(|| {
         .unwrap_or(DEFAULT_OVERLAY_SIZE_PX)
 });
 
-static NATIVE_CLICK_LOCK: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
-static NATIVE_CLICK_CALIBRATION_CACHE: Lazy<
-    std::sync::Mutex<HashMap<String, NativeClickCalibrationEntry>>,
-> = Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
-static FORCED_NATIVECLICK_CALIBRATION: Lazy<
-    std::sync::Mutex<HashMap<String, NativeClickCalibration>>,
-> = Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
-static NATIVECLICK_TRACE_HOOKS: Lazy<std::sync::Mutex<HashMap<String, Vec<String>>>> =
-    Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
-static NATIVE_CLICK_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
-static NATIVE_LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
-static NATIVE_LOCK_CONTENTIONS: AtomicU64 = AtomicU64::new(0);
-static NATIVE_LOCK_TOTAL_WAIT_MS: AtomicU64 = AtomicU64::new(0);
-static NATIVE_LOCK_MAX_WAIT_MS: AtomicU64 = AtomicU64::new(0);
-static NATIVE_LOCK_TOTAL_HOLD_MS: AtomicU64 = AtomicU64::new(0);
-static NATIVE_LOCK_MAX_HOLD_MS: AtomicU64 = AtomicU64::new(0);
-const NATIVE_LOCK_CONTENTION_THRESHOLD_MS: u64 = 50;
-const NATIVE_LOCK_WARN_WAIT_THRESHOLD_MS: u64 = 500;
+/// Wrapper for acquiring native input lock with metrics.
+async fn acquire_native_input_lock(
+    session_id: &str,
+    trace_id: u64,
+    op: &'static str,
+) -> native::NativeInputLockGuard<'static> {
+    native::acquire_native_input_lock(session_id, trace_id, op).await
+}
+
+fn with_nativeclick_log_context(session_id: &str, f: impl FnOnce()) {
+    let mut ctx = crate::logger::get_log_context();
+    ctx.session_id = Some(session_id.to_string());
+    let _guard = scoped_log_context(ctx);
+    f();
+}
+
+fn next_nativeclick_trace_id() -> u64 {
+    native::next_nativeclick_trace_id()
+}
+
+fn nativeclick_debug(
+    session_id: &str,
+    trace_id: u64,
+    selector: &str,
+    phase: &str,
+    message: impl std::fmt::Display,
+) {
+    native::record_nativeclick_trace_phase(session_id, phase);
+    with_nativeclick_log_context(session_id, || {
+        debug!(
+            "nativeclick trace={} session={} selector={} phase={} {}",
+            trace_id, session_id, selector, phase, message
+        );
+    });
+}
+
+fn record_nativeclick_trace_phase(session_id: &str, phase: &str) {
+    native::record_nativeclick_trace_phase(session_id, phase);
+}
+
+/// Clears captured nativeclick trace phases for the session.
+/// Used by integration tests to assert pipeline ordering.
+pub fn clear_nativeclick_trace_hooks(session_id: &str) {
+    native::clear_nativeclick_trace_hooks(session_id);
+}
+
+/// Returns and clears captured nativeclick trace phases for the session.
+/// Used by integration tests to assert pipeline ordering.
+pub fn take_nativeclick_trace_hooks(session_id: &str) -> Vec<String> {
+    native::take_nativeclick_trace_hooks(session_id)
+}
+
+/// Sets a forced calibration override for integration tests.
+/// This is intended for test harnesses that need deterministic error-path coverage.
+pub fn set_nativeclick_forced_calibration_for_tests(
+    session_id: &str,
+    scale_x: f64,
+    scale_y: f64,
+    origin_adjust_x: f64,
+    origin_adjust_y: f64,
+    mode: NativeClickCalibrationMode,
+) {
+    native::set_nativeclick_forced_calibration_for_tests(
+        session_id,
+        scale_x,
+        scale_y,
+        origin_adjust_x,
+        origin_adjust_y,
+        mode,
+    );
+}
+
+/// Clears the forced calibration override used by integration tests.
+pub fn clear_nativeclick_forced_calibration_for_tests(session_id: &str) {
+    native::clear_nativeclick_forced_calibration_for_tests(session_id);
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct NativeInputLockMetricsSnapshot {
@@ -181,173 +250,7 @@ pub struct NativeInputLockMetricsSnapshot {
 }
 
 pub fn native_input_lock_metrics_snapshot() -> NativeInputLockMetricsSnapshot {
-    let acquisitions = NATIVE_LOCK_ACQUISITIONS.load(Ordering::Relaxed);
-    let total_wait_ms = NATIVE_LOCK_TOTAL_WAIT_MS.load(Ordering::Relaxed);
-    let total_hold_ms = NATIVE_LOCK_TOTAL_HOLD_MS.load(Ordering::Relaxed);
-    let denom = acquisitions.max(1) as f64;
-    NativeInputLockMetricsSnapshot {
-        acquisitions,
-        contentions: NATIVE_LOCK_CONTENTIONS.load(Ordering::Relaxed),
-        total_wait_ms,
-        max_wait_ms: NATIVE_LOCK_MAX_WAIT_MS.load(Ordering::Relaxed),
-        avg_wait_ms: total_wait_ms as f64 / denom,
-        total_hold_ms,
-        max_hold_ms: NATIVE_LOCK_MAX_HOLD_MS.load(Ordering::Relaxed),
-        avg_hold_ms: total_hold_ms as f64 / denom,
-    }
-}
-
-fn atomic_update_max(target: &AtomicU64, value: u64) {
-    let mut current = target.load(Ordering::Relaxed);
-    while value > current
-        && target
-            .compare_exchange(current, value, Ordering::Relaxed, Ordering::Relaxed)
-            .is_err()
-    {
-        current = target.load(Ordering::Relaxed);
-    }
-}
-
-struct NativeInputLockGuard<'a> {
-    _guard: tokio::sync::MutexGuard<'a, ()>,
-    acquired_at: Instant,
-}
-
-impl Drop for NativeInputLockGuard<'_> {
-    fn drop(&mut self) {
-        let hold_ms = self.acquired_at.elapsed().as_millis() as u64;
-        NATIVE_LOCK_TOTAL_HOLD_MS.fetch_add(hold_ms, Ordering::Relaxed);
-        atomic_update_max(&NATIVE_LOCK_MAX_HOLD_MS, hold_ms);
-    }
-}
-
-async fn acquire_native_input_lock(
-    session_id: &str,
-    trace_id: u64,
-    op: &'static str,
-) -> NativeInputLockGuard<'static> {
-    let wait_started = Instant::now();
-    let guard = NATIVE_CLICK_LOCK.lock().await;
-    let wait_ms = wait_started.elapsed().as_millis() as u64;
-    NATIVE_LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
-    NATIVE_LOCK_TOTAL_WAIT_MS.fetch_add(wait_ms, Ordering::Relaxed);
-    atomic_update_max(&NATIVE_LOCK_MAX_WAIT_MS, wait_ms);
-    if wait_ms >= NATIVE_LOCK_CONTENTION_THRESHOLD_MS {
-        NATIVE_LOCK_CONTENTIONS.fetch_add(1, Ordering::Relaxed);
-    }
-    if wait_ms >= NATIVE_LOCK_WARN_WAIT_THRESHOLD_MS {
-        with_nativeclick_log_context(session_id, || {
-            info!(
-                "native-input-lock trace={} op={} wait_ms={} acquisitions={} contentions={}",
-                trace_id,
-                op,
-                wait_ms,
-                NATIVE_LOCK_ACQUISITIONS.load(Ordering::Relaxed),
-                NATIVE_LOCK_CONTENTIONS.load(Ordering::Relaxed)
-            );
-        });
-    }
-    NativeInputLockGuard {
-        _guard: guard,
-        acquired_at: Instant::now(),
-    }
-}
-
-fn with_nativeclick_log_context(session_id: &str, f: impl FnOnce()) {
-    let mut ctx = crate::logger::get_log_context();
-    ctx.session_id = Some(session_id.to_string());
-    let _guard = scoped_log_context(ctx);
-    f();
-}
-
-fn next_nativeclick_trace_id() -> u64 {
-    NATIVE_CLICK_TRACE_COUNTER.fetch_add(1, Ordering::Relaxed)
-}
-
-fn nativeclick_debug(
-    session_id: &str,
-    trace_id: u64,
-    selector: &str,
-    phase: &str,
-    message: impl std::fmt::Display,
-) {
-    record_nativeclick_trace_phase(session_id, phase);
-    with_nativeclick_log_context(session_id, || {
-        debug!(
-            "nativeclick trace={} session={} selector={} phase={} {}",
-            trace_id, session_id, selector, phase, message
-        );
-    });
-}
-
-fn record_nativeclick_trace_phase(session_id: &str, phase: &str) {
-    if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
-        hooks
-            .entry(session_id.to_string())
-            .or_default()
-            .push(phase.to_string());
-    }
-}
-
-/// Clears captured nativeclick trace phases for the session.
-/// Used by integration tests to assert pipeline ordering.
-pub fn clear_nativeclick_trace_hooks(session_id: &str) {
-    if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
-        hooks.remove(session_id);
-    }
-}
-
-/// Returns and clears captured nativeclick trace phases for the session.
-/// Used by integration tests to assert pipeline ordering.
-pub fn take_nativeclick_trace_hooks(session_id: &str) -> Vec<String> {
-    if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
-        return hooks.remove(session_id).unwrap_or_default();
-    }
-    Vec::new()
-}
-
-/// Sets a forced calibration override for integration tests.
-/// This is intended for test harnesses that need deterministic error-path coverage.
-pub fn set_nativeclick_forced_calibration_for_tests(
-    session_id: &str,
-    scale_x: f64,
-    scale_y: f64,
-    origin_adjust_x: f64,
-    origin_adjust_y: f64,
-    mode: NativeClickCalibrationMode,
-) {
-    if let Ok(mut map) = FORCED_NATIVECLICK_CALIBRATION.lock() {
-        map.insert(
-            session_id.to_string(),
-            NativeClickCalibration {
-                scale_x,
-                scale_y,
-                origin_adjust_x,
-                origin_adjust_y,
-                mode,
-            },
-        );
-    }
-}
-
-/// Clears the forced calibration override used by integration tests.
-pub fn clear_nativeclick_forced_calibration_for_tests(session_id: &str) {
-    if let Ok(mut map) = FORCED_NATIVECLICK_CALIBRATION.lock() {
-        map.remove(session_id);
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct NativeClickCalibrationEntry {
-    fingerprint: NativeClickFingerprint,
-    calibration: NativeClickCalibration,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct NativeCursorCandidate {
-    label: String,
-    x: f64,
-    y: f64,
+    native::native_input_lock_metrics_snapshot()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

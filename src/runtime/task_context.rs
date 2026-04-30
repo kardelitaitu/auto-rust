@@ -66,29 +66,14 @@ use crate::utils::mouse::{
     ClickOutcome, ClickStatus, CursorMovementConfig, HoverOutcome, HoverStatus, NativeCursorOutcome,
 };
 
-/// HTTP response structure for network operations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpResponse {
-    /// HTTP status code
-    pub status: u16,
-    /// Response body as string
-    pub body: String,
-    /// Response headers
-    pub headers: HashMap<String, String>,
-}
+// Submodules
+pub mod types;
 
-/// Rectangle for element position and size.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Rect {
-    /// X coordinate (left edge)
-    pub x: f64,
-    /// Y coordinate (top edge)
-    pub y: f64,
-    /// Width in pixels
-    pub width: f64,
-    /// Height in pixels
-    pub height: f64,
-}
+// Re-export shared types for backward compatibility
+pub use types::{
+    ClickAndWaitOutcome, FileMetadata, FocusOutcome, FocusStatus, HttpResponse, RandomCursorOutcome,
+    Rect, WaitForVisibleStatus,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum ClickPageContext {
@@ -169,17 +154,6 @@ struct ClickLearningState {
     total_successes: u64,
     recent_results: VecDeque<bool>,
     selectors: HashMap<String, SelectorLearningStats>,
-}
-
-/// Metadata for a data file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileMetadata {
-    /// File size in bytes
-    pub size: u64,
-    /// Last modification time
-    pub modified: std::time::SystemTime,
-    /// Creation time
-    pub created: std::time::SystemTime,
 }
 
 impl ClickLearningState {
@@ -463,82 +437,8 @@ impl ClickTimingContext {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusStatus {
-    Success,
-    Failed,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FocusOutcome {
-    pub focus: FocusStatus,
-    pub x: f64,
-    pub y: f64,
-}
-
-impl FocusOutcome {
-    pub fn summary(&self) -> String {
-        let status = match self.focus {
-            FocusStatus::Success => "success",
-            FocusStatus::Failed => "failed",
-        };
-        format!("focus:{status} ({:.1},{:.1})", self.x, self.y)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct RandomCursorOutcome {
-    pub x: f64,
-    pub y: f64,
-    pub movement: CursorMovementConfig,
-}
-
-impl RandomCursorOutcome {
-    pub fn summary(&self) -> String {
-        format!(
-            "randomcursor ({:.1},{:.1}) delay:{}..{}",
-            self.x,
-            self.y,
-            self.movement.min_step_delay_ms,
-            self.movement
-                .min_step_delay_ms
-                .saturating_add(self.movement.max_step_delay_variance_ms)
-        )
-    }
-}
-
 fn nativeclick_public_log_line(selector: &str, x: f64, y: f64) -> String {
     format!("[task-api] clicked ({selector}) at {x:.1},{y:.1}")
-}
-
-#[derive(Debug, Clone)]
-pub struct ClickAndWaitOutcome {
-    pub click: ClickOutcome,
-    pub next_selector: String,
-    pub next_visible: WaitForVisibleStatus,
-    pub timeout_ms: u64,
-}
-
-impl ClickAndWaitOutcome {
-    pub fn summary(&self) -> String {
-        let next_visible = match self.next_visible {
-            WaitForVisibleStatus::Visible => "visible",
-            WaitForVisibleStatus::Timeout => "timeout",
-        };
-        format!(
-            "{} wait_for:{} visible:{} timeout:{}ms",
-            self.click.summary(),
-            self.next_selector,
-            next_visible,
-            self.timeout_ms
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WaitForVisibleStatus {
-    Visible,
-    Timeout,
 }
 
 #[cfg(test)]

@@ -80,11 +80,12 @@
       - [x] Extract `types.rs`: `ClickOutcome`, `HoverOutcome`, `NativeCursorOutcome`, `MouseButton`
       - [x] All types properly exported and re-exported
       - [x] Tests pass, clippy clean
-    - [ ] Phase 2: Extract trajectory.rs (Day 1-2)
-      - [ ] Move path generation: `generate_bezier_curve_with_config()`, `generate_arc_curve()`
-      - [ ] Move curves: `generate_zigzag_curve()`, `generate_overshoot_curve()`, `generate_stopped_curve()`, `generate_muscle_path()`
-      - [ ] Move cursor movement: `cursor_move_to()`, `cursor_move_to_with_config()`, `cursor_move_to_immediate()`
-      - [ ] Keep `CursorMovementConfig` here (shared with profile.rs)
+    - [x] Phase 2: Extract trajectory.rs (Day 1-2) ✅ DONE
+      - [x] Move path generation: `generate_bezier_curve_with_config()`, `generate_arc_curve()`
+      - [x] Move curves: `generate_zigzag_curve()`, `generate_overshoot_curve()`, `generate_stopped_curve()`, `generate_muscle_path()`
+      - [x] Create standalone `Point` struct in trajectory module
+      - [x] Keep wrapper functions in mouse.rs delegating to trajectory
+      - [x] All 63 tests pass, clippy clean
     - [ ] Phase 3: Extract native.rs (Day 3-4)
       - [ ] Move native click infrastructure: `NATIVE_CLICK_LOCK`, calibration cache
       - [ ] Move calibration: `NativeClickCalibration`, `NativeClickFingerprint`, `solve_calibration_from_probe_samples()`

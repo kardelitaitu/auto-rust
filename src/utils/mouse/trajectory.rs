@@ -75,7 +75,7 @@ pub fn generate_bezier_curve_with_config(
 }
 
 /// Calculate a point on a cubic Bezier curve at parameter t.
-fn bezier_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
+pub fn bezier_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
     let x = (1.0 - t).powi(3) * p0.x
         + 3.0 * (1.0 - t).powi(2) * t * p1.x
         + 3.0 * (1.0 - t) * t.powi(2) * p2.x

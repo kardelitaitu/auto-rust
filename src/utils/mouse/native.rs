@@ -75,7 +75,7 @@ pub struct NativeDispatchOptions {
 }
 
 /// Screen point coordinates.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScreenPoint {
     pub x: i32,
     pub y: i32,

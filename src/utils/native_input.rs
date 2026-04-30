@@ -208,7 +208,7 @@ fn native_move_to_point_blocking_with_enigo(
     Ok(())
 }
 
-fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
+pub fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
     if base_ms == 0 {
         return 0;
     }

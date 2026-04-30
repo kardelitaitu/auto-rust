@@ -25,8 +25,6 @@ use chromiumoxide::cdp::browser_protocol::input::{
 use chromiumoxide::Page;
 use log::debug;
 use once_cell::sync::Lazy;
-#[cfg(test)]
-use rand::Rng;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -2430,6 +2428,9 @@ pub fn fitts_law_optimal_size(distance: f64, time: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::NativeClickCalibrationMode;
+    use crate::utils::native_input::jittered_delay_ms;
+    use crate::utils::trajectory::bezier_point;
 
     #[test]
     fn test_path_style_variants() {

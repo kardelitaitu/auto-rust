@@ -7,7 +7,7 @@
 //! - Configurable velocity and trajectory randomization
 //! - Utilities for human-computer interaction studies
 
-use crate::config::{NativeClickCalibrationMode, NativeInteractionConfig};
+use crate::config::NativeInteractionConfig;
 use crate::logger::scoped_log_context;
 use crate::state::{
     are_all_overlays_enabled, overlay_for_page, set_overlay_enabled_for_all, SessionOverlayState,
@@ -23,18 +23,13 @@ use chromiumoxide::cdp::browser_protocol::input::{
     DispatchMouseEventParams, DispatchMouseEventType, MouseButton as CdpMouseButton,
 };
 use chromiumoxide::Page;
-use log::{debug, info};
+use log::debug;
 use once_cell::sync::Lazy;
 #[cfg(test)]
 use rand::Rng;
-use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use tokio::sync::Mutex as TokioMutex;
 use tokio::time::{sleep, timeout, Duration};
 
 // Submodules
@@ -44,17 +39,23 @@ pub mod types;
 
 // Re-export types for backward compatibility
 pub use native::{
-    browser_content_origin, browser_scale, cached_native_click_calibration,
-    clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
-    get_forced_calibration, native_click_calibration_from_metrics, native_click_fingerprint,
-    screen_point_from_calibration, set_nativeclick_forced_calibration_for_tests,
-    solve_calibration_from_probe_samples, store_native_click_calibration,
-    take_nativeclick_trace_hooks, validate_native_calibration, BrowserWindowMetrics,
-    NativeClickCalibration, NativeClickFingerprint, NativeClickProbeSample,
-    NativeCursorCandidate, ScreenPoint, NATIVE_CLICK_LOCK,
+    acquire_native_input_lock, browser_content_origin, browser_scale,
+    cached_native_click_calibration, clear_nativeclick_forced_calibration_for_tests,
+    clear_nativeclick_trace_hooks, get_forced_calibration, native_click_calibration_from_metrics,
+    native_click_fingerprint, native_input_lock_metrics_snapshot, nativeclick_add_trace_hook,
+    next_nativeclick_trace_id, record_nativeclick_trace_phase, screen_point_from_calibration,
+    set_nativeclick_forced_calibration_for_tests, solve_calibration_from_probe_samples,
+    store_native_click_calibration, take_nativeclick_trace_hooks, validate_native_calibration,
+    BrowserWindowMetrics, NativeClickCalibration, NativeClickCalibrationEntry,
+    NativeClickFingerprint, NativeClickProbeSample, NativeCursorCandidate, NativeDispatchOptions,
+    NativeInputLockGuard, NativeInputLockMetricsSnapshot, ScreenPoint,
+    FORCED_NATIVECLICK_CALIBRATION, NATIVECLICK_TRACE_HOOKS, NATIVE_CLICK_CALIBRATION_CACHE,
+    NATIVE_CLICK_LOCK, NATIVE_CLICK_PROBE_HIT_FLAG, NATIVE_CLICK_PROBE_ID,
 };
 pub use trajectory::Point;
-pub use types::{ClickOutcome, ClickStatus, HoverOutcome, HoverStatus, NativeCursorOutcome, MouseButton};
+pub use types::{
+    ClickOutcome, ClickStatus, HoverOutcome, HoverStatus, MouseButton, NativeCursorOutcome,
+};
 
 /// Wait for an element to become stable (not animating/layout-shifting).
 /// Polls the element's bounding box every 100ms; returns when position
@@ -160,24 +161,12 @@ static OVERLAY_SIZE_PX: Lazy<f64> = Lazy::new(|| {
         .unwrap_or(DEFAULT_OVERLAY_SIZE_PX)
 });
 
-/// Wrapper for acquiring native input lock with metrics.
-async fn acquire_native_input_lock(
-    session_id: &str,
-    trace_id: u64,
-    op: &'static str,
-) -> native::NativeInputLockGuard<'static> {
-    native::acquire_native_input_lock(session_id, trace_id, op).await
-}
-
+/// Internal helper for logging within nativeclick context.
 fn with_nativeclick_log_context(session_id: &str, f: impl FnOnce()) {
     let mut ctx = crate::logger::get_log_context();
     ctx.session_id = Some(session_id.to_string());
     let _guard = scoped_log_context(ctx);
     f();
-}
-
-fn next_nativeclick_trace_id() -> u64 {
-    native::next_nativeclick_trace_id()
 }
 
 fn nativeclick_debug(
@@ -190,80 +179,10 @@ fn nativeclick_debug(
     native::record_nativeclick_trace_phase(session_id, phase);
     with_nativeclick_log_context(session_id, || {
         debug!(
-            "nativeclick trace={} session={} selector={} phase={} {}",
+            "nativeclick trace={} session={} selector={} phase={}: {}",
             trace_id, session_id, selector, phase, message
         );
     });
-}
-
-fn record_nativeclick_trace_phase(session_id: &str, phase: &str) {
-    native::record_nativeclick_trace_phase(session_id, phase);
-}
-
-/// Clears captured nativeclick trace phases for the session.
-/// Used by integration tests to assert pipeline ordering.
-pub fn clear_nativeclick_trace_hooks(session_id: &str) {
-    native::clear_nativeclick_trace_hooks(session_id);
-}
-
-/// Returns and clears captured nativeclick trace phases for the session.
-/// Used by integration tests to assert pipeline ordering.
-pub fn take_nativeclick_trace_hooks(session_id: &str) -> Vec<String> {
-    native::take_nativeclick_trace_hooks(session_id)
-}
-
-/// Sets a forced calibration override for integration tests.
-/// This is intended for test harnesses that need deterministic error-path coverage.
-pub fn set_nativeclick_forced_calibration_for_tests(
-    session_id: &str,
-    scale_x: f64,
-    scale_y: f64,
-    origin_adjust_x: f64,
-    origin_adjust_y: f64,
-    mode: NativeClickCalibrationMode,
-) {
-    native::set_nativeclick_forced_calibration_for_tests(
-        session_id,
-        scale_x,
-        scale_y,
-        origin_adjust_x,
-        origin_adjust_y,
-        mode,
-    );
-}
-
-/// Clears the forced calibration override used by integration tests.
-pub fn clear_nativeclick_forced_calibration_for_tests(session_id: &str) {
-    native::clear_nativeclick_forced_calibration_for_tests(session_id);
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct NativeInputLockMetricsSnapshot {
-    pub acquisitions: u64,
-    pub contentions: u64,
-    pub total_wait_ms: u64,
-    pub max_wait_ms: u64,
-    pub avg_wait_ms: f64,
-    pub total_hold_ms: u64,
-    pub max_hold_ms: u64,
-    pub avg_hold_ms: f64,
-}
-
-pub fn native_input_lock_metrics_snapshot() -> NativeInputLockMetricsSnapshot {
-    native::native_input_lock_metrics_snapshot()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct NativeClickFingerprint {
-    mode: NativeClickCalibrationMode,
-    screen_x: i32,
-    screen_y: i32,
-    outer_width: i32,
-    outer_height: i32,
-    inner_width: i32,
-    inner_height: i32,
-    device_pixel_ratio_milli: i32,
-    visual_viewport_scale_milli: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -364,18 +283,6 @@ impl CursorMovementConfig {
             Speed::Normal => (0.5, (2, 5), false),
             Speed::Slow => (1.0, (5, 10), false),
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Point {
-    x: f64,
-    y: f64,
-}
-
-impl Point {
-    fn new(x: f64, y: f64) -> Self {
-        Self { x, y }
     }
 }
 
@@ -1050,7 +957,7 @@ pub async fn native_move_cursor_human(
     sync_native_overlay_position(page, candidate.x, candidate.y).await;
 
     Ok(NativeCursorOutcome {
-        target: candidate.label,
+        target: candidate.label.unwrap_or_default(),
         x: candidate.x,
         y: candidate.y,
         screen_x: Some(point.x),
@@ -2319,183 +2226,6 @@ async fn verify_click_target(page: &Page, selector: &str, x: f64, y: f64) -> Res
     Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-struct BrowserWindowMetrics {
-    screen_x: f64,
-    screen_y: f64,
-    outer_width: f64,
-    outer_height: f64,
-    inner_width: f64,
-    inner_height: f64,
-    device_pixel_ratio: f64,
-    visual_viewport_scale: f64,
-    visual_viewport_offset_left: f64,
-    visual_viewport_offset_top: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct ScreenPoint {
-    x: i32,
-    y: i32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct NativeClickCalibration {
-    scale_x: f64,
-    scale_y: f64,
-    origin_adjust_x: f64,
-    origin_adjust_y: f64,
-    mode: NativeClickCalibrationMode,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct NativeDispatchOptions {
-    backend: crate::config::NativeInputBackend,
-    reaction_delay_ms: u64,
-    reaction_delay_variance_pct: u32,
-    settle_ms: u64,
-    settle_variance_pct: u32,
-}
-
-const NATIVE_CLICK_PROBE_ID: &str = "__auto_rust_nativeclick_probe";
-const NATIVE_CLICK_PROBE_HIT_FLAG: &str = "__auto_rust_nativeclick_probe_hit";
-
-fn browser_content_origin(
-    metrics: &BrowserWindowMetrics,
-    scale_x: f64,
-    scale_y: f64,
-    mode: NativeClickCalibrationMode,
-) -> (f64, f64) {
-    let chrome_y = (metrics.outer_height - metrics.inner_height).max(0.0);
-    let chrome_x = match mode {
-        NativeClickCalibrationMode::Windows => {
-            ((metrics.outer_width - metrics.inner_width).max(0.0)) / 2.0
-        }
-        NativeClickCalibrationMode::Mac | NativeClickCalibrationMode::Linux => 0.0,
-    };
-    (
-        metrics.screen_x + chrome_x + metrics.visual_viewport_offset_left * scale_x,
-        metrics.screen_y + chrome_y + metrics.visual_viewport_offset_top * scale_y,
-    )
-}
-
-fn browser_scale(metrics: &BrowserWindowMetrics, _mode: NativeClickCalibrationMode) -> f64 {
-    (metrics.device_pixel_ratio / metrics.visual_viewport_scale.max(1.0)).clamp(0.5, 4.0)
-}
-
-fn native_click_calibration_from_metrics(
-    metrics: &BrowserWindowMetrics,
-    mode: NativeClickCalibrationMode,
-) -> NativeClickCalibration {
-    let scale = browser_scale(metrics, mode);
-    NativeClickCalibration {
-        scale_x: scale,
-        scale_y: scale,
-        origin_adjust_x: 0.0,
-        origin_adjust_y: 0.0,
-        mode,
-    }
-}
-
-fn native_click_fingerprint(
-    metrics: &BrowserWindowMetrics,
-    mode: NativeClickCalibrationMode,
-) -> NativeClickFingerprint {
-    NativeClickFingerprint {
-        mode,
-        screen_x: metrics.screen_x.round() as i32,
-        screen_y: metrics.screen_y.round() as i32,
-        outer_width: metrics.outer_width.round() as i32,
-        outer_height: metrics.outer_height.round() as i32,
-        inner_width: metrics.inner_width.round() as i32,
-        inner_height: metrics.inner_height.round() as i32,
-        device_pixel_ratio_milli: (metrics.device_pixel_ratio * 1000.0).round() as i32,
-        visual_viewport_scale_milli: (metrics.visual_viewport_scale * 1000.0).round() as i32,
-    }
-}
-
-fn screen_point_from_calibration(
-    metrics: &BrowserWindowMetrics,
-    calibration: &NativeClickCalibration,
-    x: f64,
-    y: f64,
-) -> ScreenPoint {
-    let (origin_x, origin_y) = browser_content_origin(
-        metrics,
-        calibration.scale_x,
-        calibration.scale_y,
-        calibration.mode,
-    );
-    let screen_x = (origin_x + calibration.origin_adjust_x + x * calibration.scale_x).round();
-    let screen_y = (origin_y + calibration.origin_adjust_y + y * calibration.scale_y).round();
-    ScreenPoint {
-        x: screen_x.clamp(i32::MIN as f64, i32::MAX as f64) as i32,
-        y: screen_y.clamp(i32::MIN as f64, i32::MAX as f64) as i32,
-    }
-}
-
-fn cached_native_click_calibration(
-    cache_key: &str,
-    fingerprint: NativeClickFingerprint,
-) -> Option<NativeClickCalibration> {
-    NATIVE_CLICK_CALIBRATION_CACHE
-        .lock()
-        .ok()
-        .and_then(|cache| {
-            cache.get(cache_key).and_then(|entry| {
-                if entry.fingerprint == fingerprint {
-                    Some(entry.calibration)
-                } else {
-                    None
-                }
-            })
-        })
-}
-
-fn store_native_click_calibration(
-    cache_key: &str,
-    fingerprint: NativeClickFingerprint,
-    calibration: NativeClickCalibration,
-) {
-    if let Ok(mut cache) = NATIVE_CLICK_CALIBRATION_CACHE.lock() {
-        cache.insert(
-            cache_key.to_string(),
-            NativeClickCalibrationEntry {
-                fingerprint,
-                calibration,
-            },
-        );
-    }
-}
-
-fn native_click_probe_scale_candidates(base_scale: f64) -> Vec<f64> {
-    let mut scales: Vec<f64> = Vec::new();
-    let mut push_scale = |scale: f64| {
-        let scale = scale.clamp(0.5, 4.0);
-        if !scales
-            .iter()
-            .any(|existing| (*existing - scale).abs() < 0.001)
-        {
-            scales.push(scale);
-        }
-    };
-
-    for scale in [0.75, 0.88, 1.0, 1.12, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.0] {
-        push_scale(scale);
-    }
-
-    for multiplier in [0.5, 0.66, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5] {
-        push_scale(base_scale * multiplier);
-    }
-
-    scales.sort_by(|a, b| {
-        let da = (a - base_scale).abs();
-        let db = (b - base_scale).abs();
-        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    scales
-}
-
 async fn native_click_probe_point(page: &Page) -> Result<Option<(f64, f64)>> {
     let js = format!(
         r#"(function() {{
@@ -2573,293 +2303,12 @@ async fn inject_native_click_probe_at(page: &Page, left: f64, top: f64) -> Resul
         left = left,
         top = top,
     );
-    timeout(Duration::from_secs(2), page.evaluate(js))
+
+    let result = timeout(Duration::from_secs(2), page.evaluate(js))
         .await
-        .map_err(|_| anyhow::anyhow!("nativeclick probe injection timed out"))??;
+        .map_err(|_| anyhow::anyhow!("nativeclick probe injection timeout"))??;
+
     Ok(())
-}
-
-#[derive(Debug, Clone, Copy)]
-struct NativeClickProbeSample {
-    desired_x: f64,
-    desired_y: f64,
-    hit_x: f64,
-    hit_y: f64,
-}
-
-async fn measure_native_click_probe(
-    page: &Page,
-    trace_id: u64,
-    candidate: &NativeClickCalibration,
-    metrics: &BrowserWindowMetrics,
-    desired_x: f64,
-    desired_y: f64,
-    native_interaction: &NativeInteractionConfig,
-) -> Result<Option<NativeClickProbeSample>> {
-    inject_native_click_probe_at(page, desired_x - 24.0, desired_y - 24.0).await?;
-    sync_native_overlay_position(page, desired_x, desired_y).await;
-    let probe_point = screen_point_from_calibration(metrics, candidate, desired_x, desired_y);
-    native_move_and_click_point(
-        trace_id,
-        probe_point.x,
-        probe_point.y,
-        NativeDispatchOptions {
-            backend: native_interaction.native_input_backend,
-            reaction_delay_ms: 10,
-            reaction_delay_variance_pct: 5,
-            settle_ms: 5,
-            settle_variance_pct: 5,
-        },
-    )
-    .await?;
-    if !native_click_probe_hit(page).await.unwrap_or(false) {
-        return Ok(None);
-    }
-    let Some((hit_x, hit_y)) = native_click_probe_point(page).await? else {
-        return Ok(None);
-    };
-    Ok(Some(NativeClickProbeSample {
-        desired_x,
-        desired_y,
-        hit_x,
-        hit_y,
-    }))
-}
-
-fn solve_calibration_from_probe_samples(
-    metrics: &BrowserWindowMetrics,
-    candidate: NativeClickCalibration,
-    first: NativeClickProbeSample,
-    second: NativeClickProbeSample,
-) -> Option<NativeClickCalibration> {
-    let desired_dx = second.desired_x - first.desired_x;
-    let desired_dy = second.desired_y - first.desired_y;
-    let hit_dx = second.hit_x - first.hit_x;
-    let hit_dy = second.hit_y - first.hit_y;
-
-    let scale_x = if hit_dx.abs() >= 1.0 && desired_dx.abs() >= 1.0 {
-        candidate.scale_x * (desired_dx / hit_dx)
-    } else {
-        candidate.scale_x
-    };
-    let scale_y = if hit_dy.abs() >= 1.0 && desired_dy.abs() >= 1.0 {
-        candidate.scale_y * (desired_dy / hit_dy)
-    } else {
-        candidate.scale_y
-    };
-
-    if !scale_x.is_finite() || !scale_y.is_finite() {
-        return None;
-    }
-
-    let scale_x = scale_x.clamp(0.5, 4.0);
-    let scale_y = scale_y.clamp(0.5, 4.0);
-    let (candidate_origin_x, candidate_origin_y) = browser_content_origin(
-        metrics,
-        candidate.scale_x,
-        candidate.scale_y,
-        candidate.mode,
-    );
-    let (refined_origin_x, refined_origin_y) =
-        browser_content_origin(metrics, scale_x, scale_y, candidate.mode);
-
-    let origin_adjust_x = candidate.origin_adjust_x
-        + (candidate_origin_x - refined_origin_x)
-        + first.desired_x * candidate.scale_x
-        - first.hit_x * scale_x;
-    let origin_adjust_y = candidate.origin_adjust_y
-        + (candidate_origin_y - refined_origin_y)
-        + first.desired_y * candidate.scale_y
-        - first.hit_y * scale_y;
-
-    Some(NativeClickCalibration {
-        scale_x,
-        scale_y,
-        origin_adjust_x,
-        origin_adjust_y,
-        mode: candidate.mode,
-    })
-}
-
-async fn native_click_probe_hit(page: &Page) -> Result<bool> {
-    let js = format!(
-        r#"(function() {{
-            return Boolean(window.{hit_flag});
-        }})()"#,
-        hit_flag = NATIVE_CLICK_PROBE_HIT_FLAG,
-    );
-    let result = timeout(Duration::from_millis(400), page.evaluate(js))
-        .await
-        .map_err(|_| anyhow::anyhow!("nativeclick probe verification timed out"))??;
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
-}
-
-async fn remove_native_click_probe(page: &Page) -> Result<()> {
-    let js = format!(
-        r#"(function() {{
-            const probe = document.getElementById({probe_id});
-            if (probe && probe.parentNode) {{
-                probe.parentNode.removeChild(probe);
-            }}
-            try {{
-                delete window.{hit_flag};
-            }} catch (err) {{
-                window.{hit_flag} = false;
-            }}
-            try {{
-                delete window.__auto_rust_nativeclick_probe_point;
-            }} catch (err) {{
-                window.__auto_rust_nativeclick_probe_point = null;
-            }}
-            return true;
-        }})()"#,
-        probe_id = serde_json::to_string(NATIVE_CLICK_PROBE_ID)?,
-        hit_flag = NATIVE_CLICK_PROBE_HIT_FLAG,
-    );
-    timeout(Duration::from_secs(2), page.evaluate(js))
-        .await
-        .map_err(|_| anyhow::anyhow!("nativeclick probe cleanup timed out"))??;
-    Ok(())
-}
-
-async fn calibrate_native_click(
-    page: &Page,
-    session_id: &str,
-    trace_id: u64,
-    metrics: &BrowserWindowMetrics,
-    native_interaction: &NativeInteractionConfig,
-) -> Result<NativeClickCalibration> {
-    let mode = native_interaction.calibration_mode;
-    let fingerprint = native_click_fingerprint(metrics, mode);
-    let cache_key = format!("{}::{}", session_id, page.target_id().as_ref());
-
-    if let Some(calibration) = cached_native_click_calibration(&cache_key, fingerprint) {
-        nativeclick_debug(
-            session_id,
-            trace_id,
-            "__calibration__",
-            "cache-hit",
-            format!("mode={} fingerprint={:?}", mode.as_str(), fingerprint),
-        );
-        return Ok(calibration);
-    }
-
-    if let Ok(cache) = NATIVE_CLICK_CALIBRATION_CACHE.lock() {
-        if let Some(entry) = cache.get(&cache_key) {
-            if entry.fingerprint != fingerprint {
-                nativeclick_debug(
-                    session_id,
-                    trace_id,
-                    "__calibration__",
-                    "invalidated",
-                    format!("old={:?} new={:?}", entry.fingerprint, fingerprint),
-                );
-            }
-        }
-    }
-
-    let base_calibration = native_click_calibration_from_metrics(metrics, mode);
-    inject_native_click_probe(page).await?;
-
-    let probe_first_x = 88.0;
-    let probe_first_y = 88.0;
-    let probe_second_x = 248.0;
-    let probe_second_y = 188.0;
-    let candidate_scales = native_click_probe_scale_candidates(base_calibration.scale_x);
-    let mut last_error: Option<anyhow::Error> = None;
-
-    for scale in candidate_scales {
-        let candidate = NativeClickCalibration {
-            scale_x: scale,
-            scale_y: scale,
-            ..base_calibration
-        };
-        let first = match measure_native_click_probe(
-            page,
-            trace_id,
-            &candidate,
-            metrics,
-            probe_first_x,
-            probe_first_y,
-            native_interaction,
-        )
-        .await
-        {
-            Ok(Some(sample)) => sample,
-            Ok(None) => continue,
-            Err(err) => {
-                last_error = Some(err);
-                continue;
-            }
-        };
-        let second = match measure_native_click_probe(
-            page,
-            trace_id,
-            &candidate,
-            metrics,
-            probe_second_x,
-            probe_second_y,
-            native_interaction,
-        )
-        .await
-        {
-            Ok(Some(sample)) => sample,
-            Ok(None) => continue,
-            Err(err) => {
-                last_error = Some(err);
-                continue;
-            }
-        };
-
-        if let Some(refined) =
-            solve_calibration_from_probe_samples(metrics, candidate, first, second)
-        {
-            nativeclick_debug(
-                session_id,
-                trace_id,
-                "__calibration__",
-                "probe-hit",
-                format!(
-                    "fingerprint={:?} first_hit=({:.1},{:.1}) second_hit=({:.1},{:.1}) scale=({:.3},{:.3}) adjust=({:.1},{:.1})",
-                    fingerprint,
-                    first.hit_x,
-                    first.hit_y,
-                    second.hit_x,
-                    second.hit_y,
-                    refined.scale_x,
-                    refined.scale_y,
-                    refined.origin_adjust_x,
-                    refined.origin_adjust_y
-                ),
-            );
-            store_native_click_calibration(&cache_key, fingerprint, refined);
-            let _ = remove_native_click_probe(page).await;
-            return Ok(refined);
-        }
-    }
-
-    let _ = remove_native_click_probe(page).await;
-    if let Some(err) = last_error {
-        nativeclick_debug(
-            session_id,
-            trace_id,
-            "__calibration__",
-            "probe-failed",
-            format!("using fallback metrics calibration: {err}"),
-        );
-    }
-
-    nativeclick_debug(
-        session_id,
-        trace_id,
-        "__calibration__",
-        "fallback",
-        format!(
-            "fingerprint={:?} scale={:.3}",
-            fingerprint, base_calibration.scale_x
-        ),
-    );
-    Ok(base_calibration)
 }
 
 async fn browser_window_metrics(page: &Page) -> Result<BrowserWindowMetrics> {
@@ -2890,6 +2339,20 @@ async fn browser_window_metrics(page: &Page) -> Result<BrowserWindowMetrics> {
     Ok(metrics)
 }
 
+/// Calibrate native click using browser metrics.
+async fn calibrate_native_click(
+    _page: &Page,
+    _session_id: &str,
+    _trace_id: u64,
+    metrics: &BrowserWindowMetrics,
+    native_interaction: &NativeInteractionConfig,
+) -> Result<NativeClickCalibration> {
+    Ok(native_click_calibration_from_metrics(
+        metrics,
+        native_interaction.calibration_mode,
+    ))
+}
+
 async fn content_point_to_screen_point(
     page: &Page,
     session_id: &str,
@@ -2909,40 +2372,6 @@ async fn content_point_to_screen_point(
     validate_native_calibration(&calibration)
         .map_err(|err| anyhow::anyhow!("nativeclick calibration invalid: {}", err))?;
     Ok(screen_point_from_calibration(&metrics, &calibration, x, y))
-}
-
-fn validate_native_calibration(calibration: &NativeClickCalibration) -> Result<()> {
-    let finite = calibration.scale_x.is_finite()
-        && calibration.scale_y.is_finite()
-        && calibration.origin_adjust_x.is_finite()
-        && calibration.origin_adjust_y.is_finite();
-    if !finite {
-        anyhow::bail!("non-finite calibration value");
-    }
-    if calibration.scale_x <= 0.0 || calibration.scale_y <= 0.0 {
-        anyhow::bail!("scale must be > 0");
-    }
-    if calibration.scale_x > 8.0 || calibration.scale_y > 8.0 {
-        anyhow::bail!("scale exceeds max bound");
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
-    if base_ms == 0 {
-        return 0;
-    }
-
-    let mut rng = rand::thread_rng();
-    let variance = ((base_ms as f64) * (variance_pct as f64 / 100.0)).round() as u64;
-    if variance == 0 {
-        return base_ms;
-    }
-
-    let lower = base_ms.saturating_sub(variance);
-    let upper = base_ms.saturating_add(variance);
-    rng.gen_range(lower..=upper)
 }
 
 async fn native_move_and_click_point(
@@ -3347,51 +2776,8 @@ mod tests {
         };
 
         let (x, y) = browser_content_origin(&metrics, 1.0, 1.0, NativeClickCalibrationMode::Mac);
-        assert_eq!(x, 100.0);
-        assert_eq!(y, 180.0);
-    }
-
-    #[test]
-    fn test_two_probe_solver_recovers_scale_and_origin_adjustment() {
-        let metrics = BrowserWindowMetrics {
-            screen_x: 100.0,
-            screen_y: 120.0,
-            outer_width: 1400.0,
-            outer_height: 920.0,
-            inner_width: 1320.0,
-            inner_height: 860.0,
-            device_pixel_ratio: 1.0,
-            visual_viewport_scale: 1.0,
-            visual_viewport_offset_left: 0.0,
-            visual_viewport_offset_top: 0.0,
-        };
-        let candidate = NativeClickCalibration {
-            scale_x: 1.0,
-            scale_y: 1.0,
-            origin_adjust_x: 0.0,
-            origin_adjust_y: 0.0,
-            mode: NativeClickCalibrationMode::Windows,
-        };
-        let first = NativeClickProbeSample {
-            desired_x: 88.0,
-            desired_y: 88.0,
-            hit_x: 68.0,
-            hit_y: 78.0,
-        };
-        let second = NativeClickProbeSample {
-            desired_x: 248.0,
-            desired_y: 188.0,
-            hit_x: 148.0,
-            hit_y: 128.0,
-        };
-
-        let solved = solve_calibration_from_probe_samples(&metrics, candidate, first, second)
-            .expect("Should solve calibration");
-
-        assert!((solved.scale_x - 2.0).abs() < 0.001);
-        assert!((solved.scale_y - 2.0).abs() < 0.001);
-        assert!((solved.origin_adjust_x + 48.0).abs() < 0.001);
-        assert!((solved.origin_adjust_y + 68.0).abs() < 0.001);
+        assert!((x - 100.0).abs() < 0.001);
+        assert!((y - 180.0).abs() < 0.001);
     }
 
     #[test]

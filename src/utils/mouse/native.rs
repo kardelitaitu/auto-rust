@@ -5,28 +5,74 @@
 //! - Fingerprint-based calibration caching
 //! - Test calibration helpers
 
-use crate::config::{NativeClickCalibrationMode, NativeInteractionConfig};
+use crate::config::NativeClickCalibrationMode;
 use anyhow::Result;
 use once_cell::sync::Lazy;
+use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::Instant;
 use tokio::sync::Mutex as TokioMutex;
+
+/// Native click probe ID constant.
+pub const NATIVE_CLICK_PROBE_ID: &str = "__auto_rust_nativeclick_probe";
+
+/// Native click probe hit flag constant.
+pub const NATIVE_CLICK_PROBE_HIT_FLAG: &str = "__auto_rust_nativeclick_probe_hit";
 
 /// Global lock for native click operations to prevent concurrent OS input conflicts.
 pub static NATIVE_CLICK_LOCK: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
 
 /// Calibration cache keyed by session::target_id fingerprint.
-static NATIVE_CLICK_CALIBRATION_CACHE: Lazy<
+pub static NATIVE_CLICK_CALIBRATION_CACHE: Lazy<
     Mutex<HashMap<String, NativeClickCalibrationEntry>>,
 > = Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Forced calibration override for integration tests.
-static FORCED_NATIVECLICK_CALIBRATION: Lazy<Mutex<HashMap<String, NativeClickCalibration>>> =
+pub static FORCED_NATIVECLICK_CALIBRATION: Lazy<Mutex<HashMap<String, NativeClickCalibration>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Trace hooks for testing native click flow.
-static NATIVECLICK_TRACE_HOOKS: Lazy<Mutex<HashMap<String, Vec<String>>>> =
+pub static NATIVECLICK_TRACE_HOOKS: Lazy<Mutex<HashMap<String, Vec<String>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Counter for trace IDs.
+static NATIVE_CLICK_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Counter for lock acquisitions.
+static NATIVE_LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
+
+/// Counter for lock contentions.
+static NATIVE_LOCK_CONTENTIONS: AtomicU64 = AtomicU64::new(0);
+
+/// Total wait time for locks.
+static NATIVE_LOCK_TOTAL_WAIT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Maximum wait time for locks.
+static NATIVE_LOCK_MAX_WAIT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Total hold time for locks.
+static NATIVE_LOCK_TOTAL_HOLD_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Maximum hold time for locks.
+static NATIVE_LOCK_MAX_HOLD_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Contention threshold in ms.
+const NATIVE_LOCK_CONTENTION_THRESHOLD_MS: u64 = 50;
+
+/// Warning threshold for long waits.
+const NATIVE_LOCK_WARN_WAIT_THRESHOLD_MS: u64 = 500;
+
+/// Dispatch options for native mouse input.
+#[derive(Debug, Clone, Copy)]
+pub struct NativeDispatchOptions {
+    pub backend: crate::config::NativeInputBackend,
+    pub reaction_delay_ms: u64,
+    pub reaction_delay_variance_pct: u32,
+    pub settle_ms: u64,
+    pub settle_variance_pct: u32,
+}
 
 /// Screen point coordinates.
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +92,7 @@ pub struct NativeClickCalibration {
 }
 
 /// Browser window metrics for calibration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct BrowserWindowMetrics {
     pub screen_x: f64,
     pub screen_y: f64,
@@ -72,7 +118,7 @@ pub struct NativeClickFingerprint {
 
 /// Cache entry combining fingerprint and calibration.
 #[derive(Debug, Clone, Copy)]
-struct NativeClickCalibrationEntry {
+pub struct NativeClickCalibrationEntry {
     pub fingerprint: NativeClickFingerprint,
     pub calibration: NativeClickCalibration,
 }
@@ -153,6 +199,118 @@ pub fn set_nativeclick_forced_calibration_for_tests(
                 mode,
             },
         );
+    }
+}
+
+/// Get next trace ID.
+pub fn next_nativeclick_trace_id() -> u64 {
+    NATIVE_CLICK_TRACE_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Record a trace phase for a session.
+pub fn record_nativeclick_trace_phase(session_id: &str, phase: &str) {
+    if let Ok(mut hooks) = NATIVECLICK_TRACE_HOOKS.lock() {
+        hooks
+            .entry(session_id.to_string())
+            .or_default()
+            .push(phase.to_string());
+    }
+}
+
+/// Update max atomic value.
+fn atomic_update_max(target: &AtomicU64, value: u64) {
+    let mut current = target.load(Ordering::Relaxed);
+    while value > current
+        && target
+            .compare_exchange(current, value, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        current = target.load(Ordering::Relaxed);
+    }
+}
+
+/// Lock guard with metrics tracking.
+pub struct NativeInputLockGuard {
+    _guard: tokio::sync::MutexGuard<'static, ()>,
+    acquired_at: Instant,
+}
+
+impl Drop for NativeInputLockGuard {
+    fn drop(&mut self) {
+        let hold_ms = self.acquired_at.elapsed().as_millis() as u64;
+        NATIVE_LOCK_TOTAL_HOLD_MS.fetch_add(hold_ms, Ordering::Relaxed);
+        atomic_update_max(&NATIVE_LOCK_MAX_HOLD_MS, hold_ms);
+    }
+}
+
+/// Acquire native input lock with metrics.
+pub async fn acquire_native_input_lock(
+    session_id: &str,
+    trace_id: u64,
+    op: &'static str,
+) -> NativeInputLockGuard {
+    let wait_started = Instant::now();
+    let guard = NATIVE_CLICK_LOCK.lock().await;
+    let wait_ms = wait_started.elapsed().as_millis() as u64;
+    NATIVE_LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
+    NATIVE_LOCK_TOTAL_WAIT_MS.fetch_add(wait_ms, Ordering::Relaxed);
+    let contentions = if wait_ms > NATIVE_LOCK_CONTENTION_THRESHOLD_MS {
+        NATIVE_LOCK_CONTENTIONS.fetch_add(1, Ordering::Relaxed);
+        wait_ms
+    } else {
+        0
+    };
+    atomic_update_max(&NATIVE_LOCK_MAX_WAIT_MS, wait_ms);
+    if wait_ms > NATIVE_LOCK_WARN_WAIT_THRESHOLD_MS {
+        log::warn!(
+            "[native-lock] High wait time for session_id={} op={}: {}ms",
+            session_id,
+            op,
+            wait_ms
+        );
+    }
+    if contentions > 0 {
+        log::debug!(
+            "[native-lock] Contention for session_id={} op={}: waited {}ms",
+            session_id,
+            op,
+            contentions
+        );
+    }
+    NativeInputLockGuard {
+        _guard: guard,
+        acquired_at: Instant::now(),
+    }
+}
+
+/// Metrics snapshot for native input lock.
+#[derive(Debug, Clone, Copy)]
+pub struct NativeInputLockMetricsSnapshot {
+    pub acquisitions: u64,
+    pub contentions: u64,
+    pub total_wait_ms: u64,
+    pub max_wait_ms: u64,
+    pub avg_wait_ms: f64,
+    pub total_hold_ms: u64,
+    pub max_hold_ms: u64,
+    pub avg_hold_ms: f64,
+}
+
+/// Get metrics snapshot for native input lock.
+pub fn native_input_lock_metrics_snapshot() -> NativeInputLockMetricsSnapshot {
+    let acquisitions = NATIVE_LOCK_ACQUISITIONS.load(Ordering::Relaxed);
+    let total_wait_ms = NATIVE_LOCK_TOTAL_WAIT_MS.load(Ordering::Relaxed);
+    let total_hold_ms = NATIVE_LOCK_TOTAL_HOLD_MS.load(Ordering::Relaxed);
+    let denom = acquisitions.max(1) as f64;
+    NativeInputLockMetricsSnapshot {
+        acquisitions,
+        contentions: NATIVE_LOCK_CONTENTIONS.load(Ordering::Relaxed),
+        total_wait_ms,
+        max_wait_ms: NATIVE_LOCK_MAX_WAIT_MS.load(Ordering::Relaxed),
+        avg_wait_ms: total_wait_ms as f64 / denom,
+        total_hold_ms,
+        max_hold_ms: NATIVE_LOCK_MAX_HOLD_MS.load(Ordering::Relaxed),
+        avg_hold_ms: total_hold_ms as f64 / denom,
     }
 }
 
@@ -251,8 +409,12 @@ pub fn screen_point_from_calibration(
     x: f64,
     y: f64,
 ) -> ScreenPoint {
-    let (origin_x, origin_y) =
-        browser_content_origin(metrics, calibration.scale_x, calibration.scale_y, calibration.mode);
+    let (origin_x, origin_y) = browser_content_origin(
+        metrics,
+        calibration.scale_x,
+        calibration.scale_y,
+        calibration.mode,
+    );
     ScreenPoint {
         x: (origin_x + x * calibration.scale_x + calibration.origin_adjust_x).round() as i32,
         y: (origin_y + y * calibration.scale_y + calibration.origin_adjust_y).round() as i32,
@@ -278,10 +440,11 @@ pub fn validate_native_calibration(calibration: &NativeClickCalibration) -> Resu
 }
 
 /// Native cursor candidate for probe-based calibration.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct NativeCursorCandidate {
     pub x: f64,
     pub y: f64,
+    pub label: Option<String>,
 }
 
 /// Sample from a native click probe.
@@ -316,12 +479,10 @@ pub fn solve_calibration_from_probe_samples(
         return None;
     }
 
-    let origin_adjust_x = first.desired_x * candidate.scale_x
-        - first.hit_x * scale_x
-        + candidate.origin_adjust_x;
-    let origin_adjust_y = first.desired_y * candidate.scale_y
-        - first.hit_y * scale_y
-        + candidate.origin_adjust_y;
+    let origin_adjust_x =
+        first.desired_x * candidate.scale_x - first.hit_x * scale_x + candidate.origin_adjust_x;
+    let origin_adjust_y =
+        first.desired_y * candidate.scale_y - first.hit_y * scale_y + candidate.origin_adjust_y;
 
     Some(NativeClickCalibration {
         scale_x,

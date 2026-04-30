@@ -10,7 +10,7 @@ use chromiumoxide::Page;
 // Re-export keyboard operations
 pub use crate::capabilities::keyboard::{press, press_with_modifiers};
 
-// Re-export clipboard operations  
+// Re-export clipboard operations
 pub use crate::capabilities::clipboard::{copy, cut};
 
 /// Paste clipboard content into focused element.

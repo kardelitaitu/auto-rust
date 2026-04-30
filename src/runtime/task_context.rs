@@ -83,8 +83,8 @@ pub use types::{
 };
 
 // Query and interaction modules are public for standalone use
-pub use query as dom_query;
 pub use interaction as actions;
+pub use query as dom_query;
 
 fn nativeclick_public_log_line(selector: &str, x: f64, y: f64) -> String {
     format!("[task-api] clicked ({selector}) at {x:.1},{y:.1}")

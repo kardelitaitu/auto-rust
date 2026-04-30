@@ -47,8 +47,13 @@ pub async fn wait_for_visible(page: &Page, selector: &str, timeout_ms: u64) -> R
 }
 
 /// Wait until any of the given selectors becomes visible. Returns first match or false.
-pub async fn wait_for_any_visible(page: &Page, selectors: &[&str], timeout_ms: u64) -> Result<bool> {
-    crate::capabilities::navigation::wait_for_any_visible_selector(page, selectors, timeout_ms).await
+pub async fn wait_for_any_visible(
+    page: &Page,
+    selectors: &[&str],
+    timeout_ms: u64,
+) -> Result<bool> {
+    crate::capabilities::navigation::wait_for_any_visible_selector(page, selectors, timeout_ms)
+        .await
 }
 
 /// Get current page URL.

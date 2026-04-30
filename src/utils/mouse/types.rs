@@ -52,10 +52,7 @@ impl HoverOutcome {
             HoverStatus::Success => "success",
             HoverStatus::Failed => "failed",
         };
-        format!(
-            "hover:{} ({:.1},{:.1})",
-            status, self.x, self.y
-        )
+        format!("hover:{} ({:.1},{:.1})", status, self.x, self.y)
     }
 }
 
@@ -72,10 +69,7 @@ pub struct NativeCursorOutcome {
 impl NativeCursorOutcome {
     /// Returns a summary string for logging.
     pub fn summary(&self) -> String {
-        format!(
-            "nativecursor {} ({:.1},{:.1})",
-            self.target, self.x, self.y
-        )
+        format!("nativecursor {} ({:.1},{:.1})", self.target, self.x, self.y)
     }
 }
 

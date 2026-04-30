@@ -238,12 +238,106 @@ async fn connect_to_browser(
     Ok(session)
 }
 
+// Default port ranges for browser discovery
+const DEFAULT_BRAVE_PORT_START: u16 = 9001;
+const DEFAULT_BRAVE_PORT_END: u16 = 9050;
+const DEFAULT_CHROME_PORT_START: u16 = 9222;
+const DEFAULT_CHROME_PORT_END: u16 = 9230;
+const MIN_PORT: u16 = 1024;
+const MAX_PORT: u16 = 65535;
+
+/// Parse port range from environment variables with validation.
+///
+/// Reads START and END from env vars, validates the range, and returns
+/// a tuple of (start, end) ports. Falls back to defaults if env vars
+/// are unset or invalid.
+///
+/// # Arguments
+///
+/// * `start_var` - Environment variable name for start port
+/// * `end_var` - Environment variable name for end port
+/// * `default_start` - Default start port if env vars are unset/invalid
+/// * `default_end` - Default end port if env vars are unset/invalid
+///
+/// # Returns
+///
+/// A tuple of (start_port, end_port) where start <= end
+fn parse_port_range(
+    start_var: &str,
+    end_var: &str,
+    default_start: u16,
+    default_end: u16,
+) -> (u16, u16) {
+    let mut start = parse_port_env(start_var, default_start);
+    let mut end = parse_port_env(end_var, default_end);
+
+    // Validate: START must be <= END (swap if needed)
+    if start > end {
+        warn!(
+            "[browser] Invalid port range: {} > {}. Swapping to ensure START <= END.",
+            start, end
+        );
+        std::mem::swap(&mut start, &mut end);
+    }
+
+    // Validate: ports must be in valid range (1024-65535)
+    let clamped_start = start.clamp(MIN_PORT, MAX_PORT);
+    let clamped_end = end.clamp(MIN_PORT, MAX_PORT);
+
+    if clamped_start != start || clamped_end != end {
+        warn!(
+            "[browser] Port range {}-{} clamped to valid range {}-{}",
+            start, end, clamped_start, clamped_end
+        );
+    }
+
+    (clamped_start, clamped_end)
+}
+
+/// Parse a single port from environment variable.
+fn parse_port_env(var_name: &str, default: u16) -> u16 {
+    match std::env::var(var_name) {
+        Ok(val) => match val.parse::<u16>() {
+            Ok(port) => port,
+            Err(_) => {
+                warn!(
+                    "[browser] Invalid port value in {}: '{}'. Using default: {}",
+                    var_name, val, default
+                );
+                default
+            }
+        },
+        Err(_) => default,
+    }
+}
+
+/// Get Brave browser port range from environment or defaults.
+fn get_brave_port_range() -> (u16, u16) {
+    parse_port_range(
+        "BRAVE_PORT_START",
+        "BRAVE_PORT_END",
+        DEFAULT_BRAVE_PORT_START,
+        DEFAULT_BRAVE_PORT_END,
+    )
+}
+
+/// Get Chrome browser port range from environment or defaults.
+fn get_chrome_port_range() -> (u16, u16) {
+    parse_port_range(
+        "CHROME_PORT_START",
+        "CHROME_PORT_END",
+        DEFAULT_CHROME_PORT_START,
+        DEFAULT_CHROME_PORT_END,
+    )
+}
+
 /// Auto-discovers local browser instances (Brave, Chrome, etc.).
 ///
 /// Scans common CDP (Chrome DevTools Protocol) ports for local
-/// browser instances that are running with remote debugging enabled:
-/// - Brave: ports 9001-9050
-/// - Chrome: ports 9221-9230
+/// browser instances that are running with remote debugging enabled.
+/// Port ranges can be configured via environment variables:
+/// - BRAVE_PORT_START, BRAVE_PORT_END (default: 9001-9050)
+/// - CHROME_PORT_START, CHROME_PORT_END (default: 9222-9230)
 ///
 /// # Arguments
 ///
@@ -253,8 +347,11 @@ async fn connect_to_browser(
 ///
 /// A vector of successfully connected `Session` instances.
 async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
-    let brave_ports: Vec<u16> = (9001..=9050).collect();
-    let chrome_ports: Vec<u16> = (9222..=9230).collect();
+    let (brave_start, brave_end) = get_brave_port_range();
+    let (chrome_start, chrome_end) = get_chrome_port_range();
+
+    let brave_ports: Vec<u16> = (brave_start..=brave_end).collect();
+    let chrome_ports: Vec<u16> = (chrome_start..=chrome_end).collect();
 
     let mut results: Vec<Option<Session>> = stream::iter(brave_ports)
         .map(|port| async move { discover_brave_on_port(port, config).await.ok().flatten() })

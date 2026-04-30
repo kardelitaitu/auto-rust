@@ -314,6 +314,32 @@ export RUST_LOG="info,orchestrator=debug"
 brave.exe --remote-debugging-port=9001
 ```
 
+### Custom browser port ranges
+
+By default, the orchestrator scans these ports for browsers:
+- **Brave**: ports 9001-9050
+- **Chrome**: ports 9222-9230
+
+You can customize these ranges via environment variables:
+
+```bash
+# Custom Brave port range
+export BRAVE_PORT_START=9100
+export BRAVE_PORT_END=9150
+
+# Custom Chrome port range
+export CHROME_PORT_START=9300
+export CHROME_PORT_END=9350
+
+# Run with custom ports
+cargo run cookiebot
+```
+
+**Validation rules:**
+- If `START > END`, values are automatically swapped
+- Ports below 1024 are clamped to 1024 (reserved ports)
+- Invalid values fall back to defaults
+
 ### Task validation errors
 
 ```bash

@@ -177,13 +177,20 @@
   - [ ] Document flaky test fixes
 
 
-### Brave and Chrome Browser Ports can be overrided by environment variables
-  - [ ] `BRAVE_PORT_START` environment variable
-  - [ ] `BRAVE_PORT_END` environment variable
-  - [ ] `CHROME_PORT_START` environment variable
-  - [ ] `CHROME_PORT_END` environment variable
-  - [ ] Create a tests file for this features START should lower than END etc..
-  - [ ] Update documentation to reflect this feature  
+### Brave and Chrome Browser Ports can be overrided by environment variables ✅ DONE
+  - [x] `BRAVE_PORT_START` environment variable
+  - [x] `BRAVE_PORT_END` environment variable
+  - [x] `CHROME_PORT_START` environment variable
+  - [x] `CHROME_PORT_END` environment variable
+  - [x] Created `tests/browser_port_config_test.rs` with 24 tests covering:
+    - Default port ranges (9001-9050 for Brave, 9222-9230 for Chrome)
+    - Custom port ranges via env vars
+    - Validation: START <= END (auto-swap if needed)
+    - Validation: ports clamped to 1024-65535 range
+    - Invalid input handling (non-numeric, empty, negative)
+    - Single port ranges (START == END)
+    - Partial env var configuration (only START or only END set)
+  - [x] Updated README.md with environment variable documentation  
 
 ### Phase 1: Parser Exhaustiveness (`src/utils/accessibility_locator.rs`)
 - [ ] Positive matrix:

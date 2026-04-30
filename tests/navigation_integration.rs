@@ -27,7 +27,7 @@ async fn connect_test_browser() -> Result<Browser> {
     // Fetch the actual WebSocket URL from the CDP version endpoint
     let client = reqwest::Client::new();
     let response = client
-        .get(&format!(
+        .get(format!(
             "{}/json/version",
             cdp_url.replace("ws://", "http://")
         ))
@@ -88,7 +88,7 @@ mod tests {
             "wait_for_selector returned error: {:?}",
             result
         );
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }
@@ -103,7 +103,7 @@ mod tests {
         let result =
             auto::utils::navigation::wait_for_visible_selector(&page, "#nonexistent", 100).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }
@@ -119,7 +119,7 @@ mod tests {
         let result =
             auto::utils::navigation::wait_for_any_visible_selector(&page, &selectors, 100).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }
@@ -133,12 +133,12 @@ mod tests {
         // Test with body selector (always exists)
         let result = auto::utils::navigation::selector_exists(&page, "body").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         // Test with non-existent selector
         let result = auto::utils::navigation::selector_exists(&page, "#nonexistent").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }
@@ -152,12 +152,12 @@ mod tests {
         // Test with body selector (always visible)
         let result = auto::utils::navigation::selector_is_visible(&page, "body").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         // Test with non-existent selector
         let result = auto::utils::navigation::selector_is_visible(&page, "#nonexistent").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }

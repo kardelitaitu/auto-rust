@@ -12,7 +12,6 @@
 //    cargo test --test task_context_integration -- --ignored --test-threads=1
 
 use anyhow::Result;
-use auto::runtime::task_context::TaskContext;
 use chromiumoxide::Browser;
 use futures::StreamExt;
 use std::env;
@@ -23,7 +22,7 @@ async fn connect_test_browser() -> Result<Browser> {
 
     let client = reqwest::Client::new();
     let response = client
-        .get(&format!(
+        .get(format!(
             "{}/json/version",
             cdp_url.replace("ws://", "http://")
         ))
@@ -62,12 +61,12 @@ mod tests {
         // Test body exists
         let result = auto::runtime::task_context::query::exists(&page, "body").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         // Test non-existent selector
         let result = auto::runtime::task_context::query::exists(&page, "#nonexistent").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }
@@ -81,12 +80,12 @@ mod tests {
         // Test body is visible
         let result = auto::runtime::task_context::query::visible(&page, "body").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         // Test non-existent selector
         let result = auto::runtime::task_context::query::visible(&page, "#nonexistent").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }
@@ -199,12 +198,12 @@ mod tests {
         // Test wait for body (should exist immediately)
         let result = auto::runtime::task_context::query::wait_for(&page, "body", 1000).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         // Test wait for non-existent (should timeout and return false)
         let result = auto::runtime::task_context::query::wait_for(&page, "#nonexistent", 100).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }
@@ -219,13 +218,13 @@ mod tests {
         let result =
             auto::runtime::task_context::query::wait_for_visible(&page, "body", 1000).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         // Test wait for non-existent (should timeout and return false)
         let result =
             auto::runtime::task_context::query::wait_for_visible(&page, "#nonexistent", 100).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         let _ = page.close().await;
     }

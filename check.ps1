@@ -156,12 +156,43 @@ if (-not $SkipTests -and -not $failed) {
         cargo install --locked cargo-nextest 2>&1 | Out-Null | Out-Null
     }
 
-    $r = Test-Check -Name "Tests" -Cmd "cargo nextest run --all-features --lib" -Secs $testsTimeout -Success {
-        param($r) $r.ExitCode -eq 0
-    } -Quiet
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $testTmp = "$env:APPDATA\ci_test_$( [guid]::NewGuid().ToString('N') ).txt"
 
-    $results.Tests = @{ Passed = $r.Passed; Duration = $r.Duration }
-    if (-not $r.Passed) { $failed = $true }
+    # Run nextest with stdout/stderr redirected to file (completely silent)
+    $testJob = Start-Process pwsh -ArgumentList "-NoProfile", "-NonI", "-Command",
+        "cargo nextest run --all-features --lib 2>&1 | Out-File '$testTmp'; exit `$LASTEXITCODE" `
+        -NoNewWindow -PassThru
+
+    $waited = 0
+    while ($testJob.HasExited -eq $false -and $waited -lt $testsTimeout) {
+        Start-Sleep -Milliseconds 100
+        $waited += 0.1
+    }
+
+    if ($testJob.HasExited -eq $false) {
+        Stop-Process $testJob.Id -Force -EA SilentlyContinue
+        $results.Tests = @{ Passed = $false; Duration = $sw.Elapsed.TotalSeconds }
+        $failed = $true
+    } else {
+        Start-Sleep -Milliseconds 200
+        $testOutput = if (Test-Path $testTmp) { Get-Content $testTmp -Raw } else { "" }
+        if (Test-Path $testTmp) { Remove-Item $testTmp -EA SilentlyContinue }
+
+        $passed = $testJob.ExitCode -eq 0
+        $results.Tests = @{ Passed = $passed; Duration = $sw.Elapsed.TotalSeconds }
+        if (-not $passed) { $failed = $true }
+
+        # Show only last 5 lines of nextest output (the summary)
+        if ($testOutput) {
+            $lines = $testOutput -split "`n" | Where-Object { $_.Trim() -ne "" }
+            $lastLines = $lines | Select-Object -Last 5
+            if ($lastLines) {
+                Write-Output ""
+                $lastLines | ForEach-Object { Write-Output $_ }
+            }
+        }
+    }
 }
 
 # ---- REPORT ----------------------------------------------------------

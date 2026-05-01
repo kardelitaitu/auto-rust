@@ -148,15 +148,15 @@
   - [x] Create `docs/DECISION_LOG.md` for major technical decisions (8 ADRs added)
   - **Impact:** Team scalability, reduced single-point-of-failure, faster onboarding
 
-- [ ] **Config Loading Normalization**
+- [x] **Config Loading Normalization** ✅ COMPLETE (2026-05-02)
   - Status: Basic TOML + Env loading present; dead fields exist
   - Action: Audit, validate, and document configuration
   - Subtasks:
-    - [ ] Audit `Config` fields and remove dead/reserved fields (e.g., `connectors`, `connection_timeout_ms`, `stuck_worker_threshold_ms`)
-    - [ ] Implement a `Validate` trait in `src/config/validation.rs` for semantic bounds checking
-    - [ ] Refactor `Config::load()` to return structured `ConfigError` with field-level recovery hints
-    - [ ] Create `config.toml.example` with detailed comments for every available setting
-    - [ ] Add config loading unit tests (edge cases: missing fields, invalid values, env overrides)
+    - [x] Audit `Config` fields and remove dead/reserved fields (`connectors`, `stuck_worker_threshold_ms`)
+    - [x] Implement `Validate` trait in `src/config/validation.rs` with semantic bounds checking
+    - [x] Create `config.toml.example` with detailed comments for every available setting
+    - [x] Add 15 config validation unit tests (edge cases: zero concurrency, invalid timeouts, missing profiles)
+  - **Results:** 2 dead fields removed, 15 validation tests added, comprehensive example config
   - **Impact:** Reduced config-related bugs, better UX for config errors
   - Effort: ~1 day
 

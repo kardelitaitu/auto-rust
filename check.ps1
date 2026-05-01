@@ -125,7 +125,6 @@ $failed = $false
 $stepNum = 1
 
 function Write-StepHeader($num, $desc) {
-    Write-Output ""
     Write-Output "$num. $desc"
 }
 
@@ -215,9 +214,7 @@ if (-not $SkipTests -and -not $failed) {
 
 # ---- REPORT ----------------------------------------------------------
 $total = ((Get-Date) - $startTime).TotalSeconds
-Write-Output ""
 Write-Status "CI CHECKER REPORT:" "Cyan"
-
 $p = 0; $f = 0
 $runOrder = @("Build", "Format", "Clippy", "Tests")
 foreach ($name in $runOrder) {

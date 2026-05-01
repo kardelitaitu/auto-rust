@@ -132,7 +132,10 @@ async fn run_async() -> Result<()> {
         .count();
     let total_sessions = sessions.len();
     if !sessions.is_empty() && is_session_health_degraded(healthy_sessions, total_sessions) {
-        warn!("{}", format_health_warning(healthy_sessions, total_sessions));
+        warn!(
+            "{}",
+            format_health_warning(healthy_sessions, total_sessions)
+        );
     }
 
     // Calculate fan-out metrics for Phase 4
@@ -198,17 +201,17 @@ mod tests {
     #[test]
     fn test_session_health_degraded_threshold_80_percent() {
         // Exactly 80% healthy - not degraded (threshold is < 80%)
-        assert!(!is_session_health_degraded(4, 5));  // 80%
+        assert!(!is_session_health_degraded(4, 5)); // 80%
         assert!(!is_session_health_degraded(8, 10)); // 80%
     }
 
     #[test]
     fn test_session_health_degraded_below_threshold() {
         // Below 80% healthy - degraded
-        assert!(is_session_health_degraded(3, 5));   // 60%
-        assert!(is_session_health_degraded(7, 10));  // 70%
-        assert!(is_session_health_degraded(0, 5));   // 0%
-        assert!(is_session_health_degraded(1, 2));   // 50%
+        assert!(is_session_health_degraded(3, 5)); // 60%
+        assert!(is_session_health_degraded(7, 10)); // 70%
+        assert!(is_session_health_degraded(0, 5)); // 0%
+        assert!(is_session_health_degraded(1, 2)); // 50%
     }
 
     #[test]

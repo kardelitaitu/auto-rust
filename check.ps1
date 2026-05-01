@@ -59,7 +59,11 @@ function Invoke-WithTimeout {
         [int]$TimeoutSeconds
     )
 
-    $job = Start-Job -ScriptBlock $Command
+    $job = Start-Job -ScriptBlock {
+        $output = & $Command 2>&1
+        $exitCode = $LASTEXITCODE
+        @{ Output = $output; ExitCode = $exitCode }
+    }
     $waited = 0
 
     while ($job.State -eq "Running" -and $waited -lt $TimeoutSeconds) {
@@ -71,12 +75,12 @@ function Invoke-WithTimeout {
         Write-Status "$Name timed out after ${TimeoutSeconds}s - killing process" "Yellow"
         Stop-Job -Job $job -ErrorAction SilentlyContinue
         Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-        return $null
+        return @{ Output = $null; ExitCode = 124; TimedOut = $true }
     }
 
-    $output = Receive-Job -Job $job
+    $result = Receive-Job -Job $job
     Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-    return $output
+    return @{ Output = $result.Output; ExitCode = $result.ExitCode; TimedOut = $false }
 }
 
 # Results tracking
@@ -109,20 +113,21 @@ if (-not $SkipTests) {
     Write-Section "Running Tests (cargo nextest run --all-features)"
     $testStart = Get-Date
 
-    $output = Invoke-WithTimeout -Name "Tests" -TimeoutSeconds $testsTimeout -Command {
+    $result = Invoke-WithTimeout -Name "Tests" -TimeoutSeconds $testsTimeout -Command {
         cargo nextest run --all-features --lib 2>&1
     }
 
+    $output = $result.Output
     $results.Tests.Output = if ($output) { $output -join "`n" } else { "" }
 
-    if (-not $output) {
+    if ($result.TimedOut) {
         Write-Status "Tests timed out after ${testsTimeout}s" "Red"
         $results.Tests.Passed = $false
-    } elseif ($output -match "test result: ok" -or $output -match "passed") {
+    } elseif ($result.ExitCode -eq 0 -or ($output -match "test result: ok" -or $output -match "passed")) {
         Write-Status "Tests passed" "Green"
         $results.Tests.Passed = $true
     } else {
-        Write-Status "Tests failed" "Red"
+        Write-Status "Tests failed (exit code: $($result.ExitCode))" "Red"
         $results.Tests.Passed = $false
     }
     $results.Tests.Duration = ((Get-Date) - $testStart).TotalSeconds
@@ -133,16 +138,17 @@ if (-not $SkipFormat) {
     Write-Section "Checking Format (cargo fmt --all -- --check)"
     $fmtStart = Get-Date
 
-    $output = Invoke-WithTimeout -Name "Format" -TimeoutSeconds $formatTimeout -Command {
+    $result = Invoke-WithTimeout -Name "Format" -TimeoutSeconds $formatTimeout -Command {
         cargo fmt --all -- --check 2>&1
     }
 
+    $output = $result.Output
     $results.Format.Output = if ($output) { $output -join "`n" } else { "" }
 
-    if (-not $output) {
+    if ($result.TimedOut) {
         Write-Status "Format timed out after ${formatTimeout}s" "Red"
         $results.Format.Passed = $false
-    } elseif ($LASTEXITCODE -eq 0) {
+    } elseif ($result.ExitCode -eq 0) {
         Write-Status "Format check passed" "Green"
         $results.Format.Passed = $true
     } else {

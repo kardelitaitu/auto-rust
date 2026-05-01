@@ -1365,6 +1365,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_selector_observation_logs_a11y_ok_result() {
+        // Test a11y mode with ok result (not ambiguous/not_found)
+        let output = capture_selector_observation_log(|| {
+            emit_selector_observation("a11y", Some("link"), "ok", Some("contains"), None);
+        });
+
+        assert!(output.contains("selector resolution"));
+        assert!(output.contains("selector_mode=a11y") || output.contains("selector_mode=\"a11y\""));
+        assert!(output.contains("locator_result=ok") || output.contains("locator_result=\"ok\""));
+        assert!(output.contains("locator_role=link") || output.contains("locator_role=\"link\""));
+        assert!(
+            output.contains("locator_match_mode=contains")
+                || output.contains("locator_match_mode=\"contains\"")
+        );
+    }
+
+    #[test]
+    fn test_selector_observation_logs_not_found_result() {
+        let output = capture_selector_observation_log(|| {
+            emit_selector_observation("a11y", Some("button"), "not_found", Some("exact"), None);
+        });
+
+        assert!(output.contains("selector resolution"));
+        assert!(output.contains("selector_mode=a11y") || output.contains("selector_mode=\"a11y\""));
+        assert!(
+            output.contains("locator_result=not_found")
+                || output.contains("locator_result=\"not_found\"")
+        );
+    }
+
+    #[test]
+    fn test_selector_observation_logs_unsupported_result() {
+        let output = capture_selector_observation_log(|| {
+            emit_selector_observation("a11y", Some("button"), "unsupported", None, None);
+        });
+
+        assert!(output.contains("selector resolution"));
+        assert!(output.contains("selector_mode=a11y") || output.contains("selector_mode=\"a11y\""));
+        assert!(
+            output.contains("locator_result=unsupported")
+                || output.contains("locator_result=\"unsupported\"")
+        );
+    }
+
+    #[test]
+    fn test_selector_observation_logs_scope_used_when_none() {
+        // Test that scope field is present even when None (empty string)
+        let output = capture_selector_observation_log(|| {
+            emit_selector_observation("a11y", Some("button"), "ok", Some("exact"), None);
+        });
+
+        assert!(output.contains("selector resolution"));
+        assert!(output.contains("locator_scope_used="));
+    }
+
     #[cfg(feature = "accessibility-locator")]
     #[test]
     fn test_classify_locator_exists_states() {

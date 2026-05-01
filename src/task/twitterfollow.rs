@@ -925,4 +925,139 @@ mod tests {
             "https://x.com/validuser"
         );
     }
+
+    #[test]
+    fn test_follow_locator_candidates_fallback_to_css_selectors() {
+        // Verify that CSS selectors are NOT in the semantic locator candidates
+        // (CSS selectors are used as fallback in find_and_click_follow_button JS)
+        let selectors = follow_locator_candidates("testuser");
+
+        // All candidates should be accessibility locators (role=)
+        for selector in &selectors {
+            assert!(
+                selector.starts_with("role="),
+                "Candidate '{}' should be accessibility locator, not CSS",
+                selector
+            );
+        }
+
+        // CSS fallback happens in JS evaluation when semantic locators fail
+        // This test verifies the separation: semantic first, then CSS via JS
+        assert!(!selectors.iter().any(|s| s.contains("[data-testid")));
+        assert!(!selectors
+            .iter()
+            .any(|s| s.contains("aria-label") && !s.contains("role=")));
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_state_detection_not_followed() {
+        // "Not followed" state locators should include "Follow" patterns
+        let selectors = follow_locator_candidates("testuser");
+
+        // Should have "Follow" buttons
+        assert!(selectors.iter().any(|s| s.contains("[name='Follow']")));
+        assert!(selectors.iter().any(|s| s.contains("Follow @")));
+
+        // Should NOT have "Following" or "Unfollow" patterns (those are for already-following state)
+        assert!(!selectors.iter().any(|s| s.contains("[name='Following")));
+        assert!(!selectors.iter().any(|s| s.contains("[name='Unfollow")));
+    }
+
+    #[test]
+    fn test_following_locator_candidates_state_detection_already_following() {
+        // "Already following" state locators should include "Following" and "Unfollow" patterns
+        let selectors = following_locator_candidates(Some("testuser"));
+
+        // Should have "Following" buttons
+        assert!(selectors.iter().any(|s| s.contains("[name='Following']")));
+        assert!(selectors.iter().any(|s| s.contains("Following @")));
+
+        // Should have "Unfollow" buttons
+        assert!(selectors.iter().any(|s| s.contains("[name='Unfollow @")));
+
+        // Should NOT have "Follow" patterns (those are for not-followed state)
+        let follow_only_patterns: Vec<_> = selectors
+            .iter()
+            .filter(|s| {
+                s.contains("[name='Follow']") && !s.contains("Following") && !s.contains("Unfollow")
+            })
+            .collect();
+        assert!(
+            follow_only_patterns.is_empty(),
+            "Following candidates should not include plain 'Follow' patterns: {:?}",
+            follow_only_patterns
+        );
+    }
+
+    #[test]
+    fn test_locator_candidates_no_pending_or_private_references() {
+        // Comprehensive check that no candidate references pending or private states
+        let follow = follow_locator_candidates("anyuser");
+        let following = following_locator_candidates(Some("anyuser"));
+
+        for selector in follow.iter().chain(following.iter()) {
+            let lower = selector.to_lowercase();
+            assert!(
+                !lower.contains("pending"),
+                "Candidate '{}' should not reference pending state",
+                selector
+            );
+            assert!(
+                !lower.contains("private"),
+                "Candidate '{}' should not reference private state",
+                selector
+            );
+        }
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_ordering_scoped_before_global() {
+        // Scoped locators (with [scope='main header']) should come before global ones
+        let selectors = follow_locator_candidates("user123");
+
+        let scoped_count = selectors
+            .iter()
+            .take_while(|s| s.contains("[scope='main header']"))
+            .count();
+        let global_count = selectors
+            .iter()
+            .skip_while(|s| s.contains("[scope='main header']"))
+            .take_while(|s| s.contains("role=button") && !s.contains("[scope="))
+            .count();
+
+        assert!(
+            scoped_count >= 3,
+            "Should have at least 3 scoped locators before global ones"
+        );
+        assert!(
+            global_count >= 2,
+            "Should have at least 2 global locators after scoped ones"
+        );
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_ordering_global_before_generic() {
+        // Global locators (with specific username) should come before completely generic ones
+        let selectors = follow_locator_candidates("specificuser");
+
+        // Find first completely generic locator (no username, no partial match)
+        let first_generic_idx = selectors
+            .iter()
+            .position(|s| s == "role=button[name='Follow']")
+            .expect("Should have generic fallback");
+
+        // The generic "role=button[name='Follow']" should be last
+        assert_eq!(first_generic_idx, selectors.len() - 1);
+
+        // All locators before the last should be more specific (contain username, scope, or partial match)
+        for selector in &selectors[..first_generic_idx] {
+            assert!(
+                selector.contains("specificuser")
+                    || selector.contains("[scope=")
+                    || selector.contains("[match=contains]"),
+                "Pre-generic locator '{}' should be specific, scoped, or partial match",
+                selector
+            );
+        }
+    }
 }

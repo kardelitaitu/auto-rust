@@ -1087,6 +1087,416 @@ async fn browser_runtime_locator_action_emits_selector_telemetry_fields() -> Res
     Ok(())
 }
 
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_locator_telemetry_not_found_error() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Not Found Telemetry</title></head><body><button aria-label='Exists'>Click</button></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    let sink = SelectorTelemetryLogSink::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(sink.clone())
+        .with_max_level(Level::DEBUG)
+        .with_ansi(false)
+        .with_target(false)
+        .without_time()
+        .finish();
+
+    let not_found = async {
+        api.exists("role=button[name='Nonexistent']")
+            .await
+            .expect_err("should fail")
+    }
+    .with_subscriber(subscriber)
+    .await;
+    assert!(not_found.to_string().contains("locator_not_found"));
+
+    let logs = selector_telemetry_logs(&sink);
+    assert!(logs.contains("selector resolution"));
+    assert!(logs.contains("selector_mode=a11y") || logs.contains("selector_mode=\"a11y\""));
+    assert!(
+        logs.contains("locator_result=not_found") || logs.contains("locator_result=\"not_found\"")
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_locator_telemetry_unsupported_error() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Unsupported Telemetry</title></head><body><button aria-label='Save'>Click</button></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    let sink = SelectorTelemetryLogSink::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(sink.clone())
+        .with_max_level(Level::DEBUG)
+        .with_ansi(false)
+        .with_target(false)
+        .without_time()
+        .finish();
+
+    let unsupported = async {
+        api.html("role=button[name='Save']")
+            .await
+            .expect_err("should fail")
+    }
+    .with_subscriber(subscriber)
+    .await;
+    assert!(unsupported.to_string().contains("locator_unsupported"));
+
+    let logs = selector_telemetry_logs(&sink);
+    assert!(logs.contains("selector resolution"));
+    assert!(logs.contains("selector_mode=a11y") || logs.contains("selector_mode=\"a11y\""));
+    assert!(
+        logs.contains("locator_result=unsupported")
+            || logs.contains("locator_result=\"unsupported\"")
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_locator_focus_middle_click_and_input_helpers() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Input Test</title></head><body><input id='name' aria-label='Name field' value='initial'><button id='submit' aria-label='Submit'>Submit</button><div id='drag-source' aria-label='Drag source' draggable='true'>Drag me</div><div id='drop-target' aria-label='Drop target'>Drop here</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    // Test focus with locator
+    api.focus("role=textbox[name='Name field']").await?;
+    let focused = api
+        .attr("role=textbox[name='Name field']", "data-focused")
+        .await;
+    assert!(focused.is_ok());
+
+    // Test select_all with locator
+    api.select_all("role=textbox[name='Name field']").await?;
+
+    // Test typing verification with locator
+    api.r#type("role=textbox[name='Name field']", "hello")
+        .await?;
+    let value = api.value("role=textbox[name='Name field']").await?;
+    assert_eq!(value, Some("hello".to_string()));
+
+    // Test middle_click with locator
+    let middle = api.middle_click("role=button[name='Submit']").await?;
+    assert!(matches!(middle.click, ClickStatus::Success));
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_locator_drag_action() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Drag Test</title></head><body><div id='drag-source' aria-label='Drag source' draggable='true' style='width:100px;height:100px;background:blue;'>Drag me</div><div id='drop-target' aria-label='Drop target' style='width:100px;height:100px;background:red;margin-top:20px;'>Drop here</div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    // Test drag with locator (drag from source to target)
+    api.drag(
+        "role=generic[name='Drag source']",
+        "role=generic[name='Drop target']",
+    )
+    .await?;
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_mixed_css_and_locator_flow() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Mixed Flow</title></head><body><main id='main-content'><button id='css-btn' aria-label='CSS Button'>CSS</button><button id='a11y-btn' aria-label='A11y Button'>A11y</button></main></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    // Mixed flow: Use CSS selector first, then accessibility locator
+    assert!(api.exists("#main-content").await?);
+    assert!(api.visible("role=button[name='CSS Button']").await?);
+    assert!(api.exists("#css-btn").await?);
+    assert!(api.visible("role=button[name='A11y Button']").await?);
+
+    // Click using CSS selector
+    let css_click = api.click("#css-btn").await?;
+    assert!(matches!(css_click.click, ClickStatus::Success));
+
+    // Click using accessibility locator
+    let a11y_click = api.click("role=button[name='A11y Button']").await?;
+    assert!(matches!(a11y_click.click, ClickStatus::Success));
+
+    // Verify both selector types work interchangeably
+    assert!(api.exists("#main-content").await?);
+    assert!(api.exists("role=generic[name='']").await?);
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_css_only_behavior_unchanged_with_feature_on() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>CSS Only</title></head><body><div id='test-div' class='test-class'>Content</div><input id='test-input' value='test-value'><button id='test-btn' aria-label='Test'>Click</button></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    // All CSS selectors should work exactly as before with feature flag on
+    let css_selectors = [
+        ("#test-div", "id selector"),
+        (".test-class", "class selector"),
+        ("div", "element selector"),
+        ("#test-input", "input id"),
+        ("input[value='test-value']", "attribute selector"),
+        ("#test-btn", "button id"),
+        ("button[aria-label='Test']", "button attribute"),
+    ];
+
+    for (selector, desc) in css_selectors {
+        assert!(
+            api.exists(selector).await?,
+            "CSS selector '{}' ({}) should work with feature flag on",
+            selector,
+            desc
+        );
+    }
+
+    // CSS-only operations should not be affected
+    assert_eq!(api.text("#test-div").await?, Some("Content".to_string()));
+    assert_eq!(
+        api.value("#test-input").await?,
+        Some("test-value".to_string())
+    );
+    assert!(api.html("#test-div").await?.is_some());
+    assert_eq!(
+        api.attr("#test-btn", "aria-label").await?,
+        Some("Test".to_string())
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_locator_exact_contains_scope_combinations() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Combinations</title></head><body><main id='main'><button aria-label='Exact Match'>Exact</button><button aria-label='Contains Match Button'>Contains</button><button aria-label='Scoped Button'>Scoped</button></main><aside id='aside'><button aria-label='Scoped Button'>Aside</button></aside></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    // Exact match (default)
+    assert!(api.exists("role=button[name='Exact Match']").await?);
+
+    // Contains match
+    assert!(api
+        .exists("role=button[name='Match'][match=contains]")
+        .await
+        .is_err()); // 'Match' alone won't match
+    assert!(
+        api.exists("role=button[name='Contains'][match=contains]")
+            .await?,
+        "Contains match should find 'Contains Match Button'"
+    );
+
+    // Scope combinations
+    assert!(
+        api.exists("role=button[name='Scoped Button'][scope='main']")
+            .await?,
+        "Scoped locator should find button in main"
+    );
+
+    // Multiple matches (ambiguous)
+    let ambiguous = api
+        .exists("role=button[name='Scoped Button']")
+        .await
+        .expect_err("should be ambiguous without scope");
+    assert!(
+        ambiguous.to_string().contains("locator_ambiguous"),
+        "Multiple buttons with same name should be ambiguous: {}",
+        ambiguous
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "accessibility-locator")]
+#[tokio::test]
+async fn browser_runtime_all_locator_failure_classes() -> Result<()> {
+    let Some(mut session): Option<Session> = connect_test_session().await? else {
+        return Ok(());
+    };
+
+    let server = TestServer::start(
+        "<!doctype html><html><head><title>Failures</title></head><body><button aria-label='Duplicate'>Dup1</button><button aria-label='Duplicate'>Dup2</button><div id='scope'><button aria-label='Scoped'>Scoped</button></div></body></html>",
+    )
+    .await?;
+
+    let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
+    let api = build_task_context(&session, page.clone());
+
+    // not_found: element doesn't exist
+    let not_found = api
+        .exists("role=button[name='Nonexistent']")
+        .await
+        .expect_err("should be not_found");
+    assert!(
+        not_found.to_string().contains("locator_not_found"),
+        "Error: {}",
+        not_found
+    );
+
+    // ambiguous: multiple matches
+    let ambiguous = api
+        .exists("role=button[name='Duplicate']")
+        .await
+        .expect_err("should be ambiguous");
+    assert!(
+        ambiguous.to_string().contains("locator_ambiguous"),
+        "Error: {}",
+        ambiguous
+    );
+
+    // unsupported: html operation with locator
+    let unsupported_html = api
+        .html("role=button[name='Scoped']")
+        .await
+        .expect_err("should be unsupported");
+    assert!(
+        unsupported_html.to_string().contains("locator_unsupported"),
+        "Error: {}",
+        unsupported_html
+    );
+
+    // unsupported: attr operation with locator
+    let unsupported_attr = api
+        .attr("role=button[name='Scoped']", "aria-label")
+        .await
+        .expect_err("should be unsupported");
+    assert!(
+        unsupported_attr.to_string().contains("locator_unsupported"),
+        "Error: {}",
+        unsupported_attr
+    );
+
+    // parse_error: invalid syntax
+    let parse_error = api
+        .exists("role=button[name=\"double-quotes\"]")
+        .await
+        .expect_err("should be parse_error");
+    assert!(
+        parse_error.to_string().contains("locator_parse_error"),
+        "Error: {}",
+        parse_error
+    );
+
+    // scope_invalid: invalid scope selector
+    let scope_invalid = api
+        .click("role=button[name='Scoped'][scope='###bad']")
+        .await
+        .expect_err("should be scope_invalid");
+    assert!(
+        scope_invalid.to_string().contains("locator_scope_invalid"),
+        "Error: {}",
+        scope_invalid
+    );
+
+    drop(api);
+    session.release_page(page).await;
+    server.shutdown().await;
+    session.graceful_shutdown().await?;
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn check_permission_respects_effective_policy() -> Result<()> {
     let Some(mut session): Option<Session> = connect_test_session().await? else {

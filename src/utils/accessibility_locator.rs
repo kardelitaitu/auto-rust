@@ -451,4 +451,161 @@ mod tests {
     fn parse_single_quoted_double_quotes_rejected() {
         assert!(parse_single_quoted("\"hello\"", "field").is_err());
     }
+
+    // ============================================================================
+    // Property-Style Safety Tests: Parser never panics on arbitrary malformed input
+    // ============================================================================
+
+    #[test]
+    fn safety_test_arbitrary_malformed_inputs_never_panic() {
+        // These are arbitrary malformed inputs that should never cause a panic
+        let malformed_inputs = [
+            // Bracket-related edge cases
+            "role=button[",
+            "role=button]",
+            "role=button[[",
+            "role=button]]",
+            "role=button][",
+            "role=button[name='test'][",
+            "role=button[name='test']][",
+            "[role=button",
+            "role=]button[",
+            // Empty and whitespace edge cases
+            "role=",
+            "role= ",
+            "role=   ",
+            "role=[name='']",
+            // Malformed segments
+            "role=button[invalid_segment]",
+            "role=button[name]",
+            "role=button[=value]",
+            "role=button[name'value']",
+            "role=button[name='value",
+            "role=button[name=value']",
+            "role=button['value']",
+            // Nested/embedded brackets
+            "role=button[name='[test]']",
+            "role=button[name=']test[']",
+            // Double brackets
+            "role=button[[name='test']]",
+            "role=button[name='test'][[scope='main']",
+            // Missing equals in various positions
+            "rolebutton[name='test']",
+            "role=buttonname='test']",
+            // Unbalanced quotes
+            "role=button[name='test\"]",
+            "role=button[name=\"test']",
+            // Special characters and unicode
+            "role=button[name='test\x00']",
+            "role=button[name='test\x1f']",
+            "role=button[name='test\x7f']",
+            "role=👆[name='test']",
+            "role=button[name='👆']",
+            "role=button[scope='🌐']",
+            // Very long inputs (to check for overflow issues)
+            &format!("role=button[name='{}']", "a".repeat(1000)),
+            &format!("role=button[scope='{}']", "b".repeat(1000)),
+            &format!("role={}[name='test']", "c".repeat(500)),
+            // Empty role with valid name
+            "role=[name='test']",
+            // Multiple equals signs
+            "role=a=b[name='test']",
+            "role=button[name='a=b']",
+            // Newlines and control characters
+            "role=button[name='test\n']",
+            "role=button[name='test\r']",
+            "role=button[name='test\t']",
+        ];
+
+        for input in malformed_inputs {
+            // Should never panic - either Ok or Err is fine
+            let _ = parse_selector_input(input);
+        }
+    }
+
+    #[test]
+    fn safety_test_malformed_locator_always_returns_error() {
+        // These malformed role= inputs should always return a LocatorParseError
+        // (never Ok as CSS, never Ok as valid AccessibilityLocator)
+        let malformed_role_inputs = [
+            "role=button[",
+            "role=button]",
+            "role=button[[",
+            "role=button[name='test'][", // unclosed bracket after valid segment
+            "role=[name='test']",        // empty role
+            "role=button[invalid_segment]", // no = in segment
+            "role=button[name]",         // no =value in segment
+        ];
+
+        for input in malformed_role_inputs {
+            let result = parse_selector_input(input);
+            // Should be an error, specifically a LocatorParseError
+            assert!(
+                result.is_err(),
+                "Input '{}' should return an error, got {:?}",
+                input,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn safety_test_empty_role_returns_invalid_role_error() {
+        // Empty role should return InvalidRole error, not be parsed as CSS
+        let empty_role_inputs = ["role=", "role= ", "role=   "];
+
+        for input in empty_role_inputs {
+            let result = parse_selector_input(input);
+            match result {
+                Err(LocatorParseError::InvalidRole) => (), // Expected
+                Ok(ParsedSelector::Css(_)) => {
+                    panic!(
+                        "Input '{}' should error with InvalidRole, not be CSS",
+                        input
+                    )
+                }
+                Ok(ParsedSelector::Accessibility(_)) => {
+                    panic!(
+                        "Input '{}' should error with InvalidRole, not be valid locator",
+                        input
+                    )
+                }
+                Err(other) => {
+                    panic!(
+                        "Input '{}' should error with InvalidRole, got {:?}",
+                        input, other
+                    )
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn safety_test_css_like_selectors_stay_as_css() {
+        // These look like CSS selectors and should be parsed as CSS
+        let css_inputs = [
+            "role[aria-label='button']",
+            "role",
+            "[role='button']",
+            "div[role]",
+            "role=", // This is edge case - empty role is invalid
+        ];
+
+        for input in css_inputs {
+            let result = parse_selector_input(input);
+            match result {
+                Ok(ParsedSelector::Css(_)) => (), // Expected
+                Ok(ParsedSelector::Accessibility(_)) => {
+                    panic!("Input '{}' should be CSS, not accessibility locator", input)
+                }
+                Err(LocatorParseError::InvalidRole) if input == "role=" => (), // Empty role is invalid
+                Err(other) => {
+                    panic!(
+                        "Input '{}' should be CSS or InvalidRole, got {:?}",
+                        input, other
+                    )
+                }
+            }
+        }
+    }
 }

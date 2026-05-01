@@ -602,6 +602,7 @@ async fn execute_task_with_retry(
             session.behavior_runtime,
             config.browser.native_interaction.clone(),
             metrics.clone(),
+            &config.browser,
             policy,
             Some(cancel_token.clone()),
         );

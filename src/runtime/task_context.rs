@@ -40,7 +40,6 @@
 
 use chromiumoxide::Page;
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -50,8 +49,9 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+use crate::adaptive::LearningEngine;
 use crate::capabilities::{keyboard, mouse, navigation, scroll, timing};
-use crate::config::NativeInteractionConfig;
+use crate::config::{BrowserConfig, NativeInteractionConfig};
 use crate::internal::page_size::{self, Viewport};
 use crate::logger::scoped_log_context;
 use crate::metrics::{
@@ -1599,8 +1599,7 @@ pub struct TaskContext {
     behavior_runtime: ProfileRuntime,
     native_interaction: NativeInteractionConfig,
     metrics: Option<Arc<MetricsCollector>>,
-    click_learning: Arc<Mutex<ClickLearningState>>,
-    click_learning_path: Option<PathBuf>,
+    learning_engine: Arc<Mutex<LearningEngine>>,
     policy: &'static TaskPolicy,
     /// When set (orchestrated runs), `pause`/`pause_with_variance`/`pause_human` return early on cancel.
     cancel_token: Option<CancellationToken>,
@@ -1635,22 +1634,29 @@ impl TaskContext {
     /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY, None);
     /// # }
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_id: impl Into<String>,
         page: Arc<Page>,
         behavior_profile: BrowserProfile,
         behavior_runtime: ProfileRuntime,
         native_interaction: NativeInteractionConfig,
+        browser_config: &BrowserConfig,
         policy: &'static TaskPolicy,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
         let session_id = session_id.into();
         let clipboard = ClipboardState::new(session_id.clone());
-        let click_learning_path = click_learning_path(&session_id, &behavior_profile);
-        let click_learning = click_learning_path
-            .as_deref()
-            .and_then(load_click_learning)
-            .unwrap_or_default();
+        let learning_engine = if browser_config.enable_learning_persistence {
+            LearningEngine::new(
+                &session_id,
+                &behavior_profile,
+                true,
+                browser_config.learning_ttl_days,
+            )
+        } else {
+            LearningEngine::disabled()
+        };
         Self {
             session_id,
             page,
@@ -1659,8 +1665,7 @@ impl TaskContext {
             behavior_runtime,
             native_interaction,
             metrics: None,
-            click_learning: Arc::new(Mutex::new(click_learning)),
-            click_learning_path,
+            learning_engine: Arc::new(Mutex::new(learning_engine)),
             policy,
             cancel_token,
         }
@@ -1677,6 +1682,7 @@ impl TaskContext {
         behavior_runtime: ProfileRuntime,
         native_interaction: NativeInteractionConfig,
         metrics: Arc<MetricsCollector>,
+        browser_config: &BrowserConfig,
         policy: &'static TaskPolicy,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
@@ -1686,6 +1692,7 @@ impl TaskContext {
             behavior_profile,
             behavior_runtime,
             native_interaction,
+            browser_config,
             policy,
             cancel_token,
         );
@@ -1729,21 +1736,9 @@ impl TaskContext {
             .expect("Metrics collector not initialized")
     }
 
-    fn click_learning_path(&self) -> Option<&Path> {
-        self.click_learning_path.as_deref()
-    }
-
     async fn record_click_learning(&self, selector: &str, success: bool) -> Result<()> {
-        let snapshot = {
-            let mut learning = self.click_learning.lock().await;
-            learning.record(selector, success);
-            learning.clone()
-        };
-
-        if let Some(path) = self.click_learning_path() {
-            save_click_learning(path, &snapshot)?;
-        }
-
+        let mut engine = self.learning_engine.lock().await;
+        engine.record(selector, success)?;
         Ok(())
     }
 
@@ -4331,14 +4326,14 @@ impl TaskContext {
         let base_variance = self.behavior_runtime.action_delay.variance_pct.round() as u32;
 
         let (timing_profile, adaptation, fatigue, recent_success_rate) = {
-            let learning = self.click_learning.lock().await;
+            let engine = self.learning_engine.lock().await;
             let timing_context = ClickTimingContext::from_observation(
                 &observed_url,
                 selector,
-                learning.interaction_count,
-                learning.recent_success_rate(),
+                engine.interaction_count(),
+                engine.recent_success_rate(),
             );
-            let adaptation = learning.adaptation_for(selector, &timing_context);
+            let adaptation = engine.adaptation_for(selector, &timing_context);
             let timing_profile = timing_context.timing_profile(
                 click.reaction_delay_ms,
                 base_variance,

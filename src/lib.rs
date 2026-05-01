@@ -12,6 +12,7 @@
 //! Tasks should depend on `TaskContext` and the capability/state modules,
 //! not on the lower-level utilities directly.
 
+pub mod adaptive;
 pub mod api;
 pub mod browser;
 pub mod capabilities;

@@ -61,6 +61,12 @@ pub struct BrowserConfig {
     /// Maximum concurrent pages/workers per session
     #[serde(default = "default_max_workers_per_session")]
     pub max_workers_per_session: usize,
+    /// Enable click learning persistence
+    #[serde(default = "default_enable_learning_persistence")]
+    pub enable_learning_persistence: bool,
+    /// TTL for learning data in days (0 = never expire)
+    #[serde(default = "default_learning_ttl_days")]
+    pub learning_ttl_days: u32,
 }
 
 /// Calibration mode for native cursor and click coordinate mapping.
@@ -449,6 +455,14 @@ fn default_max_workers_per_session() -> usize {
     5
 }
 
+fn default_enable_learning_persistence() -> bool {
+    true
+}
+
+fn default_learning_ttl_days() -> u32 {
+    30
+}
+
 fn default_native_interaction_stability_wait_ms() -> u64 {
     5_000
 }
@@ -508,6 +522,8 @@ impl Default for BrowserConfig {
             cursor_overlay_ms: 0,
             native_interaction: NativeInteractionConfig::default(),
             max_workers_per_session: 5,
+            enable_learning_persistence: true,
+            learning_ttl_days: 30,
         }
     }
 }
@@ -1135,6 +1151,8 @@ fn load_code_config() -> Result<Config> {
             cursor_overlay_ms: 0,
             native_interaction: NativeInteractionConfig::default(),
             max_workers_per_session: 5,
+            enable_learning_persistence: true,
+            learning_ttl_days: 30,
         },
         orchestrator: OrchestratorConfig {
             max_global_concurrency: 20,

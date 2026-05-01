@@ -34,6 +34,10 @@ pub struct Args {
     /// Comma-separated list of browser names or types to connect to
     #[arg(long)]
     pub browsers: Option<String>,
+
+    /// Clear all click learning data before starting
+    #[arg(long, help = "Clear all click learning data and exit")]
+    pub clear_learning: bool,
 }
 
 /// Parses command-line arguments using clap.

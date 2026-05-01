@@ -29,7 +29,7 @@ impl Validate for OrchestratorConfig {
             return Err(ConfigError::InvalidValue {
                 field: "max_global_concurrency".to_string(),
                 value: "0".to_string(),
-                hint: "concurrency must be at least 1".to_string(),
+                reason: "concurrency must be at least 1".to_string(),
             });
         }
 
@@ -37,7 +37,7 @@ impl Validate for OrchestratorConfig {
             return Err(ConfigError::InvalidValue {
                 field: "task_timeout_ms".to_string(),
                 value: self.task_timeout_ms.to_string(),
-                hint: "task timeout must be at least 1000ms (1 second)".to_string(),
+                reason: "task timeout must be at least 1000ms (1 second)".to_string(),
             });
         }
 
@@ -45,7 +45,7 @@ impl Validate for OrchestratorConfig {
             return Err(ConfigError::InvalidValue {
                 field: "group_timeout_ms".to_string(),
                 value: self.group_timeout_ms.to_string(),
-                hint: "group timeout must be at least 1000ms (1 second)".to_string(),
+                reason: "group timeout must be at least 1000ms (1 second)".to_string(),
             });
         }
 
@@ -53,7 +53,7 @@ impl Validate for OrchestratorConfig {
             return Err(ConfigError::InvalidValue {
                 field: "worker_wait_timeout_ms".to_string(),
                 value: self.worker_wait_timeout_ms.to_string(),
-                hint: "worker wait timeout must be at least 1000ms (1 second)".to_string(),
+                reason: "worker wait timeout must be at least 1000ms (1 second)".to_string(),
             });
         }
 
@@ -61,7 +61,7 @@ impl Validate for OrchestratorConfig {
             return Err(ConfigError::InvalidValue {
                 field: "max_retries".to_string(),
                 value: self.max_retries.to_string(),
-                hint: "max retries cannot exceed 10".to_string(),
+                reason: "max retries cannot exceed 10".to_string(),
             });
         }
 
@@ -69,7 +69,7 @@ impl Validate for OrchestratorConfig {
             return Err(ConfigError::InvalidValue {
                 field: "retry_delay_ms".to_string(),
                 value: self.retry_delay_ms.to_string(),
-                hint: "retry delay must be at least 100ms".to_string(),
+                reason: "retry delay must be at least 100ms".to_string(),
             });
         }
 
@@ -77,7 +77,7 @@ impl Validate for OrchestratorConfig {
             return Err(ConfigError::InvalidValue {
                 field: "task_stagger_delay_ms".to_string(),
                 value: self.task_stagger_delay_ms.to_string(),
-                hint: "task stagger delay should not exceed 60000ms (1 minute)".to_string(),
+                reason: "task stagger delay should not exceed 60000ms (1 minute)".to_string(),
             });
         }
 
@@ -91,7 +91,7 @@ impl Validate for BrowserConfig {
             return Err(ConfigError::InvalidValue {
                 field: "connection_timeout_ms".to_string(),
                 value: self.connection_timeout_ms.to_string(),
-                hint: "connection timeout should be at least 5000ms (5 seconds)".to_string(),
+                reason: "connection timeout should be at least 5000ms (5 seconds)".to_string(),
             });
         }
 
@@ -99,7 +99,7 @@ impl Validate for BrowserConfig {
             return Err(ConfigError::InvalidValue {
                 field: "max_discovery_retries".to_string(),
                 value: "0".to_string(),
-                hint: "discovery retries must be at least 1".to_string(),
+                reason: "discovery retries must be at least 1".to_string(),
             });
         }
 
@@ -107,7 +107,7 @@ impl Validate for BrowserConfig {
             return Err(ConfigError::InvalidValue {
                 field: "discovery_retry_delay_ms".to_string(),
                 value: self.discovery_retry_delay_ms.to_string(),
-                hint: "discovery retry delay must be at least 100ms".to_string(),
+                reason: "discovery retry delay must be at least 100ms".to_string(),
             });
         }
 
@@ -122,7 +122,7 @@ impl Validate for BrowserConfig {
             return Err(ConfigError::InvalidValue {
                 field: "max_workers_per_session".to_string(),
                 value: "0".to_string(),
-                hint: "max workers per session must be at least 1".to_string(),
+                reason: "max workers per session must be at least 1".to_string(),
             });
         }
 
@@ -130,7 +130,7 @@ impl Validate for BrowserConfig {
             return Err(ConfigError::InvalidValue {
                 field: "max_workers_per_session".to_string(),
                 value: self.max_workers_per_session.to_string(),
-                hint: "max workers per session should not exceed 50".to_string(),
+                reason: "max workers per session should not exceed 50".to_string(),
             });
         }
 
@@ -186,7 +186,9 @@ mod tests {
         let mut config = create_valid_orchestrator_config();
         config.max_global_concurrency = 0;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_global_concurrency"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_global_concurrency")
+        );
     }
 
     #[test]
@@ -194,7 +196,9 @@ mod tests {
         let mut config = create_valid_orchestrator_config();
         config.task_timeout_ms = 500;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "task_timeout_ms"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "task_timeout_ms")
+        );
     }
 
     #[test]
@@ -210,7 +214,9 @@ mod tests {
         let mut config = create_valid_orchestrator_config();
         config.retry_delay_ms = 50;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "retry_delay_ms"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "retry_delay_ms")
+        );
     }
 
     #[test]
@@ -218,7 +224,9 @@ mod tests {
         let mut config = create_valid_orchestrator_config();
         config.task_stagger_delay_ms = 120000;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "task_stagger_delay_ms"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "task_stagger_delay_ms")
+        );
     }
 
     #[test]
@@ -232,7 +240,9 @@ mod tests {
         let mut config = create_valid_browser_config();
         config.connection_timeout_ms = 1000;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "connection_timeout_ms"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "connection_timeout_ms")
+        );
     }
 
     #[test]
@@ -240,7 +250,9 @@ mod tests {
         let mut config = create_valid_browser_config();
         config.max_discovery_retries = 0;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_discovery_retries"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_discovery_retries")
+        );
     }
 
     #[test]
@@ -256,7 +268,9 @@ mod tests {
         let mut config = create_valid_browser_config();
         config.max_workers_per_session = 0;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_workers_per_session"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_workers_per_session")
+        );
     }
 
     #[test]
@@ -264,7 +278,9 @@ mod tests {
         let mut config = create_valid_browser_config();
         config.max_workers_per_session = 100;
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_workers_per_session"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_workers_per_session")
+        );
     }
 
     #[test]
@@ -290,7 +306,9 @@ mod tests {
             tracing: crate::config::TracingConfig::default(),
         };
         let err = config.validate().unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_global_concurrency"));
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_global_concurrency")
+        );
     }
 
     #[test]

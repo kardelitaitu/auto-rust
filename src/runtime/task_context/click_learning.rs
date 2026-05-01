@@ -4,6 +4,7 @@
 //! based on page context, element priority, and fatigue levels.
 
 use crate::utils::profile::BrowserProfile;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
@@ -86,6 +87,9 @@ pub struct SelectorLearningStats {
     pub attempts: u32,
     pub successes: u32,
     pub consecutive_failures: u32,
+    /// Last time this selector was updated (for TTL management)
+    #[serde(default)]
+    pub last_updated: Option<DateTime<Utc>>,
 }
 
 /// Click learning state tracking selector performance.
@@ -125,6 +129,7 @@ impl ClickLearningState {
 
         let entry = self.selectors.entry(selector.to_string()).or_default();
         entry.attempts = entry.attempts.saturating_add(1);
+        entry.last_updated = Some(Utc::now());
         if success {
             entry.successes = entry.successes.saturating_add(1);
             entry.consecutive_failures = 0;

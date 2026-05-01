@@ -30,6 +30,13 @@ cursor_overlay_ms = 0
 # Default: 5
 max_workers_per_session = 5
 
+# Enable click learning persistence (default: true)
+# Set to false to disable learning and adaptation
+enable_learning_persistence = true
+
+# TTL for learning data in days (0 = never expire, default: 30)
+learning_ttl_days = 30
+
 # Custom User-Agent string (optional)
 # If not set, browser's default User-Agent will be used
 # user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"

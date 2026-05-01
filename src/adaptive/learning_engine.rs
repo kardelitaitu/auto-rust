@@ -1,482 +1,527 @@
-//! Adaptive learning engine for Twitter activity automation.
-//! Tracks success patterns and adapts behavior based on historical performance.
+//! Click learning engine for adaptive automation.
+//!
+//! Provides a service-based API for click learning persistence with:
+//! - TTL-based data expiration
+//! - Privacy controls (enable/disable)
+//! - Automatic cleanup of stale data
+//! - Decoupled from TaskContext for better testability
 
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use crate::runtime::task_context::click_learning::{
+    ClickAdaptation, ClickLearningState, ClickTimingContext, SelectorLearningStats,
+};
+use crate::utils::profile::BrowserProfile;
+use anyhow::Result;
+use chrono::{Duration, Utc};
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::metrics::TwitterActivityRunCounters;
-
-/// Adaptive learning engine that tracks and learns from engagement patterns.
-pub struct AdaptiveLearningEngine {
-    /// Tracks success patterns for different action types
-    success_patterns: HashMap<String, ActionSuccessPatterns>,
-    /// User-specific behavior profiles
-    user_profiles: HashMap<String, UserBehaviorProfile>,
-    /// Temporal pattern analysis
-    temporal_analyzer: TemporalPatternAnalyzer,
-    /// Current engagement goals
-    current_goals: Vec<EngagementGoal>,
+/// LearningEngine manages click learning persistence and adaptation.
+///
+/// This service decouples click learning from TaskContext and provides
+/// a clean API for recording, retrieving, and managing learning data.
+pub struct LearningEngine {
+    state: ClickLearningState,
+    path: Option<PathBuf>,
+    enabled: bool,
+    ttl_days: u32,
 }
 
-/// Success patterns for a specific action type.
-#[derive(Debug, Clone, Default)]
-struct ActionSuccessPatterns {
-    total_attempts: usize,
-    successful_attempts: usize,
-    recent_attempts: Vec<RecentAttempt>,
-    success_rate: f32,
-    last_success: Option<Instant>,
-    last_failure: Option<Instant>,
-}
+impl LearningEngine {
+    /// Create a new LearningEngine for a session.
+    ///
+    /// # Arguments
+    /// * `session_id` - Unique session identifier
+    /// * `behavior_profile` - Browser profile for path determination
+    /// * `enabled` - Whether learning is enabled
+    /// * `ttl_days` - Days before data expires (0 = never)
+    pub fn new(
+        session_id: &str,
+        behavior_profile: &BrowserProfile,
+        enabled: bool,
+        ttl_days: u32,
+    ) -> Self {
+        let path = learning_data_path(session_id, behavior_profile);
+        let state = path
+            .as_ref()
+            .and_then(|p| load_learning_state(p))
+            .unwrap_or_default();
 
-/// A single recent attempt record.
-struct RecentAttempt {
-    timestamp: Instant,
-    success: bool,
-    action_type: String,
-    context_factors: Vec<String>,
-}
+        let mut engine = Self {
+            state,
+            path,
+            enabled,
+            ttl_days,
+        };
 
-/// User behavior profile for personalized adaptation.
-#[derive(Debug, Clone, Default)]
-pub struct UserBehaviorProfile {
-    /// Preferred engagement times (UTC hours)
-    preferred_times: Vec<u8>,
-    /// Successful action types for this user
-    successful_actions: HashMap<String, usize>,
-    /// Conversation style preference
-    conversation_style: ConversationStyle,
-    /// Risk tolerance (0.0-1.0)
-    risk_tolerance: f32,
-    /// Last adaptation timestamp
-    last_adaptation: Instant,
-    /// Adaptation history
-    adaptation_history: Vec<AdaptationEvent>,
-}
+        // Prune expired entries on load
+        if ttl_days > 0 {
+            let _ = engine.prune_expired();
+        }
 
-/// Conversation style preference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConversationStyle {
-    /// Aggressive engagement
-    Aggressive,
-    /// Balanced engagement
-    Balanced,
-    /// Conservative engagement
-    Conservative,
-    /// Experimental engagement
-    Experimental,
-}
+        engine
+    }
 
-/// Temporal pattern analyzer for time-based optimization.
-struct TemporalPatternAnalyzer {
-    /// Hourly success rates
-    hourly_success: [f32; 24],
-    /// Daily success rates
-    daily_success: [f32; 7],
-    /// Seasonal patterns
-    seasonal_patterns: SeasonalPatterns,
-    /// Last analysis timestamp
-    last_analysis: Instant,
-}
-
-/// Seasonal pattern tracking.
-struct SeasonalPatterns {
-    /// Monthly performance
-    monthly: [f32; 12],
-    /// Weekly trends
-    weekly_trends: Vec<f32>,
-    /// Event-based patterns
-    event_patterns: HashMap<String, f32>,
-}
-
-/// Engagement goals for adaptive learning.
-#[derive(Debug, Clone)]
-pub enum EngagementGoal {
-    /// Maximize engagement rate
-    MaximizeEngagement,
-    /// Minimize failure rate
-    MinimizeFailures,
-    /// Balance between reach and engagement
-    BalancedGrowth,
-    /// Focus on quality over quantity
-    QualityFocus,
-    /// Specific action type optimization
-    ActionTypeOptimization(String),
-}
-
-/// Adaptation event for tracking changes.
-#[derive(Debug, Clone)]
-struct AdaptationEvent {
-    timestamp: Instant,
-    adaptation_type: AdaptationType,
-    reason: String,
-    impact: f32,
-}
-
-/// Type of adaptation that occurred.
-#[derive(Debug, Clone)]
-enum AdaptationType {
-    /// Strategy parameter adjustment
-    ParameterAdjustment(String, f32),
-    /// Action type preference change
-    ActionPreferenceChange(String, f32),
-    /// Temporal pattern update
-    TemporalPatternUpdate(String),
-    /// Complete strategy shift
-    StrategyShift(String),
-}
-
-impl AdaptiveLearningEngine {
-    /// Create a new adaptive learning engine.
-    pub fn new() -> Self {
+    /// Create a disabled engine (no-op, no persistence).
+    pub fn disabled() -> Self {
         Self {
-            success_patterns: HashMap::new(),
-            user_profiles: HashMap::new(),
-            temporal_analyzer: TemporalPatternAnalyzer::new(),
-            current_goals: vec![EngagementGoal::BalancedGrowth],
+            state: ClickLearningState::default(),
+            path: None,
+            enabled: false,
+            ttl_days: 0,
         }
     }
 
-    /// Record an engagement attempt and update patterns.
-    pub fn record_attempt(
-        &mut self,
-        user_id: &str,
-        action_type: &str,
-        success: bool,
-        context_factors: Vec<String>,
-    ) {
-        // Update action success patterns
-        let patterns = self.success_patterns.entry(action_type.to_string())
-            .or_insert_with(ActionSuccessPatterns::default);
-        
-        patterns.total_attempts += 1;
-        if success {
-            patterns.successful_attempts += 1;
-            patterns.last_success = Some(Instant::now());
-        } else {
-            patterns.last_failure = Some(Instant::now());
+    /// Record a click result.
+    ///
+    /// If disabled, this is a no-op that returns Ok.
+    pub fn record(&mut self, selector: &str, success: bool) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
         }
-        patterns.success_rate = patterns.successful_attempts as f32 / patterns.total_attempts as f32;
-        
-        // Record recent attempt
-        patterns.recent_attempts.push(RecentAttempt {
-            timestamp: Instant::now(),
-            success,
-            action_type: action_type.to_string(),
-            context_factors,
+
+        self.state.record(selector, success);
+        self.save()?;
+        Ok(())
+    }
+
+    /// Get adaptation for a selector based on current state.
+    pub fn adaptation_for(&self, selector: &str, context: &ClickTimingContext) -> ClickAdaptation {
+        self.state.adaptation_for(selector, context)
+    }
+
+    /// Get statistics for a specific selector.
+    pub fn selector_stats(&self, selector: &str) -> SelectorLearningStats {
+        self.state.selector_stats(selector)
+    }
+
+    /// Clear all learning data for this session.
+    pub fn clear(&mut self) -> Result<()> {
+        self.state = ClickLearningState::default();
+        if let Some(ref path) = self.path {
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Prune expired selector entries.
+    ///
+    /// Returns the number of entries pruned.
+    pub fn prune_expired(&mut self) -> Result<usize> {
+        if self.ttl_days == 0 || !self.enabled {
+            return Ok(0);
+        }
+
+        let cutoff = Utc::now() - Duration::days(self.ttl_days as i64);
+        let before = self.state.selectors.len();
+
+        self.state.selectors.retain(|_, stats| {
+            stats.last_updated.map(|dt| dt > cutoff).unwrap_or(true) // Keep if no timestamp (backward compat)
         });
 
-        // Keep only recent attempts (last 100)
-        if patterns.recent_attempts.len() > 100 {
-            patterns.recent_attempts.drain(0..patterns.recent_attempts.len() - 100);
+        let pruned = before - self.state.selectors.len();
+        if pruned > 0 {
+            self.save()?;
         }
-
-        // Update user profile
-        self.update_user_profile(user_id, success, action_type);
-        
-        // Update temporal patterns
-        self.temporal_analyzer.record_attempt(success, action_type);
+        Ok(pruned)
     }
 
-    /// Update user behavior profile based on engagement outcome.
-    fn update_user_profile(&mut self, user_id: &str, success: bool, action_type: &str) {
-        let profile = self.user_profiles.entry(user_id.to_string())
-            .or_insert_with(UserBehaviorProfile::default);
-        
-        // Update successful actions count
-        if success {
-            *profile.successful_actions.entry(action_type.to_string())
-                .or_insert(0) += 1;
+    /// Save current state to disk.
+    pub fn save(&self) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
         }
-        
-        // Update adaptation history
-        profile.adaptation_history.push(AdaptationEvent {
-            timestamp: Instant::now(),
-            adaptation_type: AdaptationType::ActionPreferenceChange(
-                action_type.to_string(),
-                if success { 1.0 } else { 0.0 }
-            ),
-            reason: if success { "success" } else { "failure" }.to_string(),
-            impact: if success { 0.1 } else { -0.1 },
-        });
-        
-        // Adapt every 100 attempts
-        if profile.adaptation_history.len() % 100 == 0 {
-            self.adapt_strategy(user_id);
+        if let Some(ref path) = self.path {
+            save_learning_state(path, &self.state)?;
         }
+        Ok(())
     }
 
-    /// Adapt strategy based on accumulated patterns.
-    fn adapt_strategy(&mut self, user_id: &str) {
-        if let Some(profile) = self.user_profiles.get(user_id) {
-            // Analyze patterns and adjust strategy
-            let _adaptation = self.analyze_patterns(profile);
-            
-            // Log adaptation
-            println!("[Adaptive Learning] Strategy adapted for user: {}", user_id);
+    /// Get recent success rate (last 32 interactions).
+    pub fn recent_success_rate(&self) -> f64 {
+        self.state.recent_success_rate()
+    }
+
+    /// Get total interaction count.
+    pub fn interaction_count(&self) -> u64 {
+        self.state.interaction_count
+    }
+
+    /// Check if learning is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Get TTL in days.
+    pub fn ttl_days(&self) -> u32 {
+        self.ttl_days
+    }
+
+    /// Clear all learning data across all sessions.
+    ///
+    /// This removes the entire click-learning directory.
+    pub fn clear_all() -> Result<()> {
+        let base_dir = std::env::current_dir()?.join("click-learning");
+        if base_dir.exists() {
+            fs::remove_dir_all(&base_dir)?;
         }
-    }
-
-    /// Analyze patterns and determine optimal strategy.
-    fn analyze_patterns(&self, profile: &UserBehaviorProfile) -> AdaptationAnalysis {
-        // Analyze successful action types
-        let best_actions: Vec<_> = profile.successful_actions.iter()
-            .max_by_key(|(_, &count)| count)
-            .map(|(action, _)| action.clone())
-            .collect();
-        
-        AdaptationAnalysis {
-            recommended_actions: best_actions,
-            risk_adjustment: profile.risk_tolerance,
-            timing_adjustments: self.temporal_analyzer.get_optimal_times(),
-            conversation_style: profile.conversation_style,
-        }
-    }
-
-    /// Get optimal action type based on historical success.
-    pub fn get_optimal_action(&self, user_id: &str, action_types: &[String]) -> Option<String> {
-        action_types.iter()
-            .max_by_key(|action| {
-                self.success_patterns.get(action)
-                    .map(|p| p.successful_attempts)
-                    .unwrap_or(0)
-            })
-            .cloned()
-    }
-
-    /// Get engagement goal recommendations.
-    pub fn get_goal_recommendations(&self) -> Vec<EngagementGoal> {
-        self.current_goals.clone()
-    }
-
-    /// Update engagement goals based on performance.
-    pub fn update_goals(&mut self, performance_metrics: &PerformanceMetrics) {
-        // Adjust goals based on performance
-        if performance_metrics.success_rate < 0.5 {
-            self.current_goals = vec![EngagementGoal::MinimizeFailures];
-        } else if performance_metrics.engagement_quality > 0.8 {
-            self.current_goals = vec![EngagementGoal::MaximizeEngagement];
-        }
+        Ok(())
     }
 }
 
-/// Analysis results from pattern recognition.
-pub struct AdaptationAnalysis {
-    pub recommended_actions: Vec<String>,
-    pub risk_adjustment: f32,
-    pub timing_adjustments: Vec<u8>,
-    pub conversation_style: ConversationStyle,
+/// Get the file path for learning data.
+fn learning_data_path(session_id: &str, behavior_profile: &BrowserProfile) -> Option<PathBuf> {
+    let base_dir = std::env::current_dir().ok()?.join("click-learning");
+    let profile_component = sanitize_path_component(&behavior_profile.name);
+    let session_component = sanitize_path_component(session_id);
+    Some(
+        base_dir
+            .join(profile_component)
+            .join(format!("{session_component}.json")),
+    )
 }
 
-impl TemporalPatternAnalyzer {
-    fn new() -> Self {
-        Self {
-            hourly_success: [0.0; 24],
-            daily_success: [0.0; 7],
-            seasonal_patterns: SeasonalPatterns::default(),
-            last_analysis: Instant::now(),
+/// Sanitize a path component for file storage.
+fn sanitize_path_component(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "default".to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// Load learning state from file.
+fn load_learning_state(path: &Path) -> Option<ClickLearningState> {
+    let content = fs::read_to_string(path).ok()?;
+    let mut state: ClickLearningState = serde_json::from_str(&content).ok()?;
+
+    // Backward compatibility: ensure last_updated is set
+    let now = Utc::now();
+    for stats in state.selectors.values_mut() {
+        if stats.last_updated.is_none() {
+            stats.last_updated = Some(now);
         }
     }
 
-    fn record_attempt(&mut self, success: bool, action_type: &str) {
-        // Update temporal patterns
-        let now = Instant::now();
-        // Simplified temporal tracking
-        let _ = (now, success, action_type);
-    }
-
-    fn get_optimal_times(&self) -> Vec<u8> {
-        // Return hours with highest success rates
-        (0..24).filter(|&h| self.hourly_success[h as usize] > 0.7).collect()
-    }
+    Some(state)
 }
 
-impl Default for AdaptiveLearningEngine {
-    fn default() -> Self {
-        Self::new()
+/// Save learning state to file.
+fn save_learning_state(path: &Path, state: &ClickLearningState) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
     }
+    let json = serde_json::to_string_pretty(state)?;
+    fs::write(path, json)?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::task_context::click_learning::{
+        ClickElementPriority, ClickFatigueLevel, ClickPageContext, ClickTimingContext,
+    };
+    use crate::utils::profile::BrowserProfile;
 
-    #[test]
-    fn test_record_attempt() {
-        let mut engine = AdaptiveLearningEngine::new();
-        engine.record_attempt("user1", "like", true, vec!["test".to_string()]);
-        
-        let patterns = engine.success_patterns.get("like").unwrap();
-        assert_eq!(patterns.total_attempts, 1);
-        assert_eq!(patterns.successful_attempts, 1);
-        assert_eq!(patterns.success_rate, 1.0);
+    fn create_test_profile() -> BrowserProfile {
+        BrowserProfile {
+            name: "test-profile".to_string(),
+            browser_type: crate::config::BrowserType::Brave,
+            path: "/usr/bin/brave".to_string(),
+        }
+    }
+
+    fn create_test_context() -> ClickTimingContext {
+        ClickTimingContext {
+            page: ClickPageContext::Social,
+            priority: ClickElementPriority::Normal,
+            fatigue: ClickFatigueLevel::Normal,
+            recent_success_rate: 1.0,
+        }
     }
 
     #[test]
-    fn test_get_optimal_action() {
-        let mut engine = AdaptiveLearningEngine::new();
-        engine.record_attempt("user1", "like", true, vec![]);
-        engine.record_attempt("user1", "like", true, vec![]);
-        engine.record_attempt("user1", "retweet", false, vec![]);
-        
-        let optimal = engine.get_optimal_action("user1", &vec!["like".to_string(), "retweet".to_string()]);
-        assert_eq!(optimal, Some("like".to_string()));
+    fn test_learning_engine_disabled() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::disabled();
+
+        // Recording should be no-op
+        assert!(engine.record("#button", true).is_ok());
+        assert!(engine.record("#button", false).is_ok());
+
+        // Stats should be default
+        let stats = engine.selector_stats("#button");
+        assert_eq!(stats.attempts, 0);
+        assert!(!engine.is_enabled());
     }
 
     #[test]
-    fn test_learning_engine_new() {
-        let engine = AdaptiveLearningEngine::new();
-        assert!(engine.success_patterns.is_empty());
-        assert!(engine.user_profiles.is_empty());
-        assert!(!engine.current_goals.is_empty());
+    fn test_learning_convergence() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
+
+        // Record 3 failures for the same selector
+        for _ in 0..3 {
+            engine
+                .record("button[data-testid='retweet']", false)
+                .unwrap();
+        }
+
+        let context = create_test_context();
+        let adaptation = engine.adaptation_for("button[data-testid='retweet']", &context);
+
+        // After 3 failures, adaptation should increase
+        assert!(adaptation.reaction_delay_multiplier > 1.0);
+        assert!(adaptation.require_strict_verification);
+        assert!(adaptation.prefer_coordinate_fallback);
     }
 
     #[test]
-    fn test_learning_engine_default() {
-        let engine = AdaptiveLearningEngine::default();
-        assert!(engine.success_patterns.is_empty());
-        assert!(engine.user_profiles.is_empty());
+    fn test_learning_success_improves_adaptation() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
+
+        // Record 5 successes
+        for _ in 0..5 {
+            engine.record("button[data-testid='like']", true).unwrap();
+        }
+
+        let context = create_test_context();
+        let adaptation = engine.adaptation_for("button[data-testid='like']", &context);
+
+        // With all successes, should use defaults
+        assert_eq!(adaptation.reaction_delay_multiplier, 1.0);
+        assert!(!adaptation.require_strict_verification);
     }
 
     #[test]
-    fn test_record_attempt_failure() {
-        let mut engine = AdaptiveLearningEngine::new();
-        engine.record_attempt("user1", "like", false, vec!["test".to_string()]);
-        
-        let patterns = engine.success_patterns.get("like").unwrap();
-        assert_eq!(patterns.total_attempts, 1);
-        assert_eq!(patterns.successful_attempts, 0);
-        assert_eq!(patterns.success_rate, 0.0);
+    fn test_ttl_pruning() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 7);
+
+        // Manually insert stats with old timestamps
+        let old_date = Utc::now() - Duration::days(10);
+        let recent_date = Utc::now() - Duration::days(5);
+
+        engine.state.selectors.insert(
+            "old-selector".to_string(),
+            SelectorLearningStats {
+                attempts: 5,
+                successes: 3,
+                consecutive_failures: 0,
+                last_updated: Some(old_date),
+            },
+        );
+
+        engine.state.selectors.insert(
+            "recent-selector".to_string(),
+            SelectorLearningStats {
+                attempts: 5,
+                successes: 5,
+                consecutive_failures: 0,
+                last_updated: Some(recent_date),
+            },
+        );
+
+        // Prune should remove old-selector
+        let pruned = engine.prune_expired().unwrap();
+        assert_eq!(pruned, 1);
+        assert!(!engine.state.selectors.contains_key("old-selector"));
+        assert!(engine.state.selectors.contains_key("recent-selector"));
     }
 
     #[test]
-    fn test_record_attempt_multiple() {
-        let mut engine = AdaptiveLearningEngine::new();
-        engine.record_attempt("user1", "like", true, vec![]);
-        engine.record_attempt("user1", "like", false, vec![]);
-        engine.record_attempt("user1", "like", true, vec![]);
-        
-        let patterns = engine.success_patterns.get("like").unwrap();
-        assert_eq!(patterns.total_attempts, 3);
-        assert_eq!(patterns.successful_attempts, 2);
-        assert!((patterns.success_rate - 0.666).abs() < 0.01);
+    fn test_ttl_zero_never_expires() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 0); // 0 = never
+
+        // Insert old stats
+        let old_date = Utc::now() - Duration::days(365);
+        engine.state.selectors.insert(
+            "very-old".to_string(),
+            SelectorLearningStats {
+                attempts: 5,
+                successes: 3,
+                consecutive_failures: 0,
+                last_updated: Some(old_date),
+            },
+        );
+
+        // Should not prune anything
+        let pruned = engine.prune_expired().unwrap();
+        assert_eq!(pruned, 0);
+        assert!(engine.state.selectors.contains_key("very-old"));
     }
 
     #[test]
-    fn test_get_optimal_action_no_patterns() {
-        let engine = AdaptiveLearningEngine::new();
-        let optimal = engine.get_optimal_action("user1", &vec!["like".to_string()]);
-        assert_eq!(optimal, Some("like".to_string()));
+    fn test_clear_session_data() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
+
+        engine.record("#button", true).unwrap();
+        assert_eq!(engine.interaction_count(), 1);
+
+        engine.clear().unwrap();
+        assert_eq!(engine.interaction_count(), 0);
+        assert_eq!(engine.selector_stats("#button").attempts, 0);
     }
 
     #[test]
-    fn test_get_optimal_action_empty_list() {
-        let engine = AdaptiveLearningEngine::new();
-        let optimal = engine.get_optimal_action("user1", &vec![]);
-        assert_eq!(optimal, None);
+    fn test_clear_all() {
+        // Create temp directory for test
+        let temp_dir =
+            std::env::temp_dir().join(format!("click-learning-test-{}", std::process::id()));
+
+        // Set current dir to temp for this test
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).ok();
+
+        // Create some learning files
+        let profile = create_test_profile();
+        let mut engine1 = LearningEngine::new("session-1", &profile, true, 30);
+        engine1.record("#btn", true).unwrap();
+
+        let mut engine2 = LearningEngine::new("session-2", &profile, true, 30);
+        engine2.record("#btn", true).unwrap();
+
+        // Verify files exist
+        let base_dir = temp_dir.join("click-learning");
+        assert!(base_dir.exists());
+
+        // Clear all
+        LearningEngine::clear_all().unwrap();
+
+        // Verify directory is gone
+        assert!(!base_dir.exists());
+
+        // Restore original dir
+        std::env::set_current_dir(original_dir).ok();
     }
 
     #[test]
-    fn test_get_goal_recommendations() {
-        let engine = AdaptiveLearningEngine::new();
-        let goals = engine.get_goal_recommendations();
-        assert!(!goals.is_empty());
-    }
+    fn test_decay_algorithm() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
 
-    #[test]
-    fn test_update_goals_low_success_rate() {
-        let mut engine = AdaptiveLearningEngine::new();
-        let metrics = PerformanceMetrics {
-            success_rate: 0.3,
-            engagement_quality: 0.5,
+        // Mix of successes and failures
+        for i in 0..20 {
+            engine.record("#dynamic", i % 3 != 0).unwrap(); // 66% success rate
+        }
+
+        let context = ClickTimingContext {
+            recent_success_rate: engine.recent_success_rate(),
+            ..create_test_context()
         };
-        engine.update_goals(&metrics);
-        assert_eq!(engine.current_goals.len(), 1);
+
+        let adaptation = engine.adaptation_for("#dynamic", &context);
+
+        // With mixed results, should have moderate adaptation
+        assert!(adaptation.reaction_delay_multiplier >= 1.0);
     }
 
     #[test]
-    fn test_update_goals_high_engagement() {
-        let mut engine = AdaptiveLearningEngine::new();
-        let metrics = PerformanceMetrics {
-            success_rate: 0.7,
-            engagement_quality: 0.9,
+    fn test_persistence_roundtrip() {
+        let temp_dir = std::env::temp_dir().join(format!("learning-test-{}", std::process::id()));
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).ok();
+
+        let profile = create_test_profile();
+
+        // Create and populate engine
+        {
+            let mut engine = LearningEngine::new("persist-test", &profile, true, 30);
+            engine.record("button[data-testid='like']", true).unwrap();
+            engine.record("button[data-testid='like']", false).unwrap();
+            engine
+                .record("button[data-testid='retweet']", true)
+                .unwrap();
+            engine.save().unwrap();
+        }
+
+        // Load in new engine
+        {
+            let engine = LearningEngine::new("persist-test", &profile, true, 30);
+            let like_stats = engine.selector_stats("button[data-testid='like']");
+            assert_eq!(like_stats.attempts, 2);
+            assert_eq!(like_stats.successes, 1);
+
+            let retweet_stats = engine.selector_stats("button[data-testid='retweet']");
+            assert_eq!(retweet_stats.attempts, 1);
+            assert_eq!(retweet_stats.successes, 1);
+        }
+
+        std::env::set_current_dir(original_dir).ok();
+    }
+
+    #[test]
+    fn test_consecutive_failures_triggers_stronger_adaptation() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
+
+        // Record 2 consecutive failures
+        engine.record("#tricky", false).unwrap();
+        engine.record("#tricky", false).unwrap();
+
+        let context = create_test_context();
+        let adaptation = engine.adaptation_for("#tricky", &context);
+
+        // Consecutive failures should trigger stricter verification
+        assert!(adaptation.require_strict_verification);
+        assert!(adaptation.extra_stability_wait_ms >= 380);
+    }
+
+    #[test]
+    fn test_complex_selector_gets_extra_wait() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
+
+        // Record success on complex selector
+        engine
+            .record(
+                "div.container > button[data-testid='submit']:nth-child(2)",
+                true,
+            )
+            .unwrap();
+
+        let context = create_test_context();
+        let adaptation = engine.adaptation_for(
+            "div.container > button[data-testid='submit']:nth-child(2)",
+            &context,
+        );
+
+        // Complex selector should get extra stability wait
+        assert!(adaptation.extra_stability_wait_ms >= 120);
+    }
+
+    #[test]
+    fn test_backward_compatibility_no_timestamp() {
+        // Simulate old data without last_updated
+        let stats = SelectorLearningStats {
+            attempts: 5,
+            successes: 4,
+            consecutive_failures: 0,
+            last_updated: None,
         };
-        engine.update_goals(&metrics);
-        assert_eq!(engine.current_goals.len(), 1);
-    }
 
-    #[test]
-    fn test_conversation_style_variants() {
-        assert_eq!(ConversationStyle::Aggressive, ConversationStyle::Aggressive);
-        assert_eq!(ConversationStyle::Balanced, ConversationStyle::Balanced);
-        assert_eq!(ConversationStyle::Conservative, ConversationStyle::Conservative);
-        assert_eq!(ConversationStyle::Experimental, ConversationStyle::Experimental);
-    }
+        // Should not be pruned (backward compat)
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("compat-test", &profile, true, 7);
+        engine.state.selectors.insert("legacy".to_string(), stats);
 
-    #[test]
-    fn test_conversation_style_inequality() {
-        assert_ne!(ConversationStyle::Aggressive, ConversationStyle::Balanced);
-        assert_ne!(ConversationStyle::Balanced, ConversationStyle::Conservative);
-        assert_ne!(ConversationStyle::Conservative, ConversationStyle::Experimental);
-    }
-
-    #[test]
-    fn test_user_behavior_profile_default() {
-        let profile = UserBehaviorProfile::default();
-        assert!(profile.preferred_times.is_empty());
-        assert!(profile.successful_actions.is_empty());
-        assert_eq!(profile.risk_tolerance, 0.0);
-    }
-
-    #[test]
-    fn test_action_success_patterns_default() {
-        let patterns = ActionSuccessPatterns::default();
-        assert_eq!(patterns.total_attempts, 0);
-        assert_eq!(patterns.successful_attempts, 0);
-        assert_eq!(patterns.success_rate, 0.0);
-    }
-
-    #[test]
-    fn test_engagement_goal_variants() {
-        let _ = EngagementGoal::MaximizeEngagement;
-        let _ = EngagementGoal::MinimizeFailures;
-        let _ = EngagementGoal::BalancedGrowth;
-        let _ = EngagementGoal::QualityFocus;
-        let _ = EngagementGoal::ActionTypeOptimization("like".to_string());
-    }
-
-    #[test]
-    fn test_record_attempt_creates_user_profile() {
-        let mut engine = AdaptiveLearningEngine::new();
-        engine.record_attempt("user1", "like", true, vec![]);
-        
-        assert!(engine.user_profiles.contains_key("user1"));
-    }
-
-    #[test]
-    fn test_record_attempt_different_users() {
-        let mut engine = AdaptiveLearningEngine::new();
-        engine.record_attempt("user1", "like", true, vec![]);
-        engine.record_attempt("user2", "like", false, vec![]);
-        
-        assert!(engine.user_profiles.contains_key("user1"));
-        assert!(engine.user_profiles.contains_key("user2"));
-    }
-
-    #[test]
-    fn test_record_attempt_different_actions() {
-        let mut engine = AdaptiveLearningEngine::new();
-        engine.record_attempt("user1", "like", true, vec![]);
-        engine.record_attempt("user1", "retweet", true, vec![]);
-        
-        assert!(engine.success_patterns.contains_key("like"));
-        assert!(engine.success_patterns.contains_key("retweet"));
-    }
-
-    #[test]
-    fn test_temporal_pattern_analyzer_new() {
-        let analyzer = TemporalPatternAnalyzer::new();
-        assert_eq!(analyzer.hourly_success.len(), 24);
-        assert_eq!(analyzer.daily_success.len(), 7);
+        let pruned = engine.prune_expired().unwrap();
+        assert_eq!(pruned, 0); // Not pruned because no timestamp
     }
 }

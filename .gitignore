@@ -4,6 +4,7 @@ Thumbs.db
 nul
 
 # Editor / IDE files
+.llm-context/
 .idea/
 .vscode/
 *.swp
@@ -26,6 +27,7 @@ click-learning/
 .pi/
 .qwen/
 .nodejs-reference
+GEMINI.md
 
 # Reference and analysis outputs
 .graphify_*.json

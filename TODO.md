@@ -344,18 +344,24 @@ These appear low in tarpaulin but are well-tested via integration tests:
 - **Migration:** lazy_static → once_cell::sync::Lazy
 - **Impact:** 37 direct deps (was 39), cleaner dependency tree
 
-**2. Increase Bus Factor** (Est: 4-6 hours)
-- [ ] Create `docs/ARCHITECTURE.md` with core design decisions (ADRs)
-  - [ ] Session management architecture
-  - [ ] Task execution flow
-  - [ ] Browser automation abstraction layer
-  - [ ] Error handling philosophy
-- [ ] Create `docs/ONBOARDING.md` for new contributors
-  - [ ] Development environment setup
-  - [ ] Testing guidelines
-  - [ ] Code review checklist
-- [ ] Add module-level rustdoc to 5+ core modules
-- [ ] Create `docs/DECISION_LOG.md` for major technical decisions
+**2. Increase Bus Factor** ✅ COMPLETE (2026-05-01)
+- [x] Create `docs/ARCHITECTURE.md` with core design decisions (ADRs)
+  - [x] Session management architecture
+  - [x] Task execution flow
+  - [x] Browser automation abstraction layer
+  - [x] Error handling philosophy
+- [x] Create `docs/ONBOARDING.md` for new contributors
+  - [x] Development environment setup
+  - [x] Testing guidelines
+  - [x] Code review checklist
+- [x] Add module-level rustdoc to 5+ core modules
+  - [x] `src/utils/keyboard.rs`
+  - [x] `src/utils/clipboard.rs`
+  - [x] `src/utils/native_input.rs`
+  - [x] `src/utils/navigation.rs`
+  - [x] `src/utils/trajectory.rs` (already documented)
+- [x] Create `docs/DECISION_LOG.md` for major technical decisions
+  - [x] 8 ADRs: nextest, circuit breaker, mouse trajectory, CDP, error handling, tokio, once_cell migration, dependency audit
 - **Impact:** Team scalability, reduced single-point-of-failure, faster onboarding
 
 #### Medium Impact (Defined Effort) - Priority 2

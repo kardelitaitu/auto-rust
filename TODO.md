@@ -248,13 +248,17 @@
 
 ### Medium Priority (20-40% Coverage - Missing Edge Cases)
 
-- [ ] **src/utils/mouse.rs** (6.7% - 990 lines)
-  - Mouse trajectory edge cases
-  - Click point calculations
-  - Humanized movement patterns
-  - Note: Core trajectory module already at 99%
+- [x] **src/utils/mouse/trajectory.rs** (25 tests added - 2026-05-01)
+  - ✅ Point struct: new(), clone, copy
+  - ✅ Bezier: point calculation, curve generation with config
+  - ✅ Arc curve: curvature, midpoint deviation
+  - ✅ Zigzag: perpendicular deviation, alternating pattern
+  - ✅ Overshoot: 1.2x scale, reverse direction
+  - ✅ Stopped curve: equal spacing at 0/33/66/100%
+  - ✅ Muscle path: convergence, progression, max steps, jitter
+  - Note: Core trajectory module now fully tested
 
-- [ ] **src/task/*.rs** (Most under 25%)
+- [ ] **src/task/*.rs** (Medium Priority - Next candidate)
   - twitteractivity.rs (14.9%)
   - twitterfollow.rs (22.6%) - Note: Locator tests added, coverage improved
   - twitterintent.rs (43.8%)

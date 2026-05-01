@@ -37,7 +37,8 @@ $colors = @{
 }
 
 function Write-Status($msg, $color = "White") {
-    Write-Output "$($colors[$color] ?? '')$msg$($colors.Reset)"
+    $c = if ($colors[$color]) { $colors[$color] } else { "" }
+    Write-Output "$c$msg$($colors.Reset)"
 }
 
 function Write-Header($title) {
@@ -121,36 +122,64 @@ if (-not (Test-Path "Cargo.toml")) {
 }
 
 $failed = $false
+$stepNum = 1
+
+function Write-StepHeader($num, $desc) {
+    Write-Output ""
+    Write-Output "$num. $desc"
+}
+
+function Write-StepResult($passed) {
+    if ($passed) {
+        Write-Status "PASS" "Green"
+    } else {
+        Write-Status "FAIL" "Red"
+    }
+}
 
 # ---- BUILD -----------------------------------------------------------
 if (-not $SkipBuild) {
-    $r = Test-Check -Name "Build" -Cmd "cargo check" -Secs $buildTimeout -Success {
-        param($r) $r.ExitCode -eq 0
-    }
-    $results.Build = $r
-    if (-not $r.Passed) { $failed = $true }
+    Write-StepHeader $stepNum "Build check (cargo check)"
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $proc = Start-Process cargo -ArgumentList "check" -NoNewWindow -PassThru -Wait
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $proc.ExitCode -eq 0
+    $results.Build = @{ Passed = $passed; Duration = $elapsed }
+    Write-StepResult $passed
+    if (-not $passed) { $failed = $true }
+    $stepNum++
 }
 
 # ---- FORMAT -----------------------------------------------------------
 if (-not $SkipFormat -and -not $failed) {
-    $r = Test-Check -Name "Format" -Cmd "cargo fmt --all -- --check" -Secs $formatTimeout -Success {
-        param($r) $r.ExitCode -eq 0
-    }
-    $results.Format = $r
-    if (-not $r.Passed) { $failed = $true }
+    Write-StepHeader $stepNum "Format check (cargo fmt --all -- --check)"
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $proc = Start-Process cargo -ArgumentList "fmt","--all","--","--check" -NoNewWindow -PassThru -Wait
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $proc.ExitCode -eq 0
+    $results.Format = @{ Passed = $passed; Duration = $elapsed }
+    Write-StepResult $passed
+    if (-not $passed) { $failed = $true }
+    $stepNum++
 }
 
 # ---- CLIPPY ----------------------------------------------------------
 if (-not $SkipClippy -and -not $failed) {
-    $r = Test-Check -Name "Clippy" -Cmd "cargo clippy --all-targets --all-features -- -D warnings" -Secs $clippyTimeout -Success {
-        param($r) $r.ExitCode -eq 0
-    }
-    $results.Clippy = $r
-    if (-not $r.Passed) { $failed = $true }
+    Write-StepHeader $stepNum "Clippy check (cargo clippy --all-targets --all-features -- -D warnings)"
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $proc = Start-Process cargo -ArgumentList "clippy","--all-targets","--all-features","--","-D","warnings" -NoNewWindow -PassThru -Wait
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $proc.ExitCode -eq 0
+    $results.Clippy = @{ Passed = $passed; Duration = $elapsed }
+    Write-StepResult $passed
+    if (-not $passed) { $failed = $true }
+    $stepNum++
 }
 
 # ---- TESTS ----------------------------------------------------------
 if (-not $SkipTests -and -not $failed) {
+    Write-StepHeader $stepNum "Nextest check (cargo nextest run --all-features --lib)"
+
     # Silently install cargo-nextest if missing
     if (-not (Get-Command cargo-nextest -EA SilentlyContinue)) {
         cargo install --locked cargo-nextest 2>&1 | Out-Null | Out-Null
@@ -159,40 +188,29 @@ if (-not $SkipTests -and -not $failed) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $testTmp = "$env:APPDATA\ci_test_$( [guid]::NewGuid().ToString('N') ).txt"
 
-    # Run nextest with stdout/stderr redirected to file (completely silent)
-    $testJob = Start-Process pwsh -ArgumentList "-NoProfile", "-NonI", "-Command",
-        "cargo nextest run --all-features --lib 2>&1 | Out-File '$testTmp'; exit `$LASTEXITCODE" `
-        -NoNewWindow -PassThru
+    # Run nextest silently (output to file only), then get exit code
+    $proc = Start-Process pwsh -ArgumentList "-NoProfile", "-NonI", "-Command",
+        "& { cargo nextest run --all-features --lib 2>&1 | Out-File '$testTmp'; exit $LASTEXITCODE }" `
+        -NoNewWindow -PassThru -Wait
 
-    $waited = 0
-    while ($testJob.HasExited -eq $false -and $waited -lt $testsTimeout) {
-        Start-Sleep -Milliseconds 100
-        $waited += 0.1
-    }
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $proc.ExitCode -eq 0
+    $results.Tests = @{ Passed = $passed; Duration = $elapsed }
+    if (-not $passed) { $failed = $true }
 
-    if ($testJob.HasExited -eq $false) {
-        Stop-Process $testJob.Id -Force -EA SilentlyContinue
-        $results.Tests = @{ Passed = $false; Duration = $sw.Elapsed.TotalSeconds }
-        $failed = $true
-    } else {
-        Start-Sleep -Milliseconds 200
-        $testOutput = if (Test-Path $testTmp) { Get-Content $testTmp -Raw } else { "" }
-        if (Test-Path $testTmp) { Remove-Item $testTmp -EA SilentlyContinue }
-
-        $passed = $testJob.ExitCode -eq 0
-        $results.Tests = @{ Passed = $passed; Duration = $sw.Elapsed.TotalSeconds }
-        if (-not $passed) { $failed = $true }
-
-        # Show only last 5 lines of nextest output (the summary)
+    # Show only last 5 lines (summary)
+    if (Test-Path $testTmp) {
+        $testOutput = Get-Content $testTmp -Raw
+        Remove-Item $testTmp -EA SilentlyContinue
         if ($testOutput) {
-            $lines = $testOutput -split "`n" | Where-Object { $_.Trim() -ne "" }
+            $lines = $testOutput -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
             $lastLines = $lines | Select-Object -Last 5
             if ($lastLines) {
-                Write-Output ""
                 $lastLines | ForEach-Object { Write-Output $_ }
             }
         }
     }
+    Write-StepResult $results.Tests.Passed
 }
 
 # ---- REPORT ----------------------------------------------------------

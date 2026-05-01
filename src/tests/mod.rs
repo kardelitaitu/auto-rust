@@ -16,7 +16,6 @@ mod config_tests {
     fn test_validate_config_valid() {
         let config = Config {
             browser: BrowserConfig {
-                connectors: vec![],
                 connection_timeout_ms: 10000,
                 max_discovery_retries: 3,
                 discovery_retry_delay_ms: 5000,
@@ -43,7 +42,6 @@ mod config_tests {
                 task_timeout_ms: 60_000,
                 group_timeout_ms: 120_000,
                 worker_wait_timeout_ms: 10000,
-                stuck_worker_threshold_ms: 60_000,
                 task_stagger_delay_ms: 1000,
                 max_retries: 2,
                 retry_delay_ms: 500,
@@ -59,7 +57,6 @@ mod config_tests {
     fn test_validate_config_invalid_concurrency() {
         let config = Config {
             browser: BrowserConfig {
-                connectors: vec![],
                 connection_timeout_ms: 10000,
                 max_discovery_retries: 3,
                 discovery_retry_delay_ms: 5000,
@@ -86,7 +83,6 @@ mod config_tests {
                 task_timeout_ms: 60_000,
                 group_timeout_ms: 120_000,
                 worker_wait_timeout_ms: 10000,
-                stuck_worker_threshold_ms: 60_000,
                 task_stagger_delay_ms: 1000,
                 max_retries: 2,
                 retry_delay_ms: 500,

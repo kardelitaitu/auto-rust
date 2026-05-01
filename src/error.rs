@@ -152,8 +152,8 @@ pub enum ConfigError {
     ValidationFailed(String),
 
     /// Missing required field
-    #[error("Missing required config field: {0}")]
-    MissingField(String),
+    #[error("Missing required config field: {0} ({1})")]
+    MissingField(String, String),
 
     /// Invalid value for field
     #[error("Invalid value for {field}: {value} - {reason}")]
@@ -318,10 +318,10 @@ mod tests {
         let err = ConfigError::ValidationFailed("invalid field".to_string());
         assert_eq!(err.to_string(), "Config validation failed: invalid field");
 
-        let err = ConfigError::MissingField("required_field".to_string());
+        let err = ConfigError::MissingField("required_field".to_string(), "this field is required".to_string());
         assert_eq!(
             err.to_string(),
-            "Missing required config field: required_field"
+            "Missing required config field: required_field (this field is required)"
         );
 
         let err = ConfigError::InvalidValue {
@@ -534,8 +534,8 @@ mod tests {
 
     #[test]
     fn test_config_error_empty_field() {
-        let err = ConfigError::MissingField("".to_string());
-        assert_eq!(err.to_string(), "Missing required config field: ");
+        let err = ConfigError::MissingField("".to_string(), "".to_string());
+        assert_eq!(err.to_string(), "Missing required config field:  ()");
     }
 
     #[test]
@@ -604,8 +604,8 @@ mod tests {
     #[test]
     fn test_config_error_clone_not_implemented() {
         // ConfigError doesn't derive Clone
-        let err = ConfigError::MissingField("test".to_string());
-        assert_eq!(err.to_string(), "Missing required config field: test");
+        let err = ConfigError::MissingField("test".to_string(), "hint".to_string());
+        assert_eq!(err.to_string(), "Missing required config field: test (hint)");
     }
 
     #[test]
@@ -793,7 +793,7 @@ mod tests {
                 reason: "".to_string(),
             },
             ConfigError::ValidationFailed("".to_string()),
-            ConfigError::MissingField("".to_string()),
+            ConfigError::MissingField("".to_string(), "".to_string()),
             ConfigError::InvalidValue {
                 field: "".to_string(),
                 value: "".to_string(),

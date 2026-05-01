@@ -30,18 +30,9 @@ pub struct Config {
 
 /// Configuration for browser connections and management.
 /// Defines how the orchestrator discovers, connects to, and manages browser instances.
-///
-/// # Future Use
-/// - `connectors`: Reserved for additional browser connector types beyond RoxyBrowser
-/// - `connection_timeout_ms`: Not currently used - chromiumoxide::Browser::connect has no timeout param
 #[derive(Debug, Deserialize, Clone)]
 pub struct BrowserConfig {
-    /// List of browser connector types to use
-    #[allow(dead_code)]
-    pub connectors: Vec<String>,
     /// Timeout for establishing browser connections in milliseconds
-    /// Note: Not currently applied - chromiumoxide::Browser::connect() has no timeout
-    #[allow(dead_code)]
     pub connection_timeout_ms: u64,
     /// Maximum number of attempts to discover available browsers
     pub max_discovery_retries: u32,
@@ -221,9 +212,6 @@ pub struct OrchestratorConfig {
     pub group_timeout_ms: u64,
     /// Timeout for acquiring a worker/session for task execution
     pub worker_wait_timeout_ms: u64,
-    /// Threshold for detecting stuck workers in milliseconds
-    #[allow(dead_code)]
-    pub stuck_worker_threshold_ms: u64,
     /// Delay between starting consecutive tasks in milliseconds
     pub task_stagger_delay_ms: u64,
     /// Maximum number of retry attempts for failed tasks
@@ -509,7 +497,6 @@ impl Default for TwitterActivityConfig {
 impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
-            connectors: vec![],
             connection_timeout_ms: 30000,
             max_discovery_retries: 3,
             discovery_retry_delay_ms: 500,
@@ -533,7 +520,6 @@ impl Default for OrchestratorConfig {
             task_timeout_ms: 60000,
             group_timeout_ms: 300000,
             worker_wait_timeout_ms: 10000,
-            stuck_worker_threshold_ms: 120000,
             task_stagger_delay_ms: 500,
             max_retries: 3,
             retry_delay_ms: 2000,
@@ -1002,7 +988,6 @@ mod tests {
             task_timeout_ms: 120000,
             group_timeout_ms: 600000,
             worker_wait_timeout_ms: 20000,
-            stuck_worker_threshold_ms: 240000,
             task_stagger_delay_ms: 1000,
             max_retries: 5,
             retry_delay_ms: 5000,
@@ -1130,7 +1115,6 @@ fn load_code_config() -> Result<Config> {
 
     Ok(Config {
         browser: BrowserConfig {
-            connectors: vec![],
             connection_timeout_ms: 10000,
             max_discovery_retries: 3,
             discovery_retry_delay_ms: 5000,
@@ -1157,7 +1141,6 @@ fn load_code_config() -> Result<Config> {
             task_timeout_ms: 600_000,
             group_timeout_ms: 600_000,
             worker_wait_timeout_ms: 10000,
-            stuck_worker_threshold_ms: 120_000,
             task_stagger_delay_ms: 2000,
             max_retries: 2,
             retry_delay_ms: 500,
@@ -1952,3 +1935,5 @@ impl Default for ConfigValidationReport {
         Self::new()
     }
 }
+
+pub mod validation;

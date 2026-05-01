@@ -133,11 +133,10 @@
   - Action: Add `criterion` for hot paths
   - Subtasks:
     - [ ] Add `criterion` to `[dev-dependencies]` in `Cargo.toml`
-    - [ ] Create `benches/` directory with `trajectory_bench.rs` and `locator_bench.rs`
+    - [ ] Create `src/benches/` directory with `trajectory_bench.rs`, `locator_bench.rs`, and `scorer_bench.rs`
     - [ ] Benchmark `MusclePath` generation (`src/utils/mouse/trajectory.rs`)
     - [ ] Benchmark `parse_selector_input` (`src/utils/accessibility_locator.rs`)
     - [ ] Benchmark `PredictiveScorer` logic (`src/adaptive/predictive_scorer.rs`)
-    - [ ] Add `cargo bench` to CI with `PR-Performance` check
     - [ ] Document baseline metrics in `docs/PERFORMANCE.md`
   - Benefit: Prevent performance regressions in critical interaction/parsing paths
   - Effort: ~2 days
@@ -150,38 +149,41 @@
   - **Impact:** Team scalability, reduced single-point-of-failure, faster onboarding
 
 - [ ] **Config Loading Normalization**
-  - [ ] Audit all config loading sites (`config::Config` usage)
-  - [ ] Consolidate validation logic into `src/config/validation.rs`
-  - [ ] Add detailed error messages for config failures
-  - [ ] Add config schema documentation
-  - [ ] Create example configs with all options commented
-  - [ ] Add config loading unit tests (edge cases: missing fields, invalid values)
+  - Status: Basic TOML + Env loading present; dead fields exist
+  - Action: Audit, validate, and document configuration
+  - Subtasks:
+    - [ ] Audit `Config` fields and remove dead/reserved fields (e.g., `connectors`, `connection_timeout_ms`, `stuck_worker_threshold_ms`)
+    - [ ] Implement a `Validate` trait in `src/config/validation.rs` for semantic bounds checking
+    - [ ] Refactor `Config::load()` to return structured `ConfigError` with field-level recovery hints
+    - [ ] Create `config.toml.example` with detailed comments for every available setting
+    - [ ] Add config loading unit tests (edge cases: missing fields, invalid values, env overrides)
   - **Impact:** Reduced config-related bugs, better UX for config errors
   - Effort: ~1 day
 
 - [ ] **Click-Learning Persistence**
-  - [ ] Isolate click adaptation logic into `src/learning/` module
-  - [ ] Design persistence format (JSON/SQLite) for learned patterns
-  - [ ] Implement load/save for click position corrections
-  - [ ] Add TTL (time-to-live) for stale learnings
-  - [ ] Add privacy controls (opt-out, data clearing)
-  - [ ] Unit tests for learning algorithm
+  - Status: Logic tightly coupled to `TaskContext`; simple JSON persistence
+  - Action: Decouple adaptation logic and harden persistence
+  - Subtasks:
+    - [ ] Decouple adaptation logic from `TaskContext` into `src/adaptive/learning_engine.rs`
+    - [ ] Implement `LearningEngine` service with a clean API for `TaskContext` consumption
+    - [ ] Add `last_updated` timestamp to `SelectorLearningStats` for TTL management
+    - [ ] Implement background cleanup task to prune data older than 30 days
+    - [ ] Add `enable_learning_persistence` flag and privacy controls to `BrowserConfig`
+    - [ ] Add CLI flag `auto --clear-learning` to reset learned patterns
+    - [ ] Unit tests for learning convergence and decay algorithm
   - **Impact:** Smarter automation over time, reduced manual corrections
   - Effort: ~2-3 days
 
 ## P3: Lower Priority (Large Refactorings)
 
 - [ ] **TaskContext click / interaction pipeline**
-  - Files: `src/runtime/task_context.rs`, `src/capabilities/mouse.rs`, `src/utils/mouse.rs`, `src/internal/profile.rs`, `src/state/overlay.rs`
+  - Files: `src/runtime/task_context.rs`, `src/capabilities/mouse.rs`, `src/utils/mouse.rs`, `src/state/overlay.rs`
   - Goal: Isolate "how the system adapts" from mouse interaction mechanics
   - Subtasks:
-    - [ ] Audit current click interaction layers
-    - [ ] Design unified click abstraction
-    - [ ] Consolidate CDP and DOM click paths
-    - [ ] Add retry logic with exponential backoff
-    - [ ] Add click verification (element state before/after)
-    - [ ] Refactor `TaskContext` click methods to use new pipeline
-    - [ ] Add click pipeline unit tests
+    - [ ] Create `src/runtime/task_context/interaction_pipeline.rs` to unify click/type execution
+    - [ ] Implement standardized `InteractionResult` including pre/post state and adaptation context
+    - [ ] Consolidate CDP-based and Native-based click paths into a unified decision branching point
+    - [ ] Add post-action auto-verification (e.g., checking if element state changed as expected)
   - **Impact:** More reliable clicks, easier to debug, consistent behavior
   - Effort: ~3-5 days
 
@@ -189,12 +191,10 @@
   - Files: `src/main.rs`, `src/runtime/execution.rs`, `src/orchestrator.rs`
   - Goal: Make "run groups until shutdown" a clearer boundary
   - Subtasks:
-    - [ ] Audit all shutdown paths (signals, errors, graceful)
-    - [ ] Design shutdown token propagation architecture
-    - [ ] Implement coordinated shutdown for browser pool
-    - [ ] Ensure all tasks complete or cancel cleanly
-    - [ ] Add shutdown timeout enforcement
-    - [ ] Add shutdown integration tests
+    - [ ] Centralize signal handling in `src/runtime/shutdown.rs` with a `ShutdownManager`
+    - [ ] Implement coordinated shutdown: block new tasks -> wait for active -> close browsers -> exit
+    - [ ] Propagate `CancellationToken` to all async capability loops (waiting for selectors, etc.)
+    - [ ] Add integration tests for graceful shutdown during active task groups
   - **Impact:** Eliminate zombie processes, clean restarts
   - Effort: ~3-4 days
 
@@ -202,11 +202,10 @@
   - Files: `src/cli.rs`, `src/task/mod.rs`, `src/validation/*`
   - Goal: Make CLI behavior more self-contained and extendable
   - Subtasks:
-    - [ ] Audit current CLI argument parsing (`clap` usage)
-    - [ ] Move CLI logic from `src/main.rs` to `src/cli/` module
-    - [ ] Self-contain task registry discovery
-    - [ ] Add CLI integration tests
-    - [ ] Document all CLI options with examples
+    - [ ] Decouple `TaskRegistry` into a standalone system that supports dynamic registration
+    - [ ] Move CLI-specific formatting and complex parsing to `src/cli/parser.rs`
+    - [ ] Implement payload schema validation based on task name during parsing
+    - [ ] Add "Task Help" CLI command (e.g., `auto --help-task cookiebot`) showing expected payload
   - **Impact:** Cleaner `main.rs`, easier CLI testing, better help documentation
   - Effort: ~2-3 days
 
@@ -214,18 +213,13 @@
   - Files: `src/browser.rs`, `src/session/*`, `src/config.rs`
   - Goal: Make startup behavior more predictable and testable
   - Subtasks:
-    - [ ] Audit current browser discovery (`chromiumoxide` usage)
-    - [ ] Design predictable browser session assembly
-    - [ ] Add browser capability detection
-    - [ ] Add fallback strategies (Chrome → Chromium → Edge)
-    - [ ] Add browser version compatibility checks
-    - [ ] Document browser requirements
-    - [ ] Add browser discovery unit tests
+    - [ ] Define `BrowserConnector` trait in `src/session/connector.rs` (`discover` & `connect` methods)
+    - [ ] Implement modular connectors: `ProfileConnector`, `RoxyConnector`, and `LocalDiscoveryConnector`
+    - [ ] Create a `SessionFactory` to move `Session::new` construction and connection logic out of `browser.rs`
+    - [ ] Implement `SessionPoolManager` in `src/session/pool.rs` to handle parallel discovery and retry logic
+    - [ ] Add `BrowserCapabilities` struct to `Session` (e.g., `native_input`, `persistent_profile`) with auto-detection
   - **Impact:** More reliable browser automation, clearer requirements
   - Effort: ~4-7 days
-
-- [ ] **Click-learning / behavior adaptation persistence**
-  - *Note: Merged with P2 Click-Learning Persistence*
 
 ---
 

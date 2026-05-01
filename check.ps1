@@ -198,15 +198,15 @@ if (-not $SkipTests -and -not $failed) {
     $results.Tests = @{ Passed = $passed; Duration = $elapsed }
     if (-not $passed) { $failed = $true }
 
-    # Show only last 5 lines (summary)
+    # Show only last line (summary)
     if (Test-Path $testTmp) {
         $testOutput = Get-Content $testTmp -Raw
         Remove-Item $testTmp -EA SilentlyContinue
         if ($testOutput) {
             $lines = $testOutput -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
-            $lastLines = $lines | Select-Object -Last 5
-            if ($lastLines) {
-                $lastLines | ForEach-Object { Write-Output $_ }
+            $summaryLine = $lines | Select-Object -Last 1
+            if ($summaryLine) {
+                Write-Output $summaryLine
             }
         }
     }

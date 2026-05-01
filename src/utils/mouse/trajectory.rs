@@ -211,7 +211,7 @@ mod tests {
     fn test_point_clone_and_copy() {
         let p1 = Point::new(5.0, 15.0);
         let p2 = p1; // Copy
-        let p3 = p1.clone();
+        let p3 = p1;
         assert_eq!(p1, p2);
         assert_eq!(p1, p3);
     }
@@ -405,7 +405,6 @@ mod tests {
 
         // Check that consecutive points alternate direction
         for i in 1..points.len() - 1 {
-            let prev_y = points[i - 1].y;
             let curr_y = points[i].y;
             let next_y = points[i + 1].y;
 

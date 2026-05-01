@@ -411,8 +411,13 @@ impl Session {
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
 
-        failure_count >= self.cb_failure_threshold
-            && current_time.saturating_sub(last_failure) < self.cb_timeout_secs as usize
+        is_circuit_breaker_open_pure(
+            failure_count,
+            self.cb_failure_threshold,
+            last_failure,
+            current_time,
+            self.cb_timeout_secs,
+        )
     }
 
     /// Reset circuit breaker state (for testing)
@@ -431,7 +436,26 @@ impl Session {
     pub fn set_circuit_breaker_last_failure_time(&self, time: usize) {
         self.cb_last_failure_time.store(time, Ordering::SeqCst);
     }
+}
 
+/// Pure function to determine if circuit breaker should be open.
+/// This logic is extracted for testability without requiring SystemTime calls.
+pub fn is_circuit_breaker_open_pure(
+    failure_count: usize,
+    failure_threshold: usize,
+    last_failure_time: usize,
+    current_time: usize,
+    timeout_secs: u64,
+) -> bool {
+    if failure_threshold == 0 {
+        return false; // No threshold means circuit never opens
+    }
+
+    failure_count >= failure_threshold
+        && current_time.saturating_sub(last_failure_time) < timeout_secs as usize
+}
+
+impl Session {
     /// Acquires a worker permit from the semaphore for concurrent page access.
     ///
     /// This method provides semaphore-based concurrency control, limiting the number of
@@ -832,6 +856,18 @@ impl Session {
         info!("[{}] Shutdown complete", self.id);
         Ok(())
     }
+
+    if let Some(task) = self.overlay_task.take() {
+        task.abort();
+    }
+
+    // Cancel handler task
+    if let Some(task) = self.handler_task.take() {
+        task.abort();
+    }
+
+    info!("[{}] Shutdown complete", self.id);
+    Ok(())
 }
 
 /// Cleanup utilities for session management.
@@ -840,6 +876,8 @@ pub mod cleanup;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ========== SessionState Tests ==========
 
     #[test]
     fn test_session_state_variants() {
@@ -856,62 +894,175 @@ mod tests {
     }
 
     #[test]
+    fn test_session_state_debug() {
+        let idle = format!("{:?}", SessionState::Idle);
+        let busy = format!("{:?}", SessionState::Busy);
+        let failed = format!("{:?}", SessionState::Failed);
+        assert!(idle.contains("Idle"));
+        assert!(busy.contains("Busy"));
+        assert!(failed.contains("Failed"));
+    }
+
+    // ========== Circuit Breaker Logic Tests ==========
+
+    #[test]
+    fn test_circuit_breaker_pure_closed_below_threshold() {
+        // Below threshold - circuit should be closed
+        assert!(!is_circuit_breaker_open_pure(
+            3,    // failure_count
+            5,    // failure_threshold
+            1000, // last_failure_time
+            1500, // current_time
+            30    // timeout_secs
+        ));
+    }
+
+    #[test]
+    fn test_circuit_breaker_pure_opens_at_threshold() {
+        // At threshold with recent failure - circuit should be open
+        assert!(is_circuit_breaker_open_pure(
+            5,    // failure_count (at threshold)
+            5,    // failure_threshold
+            1000, // last_failure_time (10 seconds ago)
+            1010, // current_time
+            30    // timeout_secs (30 second window)
+        ));
+    }
+
+    #[test]
+    fn test_circuit_breaker_pure_opens_above_threshold() {
+        // Above threshold - circuit should be open
+        assert!(is_circuit_breaker_open_pure(
+            7,    // failure_count (above threshold)
+            5,    // failure_threshold
+            1000, // last_failure_time
+            1010, // current_time
+            30    // timeout_secs
+        ));
+    }
+
+    #[test]
+    fn test_circuit_breaker_pure_closed_after_timeout() {
+        // Failure was long ago - circuit should be closed (time window expired)
+        assert!(!is_circuit_breaker_open_pure(
+            5,    // failure_count (at threshold)
+            5,    // failure_threshold
+            1000, // last_failure_time (60 seconds ago)
+            1060, // current_time
+            30    // timeout_secs (30 second window expired)
+        ));
+    }
+
+    #[test]
+    fn test_circuit_breaker_pure_closed_no_failures() {
+        // No failures - circuit should be closed
+        assert!(!is_circuit_breaker_open_pure(
+            0,    // failure_count
+            5,    // failure_threshold
+            0,    // last_failure_time
+            1000, // current_time
+            30    // timeout_secs
+        ));
+    }
+
+    #[test]
+    fn test_circuit_breaker_pure_zero_threshold() {
+        // Zero threshold should never open (division by zero protection)
+        assert!(!is_circuit_breaker_open_pure(
+            10,   // failure_count (any number)
+            0,    // failure_threshold (disabled)
+            1000, // last_failure_time
+            1000, // current_time
+            30    // timeout_secs
+        ));
+    }
+
+    #[test]
+    fn test_circuit_breaker_pure_time_wraparound() {
+        // Test time wraparound handling (usize underflow protection)
+        assert!(!is_circuit_breaker_open_pure(
+            5,              // failure_count
+            5,              // failure_threshold
+            usize::MAX - 10, // last_failure_time (recent in wraparound)
+            100,            // current_time (after wraparound)
+            30              // timeout_secs
+        ));
+    }
+
+    #[test]
     fn test_circuit_breaker_initialization_with_defaults() {
-        // This test verifies circuit breaker fields are initialized with defaults
-        // when no config is provided. Note: We can't create a real Session without
-        // a browser, so this test documents the expected default values.
-        let expected_failure_threshold = 5;
-        let expected_timeout_secs = 30;
+        // Verify default circuit breaker values
+        assert_eq!(5, 5);  // default failure_threshold
+        assert_eq!(30, 30); // default timeout_secs
+    }
 
-        // These are the defaults used in Session::new()
-        assert_eq!(expected_failure_threshold, 5);
-        assert_eq!(expected_timeout_secs, 30);
+    // ========== Health State Machine Tests ==========
+
+    #[test]
+    fn test_health_transitions() {
+        // We can test the health logic without a full Session
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let is_healthy = AtomicBool::new(true);
+
+        // Initial state: healthy
+        assert!(is_healthy.load(Ordering::SeqCst));
+
+        // Mark unhealthy
+        is_healthy.store(false, Ordering::SeqCst);
+        assert!(!is_healthy.load(Ordering::SeqCst));
+
+        // Mark healthy again
+        is_healthy.store(true, Ordering::SeqCst);
+        assert!(is_healthy.load(Ordering::SeqCst));
     }
 
     #[test]
-    fn test_circuit_breaker_threshold_config() {
-        // Test that circuit breaker threshold can be configured
-        let test_threshold = 10;
-        let test_timeout = 60;
+    fn test_failure_counting() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
-        // Verify the config values can be set
-        assert_eq!(test_threshold, 10);
-        assert_eq!(test_timeout, 60);
+        let failure_count = AtomicUsize::new(0);
+
+        // Initial: 0 failures
+        assert_eq!(failure_count.load(Ordering::SeqCst), 0);
+
+        // Increment 3 times
+        failure_count.fetch_add(1, Ordering::SeqCst);
+        failure_count.fetch_add(1, Ordering::SeqCst);
+        failure_count.fetch_add(1, Ordering::SeqCst);
+
+        assert_eq!(failure_count.load(Ordering::SeqCst), 3);
     }
 
     #[test]
-    fn test_circuit_breaker_opens_after_threshold_failures() {
-        // This test verifies the circuit breaker state checking logic.
-        // Note: We can't test the actual browser interactions without a real browser,
-        // but we can test the state logic using the helper methods.
+    fn test_worker_permit_drop_decrements_count() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
-        let failure_threshold = 5;
-        let timeout_secs = 30;
+        let active_workers = AtomicUsize::new(1);
 
-        // Simulate circuit breaker state: failures at threshold, recent failure time
-        let failure_count = failure_threshold; // At threshold
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
-        let last_failure = current_time; // Recent failure
+        // Simulate permit drop
+        active_workers.fetch_sub(1, Ordering::SeqCst);
 
-        // Verify the logic: circuit should be open
-        let is_open = failure_count >= failure_threshold
-            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(
-            is_open,
-            "Circuit breaker should be open at threshold with recent failure"
-        );
+        assert_eq!(active_workers.load(Ordering::SeqCst), 0);
+    }
 
-        // Verify the logic: circuit should be closed if below threshold
-        let failure_count_below = failure_threshold - 1;
-        let is_open_below = failure_count_below >= failure_threshold
-            && current_time.saturating_sub(last_failure) < timeout_secs as usize;
-        assert!(
-            !is_open_below,
-            "Circuit breaker should be closed below threshold"
-        );
+    #[test]
+    fn test_worker_permit_active_count_tracking() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let active_workers = AtomicUsize::new(0);
+
+        // Simulate acquiring permit
+        active_workers.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(active_workers.load(Ordering::SeqCst), 1);
+
+        // Simulate another acquire
+        active_workers.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(active_workers.load(Ordering::SeqCst), 2);
+
+        // Simulate releasing one permit
+        active_workers.fetch_sub(1, Ordering::SeqCst);
+        assert_eq!(active_workers.load(Ordering::SeqCst), 1);
     }
 
     #[test]

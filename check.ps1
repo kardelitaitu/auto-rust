@@ -2,16 +2,13 @@
 <#
 .SYNOPSIS
     Auto-rust CI Checker - Runs full test suite like GitHub workflow
-
 .DESCRIPTION
-    Runs cargo nextest run, clippy, fmt, and build checks with detailed reporting.
-    Mirrors .github/workflows/ci.yml for local Windows development.
-    Includes timeouts to prevent hanging.
-
+    Runs cargo check, fmt, clippy, then nextest with detailed reporting.
+    Short-circuits on first failure for fast feedback.
+    Mirrors .github//workflows/ci.ym1 for local Windows development.
 .EXAMPLE
-    .\check.ps1           # Run all checks
-    .\check.ps1 -Verbose  # Show all output
-    .\check.ps1 -SkipTests # Skip test execution
+    .\check.PS1           # Run all checks
+    .\check.PS1 -SkipTests # Skip test execution
 #>
 [CmdletBinding()]
 param(
@@ -23,75 +20,101 @@ param(
 
 $ErrorActionPreference = "Stop"
 $startTime = Get-Date
-
 # Timeout settings (in seconds)
-$globalTimeout = 300    # 5 minutes global
-$testsTimeout = 180    # 3 minutes for tests
-$formatTimeout = 30     # 30 seconds for format
-$clippyTimeout = 30    # 30 seconds for clippy
-$buildTimeout = 60      # 60 seconds for build
+$globalTimeout = 300
+$buildTimeout = 60
+$formatTimeout = 30
+$clippyTimeout = 30
+$testsTimeout = 180
 
-# Colors for output
 $colors = @{
-    Green = "`e[32m"
-    Red = "`e[31m"
+    Green  = "`e[32m"
+    Red    = "`e[31m"
     Yellow = "`e[33m"
-    Blue = "`e[34m"
-    Cyan = "`e[36m"
-    Reset = "`e[0m"
+    Blue   = "`e[34m"
+    Cyan   = "`e[36m"
+    Reset  = "`e[0m"
 }
 
-function Write-Status($message, $color = "White") {
-    $c = $colors[$color] ?? ""
-    $r = $colors.Reset
-    Write-Output "$c$message$r"
+function Write-Status($msg, $color = "White") {
+    Write-Output "$($colors[$color] ?? '')$msg$($colors.Reset)"
 }
 
-function Write-Section($title) {
+function Write-Header($title) {
     Write-Output ""
     Write-Status "=== $title ===" "Cyan"
 }
 
-function Invoke-WithTimeout {
+function Start-CheckProcess {
+    param([string]$Cmd, [int]$Secs)
+
+    $tmp = "$env:APPDATA\ci_$( [guid]::NewGuid().ToString('N') ).txt"
+    $job = Start-Process pwsh -ArgumentList "-NoProfile", "-NonI", "-Command",
+        "$Cmd | Out-File '$tmp'; exit `$LASTEXITCODE" `
+        -NoNewWindow -PassThru
+
+    $waited = 0
+    while ($job.HasExited -eq $false -and $waited -lt $Secs) {
+        Start-Sleep -Milliseconds 100
+        $waited += 0.1
+    }
+
+    if ($job.HasExited -eq $false) {
+        Stop-Process $job.Id -Force -EA SilentlyContinue
+        if (Test-Path $tmp) { Remove-Item $tmp -EA SilentlyContinue }
+        return @{ Output = $null; ExitCode = 124 }
+    }
+
+    $waited = 0
+    while ((Test-Path $tmp) -eq $false -and $waited -lt 5) {
+        Start-Sleep -Milliseconds 200
+        $waited += 0.2
+    }
+
+    $output = if (Test-Path $tmp) { Get-Content $tmp -Raw } else { "" }
+    $exitCode = $job.ExitCode
+    if (Test-Path $tmp) { Remove-Item $tmp -EA SilentlyContinue }
+
+    return @{ Output = $output; ExitCode = $exitCode }
+}
+
+function Test-Check {
     param(
         [string]$Name,
-        [scriptblock]$Command,
-        [int]$TimeoutSeconds
+        [string]$Cmd,
+        [int]$Secs,
+        [scriptblock]$Success,
+        [switch]$Quiet
     )
 
-    $job = Start-Job -ScriptBlock {
-        $output = & $Command 2>&1
-        $exitCode = $LASTEXITCODE
-        @{ Output = $output; ExitCode = $exitCode }
-    }
-    $waited = 0
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $result = Start-CheckProcess -Cmd $Cmd -Secs $Secs
+    $elapsed = $sw.Elapsed.TotalSeconds
 
-    while ($job.State -eq "Running" -and $waited -lt $TimeoutSeconds) {
-        Start-Sleep 1
-        $waited++
+    if ($result.ExitCode -eq 124) {
+        Write-Status "$Name timed out after ${Secs}s" "Red"
+        return @{ Passed = $false; Duration = $elapsed; ExitCode = 124 }
     }
 
-    if ($job.State -eq "Running") {
-        Write-Status "$Name timed out after ${TimeoutSeconds}s - killing process" "Yellow"
-        Stop-Job -Job $job -ErrorAction SilentlyContinue
-        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-        return @{ Output = $null; ExitCode = 124; TimedOut = $true }
+    $passed = & $Success $result
+    $color = if ($passed) { "Green" } else { "Red" }
+    $dur = "{0:N2}s" -f $elapsed
+    $msg = if ($passed) { "passed" } else { "failed" }
+
+    if (-not $Quiet) {
+        Write-Status "$Name $msg ($dur)" $color
     }
 
-    $result = Receive-Job -Job $job
-    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-    return @{ Output = $result.Output; ExitCode = $result.ExitCode; TimedOut = $false }
+    return @{ Passed = $passed; Duration = $elapsed; ExitCode = $result.ExitCode; Output = $result.Output }
 }
 
-# Results tracking
 $results = @{
-    Tests = @{ Passed = $false; Duration = 0; Output = "" }
-    Format = @{ Passed = $false; Duration = 0; Output = "" }
-    Clippy = @{ Passed = $false; Duration = 0; Output = "" }
-    Build = @{ Passed = $false; Duration = 0; Output = "" }
+    Build  = @{ Passed = $false; Duration = 0 }
+    Format = @{ Passed = $false; Duration = 0 }
+    Clippy = @{ Passed = $false; Duration = 0 }
+    Tests  = @{ Passed = $false; Duration = 0 }
 }
 
-# Check if in correct directory
 if (-not (Test-Path "Cargo.toml")) {
     Write-Status "ERROR: Must run from project root (where Cargo.toml is)" "Red"
     exit 1
@@ -99,149 +122,106 @@ if (-not (Test-Path "Cargo.toml")) {
 
 Write-Status "Auto-rust CI Checker" "Blue"
 Write-Status "Working Directory: $(Get-Location)" "Yellow"
-Write-Status "Timeouts - Global: ${globalTimeout}s | Tests: ${testsTimeout}s | Format: ${formatTimeout}s | Clippy: ${clippyTimeout}s | Build: ${buildTimeout}s" "Yellow"
+Write-Output "Timeouts - Build: ${buildTimeout}s | Format: ${formatTimeout}s | Clippy: ${clippyTimeout}s | Tests: ${testsTimeout}s"
+Write-Output "Order  - Build -> Format -> Clippy -> Tests (short-circuit on failure)"
+Write-Output ""
 
-# ============ TESTS ============
-if (-not $SkipTests) {
-    Write-Output ""
-    Write-Status "Checking if cargo-nextest is installed..." "Yellow"
-    $nextestCheck = Get-Command cargo-nextest -ErrorAction SilentlyContinue
-    if (-not $nextestCheck) {
-        Write-Status "Installing cargo-nextest..." "Yellow"
-        cargo install --locked cargo-nextest 2>&1 | Out-Null
-    }
-    Write-Section "Running Tests (cargo nextest run --all-features)"
-    $testStart = Get-Date
+$failed = $false
 
-    $result = Invoke-WithTimeout -Name "Tests" -TimeoutSeconds $testsTimeout -Command {
-        cargo nextest run --all-features --lib 2>&1
-    }
-
-    $output = $result.Output
-    $results.Tests.Output = if ($output) { $output -join "`n" } else { "" }
-
-    if ($result.TimedOut) {
-        Write-Status "Tests timed out after ${testsTimeout}s" "Red"
-        $results.Tests.Passed = $false
-    } elseif ($result.ExitCode -eq 0 -or ($output -match "test result: ok" -or $output -match "passed")) {
-        Write-Status "Tests passed" "Green"
-        $results.Tests.Passed = $true
-    } else {
-        Write-Status "Tests failed (exit code: $($result.ExitCode))" "Red"
-        $results.Tests.Passed = $false
-    }
-    $results.Tests.Duration = ((Get-Date) - $testStart).TotalSeconds
-}
-
-# ============ FORMAT ============
-if (-not $SkipFormat) {
-    Write-Section "Checking Format (cargo fmt --all -- --check)"
-    $fmtStart = Get-Date
-
-    $result = Invoke-WithTimeout -Name "Format" -TimeoutSeconds $formatTimeout -Command {
-        cargo fmt --all -- --check 2>&1
-    }
-
-    $output = $result.Output
-    $results.Format.Output = if ($output) { $output -join "`n" } else { "" }
-
-    if ($result.TimedOut) {
-        Write-Status "Format timed out after ${formatTimeout}s" "Red"
-        $results.Format.Passed = $false
-    } elseif ($result.ExitCode -eq 0) {
-        Write-Status "Format check passed" "Green"
-        $results.Format.Passed = $true
-    } else {
-        Write-Status "Format check failed - run 'cargo fmt --all' to fix" "Red"
-        $results.Format.Passed = $false
-    }
-    $results.Format.Duration = ((Get-Date) - $fmtStart).TotalSeconds
-}
-
-# ============ CLIPPY ============
-if (-not $SkipClippy) {
-    Write-Section "Running Clippy (cargo clippy --all-targets --all-features -- -D warnings)"
-    $clipStart = Get-Date
-
-    $output = Invoke-WithTimeout -Name "Clippy" -TimeoutSeconds $clippyTimeout -Command {
-        cargo clippy --all-targets --all-features -- -D warnings 2>&1
-    }
-
-    $results.Clippy.Output = if ($output) { $output -join "`n" } else { "" }
-
-    if (-not $output) {
-        Write-Status "Clippy timed out after ${clippyTimeout}s" "Red"
-        $results.Clippy.Passed = $false
-    } elseif ($LASTEXITCODE -eq 0) {
-        Write-Status "Clippy passed" "Green"
-        $results.Clippy.Passed = $true
-    } else {
-        Write-Status "Clippy found warnings/errors" "Red"
-        $results.Clippy.Passed = $false
-    }
-    $results.Clippy.Duration = ((Get-Date) - $clipStart).TotalSeconds
-}
-
-# ============ BUILD ============
+# ---- BUILD -----------------------------------------------------------
 if (-not $SkipBuild) {
-    Write-Section "Checking Build (cargo check)"
-    $buildStart = Get-Date
-
-    $output = Invoke-WithTimeout -Name "Build" -TimeoutSeconds $buildTimeout -Command {
-        cargo check 2>&1
+    Write-Header "1. Checking Build (cargo check)"
+    $r = Test-Check -Name "Build" -Cmd "cargo check" -Secs $buildTimeout -Success {
+        param($r) $r.ExitCode -eq 0
     }
-
-    $results.Build.Output = if ($output) { $output -join "`n" } else { "" }
-
-    if (-not $output) {
-        Write-Status "Build timed out after ${buildTimeout}s" "Red"
-        $results.Build.Passed = $false
-    } elseif ($LASTEXITCODE -eq 0) {
-        Write-Status "Build check passed" "Green"
-        $results.Build.Passed = $true
-    } else {
-        Write-Status "Build failed" "Red"
-        $results.Build.Passed = $false
-    }
-    $results.Build.Duration = ((Get-Date) - $buildStart).TotalSeconds
+    $results.Build = $r
+    if (-not $r.Passed) { $failed = $true }
 }
 
-# ============ SUMMARY REPORT ============
-$totalDuration = ((Get-Date) - $startTime).TotalSeconds
+# ---- FORMAT -----------------------------------------------------------
+if (-not $SkipFormat -and -not $failed) {
+    Write-Header "2. Checking Format (cargo fmt --all -- --check)"
+    $r = Test-Check -Name "Format" -Cmd "cargo fmt --all -- --check" -Secs $formatTimeout -Success {
+        param($r) $r.ExitCode -eq 0
+    }
+    $results.Format = $r
+    if (-not $r.Passed) { $failed = $true }
+}
 
+# ---- CLIPPY ----------------------------------------------------------
+if (-not $SkipClippy -and -not $failed) {
+    Write-Header "3. Running Clippy (cargo clippy --all-targets --all-features -- -D warnings)"
+    $r = Test-Check -Name "Clippy" -Cmd "cargo clippy --all-targets --all-features -- -D warnings" -Secs $clippyTimeout -Success {
+        param($r) $r.ExitCode -eq 0
+    }
+    $results.Clippy = $r
+    if (-not $r.Passed) { $failed = $true }
+}
+
+# ---- TESTS ----------------------------------------------------------
+if (-not $SkipTests -and -not $failed) {
+    Write-Status "Checking if cargo-nextest is installed..." "Yellow"
+    if (-not (Get-Command cargo-nextest -EA SilentlyContinue)) {
+        Write-Status "Installing cargo-nextest..." "Yellow"
+        cargo install --locked cargo-nextest | Out-Null
+    }
+    Write-Header "4. Running Tests (cargo nextest run --all-features --lib)"
+
+    $r = Test-Check -Name "Tests" -Cmd "cargo nextest run --all-features --lib" -Secs $testsTimeout -Success {
+        param($r) $r.ExitCode -eq 0
+    } -Quiet
+
+    $results.Tests = @{ Passed = $r.Passed; Duration = $r.Duration }
+    if (-not $r.Passed) { $failed = $true }
+
+    $output = $r.Output
+    if ($output -match "(?s)Summary.*?tests run.*?passed.*?skipped") {
+        $summary = $Matches[0]
+    } else {
+        $summary = "Summary: $output"
+    }
+    $color = if ($r.Passed) { "Green" } else { "Red" }
+    Write-Status "  $summary" $color
+    }
+
+# ---- REPORT ----------------------------------------------------------
+$total = ((Get-Date) - $startTime).TotalSeconds
 Write-Output ""
 Write-Status "====================================================" "Cyan"
 Write-Status "           CI CHECKER REPORT           " "Cyan"
 Write-Status "====================================================" "Cyan"
 Write-Output ""
 
-$passed = 0
-$failed = 0
-
-foreach ($check in $results.GetEnumerator() | Sort-Object Key) {
-    $name = $check.Key
-    $result = $check.Value
-
-    if ($result.Duration -gt 0 -or $result.Passed) {
-        $status = if ($result.Passed) { "PASS" } else { "FAIL" }
-        $color = if ($result.Passed) { "Green" } else { "Red" }
-        $duration = "{0:N2}s" -f $result.Duration
-
-        Write-Status ($status.PadRight(8) + " $name".PadRight(25) + $duration.PadLeft(8)) $color
-
-        if ($result.Passed) { $passed++ } else { $failed++ }
+$p = 0; $f = 0
+$runOrder = @("Build", "Format", "Clippy", "Tests")
+foreach ($name in $runOrder) {
+    $r = $results.$name
+    if ($r.Duration -gt 0 -or $r.Passed) {
+        $s = if ($r.Passed) { "PASS" } else { "FAIL" }
+        $col = if ($r.Passed) { "Green" } else { "Red" }
+        Write-Status ("{0,-8}  {1,-25}  {2,8}" -f $s, $name, "{0:N2}s" -f $r.Duration) $col
+        if ($r.Passed) { $p++ } else { $f++ }
     }
 }
-
 Write-Output ""
 Write-Status "------------------------------------------------" "Cyan"
-Write-Status ("Passed: $passed  |  Failed: $failed  |  Total Time: {0:N2}s" -f $totalDuration) $(if ($failed -eq 0) { "Green" } else { "Red" })
+Write-Status ("Passed: $p  |  Failed: $f  |  Total Time: {0:N2}s" -f $total) $(if ($f -eq 0) { "Green" } else { "Red" })
 Write-Status "------------------------------------------------" "Cyan"
 Write-Output ""
 
-# Exit code
-if ($failed -eq 0) {
+# ---- EXIT -----------------------------------------------------------
+if ($f -eq 0) {
+    Write-Output ""
     Write-Status "All checks passed! Ready for commit." "Green"
+    Write-Output ""
+    Write-Status "COMMIT REMINDER:" "Yellow"
+    Write-Output "  - Describe the WHY, not the what"
+    Write-Output "  - Format: 'type: description (reason/impact)'"
+    Write-Output "  - Examples:"
+    Write-Output "      'feat: add twitterquote task with LLM integration'"
+    Write-Output "      'fix: handle rate limit in twitterfollow retry logic'"
+    Write-Output "      'docs: rewrite README with TOC (843 -> 350 lines)'"
+    Write-Output "  - DO NOT use: 'update', 'fix', 'changes'"
     exit 0
 } else {
     Write-Status "Some checks failed. Fix before committing." "Red"

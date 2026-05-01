@@ -120,17 +120,10 @@ if (-not (Test-Path "Cargo.toml")) {
     exit 1
 }
 
-Write-Status "Auto-rust CI Checker" "Blue"
-Write-Status "Working Directory: $(Get-Location)" "Yellow"
-Write-Output "Timeouts - Build: ${buildTimeout}s | Format: ${formatTimeout}s | Clippy: ${clippyTimeout}s | Tests: ${testsTimeout}s"
-Write-Output "Order  - Build -> Format -> Clippy -> Tests (short-circuit on failure)"
-Write-Output ""
-
 $failed = $false
 
 # ---- BUILD -----------------------------------------------------------
 if (-not $SkipBuild) {
-    Write-Header "1. Checking Build (cargo check)"
     $r = Test-Check -Name "Build" -Cmd "cargo check" -Secs $buildTimeout -Success {
         param($r) $r.ExitCode -eq 0
     }
@@ -140,7 +133,6 @@ if (-not $SkipBuild) {
 
 # ---- FORMAT -----------------------------------------------------------
 if (-not $SkipFormat -and -not $failed) {
-    Write-Header "2. Checking Format (cargo fmt --all -- --check)"
     $r = Test-Check -Name "Format" -Cmd "cargo fmt --all -- --check" -Secs $formatTimeout -Success {
         param($r) $r.ExitCode -eq 0
     }
@@ -150,7 +142,6 @@ if (-not $SkipFormat -and -not $failed) {
 
 # ---- CLIPPY ----------------------------------------------------------
 if (-not $SkipClippy -and -not $failed) {
-    Write-Header "3. Running Clippy (cargo clippy --all-targets --all-features -- -D warnings)"
     $r = Test-Check -Name "Clippy" -Cmd "cargo clippy --all-targets --all-features -- -D warnings" -Secs $clippyTimeout -Success {
         param($r) $r.ExitCode -eq 0
     }
@@ -160,12 +151,10 @@ if (-not $SkipClippy -and -not $failed) {
 
 # ---- TESTS ----------------------------------------------------------
 if (-not $SkipTests -and -not $failed) {
-    Write-Status "Checking if cargo-nextest is installed..." "Yellow"
+    # Silently install cargo-nextest if missing
     if (-not (Get-Command cargo-nextest -EA SilentlyContinue)) {
-        Write-Status "Installing cargo-nextest..." "Yellow"
-        cargo install --locked cargo-nextest | Out-Null
+        cargo install --locked cargo-nextest 2>&1 | Out-Null | Out-Null
     }
-    Write-Header "4. Running Tests (cargo nextest run --all-features --lib)"
 
     $r = Test-Check -Name "Tests" -Cmd "cargo nextest run --all-features --lib" -Secs $testsTimeout -Success {
         param($r) $r.ExitCode -eq 0
@@ -173,24 +162,12 @@ if (-not $SkipTests -and -not $failed) {
 
     $results.Tests = @{ Passed = $r.Passed; Duration = $r.Duration }
     if (-not $r.Passed) { $failed = $true }
-
-    $output = $r.Output
-    if ($output -match "(?s)Summary.*?tests run.*?passed.*?skipped") {
-        $summary = $Matches[0]
-    } else {
-        $summary = "Summary: $output"
-    }
-    $color = if ($r.Passed) { "Green" } else { "Red" }
-    Write-Status "  $summary" $color
-    }
+}
 
 # ---- REPORT ----------------------------------------------------------
 $total = ((Get-Date) - $startTime).TotalSeconds
 Write-Output ""
-Write-Status "====================================================" "Cyan"
-Write-Status "           CI CHECKER REPORT           " "Cyan"
-Write-Status "====================================================" "Cyan"
-Write-Output ""
+Write-Status "CI CHECKER REPORT:" "Cyan"
 
 $p = 0; $f = 0
 $runOrder = @("Build", "Format", "Clippy", "Tests")
@@ -203,17 +180,12 @@ foreach ($name in $runOrder) {
         if ($r.Passed) { $p++ } else { $f++ }
     }
 }
-Write-Output ""
-Write-Status "------------------------------------------------" "Cyan"
 Write-Status ("Passed: $p  |  Failed: $f  |  Total Time: {0:N2}s" -f $total) $(if ($f -eq 0) { "Green" } else { "Red" })
-Write-Status "------------------------------------------------" "Cyan"
-Write-Output ""
+Write-Status "----------------------------------------------" "Cyan"
 
 # ---- EXIT -----------------------------------------------------------
 if ($f -eq 0) {
-    Write-Output ""
     Write-Status "All checks passed! Ready for commit." "Green"
-    Write-Output ""
     Write-Status "COMMIT REMINDER:" "Yellow"
     Write-Output "  - Describe the WHY, not the what"
     Write-Output "  - Format: 'type: description (reason/impact)'"

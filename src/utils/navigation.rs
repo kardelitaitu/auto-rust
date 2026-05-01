@@ -1,3 +1,9 @@
+//! Browser navigation utilities for page loading and element location.
+//!
+//! Provides functions for page navigation (goto, reload, back)
+//! and element location via CSS selectors and accessibility tree.
+//! Includes timeout handling and fallback strategies.
+
 use anyhow::Result;
 #[cfg(feature = "accessibility-locator")]
 use chromiumoxide::cdp::browser_protocol::accessibility::{

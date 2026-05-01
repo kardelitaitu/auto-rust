@@ -1,3 +1,12 @@
+//! Native OS-level input simulation via enigo library.
+//!
+//! Provides fallback input methods when CDP (Chrome DevTools Protocol)
+//! input is unavailable or insufficient. Supports mouse and keyboard
+//! actions at the OS level for native application automation.
+//!
+//! This is primarily used as a fallback or for non-browser automation
+//! scenarios where direct OS interaction is required.
+
 use crate::config::NativeInputBackend;
 use anyhow::Result;
 use enigo::{

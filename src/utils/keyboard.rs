@@ -1,3 +1,11 @@
+//! Keyboard input simulation with human-like typing patterns.
+//!
+//! Provides utilities for simulating realistic keyboard input:
+//! - Human-like typing with variable delay between keystrokes
+//! - Special key combinations (Ctrl+C, Ctrl+V, etc.)
+//! - Text input with optional typos and corrections
+//! - Support for accessibility features and screen readers
+
 use crate::internal::profile::TypingBehavior;
 use crate::utils::math::{gaussian, random_in_range};
 use crate::utils::timing::human_pause;

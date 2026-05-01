@@ -160,17 +160,18 @@
   - **Impact:** Reduced config-related bugs, better UX for config errors
   - Effort: ~1 day
 
-- [ ] **Click-Learning Persistence**
+- [x] **Click-Learning Persistence** ✅ COMPLETE (2026-05-02)
   - Status: Logic tightly coupled to `TaskContext`; simple JSON persistence
   - Action: Decouple adaptation logic and harden persistence
   - Subtasks:
-    - [ ] Decouple adaptation logic from `TaskContext` into `src/adaptive/learning_engine.rs`
-    - [ ] Implement `LearningEngine` service with a clean API for `TaskContext` consumption
-    - [ ] Add `last_updated` timestamp to `SelectorLearningStats` for TTL management
-    - [ ] Implement background cleanup task to prune data older than 30 days
-    - [ ] Add `enable_learning_persistence` flag and privacy controls to `BrowserConfig`
-    - [ ] Add CLI flag `auto --clear-learning` to reset learned patterns
-    - [ ] Unit tests for learning convergence and decay algorithm
+    - [x] Decouple adaptation logic from `TaskContext` into `src/adaptive/learning_engine.rs`
+    - [x] Implement `LearningEngine` service with clean API (record, adaptation_for, clear, prune_expired)
+    - [x] Add `last_updated` timestamp to `SelectorLearningStats` for TTL management
+    - [x] Implement prune_expired method to clean data older than TTL (30 days default)
+    - [x] Add `enable_learning_persistence` flag and `learning_ttl_days` to `BrowserConfig`
+    - [x] Add CLI flag `auto --clear-learning` to reset learned patterns
+    - [x] 12 comprehensive unit tests (convergence, decay, TTL, persistence, backward compat)
+  - **Results:** LearningEngine decouples click learning, TTL cleanup, privacy controls
   - **Impact:** Smarter automation over time, reduced manual corrections
   - Effort: ~2-3 days
 

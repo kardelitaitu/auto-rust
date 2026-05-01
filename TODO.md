@@ -332,15 +332,17 @@ These appear low in tarpaulin but are well-tested via integration tests:
 
 #### High Impact (Quick Wins) - Priority 1
 
-**1. Dependency Audit** (Est: 2-4 hours)
-- [ ] Run `cargo tree` to visualize dependency graph
-- [ ] Identify unused dependencies with `cargo-udeps` or manual review
-- [ ] Check for duplicate transitive dependencies (`cargo tree -d`)
-- [ ] Review outdated dependencies (`cargo outdated`)
-- [ ] Update high-priority dependencies (security patches)
-- [ ] Document findings in `docs/DEPENDENCY_AUDIT.md`
-- [ ] Remove redundant deps, update `Cargo.lock`
-- **Impact:** Faster builds, smaller binary (~5-15% reduction), reduced attack surface
+**1. Dependency Audit** ✅ COMPLETE (2026-05-01)
+- [x] Run `cargo tree` to visualize dependency graph
+- [x] Identify unused dependencies with manual review
+- [x] Check for duplicate transitive dependencies (`cargo tree -d`)
+- [x] Review outdated dependencies (manual inspection)
+- [x] Update high-priority dependencies (security patches)
+- [x] Document findings in `docs/DEPENDENCY_AUDIT.md`
+- [x] Remove redundant deps, update `Cargo.lock`
+- **Results:** 3 deps removed (urlencoding, humantime, lazy_static)
+- **Migration:** lazy_static → once_cell::sync::Lazy
+- **Impact:** 37 direct deps (was 39), cleaner dependency tree
 
 **2. Increase Bus Factor** (Est: 4-6 hours)
 - [ ] Create `docs/ARCHITECTURE.md` with core design decisions (ADRs)

@@ -328,19 +328,99 @@ These appear low in tarpaulin but are well-tested via integration tests:
 - [x] Clippy clean (0 warnings) - DONE
 - [x] Formatting compliant (cargo fmt) - DONE
 
-### Next Items to Consider
+### Next Items to Consider (Sorted by Impact)
 
-#### High Impact (Quick Wins)
-1. **Dependency audit** - Review 39 dependencies for redundancy
-2. **Increase bus factor** - Document ADRs, onboarding guide
+#### High Impact (Quick Wins) - Priority 1
 
-#### Medium Impact (Defined Effort)
-3. **Add benchmark suite** - Implement criterion for hot paths
-4. **Config loading normalization** - Deepen config boundary
-5. **Click-learning persistence** - Isolate adaptation logic
+**1. Dependency Audit** (Est: 2-4 hours)
+- [ ] Run `cargo tree` to visualize dependency graph
+- [ ] Identify unused dependencies with `cargo-udeps` or manual review
+- [ ] Check for duplicate transitive dependencies (`cargo tree -d`)
+- [ ] Review outdated dependencies (`cargo outdated`)
+- [ ] Update high-priority dependencies (security patches)
+- [ ] Document findings in `docs/DEPENDENCY_AUDIT.md`
+- [ ] Remove redundant deps, update `Cargo.lock`
+- **Impact:** Faster builds, smaller binary (~5-15% reduction), reduced attack surface
 
-#### Lower Impact (Larger Refactorings)
-6. **TaskContext click pipeline** - Consolidate interaction layers
-7. **Runtime shutdown coordination** - Clarify shutdown boundaries
-8. **CLI parsing + registry** - Self-contain CLI logic
-9. **Browser discovery** - Predictable session assembly
+**2. Increase Bus Factor** (Est: 4-6 hours)
+- [ ] Create `docs/ARCHITECTURE.md` with core design decisions (ADRs)
+  - [ ] Session management architecture
+  - [ ] Task execution flow
+  - [ ] Browser automation abstraction layer
+  - [ ] Error handling philosophy
+- [ ] Create `docs/ONBOARDING.md` for new contributors
+  - [ ] Development environment setup
+  - [ ] Testing guidelines
+  - [ ] Code review checklist
+- [ ] Add module-level rustdoc to 5+ core modules
+- [ ] Create `docs/DECISION_LOG.md` for major technical decisions
+- **Impact:** Team scalability, reduced single-point-of-failure, faster onboarding
+
+#### Medium Impact (Defined Effort) - Priority 2
+
+**3. Add Benchmark Suite** (Est: 1-2 days)
+- [ ] Add `criterion` dev dependency
+- [ ] Create `benches/` directory structure
+- [ ] Benchmark mouse trajectory generation (hot path)
+- [ ] Benchmark pathfinding algorithms
+- [ ] Benchmark DOM selector resolution
+- [ ] Add `cargo bench` to CI (optional gate)
+- [ ] Document baseline performance metrics
+- **Impact:** Performance regression detection, optimization targets identified
+
+**4. Config Loading Normalization** (Est: 1 day)
+- [ ] Audit all config loading sites (`config::Config` usage)
+- [ ] Consolidate validation logic into `src/config/validation.rs`
+- [ ] Add detailed error messages for config failures
+- [ ] Add config schema documentation
+- [ ] Create example configs with all options commented
+- [ ] Add config loading unit tests (edge cases: missing fields, invalid values)
+- **Impact:** Reduced config-related bugs, better UX for config errors
+
+**5. Click-Learning Persistence** (Est: 2-3 days)
+- [ ] Isolate click adaptation logic into `src/learning/` module
+- [ ] Design persistence format (JSON/SQLite) for learned patterns
+- [ ] Implement load/save for click position corrections
+- [ ] Add TTL (time-to-live) for stale learnings
+- [ ] Add privacy controls (opt-out, data clearing)
+- [ ] Unit tests for learning algorithm
+- **Impact:** Smarter automation over time, reduced manual corrections
+
+#### Lower Impact (Larger Refactorings) - Priority 3
+
+**6. Runtime Shutdown Coordination** (Est: 3-4 days)
+- [ ] Audit all shutdown paths (signals, errors, graceful)
+- [ ] Design shutdown token propagation architecture
+- [ ] Implement coordinated shutdown for browser pool
+- [ ] Ensure all tasks complete or cancel cleanly
+- [ ] Add shutdown timeout enforcement
+- [ ] Add shutdown integration tests
+- **Impact:** Eliminate zombie processes, clean restarts
+
+**7. TaskContext Click Pipeline** (Est: 3-5 days)
+- [ ] Audit current click interaction layers
+- [ ] Design unified click abstraction
+- [ ] Consolidate CDP and DOM click paths
+- [ ] Add retry logic with exponential backoff
+- [ ] Add click verification (element state before/after)
+- [ ] Refactor `TaskContext` click methods to use new pipeline
+- [ ] Add click pipeline unit tests
+- **Impact:** More reliable clicks, easier to debug, consistent behavior
+
+**8. CLI Parsing + Registry Self-Containment** (Est: 2-3 days)
+- [ ] Audit current CLI argument parsing (`clap` usage)
+- [ ] Move CLI logic from `src/main.rs` to `src/cli/` module
+- [ ] Self-contain task registry discovery
+- [ ] Add CLI integration tests
+- [ ] Document all CLI options with examples
+- **Impact:** Cleaner `main.rs`, easier CLI testing, better help documentation
+
+**9. Browser Discovery Predictability** (Est: 4-7 days)
+- [ ] Audit current browser discovery (`chromiumoxide` usage)
+- [ ] Design predictable browser session assembly
+- [ ] Add browser capability detection
+- [ ] Add fallback strategies (Chrome → Chromium → Edge)
+- [ ] Add browser version compatibility checks
+- [ ] Document browser requirements
+- [ ] Add browser discovery unit tests
+- **Impact:** More reliable browser automation, clearer requirements

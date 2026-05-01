@@ -214,7 +214,7 @@ if (-not $SkipTests -and -not $failed) {
 
 # ---- REPORT ----------------------------------------------------------
 $total = ((Get-Date) - $startTime).TotalSeconds
-Write-Status "CI CHECKER REPORT:" "Cyan"
+Write-Status "CI CHECKER REPORT:" "Yellow"
 $p = 0; $f = 0
 $runOrder = @("Build", "Format", "Clippy", "Tests")
 foreach ($name in $runOrder) {

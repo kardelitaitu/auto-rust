@@ -141,7 +141,7 @@ impl Validate for BrowserConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{BrowserConfig, BrowserProfile, BrowserType, OrchestratorConfig};
+    use crate::config::{BrowserConfig, BrowserProfile, OrchestratorConfig};
 
     fn create_valid_orchestrator_config() -> OrchestratorConfig {
         OrchestratorConfig {
@@ -163,8 +163,8 @@ mod tests {
             circuit_breaker: crate::config::CircuitBreakerConfig::default(),
             profiles: vec![BrowserProfile {
                 name: "test".to_string(),
-                path: "/usr/bin/brave".to_string(),
-                browser_type: BrowserType::Brave,
+                r#type: "brave".to_string(),
+                ws_endpoint: "ws://localhost:9222".to_string(),
             }],
             roxybrowser: crate::config::RoxybrowserConfig::default(),
             user_agent: None,
@@ -172,6 +172,8 @@ mod tests {
             cursor_overlay_ms: 0,
             native_interaction: crate::config::NativeInteractionConfig::default(),
             max_workers_per_session: 5,
+            enable_learning_persistence: true,
+            learning_ttl_days: 30,
         }
     }
 

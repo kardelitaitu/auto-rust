@@ -1,5 +1,5 @@
 use anyhow::Result;
-use auto::config::{NativeClickCalibrationMode, NativeInteractionConfig};
+use auto::config::{BrowserConfig, NativeClickCalibrationMode, NativeInteractionConfig};
 use auto::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
 use auto::result::{TaskErrorKind, TaskResult, TaskStatus};
 use auto::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
@@ -106,6 +106,10 @@ async fn connect_test_session() -> Result<Option<Session>> {
     Ok(Some(session))
 }
 
+fn test_browser_config() -> BrowserConfig {
+    BrowserConfig::default()
+}
+
 fn build_task_context(session: &Session, page: Arc<chromiumoxide::Page>) -> TaskContext {
     TaskContext::new(
         session.id.clone(),
@@ -113,6 +117,7 @@ fn build_task_context(session: &Session, page: Arc<chromiumoxide::Page>) -> Task
         session.behavior_profile.clone(),
         session.behavior_runtime,
         NativeInteractionConfig::default(),
+        &test_browser_config(),
         &DEFAULT_TASK_POLICY,
         None,
     )
@@ -130,6 +135,7 @@ fn build_task_context_with_metrics(
         session.behavior_runtime,
         NativeInteractionConfig::default(),
         metrics,
+        &test_browser_config(),
         &DEFAULT_TASK_POLICY,
         None,
     )
@@ -146,6 +152,7 @@ fn build_task_context_with_policy(
         session.behavior_profile.clone(),
         session.behavior_runtime,
         NativeInteractionConfig::default(),
+        &test_browser_config(),
         policy,
         None,
     )
@@ -162,6 +169,7 @@ fn build_task_context_with_cancel_token(
         session.behavior_profile.clone(),
         session.behavior_runtime,
         NativeInteractionConfig::default(),
+        &test_browser_config(),
         &DEFAULT_TASK_POLICY,
         cancel_token,
     )
@@ -2291,6 +2299,7 @@ async fn screenshot_auto_saves_webp_with_correct_filename() -> Result<()> {
         session.behavior_profile.clone(),
         session.behavior_runtime,
         NativeInteractionConfig::default(),
+        &test_browser_config(),
         policy,
         None,
     );
@@ -2410,6 +2419,7 @@ async fn screenshot_creates_directory_if_not_exists() -> Result<()> {
         session.behavior_profile.clone(),
         session.behavior_runtime,
         NativeInteractionConfig::default(),
+        &test_browser_config(),
         policy,
         None,
     );
@@ -2461,6 +2471,7 @@ async fn screenshot_with_quality_clamps_and_writes_webp() -> Result<()> {
         session.behavior_profile.clone(),
         session.behavior_runtime,
         NativeInteractionConfig::default(),
+        &test_browser_config(),
         policy,
         None,
     );

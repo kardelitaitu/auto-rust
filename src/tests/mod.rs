@@ -36,6 +36,8 @@ mod config_tests {
                 cursor_overlay_ms: 0,
                 native_interaction: NativeInteractionConfig::default(),
                 max_workers_per_session: 5,
+                enable_learning_persistence: true,
+                learning_ttl_days: 30,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 5,
@@ -77,6 +79,8 @@ mod config_tests {
                 cursor_overlay_ms: 0,
                 native_interaction: NativeInteractionConfig::default(),
                 max_workers_per_session: 5,
+                enable_learning_persistence: true,
+                learning_ttl_days: 30,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 0,

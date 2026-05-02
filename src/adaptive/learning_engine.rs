@@ -237,11 +237,11 @@ mod tests {
     use crate::utils::profile::BrowserProfile;
 
     fn create_test_profile() -> BrowserProfile {
-        BrowserProfile {
-            name: "test-profile".to_string(),
-            browser_type: crate::config::BrowserType::Brave,
-            path: "/usr/bin/brave".to_string(),
-        }
+        // Only use the name field which is common between utils::profile::BrowserProfile
+        // and config::BrowserProfile. The learning engine only needs the name for path.
+        let mut profile = BrowserProfile::average();
+        profile.name = "test-profile".to_string();
+        profile
     }
 
     fn create_test_context() -> ClickTimingContext {
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_learning_engine_disabled() {
-        let profile = create_test_profile();
+        let _profile = create_test_profile();
         let mut engine = LearningEngine::disabled();
 
         // Recording should be no-op

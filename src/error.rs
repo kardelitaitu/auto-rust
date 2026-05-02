@@ -402,7 +402,8 @@ mod tests {
 
     #[test]
     fn test_orchestrator_error_from_config_error() {
-        let config_err = ConfigError::MissingField("test".to_string());
+        let config_err =
+            ConfigError::MissingField("test".to_string(), "this field is required".to_string());
         let orch_err: OrchestratorError = config_err.into();
         assert!(matches!(orch_err, OrchestratorError::Config(_)));
         assert_eq!(

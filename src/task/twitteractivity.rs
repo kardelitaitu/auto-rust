@@ -27,7 +27,6 @@
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 #[allow(unused_imports)]
 use tokio::time::timeout;
@@ -56,7 +55,6 @@ use crate::metrics::{
 };
 use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
-use crate::utils::timing::duration_with_variance;
 use crate::utils::twitter::{
     twitteractivity_decision::*,
     twitteractivity_dive::*,
@@ -69,18 +67,14 @@ use crate::utils::twitter::{
     twitteractivity_persona::*,
     twitteractivity_popup::*,
     twitteractivity_sentiment::*,
+    twitteractivity_state::*,
     twitteractivity_sentiment_enhanced::{
         extract_temporal_factors, extract_thread_context, extract_user_reputation,
         EnhancedSentimentAnalyzer, EnhancedSentimentResult,
     },
 };
 
-/// Default feed scan duration budget (ms): 5 minutes.
-pub const DEFAULT_TWITTERACTIVITY_DURATION_MS: u64 = 300_000;
 
-fn default_duration_ms() -> u64 {
-    DEFAULT_TWITTERACTIVITY_DURATION_MS
-}
 /// Minimum delay between feed candidate scans (ms)
 const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;
 /// Minimum delay between actions on same tweet (ms)
@@ -175,67 +169,7 @@ pub fn select_entry_point() -> &'static str {
     ENTRY_POINTS[0].url // fallback to home
 }
 
-/// Tracks the last action type and timestamp for each tweet to prevent unrealistic action chains.
-///
-// This tracker prevents the bot from performing multiple actions on the same tweet
-// in rapid succession, which would appear unnatural. It enforces a minimum delay
-// between different action types on the same tweet.
-//
-// # Fields
-// * `last_action` - Maps tweet ID to (last_action_type, timestamp)
-// * `min_delay_ms` - Minimum delay between actions on the same tweet
-//
-// # Behavior
-// - Actions on the same tweet must be separated by at least `min_delay_ms`
-// - This prevents patterns like like→retweet→reply in quick succession
-// - Each action is recorded with its timestamp for cooldown tracking
-//
-// # Example
-/// ```rust,no_run
-/// # use auto::task::twitteractivity::TweetActionTracker;
-/// // This is a simplified example for documentation purposes
-/// let mut tracker = TweetActionTracker::new(3000);
-/// // In actual use, you would call can_perform_action and record_action
-/// ```
-#[derive(Debug, Clone, Default)]
-pub struct TweetActionTracker {
-    /// Maps tweet ID to (last_action_type, timestamp)
-    last_action: HashMap<String, (&'static str, Instant)>,
-    /// Minimum delay between actions on the same tweet in milliseconds
-    min_delay_ms: u64,
-}
 
-impl TweetActionTracker {
-    pub fn new(min_delay_ms: u64) -> Self {
-        Self {
-            last_action: HashMap::new(),
-            min_delay_ms,
-        }
-    }
-
-    /// Check if an action is allowed on this tweet (prevents rapid action chains).
-    pub fn can_perform_action(&self, tweet_id: &str, _action_type: &str) -> bool {
-        if let Some((_, last_time)) = self.last_action.get(tweet_id) {
-            let elapsed = last_time.elapsed();
-            // Enforce minimum delay between actions on same tweet
-            if elapsed.as_millis() < self.min_delay_ms as u128 {
-                return false;
-            }
-        }
-        true
-    }
-
-    /// Record that an action was performed on a tweet.
-    pub fn record_action(&mut self, tweet_id: String, action_type: &'static str) {
-        let tweet_id_for_log = tweet_id.clone();
-        self.last_action
-            .insert(tweet_id, (action_type, Instant::now()));
-        info!(
-            "Recorded {} action on tweet {} (cooldown: {}ms)",
-            action_type, tweet_id_for_log, self.min_delay_ms
-        );
-    }
-}
 
 /// Navigate to weighted entry point and simulate reading if not on home.
 ///
@@ -307,177 +241,9 @@ async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Configuration for reply and quote text templates by sentiment.
-///
-/// This struct holds template strings for generating human-like engagement text
-/// based on tweet sentiment analysis. Each sentiment category (positive, neutral, negative)
-/// has separate templates for replies and quotes.
-///
-/// # Fields
-/// * `reply_positive` - Template strings for positive sentiment replies
-/// * `reply_neutral` - Template strings for neutral sentiment replies
-/// * `reply_negative` - Template strings for negative sentiment replies
-/// * `quote_positive` - Template strings for positive sentiment quotes
-/// * `quote_neutral` - Template strings for neutral sentiment quotes
-/// * `quote_negative` - Template strings for negative sentiment quotes
-#[derive(Debug, Clone)]
-struct SentimentTemplates {
-    reply_positive: Vec<String>,
-    reply_neutral: Vec<String>,
-    reply_negative: Vec<String>,
-    quote_positive: Vec<String>,
-    quote_neutral: Vec<String>,
-    quote_negative: Vec<String>,
-}
 
-impl Default for SentimentTemplates {
-    fn default() -> Self {
-        Self {
-            reply_positive: vec![
-                "Great point!".to_string(),
-                "Absolutely agree.".to_string(),
-                "Well said.".to_string(),
-                "Thanks for sharing!".to_string(),
-                "This is spot on.".to_string(),
-            ],
-            reply_neutral: vec![
-                "Interesting.".to_string(),
-                "Thanks.".to_string(),
-                "Noted.".to_string(),
-                "Hmm.".to_string(),
-                "I see.".to_string(),
-            ],
-            reply_negative: vec![
-                "I disagree, but good discussion.".to_string(),
-                "Different perspective, but thanks.".to_string(),
-                "I see your point, though I think otherwise.".to_string(),
-                "Respectfully, I have to differ.".to_string(),
-            ],
-            quote_positive: vec![
-                "This is worth sharing.".to_string(),
-                "Great perspective here.".to_string(),
-                "Agreed with this take.".to_string(),
-                "Important point worth highlighting.".to_string(),
-                "This resonates.".to_string(),
-            ],
-            quote_neutral: vec![
-                "Worth a read.".to_string(),
-                "Interesting take.".to_string(),
-                "Good point here.".to_string(),
-                "Noting this one.".to_string(),
-                "Thoughts on this.".to_string(),
-            ],
-            quote_negative: vec![
-                "Different perspective worth considering.".to_string(),
-                "This raises important questions.".to_string(),
-                "Worth discussing further.".to_string(),
-                "Challenging viewpoint here.".to_string(),
-                "Food for thought.".to_string(),
-            ],
-        }
-    }
-}
 
-/// Task configuration parsed from JSON payload.
-///
-/// This struct contains all configuration parameters for the Twitter activity task,
-/// including timing, engagement limits, persona weights, and feature flags.
-///
-/// # Fields
-/// * `duration_ms` - Total duration of the feed scanning phase in milliseconds
-/// * `candidate_count` - Maximum number of tweet candidates to consider per scan
-/// * `thread_depth` - Maximum thread depth when diving into tweet threads
-/// * `max_actions_per_scan` - Maximum successful actions allowed per candidate scan iteration
-/// * `weights` - Optional persona weights for engagement probability modulation
-/// * `llm_enabled` - Whether LLM-powered reply/quote generation is enabled
-/// * `smart_decision_enabled` - Whether rule-based smart decision filtering is enabled
-/// * `sentiment_templates` - Template strings for generating engagement text by sentiment
-/// * `enhanced_sentiment_enabled` - Whether to use enhanced sentiment analysis with context
-///
-/// # Example
-/// ```json
-/// {
-///   "duration_ms": 120000,
-///   "candidate_count": 5,
-///   "thread_depth": 10,
-///   "max_actions_per_scan": 3,
-///   "llm_enabled": true,
-///   "smart_decision_enabled": true,
-///   "enhanced_sentiment_enabled": true
-/// }
-/// ```
-#[derive(Debug, Clone)]
-struct TaskConfig {
-    duration_ms: u64,
-    candidate_count: u32,
-    thread_depth: u32,
-    max_actions_per_scan: u32,
-    weights: Option<Value>,
-    llm_enabled: bool,
-    smart_decision_enabled: bool,
-    sentiment_templates: SentimentTemplates,
-    enhanced_sentiment_enabled: bool,
-    dry_run_actions: bool,
-}
 
-impl TaskConfig {
-    /// Parse task configuration from JSON payload with defaults
-    fn from_payload(payload: &Value, config: &crate::config::TwitterActivityConfig) -> Self {
-        let duration_ms =
-            duration_with_variance(read_u64(payload, "duration_ms", default_duration_ms()), 20);
-        let candidate_count = read_u32(
-            payload,
-            "candidate_count",
-            config.engagement_candidate_count,
-        );
-        let thread_depth = read_u32(payload, "thread_depth", 3);
-        let max_actions_per_scan = read_u32(
-            payload,
-            "max_actions_per_scan",
-            config.engagement_candidate_count,
-        )
-        .max(1);
-        let weights = payload.get("weights").cloned();
-
-        // Parse LLM config (V2 feature)
-        let llm_enabled = payload
-            .get("llm_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(config.llm.enabled);
-
-        // Parse smart decision config (V3 feature - rule-based)
-        let smart_decision_enabled = payload
-            .get("smart_decision_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        // Sentiment templates use defaults for now (could be parsed from payload in future)
-        let sentiment_templates = SentimentTemplates::default();
-
-        // Parse enhanced sentiment config
-        let enhanced_sentiment_enabled = payload
-            .get("enhanced_sentiment_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true); // Enable by default for better analysis
-        let dry_run_actions = payload
-            .get("dry_run_actions")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        Self {
-            duration_ms,
-            candidate_count,
-            thread_depth,
-            max_actions_per_scan,
-            weights,
-            llm_enabled,
-            smart_decision_enabled,
-            sentiment_templates,
-            enhanced_sentiment_enabled,
-            dry_run_actions,
-        }
-    }
-}
 
 fn engagement_limits_from_config(
     config: &crate::config::EngagementLimitsConfig,
@@ -686,59 +452,49 @@ fn handle_engagement_decision(
 /// Process a single candidate tweet for engagement.
 ///
 /// # Arguments
-/// * `tweet` - Tweet data from candidate scan
-/// * `persona` - Base persona weights
-/// * `task_config` - Task configuration
-/// * `api` - Task context
-/// * `limits` - Engagement limits
-/// * `action_tracker` - Action tracking state (mutable)
-/// * `scroll_interval` - Scroll interval between scans
-/// * `counters` - Engagement counters (mutable)
+/// * `ctx` - CandidateContext grouping configuration and mutable state
 /// * `actions_this_scan` - Actions taken in current scan
-/// * `next_scroll` - Next scroll time (mutable)
-/// * `_actions_taken` - Total actions taken (mutable)
-///
-/// Context for processing a single tweet candidate.
-/// Groups configuration and mutable state for candidate processing.
+/// * `next_scroll` - Next scroll time
+/// * `_actions_taken` - Total actions taken
 ///
 /// # Returns
-/// Result<(bool, Instant, u32, u32, Option<ThreadCache>)> - (should_break, next_scroll, actions_this_scan, _actions_taken, thread_cache)
+/// Result<CandidateResult> - (should_break, next_scroll, actions_this_scan, actions_taken, thread_cache)
 #[allow(clippy::too_many_arguments)]
 async fn process_candidate(
-    tweet: &Value,
-    persona: &PersonaWeights,
-    task_config: &TaskConfig,
-    api: &TaskContext,
-    limits: &EngagementLimits,
-    scroll_interval: Duration,
-    action_tracker: &mut TweetActionTracker,
-    counters: &mut EngagementCounters,
-    // NOTE: current_thread_cache is intentionally NOT used here to avoid cross-tweet contamination.
-    // Each tweet should start with a fresh cache. The cache is only populated if THIS tweet
-    // performs a dive, and is only valid for subsequent quote/reply actions on THIS same tweet.
-    _current_thread_cache_unused: Option<ThreadCache>,
+    mut ctx: CandidateContext<'_>,
     actions_this_scan: u32,
     next_scroll: Instant,
     _actions_taken: u32,
-) -> Result<(bool, Instant, u32, u32, Option<ThreadCache>)> {
+) -> Result<CandidateResult> {
     let mut actions_this_scan = actions_this_scan;
     let mut next_scroll = next_scroll;
     let mut _actions_taken = _actions_taken;
     // Each tweet starts with a fresh cache. Only populated if this tweet dives.
     let mut current_thread_cache: Option<ThreadCache> = None;
 
+    // Destructure ctx for easier access (preserve original variable names)
+    let tweet = ctx.tweet;
+    let persona = ctx.persona;
+    let task_config = ctx.task_config;
+    let api = ctx.api;
+    let limits = ctx.limits;
+    let scroll_interval = ctx.scroll_interval;
+    let action_tracker = &mut ctx.action_tracker;
+    let counters = &mut ctx.counters;
+    let _current_thread_cache_unused = ctx.thread_cache;
+
     if actions_this_scan >= task_config.max_actions_per_scan {
         info!(
             "Per-scan action budget reached ({}/{}), deferring remaining candidates",
             actions_this_scan, task_config.max_actions_per_scan
         );
-        return Ok((
-            true,
+        return Ok(CandidateResult {
+            should_break: true,
             next_scroll,
             actions_this_scan,
-            _actions_taken,
-            current_thread_cache,
-        ));
+            actions_taken: _actions_taken,
+            thread_cache: current_thread_cache,
+        });
     }
 
     // Analyze sentiment with enhanced context when enabled
@@ -804,13 +560,13 @@ async fn process_candidate(
                 "Skipping engagement: {} (score: {})",
                 decision.reason, decision.score
             );
-            return Ok((
-                false,
+            return Ok(CandidateResult {
+                should_break: false,
                 next_scroll,
                 actions_this_scan,
-                _actions_taken,
-                current_thread_cache,
-            ));
+                actions_taken: _actions_taken,
+                thread_cache: current_thread_cache,
+            });
         }
     }
 
@@ -866,13 +622,13 @@ async fn process_candidate(
         status_url.is_some(),
     );
     let Some(selected_action) = selected_action else {
-        return Ok((
-            false,
+        return Ok(CandidateResult {
+            should_break: false,
             next_scroll,
             actions_this_scan,
-            _actions_taken,
-            current_thread_cache,
-        ));
+            actions_taken: _actions_taken,
+            thread_cache: current_thread_cache,
+        });
     };
 
     // Retweet, quote, reply, follow, and bookmark require a detail view; like does not.
@@ -882,13 +638,13 @@ async fn process_candidate(
     if need_dive {
         // Dive into thread for non-like actions
         if actions_this_scan >= task_config.max_actions_per_scan {
-            return Ok((
-                true,
+            return Ok(CandidateResult {
+                should_break: true,
                 next_scroll,
                 actions_this_scan,
-                _actions_taken,
-                current_thread_cache,
-            ));
+                actions_taken: _actions_taken,
+                thread_cache: current_thread_cache,
+            });
         }
         if !limits.can_dive(counters) {
             info!(
@@ -1241,13 +997,13 @@ async fn process_candidate(
         info!("Resumed continuous scrolling after thread dive");
     }
 
-    Ok((
-        false,
+    Ok(CandidateResult {
+        should_break: false,
         next_scroll,
         actions_this_scan,
-        _actions_taken,
-        current_thread_cache,
-    ))
+        actions_taken: _actions_taken,
+        thread_cache: current_thread_cache,
+    })
 }
 
 /// Task entry point called by orchestrator.
@@ -1393,27 +1149,27 @@ async fn run_inner(
             let mut actions_this_scan = 0u32;
 
             for tweet in to_consider {
-                let (
-                    should_break,
-                    new_next_scroll,
-                    new_actions_this_scan,
-                    new_actions_taken,
-                    _new_thread_cache,
-                ) = process_candidate(
+                // Construct CandidateContext for process_candidate
+                let ctx = CandidateContext {
                     tweet,
-                    &persona,
-                    &task_config,
+                    persona: &persona,
+                    task_config: &task_config,
                     api,
-                    &limits,
+                    limits: &limits,
                     scroll_interval,
-                    &mut action_tracker,
-                    &mut counters,
-                    None, // Each tweet starts with fresh cache (no cross-tweet contamination)
-                    actions_this_scan,
-                    next_scroll,
-                    _actions_taken,
-                )
-                .await?;
+                    action_tracker: &mut action_tracker,
+                    counters: &mut counters,
+                    thread_cache: None, // Each tweet starts fresh
+                };
+
+                let result = process_candidate(ctx, actions_this_scan, next_scroll, _actions_taken).await?;
+                let CandidateResult {
+                    should_break,
+                    next_scroll: new_next_scroll,
+                    actions_this_scan: new_actions_this_scan,
+                    actions_taken: new_actions_taken,
+                    thread_cache: _new_thread_cache,
+                } = result;
 
                 next_scroll = new_next_scroll;
                 actions_this_scan = new_actions_this_scan;
@@ -1443,18 +1199,7 @@ async fn run_inner(
     Ok(())
 }
 
-// Helper: read numeric fields from payload with defaults
-fn read_u64(payload: &Value, key: &str, default: u64) -> u64 {
-    payload.get(key).and_then(|v| v.as_u64()).unwrap_or(default)
-}
 
-fn read_u32(payload: &Value, key: &str, default: u32) -> u32 {
-    payload
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .and_then(|v| u32::try_from(v).ok())
-        .unwrap_or(default)
-}
 
 // Helper: extract tweet text from tweet object
 fn extract_tweet_text(tweet_obj: &Value) -> String {

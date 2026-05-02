@@ -33,7 +33,9 @@ pub mod twitterretweet;
 pub mod twittertest;
 
 // Re-exports for twitteractivity test access
-pub use twitteractivity::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
+pub use twitteractivity::select_entry_point;
+pub use crate::utils::twitter::twitteractivity_state::TweetActionTracker;
+pub use twitteractivity::MIN_ACTION_CHAIN_DELAY_MS;
 
 pub const TASK_NAMES: &[&str] = &[
     "cookiebot",

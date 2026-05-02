@@ -220,7 +220,7 @@ pub static PAGEVIEW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 
 /// TwitterActivity policy - complex social media automation.
 pub static TWITTERACTIVITY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::twitteractivity::DEFAULT_TWITTERACTIVITY_DURATION_MS,
+    max_duration_ms: crate::utils::twitter::DEFAULT_TWITTERACTIVITY_DURATION_MS,
     permissions: TaskPermissions {
         allow_export_cookies: true,    // Verify login session
         allow_session_clipboard: true, // Copy tweet text, paste replies
@@ -591,7 +591,7 @@ mod tests {
         assert!(policy.permissions.allow_screenshot);
         assert_eq!(
             policy.max_duration_ms,
-            crate::task::twitteractivity::DEFAULT_TWITTERACTIVITY_DURATION_MS
+            crate::utils::twitter::DEFAULT_TWITTERACTIVITY_DURATION_MS
         );
     }
 

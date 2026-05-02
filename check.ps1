@@ -20,12 +20,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $startTime = Get-Date
-# Timeout settings (in seconds)
-$globalTimeout = 300
-$buildTimeout = 60
-$formatTimeout = 30
-$clippyTimeout = 30
-$testsTimeout = 180
 
 $colors = @{
     Green  = "`e[32m"
@@ -44,69 +38,6 @@ function Write-Status($msg, $color = "White") {
 function Write-Header($title) {
     Write-Output ""
     Write-Status "=== $title ===" "Cyan"
-}
-
-function Start-CheckProcess {
-    param([string]$Cmd, [int]$Secs)
-
-    $tmp = "$env:APPDATA\ci_$( [guid]::NewGuid().ToString('N') ).txt"
-    $job = Start-Process pwsh -ArgumentList "-NoProfile", "-NonI", "-Command",
-        "$Cmd | Out-File '$tmp'; exit `$LASTEXITCODE" `
-        -NoNewWindow -PassThru
-
-    $waited = 0
-    while ($job.HasExited -eq $false -and $waited -lt $Secs) {
-        Start-Sleep -Milliseconds 100
-        $waited += 0.1
-    }
-
-    if ($job.HasExited -eq $false) {
-        Stop-Process $job.Id -Force -EA SilentlyContinue
-        if (Test-Path $tmp) { Remove-Item $tmp -EA SilentlyContinue }
-        return @{ Output = $null; ExitCode = 124 }
-    }
-
-    $waited = 0
-    while ((Test-Path $tmp) -eq $false -and $waited -lt 5) {
-        Start-Sleep -Milliseconds 200
-        $waited += 0.2
-    }
-
-    $output = if (Test-Path $tmp) { Get-Content $tmp -Raw } else { "" }
-    $exitCode = $job.ExitCode
-    if (Test-Path $tmp) { Remove-Item $tmp -EA SilentlyContinue }
-
-    return @{ Output = $output; ExitCode = $exitCode }
-}
-
-function Test-Check {
-    param(
-        [string]$Name,
-        [string]$Cmd,
-        [int]$Secs,
-        [scriptblock]$Success,
-        [switch]$Quiet
-    )
-
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $result = Start-CheckProcess -Cmd $Cmd -Secs $Secs
-    $elapsed = $sw.Elapsed.TotalSeconds
-
-    if ($result.ExitCode -eq 124) {
-        Write-Status "$Name timed out after ${Secs}s" "Red"
-        return @{ Passed = $false; Duration = $elapsed; ExitCode = 124 }
-    }
-
-    $passed = & $Success $result
-    $color = if ($passed) { "Green" } else { "Red" }
-    $dur = "{0:N2}s" -f $elapsed
-    $msg = if ($passed) { "passed" } else { "failed" }
-
-    if (-not $Quiet) {
-        Write-Status "$Name $msg ($dur)" $color
-    }
-
-    return @{ Passed = $passed; Duration = $elapsed; ExitCode = $result.ExitCode; Output = $result.Output }
 }
 
 $results = @{

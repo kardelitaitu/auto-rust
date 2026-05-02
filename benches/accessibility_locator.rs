@@ -43,8 +43,7 @@ fn parse_selector_input(input: &str) -> Result<ParsedSelector, LocatorParseError
     }
 
     // Check for role= prefix (simplified parsing)
-    if trimmed.starts_with("role=") {
-        let rest = &trimmed[5..];
+    if let Some(rest) = trimmed.strip_prefix("role=") {
         // Find role name (until [ or end)
         let role_end = rest.find('[').unwrap_or(rest.len());
         let role = &rest[..role_end];
@@ -216,20 +215,18 @@ fn benchmark_throughput(c: &mut Criterion) {
 
     group.bench_function("batch_5_selectors", |b| {
         b.iter(|| {
-            selectors
-                .iter()
-                .map(|s| parse_selector_input(black_box(s)).unwrap())
-                .count()
+            for s in &selectors {
+                black_box(parse_selector_input(black_box(s)).unwrap());
+            }
         })
     });
 
     group.bench_function("batch_10_selectors", |b| {
         b.iter(|| {
             let extended: Vec<&str> = selectors.iter().chain(selectors.iter()).copied().collect();
-            extended
-                .iter()
-                .map(|s| parse_selector_input(black_box(s)).unwrap())
-                .count()
+            for s in &extended {
+                black_box(parse_selector_input(black_box(s)).unwrap());
+            }
         })
     });
 

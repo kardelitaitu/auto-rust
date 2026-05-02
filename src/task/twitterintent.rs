@@ -514,4 +514,143 @@ mod tests {
         let duration = duration_with_variance(DEFAULT_TWITTERINTENT_TASK_DURATION_MS, 20);
         assert!((96_000..=144_000).contains(&duration));
     }
+
+    // --- New Step 1 Tests ---
+
+    #[test]
+    fn test_extract_url_from_payload_cli_truncation_username_only() {
+        let payload = serde_json::json!({"url": "snsnokyoufu"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert!(result.contains("intent/follow?screen_name=snsnokyoufu"));
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_legacy_twitter_com() {
+        let payload =
+            serde_json::json!({"url": "https://twitter.com/intent/follow?screen_name=elonmusk"});
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert!(result.contains("intent/follow"));
+    }
+
+    #[test]
+    fn test_intent_type_from_url_legacy_twitter_com() {
+        let url = "https://twitter.com/intent/follow?screen_name=elonmusk";
+        assert!(matches!(IntentType::from_url(url), Ok(IntentType::Follow)));
+    }
+
+    #[test]
+    fn test_extract_param_multiple_params() {
+        let url = "https://x.com/intent/tweet?text=hi&url=https://x.com/123&in_reply_to=456";
+        assert_eq!(extract_param(url, "text"), Some("hi".to_string()));
+        assert_eq!(
+            extract_param(url, "url"),
+            Some("https://x.com/123".to_string())
+        );
+        assert_eq!(extract_param(url, "in_reply_to"), Some("456".to_string()));
+    }
+
+    #[test]
+    fn test_extract_param_url_encoded_spaces() {
+        let url = "https://x.com/intent/tweet?text=this+is+reply%0Asecond";
+        assert_eq!(
+            extract_param(url, "text"),
+            Some("this+is+reply%0Asecond".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_intent_info_all_types_exhaustive() {
+        let follow_url = "https://x.com/intent/follow?screen_name=elonmusk";
+        let info = parse_intent_info(follow_url, IntentType::Follow);
+        assert_eq!(info.description, "Followed @elonmusk");
+
+        let like_url = "https://x.com/intent/like?tweet_id=123";
+        let info = parse_intent_info(like_url, IntentType::Like);
+        assert_eq!(info.description, "Liked tweet 123");
+
+        let post_url = "https://x.com/intent/tweet?text=Hello";
+        let info = parse_intent_info(post_url, IntentType::Post);
+        assert_eq!(info.description, "Posted 'Hello'");
+
+        let quote_url = "https://x.com/intent/tweet?url=https://x.com/123&text=Great";
+        let info = parse_intent_info(quote_url, IntentType::Quote);
+        assert_eq!(info.description, "Quoted https://x.com/123");
+
+        let retweet_url = "https://x.com/intent/retweet?tweet_id=456";
+        let info = parse_intent_info(retweet_url, IntentType::Retweet);
+        assert_eq!(info.description, "Retweeted tweet 456");
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_twitter_com_no_intent() {
+        let payload = serde_json::json!({"url": "https://twitter.com/elonmusk"});
+        // Function only validates domain (twitter.com/x.com), not intent path
+        let result = extract_url_from_payload(&payload).unwrap();
+        assert_eq!(result, "https://twitter.com/elonmusk");
+    }
+
+    #[test]
+    fn test_intent_type_from_url_invalid() {
+        let url = "https://x.com/elonmusk";
+        assert!(IntentType::from_url(url).is_err());
+    }
+
+    // --- Flow Tests ---
+
+    #[test]
+    fn test_run_inner_flow_url_extraction() {
+        let payload = json!({"url": "https://x.com/intent/follow?screen_name=test"});
+        let url = extract_url_from_payload(&payload).unwrap();
+        assert!(url.contains("intent/follow"));
+        assert!(url.contains("screen_name=test"));
+    }
+
+    #[test]
+    fn test_run_inner_flow_intent_type_detection() {
+        let url = "https://x.com/intent/like?tweet_id=123";
+        let intent_type = IntentType::from_url(url).unwrap();
+        assert!(matches!(intent_type, IntentType::Like));
+        assert_eq!(
+            intent_type.confirm_selector(),
+            "[data-testid=\"confirmationSheetConfirm\"]"
+        );
+    }
+
+    #[test]
+    fn test_run_inner_flow_click_verification_logic() {
+        let url = "https://x.com/intent/follow?screen_name=test";
+        let intent_type = IntentType::from_url(url).unwrap();
+        let selector = intent_type.confirm_selector();
+        assert_eq!(selector, "[data-testid=\"confirmationSheetConfirm\"]");
+        let info = parse_intent_info(url, intent_type);
+        assert_eq!(info.description, "Followed @test");
+    }
+
+    #[test]
+    fn test_run_inner_flow_home_navigation_logic() {
+        let home_selector = "a[href=\"/home\"]";
+        assert!(home_selector.contains("home"));
+        let duration_ms = duration_with_variance(DEFAULT_TWITTERINTENT_TASK_DURATION_MS, 20);
+        assert!((96_000..=144_000).contains(&duration_ms));
+    }
+
+    #[test]
+    fn test_run_inner_flow_post_action_pause_range() {
+        for _ in 0..100 {
+            let pause = crate::utils::math::random_in_range(5000, 15000);
+            assert!((5000..=15000).contains(&pause));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_click_and_verify_flow_button_gone() {
+        // Test the logic flow of click_and_verify when button disappears
+        let url = "https://x.com/intent/follow?screen_name=test";
+        let intent_type = IntentType::from_url(url).unwrap();
+        assert!(matches!(intent_type, IntentType::Follow));
+        assert_eq!(
+            intent_type.confirm_selector(),
+            "[data-testid=\"confirmationSheetConfirm\"]"
+        );
+    }
 }

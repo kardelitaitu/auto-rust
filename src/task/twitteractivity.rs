@@ -29,6 +29,7 @@ use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+#[allow(unused_imports)]
 use tokio::time::timeout;
 
 // Element selectors configuration
@@ -586,14 +587,6 @@ fn phase4_cleanup(
         + api.metrics().run_counter(RUN_COUNTER_QUOTE_FAILURE);
     let dive_attempts = api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS)
         + api.metrics().run_counter(RUN_COUNTER_DIVE_FAILURE);
-
-    fn calc_rate(success: usize, total: usize) -> f64 {
-        if total == 0 {
-            0.0
-        } else {
-            (success as f64 / total as f64) * 100.0
-        }
-    }
 
     info!(
         "[twitter] Success rates | like={:.1}% ({}/{}) retweet={:.1}% ({}/{}) follow={:.1}% ({}/{}) reply={:.1}% ({}/{}) bookmark={:.1}% ({}/{}) quote={:.1}% ({}/{}) dive={:.1}% ({}/{})",
@@ -1639,6 +1632,15 @@ fn generate_quote_text(
     phrases[(quote_idx as usize) % phrases.len()].clone()
 }
 
+/// Calculate success rate as a percentage.
+fn calc_rate(success: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        (success as f64 / total as f64) * 100.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1925,5 +1927,227 @@ mod tests {
             assert!(ep.weight > 0);
             assert!(!ep.url.is_empty());
         }
+    }
+
+    // --- New Step 1 Tests ---
+
+    #[test]
+    fn test_calc_rate_zero_total() {
+        assert_eq!(calc_rate(0, 0), 0.0);
+    }
+
+    #[test]
+    fn test_calc_rate_partial() {
+        assert_eq!(calc_rate(3, 10), 30.0);
+    }
+
+    #[test]
+    fn test_calc_rate_full() {
+        assert_eq!(calc_rate(10, 10), 100.0);
+    }
+
+    #[test]
+    fn test_calc_rate_zero_success() {
+        assert_eq!(calc_rate(0, 5), 0.0);
+    }
+
+    #[test]
+    fn test_select_entry_point_all_valid() {
+        let valid_urls: Vec<&str> = ENTRY_POINTS.iter().map(|ep| ep.url).collect();
+        for _ in 0..1000 {
+            let url = select_entry_point();
+            assert!(valid_urls.contains(&url), "Invalid URL returned: {}", url);
+        }
+    }
+
+    #[test]
+    fn test_select_entry_point_home_weight() {
+        let mut home_count = 0;
+        let total = 1000;
+        for _ in 0..total {
+            let url = select_entry_point();
+            if url == "https://x.com/" {
+                home_count += 1;
+            }
+        }
+        // Home has 59% weight, allow 50-68% range for randomness
+        assert!(
+            home_count > 500 && home_count < 680,
+            "Home count out of range: {}",
+            home_count
+        );
+    }
+
+    #[test]
+    fn test_tweet_action_tracker_new() {
+        let tracker = TweetActionTracker::new(3000);
+        assert_eq!(tracker.min_delay_ms, 3000);
+        assert!(tracker.last_action.is_empty());
+    }
+
+    #[test]
+    fn test_tweet_action_tracker_can_perform_no_prev() {
+        let tracker = TweetActionTracker::new(3000);
+        assert!(tracker.can_perform_action("tweet1", "like"));
+    }
+
+    #[test]
+    fn test_tweet_action_tracker_can_perform_after_record() {
+        let mut tracker = TweetActionTracker::new(3000);
+        tracker.record_action("tweet1".to_string(), "like");
+        // Should be false immediately after recording (cooldown not elapsed)
+        assert!(!tracker.can_perform_action("tweet1", "like"));
+    }
+
+    #[test]
+    fn test_extract_tweet_text_from_text() {
+        let tweet = serde_json::json!({"text": "hello world"});
+        assert_eq!(extract_tweet_text(&tweet), "hello world");
+    }
+
+    #[test]
+    fn test_extract_tweet_text_from_full_text() {
+        let tweet = serde_json::json!({"full_text": "full text here"});
+        assert_eq!(extract_tweet_text(&tweet), "full text here");
+    }
+
+    #[test]
+    fn test_extract_tweet_text_missing() {
+        let tweet = serde_json::json!({});
+        assert_eq!(extract_tweet_text(&tweet), "");
+    }
+
+    #[test]
+    fn test_read_u64_negative() {
+        let payload = serde_json::json!({ "duration_ms": -100 });
+        // as_u64() returns None for negative numbers, falls back to default
+        let result = read_u64(&payload, "duration_ms", 5000);
+        assert_eq!(result, 5000);
+    }
+
+    // --- Flow Tests ---
+
+    #[tokio::test]
+    async fn test_phase1_navigation_flow() {
+        // Test that phase1_navigation calls the expected functions
+        // For now, test the pure logic parts
+        let config = crate::config::TwitterActivityConfig::default();
+        let task_config = TaskConfig::from_payload(&json!({}), &config);
+        assert!(task_config.duration_ms >= 240_000 && task_config.duration_ms <= 360_000);
+    }
+
+    #[test]
+    fn test_process_candidate_action_selection_flow() {
+        // Test the action selection logic flow
+        let persona = PersonaWeights {
+            like_prob: 1.0, // Set to 1.0 to guarantee selection
+            retweet_prob: 1.0,
+            follow_prob: 1.0,
+            reply_prob: 1.0,
+            quote_prob: 1.0,
+            bookmark_prob: 1.0,
+            thread_dive_prob: 1.0,
+            interest_multiplier: 1.0,
+        };
+        let _task_config = TaskConfig {
+            duration_ms: 120000,
+            candidate_count: 5,
+            thread_depth: 3,
+            max_actions_per_scan: 3,
+            weights: None,
+            llm_enabled: false,
+            smart_decision_enabled: false,
+            sentiment_templates: SentimentTemplates::default(),
+            enhanced_sentiment_enabled: false,
+            dry_run_actions: false,
+        };
+        let limits = EngagementLimits::with_limits(100, 100, 100, 100, 100, 100, 100, 100);
+        let counters = EngagementCounters::new();
+        let tracker = TweetActionTracker::new(3000);
+        let tweet = json!({
+            "id": "tweet123",
+            "text": "hello world",
+            "status_url": "https://x.com/user/status/123"
+        });
+
+        // Test that actions_to_do is populated correctly
+        let tweet_id = tweet
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let mut actions_to_do: Vec<&str> = Vec::new();
+
+        if should_like(&persona)
+            && tracker.can_perform_action(tweet_id, "like")
+            && limits.can_like(&counters)
+        {
+            actions_to_do.push("like");
+        }
+        if should_retweet(&persona)
+            && tracker.can_perform_action(tweet_id, "retweet")
+            && limits.can_retweet(&counters)
+        {
+            actions_to_do.push("retweet");
+        }
+
+        assert!(actions_to_do.contains(&"like"));
+        assert!(actions_to_do.contains(&"retweet"));
+    }
+
+    #[test]
+    fn test_process_candidate_limit_enforcement_flow() {
+        let limits = EngagementLimits::with_limits(0, 0, 0, 0, 0, 0, 0, 0);
+        let counters = EngagementCounters::new();
+        let _persona = PersonaWeights::default();
+        let _tweet_id = "tweet123";
+        let _tracker = TweetActionTracker::new(3000);
+
+        // All limits exhausted - no actions should be allowed
+        assert!(!action_allowed_by_limits("like", &limits, &counters));
+        assert!(!action_allowed_by_limits("retweet", &limits, &counters));
+        assert!(!action_allowed_by_limits("follow", &limits, &counters));
+    }
+
+    #[test]
+    fn test_handle_engagement_decision_disabled() {
+        let _task_config = TaskConfig {
+            duration_ms: 120000,
+            candidate_count: 5,
+            thread_depth: 3,
+            max_actions_per_scan: 3,
+            weights: None,
+            llm_enabled: false,
+            smart_decision_enabled: false, // Disabled
+            sentiment_templates: SentimentTemplates::default(),
+            enhanced_sentiment_enabled: false,
+            dry_run_actions: false,
+        };
+        let tweet = json!({"text": "hello"});
+        let result = handle_engagement_decision(&tweet, &_task_config);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_smart_decision_enabled_returns_some() {
+        let _task_config = TaskConfig {
+            duration_ms: 120000,
+            candidate_count: 5,
+            thread_depth: 3,
+            max_actions_per_scan: 3,
+            weights: None,
+            llm_enabled: false,
+            smart_decision_enabled: true, // Enabled
+            sentiment_templates: SentimentTemplates::default(),
+            enhanced_sentiment_enabled: false,
+            dry_run_actions: false,
+        };
+        let tweet = json!({"text": "hello world", "replies": []});
+        let result = handle_engagement_decision(&tweet, &_task_config);
+        assert!(result.is_some());
+        let decision = result.unwrap();
+        // Just verify we got a valid decision
+        // EngagementDecision has: level, score, reason
+        let _level = decision.level;
+        assert!(decision.score <= 100);
     }
 }

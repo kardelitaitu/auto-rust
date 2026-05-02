@@ -257,14 +257,16 @@ mod tests {
     }
 
     #[test]
-    fn preview_chars_unicode_combining() {
-        let text = "café";
-        assert_eq!(preview_chars(text, 3), "caf");
+    fn test_truncate_with_ellipsis_various_scripts() {
+        let text = "Hello 世界 🌍 testing";
+        let result = truncate_with_ellipsis(text, 10);
+        assert!(result.contains("..."));
+        assert_eq!(result.chars().count(), 10);
     }
 
     #[test]
-    fn truncate_chars_unicode_combining() {
-        let text = "café";
-        assert_eq!(truncate_chars(text, 3), "caf");
+    fn test_preview_chars_surrogate_pair() {
+        let text = "\u{10400}"; // Deseret letter (4-byte UTF-8)
+        assert_eq!(preview_chars(text, 1).len(), 4); // 4 bytes
     }
 }

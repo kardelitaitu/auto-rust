@@ -2,7 +2,7 @@
 //!
 //! Run with: `cargo bench --bench accessibility_locator`
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 /// Parsed selector types (simplified for benchmark)
 #[derive(Debug, Clone, PartialEq)]
@@ -48,7 +48,7 @@ fn parse_selector_input(input: &str) -> Result<ParsedSelector, LocatorParseError
         // Find role name (until [ or end)
         let role_end = rest.find('[').unwrap_or(rest.len());
         let role = &rest[..role_end];
-        
+
         if role.is_empty() || role.chars().next().unwrap().is_uppercase() {
             return Err(LocatorParseError::InvalidRole);
         }
@@ -63,27 +63,29 @@ fn parse_selector_input(input: &str) -> Result<ParsedSelector, LocatorParseError
         // Parse segments like [name='value']
         let mut remaining = &rest[role_end..];
         while remaining.starts_with('[') {
-            let close_idx = remaining.find(']').ok_or_else(|| {
-                LocatorParseError::MalformedSegment(remaining.to_string())
-            })?;
+            let close_idx = remaining
+                .find(']')
+                .ok_or_else(|| LocatorParseError::MalformedSegment(remaining.to_string()))?;
             let segment = &remaining[1..close_idx];
-            
+
             if let Some(eq_idx) = segment.find('=') {
                 let key = &segment[..eq_idx];
                 let value = &segment[eq_idx + 2..segment.len() - 1]; // Strip quotes
-                
+
                 match key {
                     "name" => locator.name = Some(value.to_string()),
                     "scope" => locator.scope = Some(value.to_string()),
-                    "match" => locator.match_mode = match value {
-                        "exact" => MatchMode::Exact,
-                        "contains" => MatchMode::Contains,
-                        _ => MatchMode::Exact,
-                    },
+                    "match" => {
+                        locator.match_mode = match value {
+                            "exact" => MatchMode::Exact,
+                            "contains" => MatchMode::Contains,
+                            _ => MatchMode::Exact,
+                        }
+                    }
                     _ => {}
                 }
             }
-            
+
             remaining = &remaining[close_idx + 1..];
         }
 
@@ -100,7 +102,7 @@ fn parse_selector_input(input: &str) -> Result<ParsedSelector, LocatorParseError
 
 fn benchmark_css_selectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("css_selectors");
-    
+
     let selectors = [
         "#button",
         ".class-name",
@@ -113,18 +115,16 @@ fn benchmark_css_selectors(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("parse", selector.len()),
             selector,
-            |b, sel| {
-                b.iter(|| parse_selector_input(black_box(sel)))
-            },
+            |b, sel| b.iter(|| parse_selector_input(black_box(sel))),
         );
     }
-    
+
     group.finish();
 }
 
 fn benchmark_accessibility_locators(c: &mut Criterion) {
     let mut group = c.benchmark_group("accessibility_locators");
-    
+
     let locators = [
         "role=button[name='Save']",
         "role=link[name='Profile'][scope='main']",
@@ -136,12 +136,10 @@ fn benchmark_accessibility_locators(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("parse", locator.len()),
             locator,
-            |b, loc| {
-                b.iter(|| parse_selector_input(black_box(loc)))
-            },
+            |b, loc| b.iter(|| parse_selector_input(black_box(loc))),
         );
     }
-    
+
     group.finish();
 }
 
@@ -152,7 +150,7 @@ fn benchmark_complex_selectors(c: &mut Criterion) {
     group.bench_function("deep_css", |b| {
         b.iter(|| {
             parse_selector_input(black_box(
-                "html > body > main > article > div > section > button[aria-label='Submit']"
+                "html > body > main > article > div > section > button[aria-label='Submit']",
             ))
         })
     });
@@ -170,7 +168,7 @@ fn benchmark_complex_selectors(c: &mut Criterion) {
     group.bench_function("attribute_heavy_css", |b| {
         b.iter(|| {
             parse_selector_input(black_box(
-                "[data-testid='button'][data-variant='primary'][data-size='large'][disabled]"
+                "[data-testid='button'][data-variant='primary'][data-size='large'][disabled]",
             ))
         })
     });
@@ -206,7 +204,7 @@ fn benchmark_parse_error_cases(c: &mut Criterion) {
 
 fn benchmark_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("throughput");
-    
+
     // Measure batch parsing throughput
     let selectors: Vec<&str> = vec![
         "#button",
@@ -218,17 +216,20 @@ fn benchmark_throughput(c: &mut Criterion) {
 
     group.bench_function("batch_5_selectors", |b| {
         b.iter(|| {
-            selectors.iter().map(|s| parse_selector_input(black_box(s)).unwrap()).count()
+            selectors
+                .iter()
+                .map(|s| parse_selector_input(black_box(s)).unwrap())
+                .count()
         })
     });
 
     group.bench_function("batch_10_selectors", |b| {
         b.iter(|| {
-            let extended: Vec<&str> = selectors.iter()
-                .chain(selectors.iter())
-                .copied()
-                .collect();
-            extended.iter().map(|s| parse_selector_input(black_box(s)).unwrap()).count()
+            let extended: Vec<&str> = selectors.iter().chain(selectors.iter()).copied().collect();
+            extended
+                .iter()
+                .map(|s| parse_selector_input(black_box(s)).unwrap())
+                .count()
         })
     });
 

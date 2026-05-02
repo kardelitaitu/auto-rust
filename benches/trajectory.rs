@@ -2,7 +2,7 @@
 //!
 //! Run with: `cargo bench --bench trajectory`
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 /// Simple Point struct for benchmarking
 #[derive(Debug, Clone, Copy)]
@@ -56,12 +56,10 @@ fn generate_arc_curve(start: &Point, end: &Point, curvature: f64, steps: u32) ->
     for i in 0..=steps {
         let t = i as f64 / steps as f64;
         let one_minus_t = 1.0 - t;
-        let x = one_minus_t * one_minus_t * start.x
-            + 2.0 * one_minus_t * t * control.x
-            + t * t * end.x;
-        let y = one_minus_t * one_minus_t * start.y
-            + 2.0 * one_minus_t * t * control.y
-            + t * t * end.y;
+        let x =
+            one_minus_t * one_minus_t * start.x + 2.0 * one_minus_t * t * control.x + t * t * end.x;
+        let y =
+            one_minus_t * one_minus_t * start.y + 2.0 * one_minus_t * t * control.y + t * t * end.y;
         points.push(Point::new(x, y));
     }
     points
@@ -73,17 +71,17 @@ fn generate_muscle_path(start: &Point, end: &Point, steps: u32) -> Vec<Point> {
     let dx = end.x - start.x;
     let dy = end.y - start.y;
     let distance = (dx * dx + dy * dy).sqrt();
-    
+
     for i in 0..=steps {
         let t = i as f64 / steps as f64;
         let base_x = start.x + dx * t;
         let base_y = start.y + dy * t;
-        
+
         // Add muscle jitter based on distance remaining
         let jitter = (distance * (1.0 - t) * 0.01).sin() * 2.0;
         let x = base_x + jitter * (1.0 - t);
         let y = base_y + jitter * t;
-        
+
         points.push(Point::new(x, y));
     }
     points
@@ -95,20 +93,16 @@ fn benchmark_bezier_curves(c: &mut Criterion) {
     let end = Point::new(500.0, 400.0);
 
     for steps in [10, 50, 100, 200].iter() {
-        group.bench_with_input(
-            BenchmarkId::new("steps", steps),
-            steps,
-            |b, &steps| {
-                b.iter(|| {
-                    generate_bezier_curve(
-                        black_box(&start),
-                        black_box(&end),
-                        black_box(30.0),
-                        black_box(steps),
-                    )
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("steps", steps), steps, |b, &steps| {
+            b.iter(|| {
+                generate_bezier_curve(
+                    black_box(&start),
+                    black_box(&end),
+                    black_box(30.0),
+                    black_box(steps),
+                )
+            })
+        });
     }
     group.finish();
 }
@@ -139,15 +133,15 @@ fn benchmark_arc_curves(c: &mut Criterion) {
 
 fn benchmark_muscle_paths(c: &mut Criterion) {
     let mut group = c.benchmark_group("muscle_path");
-    
+
     // Short distance
     let short_start = Point::new(100.0, 100.0);
     let short_end = Point::new(200.0, 150.0);
-    
+
     // Medium distance
     let medium_start = Point::new(100.0, 100.0);
     let medium_end = Point::new(500.0, 400.0);
-    
+
     // Long distance
     let long_start = Point::new(100.0, 100.0);
     let long_end = Point::new(1000.0, 800.0);
@@ -174,14 +168,10 @@ fn benchmark_muscle_paths(c: &mut Criterion) {
 
     group.bench_function("long_distance", |b| {
         b.iter(|| {
-            generate_muscle_path(
-                black_box(&long_start),
-                black_box(&long_end),
-                black_box(100),
-            )
+            generate_muscle_path(black_box(&long_start), black_box(&long_end), black_box(100))
         })
     });
-    
+
     group.finish();
 }
 
@@ -191,11 +181,25 @@ fn benchmark_trajectory_comparison(c: &mut Criterion) {
     let end = Point::new(500.0, 400.0);
 
     group.bench_function("bezier_50_steps", |b| {
-        b.iter(|| generate_bezier_curve(black_box(&start), black_box(&end), black_box(30.0), black_box(50)))
+        b.iter(|| {
+            generate_bezier_curve(
+                black_box(&start),
+                black_box(&end),
+                black_box(30.0),
+                black_box(50),
+            )
+        })
     });
 
     group.bench_function("arc_50_steps", |b| {
-        b.iter(|| generate_arc_curve(black_box(&start), black_box(&end), black_box(0.3), black_box(50)))
+        b.iter(|| {
+            generate_arc_curve(
+                black_box(&start),
+                black_box(&end),
+                black_box(0.3),
+                black_box(50),
+            )
+        })
     });
 
     group.bench_function("muscle_50_steps", |b| {

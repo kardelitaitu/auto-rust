@@ -2,7 +2,7 @@
 //!
 //! Run with: `cargo bench --bench predictive_scorer`
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::collections::HashMap;
 
 /// Engagement prediction result
@@ -70,32 +70,35 @@ impl PredictiveEngagementScorer {
     ) -> EngagementPrediction {
         // Extract text features (simplified)
         let text_features = self.extract_text_features(tweet_text);
-        
+
         // Extract user features
         let user_features = self.extract_user_features(user_profile);
-        
+
         // Extract temporal features
         let temporal_features = self.extract_temporal_features();
-        
+
         // Calculate weighted sum
-        let text_score: f64 = text_features.iter()
+        let text_score: f64 = text_features
+            .iter()
             .zip(&self.model_weights.text_coefficients)
             .map(|(f, w)| f * w)
             .sum();
-        
-        let user_score: f64 = user_features.iter()
+
+        let user_score: f64 = user_features
+            .iter()
             .zip(&self.model_weights.user_coefficients)
             .map(|(f, w)| f * w)
             .sum();
-        
-        let temporal_score: f64 = temporal_features.iter()
+
+        let temporal_score: f64 = temporal_features
+            .iter()
             .zip(&self.model_weights.temporal_coefficients)
             .map(|(f, w)| f * w)
             .sum();
-        
+
         let raw_score = text_score + user_score + temporal_score + self.model_weights.bias;
         let probability = sigmoid(raw_score);
-        
+
         // Determine recommended action
         let action = if probability > 0.8 {
             ActionType::Reply
@@ -108,7 +111,7 @@ impl PredictiveEngagementScorer {
         } else {
             ActionType::Skip
         };
-        
+
         EngagementPrediction {
             success_probability: probability,
             confidence_score: (probability * (1.0 - probability)).sqrt() * 2.0,
@@ -122,13 +125,13 @@ impl PredictiveEngagementScorer {
         let emoji_count = text.chars().filter(|c| c.is_ascii_punctuation()).count() as f64;
         let hashtag_count = text.matches('#').count() as f64;
         let mention_count = text.matches('@').count() as f64;
-        
+
         vec![
-            (length / 280.0).min(1.0),  // Normalized length
-            (word_count / 50.0).min(1.0),  // Normalized word count
-            (emoji_count / 5.0).min(1.0),  // Normalized emoji count
-            (hashtag_count / 3.0).min(1.0),  // Normalized hashtag count
-            (mention_count / 5.0).min(1.0),  // Normalized mention count
+            (length / 280.0).min(1.0),      // Normalized length
+            (word_count / 50.0).min(1.0),   // Normalized word count
+            (emoji_count / 5.0).min(1.0),   // Normalized emoji count
+            (hashtag_count / 3.0).min(1.0), // Normalized hashtag count
+            (mention_count / 5.0).min(1.0), // Normalized mention count
         ]
     }
 
@@ -143,8 +146,8 @@ impl PredictiveEngagementScorer {
     fn extract_temporal_features(&self) -> Vec<f64> {
         // Simplified - in real implementation, use actual time
         vec![
-            0.5,  // Hour of day normalized
-            0.7,  // Day of week normalized
+            0.5, // Hour of day normalized
+            0.7, // Day of week normalized
         ]
     }
 }
@@ -161,13 +164,14 @@ fn recommend_action(
     candidates: &[ActionType],
 ) -> ActionType {
     let prediction = scorer.predict_engagement(tweet_text, user_profile);
-    
+
     // Filter to available candidates
     if candidates.contains(&prediction.recommended_action) {
         prediction.recommended_action
     } else {
         // Pick highest probability from available
-        candidates.iter()
+        candidates
+            .iter()
             .max_by(|a, b| {
                 let score_a = action_priority(**a);
                 let score_b = action_priority(**b);
@@ -191,7 +195,7 @@ fn action_priority(action: ActionType) -> f64 {
 fn benchmark_prediction(c: &mut Criterion) {
     let mut group = c.benchmark_group("prediction");
     let scorer = PredictiveEngagementScorer::new();
-    
+
     let profile = UserBehaviorProfile {
         avg_engagement_rate: 0.15,
         preferred_topics: vec!["tech".to_string(), "ai".to_string()],
@@ -206,20 +210,11 @@ fn benchmark_prediction(c: &mut Criterion) {
     ];
 
     for (idx, tweet) in tweets.iter().enumerate() {
-        group.bench_with_input(
-            BenchmarkId::new("tweet_length", idx),
-            tweet,
-            |b, tw| {
-                b.iter(|| {
-                    scorer.predict_engagement(
-                        black_box(tw),
-                        black_box(&profile),
-                    )
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("tweet_length", idx), tweet, |b, tw| {
+            b.iter(|| scorer.predict_engagement(black_box(tw), black_box(&profile)))
+        });
     }
-    
+
     group.finish();
 }
 
@@ -260,7 +255,7 @@ fn benchmark_feature_extraction(c: &mut Criterion) {
 fn benchmark_action_recommendation(c: &mut Criterion) {
     let mut group = c.benchmark_group("action_recommendation");
     let scorer = PredictiveEngagementScorer::new();
-    
+
     let profile = UserBehaviorProfile {
         avg_engagement_rate: 0.2,
         preferred_topics: vec!["tech".to_string()],
@@ -272,7 +267,13 @@ fn benchmark_action_recommendation(c: &mut Criterion) {
 
     let candidates_2 = [ActionType::Like, ActionType::Skip];
     let candidates_3 = [ActionType::Like, ActionType::Retweet, ActionType::Skip];
-    let candidates_5 = [ActionType::Like, ActionType::Retweet, ActionType::Reply, ActionType::Follow, ActionType::Skip];
+    let candidates_5 = [
+        ActionType::Like,
+        ActionType::Retweet,
+        ActionType::Reply,
+        ActionType::Follow,
+        ActionType::Skip,
+    ];
 
     group.bench_with_input(
         BenchmarkId::new("candidates", 2),
@@ -325,7 +326,7 @@ fn benchmark_action_recommendation(c: &mut Criterion) {
 fn benchmark_batch_predictions(c: &mut Criterion) {
     let mut group = c.benchmark_group("batch_predictions");
     let scorer = PredictiveEngagementScorer::new();
-    
+
     let profile = UserBehaviorProfile {
         avg_engagement_rate: 0.15,
         preferred_topics: vec!["tech".to_string()],
@@ -343,7 +344,8 @@ fn benchmark_batch_predictions(c: &mut Criterion) {
 
     group.bench_function("batch_10", |b| {
         b.iter(|| {
-            tweets_10.iter()
+            tweets_10
+                .iter()
                 .map(|t| scorer.predict_engagement(black_box(t), black_box(&profile)))
                 .count()
         })
@@ -351,7 +353,8 @@ fn benchmark_batch_predictions(c: &mut Criterion) {
 
     group.bench_function("batch_50", |b| {
         b.iter(|| {
-            tweets_50.iter()
+            tweets_50
+                .iter()
                 .map(|t| scorer.predict_engagement(black_box(t), black_box(&profile)))
                 .count()
         })

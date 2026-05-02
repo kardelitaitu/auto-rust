@@ -408,7 +408,7 @@ mod tests {
         assert!(matches!(orch_err, OrchestratorError::Config(_)));
         assert_eq!(
             orch_err.to_string(),
-            "Configuration error: Missing required config field: test"
+            "Configuration error: Missing required config field: test (this field is required)"
         );
     }
 

@@ -3,10 +3,10 @@
 //! Run with: `cargo bench --bench predictive_scorer`
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use std::collections::HashMap;
 
 /// Engagement prediction result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct EngagementPrediction {
     success_probability: f64,
     confidence_score: f64,
@@ -24,6 +24,7 @@ enum ActionType {
 
 /// User behavior profile
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct UserBehaviorProfile {
     avg_engagement_rate: f64,
     preferred_topics: Vec<String>,
@@ -32,10 +33,10 @@ struct UserBehaviorProfile {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 enum DeviceType {
     Mobile,
     Desktop,
-    Tablet,
 }
 
 /// Predictive engagement scorer
@@ -344,19 +345,17 @@ fn benchmark_batch_predictions(c: &mut Criterion) {
 
     group.bench_function("batch_10", |b| {
         b.iter(|| {
-            tweets_10
-                .iter()
-                .map(|t| scorer.predict_engagement(black_box(t), black_box(&profile)))
-                .count()
+            for t in &tweets_10 {
+                black_box(scorer.predict_engagement(black_box(t), black_box(&profile)));
+            }
         })
     });
 
     group.bench_function("batch_50", |b| {
         b.iter(|| {
-            tweets_50
-                .iter()
-                .map(|t| scorer.predict_engagement(black_box(t), black_box(&profile)))
-                .count()
+            for t in &tweets_50 {
+                black_box(scorer.predict_engagement(black_box(t), black_box(&profile)));
+            }
         })
     });
 

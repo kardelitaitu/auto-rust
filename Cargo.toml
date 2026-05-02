@@ -100,6 +100,7 @@ overflow-checks = false       # Disable overflow checks in release
 env_logger = "0.11"
 tempfile = "3"
 wiremock = "0.6"
+criterion = "0.5"
 
 
 [[example]]
@@ -109,3 +110,15 @@ path = "src/task/demo-interaction-keyboard.rs"
 [[example]]
 name = "demo-interaction-mouse"
 path = "src/task/demo-interaction-mouse.rs"
+
+[[bench]]
+name = "trajectory"
+harness = false
+
+[[bench]]
+name = "accessibility_locator"
+harness = false
+
+[[bench]]
+name = "predictive_scorer"
+harness = false

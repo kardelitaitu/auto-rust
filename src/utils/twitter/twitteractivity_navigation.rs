@@ -47,11 +47,17 @@
 use crate::prelude::TaskContext;
 use crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS;
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
 use serde_json::Value;
+use std::time::Instant;
 use tracing::instrument;
 
-use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
+use super::{
+    twitteractivity_humanized::*,
+    twitteractivity_interact::*,
+    twitteractivity_popup::*,
+    twitteractivity_selectors::*,
+};
 
 /// Default timeout for wait operations in milliseconds
 const DEFAULT_WAIT_TIMEOUT_MS: u64 = 15_000;
@@ -252,6 +258,185 @@ pub async fn check_selector_health(api: &TaskContext) -> Result<()> {
 
     Ok(())
 }
+
+
+
+// Navigation functions moved from twitteractivity.rs
+
+/// Select a weighted entry point randomly
+pub fn select_entry_point() -> &'static str {
+    let total_weight: u32 = ENTRY_POINTS.iter().map(|ep| ep.weight).sum();
+    let mut random = rand::random::<u32>() % total_weight;
+
+    for entry in ENTRY_POINTS.iter() {
+        if random < entry.weight {
+            return entry.url;
+        }
+        random -= entry.weight;
+    }
+
+    ENTRY_POINTS[0].url // fallback to home
+}
+
+pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()> {
+    let entry_name = entry_url
+        .replace("https://x.com/", "")
+        .replace("https://x.com", "");
+    let entry_name = if entry_name.is_empty() {
+        "home"
+    } else {
+        &entry_name
+    };
+
+    info!("🎲 Rolled entry point: {} → {}", entry_name, entry_url);
+
+    // Navigate to entry point
+    api.navigate(entry_url, 60000).await?;
+    human_pause(api, 2000).await;
+
+    // Check if on home feed
+    let on_home = is_on_home_feed(api).await.unwrap_or(false);
+
+    if !on_home {
+        // Simulate reading on non-home page
+        let scroll_duration = rand::random::<u64>() % 10000 + 10000; // 10-20s
+        info!(
+            "📖 Simulating reading on {} for {}s",
+            entry_name,
+            scroll_duration / 1000
+        );
+
+        let scroll_start = Instant::now();
+        let profile = api.behavior_runtime();
+        while scroll_start.elapsed().as_millis() < scroll_duration as u128 {
+            let scroll_amount = (rand::random::<u64>() % 400 + 200) as i32;
+            let _ = api
+                .scroll_read(
+                    1,
+                    scroll_amount,
+                    profile.scroll.smooth,
+                    profile.scroll.back_scroll,
+                )
+                .await;
+            human_pause(api, rand::random::<u64>() % 300 + 200).await;
+        }
+
+        info!("✅ Finished reading, navigating to home...");
+        goto_home(api).await?;
+        human_pause(api, 500).await;
+    }
+
+    Ok(())
+}
+
+
+
+
+
+pub async fn phase1_navigation(api: &TaskContext) -> Result<()> {
+    info!("Phase 1: Navigation to entry point");
+    let entry_url = select_entry_point();
+    navigate_and_read(api, entry_url).await?;
+
+    if verify_login(api).await? {
+        info!("User is logged in - proceeding");
+    } else {
+        warn!("User appears not logged in; task may fail");
+    }
+
+    // Dismiss initial popups
+    match dismiss_cookie_banner(api).await {
+        Ok(true) => info!("Cookie banner dismissed"),
+        Ok(false) => {}
+        Err(e) => warn!("Cookie banner dismissal failed: {}", e),
+    }
+    match dismiss_signup_nag(api).await {
+        Ok(true) => info!("Signup nag dismissed"),
+        Ok(false) => {}
+        Err(e) => warn!("Signup nag dismissal failed: {}", e),
+    }
+    if let Err(e) = close_active_popup(api).await {
+        warn!("Popup close failed: {}", e);
+    }
+
+    Ok(())
+}
+
+
+// Navigation entry points and functions
+pub struct EntryPoint {
+    pub url: &'static str,
+    pub weight: u32,
+}
+
+/// Weighted entry points matching Node.js implementation
+pub const ENTRY_POINTS: [EntryPoint; 15] = [
+    // Primary Entry (59%)
+    EntryPoint {
+        url: "https://x.com/",
+        weight: 59,
+    },
+    // 4% Weight Group (32% total)
+    EntryPoint {
+        url: "https://x.com/i/jf/global-trending/home",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/explore",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/for-you",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/trending",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/i/bookmarks",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/notifications",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/notifications/mentions",
+        weight: 4,
+    },
+    EntryPoint {
+        url: "https://x.com/i/chat/",
+        weight: 4,
+    },
+    // 2% Weight Group (4% total)
+    EntryPoint {
+        url: "https://x.com/i/connect_people?show_topics=false",
+        weight: 2,
+    },
+    EntryPoint {
+        url: "https://x.com/i/connect_people?is_creator_only=true",
+        weight: 2,
+    },
+    // Legacy/Supplementary Exploratory Points (5% total)
+    EntryPoint {
+        url: "https://x.com/explore/tabs/news",
+        weight: 1,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/sports",
+        weight: 1,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/entertainment",
+        weight: 1,
+    },
+    EntryPoint {
+        url: "https://x.com/explore/tabs/for_you",
+        weight: 1,
+    },
+];
+
 
 #[cfg(test)]
 mod tests {

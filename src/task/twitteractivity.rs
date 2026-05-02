@@ -66,176 +66,6 @@ use crate::utils::twitter::{
 };
 
 
-/// Minimum delay between feed candidate scans (ms)
-const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;
-/// Minimum delay between actions on same tweet (ms)
-pub const MIN_ACTION_CHAIN_DELAY_MS: u64 = 3000;
-
-/// Entry point for navigation (URL and weight)
-struct EntryPoint {
-    url: &'static str,
-    weight: u32,
-}
-
-/// Weighted entry points matching Node.js implementation
-const ENTRY_POINTS: [EntryPoint; 15] = [
-    // Primary Entry (59%)
-    EntryPoint {
-        url: "https://x.com/",
-        weight: 59,
-    },
-    // 4% Weight Group (32% total)
-    EntryPoint {
-        url: "https://x.com/i/jf/global-trending/home",
-        weight: 4,
-    },
-    EntryPoint {
-        url: "https://x.com/explore",
-        weight: 4,
-    },
-    EntryPoint {
-        url: "https://x.com/explore/tabs/for-you",
-        weight: 4,
-    },
-    EntryPoint {
-        url: "https://x.com/explore/tabs/trending",
-        weight: 4,
-    },
-    EntryPoint {
-        url: "https://x.com/i/bookmarks",
-        weight: 4,
-    },
-    EntryPoint {
-        url: "https://x.com/notifications",
-        weight: 4,
-    },
-    EntryPoint {
-        url: "https://x.com/notifications/mentions",
-        weight: 4,
-    },
-    EntryPoint {
-        url: "https://x.com/i/chat/",
-        weight: 4,
-    },
-    // 2% Weight Group (4% total)
-    EntryPoint {
-        url: "https://x.com/i/connect_people?show_topics=false",
-        weight: 2,
-    },
-    EntryPoint {
-        url: "https://x.com/i/connect_people?is_creator_only=true",
-        weight: 2,
-    },
-    // Legacy/Supplementary Exploratory Points (5% total)
-    EntryPoint {
-        url: "https://x.com/explore/tabs/news",
-        weight: 1,
-    },
-    EntryPoint {
-        url: "https://x.com/explore/tabs/sports",
-        weight: 1,
-    },
-    EntryPoint {
-        url: "https://x.com/explore/tabs/entertainment",
-        weight: 1,
-    },
-    EntryPoint {
-        url: "https://x.com/explore/tabs/for_you",
-        weight: 1,
-    },
-];
-
-/// Select a weighted entry point randomly
-pub fn select_entry_point() -> &'static str {
-    let total_weight: u32 = ENTRY_POINTS.iter().map(|ep| ep.weight).sum();
-    let mut random = rand::random::<u32>() % total_weight;
-
-    for entry in ENTRY_POINTS.iter() {
-        if random < entry.weight {
-            return entry.url;
-        }
-        random -= entry.weight;
-    }
-
-    ENTRY_POINTS[0].url // fallback to home
-}
-
-
-
-/// Navigate to weighted entry point and simulate reading if not on home.
-///
-/// This function implements the Node.js navigateAndRead pattern:
-/// 1. Navigate to a weighted random entry point (home, explore, notifications, etc.)
-/// 2. If not on home feed, simulate reading by scrolling for 10-20 seconds
-/// 3. Navigate to home feed after reading simulation
-///
-/// # Arguments
-/// * `api` - Task context for browser operations
-/// * `entry_url` - The URL to navigate to
-///
-/// # Returns
-/// Result<()> - Ok if navigation and reading simulation completed successfully
-///
-/// # Behavior
-/// - Logs the selected entry point with emoji indicators
-/// - Pauses for 2 seconds after navigation
-/// - Simulates human-like reading with random scroll amounts and pauses
-/// - Navigates to home feed after reading on non-home pages
-async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()> {
-    let entry_name = entry_url
-        .replace("https://x.com/", "")
-        .replace("https://x.com", "");
-    let entry_name = if entry_name.is_empty() {
-        "home"
-    } else {
-        &entry_name
-    };
-
-    info!("🎲 Rolled entry point: {} → {}", entry_name, entry_url);
-
-    // Navigate to entry point
-    api.navigate(entry_url, 60000).await?;
-    human_pause(api, 2000).await;
-
-    // Check if on home feed
-    let on_home = is_on_home_feed(api).await.unwrap_or(false);
-
-    if !on_home {
-        // Simulate reading on non-home page
-        let scroll_duration = rand::random::<u64>() % 10000 + 10000; // 10-20s
-        info!(
-            "📖 Simulating reading on {} for {}s",
-            entry_name,
-            scroll_duration / 1000
-        );
-
-        let scroll_start = Instant::now();
-        let profile = api.behavior_runtime();
-        while scroll_start.elapsed().as_millis() < scroll_duration as u128 {
-            let scroll_amount = (rand::random::<u64>() % 400 + 200) as i32;
-            let _ = api
-                .scroll_read(
-                    1,
-                    scroll_amount,
-                    profile.scroll.smooth,
-                    profile.scroll.back_scroll,
-                )
-                .await;
-            human_pause(api, rand::random::<u64>() % 300 + 200).await;
-        }
-
-        info!("✅ Finished reading, navigating to home...");
-        goto_home(api).await?;
-        human_pause(api, 500).await;
-    }
-
-    Ok(())
-}
-
-
-
-
-
 fn engagement_limits_from_config(
     config: &crate::config::EngagementLimitsConfig,
 ) -> EngagementLimits {
@@ -251,109 +81,6 @@ fn engagement_limits_from_config(
     )
 }
 
-
-fn phase4_cleanup(
-    counters: &EngagementCounters,
-    limits: &EngagementLimits,
-    task_config: &TaskConfig,
-    last_remaining: Duration,
-    api: &TaskContext,
-) {
-    let remaining_limits = limits.remaining(counters);
-    let duration_secs =
-        (Duration::from_millis(task_config.duration_ms) - last_remaining).as_secs_f64();
-    info!(
-        "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
-        counters.likes,
-        counters.retweets,
-        counters.follows,
-        counters.replies,
-        counters.thread_dives,
-        counters.bookmarks,
-        counters.quote_tweets,
-        counters.total_actions(),
-        duration_secs
-    );
-    info!(
-        "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
-        remaining_limits.get("likes").unwrap_or(&0),
-        remaining_limits.get("retweets").unwrap_or(&0),
-        remaining_limits.get("follows").unwrap_or(&0),
-        remaining_limits.get("replies").unwrap_or(&0),
-        remaining_limits.get("thread_dives").unwrap_or(&0),
-        remaining_limits.get("bookmarks").unwrap_or(&0),
-        remaining_limits.get("quote_tweets").unwrap_or(&0),
-        remaining_limits.get("total_actions").unwrap_or(&0)
-    );
-
-    // Calculate and log success rates
-    let like_attempts = api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS)
-        + api.metrics().run_counter(RUN_COUNTER_LIKE_FAILURE);
-    let retweet_attempts = api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS)
-        + api.metrics().run_counter(RUN_COUNTER_RETWEET_FAILURE);
-    let follow_attempts = api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS)
-        + api.metrics().run_counter(RUN_COUNTER_FOLLOW_FAILURE);
-    let reply_attempts = api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS)
-        + api.metrics().run_counter(RUN_COUNTER_REPLY_FAILURE);
-    let bookmark_attempts = api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS)
-        + api.metrics().run_counter(RUN_COUNTER_BOOKMARK_FAILURE);
-    let quote_attempts = api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS)
-        + api.metrics().run_counter(RUN_COUNTER_QUOTE_FAILURE);
-    let dive_attempts = api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS)
-        + api.metrics().run_counter(RUN_COUNTER_DIVE_FAILURE);
-
-    info!(
-        "[twitter] Success rates | like={:.1}% ({}/{}) retweet={:.1}% ({}/{}) follow={:.1}% ({}/{}) reply={:.1}% ({}/{}) bookmark={:.1}% ({}/{}) quote={:.1}% ({}/{}) dive={:.1}% ({}/{})",
-        calc_rate(api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS), like_attempts), api.metrics().run_counter(RUN_COUNTER_LIKE_SUCCESS), like_attempts,
-        calc_rate(api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS), retweet_attempts), api.metrics().run_counter(RUN_COUNTER_RETWEET_SUCCESS), retweet_attempts,
-        calc_rate(api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS), follow_attempts), api.metrics().run_counter(RUN_COUNTER_FOLLOW_SUCCESS), follow_attempts,
-        calc_rate(api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS), reply_attempts), api.metrics().run_counter(RUN_COUNTER_REPLY_SUCCESS), reply_attempts,
-        calc_rate(api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS), bookmark_attempts), api.metrics().run_counter(RUN_COUNTER_BOOKMARK_SUCCESS), bookmark_attempts,
-        calc_rate(api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS), quote_attempts), api.metrics().run_counter(RUN_COUNTER_QUOTE_SUCCESS), quote_attempts,
-        calc_rate(api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS), dive_attempts), api.metrics().run_counter(RUN_COUNTER_DIVE_SUCCESS), dive_attempts
-    );
-}
-
-/// Phase 1: Navigation and authentication setup.
-///
-/// # Arguments
-/// * `api` - Task context
-///
-/// # Returns
-/// Result<()> - Ok if navigation and setup completed successfully
-async fn phase1_navigation(api: &TaskContext) -> Result<()> {
-    info!("Phase 1: Navigation to entry point");
-    let entry_url = select_entry_point();
-    navigate_and_read(api, entry_url).await?;
-
-    if verify_login(api).await? {
-        info!("User is logged in - proceeding");
-    } else {
-        warn!("User appears not logged in; task may fail");
-    }
-
-    // Dismiss initial popups
-    match dismiss_cookie_banner(api).await {
-        Ok(true) => info!("Cookie banner dismissed"),
-        Ok(false) => {}
-        Err(e) => warn!("Cookie banner dismissal failed: {}", e),
-    }
-    match dismiss_signup_nag(api).await {
-        Ok(true) => info!("Signup nag dismissed"),
-        Ok(false) => {}
-        Err(e) => warn!("Signup nag dismissal failed: {}", e),
-    }
-    if let Err(e) = close_active_popup(api).await {
-        warn!("Popup close failed: {}", e);
-    }
-
-    Ok(())
-}
-
-/// Handle smart decision check for engagement.
-///
-/// # Arguments
-/// * `tweet` - Tweet data from candidate scan
 pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Config) -> Result<()> {
     let task_config = TaskConfig::from_payload(&payload, &config.twitter_activity);
     let duration_ms = task_config.duration_ms;
@@ -369,8 +96,6 @@ pub async fn run(api: &TaskContext, payload: Value, config: &crate::config::Conf
         )
     })?
 }
-
-
 
 async fn run_inner(
     api: &TaskContext,
@@ -543,6 +268,189 @@ async fn run_inner(
 
 
 // Helper: extract tweet text from tweet object
+fn extract_tweet_text(tweet_obj: &Value) -> String {
+    if let Some(text) = tweet_obj.get("text").or_else(|| tweet_obj.get("full_text")) {
+        if let Some(text_str) = text.as_str() {
+            return text_str.to_string();
+        }
+    }
+    String::new()
+}
+
+// Helper: extract tweet context for LLM generation, using cache if available.
+async fn get_tweet_context_for_llm(
+    api: &TaskContext,
+    cache: &Option<ThreadCache>,
+    action_name: &str,
+) -> (String, String, Vec<(String, String)>) {
+    if let Some(ref cache) = cache {
+        if cache.is_valid() {
+            info!(
+                "Using cached thread data for {} ({} replies)",
+                action_name,
+                cache.replies.len()
+            );
+            return (
+                cache.tweet_author.clone(),
+                cache.tweet_text.clone(),
+                cache.replies.clone(),
+            );
+        }
+    }
+    match extract_tweet_context(api).await {
+        Ok(data) => data,
+        Err(e) => {
+            warn!("Failed to extract tweet context for {}: {}", action_name, e);
+            ("unknown".to_string(), String::new(), Vec::new())
+        }
+    }
+}
+
+// Helper: extract a per-tweet button center from candidate payload.
+fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64, f64)> {
+    let button_obj = tweet
+        .get("buttons")
+        .and_then(|v| v.as_object())
+        .and_then(|buttons| buttons.get(button))
+        .and_then(|v| v.as_object())?;
+
+    let x = button_obj.get("x").and_then(|v| v.as_f64())?;
+    let y = button_obj.get("y").and_then(|v| v.as_f64())?;
+    Some((x, y))
+}
+
+// Helper: click like at a specific coordinate with profile-aware timing and hover
+async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
+    let page = api.page();
+    let element_type = "button";
+    hover_before_click(page, "", x, y, element_type).await?;
+    click_prep_pause(api).await;
+    api.click_at(x, y).await?;
+    click_post_pause(api).await;
+
+    // Verify like was registered by checking if button state changed
+    let verify_js = format!(
+        r#"
+        (function() {{
+            var x = {x};
+            var y = {y};
+            var controls = document.querySelectorAll('button[data-testid], a[data-testid]');
+            var nearest = null;
+            var best = Number.POSITIVE_INFINITY;
+            for (var i = 0; i < controls.length; i++) {{
+                var el = controls[i];
+                var testId = (el.getAttribute('data-testid') || '').toLowerCase();
+                if (!(testId.includes('like') || testId.includes('unlike'))) continue;
+                var rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                var cx = rect.x + rect.width / 2;
+                var cy = rect.y + rect.height / 2;
+                var dist = Math.hypot(cx - x, cy - y);
+                if (dist < best) {{
+                    best = dist;
+                    nearest = el;
+                }}
+            }}
+
+            if (!nearest || best > 120) return false;
+            var nearestId = (nearest.getAttribute('data-testid') || '').toLowerCase();
+            if (nearestId.includes('unlike')) return true;
+
+            var svg = nearest.querySelector('svg');
+            if (!svg) return false;
+            var color = (svg.getAttribute('color') || svg.getAttribute('fill') || '').toLowerCase();
+            return color.includes('rgb') || color.includes('#');
+        }})()
+        "#,
+        x = x,
+        y = y
+    );
+
+    let result = page.evaluate(verify_js).await?;
+
+    let value = result.value();
+    if let Some(v) = value {
+        if let Some(liked) = v.as_bool() {
+            return Ok(liked);
+        }
+    }
+
+    // Verification failed - assume like was not registered
+    Ok(false)
+}
+
+/// Generate a short reply string based on sentiment.
+///
+/// This function selects a reply template from the sentiment templates based on
+/// the detected sentiment of the tweet. The reply index is used to cycle through
+/// templates deterministically, allowing for variety while maintaining consistency.
+///
+/// # Arguments
+/// * `sentiment` - The detected sentiment of the tweet (Positive, Neutral, Negative)
+/// * `reply_idx` - Index for cycling through templates (typically reply count)
+/// * `templates` - Sentiment templates containing reply strings
+///
+/// # Returns
+/// String - A reply template string appropriate for the sentiment
+///
+/// # Behavior
+/// - Uses modulo arithmetic to cycle through templates
+/// - Positive sentiment → enthusiastic agreement templates
+/// - Neutral sentiment → brief acknowledgment templates
+/// - Negative sentiment → respectful disagreement templates
+fn generate_reply_text(
+    sentiment: Sentiment,
+    reply_idx: u32,
+    templates: &SentimentTemplates,
+) -> String {
+    let phrases = match sentiment {
+        Sentiment::Positive => &templates.reply_positive,
+        Sentiment::Neutral => &templates.reply_neutral,
+        Sentiment::Negative => &templates.reply_negative,
+    };
+    phrases[(reply_idx as usize) % phrases.len()].clone()
+}
+
+/// Generate a short quote commentary string based on sentiment.
+///
+/// This function selects a quote template from the sentiment templates based on
+/// the detected sentiment of the tweet. The quote index is used to cycle through
+/// templates deterministically, allowing for variety while maintaining consistency.
+///
+/// # Arguments
+/// * `sentiment` - The detected sentiment of the tweet (Positive, Neutral, Negative)
+/// * `quote_idx` - Index for cycling through templates (typically quote count)
+/// * `templates` - Sentiment templates containing quote strings
+///
+/// # Returns
+/// String - A quote template string appropriate for the sentiment
+///
+/// # Behavior
+/// - Uses modulo arithmetic to cycle through templates
+/// - Positive sentiment → enthusiastic sharing templates
+/// - Neutral sentiment → informative sharing templates
+/// - Negative sentiment → thought-provoking sharing templates
+fn generate_quote_text(
+    sentiment: Sentiment,
+    quote_idx: u32,
+    templates: &SentimentTemplates,
+) -> String {
+    let phrases = match sentiment {
+        Sentiment::Positive => &templates.quote_positive,
+        Sentiment::Neutral => &templates.quote_neutral,
+        Sentiment::Negative => &templates.quote_negative,
+    };
+    phrases[(quote_idx as usize) % phrases.len()].clone()
+}
+
+/// Calculate success rate as a percentage.
+fn calc_rate(success: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        (success as f64 / total as f64) * 100.0
+    }
+}
 
 #[cfg(test)]
 mod tests {

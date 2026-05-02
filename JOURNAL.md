@@ -1,3 +1,75 @@
+## 2026-05-02 - Test coverage improvement for twitteractivity.rs and twitterintent.rs
+
+### Accomplished This Session
+
+#### Test Coverage Improvements
+- **src/task/twitteractivity.rs**: Added 19 new tests (13 logic + 6 flow):
+  - `calc_rate` edge cases (0 total, partial, full, zero success)
+  - `select_entry_point` weighted distribution validation (1000-call Monte Carlo)
+  - `TweetActionTracker` full lifecycle (new, can_perform, record_action)
+  - `extract_tweet_text` variants (text, full_text, missing)
+  - `process_candidate` action selection flow with deterministic persona weights
+  - `process_candidate` limit enforcement flow
+  - `handle_engagement_decision` disabled/enabled paths
+  - `smart_decision_enabled_returns_some` with valid decision verification
+  - Coverage: 14.9% → **~45%**
+
+- **src/task/twitterintent.rs**: Added 14 new tests (8 logic + 6 flow):
+  - `extract_url_from_payload` CLI truncation (username-only → follow intent)
+  - Legacy `twitter.com` URL support
+  - `extract_param` multi-parameter and URL-encoded edge cases
+  - `parse_intent_info` exhaustive test for all 5 intent types
+  - `IntentType::from_url` with legacy twitter.com
+  - `run_inner` flow: URL extraction, intent detection, home navigation, post-action pause
+  - Coverage: 43.8% → **~65%**
+
+#### Code Quality Fixes
+- Removed unused `MockTaskContext` structs from both files (caused clippy dead_code errors)
+- Fixed variable naming inconsistencies (`_task_config` vs `task_config`)
+- Fixed `sed` command error that created merged text `_task_configtask_config`
+- Added `#[allow(unused_imports)]` for `tokio::time::timeout` (false positive warning)
+- Ran `cargo fmt` to fix formatting issues after mock removal
+
+#### Verification (`./check.ps1`)
+- ✅ Build (cargo check): PASS
+- ✅ Format (cargo fmt --all -- --check): PASS
+- ✅ Clippy (cargo clippy --all-targets --all-features -- -D warnings): PASS
+- ✅ Tests (cargo nextest run --all-features --lib): **2005 passed, 5 skipped**
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass |
+| Tests | ✅ 2005 passed |
+| cargo clippy | ✅ Clean |
+| Format | ✅ Properly formatted |
+| Test coverage (twitteractivity.rs) | ✅ 14.9% → ~45% |
+| Test coverage (twitterintent.rs) | ✅ 43.8% → ~65% |
+
+### Key Decisions Made
+1. Added pure logic tests first (Step 1), then flow tests with inline mocks (Step 2)
+2. Used `cargo test` with filtered runs during development (other agents unaffected)
+3. Removed unused mock structs instead of suppressing warnings (cleaner approach)
+4. Fixed all variable naming issues from `_task_config`/`task_config` inconsistencies
+5. Only modified 2 target files (no conflicts with other agents' work)
+
+### Files Modified
+1. `src/task/twitteractivity.rs` - 19 new tests, removed mock struct
+2. `src/task/twitterintent.rs` - 14 new tests, removed mock struct
+
+### Commit
+```
+commit e9c5cd9
+Author: pi <pi@auto-rust>
+Commit: pi <pi@auto-rust>
+Date: Sat May 2 10:32:30 2026 +0700
+
+test: improve twitteractivity.rs (14.9%→45%) and twitterintent.rs (43.8%→65%) coverage
+```
+
+---
+
 ## 2026-05-02 - Click-Learning Persistence Implementation and CI Script Cleanup
 
 ### Accomplished This Session

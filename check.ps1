@@ -124,7 +124,9 @@ if (-not $SkipTests -and -not $failed) {
         -NoNewWindow -PassThru -Wait
 
     $elapsed = $sw.Elapsed.TotalSeconds
-    $passed = $proc.ExitCode -eq 0
+    $exitCode = $proc.ExitCode
+    $passed = $exitCode -eq 0
+    Write-Output "DEBUG: Exit code = $exitCode, Passed = $passed"
     $results.Tests = @{ Passed = $passed; Duration = $elapsed }
     if (-not $passed) { $failed = $true }
 

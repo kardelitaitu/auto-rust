@@ -14,9 +14,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-/// Default feed scan duration budget (ms): 5 minutes.
-pub const DEFAULT_TWITTERACTIVITY_DURATION_MS: u64 = 300_000;
-
 /// Configuration for reply and quote text templates by sentiment.
 #[derive(Debug, Clone)]
 pub struct SentimentTemplates {
@@ -95,7 +92,7 @@ impl TaskConfig {
     /// Parse task configuration from JSON payload with defaults
     pub fn from_payload(payload: &Value, config: &TwitterActivityConfig) -> Self {
         let duration_ms =
-            duration_with_variance(read_u64(payload, "duration_ms", DEFAULT_TWITTERACTIVITY_DURATION_MS), 20);
+            duration_with_variance(read_u64(payload, "duration_ms", 300_000), 20);
         let candidate_count = read_u32(
             payload,
             "candidate_count",
@@ -171,9 +168,9 @@ impl TweetActionTracker {
     /// Check if an action is allowed on this tweet (prevents rapid action chains).
     pub fn can_perform_action(&self, tweet_id: &str, _action_type: &str) -> bool {
         if let Some((_, last_time)) = self.last_action.get(tweet_id) {
-            let elapsed = last_time.elapsed();
+            let elased = last_time.elapsed();
             // Enforce minimum delay between actions on same tweet
-            if elapsed.as_millis() < self.min_delay_ms as u128 {
+            if elased.as_millis() < self.min_delay_ms as u128 {
                 return false;
             }
         }
@@ -193,7 +190,7 @@ impl TweetActionTracker {
 }
 
 /// Context for processing a single tweet candidate.
-/// Groups configuration and immutable state for candidate processing.
+/// Groups configuration and mutable state for candidate processing.
 pub struct CandidateContext<'a> {
     pub tweet: &'a Value,
     pub persona: &'a PersonaWeights,

@@ -4,8 +4,10 @@
 //! All helpers operate on `TaskContext` and use JavaScript evaluation
 //! for DOM queries and interactions.
 
+pub mod twitteractivity_constants;
 pub mod twitteractivity_decision;
 pub mod twitteractivity_dive;
+pub mod twitteractivity_engagement;
 pub mod twitteractivity_feed;
 pub mod twitteractivity_humanized;
 pub mod twitteractivity_interact;
@@ -17,19 +19,20 @@ pub mod twitteractivity_popup;
 pub mod twitteractivity_selectors;
 pub mod twitteractivity_sentiment;
 pub mod twitteractivity_sentiment_context;
-pub mod twitteractivity_state;
-
-#[allow(unused_imports)]
-pub use twitteractivity_state::*;
 pub mod twitteractivity_sentiment_domains;
 pub mod twitteractivity_sentiment_emoji;
 pub mod twitteractivity_sentiment_enhanced;
 pub mod twitteractivity_sentiment_llm;
+pub mod twitteractivity_state;
 
+#[allow(unused_imports)]
+pub use twitteractivity_constants::*;
 #[allow(unused_imports)]
 pub use twitteractivity_decision::*;
 #[allow(unused_imports)]
 pub use twitteractivity_dive::*;
+#[allow(unused_imports)]
+pub use twitteractivity_engagement::*;
 #[allow(unused_imports)]
 pub use twitteractivity_feed::*;
 #[allow(unused_imports)]
@@ -57,7 +60,11 @@ pub use twitteractivity_sentiment_domains::*;
 #[allow(unused_imports)]
 pub use twitteractivity_sentiment_emoji::*;
 #[allow(unused_imports)]
+pub use twitteractivity_sentiment_enhanced::*;
+#[allow(unused_imports)]
 pub use twitteractivity_sentiment_llm::*;
+#[allow(unused_imports)]
+pub use twitteractivity_state::*;
 
 #[cfg(test)]
 mod tests {

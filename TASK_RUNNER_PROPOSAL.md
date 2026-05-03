@@ -141,33 +141,27 @@ Instead of treating task name resolution as an ad hoc lookup, the codebase shoul
 
 A task should be represented by a small descriptor, not just a string.
 
-Suggested descriptor shape:
+**Finalized descriptor shape:**
 
 ```rust
 pub struct TaskDescriptor {
     pub name: String,
     pub source: TaskSource,
-    pub path: Option<PathBuf>,
-    pub is_known: bool,
     pub policy_name: &'static str,
 }
-```
 
-And a source enum such as:
-
-```rust
 pub enum TaskSource {
-    BuiltInRust,
-    ConfiguredRustPath,
-    FutureExternalFormat(String),
+    BuiltInRust,                           // Compiled into binary, no file path
+    ConfiguredPath(PathBuf),               // External task file from config
+    Unknown,                               // Task not found (for error reporting)
 }
 ```
 
-This is not a final API requirement, but it expresses the design clearly:
-
-- built-in Rust tasks remain the default
-- the registry can later grow to include configured task directories
-- future non-Rust formats can be added without reworking dispatch again
+**Design decisions:**
+- `is_known` field removed - use `TaskSource::Unknown` instead
+- `path` moved into `ConfiguredPath` variant - built-in tasks have no file path
+- `Unknown` variant allows graceful error handling with full context
+- Built-in Rust tasks remain the default source
 
 ---
 
@@ -349,11 +343,11 @@ At minimum, these must continue to pass after the foundation work:
 
 ### Suggested additional test groups
 
-- `task_registry_tests`
-- `task_discovery_tests`
-- `task_policy_registry_tests`
-- `task_conflict_tests`
-- `cli_list_tasks_tests`
+- `task_registry_tests` - Core registry resolution
+- `task_discovery_tests` - Task lookup and metadata
+- `task_policy_registry_tests` - Policy alignment with registry
+- `task_conflict_tests` - **Conflict detection when same name in multiple sources**
+- `cli_list_tasks_tests` - `--list-tasks` output verification
 
 ---
 
@@ -370,13 +364,26 @@ At minimum, these must continue to pass after the foundation work:
 
 ---
 
-## 10. Open Questions
+## 10. Decisions (Open Questions Answered)
 
-1. Should external task roots be opt-in or enabled by default?
-2. If a task name appears in multiple places, should that be a hard error or an explicit override?
-3. Should `--list-tasks` show policy details or only name/source/path?
-4. Should task metadata live in code, in config, or in a companion file when Phase 2 arrives?
-5. Should future formats be modeled as separate sources in the same registry, or as separate registries behind one facade?
+### Phase 1 Decisions
+
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| 1. External task roots | **Opt-in** | Safer default; explicit configuration required |
+| 2. Name conflicts | **Hard error** | Explicit is better than implicit; prevents ambiguity |
+| 3. `--list-tasks` output | **Name + Source + Policy** | Sufficient for debugging; path shown for external tasks only |
+| 4. Task metadata location | **Code for Phase 1** | Built-in tasks defined in source; config-based discovery in Phase 2 |
+| 5. Future format modeling | **Same registry, new source variants** | Single unified lookup; source enum handles differentiation |
+
+### Conflict Detection Requirement (Phase 1B)
+
+When the same task name exists in multiple sources, the registry must:
+1. Detect the conflict during resolution
+2. Return a clear error: "Task 'foo' exists in multiple sources: BuiltInRust, ConfiguredPath('/path/to/foo')"
+3. Never silently pick one source over another
+
+**Test requirement:** Add `task_conflict_tests` to verify conflict detection works correctly.
 
 ---
 

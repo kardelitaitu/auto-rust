@@ -38,6 +38,8 @@ pub struct TaskWatcher {
     tx: Option<mpsc::Sender<FileEvent>>,
     /// Background watch task handle
     handle: Option<JoinHandle<()>>,
+    /// Native file watcher handle
+    watcher: Option<RecommendedWatcher>,
 }
 
 /// File system events relevant to task reloading.
@@ -66,6 +68,7 @@ impl TaskWatcher {
             registry,
             tx: None,
             handle: None,
+            watcher: None,
         }
     }
 
@@ -161,10 +164,8 @@ impl TaskWatcher {
         });
 
         self.handle = Some(handle);
+        self.watcher = Some(watcher);
         log::info!("Started watching task directory: {}", path.display());
-
-        // Keep watcher alive
-        std::mem::forget(watcher);
 
         Ok(())
     }
@@ -173,6 +174,8 @@ impl TaskWatcher {
     pub fn stop(&mut self) {
         if let Some(handle) = self.handle.take() {
             handle.abort();
+        }
+        if self.watcher.take().is_some() {
             log::info!("Task watcher stopped");
         }
     }
@@ -238,7 +241,7 @@ impl TaskWatcher {
 
         // Try to load as DSL task
         match crate::task::dsl::parse_task_file(path) {
-            Ok(task_def) => {
+            Ok(mut task_def) => {
                 // Validate
                 if let Err(errors) = crate::task::dsl::validate_task_definition(&task_def) {
                     log::warn!(
@@ -248,10 +251,20 @@ impl TaskWatcher {
                     );
                 }
 
+                if task_def.name != name {
+                    log::warn!(
+                        "Task file '{}' declares name '{}' but watcher key is '{}'; using file stem as canonical name",
+                        path.display(),
+                        task_def.name,
+                        name
+                    );
+                    task_def.name = name.to_string();
+                }
+
                 // Update registry
                 use crate::task::registry::{TaskDescriptor, TaskSource};
                 let descriptor = TaskDescriptor {
-                    name: task_def.name.clone(),
+                    name: name.to_string(),
                     source: TaskSource::ConfiguredPath(path.to_path_buf()),
                     policy_name: Box::leak(task_def.policy.clone().into_boxed_str()),
                     task_def: Some(task_def),
@@ -272,7 +285,11 @@ impl TaskWatcher {
 mod tests {
     use super::*;
     use crate::task::registry::TaskRegistry;
+    use notify::{event::CreateKind, event::ModifyKind, event::RemoveKind, EventKind};
+    use std::fs;
     use std::path::PathBuf;
+    use tempfile::TempDir;
+    use tokio::sync::mpsc;
 
     #[test]
     fn test_file_event_variants() {
@@ -323,5 +340,129 @@ mod tests {
 
         registry.insert("inserted_task".to_string(), descriptor);
         assert!(registry.is_known("inserted_task"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_notify_event_maps_create_modify_remove() {
+        let (tx, mut rx) = mpsc::channel(8);
+
+        let mut event = notify::Event::new(EventKind::Create(CreateKind::File));
+        event.paths.push(PathBuf::from("C:/tmp/sample.task"));
+        TaskWatcher::handle_notify_event(&event, &tx).unwrap();
+        assert!(
+            matches!(rx.recv().await, Some(FileEvent::Created(path)) if path.contains("sample.task"))
+        );
+
+        let mut event = notify::Event::new(EventKind::Modify(ModifyKind::Data(
+            notify::event::DataChange::Content,
+        )));
+        event.paths.push(PathBuf::from("C:/tmp/sample.task"));
+        TaskWatcher::handle_notify_event(&event, &tx).unwrap();
+        assert!(
+            matches!(rx.recv().await, Some(FileEvent::Modified(path)) if path.contains("sample.task"))
+        );
+
+        let mut event = notify::Event::new(EventKind::Remove(RemoveKind::File));
+        event.paths.push(PathBuf::from("C:/tmp/sample.task"));
+        TaskWatcher::handle_notify_event(&event, &tx).unwrap();
+        assert!(
+            matches!(rx.recv().await, Some(FileEvent::Deleted(path)) if path.contains("sample.task"))
+        );
+    }
+
+    #[test]
+    fn test_handle_notify_event_ignores_non_task_files() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut event = notify::Event::new(EventKind::Create(CreateKind::File));
+        event.paths.push(PathBuf::from("C:/tmp/sample.txt"));
+
+        TaskWatcher::handle_notify_event(&event, &tx).unwrap();
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_reload_task_succeeds_for_valid_task() {
+        let dir = TempDir::new().unwrap();
+        let task_file = dir.path().join("reload_me.task");
+        fs::write(
+            &task_file,
+            r#"
+name: reload_me
+policy: default
+actions:
+  - action: wait
+    duration_ms: 5
+"#,
+        )
+        .unwrap();
+
+        let mut registry = TaskRegistry::new();
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![dir.path().to_string_lossy().to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        TaskWatcher::reload_task(
+            &mut registry,
+            "reload_me",
+            &task_file.to_string_lossy(),
+            &config,
+        )
+        .unwrap();
+
+        let descriptor = registry.lookup("reload_me").unwrap();
+        assert!(descriptor.source.is_configured());
+        assert!(descriptor.task_def.is_some());
+    }
+
+    #[test]
+    fn test_reload_task_fails_for_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("missing.task");
+        let mut registry = TaskRegistry::new();
+        let config = crate::config::TaskDiscoveryConfig::default();
+
+        let err = TaskWatcher::reload_task(
+            &mut registry,
+            "missing",
+            &missing.to_string_lossy(),
+            &config,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Task file does not exist"));
+    }
+
+    #[test]
+    fn test_reload_task_fails_for_invalid_file() {
+        let dir = TempDir::new().unwrap();
+        let task_file = dir.path().join("broken.task");
+        fs::write(&task_file, "not valid").unwrap();
+        let mut registry = TaskRegistry::new();
+        let config = crate::config::TaskDiscoveryConfig::default();
+
+        let err = TaskWatcher::reload_task(
+            &mut registry,
+            "broken",
+            &task_file.to_string_lossy(),
+            &config,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Failed to parse task file"));
+    }
+
+    #[tokio::test]
+    async fn test_stop_is_safe_with_and_without_active_handle() {
+        let registry = Arc::new(Mutex::new(TaskRegistry::new()));
+        let mut watcher = TaskWatcher::new(registry);
+
+        watcher.stop();
+
+        watcher.handle = Some(tokio::spawn(async {}));
+        watcher.stop();
+
+        assert!(watcher.handle.is_none());
     }
 }

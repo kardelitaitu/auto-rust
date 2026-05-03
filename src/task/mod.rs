@@ -117,8 +117,8 @@ async fn execute_single_attempt(
     // First check if this is a DSL task (external task with definition)
     let registry = registry::TaskRegistry::with_built_in_tasks();
     if let Some(task_def) = registry.get_task_definition(name) {
-        // Execute as DSL task
-        let mut executor = dsl_executor::DslExecutor::new(api, task_def);
+        // Execute as DSL task with parameters from CLI
+        let mut executor = dsl_executor::DslExecutor::new(api, task_def).with_parameters(payload);
         return executor.execute().await;
     }
 

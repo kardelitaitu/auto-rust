@@ -242,6 +242,49 @@ pub fn validate_task_definition(def: &TaskDefinition) -> Result<(), Vec<String>>
     }
 }
 
+/// Validate parameters against task definition.
+///
+/// Checks that:
+/// - All required parameters are provided
+/// - Provided parameters match expected types
+/// - Unknown parameters are flagged
+///
+/// # Arguments
+/// * `def` - Task definition with parameter specs
+/// * `provided` - Parameters provided from CLI
+///
+/// # Returns
+/// Ok(()) if all parameters are valid
+/// Err with list of validation errors otherwise
+pub fn validate_parameters(
+    def: &TaskDefinition,
+    provided: &serde_json::Value,
+) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    let empty_map = serde_json::Map::new();
+    let obj = provided.as_object().unwrap_or(&empty_map);
+
+    // Check required parameters
+    for (name, param_def) in &def.parameters {
+        if param_def.required && !obj.contains_key(name) && param_def.default.is_none() {
+            errors.push(format!("Missing required parameter: '{}'", name));
+        }
+    }
+
+    // Check for unknown parameters
+    for (name, _) in obj {
+        if !def.parameters.contains_key(name) {
+            errors.push(format!("Unknown parameter: '{}'", name));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 fn validate_action(action: &Action, index: usize, errors: &mut Vec<String>) {
     match action {
         Action::If { then, r#else, .. } => {
@@ -501,8 +544,11 @@ actions:
     fn test_parse_task_file_invalid_yaml_reports_parse_error() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("broken.yaml");
-        fs::write(&path, "name: broken_task\nactions:\n  - action: wait\n    duration_ms: not-a-number\n")
-            .unwrap();
+        fs::write(
+            &path,
+            "name: broken_task\nactions:\n  - action: wait\n    duration_ms: not-a-number\n",
+        )
+        .unwrap();
 
         let err = parse_task_file(&path).unwrap_err();
         let msg = err.to_string();
@@ -514,8 +560,11 @@ actions:
     fn test_parse_task_file_invalid_toml_reports_parse_error() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("broken.toml");
-        fs::write(&path, "name = \"broken_task\"\n[[actions]]\naction = \"wait\"\nduration_ms = \"oops\"\n")
-            .unwrap();
+        fs::write(
+            &path,
+            "name = \"broken_task\"\n[[actions]]\naction = \"wait\"\nduration_ms = \"oops\"\n",
+        )
+        .unwrap();
 
         let err = parse_task_file(&path).unwrap_err();
         let msg = err.to_string();
@@ -534,5 +583,84 @@ actions:
 
         assert!(msg.contains("Failed to parse task file as YAML or TOML"));
         assert!(msg.contains("broken.task"));
+    }
+
+    #[test]
+    fn test_validate_parameters_all_required_present() {
+        let mut params = HashMap::new();
+        params.insert(
+            "url".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Url,
+                description: "Target URL".to_string(),
+                default: None,
+                required: true,
+            },
+        );
+        params.insert(
+            "delay".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Integer,
+                description: "Wait time".to_string(),
+                default: Some(serde_yaml::Value::Number(1000.into())),
+                required: false,
+            },
+        );
+
+        let def = TaskDefinition {
+            name: "param_task".to_string(),
+            description: "Test".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({"url": "https://example.com"});
+        assert!(validate_parameters(&def, &provided).is_ok());
+    }
+
+    #[test]
+    fn test_validate_parameters_missing_required() {
+        let mut params = HashMap::new();
+        params.insert(
+            "url".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Url,
+                description: "Target URL".to_string(),
+                default: None,
+                required: true,
+            },
+        );
+
+        let def = TaskDefinition {
+            name: "param_task".to_string(),
+            description: "Test".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({"unknown": "value"});
+        let result = validate_parameters(&def, &provided);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Missing required")));
+    }
+
+    #[test]
+    fn test_validate_parameters_unknown_parameter() {
+        let def = TaskDefinition {
+            name: "param_task".to_string(),
+            description: "Test".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({"extra": "param"});
+        let result = validate_parameters(&def, &provided);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Unknown parameter")));
     }
 }

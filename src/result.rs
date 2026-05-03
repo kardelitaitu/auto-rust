@@ -356,6 +356,32 @@ mod tests {
     }
 
     #[test]
+    fn test_task_error_kind_classify_channel_closed_extra() {
+        let kind = TaskErrorKind::classify("channel closed while waiting for response");
+        assert_eq!(kind, TaskErrorKind::Session);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_connection_closed_extra() {
+        let kind = TaskErrorKind::classify("connection closed by peer");
+        assert_eq!(kind, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_detached_target_variants_extra() {
+        let kind1 = TaskErrorKind::classify("Target closed unexpectedly");
+        let kind2 = TaskErrorKind::classify("detachedFromTarget while clicking");
+        assert_eq!(kind1, TaskErrorKind::Browser);
+        assert_eq!(kind2, TaskErrorKind::Browser);
+    }
+
+    #[test]
+    fn test_task_error_kind_classify_load_keyword_extra() {
+        let kind = TaskErrorKind::classify("page load failed after redirect");
+        assert_eq!(kind, TaskErrorKind::Navigation);
+    }
+
+    #[test]
     fn test_task_error_kind_retryable() {
         assert!(TaskErrorKind::Timeout.is_retryable());
         assert!(TaskErrorKind::Navigation.is_retryable());
@@ -822,6 +848,28 @@ mod tests {
             TaskErrorKind::Browser,
         ));
         assert_eq!(summary.results.len(), 2);
+    }
+
+    #[test]
+    fn test_run_summary_success_rate_rounds_expected_ratio() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(10));
+        summary.add(TaskResult::success(10));
+        summary.add(TaskResult::success(10));
+        summary.add(TaskResult::failure(
+            10,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
+        assert!((summary.success_rate() - 75.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_run_summary_default_matches_new() {
+        let new_summary = RunSummary::new();
+        let default_summary = RunSummary::default();
+        assert_eq!(new_summary.total_tasks, default_summary.total_tasks);
+        assert_eq!(new_summary.results.len(), default_summary.results.len());
     }
 
     #[test]

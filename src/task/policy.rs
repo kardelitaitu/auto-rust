@@ -836,4 +836,56 @@ mod tests {
         let policy = get_policy_from_registry("nonexistent_task");
         assert_eq!(policy.max_duration_ms, DEFAULT_TASK_POLICY.max_duration_ms);
     }
+
+    #[test]
+    fn test_registry_policy_lookup_demo_keyboard_alias() {
+        let policy_hyphen = get_policy_from_registry("demo-keyboard");
+        let policy_snake = get_policy_from_registry("demo_keyboard");
+
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.permissions.allow_screenshot,
+            policy_snake.permissions.allow_screenshot
+        );
+        assert_eq!(
+            policy_hyphen.max_duration_ms,
+            DEMO_KEYBOARD_POLICY.max_duration_ms
+        );
+    }
+
+    #[test]
+    fn test_registry_policy_lookup_demo_mouse_alias() {
+        let policy_hyphen = get_policy_from_registry("demo-mouse");
+        let policy_snake = get_policy_from_registry("demo_mouse");
+
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.max_duration_ms,
+            DEMO_MOUSE_POLICY.max_duration_ms
+        );
+    }
+
+    #[test]
+    fn test_registry_policy_lookup_demoqa_alias() {
+        let policy_hyphen = get_policy_from_registry("demoqa");
+        let policy_snake = get_policy_from_registry("demo_qa");
+
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.max_duration_ms,
+            DEMO_QA_POLICY.max_duration_ms
+        );
+    }
+
+    #[test]
+    fn test_registry_policy_lookup_task_example_alias() {
+        let policy_hyphen = get_policy_from_registry("task-example");
+        let policy_snake = get_policy_from_registry("task_example");
+
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.max_duration_ms,
+            TASK_EXAMPLE_POLICY.max_duration_ms
+        );
+    }
 }

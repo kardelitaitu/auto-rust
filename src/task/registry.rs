@@ -236,7 +236,7 @@ impl TaskRegistry {
             }
 
             for extension in &config.extensions {
-                let pattern = format!("{}/*. {}", root, extension);
+                let pattern = format!("{}/**/*.{}", root, extension);
                 if let Ok(entries) = glob::glob(&pattern) {
                     for entry in entries.flatten() {
                         if let Some(name) = entry.file_stem().and_then(|s| s.to_str()) {
@@ -277,7 +277,7 @@ impl TaskRegistry {
         }
 
         // Parse the task file
-        let task_def = match crate::task::dsl::parse_task_file(path) {
+        let mut task_def = match crate::task::dsl::parse_task_file(path) {
             Ok(def) => def,
             Err(e) => {
                 log::error!("Failed to parse task file '{}': {}", path.display(), e);
@@ -294,8 +294,18 @@ impl TaskRegistry {
             }
         }
 
+        if task_def.name != name {
+            log::warn!(
+                "Task file '{}' declares name '{}' but registry key is '{}'; using file stem as canonical name",
+                path.display(),
+                task_def.name,
+                name
+            );
+            task_def.name = name.to_string();
+        }
+
         let descriptor = TaskDescriptor {
-            name: task_def.name.clone(),
+            name: name.to_string(),
             source: TaskSource::ConfiguredPath(path.to_path_buf()),
             policy_name: Box::leak(task_def.policy.clone().into_boxed_str()),
             task_def: Some(task_def),
@@ -550,6 +560,8 @@ pub fn format_task_list() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_registry_has_all_built_in_tasks() {
@@ -875,5 +887,81 @@ mod tests {
         };
         assert!(!report_with_errors.is_valid());
         assert_eq!(report_with_errors.total(), 2);
+    }
+
+    #[test]
+    fn test_load_external_tasks_from_valid_task_file() {
+        let dir = TempDir::new().unwrap();
+        let task_dir = dir.path().join("tasks");
+        fs::create_dir_all(&task_dir).unwrap();
+
+        let task_file = task_dir.join("external_greeting.task");
+        fs::write(
+            &task_file,
+            r#"
+name: external_greeting
+description: "external task"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 5
+"#,
+        )
+        .unwrap();
+
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![task_dir.to_string_lossy().to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let mut registry = TaskRegistry::new();
+        let loaded = registry.load_external_tasks(&config);
+
+        assert_eq!(loaded, 1);
+        assert!(registry.is_known("external_greeting"));
+
+        let descriptor = registry.lookup("external_greeting").unwrap();
+        assert!(descriptor.source.is_configured());
+        assert_eq!(descriptor.policy_name, "default");
+        assert!(descriptor.task_def.is_some());
+    }
+
+    #[test]
+    fn test_load_external_tasks_normalizes_declared_name_to_file_stem() {
+        let dir = TempDir::new().unwrap();
+        let task_dir = dir.path().join("tasks");
+        fs::create_dir_all(&task_dir).unwrap();
+
+        let task_file = task_dir.join("file_canonical.task");
+        fs::write(
+            &task_file,
+            r#"
+name: declared_name
+description: "mismatched task"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 5
+"#,
+        )
+        .unwrap();
+
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![task_dir.to_string_lossy().to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let mut registry = TaskRegistry::new();
+        let loaded = registry.load_external_tasks(&config);
+
+        assert_eq!(loaded, 1);
+        assert!(registry.is_known("file_canonical"));
+        assert!(!registry.is_known("declared_name"));
+
+        let descriptor = registry.lookup("file_canonical").unwrap();
+        assert_eq!(descriptor.name, "file_canonical");
+        assert_eq!(descriptor.task_def.as_ref().unwrap().name, "file_canonical");
     }
 }

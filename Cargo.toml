@@ -1,6 +1,6 @@
 [package]
-name = "auto"
-version = "0.0.3"
+name = "auto-rust"
+version = "0.0.5"
 edition = "2021"
 autobins = false
 authors = ["Ganteng Maksimal"]
@@ -13,6 +13,10 @@ categories = ["development-tools", "web-programming"]
 [features]
 default = []
 accessibility-locator = []
+
+[lib]
+name = "auto"
+path = "src/lib.rs"
 
 [[bin]]
 name = "auto"

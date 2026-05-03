@@ -171,6 +171,93 @@ impl TaskRegistry {
         self.tasks.insert(name.to_string(), descriptor);
     }
 
+    /// Register an external task from a file.
+    ///
+    /// # Arguments
+    /// * `name` - Task name
+    /// * `path` - Path to the task file
+    /// * `policy_name` - Policy to use for this task
+    ///
+    /// # Errors
+    /// Returns `RegistryError::Conflict` if task with same name already exists.
+    pub fn register_external(
+        &mut self,
+        name: &str,
+        path: PathBuf,
+        policy_name: &'static str,
+    ) -> Result<(), RegistryError> {
+        // Check for conflicts
+        if let Some(existing) = self.tasks.get(name) {
+            return Err(RegistryError::Conflict {
+                name: name.to_string(),
+                sources: vec![existing.source.clone(), TaskSource::ConfiguredPath(path)],
+            });
+        }
+
+        let descriptor = TaskDescriptor {
+            name: name.to_string(),
+            source: TaskSource::ConfiguredPath(path),
+            policy_name,
+        };
+        self.tasks.insert(name.to_string(), descriptor);
+        Ok(())
+    }
+
+    /// Load external tasks from configured discovery roots.
+    ///
+    /// Scans configured directories for task files and adds them to the registry.
+    ///
+    /// # Arguments
+    /// * `config` - Task discovery configuration
+    ///
+    /// # Returns
+    /// Number of external tasks successfully loaded
+    pub fn load_external_tasks(&mut self, config: &crate::config::TaskDiscoveryConfig) -> usize {
+        if !config.enabled {
+            return 0;
+        }
+
+        let mut loaded_count = 0;
+
+        for root in &config.roots {
+            let root_path = std::path::Path::new(root);
+            if !root_path.exists() || !root_path.is_dir() {
+                log::warn!(
+                    "Task discovery root '{}' does not exist or is not a directory",
+                    root
+                );
+                continue;
+            }
+
+            for extension in &config.extensions {
+                let pattern = format!("{}/*.{}", root, extension);
+                if let Ok(entries) = glob::glob(&pattern) {
+                    for entry in entries.flatten() {
+                        if let Some(name) = entry.file_stem().and_then(|s| s.to_str()) {
+                            // External tasks use "default" policy for now
+                            // In future, policy could be specified in task file metadata
+                            match self.register_external(name, entry.clone(), "default") {
+                                Ok(()) => {
+                                    log::info!("Loaded external task '{}' from {:?}", name, entry);
+                                    loaded_count += 1;
+                                }
+                                Err(RegistryError::Conflict { name, .. }) => {
+                                    log::warn!(
+                                        "Skipping external task '{}' - conflicts with existing task",
+                                        name
+                                    );
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        loaded_count
+    }
+
     /// Look up a task by name.
     ///
     /// Returns the task descriptor if found, or an error if unknown.
@@ -322,5 +409,83 @@ mod tests {
         assert!(!unknown.is_configured());
         assert!(unknown.is_unknown());
         assert!(unknown.path().is_none());
+    }
+
+    #[test]
+    fn test_register_external_task_success() {
+        let mut registry = TaskRegistry::new();
+        let path = PathBuf::from("/external/my_task.task");
+
+        registry
+            .register_external("my_task", path.clone(), "default")
+            .unwrap();
+
+        assert!(registry.is_known("my_task"));
+        let task = registry.lookup("my_task").unwrap();
+        assert_eq!(task.name, "my_task");
+        assert!(task.source.is_configured());
+        assert_eq!(task.source.path(), Some(&path));
+    }
+
+    #[test]
+    fn test_register_external_task_conflict_with_builtin() {
+        let mut registry = TaskRegistry::with_built_in_tasks();
+        let path = PathBuf::from("/external/cookiebot.task");
+
+        let result = registry.register_external("cookiebot", path, "default");
+        assert!(matches!(result, Err(RegistryError::Conflict { name, .. }) if name == "cookiebot"));
+    }
+
+    #[test]
+    fn test_register_external_task_conflict_with_external() {
+        let mut registry = TaskRegistry::new();
+        let path1 = PathBuf::from("/external/task1.task");
+        let path2 = PathBuf::from("/external/task2.task");
+
+        registry
+            .register_external("my_task", path1, "default")
+            .unwrap();
+
+        let result = registry.register_external("my_task", path2, "default");
+        assert!(matches!(result, Err(RegistryError::Conflict { name, .. }) if name == "my_task"));
+    }
+
+    #[test]
+    fn test_load_external_tasks_disabled() {
+        let mut registry = TaskRegistry::new();
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: false,
+            roots: vec!["./tasks".to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let loaded = registry.load_external_tasks(&config);
+        assert_eq!(loaded, 0);
+    }
+
+    #[test]
+    fn test_load_external_tasks_empty_roots() {
+        let mut registry = TaskRegistry::new();
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![],
+            extensions: vec!["task".to_string()],
+        };
+
+        let loaded = registry.load_external_tasks(&config);
+        assert_eq!(loaded, 0);
+    }
+
+    #[test]
+    fn test_load_external_tasks_nonexistent_root() {
+        let mut registry = TaskRegistry::new();
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec!["/nonexistent/path".to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let loaded = registry.load_external_tasks(&config);
+        assert_eq!(loaded, 0);
     }
 }

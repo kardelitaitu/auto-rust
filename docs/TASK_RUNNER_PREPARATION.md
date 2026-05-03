@@ -214,6 +214,13 @@ cargo run --list-tasks
 - policy lookup is consistent with registration
 - task listing output is correct
 
+### Current coverage note
+
+- `TaskDiscoveryConfig` defaults are covered both directly and through `load_config()`
+- `.env` overrides for `task_discovery` are covered through the config load path
+- task list ordering is covered so `--list-tasks` stays stable
+- startup flag precedence is covered through `select_startup_mode`
+
 ### Regression checks
 
 - `cargo check`

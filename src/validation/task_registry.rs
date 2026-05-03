@@ -40,10 +40,13 @@ pub fn get_task_descriptor(
 
 /// Validate a task name and return validation result
 pub fn validate_task(task_name: &str) -> TaskValidationResult {
+    let registry = TaskRegistry::with_built_in_tasks();
+    validate_task_with_registry(task_name, &registry)
+}
+
+fn validate_task_with_registry(task_name: &str, registry: &TaskRegistry) -> TaskValidationResult {
     let clean_name = crate::task::normalize_task_name(task_name);
     let mut warnings = Vec::new();
-
-    let registry = TaskRegistry::with_built_in_tasks();
 
     match registry.lookup(clean_name) {
         Ok(descriptor) => TaskValidationResult {
@@ -69,10 +72,7 @@ pub fn validate_task(task_name: &str) -> TaskValidationResult {
             }
         }
         Err(RegistryError::Conflict { name, sources }) => {
-            warnings.push(format!(
-                "Task '{}' exists in multiple sources: {:?}",
-                name, sources
-            ));
+            warnings.push(format_conflict_warning(&name, &sources));
 
             TaskValidationResult {
                 task_name: clean_name.to_string(),
@@ -128,6 +128,10 @@ pub fn validate_task_groups_strict(groups: &[Vec<TaskDefinition>]) -> Result<()>
     }
 }
 
+fn format_conflict_warning(name: &str, sources: &[crate::task::registry::TaskSource]) -> String {
+    format!("Task '{}' exists in multiple sources: {:?}", name, sources)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +175,25 @@ mod tests {
         assert!(!result.warnings.is_empty());
         assert!(result.warnings[0].contains("Unknown task name"));
         assert!(result.source.contains("Unknown"));
+    }
+
+    #[test]
+    fn test_validate_task_js_suffix_known_task() {
+        let result = validate_task("cookiebot.js");
+        assert!(result.is_known);
+        assert!(result.warnings.is_empty());
+        assert_eq!(result.task_name, "cookiebot");
+        assert!(result.source.contains("BuiltInRust"));
+        assert_eq!(result.policy_name, "cookiebot");
+    }
+
+    #[test]
+    fn test_validate_task_js_suffix_unknown_task() {
+        let result = validate_task("unknown_task.js");
+        assert!(!result.is_known);
+        assert_eq!(result.task_name, "unknown_task");
+        assert!(!result.warnings.is_empty());
+        assert!(result.warnings[0].contains("Unknown task name 'unknown_task'"));
     }
 
     #[test]
@@ -244,5 +267,22 @@ mod tests {
         assert!(
             matches!(result, Err(RegistryError::UnknownTask { name }) if name == "nonexistent_task")
         );
+    }
+
+    #[test]
+    fn test_format_conflict_warning() {
+        let warning = format_conflict_warning(
+            "cookiebot",
+            &[
+                crate::task::registry::TaskSource::BuiltInRust,
+                crate::task::registry::TaskSource::ConfiguredPath(std::path::PathBuf::from(
+                    r"C:\external\cookiebot.task",
+                )),
+            ],
+        );
+
+        assert!(warning.contains("Task 'cookiebot' exists in multiple sources"));
+        assert!(warning.contains("BuiltInRust"));
+        assert!(warning.contains("ConfiguredPath"));
     }
 }

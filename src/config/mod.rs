@@ -379,7 +379,7 @@ fn default_service_name() -> String {
 
 /// Task discovery configuration (Phase 2).
 /// Controls how external tasks are discovered and loaded.
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TaskDiscoveryConfig {
     /// Enable external task discovery (default: false - opt-in)
     #[serde(default)]
@@ -394,6 +394,16 @@ pub struct TaskDiscoveryConfig {
 
 fn default_task_extensions() -> Vec<String> {
     vec!["task".to_string()]
+}
+
+impl Default for TaskDiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            roots: Vec::new(),
+            extensions: default_task_extensions(),
+        }
+    }
 }
 
 /// Engagement limits configuration for Twitter automation.
@@ -602,6 +612,16 @@ impl Default for BrowserProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
+    use std::ffi::OsString;
+    use std::fs;
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::TempDir;
+
+    fn config_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn test_browser_config_defaults() {
@@ -655,6 +675,217 @@ mod tests {
         let config = RoxybrowserConfig::default();
         assert_eq!(config.api_url, "http://localhost:4444");
         assert!(!config.enabled);
+    }
+
+    #[test]
+    fn test_task_discovery_config_defaults() {
+        let config = TaskDiscoveryConfig::default();
+        assert!(!config.enabled);
+        assert!(config.roots.is_empty());
+        assert_eq!(config.extensions, vec!["task".to_string()]);
+    }
+
+    #[test]
+    fn test_load_config_defaults_task_discovery_when_omitted_in_toml() {
+        let _guard = config_test_lock().lock().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        let cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        std::env::set_current_dir(cwd).unwrap();
+
+        assert!(!config.task_discovery.enabled);
+        assert!(config.task_discovery.roots.is_empty());
+        assert_eq!(config.task_discovery.extensions, vec!["task".to_string()]);
+    }
+
+    #[test]
+    fn test_load_config_applies_task_discovery_env_overrides_from_dotenv() {
+        let _guard = config_test_lock().lock().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[task_discovery]
+enabled = false
+roots = []
+extensions = ["task"]
+"#;
+        let dotenv = "TASK_DISCOVERY_ENABLED=true\nTASK_DISCOVERY_ROOTS=./tasks;./extra-tasks\nTASK_DISCOVERY_EXTENSIONS=task;dsl\n";
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+        fs::write(temp_dir.path().join(".env"), dotenv).unwrap();
+
+        let keys = [
+            "TASK_DISCOVERY_ENABLED",
+            "TASK_DISCOVERY_ROOTS",
+            "TASK_DISCOVERY_EXTENSIONS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(value) => env::set_var(key, value),
+                None => env::remove_var(key),
+            }
+        }
+
+        assert!(config.task_discovery.enabled);
+        assert_eq!(
+            config.task_discovery.roots,
+            vec!["./tasks".to_string(), "./extra-tasks".to_string()]
+        );
+        assert_eq!(
+            config.task_discovery.extensions,
+            vec!["task".to_string(), "dsl".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_load_config_prefers_explicit_env_over_dotenv_for_task_discovery() {
+        let _guard = config_test_lock().lock().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[task_discovery]
+enabled = false
+roots = []
+extensions = ["task"]
+"#;
+        let dotenv = "TASK_DISCOVERY_ENABLED=false\nTASK_DISCOVERY_ROOTS=./dotenv-tasks\nTASK_DISCOVERY_EXTENSIONS=dotenv\n";
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+        fs::write(temp_dir.path().join(".env"), dotenv).unwrap();
+
+        let keys = [
+            "TASK_DISCOVERY_ENABLED",
+            "TASK_DISCOVERY_ROOTS",
+            "TASK_DISCOVERY_EXTENSIONS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+
+        env::set_var("TASK_DISCOVERY_ENABLED", "true");
+        env::set_var("TASK_DISCOVERY_ROOTS", "./explicit-tasks;./explicit-extra");
+        env::set_var("TASK_DISCOVERY_EXTENSIONS", "task;custom");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(value) => env::set_var(key, value),
+                None => env::remove_var(key),
+            }
+        }
+
+        assert!(config.task_discovery.enabled);
+        assert_eq!(
+            config.task_discovery.roots,
+            vec![
+                "./explicit-tasks".to_string(),
+                "./explicit-extra".to_string()
+            ]
+        );
+        assert_eq!(
+            config.task_discovery.extensions,
+            vec!["task".to_string(), "custom".to_string()]
+        );
     }
 
     #[test]
@@ -1381,6 +1612,32 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.twitter_activity.llm.quote_tweet_probability = prob
             .parse()
             .unwrap_or(config.twitter_activity.llm.quote_tweet_probability);
+    }
+
+    if let Ok(enabled) = env::var("TASK_DISCOVERY_ENABLED") {
+        config.task_discovery.enabled = enabled.parse().unwrap_or(config.task_discovery.enabled);
+    }
+    if let Ok(roots) = env::var("TASK_DISCOVERY_ROOTS") {
+        let parsed_roots: Vec<String> = roots
+            .split(';')
+            .map(str::trim)
+            .filter(|root| !root.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        if !parsed_roots.is_empty() {
+            config.task_discovery.roots = parsed_roots;
+        }
+    }
+    if let Ok(extensions) = env::var("TASK_DISCOVERY_EXTENSIONS") {
+        let parsed_extensions: Vec<String> = extensions
+            .split(';')
+            .map(str::trim)
+            .filter(|ext| !ext.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        if !parsed_extensions.is_empty() {
+            config.task_discovery.extensions = parsed_extensions;
+        }
     }
 
     log::info!("Final Twitter probabilities in config: like={:.3}, retweet={:.3}, quote={:.3}, follow={:.3}, reply={:.3}, bookmark={:.3}, dive={:.3}",

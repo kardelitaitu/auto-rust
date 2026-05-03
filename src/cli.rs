@@ -52,6 +52,10 @@ pub struct Args {
         help = "Show what would be executed without actually running tasks"
     )]
     pub dry_run: bool,
+
+    /// Validate all external tasks and exit
+    #[arg(long, help = "Validate all external task files without executing them")]
+    pub validate_tasks: bool,
 }
 
 /// Parses command-line arguments using clap.
@@ -549,6 +553,16 @@ mod tests {
 
         assert!(args.dry_run);
         assert!(!args.list_tasks);
+        assert!(args.tasks.is_empty());
+        assert!(args.browsers.is_none());
+    }
+
+    #[test]
+    fn test_args_parse_list_tasks_and_dry_run_flags() {
+        let args = Args::try_parse_from(["auto", "--list-tasks", "--dry-run"]).unwrap();
+
+        assert!(args.list_tasks);
+        assert!(args.dry_run);
         assert!(args.tasks.is_empty());
         assert!(args.browsers.is_none());
     }

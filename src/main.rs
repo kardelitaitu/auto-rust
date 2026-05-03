@@ -9,6 +9,7 @@ use tokio::sync::broadcast;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StartupMode {
     ListTasks,
+    ValidateTasks,
     DryRun,
     Execute,
 }
@@ -16,6 +17,8 @@ enum StartupMode {
 fn select_startup_mode(args: &cli::Args) -> StartupMode {
     if args.list_tasks {
         StartupMode::ListTasks
+    } else if args.validate_tasks {
+        StartupMode::ValidateTasks
     } else if args.dry_run {
         StartupMode::DryRun
     } else {
@@ -188,6 +191,64 @@ async fn run_dry_run(groups: &[Vec<cli::TaskDefinition>], config: &config::Confi
     Ok(())
 }
 
+/// Run in validate-tasks mode: check all external tasks without executing.
+///
+/// Loads external tasks and validates them, reporting any errors.
+async fn run_validate_tasks(config: &config::Config) -> Result<()> {
+    use auto::task::registry::TaskRegistry;
+
+    println!("=== TASK VALIDATION ===\n");
+
+    let mut registry = TaskRegistry::with_built_in_tasks();
+    let external_loaded = registry.load_external_tasks(&config.task_discovery);
+
+    println!("External tasks loaded: {}", external_loaded);
+
+    let report = registry.validate_all_tasks();
+    let total = report.total();
+
+    if total == 0 {
+        println!("\nNo external tasks found to validate.");
+        println!("\nValidation complete. All tasks valid.");
+        return Ok(());
+    }
+
+    println!("\nValidation Results:");
+    println!("===================\n");
+
+    if !report.valid.is_empty() {
+        println!("Valid tasks ({}):", report.valid.len());
+        for name in &report.valid {
+            println!("  [PASS] {}", name);
+        }
+        println!();
+    }
+
+    if !report.invalid.is_empty() {
+        println!("Invalid tasks ({}):", report.invalid.len());
+        for (name, error) in &report.invalid {
+            println!("  [FAIL] {}: {}", name, error);
+        }
+        println!();
+    }
+
+    println!("=== SUMMARY ===");
+    println!("Total external tasks: {}", total);
+    println!("Valid: {}", report.valid.len());
+    println!("Invalid: {}", report.invalid.len());
+
+    if report.is_valid() {
+        println!("\nValidation complete. All tasks valid.");
+        Ok(())
+    } else {
+        println!(
+            "\nValidation failed. {} task(s) have errors.",
+            report.invalid.len()
+        );
+        Err(anyhow::anyhow!("Task validation failed"))
+    }
+}
+
 async fn run_async() -> Result<()> {
     let logger = logger::FileLogger::new("log")?;
     log::set_boxed_logger(Box::new(logger))?;
@@ -215,6 +276,11 @@ async fn run_async() -> Result<()> {
         StartupMode::ListTasks => {
             print!("{}", render_list_tasks_output());
             return Ok(());
+        }
+        StartupMode::ValidateTasks => {
+            let config = config::load_config()?;
+            config::validate_config(&config)?;
+            return run_validate_tasks(&config).await;
         }
         StartupMode::DryRun | StartupMode::Execute => {}
     }
@@ -393,6 +459,7 @@ mod tests {
             clear_learning: false,
             list_tasks: true,
             dry_run: true,
+            validate_tasks: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ListTasks);
@@ -406,6 +473,7 @@ mod tests {
             clear_learning: false,
             list_tasks: false,
             dry_run: true,
+            validate_tasks: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::DryRun);
@@ -419,9 +487,39 @@ mod tests {
             clear_learning: false,
             list_tasks: false,
             dry_run: false,
+            validate_tasks: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::Execute);
+    }
+
+    #[test]
+    fn test_select_startup_mode_validate_tasks() {
+        let args = Args {
+            tasks: vec![],
+            browsers: None,
+            clear_learning: false,
+            list_tasks: false,
+            dry_run: false,
+            validate_tasks: true,
+        };
+
+        assert_eq!(select_startup_mode(&args), StartupMode::ValidateTasks);
+    }
+
+    #[test]
+    fn test_select_startup_mode_validate_tasks_takes_precedence_over_dry_run() {
+        let args = Args {
+            tasks: vec![],
+            browsers: None,
+            clear_learning: false,
+            list_tasks: false,
+            dry_run: true,
+            validate_tasks: true,
+        };
+
+        // ValidateTasks comes before DryRun in the if-else chain
+        assert_eq!(select_startup_mode(&args), StartupMode::ValidateTasks);
     }
 
     #[test]

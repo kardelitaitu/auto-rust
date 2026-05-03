@@ -88,16 +88,7 @@ impl std::fmt::Display for RegistryError {
                 write!(f, "Task '{}' not found", name)
             }
             RegistryError::Conflict { name, sources } => {
-                let formatted_sources: Vec<String> = sources
-                    .iter()
-                    .map(|s| match s {
-                        TaskSource::BuiltInRust => "built-in (rust)".to_string(),
-                        TaskSource::ConfiguredPath(path) => {
-                            format!("external file: {}", path.display())
-                        }
-                        TaskSource::Unknown => "unknown source".to_string(),
-                    })
-                    .collect();
+                let formatted_sources = format_conflict_sources(sources);
 
                 write!(
                     f,
@@ -111,6 +102,17 @@ impl std::fmt::Display for RegistryError {
 }
 
 impl std::error::Error for RegistryError {}
+
+fn format_conflict_sources(sources: &[TaskSource]) -> Vec<String> {
+    sources
+        .iter()
+        .map(|s| match s {
+            TaskSource::BuiltInRust => "built-in (rust)".to_string(),
+            TaskSource::ConfiguredPath(path) => format!("external file: {}", path.display()),
+            TaskSource::Unknown => "unknown source".to_string(),
+        })
+        .collect()
+}
 
 /// Task registry providing unified task discovery and metadata.
 ///
@@ -397,6 +399,57 @@ impl TaskRegistry {
         conflicts
     }
 
+    /// Validate all external tasks in the registry.
+    ///
+    /// Checks each external task for:
+    /// - Valid task definition (actions, parameters)
+    /// - Name consistency (file name matches task name)
+    /// - Policy validity
+    ///
+    /// # Returns
+    /// Validation report with valid and invalid tasks
+    pub fn validate_all_tasks(&self) -> ValidationReport {
+        let mut valid = Vec::new();
+        let mut invalid = Vec::new();
+
+        for (name, descriptor) in &self.tasks {
+            if descriptor.source.is_configured() {
+                if let Some(task_def) = &descriptor.task_def {
+                    // Validate the task definition
+                    match crate::task::dsl::validate_task_definition(task_def) {
+                        Ok(()) => {
+                            // Also check name consistency
+                            if task_def.name != *name {
+                                invalid.push((
+                                    name.clone(),
+                                    format!(
+                                        "Name mismatch: file is '{}' but task defines '{}'",
+                                        name, task_def.name
+                                    ),
+                                ));
+                            } else {
+                                valid.push(name.clone());
+                            }
+                        }
+                        Err(errors) => {
+                            invalid.push((
+                                name.clone(),
+                                format!("Validation errors: {}", errors.join("; ")),
+                            ));
+                        }
+                    }
+                } else {
+                    invalid.push((
+                        name.clone(),
+                        "Missing task definition (not parsed as DSL)".to_string(),
+                    ));
+                }
+            }
+        }
+
+        ValidationReport { valid, invalid }
+    }
+
     /// Generate a diagnostics report for the registry.
     ///
     /// Returns detailed information about tasks, sources, and any issues.
@@ -432,6 +485,27 @@ pub struct RegistryDiagnostics {
     pub external_tasks: usize,
     /// All task names (sorted)
     pub task_names: Vec<String>,
+}
+
+/// Validation report for external tasks.
+#[derive(Debug, Clone)]
+pub struct ValidationReport {
+    /// Names of valid external tasks
+    pub valid: Vec<String>,
+    /// Names of invalid tasks with error messages
+    pub invalid: Vec<(String, String)>,
+}
+
+impl ValidationReport {
+    /// Returns true if all external tasks are valid.
+    pub fn is_valid(&self) -> bool {
+        self.invalid.is_empty()
+    }
+
+    /// Returns the total number of external tasks checked.
+    pub fn total(&self) -> usize {
+        self.valid.len() + self.invalid.len()
+    }
 }
 
 /// Format the task list for display (--list-tasks output).
@@ -676,6 +750,24 @@ mod tests {
     }
 
     #[test]
+    fn test_format_conflict_sources() {
+        let formatted = format_conflict_sources(&[
+            TaskSource::BuiltInRust,
+            TaskSource::ConfiguredPath(PathBuf::from("/external/my_task.task")),
+            TaskSource::Unknown,
+        ]);
+
+        assert_eq!(
+            formatted,
+            vec![
+                "built-in (rust)".to_string(),
+                "external file: /external/my_task.task".to_string(),
+                "unknown source".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn test_unknown_task_error_display() {
         let err = RegistryError::UnknownTask {
             name: "nonexistent".to_string(),
@@ -705,6 +797,30 @@ mod tests {
     }
 
     #[test]
+    fn test_format_task_list_ordering_is_sorted() {
+        let output = format_task_list();
+        let names: Vec<String> = output
+            .lines()
+            .filter(|line| line.starts_with("  ") && line.contains("policy="))
+            .filter_map(|line| line.split_whitespace().next().map(str::to_string))
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+
+        assert_eq!(names.len(), 15);
+        assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn test_format_task_list_has_no_external_markers_by_default() {
+        let output = format_task_list();
+
+        assert!(!output.contains("ConfiguredPath("));
+        assert!(!output.contains("external file:"));
+        assert!(output.contains("Total: 15 tasks"));
+    }
+
+    #[test]
     fn test_registry_diagnostics_counts_external_tasks() {
         let mut registry = TaskRegistry::with_built_in_tasks();
         registry
@@ -720,5 +836,33 @@ mod tests {
         assert_eq!(diag.built_in_tasks, 15);
         assert_eq!(diag.external_tasks, 1);
         assert!(diag.task_names.contains(&"sample_external".to_string()));
+    }
+
+    #[test]
+    fn test_validation_report_empty() {
+        let registry = TaskRegistry::with_built_in_tasks();
+        let report = registry.validate_all_tasks();
+
+        assert!(report.is_valid());
+        assert_eq!(report.total(), 0);
+        assert!(report.valid.is_empty());
+        assert!(report.invalid.is_empty());
+    }
+
+    #[test]
+    fn test_validation_report_methods() {
+        let report = ValidationReport {
+            valid: vec!["task1".to_string(), "task2".to_string()],
+            invalid: vec![],
+        };
+        assert!(report.is_valid());
+        assert_eq!(report.total(), 2);
+
+        let report_with_errors = ValidationReport {
+            valid: vec!["task1".to_string()],
+            invalid: vec![("task2".to_string(), "error".to_string())],
+        };
+        assert!(!report_with_errors.is_valid());
+        assert_eq!(report_with_errors.total(), 2);
     }
 }

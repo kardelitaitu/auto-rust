@@ -38,6 +38,13 @@ pub struct Args {
     /// Clear all click learning data before starting
     #[arg(long, help = "Clear all click learning data and exit")]
     pub clear_learning: bool,
+
+    /// List all available tasks and exit
+    #[arg(
+        long,
+        help = "List all available tasks with source and policy information"
+    )]
+    pub list_tasks: bool,
 }
 
 /// Parses command-line arguments using clap.

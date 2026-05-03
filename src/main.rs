@@ -82,6 +82,14 @@ async fn run_async() -> Result<()> {
     });
 
     let args = cli::parse_args();
+
+    // Handle --list-tasks flag
+    if args.list_tasks {
+        use auto::task::registry::format_task_list;
+        print!("{}", format_task_list());
+        return Ok(());
+    }
+
     let config = config::load_config()?;
     config::validate_config(&config)?;
 

@@ -215,6 +215,34 @@ impl TaskRegistry {
     }
 }
 
+/// Format the task list for display (--list-tasks output).
+///
+/// Returns a formatted string with task names, sources, and policies.
+pub fn format_task_list() -> String {
+    let registry = TaskRegistry::with_built_in_tasks();
+    let tasks = registry.list_tasks();
+
+    let mut output = String::new();
+    output.push_str("Available Tasks:\n");
+    output.push_str("================\n\n");
+
+    for task in &tasks {
+        let source_str = match &task.source {
+            TaskSource::BuiltInRust => "built-in",
+            TaskSource::ConfiguredPath(_) => "external",
+            TaskSource::Unknown => "unknown",
+        };
+
+        output.push_str(&format!(
+            "  {:20}  {:10}  {}\n",
+            task.name, source_str, task.policy_name
+        ));
+    }
+
+    output.push_str(&format!("\nTotal: {} tasks\n", tasks.len()));
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

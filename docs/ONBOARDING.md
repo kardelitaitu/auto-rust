@@ -86,11 +86,10 @@ rust-orchestrator/
 │   ├── orchestrator.rs      # Core orchestration logic
 │   │
 │   ├── internal/            # Internal utilities
-│   │   ├── circuit_breaker.rs
 │   │   └── metrics.rs
 │   │
 │   ├── session/             # Browser session management
-│   │   ├── mod.rs
+│   │   ├── mod.rs           # Session lifecycle, circuit breaker
 │   │   └── worker.rs
 │   │
 │   ├── task/                # Task implementations
@@ -104,8 +103,9 @@ rust-orchestrator/
 │   └── utils/               # Shared utilities
 │       ├── browser.rs
 │       ├── mouse.rs
+│       ├── mouse/           # Mouse trajectory algorithms
 │       ├── keyboard.rs
-│       └── twitter/         # Twitter helpers
+│       └── twitter/         # 27 modularized Twitter automation files
 │
 ├── tests/                   # Integration tests
 ├── examples/                # Usage examples

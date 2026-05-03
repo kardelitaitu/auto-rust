@@ -47,7 +47,7 @@ The circuit breaker prevents cascading failures when browser sessions become unr
 - **Timeout Duration:** Cooldown period before attempting recovery
 - **Automatic Recovery:** Sessions transition back to `Healthy` after timeout
 
-See `src/internal/circuit_breaker.rs` for implementation details.
+Circuit breaker is implemented in `src/session/mod.rs` as part of the Session struct.
 
 ---
 
@@ -200,7 +200,7 @@ if failure_count > threshold {
 }
 ```
 
-**Files:** `src/internal/circuit_breaker.rs`, `src/session/mod.rs`
+**Files:** `src/session/mod.rs` (embedded in Session), `src/utils/twitter/twitteractivity_retry.rs` (Task-specific)
 
 ### 2. Actor Model
 
@@ -371,7 +371,8 @@ src/
     ├── keyboard.rs      # Keyboard input
     ├── scroll.rs        # Scrolling behavior
     ├── zoom.rs          # Zoom control
-    └── twitter/         # Twitter-specific helpers
+    └── twitter/         # Twitter automation (27 modularized files)
+        ├── twitteractivity_*.rs    # Modular task components
 ```
 
 ---

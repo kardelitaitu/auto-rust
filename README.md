@@ -386,18 +386,30 @@ export MAX_GLOBAL_CONCURRENCY=10
 | [docs/TASKS/pageview.md](docs/TASKS/pageview.md) | Page browsing task |
 | [docs/TASKS/twitteractivity.md](docs/TASKS/twitteractivity.md) | Twitter engagement task |
 | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Complete TaskContext API |
-| [docs/TASK_AUTHORING_GUIDE.md](docs/TASK_AUTHORING_GUIDE.md) | Build your own tasks |
+| [docs/TUTORIAL_BUILDING_FIRST_TASK.md](docs/TUTORIAL_BUILDING_FIRST_TASK.md) | Build your own tasks |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | PR guidelines |
 | [Cargo docs](https://docs.rs) | `cargo doc --open` |
 
 ### Available Tasks
 
+**Demo Tasks:**
 - `cookiebot` - Cookie/consent management
-- `pageview` - Human-like page browsing
 - `demoqa` - Demo form automation
-- `twitteractivity` - Full Twitter/X engagement
+- `demo-keyboard` - Keyboard interaction demo
+- `demo-mouse` - Mouse movement demo
+- `pageview` - Human-like page browsing
+- `task-example` - Example task template
+
+**Twitter/X Tasks:**
+- `twitteractivity` - Full feed engagement with smart decisions
+- `twitterdive` - Thread diving and reading
 - `twitterfollow` - Profile following
-- `twitterreply` - Tweet replies with LLM
+- `twitterintent` - Intent-based actions (like, follow)
+- `twitterlike` - Like specific tweets
+- `twitterquote` - Quote tweets with LLM
+- `twitterreply` - Reply to tweets with LLM
+- `twitterretweet` - Retweet specific tweets
+- `twittertest` - Twitter automation smoke tests
 
 ## Contributing
 

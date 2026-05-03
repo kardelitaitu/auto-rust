@@ -86,6 +86,22 @@ impl EngagementCounters {
         self.quote_tweets += 1;
     }
 
+    /// Increments counter by action type string.
+    /// Used by SessionState for unified action recording.
+    #[instrument]
+    pub fn increment(&mut self, action: &str) {
+        match action {
+            "like" => self.increment_like(),
+            "retweet" => self.increment_retweet(),
+            "follow" => self.increment_follow(),
+            "reply" => self.increment_reply(),
+            "bookmark" => self.increment_bookmark(),
+            "quote" => self.increment_quote_tweet(),
+            "dive" => self.increment_thread_dive(),
+            _ => {}
+        }
+    }
+
     /// Returns a summary of all counters as a HashMap.
     #[instrument]
     pub fn to_summary(&self) -> HashMap<String, u32> {

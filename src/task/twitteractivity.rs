@@ -18,10 +18,10 @@ use crate::prelude::TaskContext;
 use crate::utils::twitter::{
     twitteractivity_engagement::process_candidate,
     twitteractivity_feed::identify_engagement_candidates,
-    twitteractivity_limits::{EngagementCounters, EngagementLimits},
+    twitteractivity_limits::EngagementLimits,
     twitteractivity_navigation::phase1_navigation,
     twitteractivity_persona::{apply_behavior_profile, select_persona_weights},
-    twitteractivity_state::{CandidateContext, TaskConfig, TweetActionTracker},
+    twitteractivity_state::{CandidateContext, SessionState, TaskConfig},
 };
 
 /// Task entry point called by orchestrator.
@@ -94,8 +94,7 @@ async fn run_inner(
         persona.like_prob, persona.retweet_prob, persona.follow_prob, persona.reply_prob
     );
 
-    // Initialize engagement counters and limits
-    let mut counters = EngagementCounters::new();
+    // Initialize session state (consolidates counters, limits, tracker, deadline)
     let limits = EngagementLimits::with_limits(
         config.twitter_activity.engagement_limits.max_likes,
         config.twitter_activity.engagement_limits.max_retweets,
@@ -106,20 +105,22 @@ async fn run_inner(
         config.twitter_activity.engagement_limits.max_quote_tweets,
         config.twitter_activity.engagement_limits.max_total_actions,
     );
-    let mut action_tracker = TweetActionTracker::new(
+    let mut session = SessionState::new(
+        limits,
+        task_config.duration_ms,
         crate::utils::twitter::twitteractivity_constants::MIN_ACTION_CHAIN_DELAY_MS,
     );
 
     info!(
         "Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
-        counters.likes,
-        limits.max_likes,
-        counters.retweets,
-        limits.max_retweets,
-        counters.follows,
-        limits.max_follows,
-        counters.total_actions(),
-        limits.max_total_actions
+        session.counters.likes,
+        session.limits.max_likes,
+        session.counters.retweets,
+        session.limits.max_retweets,
+        session.counters.follows,
+        session.limits.max_follows,
+        session.counters.total_actions(),
+        session.limits.max_total_actions
     );
 
     // Phase 1: Navigation & authentication check
@@ -127,9 +128,8 @@ async fn run_inner(
 
     // Phase 2: Feed scanning and engagement
     info!("Phase 2: Scanning feed for {} ms", task_config.duration_ms);
-    let deadline = Instant::now() + Duration::from_millis(task_config.duration_ms);
     let mut actions_taken = 0u32;
-    let mut last_remaining = Duration::from_millis(task_config.duration_ms);
+    let mut last_remaining;
 
     let profile = api.behavior_runtime();
     let scroll_amount = if config.twitter_activity.scroll_amount_pixels > 0 {
@@ -150,7 +150,7 @@ async fn run_inner(
     let mut next_scroll = Instant::now();
     let mut next_candidate_scan = Instant::now();
 
-    while Instant::now() < deadline {
+    while !session.is_expired() {
         let now = Instant::now();
 
         if now < next_candidate_scan {
@@ -184,10 +184,10 @@ async fn run_inner(
                     persona: &persona,
                     task_config: &task_config,
                     api,
-                    limits: &limits,
+                    limits: &session.limits,
                     scroll_interval,
-                    action_tracker: &mut action_tracker,
-                    counters: &mut counters,
+                    action_tracker: &mut session.action_tracker,
+                    counters: &mut session.counters,
                     thread_cache: None,
                 };
 
@@ -211,41 +211,36 @@ async fn run_inner(
             }
         }
 
-        last_remaining = deadline.saturating_duration_since(Instant::now());
+        last_remaining = session.remaining_time();
         if last_remaining.as_millis() < 500 {
             break;
         }
     }
 
     // Final summary
-    log_summary(&counters, &limits, &task_config, last_remaining, api);
+    log_summary(&session, &task_config, api);
     Ok(())
 }
 
 /// Log final engagement summary.
-fn log_summary(
-    counters: &EngagementCounters,
-    limits: &EngagementLimits,
-    task_config: &TaskConfig,
-    last_remaining: Duration,
-    _api: &TaskContext,
-) {
+fn log_summary(session: &SessionState, task_config: &TaskConfig, _api: &TaskContext) {
+    let last_remaining = session.remaining_time();
     let duration_secs =
         (Duration::from_millis(task_config.duration_ms) - last_remaining).as_secs_f64();
     info!(
         "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
-        counters.likes,
-        counters.retweets,
-        counters.follows,
-        counters.replies,
-        counters.thread_dives,
-        counters.bookmarks,
-        counters.quote_tweets,
-        counters.total_actions(),
+        session.counters.likes,
+        session.counters.retweets,
+        session.counters.follows,
+        session.counters.replies,
+        session.counters.thread_dives,
+        session.counters.bookmarks,
+        session.counters.quote_tweets,
+        session.counters.total_actions(),
         duration_secs
     );
 
-    let remaining_limits = limits.remaining(counters);
+    let remaining_limits = session.limits.remaining(&session.counters);
     info!(
         "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
         remaining_limits.get("likes").unwrap_or(&0),

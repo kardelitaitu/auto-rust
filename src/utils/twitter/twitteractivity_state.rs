@@ -255,6 +255,97 @@ pub struct CandidateResult {
     pub thread_cache: Option<ThreadCache>,
 }
 
+/// Consolidated session state for Twitter activity task.
+/// Groups engagement counters, limits, action tracking, and deadline into a single unit.
+/// Simplifies passing state through the call chain and reduces parameter count.
+#[derive(Debug)]
+pub struct SessionState {
+    /// Engagement action counters (likes, retweets, follows, etc.)
+    pub counters: EngagementCounters,
+    /// Maximum allowed actions per session
+    pub limits: EngagementLimits,
+    /// Tracks per-tweet action timing to prevent rapid chains
+    pub action_tracker: TweetActionTracker,
+    /// Session deadline for timeout checking
+    pub deadline: Instant,
+}
+
+impl SessionState {
+    /// Creates a new SessionState with the given limits and duration.
+    pub fn new(limits: EngagementLimits, duration_ms: u64, min_action_delay_ms: u64) -> Self {
+        Self {
+            counters: EngagementCounters::new(),
+            limits,
+            action_tracker: TweetActionTracker::new(min_action_delay_ms),
+            deadline: Instant::now() + Duration::from_millis(duration_ms),
+        }
+    }
+
+    /// Checks if the session has exceeded its deadline.
+    pub fn is_expired(&self) -> bool {
+        Instant::now() >= self.deadline
+    }
+
+    /// Returns remaining time until deadline.
+    pub fn remaining_time(&self) -> Duration {
+        let now = Instant::now();
+        if now >= self.deadline {
+            Duration::from_millis(0)
+        } else {
+            self.deadline.duration_since(now)
+        }
+    }
+
+    /// Checks if a specific action is allowed by limits.
+    pub fn is_action_allowed(&self, action: &str) -> bool {
+        match action {
+            "like" => self.counters.likes < self.limits.max_likes,
+            "retweet" => self.counters.retweets < self.limits.max_retweets,
+            "follow" => self.counters.follows < self.limits.max_follows,
+            "reply" => self.counters.replies < self.limits.max_replies,
+            "bookmark" => self.counters.bookmarks < self.limits.max_bookmarks,
+            "quote" => self.counters.quote_tweets < self.limits.max_quote_tweets,
+            "dive" => self.counters.thread_dives < self.limits.max_thread_dives,
+            _ => false,
+        }
+    }
+
+    /// Returns total actions taken vs max allowed.
+    pub fn action_summary(&self) -> (u32, u32) {
+        (self.counters.total_actions(), self.limits.max_total_actions)
+    }
+
+    /// Checks if total action limit is reached.
+    pub fn is_total_limit_reached(&self) -> bool {
+        self.counters.total_actions() >= self.limits.max_total_actions
+    }
+
+    /// Records an action in both counters and tracker.
+    pub fn record_action(&mut self, tweet_id: &str, action_type: &'static str) {
+        self.counters.increment(action_type);
+        self.action_tracker
+            .record_action(tweet_id.to_string(), action_type);
+    }
+
+    /// Returns a formatted summary of session progress.
+    pub fn progress_summary(&self) -> String {
+        format!(
+            "Session: {}/{} actions | L:{}/{} R:{}/{} F:{}/{} Re:{}/{} | Time left: {:?}",
+            self.counters.total_actions(),
+            self.limits.max_total_actions,
+            self.counters.likes,
+            self.limits.max_likes,
+            self.counters.retweets,
+            self.limits.max_retweets,
+            self.counters.follows,
+            self.limits.max_follows,
+            self.counters.replies,
+            self.limits.max_replies,
+            self.remaining_time()
+        )
+    }
+}
+
 /// Helper: read numeric fields from payload with validation (u64)
 pub fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64, TaskValidationError> {
     payload

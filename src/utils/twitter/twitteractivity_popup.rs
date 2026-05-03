@@ -412,7 +412,7 @@ mod tests {
     fn test_dismiss_signup_nag_disabled() {
         // The function is disabled and returns false
         // This test documents that behavior
-        assert!(true); // Just verifies the test compiles
+        // Test placeholder - verifies the module compiles
     }
 
     #[test]

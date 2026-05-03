@@ -8,7 +8,8 @@ mod task_registry_policy_tests;
 mod config_tests {
     use crate::config::{
         validate_config, BrowserConfig, CircuitBreakerConfig, Config, NativeInteractionConfig,
-        OrchestratorConfig, RoxybrowserConfig, TracingConfig, TwitterActivityConfig,
+        OrchestratorConfig, RoxybrowserConfig, TaskDiscoveryConfig, TracingConfig,
+        TwitterActivityConfig,
     };
     use std::collections::BTreeMap;
 
@@ -16,7 +17,6 @@ mod config_tests {
     fn test_validate_config_valid() {
         let config = Config {
             browser: BrowserConfig {
-                connectors: vec![],
                 connection_timeout_ms: 10000,
                 max_discovery_retries: 3,
                 discovery_retry_delay_ms: 5000,
@@ -37,19 +37,21 @@ mod config_tests {
                 cursor_overlay_ms: 0,
                 native_interaction: NativeInteractionConfig::default(),
                 max_workers_per_session: 5,
+                enable_learning_persistence: true,
+                learning_ttl_days: 30,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 5,
                 task_timeout_ms: 60_000,
                 group_timeout_ms: 120_000,
                 worker_wait_timeout_ms: 10000,
-                stuck_worker_threshold_ms: 60_000,
                 task_stagger_delay_ms: 1000,
                 max_retries: 2,
                 retry_delay_ms: 500,
             },
             twitter_activity: TwitterActivityConfig::default(),
             tracing: TracingConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
 
         assert!(validate_config(&config).is_ok());
@@ -59,7 +61,6 @@ mod config_tests {
     fn test_validate_config_invalid_concurrency() {
         let config = Config {
             browser: BrowserConfig {
-                connectors: vec![],
                 connection_timeout_ms: 10000,
                 max_discovery_retries: 3,
                 discovery_retry_delay_ms: 5000,
@@ -80,19 +81,21 @@ mod config_tests {
                 cursor_overlay_ms: 0,
                 native_interaction: NativeInteractionConfig::default(),
                 max_workers_per_session: 5,
+                enable_learning_persistence: true,
+                learning_ttl_days: 30,
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 0,
                 task_timeout_ms: 60_000,
                 group_timeout_ms: 120_000,
                 worker_wait_timeout_ms: 10000,
-                stuck_worker_threshold_ms: 60_000,
                 task_stagger_delay_ms: 1000,
                 max_retries: 2,
                 retry_delay_ms: 500,
             },
             twitter_activity: TwitterActivityConfig::default(),
             tracing: TracingConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
 
         assert!(validate_config(&config).is_err());

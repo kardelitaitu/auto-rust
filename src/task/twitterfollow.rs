@@ -64,10 +64,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
-        .map_err(|_| anyhow::anyhow!(
-            "[twitterfollow] Task exceeded duration budget of {}ms",
-            duration_ms
-        ))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "[twitterfollow] Task exceeded duration budget of {}ms",
+                duration_ms
+            )
+        })?
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -80,14 +82,15 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         username = extract_username_from_payload(&payload)?;
         let profile_url = format!("https://x.com/{}", username);
         info!("[twitterfollow] Starting: target=@{}", username);
-        api.navigate(&profile_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
+        api.navigate(&profile_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+            .await?;
         info!("[twitterfollow] Navigated to {}", profile_url);
     }
 
     verify_current_profile(api, &username).await?;
 
     // Already following pre-check
-    if is_already_following(api).await? {
+    if is_already_following(api, Some(&username)).await? {
         info!("[twitterfollow] Already following @{}", username);
         return Ok(());
     }
@@ -120,8 +123,11 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
                 return Ok(false);
             }
             info!("[twitterfollow] Reloading page for retry...");
-            api.navigate(&format!("https://x.com/{}", username), DEFAULT_NAVIGATION_TIMEOUT_MS)
-                .await?;
+            api.navigate(
+                &format!("https://x.com/{}", username),
+                DEFAULT_NAVIGATION_TIMEOUT_MS,
+            )
+            .await?;
             human_pause(api, random_in_range(5000, 10000)).await;
             has_reloaded = true;
             continue;
@@ -159,7 +165,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
         }
 
         // Locate and click follow button
-        match find_and_click_follow_button(api).await {
+        match find_and_click_follow_button(api, username).await {
             Ok(true) => {
                 info!("[twitterfollow] Clicked follow button");
             }
@@ -178,7 +184,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
         info!("[twitterfollow] Click successful, verifying...");
 
         // Verify
-        match poll_for_follow_success(api).await {
+        match poll_for_follow_success(api, username).await {
             Ok(true) => {
                 info!("[twitterfollow] ✅ Follow verified");
                 return Ok(true);
@@ -228,7 +234,7 @@ async fn check_soft_error(api: &TaskContext) -> Result<bool> {
 
 /// Handle pending state: if button says "pending", wait 3s and re-check
 async fn handle_pending_state(api: &TaskContext, _username: &str) -> Result<bool> {
-    if is_already_following(api).await? {
+    if is_already_following(api, Some(_username)).await? {
         return Ok(true);
     }
     let info = match get_follow_button_info(api).await? {
@@ -239,7 +245,7 @@ async fn handle_pending_state(api: &TaskContext, _username: &str) -> Result<bool
     if txt.contains("pending") {
         info!("[twitterfollow] Button in 'pending' state, waiting 3s...");
         human_pause(api, 3000).await;
-        if is_already_following(api).await? {
+        if is_already_following(api, Some(_username)).await? {
             info!("[twitterfollow] Pending resolved to following");
             return Ok(true);
         }
@@ -255,7 +261,67 @@ async fn maybe_backoff(api: &TaskContext, attempt: u32) {
     }
 }
 
-async fn find_and_click_follow_button(api: &TaskContext) -> Result<bool> {
+fn follow_locator_candidates(username: &str) -> Vec<String> {
+    vec![
+        format!(
+            "role=button[name='Follow @{}'][scope='main header']",
+            username
+        ),
+        "role=button[name='Follow @'][match=contains][scope='main header']".to_string(),
+        "role=button[name='Follow'][scope='main header']".to_string(),
+        format!("role=button[name='Follow @{}']", username),
+        "role=button[name='Follow @'][match=contains]".to_string(),
+        "role=button[name='Follow']".to_string(),
+    ]
+}
+
+fn following_locator_candidates(username: Option<&str>) -> Vec<String> {
+    let mut candidates = vec![
+        "role=button[name='Following @'][match=contains][scope='main header']".to_string(),
+        "role=button[name='Following'][scope='main header']".to_string(),
+        "role=button[name='Following @'][match=contains]".to_string(),
+        "role=button[name='Following']".to_string(),
+        "role=button[name='Unfollow @'][match=contains][scope='main header']".to_string(),
+        "role=button[name='Unfollow @'][match=contains]".to_string(),
+    ];
+    if let Some(username) = username {
+        candidates.insert(
+            0,
+            format!(
+                "role=button[name='Following @{}'][scope='main header']",
+                username
+            ),
+        );
+        candidates.insert(1, format!("role=button[name='Following @{}']", username));
+        candidates.push(format!("role=button[name='Unfollow @{}']", username));
+    }
+    candidates
+}
+
+async fn find_and_click_follow_button(api: &TaskContext, username: &str) -> Result<bool> {
+    for selector in follow_locator_candidates(username) {
+        let visible = api.visible(&selector).await.unwrap_or_default();
+        if !visible {
+            continue;
+        }
+        if api.click(&selector).await.is_ok() {
+            return Ok(true);
+        }
+    }
+
+    for selector in [
+        "main header button[data-testid$='-follow']",
+        "button[data-testid$='-follow']",
+    ] {
+        let visible = api.visible(selector).await.unwrap_or_default();
+        if !visible {
+            continue;
+        }
+        if api.click(selector).await.is_ok() {
+            return Ok(true);
+        }
+    }
+
     let page = api.page();
 
     // Find follow button: role=button + aria-label="Follow @username" + span="Follow"
@@ -286,7 +352,22 @@ async fn find_and_click_follow_button(api: &TaskContext) -> Result<bool> {
     Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
-async fn is_already_following(api: &TaskContext) -> Result<bool> {
+async fn is_already_following(api: &TaskContext, username: Option<&str>) -> Result<bool> {
+    for selector in following_locator_candidates(username) {
+        if let Ok(true) = api.visible(&selector).await {
+            return Ok(true);
+        }
+    }
+
+    for selector in [
+        "main header button[data-testid$='-unfollow']",
+        "button[data-testid$='-unfollow']",
+    ] {
+        if let Ok(true) = api.visible(selector).await {
+            return Ok(true);
+        }
+    }
+
     let page = api.page();
 
     // Check for multiple "already following" indicators:
@@ -377,9 +458,13 @@ async fn get_follow_button_info(api: &TaskContext) -> Result<Option<ButtonInfo>>
     Ok(None)
 }
 
-async fn poll_for_follow_success(api: &TaskContext) -> Result<bool> {
+async fn poll_for_follow_success(api: &TaskContext, username: &str) -> Result<bool> {
     let deadline = std::time::Instant::now() + Duration::from_millis(VERIFY_TIMEOUT_MS);
     loop {
+        if is_already_following(api, Some(username)).await? {
+            return Ok(true);
+        }
+
         // Check 1: following indicator (unfollow button)
         let js_unfollow = selector_following_indicator();
         let result = api.page().evaluate(js_unfollow.to_string()).await?;
@@ -488,7 +573,8 @@ async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &str) -> Result<Str
         .ok_or_else(|| anyhow::anyhow!("Could not extract username from tweet URL"))?;
 
     info!("[twitterfollow] Navigating to tweet: {}", tweet_url);
-    api.navigate(tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
+    api.navigate(tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+        .await?;
 
     api.pause(2000).await;
 
@@ -639,6 +725,339 @@ mod tests {
     #[test]
     fn test_task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!(duration_ms >= 36_000 && duration_ms <= 54_000);
+        assert!((36_000..=54_000).contains(&duration_ms));
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_include_profile_header_and_generic_fallbacks() {
+        let selectors = follow_locator_candidates("historyinmemes");
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Follow @historyinmemes'][scope='main header']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Follow @'][match=contains][scope='main header']"));
+        assert!(selectors.iter().any(|s| s == "role=button[name='Follow']"));
+    }
+
+    #[test]
+    fn test_following_locator_candidates_include_verified_patterns() {
+        let selectors = following_locator_candidates(Some("PopBase"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following @PopBase'][scope='main header']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following @'][match=contains]"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Unfollow @PopBase']"));
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_prioritize_scoped_then_global_then_generic() {
+        let selectors = follow_locator_candidates("historyinmemes");
+        assert_eq!(
+            selectors[0],
+            "role=button[name='Follow @historyinmemes'][scope='main header']"
+        );
+        assert_eq!(
+            selectors[1],
+            "role=button[name='Follow @'][match=contains][scope='main header']"
+        );
+        assert_eq!(
+            selectors[2],
+            "role=button[name='Follow'][scope='main header']"
+        );
+        assert_eq!(selectors[3], "role=button[name='Follow @historyinmemes']");
+        assert_eq!(selectors[4], "role=button[name='Follow @'][match=contains]");
+        assert_eq!(selectors[5], "role=button[name='Follow']");
+    }
+
+    #[test]
+    fn test_following_locator_candidates_prioritize_scoped_exact_first() {
+        let selectors = following_locator_candidates(Some("PopBase"));
+        assert_eq!(
+            selectors[0],
+            "role=button[name='Following @PopBase'][scope='main header']"
+        );
+        assert_eq!(selectors[1], "role=button[name='Following @PopBase']");
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Unfollow @PopBase']"));
+    }
+
+    #[test]
+    fn test_following_locator_candidates_without_username_still_cover_unfollow_and_following() {
+        let selectors = following_locator_candidates(None);
+        assert!(!selectors.iter().any(|s| s.contains("@PopBase")));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following @'][match=contains][scope='main header']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Following']"));
+        assert!(selectors
+            .iter()
+            .any(|s| s == "role=button[name='Unfollow @'][match=contains]"));
+    }
+
+    #[test]
+    fn test_follow_candidate_policy_does_not_depend_on_pending_or_private_states() {
+        let follow = follow_locator_candidates("historyinmemes");
+        let following = following_locator_candidates(Some("historyinmemes"));
+        let joined = follow
+            .iter()
+            .chain(following.iter())
+            .map(|s| s.to_lowercase())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert!(!joined.contains("pending"));
+        assert!(!joined.contains("private"));
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_url_field() {
+        let payload = json!({"url": "https://x.com/elonmusk"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/elonmusk"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_value_field() {
+        let payload = json!({"value": "x.com/naval"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/naval"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_default_url_field() {
+        let payload = json!({"default_url": "twitter.com/paulg"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://twitter.com/paulg"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_fallback_search() {
+        // No url/value/default_url, but has a field with twitter URL
+        let payload = json!({
+            "other_field": "https://x.com/fallbackuser",
+            "another": "not a url"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/fallbackuser"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_fallback_twitter_com() {
+        // Fallback search finds twitter.com - normalize_url converts www.twitter.com to x.com
+        // Note: normalize_url only handles www.twitter.com/, not plain twitter.com/
+        let payload = json!({"profile": "https://www.twitter.com/jack"});
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/jack"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_url_priority_over_value() {
+        // url field takes priority over value
+        let payload = json!({
+            "url": "https://x.com/from_url",
+            "value": "https://x.com/from_value"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/from_url"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_value_priority_over_default() {
+        // value field takes priority over default_url
+        let payload = json!({
+            "value": "https://x.com/from_value",
+            "default_url": "https://x.com/from_default"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/from_value"
+        );
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_not_object_fails() {
+        let payload = json!("not an object");
+        assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_empty_object_fails() {
+        let payload = json!({});
+        assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_no_matching_url_fails() {
+        // Object with no twitter/x.com URLs
+        let payload = json!({"website": "https://example.com/user"});
+        assert!(extract_url_from_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn test_extract_url_from_payload_skips_empty_strings_in_fallback() {
+        // Empty strings should be skipped in fallback search
+        let payload = json!({
+            "empty": "",
+            "valid": "https://x.com/validuser"
+        });
+        assert_eq!(
+            extract_url_from_payload(&payload).unwrap(),
+            "https://x.com/validuser"
+        );
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_fallback_to_css_selectors() {
+        // Verify that CSS selectors are NOT in the semantic locator candidates
+        // (CSS selectors are used as fallback in find_and_click_follow_button JS)
+        let selectors = follow_locator_candidates("testuser");
+
+        // All candidates should be accessibility locators (role=)
+        for selector in &selectors {
+            assert!(
+                selector.starts_with("role="),
+                "Candidate '{}' should be accessibility locator, not CSS",
+                selector
+            );
+        }
+
+        // CSS fallback happens in JS evaluation when semantic locators fail
+        // This test verifies the separation: semantic first, then CSS via JS
+        assert!(!selectors.iter().any(|s| s.contains("[data-testid")));
+        assert!(!selectors
+            .iter()
+            .any(|s| s.contains("aria-label") && !s.contains("role=")));
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_state_detection_not_followed() {
+        // "Not followed" state locators should include "Follow" patterns
+        let selectors = follow_locator_candidates("testuser");
+
+        // Should have "Follow" buttons
+        assert!(selectors.iter().any(|s| s.contains("[name='Follow']")));
+        assert!(selectors.iter().any(|s| s.contains("Follow @")));
+
+        // Should NOT have "Following" or "Unfollow" patterns (those are for already-following state)
+        assert!(!selectors.iter().any(|s| s.contains("[name='Following")));
+        assert!(!selectors.iter().any(|s| s.contains("[name='Unfollow")));
+    }
+
+    #[test]
+    fn test_following_locator_candidates_state_detection_already_following() {
+        // "Already following" state locators should include "Following" and "Unfollow" patterns
+        let selectors = following_locator_candidates(Some("testuser"));
+
+        // Should have "Following" buttons
+        assert!(selectors.iter().any(|s| s.contains("[name='Following']")));
+        assert!(selectors.iter().any(|s| s.contains("Following @")));
+
+        // Should have "Unfollow" buttons
+        assert!(selectors.iter().any(|s| s.contains("[name='Unfollow @")));
+
+        // Should NOT have "Follow" patterns (those are for not-followed state)
+        let follow_only_patterns: Vec<_> = selectors
+            .iter()
+            .filter(|s| {
+                s.contains("[name='Follow']") && !s.contains("Following") && !s.contains("Unfollow")
+            })
+            .collect();
+        assert!(
+            follow_only_patterns.is_empty(),
+            "Following candidates should not include plain 'Follow' patterns: {:?}",
+            follow_only_patterns
+        );
+    }
+
+    #[test]
+    fn test_locator_candidates_no_pending_or_private_references() {
+        // Comprehensive check that no candidate references pending or private states
+        let follow = follow_locator_candidates("anyuser");
+        let following = following_locator_candidates(Some("anyuser"));
+
+        for selector in follow.iter().chain(following.iter()) {
+            let lower = selector.to_lowercase();
+            assert!(
+                !lower.contains("pending"),
+                "Candidate '{}' should not reference pending state",
+                selector
+            );
+            assert!(
+                !lower.contains("private"),
+                "Candidate '{}' should not reference private state",
+                selector
+            );
+        }
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_ordering_scoped_before_global() {
+        // Scoped locators (with [scope='main header']) should come before global ones
+        let selectors = follow_locator_candidates("user123");
+
+        let scoped_count = selectors
+            .iter()
+            .take_while(|s| s.contains("[scope='main header']"))
+            .count();
+        let global_count = selectors
+            .iter()
+            .skip_while(|s| s.contains("[scope='main header']"))
+            .take_while(|s| s.contains("role=button") && !s.contains("[scope="))
+            .count();
+
+        assert!(
+            scoped_count >= 3,
+            "Should have at least 3 scoped locators before global ones"
+        );
+        assert!(
+            global_count >= 2,
+            "Should have at least 2 global locators after scoped ones"
+        );
+    }
+
+    #[test]
+    fn test_follow_locator_candidates_ordering_global_before_generic() {
+        // Global locators (with specific username) should come before completely generic ones
+        let selectors = follow_locator_candidates("specificuser");
+
+        // Find first completely generic locator (no username, no partial match)
+        let first_generic_idx = selectors
+            .iter()
+            .position(|s| s == "role=button[name='Follow']")
+            .expect("Should have generic fallback");
+
+        // The generic "role=button[name='Follow']" should be last
+        assert_eq!(first_generic_idx, selectors.len() - 1);
+
+        // All locators before the last should be more specific (contain username, scope, or partial match)
+        for selector in &selectors[..first_generic_idx] {
+            assert!(
+                selector.contains("specificuser")
+                    || selector.contains("[scope=")
+                    || selector.contains("[match=contains]"),
+                "Pre-generic locator '{}' should be specific, scoped, or partial match",
+                selector
+            );
+        }
     }
 }

@@ -189,7 +189,8 @@ fn test_read_cookiebot_urls_only_whitespace() {
     let content = "   \n\t\n   \n";
 
     let (_dir, path) = create_temp_url_file(content);
-    let urls = read_cookiebot_urls(path.to_str().unwrap()).expect("Should handle whitespace-only file");
+    let urls =
+        read_cookiebot_urls(path.to_str().unwrap()).expect("Should handle whitespace-only file");
 
     assert!(urls.is_empty());
 }

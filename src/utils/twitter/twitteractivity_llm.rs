@@ -57,8 +57,7 @@
 //! - No emojis
 //! - No banned AI-sounding words
 
-/// Timeout for finding quote tweet button (seconds)
-const QUOTE_BUTTON_TIMEOUT_SECS: u64 = 5;
+/// Timeout for finding quote tweet button - uses TIMEOUT_SHORT_SECS (5s)
 /// Short pause after clicking quote button (milliseconds)
 const QUOTE_CLICK_PAUSE_SHORT_MS: u64 = 300;
 /// Long pause after clicking quote button (milliseconds)
@@ -74,6 +73,7 @@ use tracing::instrument;
 
 use crate::llm::{build_quote_messages, build_reply_messages, Llm};
 use crate::prelude::TaskContext;
+use crate::utils::timing::{TIMEOUT_LONG_SECS, TIMEOUT_MEDIUM_SECS, TIMEOUT_SHORT_SECS};
 
 use super::twitteractivity_interact::click_retweet_button;
 
@@ -113,7 +113,7 @@ pub async fn generate_reply(
     // Generate with timeout
     let llm = Llm::new().context("Failed to initialize LLM client")?;
     let reply = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
         llm.chat_with_fallback(messages),
     )
     .await
@@ -166,7 +166,7 @@ pub async fn generate_quote_commentary(
 
     let llm = Llm::new().context("Failed to initialize LLM client")?;
     let commentary = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
         llm.chat_with_fallback(messages),
     )
     .await
@@ -284,7 +284,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     "#;
 
     let result = match timeout(
-        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(quote_btn_js.to_string()),
     )
     .await
@@ -339,7 +339,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     "#;
 
     let focused = match timeout(
-        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(composer_js.to_string()),
     )
     .await
@@ -359,7 +359,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
 
     // Type the commentary
     match timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(TIMEOUT_MEDIUM_SECS),
         api.keyboard("[data-testid='tweetTextarea_0']", commentary),
     )
     .await
@@ -390,7 +390,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     "#;
 
     let button_result = match timeout(
-        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(tweet_btn_js.to_string()),
     )
     .await
@@ -422,7 +422,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
 
     // Human-like cursor movement then click
     match timeout(
-        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.move_mouse_to(tx, ty),
     )
     .await
@@ -435,7 +435,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     }
     super::twitteractivity_humanized::human_pause(api, QUOTE_CLICK_PAUSE_SHORT_MS).await;
     match timeout(
-        Duration::from_secs(QUOTE_BUTTON_TIMEOUT_SECS),
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.click_at(tx, ty),
     )
     .await
@@ -754,7 +754,7 @@ pub async fn extract_tweet_context(
             .unwrap_or_default();
 
         // Sort by text length descending and take top 10 longest replies
-        replies.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        replies.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
         replies.truncate(10);
 
         Ok((author, text, replies))

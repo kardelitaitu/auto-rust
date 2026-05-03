@@ -172,7 +172,7 @@ fn parse_task_groups_numeric_value() {
 
     assert_eq!(groups[0][0].name, "delay");
     // Numeric values should be parsed as numbers
-    assert!(groups[0][0].payload.get("value").is_some());
+    assert!(groups[0][0].payload.contains_key("value"));
 }
 
 /// Test task definition structure

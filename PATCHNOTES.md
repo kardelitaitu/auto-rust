@@ -76,3 +76,58 @@ New `api.screenshot()` method with automatic file management:
 - Tasks using `api.screenshot()` must declare `allow_screenshot: true` in their policy
 - Screenshot files are now saved as `.webp` (not `.jpg`)
 - Default quality reduced from 75% to 50% for smaller files
+
+## v0.0.3 - 29 April 2026
+
+### Accessibility Locator (Feature-Gated)
+Added accessibility-locator support behind `--features accessibility-locator` without changing the public `TaskContext` API shape.
+
+#### Core Runtime Integration
+- Added parser module: `src/utils/accessibility_locator.rs`
+- Added selector routing in shared navigation layer (`src/utils/navigation.rs`):
+  - CSS path preserved
+  - accessibility locator path added for semantic resolution
+- Added deterministic locator error taxonomy:
+  - `locator_parse_error`
+  - `locator_not_found`
+  - `locator_ambiguous`
+  - `locator_scope_invalid`
+  - `locator_unsupported`
+
+#### Action Path Integration
+- Added action-point resolver for accessibility locators (`selector_action_point`)
+- Routed TaskContext action methods through locator-aware resolution when locator syntax is used:
+  - `focus`, `hover`, `click`, `double_click`, `right_click`, `middle_click`, `drag`
+- Kept `nativeclick` CSS-only with deterministic `locator_unsupported`
+
+### Observability & Compatibility Testing
+- Added selector telemetry fields at navigation resolution boundary:
+  - `selector_mode`, `locator_role`, `locator_result`, `locator_match_mode`, `locator_scope_used`
+- Added unit telemetry assertions:
+  - `test_selector_observation_logs_css_mode_result_fields`
+  - `test_selector_observation_logs_locator_metadata_fields`
+- Added browser-runtime telemetry assertion:
+  - `browser_runtime_locator_action_emits_selector_telemetry_fields`
+- Added browser-runtime compatibility coverage:
+  - `browser_runtime_css_compatibility_matrix_under_feature_flag`
+  - `browser_runtime_accessibility_locator_integration_semantics`
+  - `browser_runtime_locator_action_paths_surface_errors_and_success`
+
+### Pilot Migration
+- Migrated `twitterfollow` to locator-first follow/following detection with safe fallback:
+  - Primary semantic patterns from live DOM:
+    - `Follow @...` + `...-follow`
+    - `Following @...` + `...-unfollow`
+  - CSS/JS fallback retained for robustness during rollout
+
+### Documentation Updates
+- Updated proposal and spec documents:
+  - `PROPOSAL_ACCESSIBILITY_LOCATOR.md`
+  - `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
+- Updated selector documentation:
+  - `src/task/SELECTOR.md`
+
+### Migration Notes
+- Feature is still gated (`accessibility-locator`); default behavior remains CSS-only when feature is off.
+- No task API signature changes were introduced..
+- Rollout remains phased: monitor telemetry/error rates before expanding migration to additional tasks.

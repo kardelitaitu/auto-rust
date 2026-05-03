@@ -811,7 +811,7 @@ pub fn detect_domain(text: &str) -> SentimentDomain {
         (SentimentDomain::Entertainment, entertainment_score),
     ];
 
-    scores.sort_by(|a, b| b.1.cmp(&a.1));
+    scores.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     // Return highest if it has at least 2 indicators, otherwise General
     if scores[0].1 >= 2 {

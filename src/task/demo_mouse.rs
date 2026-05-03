@@ -13,10 +13,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
-        .map_err(|_| anyhow::anyhow!(
-            "[demo-mouse] Task exceeded duration budget of {}ms",
-            duration_ms
-        ))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "[demo-mouse] Task exceeded duration budget of {}ms",
+                duration_ms
+            )
+        })?
 }
 
 fn task_duration_ms() -> u64 {
@@ -229,6 +231,6 @@ mod tests {
     #[test]
     fn task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!(duration_ms >= 48_000 && duration_ms <= 72_000);
+        assert!((48_000..=72_000).contains(&duration_ms));
     }
 }

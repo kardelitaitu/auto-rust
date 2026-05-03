@@ -129,7 +129,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "reply").await.unwrap();
+        let result = processor.process_candidate(&tweet, "reply").await.expect("Failed to process candidate");
         
         assert_eq!(result.action_type, "reply");
         assert!(result.confidence > 0.5);
@@ -142,7 +142,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "quote").await.unwrap();
+        let result = processor.process_candidate(&tweet, "quote").await.expect("Failed to process candidate");
         
         assert_eq!(result.action_type, "quote");
         assert!(result.confidence > 0.5);
@@ -155,7 +155,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "like").await.unwrap();
+        let result = processor.process_candidate(&tweet, "like").await.expect("Failed to process candidate");
         
         assert_eq!(result.action_type, "like");
         assert_eq!(result.confidence, 0.5);
@@ -168,7 +168,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "follow").await.unwrap();
+        let result = processor.process_candidate(&tweet, "follow").await.expect("Failed to process candidate");
         
         assert_eq!(result.action_type, "follow");
         assert_eq!(result.confidence, 0.5);
@@ -181,7 +181,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "retweet").await.unwrap();
+        let result = processor.process_candidate(&tweet, "retweet").await.expect("Failed to process candidate");
         
         assert_eq!(result.action_type, "retweet");
         assert_eq!(result.confidence, 0.5);
@@ -215,7 +215,7 @@ mod tests {
         tweet_data.insert("text".to_string(), crate::utils::twitter::twitteractivity_feed::Value::String("Hello world".to_string()));
         let tweet = crate::utils::twitter::twitteractivity_feed::Value::Object(tweet_data);
         
-        let result = processor.process_candidate(&tweet, "reply").await.unwrap();
+        let result = processor.process_candidate(&tweet, "reply").await.expect("Failed to process candidate");
         
         assert_eq!(result.action_type, "reply");
     }
@@ -227,7 +227,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "unknown_action").await.unwrap();
+        let result = processor.process_candidate(&tweet, "unknown_action").await.expect("Failed to process candidate");
         
         assert_eq!(result.action_type, "unknown_action");
         assert_eq!(result.confidence, 0.5);
@@ -240,7 +240,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let replies = processor.get_replies_for_context(&tweet).await.unwrap();
+        let replies = processor.get_replies_for_context(&tweet).await.expect("Failed to get replies");
         
         assert!(replies.is_empty());
     }
@@ -275,7 +275,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "reply").await.unwrap();
+        let result = processor.process_candidate(&tweet, "reply").await.expect("Failed to process candidate");
         
         assert!(result.confidence >= 0.0);
         assert!(result.confidence <= 1.0);
@@ -288,7 +288,7 @@ mod tests {
             std::collections::HashMap::new()
         );
         
-        let result = processor.process_candidate(&tweet, "reply").await.unwrap();
+        let result = processor.process_candidate(&tweet, "reply").await.expect("Failed to process candidate");
         
         // Sentiment should be present even if default
         let _ = result.sentiment;

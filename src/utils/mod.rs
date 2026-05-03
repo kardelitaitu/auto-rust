@@ -1,3 +1,5 @@
+#[cfg(feature = "accessibility-locator")]
+pub mod accessibility_locator;
 pub mod blockmedia;
 pub mod clipboard;
 pub mod geometry;
@@ -15,6 +17,9 @@ pub mod twitter;
 pub mod zoom;
 
 // Internal implementation module; tasks should import `crate::prelude::*` instead.
+#[cfg(feature = "accessibility-locator")]
+#[allow(unused_imports)]
+pub use accessibility_locator::*;
 #[allow(unused_imports)]
 pub use blockmedia::*;
 #[allow(unused_imports)]
@@ -48,6 +53,6 @@ mod tests {
     #[test]
     fn test_utils_module_compiles() {
         // Module structure verification - just needs to compile
-        assert!(true);
+        // Module tests placeholder
     }
 }

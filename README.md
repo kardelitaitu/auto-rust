@@ -6,13 +6,14 @@
 
 A high-performance, multi-browser automation framework built in Rust. Execute automated tasks across multiple browser sessions with advanced concurrency control, session management, and failure recovery.
 
-## 📑 Table of Contents
+## 📑 Table of Contents --
 
 - [Why Auto?](#why-auto)
 - [Quick Start](#quick-start)
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
+- [Task Registry](#task-registry)
 - [Architecture](#architecture)
 - [Current Status](#current-status)
 - [Configuration](#configuration)
@@ -119,6 +120,8 @@ cargo run 'twitteractivity,duration_ms=120000,scroll_count=12'
 cargo run cookiebot.js pageview.js
 ```
 
+> **Note:** Pass CLI flags after `--`, for example `cargo run -- --list-tasks` or `cargo run -- --dry-run cookiebot`.
+
 ### API Quick Examples (v0.0.3)
 
 ```rust
@@ -152,6 +155,27 @@ RUST_LOG=debug cargo run pageview=example.com
 
 # Custom config
 cargo run -- --config path/to/config.toml cookiebot
+```
+
+### Task Registry
+
+List all built-in tasks and their policy/source metadata:
+
+```bash
+cargo run -- --list-tasks
+```
+
+Example output:
+
+```text
+Available Tasks:
+================
+
+  cookiebot             BuiltInRust                     policy=cookiebot
+  pageview              BuiltInRust                     policy=pageview
+  twitteractivity       BuiltInRust                     policy=twitteractivity
+
+Total: 15 tasks
 ```
 
 ## Architecture
@@ -213,6 +237,12 @@ This project is actively maintained and used in production environments.
 | **DOM Inspection** | 5 APIs | Computed styles, element rect, scroll position, count, viewport check |
 | **Browser Management** | 2 APIs | Complete state export/import |
 
+**Accessibility Locator (Feature-Gated):**
+- Internal accessibility-locator parser/resolver behind `--features accessibility-locator`
+- Deterministic locator error taxonomy (`locator_parse_error`, `locator_not_found`, `locator_ambiguous`, `locator_scope_invalid`, `locator_unsupported`)
+- Action-path integration for locator syntax (`click`, `hover`, `focus`, `double_click`, `right_click`, `middle_click`, `drag`)
+- Pilot migration complete for `twitterfollow` with locator-first follow/following detection and safe CSS/JS fallback
+
 **Security:** All APIs require explicit permissions via `TaskPolicy` - secure by default.
 
 **Documentation:**
@@ -234,8 +264,9 @@ This project is actively maintained and used in production environments.
 | Integration tests | ✅ |
 
 **Quality Metrics:**
-- **68 tests** passing (unit + integration + doc tests)
-- **`cargo clippy`** clean (all targets, all features)
+- **Extensive test coverage** across unit, integration, and doc test suites
+- **Feature-on validation**: `cargo check --features accessibility-locator` passing
+- **Pilot suite validation**: `cargo test --features accessibility-locator twitterfollow` passing
 - **Parser parity:** All edge cases verified vs Node.js reference
 
 ### Browser Support
@@ -307,6 +338,32 @@ export RUST_LOG="info,orchestrator=debug"
 brave.exe --remote-debugging-port=9001
 ```
 
+### Custom browser port ranges
+
+By default, the orchestrator scans these ports for browsers:
+- **Brave**: ports 9001-9050
+- **Chrome**: ports 9222-9230
+
+You can customize these ranges via environment variables:
+
+```bash
+# Custom Brave port range
+export BRAVE_PORT_START=9100
+export BRAVE_PORT_END=9150
+
+# Custom Chrome port range
+export CHROME_PORT_START=9300
+export CHROME_PORT_END=9350
+
+# Run with custom ports
+cargo run cookiebot
+```
+
+**Validation rules:**
+- If `START > END`, values are automatically swapped
+- Ports below 1024 are clamped to 1024 (reserved ports)
+- Invalid values fall back to defaults
+
 ### Task validation errors
 
 ```bash
@@ -353,18 +410,30 @@ export MAX_GLOBAL_CONCURRENCY=10
 | [docs/TASKS/pageview.md](docs/TASKS/pageview.md) | Page browsing task |
 | [docs/TASKS/twitteractivity.md](docs/TASKS/twitteractivity.md) | Twitter engagement task |
 | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Complete TaskContext API |
-| [docs/TASK_AUTHORING_GUIDE.md](docs/TASK_AUTHORING_GUIDE.md) | Build your own tasks |
+| [docs/TUTORIAL_BUILDING_FIRST_TASK.md](docs/TUTORIAL_BUILDING_FIRST_TASK.md) | Build your own tasks |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | PR guidelines |
 | [Cargo docs](https://docs.rs) | `cargo doc --open` |
 
 ### Available Tasks
 
+**Demo Tasks:**
 - `cookiebot` - Cookie/consent management
-- `pageview` - Human-like page browsing
 - `demoqa` - Demo form automation
-- `twitteractivity` - Full Twitter/X engagement
+- `demo-keyboard` - Keyboard interaction demo
+- `demo-mouse` - Mouse movement demo
+- `pageview` - Human-like page browsing
+- `task-example` - Example task template
+
+**Twitter/X Tasks:**
+- `twitteractivity` - Full feed engagement with smart decisions
+- `twitterdive` - Thread diving and reading
 - `twitterfollow` - Profile following
-- `twitterreply` - Tweet replies with LLM
+- `twitterintent` - Intent-based actions (like, follow)
+- `twitterlike` - Like specific tweets
+- `twitterquote` - Quote tweets with LLM
+- `twitterreply` - Reply to tweets with LLM
+- `twitterretweet` - Retweet specific tweets
+- `twittertest` - Twitter automation smoke tests
 
 ## Contributing
 

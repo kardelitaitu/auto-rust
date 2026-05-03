@@ -6,6 +6,7 @@ use crate::llm::models::ChatMessage;
 use crate::utils::twitter::twitteractivity_sentiment::Sentiment;
 use anyhow::Result;
 use log::{debug, info, warn};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -94,9 +95,8 @@ pub fn llm_sentiment_to_enum(llm_sentiment: &str) -> Sentiment {
 /// Cache for LLM sentiment results to avoid re-analyzing same text.
 type SentimentCache = Arc<RwLock<HashMap<String, Sentiment>>>;
 
-lazy_static::lazy_static! {
-    static ref SENTIMENT_CACHE: SentimentCache = Arc::new(RwLock::new(HashMap::with_capacity(100)));
-}
+static SENTIMENT_CACHE: Lazy<SentimentCache> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::with_capacity(100))));
 
 /// Hybrid sentiment analysis: uses LLM with probability, fallback to keyword.
 ///

@@ -856,9 +856,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_client_get_success() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-        use wiremock::matchers::{method, path};
         use serde::Deserialize;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         #[derive(Debug, Deserialize)]
         struct TestResponse {
@@ -870,13 +870,10 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/api/test"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({
-                        "message": "Hello, World!",
-                        "status": 200
-                    })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "message": "Hello, World!",
+                "status": 200
+            })))
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -885,16 +882,16 @@ mod tests {
         let result: Result<TestResponse> = client.get("/api/test").await;
 
         assert!(result.is_ok());
-        let response = result.unwrap();
+        let response = result.expect("Should succeed");
         assert_eq!(response.message, "Hello, World!");
         assert_eq!(response.status, 200);
     }
 
     #[tokio::test]
     async fn test_api_client_get_with_key_auth_header() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-        use wiremock::matchers::{header, method, path};
         use serde::Deserialize;
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         #[derive(Debug, Deserialize)]
         struct TestResponse {
@@ -907,12 +904,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/protected"))
             .and(header("X-API-Key", "test-api-key-12345"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({
-                        "authenticated": true
-                    })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "authenticated": true
+            })))
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -923,14 +917,14 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert!(result.unwrap().authenticated);
+        assert!(result.expect("Should succeed").authenticated);
     }
 
     #[tokio::test]
     async fn test_api_client_retry_on_500_then_success() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-        use wiremock::matchers::method;
         use serde::Deserialize;
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         #[derive(Debug, Deserialize)]
         struct TestResponse {
@@ -943,7 +937,7 @@ mod tests {
         Mock::given(method("GET"))
             .respond_with(
                 ResponseTemplate::new(500)
-                    .set_body_json(serde_json::json!({"error": "Server error"}))
+                    .set_body_json(serde_json::json!({"error": "Server error"})),
             )
             .up_to_n_times(1)
             .mount(&mock_server)
@@ -952,7 +946,7 @@ mod tests {
         Mock::given(method("GET"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({"message": "Success after retry"}))
+                    .set_body_json(serde_json::json!({"message": "Success after retry"})),
             )
             .mount(&mock_server)
             .await;
@@ -969,7 +963,10 @@ mod tests {
         let result: Result<TestResponse> = client.get("/api/retry-test").await;
 
         assert!(result.is_ok(), "Should succeed after retry");
-        assert_eq!(result.unwrap().message, "Success after retry");
+        assert_eq!(
+            result.expect("Should succeed").message,
+            "Success after retry"
+        );
     }
 }
 
@@ -1047,7 +1044,7 @@ impl RetryPolicy {
                     if attempt >= self.max_retries {
                         break;
                     }
-                    if !is_retryable(last_error.as_ref().unwrap()) {
+                    if !is_retryable(last_error.as_ref().expect("last_error was just set")) {
                         break;
                     }
                     let delay = self.delay_for_attempt(attempt + 1);
@@ -1056,6 +1053,6 @@ impl RetryPolicy {
             }
         }
 
-        Err(last_error.unwrap())
+        Err(last_error.expect("last_error must be Some if we reach here"))
     }
 }

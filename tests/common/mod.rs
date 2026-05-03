@@ -95,9 +95,7 @@ impl MockHttpResponse {
         Self {
             status,
             body: value.to_string(),
-            headers: HashMap::from([
-                ("content-type".to_string(), "application/json".to_string()),
-            ]),
+            headers: HashMap::from([("content-type".to_string(), "application/json".to_string())]),
         }
     }
 
@@ -191,7 +189,11 @@ impl MockPageContext {
     /// Simulate exporting sessionStorage as JSON string.
     #[allow(dead_code)]
     pub fn export_session_storage_json(&self, origin: &str) -> Result<String, String> {
-        let data = self.session_storage.get(origin).cloned().unwrap_or_default();
+        let data = self
+            .session_storage
+            .get(origin)
+            .cloned()
+            .unwrap_or_default();
         let mut result = HashMap::new();
         result.insert(origin.to_string(), data);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -302,7 +304,10 @@ pub fn build_mock_cookie(name: &str, value: &str, domain: &str) -> serde_json::V
 
 /// Build a HashMap of key-value pairs.
 pub fn build_string_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 /// Build test localStorage data.

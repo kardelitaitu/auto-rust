@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 
 // Re-export validation functions from validation layer
 pub use crate::validation::{
-    is_known_task, task_file_exists, validate_task_groups, validate_task_groups_strict,
+    is_known_task, validate_task_groups, validate_task_groups_strict,
     validate_task_name as validate_task, TaskValidationResult,
 };
 
@@ -34,6 +34,24 @@ pub struct Args {
     /// Comma-separated list of browser names or types to connect to
     #[arg(long)]
     pub browsers: Option<String>,
+
+    /// Clear all click learning data before starting
+    #[arg(long, help = "Clear all click learning data and exit")]
+    pub clear_learning: bool,
+
+    /// List all available tasks and exit
+    #[arg(
+        long,
+        help = "List all available tasks with source and policy information"
+    )]
+    pub list_tasks: bool,
+
+    /// Simulate execution without running tasks
+    #[arg(
+        long,
+        help = "Show what would be executed without actually running tasks"
+    )]
+    pub dry_run: bool,
 }
 
 /// Parses command-line arguments using clap.
@@ -188,7 +206,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     } else {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     }
-                } else if key == current_task.as_ref().unwrap() {
+                } else if key == current_task.as_ref().expect("current_task should be Some") {
                     if let Some(task_name) = current_task.take() {
                         current_group.push(TaskDefinition {
                             name: task_name,

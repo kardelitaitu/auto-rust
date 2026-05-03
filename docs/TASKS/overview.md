@@ -23,11 +23,20 @@ cargo run cookiebot pageview=reddit.com then cookiebot
 | Task | Description | Doc |
 |------|-------------|-----|
 | `cookiebot` | Cookie/consent dialog management | [cookiebot.md](cookiebot.md) |
-| `pageview` | Human-like page browsing | [pageview.md](pageview.md) |
+| `demo-keyboard` | Keyboard interaction demo | - |
+| `demo-mouse` | Mouse movement demo | - |
 | `demoqa` | Demo text box automation | [demoqa.md](demoqa.md) |
-| `twitteractivity` | Full Twitter/X engagement | [twitteractivity.md](twitteractivity.md) |
+| `pageview` | Human-like page browsing | [pageview.md](pageview.md) |
+| `task-example` | Example task template | - |
+| `twitteractivity` | Full Twitter/X engagement with smart decisions | [twitteractivity.md](twitteractivity.md) |
+| `twitterdive` | Thread diving and reading | - |
 | `twitterfollow` | Profile following | [twitterfollow.md](twitterfollow.md) |
+| `twitterintent` | Intent-based actions (like, follow) | - |
+| `twitterlike` | Like specific tweets | - |
+| `twitterquote` | Quote tweets with LLM | - |
 | `twitterreply` | Tweet replies with LLM | [twitterreply.md](twitterreply.md) |
+| `twitterretweet` | Retweet specific tweets | - |
+| `twittertest` | Twitter automation smoke tests | - |
 
 ## Task Syntax
 
@@ -42,4 +51,4 @@ Parameters are passed as `serde_json::Value` to the task's `run()` function.
 
 ## Creating New Tasks
 
-See [Task Authoring Guide](../TASK_AUTHORING_GUIDE.md) for detailed instructions.
+See [Tutorial: Building First Task](../TUTORIAL_BUILDING_FIRST_TASK.md) for detailed instructions.

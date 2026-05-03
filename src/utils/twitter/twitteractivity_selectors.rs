@@ -237,6 +237,288 @@ pub fn js_get_current_url() -> &'static str {
     r#"window.location.href"#
 }
 
+// --- CSS Selector Constants ---
+
+/// Home logo selector (X logo)
+pub const HOME_LOGO_SELECTOR: &str = r#"a[aria-label=\"X\"]"#;
+
+/// Tweet link selector (links to individual tweets)
+pub const TWEET_LINK_SELECTOR: &str = r#"a[href*=\"/status/\"]"#;
+
+/// Tweet detail/dialog selector
+pub const TWEET_DETAIL_SELECTOR: &str = r#"div[role=\"dialog\"]"#;
+
+/// Tweet detail fallback selectors
+pub const TWEET_DETAIL_FALLBACK1: &str = r#"div[data-testid=\"tweetDetail\"]"#;
+pub const TWEET_DETAIL_FALLBACK2: &str = r#"div[data-testid=\"tweetThread\"]"#;
+pub const TWEET_DETAIL_FALLBACK3: &str = r#"[aria-label=\"Timeline: Thread\"]"#;
+pub const TWEET_DETAIL_FALLBACK4: &str = r#"article[data-testid=\"tweet\"]"#;
+
+/// Retweet button selector
+pub const RETWEET_BUTTON_SELECTOR: &str = r#"button[data-testid=\"retweet\"]"#;
+
+/// Retweet confirm button selector
+pub const RETWEET_CONFIRM_SELECTOR: &str = r#"div[data-testid=\"retweetConfirm\"]"#;
+
+/// Like button selector
+pub const LIKE_BUTTON_SELECTOR: &str = r#"button[data-testid=\"like\"]"#;
+
+/// Follow button selector (ending with -follow)
+pub const FOLLOW_BUTTON_SELECTOR: &str = r#"button[data-testid$=\"-follow\"]"#;
+
+/// Bookmark button selector
+pub const BOOKMARK_BUTTON_SELECTOR: &str = r#"button[data-testid=\"bookmark\"]"#;
+
+// --- Additional Selector Constants (for inline selector cleanup) ---
+
+/// Tweet textarea selector (for reply composition)
+pub const TWEET_TEXTAREA_SELECTOR: &str = r#"[data-testid=\"tweetTextarea_0\"]"#;
+
+/// Role textbox selector
+pub const ROLE_TEXTBOX_SELECTOR: &str = r#"[role=\"textbox\"]"#;
+
+/// Button with role=button selector
+pub const BUTTON_ROLE_BUTTON_SELECTOR: &str = r#"button, [role=\"button\"]"#;
+
+/// Subscribe button selector (for follow checks)
+pub const SUBSCRIBE_BUTTON_SELECTOR: &str = r#"button[data-testid*=\"-subscribe\"]"#;
+
+/// Article tweet selector (for feed scanning)
+pub const ARTICLE_TWEET_SELECTOR: &str = r#"article[data-testid=\"tweet\"]"#;
+
+/// Tweet text selector
+pub const TWEET_TEXT_SELECTOR: &str = r#"[data-testid=\"tweetText\"]"#;
+
+/// Reply button selector
+pub const REPLY_BUTTON_SELECTOR: &str = r#"button[data-testid="reply"]"#;
+
+/// Tweet reply selector (for extracting replies)
+pub const TWEET_REPLY_SELECTOR: &str = r#"[data-testid=\"tweetReply\"]"#;
+
+// --- Attribute-only selectors (for use with element.querySelector) ---
+
+/// Like data-testid attribute selector (element-agnostic)
+pub const LIKE_TESTID_SELECTOR: &str = r#"[data-testid="like"]"#;
+
+/// Retweet data-testid attribute selector (element-agnostic)
+pub const RETWEET_TESTID_SELECTOR: &str = r#"[data-testid="retweet"]"#;
+
+/// Reply data-testid attribute selector (element-agnostic)
+pub const REPLY_TESTID_SELECTOR: &str = r#"[data-testid="reply"]"#;
+
+/// Dir auto span selector (for reply author extraction)
+pub const DIR_AUTO_SPAN_SELECTOR: &str = r#"[dir=\"auto\"] span:first-child"#;
+
+/// Tweet button selector (generic button search)
+pub const TWEET_BUTTON_SELECTOR: &str = r#"button[data-testid], a[data-testid]"#;
+
+/// Retweet confirm button selector (in modal/dialog)
+pub const RETWEET_CONFIRM_BUTTON_SELECTOR: &str = r#"button[data-testid=\"retweetConfirm\"]"#;
+
+/// Tweet button inline selector (reply submit button in composer)
+pub const TWEET_BUTTON_INLINE_SELECTOR: &str = r#"button[data-testid=\"tweetButtonInline\"]"#;
+
+/// Returns JS to find and return center coordinates of the retweet confirm button.
+/// Returns `{x, y}` or `null` if not found.
+pub fn js_confirm_retweet_click() -> &'static str {
+    r#"
+        (function() {
+            var btn = document.querySelector('button[data-testid="retweetConfirm"]');
+            if (!btn) return null;
+            var rect = btn.getBoundingClientRect();
+            return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
+        })()
+    "#
+}
+
+/// Returns JS to find and focus the reply textarea.
+/// Returns `{found: true}` if found and focused, `{found: false}` otherwise.
+pub fn js_find_reply_textarea() -> &'static str {
+    r#"
+        (function() {
+            var textboxes = document.querySelectorAll('[data-testid="tweetTextarea_0"][role="textbox"], [data-testid="tweetTextarea_0"]');
+            for (var i = 0; i < textboxes.length; i++) {
+                var ta = textboxes[i];
+                var rect = ta.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                ta.focus();
+                ta.click();
+                return { found: true };
+            }
+            return { found: false };
+        })()
+    "#
+}
+
+/// Returns JS to find the reply submit button and return its center coordinates.
+/// Returns `{x, y}` or `null` if not found.
+pub fn js_find_reply_submit_button() -> &'static str {
+    r#"
+        (function() {
+            var buttons = document.querySelectorAll('button[data-testid="tweetButtonInline"]');
+            for (var i = 0; i < buttons.length; i++) {
+                var btn = buttons[i];
+                var rect = btn.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+                var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
+                if (text !== 'reply') continue;
+                return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
+            }
+            return null;
+        })()
+    "#
+}
+
+/// Returns JS to generate center coordinates for a button within the root tweet.
+/// Takes a CSS selector string and searches within the first visible tweet article.
+/// Returns `{x, y}` or `null` if not found.
+pub fn js_root_tweet_button_center(selector: &str) -> String {
+    format!(
+        r#"
+        (function() {{
+            function visible(el) {{
+                if (!el) return false;
+                var rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            }}
+            function center(el) {{
+                var rect = el.getBoundingClientRect();
+                return {{ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }};
+            }}
+
+            var articles = Array.prototype.slice.call(
+                document.querySelectorAll('article[data-testid="tweet"]')
+            ).filter(visible);
+            var statusMatch = window.location.pathname.match(/\/status\/(\d+)/);
+            var targetStatusId = statusMatch ? statusMatch[1] : null;
+            var targetArticle = null;
+            if (targetStatusId) {{
+                for (var i = 0; i < articles.length; i++) {{
+                    if (articles[i].querySelector('a[href*="/status/' + targetStatusId + '"]')) {{
+                        targetArticle = articles[i];
+                        break;
+                    }}
+                }}
+            }}
+            var scopes = articles.length > 0
+                ? [targetArticle || articles[0]]
+                : [document.querySelector('main'), document.body].filter(Boolean);
+
+            for (var i = 0; i < scopes.length; i++) {{
+                var button = scopes[i].querySelector("{}");
+                if (visible(button)) return center(button);
+            }}
+            return null;
+        }})()
+        "#,
+        selector.replace('"', "\\\"")
+    )
+}
+
+/// Returns JS to identify engagement candidates in the current feed.
+/// Returns an array of tweet objects with id, text, button positions, and replies.
+pub fn js_identify_engagement_candidates() -> &'static str {
+    r#"
+        (function() {
+            var tweets = [];
+            var elements = document.querySelectorAll('article[data-testid="tweet"]');
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                var rect = el.getBoundingClientRect();
+                if (rect.height > 0 && rect.width > 0) {
+                    // Extract tweet text content
+                    var tweetTextEl = el.querySelector('[data-testid="tweetText"]');
+                    var tweetText = tweetTextEl ? tweetTextEl.textContent.trim() : '';
+
+                    // Find engagement buttons within this tweet element
+                    var likeBtn = el.querySelector('[data-testid="like"]');
+                    var retweetBtn = el.querySelector('[data-testid="retweet"]');
+                    var replyBtn = el.querySelector('[data-testid="reply"]');
+
+                    var buttonPositions = {};
+                    if (likeBtn) {
+                        var likeRect = likeBtn.getBoundingClientRect();
+                        if (likeRect.width > 0 && likeRect.height > 0) {
+                            buttonPositions.like = { x: likeRect.x + likeRect.width/2, y: likeRect.y + likeRect.height/2 };
+                        }
+                    }
+                    if (retweetBtn) {
+                        var retweetRect = retweetBtn.getBoundingClientRect();
+                        if (retweetRect.width > 0 && retweetRect.height > 0) {
+                            buttonPositions.retweet = { x: retweetRect.x + retweetRect.width/2, y: retweetRect.y + retweetRect.height/2 };
+                        }
+                    }
+                    if (replyBtn) {
+                        var replyRect = replyBtn.getBoundingClientRect();
+                        if (replyRect.width > 0 && replyRect.height > 0) {
+                            buttonPositions.reply = { x: replyRect.x + replyRect.width/2, y: replyRect.y + replyRect.height/2 };
+                        }
+                    }
+
+                    // Extract the status URL from the time element for reliable diving
+                    var links = el.querySelectorAll('a[href*="/status/"]');
+                    var statusUrl = null;
+                    for (var j = 0; j < links.length; j++) {
+                        var href = links[j].getAttribute('href');
+                        var parts = href.split('/').filter(function(p) { return p.length > 0; });
+                        if (parts.length === 3 && parts[1] === 'status' && !isNaN(parts[2])) {
+                            statusUrl = href;
+                            break;
+                        }
+                    }
+
+                    // Prefer stable tweet identity from permalink
+                    var statusId = null;
+                    if (statusUrl) {
+                        var statusParts = statusUrl.split('/').filter(function(p) { return p.length > 0; });
+                        statusId = statusParts[statusParts.length - 1].split(/[?#]/)[0];
+                    }
+                    var tweetId = el.dataset.tweetId ||
+                                  el.getAttribute('data-item-id') ||
+                                  el.getAttribute('data-tweet-id') ||
+                                  statusId ||
+                                  'tweet_' + Math.floor(rect.x) + '_' + Math.floor(rect.y);
+
+                    var tweetObj = {
+                        id: tweetId,
+                        status_url: statusUrl,
+                        index: i,
+                        text: tweetText,
+                        x: rect.x + rect.width/2,
+                        y: rect.y + rect.height/2,
+                        height: rect.height,
+                        width: rect.width,
+                        buttons: buttonPositions
+                    };
+
+                    // Extract reply information for smart decision
+                    var replies = [];
+                    var replyElements = el.querySelectorAll('[data-testid="tweetReply"]');
+                    for (var j = 0; j < Math.min(replyElements.length, 3); j++) {
+                        var replyEl = replyElements[j];
+                        var authorEl = replyEl.querySelector('[dir="auto"] span:first-child');
+                        var textEl = replyEl.querySelector('[data-testid="tweetText"]');
+                        if (authorEl && textEl) {
+                            replies.push({
+                                author: authorEl.textContent.trim(),
+                                text: textEl.textContent.trim()
+                            });
+                        }
+                    }
+
+                    if (replies.length > 0) {
+                        tweetObj.replies = replies;
+                    }
+
+                    tweets.push(tweetObj);
+                }
+            }
+            return tweets;
+        })()
+    "#
+}
+
 /// Returns JS to extract username from a profile page (if navigated to /username).
 pub fn js_extract_username_from_url() -> &'static str {
     r#"

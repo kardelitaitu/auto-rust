@@ -1412,7 +1412,7 @@ mod tests {
     fn test_browser_profile_random_cursor_safe_edge_ratio() {
         let profile = BrowserProfile::average();
         let ratio = profile.random_cursor_safe_edge_ratio();
-        assert!(ratio >= 0.0 && ratio <= 1.0);
+        assert!((0.0..=1.0).contains(&ratio));
     }
 
     #[test]

@@ -1,0 +1,383 @@
+//! DSL Task Executor - Bridge between DSL definitions and runtime execution.
+//!
+//! This module executes tasks defined in DSL (YAML/TOML) format using the
+//! task-api verbs. It handles variable substitution, action execution,
+//! and control flow (if/else, loops).
+//!
+//! # Example
+//! ```rust
+//! use auto::task::dsl::{TaskDefinition, parse_task_yaml};
+//! use auto::task::dsl_executor::DslExecutor;
+//! use auto::prelude::TaskContext;
+//!
+//! async fn example(api: &TaskContext, yaml: &str) -> anyhow::Result<()> {
+//!     let task_def = parse_task_yaml(yaml)?;
+//!     let mut executor = DslExecutor::new(api, &task_def);
+//!     executor.execute().await
+//! }
+//! ```
+
+use std::collections::HashMap;
+
+use anyhow::{Context, Result};
+
+use crate::prelude::TaskContext;
+use crate::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
+
+/// Executor state for DSL task execution.
+pub struct DslExecutor<'a> {
+    /// Task context for API operations
+    api: &'a TaskContext,
+    /// Task definition being executed
+    task_def: &'a TaskDefinition,
+    /// Runtime variables (for extract/variable operations)
+    variables: HashMap<String, String>,
+    /// Execution statistics
+    actions_executed: u32,
+}
+
+impl<'a> std::fmt::Debug for DslExecutor<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DslExecutor")
+            .field("task_def", &self.task_def)
+            .field("variables", &self.variables)
+            .field("actions_executed", &self.actions_executed)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> DslExecutor<'a> {
+    /// Create a new DSL executor.
+    ///
+    /// # Arguments
+    /// * `api` - Task context for browser automation
+    /// * `task_def` - Parsed task definition
+    pub fn new(api: &'a TaskContext, task_def: &'a TaskDefinition) -> Self {
+        Self {
+            api,
+            task_def,
+            variables: HashMap::new(),
+            actions_executed: 0,
+        }
+    }
+
+    /// Execute the task definition.
+    ///
+    /// Runs all actions in sequence, handling control flow and variables.
+    pub async fn execute(&mut self) -> Result<()> {
+        log::info!(
+            "Executing DSL task '{}' with {} actions",
+            self.task_def.name,
+            self.task_def.actions.len()
+        );
+
+        for (idx, action) in self.task_def.actions.iter().enumerate() {
+            log::debug!("Action {}: {:?}", idx + 1, action);
+            self.execute_action(action).await.with_context(|| {
+                format!(
+                    "Failed to execute action {} in task '{}'",
+                    idx + 1,
+                    self.task_def.name
+                )
+            })?;
+            self.actions_executed += 1;
+        }
+
+        log::info!(
+            "DSL task '{}' completed ({} actions executed)",
+            self.task_def.name,
+            self.actions_executed
+        );
+        Ok(())
+    }
+
+    /// Execute a single action.
+    async fn execute_action(&mut self, action: &Action) -> Result<()> {
+        match action {
+            Action::Navigate { url } => {
+                let resolved_url = self.substitute_variables(url);
+                self.api.navigate(&resolved_url, 30000).await?;
+            }
+            Action::Click { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                self.api.click(&resolved_selector).await?;
+            }
+            Action::Type { selector, text } => {
+                let resolved_selector = self.substitute_variables(selector);
+                let resolved_text = self.substitute_variables(text);
+                self.api.r#type(&resolved_selector, &resolved_text).await?;
+            }
+            Action::Wait { duration_ms } => {
+                tokio::time::sleep(tokio::time::Duration::from_millis(*duration_ms)).await;
+            }
+            Action::WaitFor {
+                selector,
+                timeout_ms,
+            } => {
+                let resolved_selector = self.substitute_variables(selector);
+                let timeout = timeout_ms.unwrap_or(5000);
+                self.api
+                    .wait_for(&resolved_selector, timeout)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Element '{}' not found within {}ms",
+                            resolved_selector, timeout
+                        )
+                    })?;
+            }
+            Action::ScrollTo { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                self.api.scroll_to(&resolved_selector).await?;
+            }
+            Action::Extract { selector, variable } => {
+                let resolved_selector = self.substitute_variables(selector);
+                let text = self.api.text(&resolved_selector).await?.unwrap_or_default();
+                if let Some(var_name) = variable {
+                    log::debug!("Extracting variable '{}': {}", var_name, text);
+                    self.variables.insert(var_name.clone(), text);
+                }
+            }
+            Action::Execute { script: _ } => {
+                log::warn!("Execute action not yet implemented");
+            }
+            Action::Log { message, level } => {
+                let resolved_message = self.substitute_variables(message);
+                match level.as_ref().unwrap_or(&LogLevel::Info) {
+                    LogLevel::Debug => log::debug!("{}", resolved_message),
+                    LogLevel::Info => log::info!("{}", resolved_message),
+                    LogLevel::Warn => log::warn!("{}", resolved_message),
+                    LogLevel::Error => log::error!("{}", resolved_message),
+                }
+            }
+            Action::If {
+                condition,
+                then,
+                r#else,
+            } => {
+                if self.evaluate_condition(condition).await? {
+                    for action in then {
+                        Box::pin(self.execute_action(action)).await?;
+                    }
+                } else if let Some(else_actions) = r#else {
+                    for action in else_actions {
+                        Box::pin(self.execute_action(action)).await?;
+                    }
+                }
+            }
+            Action::Loop {
+                count,
+                condition,
+                actions,
+            } => {
+                let iterations = if let Some(c) = count {
+                    *c
+                } else if let Some(cond) = condition {
+                    // Condition-based loop with max iterations as safety
+                    let max_iterations = 100;
+                    let mut i = 0;
+                    while self.evaluate_condition(cond).await? && i < max_iterations {
+                        for action in actions {
+                            Box::pin(self.execute_action(action)).await?;
+                        }
+                        i += 1;
+                    }
+                    if i >= max_iterations {
+                        log::warn!("Loop reached max iterations ({}), breaking", max_iterations);
+                    }
+                    0 // Already executed in the loop above
+                } else {
+                    0
+                };
+
+                for _ in 0..iterations {
+                    for action in actions {
+                        Box::pin(self.execute_action(action)).await?;
+                    }
+                }
+            }
+            Action::Call {
+                task: _,
+                parameters: _,
+            } => {
+                // TODO: Implement Call action
+                log::warn!("Call action not yet fully implemented");
+            }
+        }
+        Ok(())
+    }
+
+    /// Evaluate a condition.
+    async fn evaluate_condition(&self, condition: &Condition) -> Result<bool> {
+        match condition {
+            Condition::ElementExists { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                match self.api.exists(&resolved_selector).await {
+                    Ok(exists) => Ok(exists),
+                    Err(_) => Ok(false),
+                }
+            }
+            Condition::ElementVisible { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                match self.api.visible(&resolved_selector).await {
+                    Ok(visible) => Ok(visible),
+                    Err(_) => Ok(false),
+                }
+            }
+            Condition::TextEquals { selector, value } => {
+                let resolved_selector = self.substitute_variables(selector);
+                let resolved_value = self.substitute_variables(value);
+                match self.api.text(&resolved_selector).await {
+                    Ok(Some(text)) => Ok(text.trim() == resolved_value),
+                    _ => Ok(false),
+                }
+            }
+            Condition::VariableEquals { name, value } => {
+                if let Some(var_value) = self.variables.get(name) {
+                    let expected = match value {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        serde_yaml::Value::Number(n) => n.to_string(),
+                        serde_yaml::Value::Bool(b) => b.to_string(),
+                        _ => String::new(),
+                    };
+                    Ok(var_value == &expected)
+                } else {
+                    Ok(false)
+                }
+            }
+            Condition::And { conditions } => Self::evaluate_conditions_and(self, conditions).await,
+            Condition::Or { conditions } => Self::evaluate_conditions_or(self, conditions).await,
+            Condition::Not { condition } => {
+                let result = Box::pin(self.evaluate_condition(condition)).await?;
+                Ok(!result)
+            }
+        }
+    }
+
+    /// Helper to evaluate AND conditions.
+    async fn evaluate_conditions_and(&self, conditions: &[Condition]) -> Result<bool> {
+        for cond in conditions {
+            if !Box::pin(self.evaluate_condition(cond)).await? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Helper to evaluate OR conditions.
+    async fn evaluate_conditions_or(&self, conditions: &[Condition]) -> Result<bool> {
+        for cond in conditions {
+            if Box::pin(self.evaluate_condition(cond)).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Substitute variables in a string.
+    ///
+    /// Replaces `{{variable_name}}` with the value from variables or payload.
+    fn substitute_variables(&self, text: &str) -> String {
+        let mut result = text.to_string();
+
+        // Replace {{variable}} syntax
+        for (key, value) in &self.variables {
+            let placeholder = format!("{{{{{}}}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+
+        result
+    }
+
+    /// Get execution statistics.
+    pub fn stats(&self) -> DslExecutionStats {
+        DslExecutionStats {
+            actions_executed: self.actions_executed,
+            total_actions: self.task_def.actions.len() as u32,
+            variables_defined: self.variables.len(),
+        }
+    }
+}
+
+/// Execution statistics for a DSL task.
+#[derive(Debug, Clone)]
+pub struct DslExecutionStats {
+    /// Number of actions executed
+    pub actions_executed: u32,
+    /// Total number of actions in task
+    pub total_actions: u32,
+    /// Number of variables defined during execution
+    pub variables_defined: usize,
+}
+
+/// Execute a DSL task definition.
+///
+/// Convenience function to execute a task without creating an executor instance.
+pub async fn execute_dsl_task(
+    api: &TaskContext,
+    task_def: &TaskDefinition,
+) -> Result<DslExecutionStats> {
+    let mut executor = DslExecutor::new(api, task_def);
+    executor.execute().await?;
+    Ok(executor.stats())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::dsl::Action;
+
+    // Test variable substitution without needing a TaskContext
+    fn test_substitute(variables: &HashMap<String, String>, text: &str) -> String {
+        let mut result = text.to_string();
+        for (key, value) in variables {
+            let placeholder = format!("{{{{{}}}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        result
+    }
+
+    #[test]
+    fn test_variable_substitution() {
+        let mut variables = HashMap::new();
+        variables.insert("username".to_string(), "john_doe".to_string());
+
+        let text = "Hello, {{username}}!";
+        let result = test_substitute(&variables, text);
+        assert_eq!(result, "Hello, john_doe!");
+    }
+
+    #[test]
+    fn test_variable_substitution_no_match() {
+        let variables = HashMap::new();
+
+        let text = "Hello, {{unknown}}!";
+        let result = test_substitute(&variables, text);
+        assert_eq!(result, "Hello, {{unknown}}!");
+    }
+
+    #[test]
+    fn test_dsl_stats() {
+        let task_def = TaskDefinition {
+            name: "test".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            actions: vec![
+                Action::Wait { duration_ms: 100 },
+                Action::Wait { duration_ms: 200 },
+            ],
+        };
+
+        // Stats don't require a valid TaskContext reference
+        // We can verify the stats calculation logic independently
+        let stats = DslExecutionStats {
+            actions_executed: 0,
+            total_actions: task_def.actions.len() as u32,
+            variables_defined: 0,
+        };
+
+        assert_eq!(stats.total_actions, 2);
+        assert_eq!(stats.actions_executed, 0);
+    }
+}

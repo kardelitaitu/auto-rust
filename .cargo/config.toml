@@ -1,6 +1,14 @@
 # ========================================
 # Global build settings (.cargo/config.toml)
 # ========================================
+
+# ========================================
+# Command Aliases
+# ========================================
+[alias]
+t = "test --all-features"
+f = "fmt --all -- --check"
+
 [build]
 # Use physical cores for CPU-intensive compilation (16 physical = 16 jobs)
 # Logical processors (32) can cause context switching overhead

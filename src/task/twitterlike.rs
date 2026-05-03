@@ -25,10 +25,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
-        .map_err(|_| anyhow::anyhow!(
-            "[twitterlike] Task exceeded duration budget of {}ms",
-            duration_ms
-        ))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "[twitterlike] Task exceeded duration budget of {}ms",
+                duration_ms
+            )
+        })?
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -118,7 +120,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     } else {
         // Like specific tweet
         info!("[twitterlike] Navigating to tweet: {}", tweet_url);
-        api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
+        api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+            .await?;
         api.pause(2000).await;
 
         // Dismiss popups
@@ -227,6 +230,6 @@ mod tests {
     #[test]
     fn task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!(duration_ms >= 24_000 && duration_ms <= 36_000);
+        assert!((24_000..=36_000).contains(&duration_ms));
     }
 }

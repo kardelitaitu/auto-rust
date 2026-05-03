@@ -340,7 +340,7 @@ mod tests {
         // Beyond 2 words - should not detect (or detect a different intensifier)
         // Just verify it doesn't crash and returns reasonable value
         let mult = get_intensifier_multiplier("This is something I would call very good", "good");
-        assert!(mult >= 1.0 && mult <= 2.0);
+        assert!((1.0..=2.0).contains(&mult));
     }
 
     #[test]

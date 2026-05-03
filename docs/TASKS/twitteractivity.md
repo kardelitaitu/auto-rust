@@ -18,13 +18,16 @@ cargo run 'twitteractivity,weights={"like_prob":0.4,"retweet_prob":0.15,"follow_
 ## Features
 
 - 🎭 **Persona-Based Behavior**: 21 preset personas
+- 🧠 **Smart Decisions**: AI-powered engagement decisions (7.1 unified engine)
 - ❤️ **Like Tweets**: Human-like cursor movement and timing
 - 🔁 **Retweet**: Native retweets with modal confirmation
 - 👤 **Follow Users**: From tweet context or profile pages
 - 💬 **Reply**: Context-aware reply composition with LLM
-- 🧵 **Thread Dives**: Read full conversation threads
+- 🧵 **Thread Dives**: Read full conversation threads (no caching, fresh context)
 - 🔖 **Bookmark**: Save tweets (config-driven)
 - 🤖 **LLM Integration**: AI-generated replies and quotes
+- 🎯 **Enhanced Sentiment**: Multi-layer sentiment analysis
+- 🔄 **Error Recovery**: Retry logic with exponential backoff
 
 ## Engagement Limits (Default)
 
@@ -59,6 +62,11 @@ max_total_actions = 10
 enabled = false                    # Set true for AI-powered features
 provider = "ollama"                # Options: ollama, openrouter
 model = "llama3.2:latest"
+
+# Smart Decision Engine (7.1 feature)
+smart_decision_enabled = false     # AI-powered engagement decisions
+enhanced_sentiment_enabled = false # Multi-layer sentiment analysis
+dry_run_actions = false            # Simulate actions without executing
 ```
 
 ## Payload Parameters
@@ -70,6 +78,9 @@ model = "llama3.2:latest"
 | `candidate_count` | u32 | 5 | Engagement candidates |
 | `weights` | object | persona | Engagement probabilities |
 | `profile` | string | Average | Persona preset |
+| `smart_decision_enabled` | bool | false | Enable AI-powered engagement decisions |
+| `enhanced_sentiment_enabled` | bool | false | Enable multi-layer sentiment analysis |
+| `dry_run_actions` | bool | false | Simulate actions without executing |
 
 ## Persona Presets
 
@@ -87,5 +98,10 @@ model = "llama3.2:latest"
 
 ## Related Tasks
 
+- [`twitterdive`](twitterdive.md) - Thread diving and reading
 - [`twitterfollow`](twitterfollow.md) - Profile following
+- [`twitterintent`](twitterintent.md) - Intent-based actions
+- [`twitterlike`](twitterlike.md) - Like specific tweets
+- [`twitterquote`](twitterquote.md) - Quote tweets with LLM
 - [`twitterreply`](twitterreply.md) - Tweet replies
+- [`twitterretweet`](twitterretweet.md) - Retweet specific tweets

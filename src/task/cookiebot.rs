@@ -6,8 +6,8 @@ use log::{error, info, warn};
 use rand::seq::SliceRandom;
 use serde_json::Value;
 use std::fs;
-use std::time::Instant;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::time::timeout;
 
 pub const DEFAULT_COOKIEBOT_TASK_DURATION_MS: u64 = 30_000;
@@ -147,6 +147,6 @@ mod tests {
     #[test]
     fn task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!(duration_ms >= 24_000 && duration_ms <= 36_000);
+        assert!((24_000..=36_000).contains(&duration_ms));
     }
 }

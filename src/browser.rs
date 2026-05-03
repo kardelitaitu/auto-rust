@@ -238,10 +238,106 @@ async fn connect_to_browser(
     Ok(session)
 }
 
+// Default port ranges for browser discovery
+const DEFAULT_BRAVE_PORT_START: u16 = 9001;
+const DEFAULT_BRAVE_PORT_END: u16 = 9050;
+const DEFAULT_CHROME_PORT_START: u16 = 9222;
+const DEFAULT_CHROME_PORT_END: u16 = 9230;
+const MIN_PORT: u16 = 1024;
+const MAX_PORT: u16 = 65535;
+
+/// Parse port range from environment variables with validation.
+///
+/// Reads START and END from env vars, validates the range, and returns
+/// a tuple of (start, end) ports. Falls back to defaults if env vars
+/// are unset or invalid.
+///
+/// # Arguments
+///
+/// * `start_var` - Environment variable name for start port
+/// * `end_var` - Environment variable name for end port
+/// * `default_start` - Default start port if env vars are unset/invalid
+/// * `default_end` - Default end port if env vars are unset/invalid
+///
+/// # Returns
+///
+/// A tuple of (start_port, end_port) where start <= end
+fn parse_port_range(
+    start_var: &str,
+    end_var: &str,
+    default_start: u16,
+    default_end: u16,
+) -> (u16, u16) {
+    let mut start = parse_port_env(start_var, default_start);
+    let mut end = parse_port_env(end_var, default_end);
+
+    // Validate: START must be <= END (swap if needed)
+    if start > end {
+        warn!(
+            "[browser] Invalid port range: {} > {}. Swapping to ensure START <= END.",
+            start, end
+        );
+        std::mem::swap(&mut start, &mut end);
+    }
+
+    // Validate: ports must be in valid range (1024-65535)
+    let clamped_start = start.clamp(MIN_PORT, MAX_PORT);
+    let clamped_end = end.clamp(MIN_PORT, MAX_PORT);
+
+    if clamped_start != start || clamped_end != end {
+        warn!(
+            "[browser] Port range {}-{} clamped to valid range {}-{}",
+            start, end, clamped_start, clamped_end
+        );
+    }
+
+    (clamped_start, clamped_end)
+}
+
+/// Parse a single port from environment variable.
+fn parse_port_env(var_name: &str, default: u16) -> u16 {
+    match std::env::var(var_name) {
+        Ok(val) => match val.parse::<u16>() {
+            Ok(port) => port,
+            Err(_) => {
+                warn!(
+                    "[browser] Invalid port value in {}: '{}'. Using default: {}",
+                    var_name, val, default
+                );
+                default
+            }
+        },
+        Err(_) => default,
+    }
+}
+
+/// Get Brave browser port range from environment or defaults.
+fn get_brave_port_range() -> (u16, u16) {
+    parse_port_range(
+        "BRAVE_PORT_START",
+        "BRAVE_PORT_END",
+        DEFAULT_BRAVE_PORT_START,
+        DEFAULT_BRAVE_PORT_END,
+    )
+}
+
+/// Get Chrome browser port range from environment or defaults.
+fn get_chrome_port_range() -> (u16, u16) {
+    parse_port_range(
+        "CHROME_PORT_START",
+        "CHROME_PORT_END",
+        DEFAULT_CHROME_PORT_START,
+        DEFAULT_CHROME_PORT_END,
+    )
+}
+
 /// Auto-discovers local browser instances (Brave, Chrome, etc.).
 ///
-/// Scans common CDP (Chrome DevTools Protocol) ports (9001-9050) for local
+/// Scans common CDP (Chrome DevTools Protocol) ports for local
 /// browser instances that are running with remote debugging enabled.
+/// Port ranges can be configured via environment variables:
+/// - BRAVE_PORT_START, BRAVE_PORT_END (default: 9001-9050)
+/// - CHROME_PORT_START, CHROME_PORT_END (default: 9222-9230)
 ///
 /// # Arguments
 ///
@@ -251,14 +347,25 @@ async fn connect_to_browser(
 ///
 /// A vector of successfully connected `Session` instances.
 async fn discover_local_browsers(config: &Config) -> Result<Vec<Session>> {
-    let ports: Vec<u16> = (9001..=9050).collect();
+    let (brave_start, brave_end) = get_brave_port_range();
+    let (chrome_start, chrome_end) = get_chrome_port_range();
 
-    let results: Vec<Option<Session>> = stream::iter(ports)
+    let brave_ports: Vec<u16> = (brave_start..=brave_end).collect();
+    let chrome_ports: Vec<u16> = (chrome_start..=chrome_end).collect();
+
+    let mut results: Vec<Option<Session>> = stream::iter(brave_ports)
         .map(|port| async move { discover_brave_on_port(port, config).await.ok().flatten() })
         .buffer_unordered(50)
         .collect()
         .await;
 
+    let chrome_results: Vec<Option<Session>> = stream::iter(chrome_ports)
+        .map(|port| async move { discover_chrome_on_port(port, config).await.ok().flatten() })
+        .buffer_unordered(50)
+        .collect()
+        .await;
+
+    results.extend(chrome_results);
     let sessions: Vec<Session> = results.into_iter().flatten().collect();
     Ok(sessions)
 }
@@ -326,6 +433,84 @@ async fn discover_brave_on_port(port: u16, config: &Config) -> Result<Option<Ses
                                 warn!(
                                     "Connection timeout to Brave on port {port} after {}ms",
                                     brave_timeout.as_millis()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // Port not available or no browser, continue silently
+        }
+    }
+
+    Ok(None)
+}
+
+/// Attempts to discover a Chrome browser instance on a specific port.
+///
+/// Checks if a browser is running with remote debugging enabled on the
+/// specified port by querying the CDP version endpoint.
+///
+/// # Arguments
+///
+/// * `port` - The port to check for a browser instance
+/// * `config` - The orchestrator configuration
+///
+/// # Returns
+///
+/// * `Some(Session)` - If a browser is found and connected
+/// * `None` - If no browser is found on this port
+async fn discover_chrome_on_port(port: u16, config: &Config) -> Result<Option<Session>> {
+    let cdp_url = format!("http://127.0.0.1:{port}/json/version");
+
+    debug!("Checking Chrome on port {port}");
+
+    // Try to connect with timeout
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&cdp_url)
+        .timeout(Duration::from_millis(1000))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(version_data) = resp.json::<serde_json::Value>().await {
+                if let Some(ws_url) = version_data.get("webSocketDebuggerUrl") {
+                    if let Some(ws_str) = ws_url.as_str() {
+                        info!("Found Chrome browser on port {port}");
+
+                        // Try to connect to chromiumoxide with timeout
+                        let chrome_timeout =
+                            Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+                        match tokio::time::timeout(
+                            chrome_timeout,
+                            chromiumoxide::Browser::connect(ws_str),
+                        )
+                        .await
+                        {
+                            Ok(Ok((browser, handler))) => {
+                                let session = Session::new(
+                                    format!("chrome-{port}"),
+                                    format!("Chrome on port {port}"),
+                                    "localChrome".to_string(),
+                                    browser,
+                                    handler,
+                                    config.browser.max_workers_per_session,
+                                    config.browser.cursor_overlay_ms,
+                                    Some(config.browser.circuit_breaker.clone()),
+                                );
+                                return Ok(Some(session));
+                            }
+                            Ok(Err(e)) => {
+                                warn!("Failed to connect to Chrome on port {port}: {e}");
+                            }
+                            Err(_) => {
+                                warn!(
+                                    "Connection timeout to Chrome on port {port} after {}ms",
+                                    chrome_timeout.as_millis()
                                 );
                             }
                         }
@@ -799,6 +984,7 @@ mod tests {
             orchestrator: crate::config::OrchestratorConfig::default(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let filters: Vec<String> = vec![];
 
@@ -821,6 +1007,7 @@ mod tests {
             orchestrator: crate::config::OrchestratorConfig::default(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let filters = vec!["brave".to_string()];
 
@@ -849,6 +1036,7 @@ mod tests {
             orchestrator: crate::config::OrchestratorConfig::default(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let filters: Vec<String> = vec![]; // Empty filters
 

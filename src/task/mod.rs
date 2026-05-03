@@ -18,8 +18,11 @@ pub mod cookiebot;
 pub mod demo_keyboard;
 pub mod demo_mouse;
 pub mod demoqa;
+pub mod dsl;
+pub mod dsl_executor;
 pub mod pageview;
 pub mod policy;
+pub mod registry;
 pub mod security;
 pub mod task_example;
 pub mod twitteractivity;
@@ -33,7 +36,9 @@ pub mod twitterretweet;
 pub mod twittertest;
 
 // Re-exports for twitteractivity test access
-pub use twitteractivity::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
+pub use crate::utils::twitter::select_entry_point;
+pub use crate::utils::twitter::twitteractivity_constants::MIN_ACTION_CHAIN_DELAY_MS;
+pub use crate::utils::twitter::twitteractivity_state::TweetActionTracker;
 
 pub const TASK_NAMES: &[&str] = &[
     "cookiebot",

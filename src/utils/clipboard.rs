@@ -1,3 +1,9 @@
+//! Clipboard state management for browser automation.
+//!
+//! Provides per-session clipboard storage for copy/paste operations
+//! across browser automation workflows. Supports both text and
+//! structured data clipboard operations.
+
 use anyhow::Result;
 use chromiumoxide::Page;
 use dashmap::DashMap;

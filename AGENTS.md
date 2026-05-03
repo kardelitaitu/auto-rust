@@ -1,5 +1,5 @@
 **AI Assistant Operating Manual for rust-orchestrator**
-*Last Updated: April 28, 2026*
+*Last Updated: May 3, 2026*
 
 ---
 
@@ -134,7 +134,9 @@ Need external app integration (GitHub, Slack)?
    - `docs: rewrite README with TOC (843 -> 350 lines)`
    - `feat: add twitterquote task with LLM integration`
    - `fix: handle rate limit in twitterfollow retry logic`
-8. **Never commit to main unless `cargo check` and `cargo test` pass** - ensure code compiles and all tests pass before committing to main branch
+8. **Never push to remote without running verification commands** - always execute this before `git push`:
+   - `.\check.ps1` (runs full CI suite: test, fmt, clippy, build check)
+   - Ensure all checks pass before pushing to remote repository
 
 ### Codebase rules
 - `TaskContext` is the task-api entry point; task code should stay thin and compose shared capabilities.
@@ -154,26 +156,48 @@ Need external app integration (GitHub, Slack)?
 - Prefer deterministic verification of the same target element that was clicked or inspected.
 - Use `cookiebot` only for its own resource-blocking behavior; do not leak that policy into unrelated tasks.
 - Keep task names canonical and consistent across `task/mod.rs`, `src/cli.rs`, validation, and README.
-- Current supported browsers are Brave and Roxybrowser; other Chromium browsers are future connectors only.
+- Current supported browsers are Brave, Chrome, and Roxybrowser; other Chromium browsers are future connectors only.
 
 ### Twitter Utility Modules
-The Twitter automation utilities are located in `src/utils/twitter/` and have comprehensive rustdoc documentation:
+The Twitter automation utilities are located in `src/utils/twitter/` (27 modularized files) with comprehensive rustdoc documentation:
 
-**Core Modules:**
-- `twitteractivity_dive.rs`: Thread diving, reading, and incremental caching for LLM context
-- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark)
-- `twitteractivity_llm.rs`: LLM-powered reply/quote generation with context extraction and validation
+**Core Engagement:**
+- `twitteractivity_engagement.rs`: Main `process_candidate()` logic and action orchestration
 - `twitteractivity_feed.rs`: Feed scrolling, candidate identification, and progress tracking
-- `twitteractivity_navigation.rs`: Page navigation and login state checks
+- `twitteractivity_dive.rs`: Thread diving and reading
+- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark)
 
-**Supporting Modules:**
-- `twitteractivity_sentiment*.rs`: Sentiment analysis (emoji, context, domains, LLM)
+**Decision & Strategy:**
+- `twitteractivity_decision.rs`: Legacy engagement decision logic
+- `twitteractivity_decision_unified.rs`: Unified smart decision engine
+- `twitteractivity_decision_hybrid.rs`: Hybrid persona/LLM decisions
+- `twitteractivity_decision_llm.rs`: LLM-only decision path
+- `twitteractivity_decision_persona.rs`: Persona-based decision weights
+
+**LLM Integration:**
+- `twitteractivity_llm.rs`: LLM-powered reply/quote generation
+- `twitteractivity_sentiment_llm.rs`: LLM sentiment analysis
+
+**Sentiment Analysis:**
+- `twitteractivity_sentiment.rs`: Core sentiment types and templates
+- `twitteractivity_sentiment_enhanced.rs`: Enhanced sentiment with context
+- `twitteractivity_sentiment_emoji.rs`: Emoji-based sentiment detection
+- `twitteractivity_sentiment_context.rs`: Context-aware sentiment modifiers
+- `twitteractivity_sentiment_domains.rs`: Domain-specific sentiment rules
+
+**State & Configuration:**
+- `twitteractivity_state.rs`: TaskConfig, CandidateContext, SessionState
+- `twitteractivity_constants.rs`: Timing constants
+- `twitteractivity_limits.rs`: EngagementCounters, EngagementLimits
+- `twitteractivity_persona.rs`: PersonaWeights, behavior profiles
+
+**Infrastructure:**
+- `twitteractivity_navigation.rs`: Page navigation and entry points
+- `twitteractivity_selectors.rs`: DOM selectors and CSS generators
 - `twitteractivity_humanized.rs`: Human-like timing and cursor movements
-- `twitteractivity_selectors.rs`: Twitter-specific DOM selectors
-- `twitteractivity_decision.rs`: Engagement decision logic
-- `twitteractivity_limits.rs`: Engagement limit tracking
-- `twitteractivity_persona.rs`: Persona-based behavior profiles
 - `twitteractivity_popup.rs`: Popup/modal handling
+- `twitteractivity_retry.rs`: Retry logic with exponential backoff, CircuitBreaker
+- `twitteractivity_errors.rs`: Error classification and recovery
 
 **Documentation:**
 All functions include detailed rustdoc with Arguments, Returns, Errors, Behavior, and Selectors sections. Generate with `cargo doc --all-features`.

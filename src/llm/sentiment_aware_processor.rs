@@ -252,7 +252,7 @@ mod tests {
             "Original tweet",
             "author",
             &replies,
-        ).await.unwrap();
+        ).await.expect("Failed to process reply with sentiment");
         
         assert!(result.content.contains("Reply"));
         assert!(result.sentiment.confidence > 0.5);
@@ -276,7 +276,7 @@ mod tests {
         let result = processor.process_quote_with_sentiment(
             "Original tweet",
             &replies,
-        ).await.unwrap();
+        ).await.expect("Failed to process quote with sentiment");
         
         assert!(result.confidence > 0.5);
         assert!(!result.content.is_empty());
@@ -284,20 +284,23 @@ mod tests {
 
     #[test]
     fn test_parse_response_with_sentiment_empty() {
-        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("").unwrap();
+        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("")
+            .expect("Failed to parse response");
         assert!(result.0.confidence > 0.0);
         assert!(result.1.is_empty());
     }
 
     #[test]
     fn test_parse_response_with_sentiment_whitespace() {
-        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("   ").unwrap();
+        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("   ")
+            .expect("Failed to parse response");
         assert!(result.1.is_empty());
     }
 
     #[test]
     fn test_parse_response_with_sentiment_positive() {
-        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("This is great and amazing!").unwrap();
+        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("This is great and amazing!")
+            .expect("Failed to parse response");
         assert!(result.0.confidence > 0.5);
         assert!(!result.0.indicators.is_empty());
         assert!(result.0.indicators.contains(&"positive_word".to_string()));
@@ -305,7 +308,8 @@ mod tests {
 
     #[test]
     fn test_parse_response_with_sentiment_negative() {
-        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("This is terrible and awful").unwrap();
+        let result = SentimentAwareProcessor::parse_response_with_sentiment_static("This is terrible and awful")
+            .expect("Failed to parse response");
         assert!(result.0.indicators.contains(&"negative_word".to_string()));
     }
 
@@ -367,20 +371,23 @@ mod tests {
 
     #[test]
     fn test_extract_sentiment_static_empty() {
-        let result = SentimentAwareProcessor::extract_sentiment_static("").unwrap();
+        let result = SentimentAwareProcessor::extract_sentiment_static("")
+            .expect("Failed to extract sentiment");
         assert!(result.confidence > 0.0);
     }
 
     #[test]
     fn test_extract_sentiment_static_malformed() {
-        let result = SentimentAwareProcessor::extract_sentiment_static("!!!@@@###").unwrap();
+        let result = SentimentAwareProcessor::extract_sentiment_static("!!!@@@###")
+            .expect("Failed to extract sentiment");
         assert!(result.confidence > 0.0);
         assert!(result.indicators.contains(&"exclamation".to_string()));
     }
 
     #[test]
     fn test_extract_sentiment_static_unicode_emoji() {
-        let result = SentimentAwareProcessor::extract_sentiment_static("Great post! 😊🎉").unwrap();
+        let result = SentimentAwareProcessor::extract_sentiment_static("Great post! 😊🎉")
+            .expect("Failed to extract sentiment");
         assert!(result.confidence > 0.0);
     }
 

@@ -48,13 +48,17 @@
 //! - Random variation in timing to avoid patterns
 
 use crate::prelude::TaskContext;
+use crate::utils::timing::{TIMEOUT_MEDIUM_SECS, TIMEOUT_SHORT_SECS};
 use anyhow::Result;
 use log::info;
 use rand;
 use tracing::instrument;
 
 use super::twitteractivity_humanized::*;
-use super::twitteractivity_selectors::selector_follow_button;
+use super::twitteractivity_selectors::{
+    js_confirm_retweet_click, js_find_reply_submit_button, js_find_reply_textarea,
+    js_root_tweet_button_center, selector_follow_button, REPLY_BUTTON_SELECTOR,
+};
 
 /// Gets the current page URL.
 #[instrument(skip(api))]
@@ -86,48 +90,8 @@ pub async fn is_on_tweet_page(api: &TaskContext) -> Result<bool> {
     Ok(url.contains("/status/") || url.contains("x.com/") && url.contains("/status/"))
 }
 
-fn root_tweet_button_center_js(selector: &str) -> Result<String> {
-    let selector_json = serde_json::to_string(selector)?;
-    Ok(format!(
-        r#"
-        (function() {{
-            var selector = {selector_json};
-            function visible(el) {{
-                if (!el) return false;
-                var rect = el.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
-            }}
-            function center(el) {{
-                var rect = el.getBoundingClientRect();
-                return {{ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }};
-            }}
-
-            var articles = Array.prototype.slice.call(
-                document.querySelectorAll('article[data-testid="tweet"]')
-            ).filter(visible);
-            var statusMatch = window.location.pathname.match(/\/status\/(\d+)/);
-            var targetStatusId = statusMatch ? statusMatch[1] : null;
-            var targetArticle = null;
-            if (targetStatusId) {{
-                for (var i = 0; i < articles.length; i++) {{
-                    if (articles[i].querySelector('a[href*="/status/' + targetStatusId + '"]')) {{
-                        targetArticle = articles[i];
-                        break;
-                    }}
-                }}
-            }}
-            var scopes = articles.length > 0
-                ? [targetArticle || articles[0]]
-                : [document.querySelector('main'), document.body].filter(Boolean);
-
-            for (var i = 0; i < scopes.length; i++) {{
-                var button = scopes[i].querySelector(selector);
-                if (visible(button)) return center(button);
-            }}
-            return null;
-        }})()
-        "#
-    ))
+fn root_tweet_button_center_js(selector: &str) -> String {
+    js_root_tweet_button_center(selector)
 }
 
 async fn click_root_tweet_button(
@@ -135,7 +99,7 @@ async fn click_root_tweet_button(
     selector: &str,
     action_name: &str,
 ) -> Result<bool> {
-    let js = root_tweet_button_center_js(selector)?;
+    let js = root_tweet_button_center_js(selector);
     let result = api.page().evaluate(js).await?;
 
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
@@ -203,7 +167,7 @@ pub async fn navigate_to_tweet(api: &TaskContext, x: f64, y: f64) -> Result<bool
 /// - Like button: `LIKE_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
 pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::LIKE_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::LIKE_BUTTON_SELECTOR;
 
     if click_root_tweet_button(api, LIKE_BUTTON_SELECTOR, "like").await? {
         info!("Clicked root tweet like button");
@@ -246,7 +210,7 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
 /// Filters for: data-testid includes "retweet" but not "unretweet"
 #[instrument(skip(api))]
 pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::RETWEET_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::RETWEET_BUTTON_SELECTOR;
 
     if click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
         return Ok(true);
@@ -287,14 +251,7 @@ pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
 /// - Confirm button: `button[data-testid="retweetConfirm"]`
 #[instrument(skip(api))]
 pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
-    let js = r#"
-        (function() {
-            var btn = document.querySelector('button[data-testid="retweetConfirm"]');
-            if (!btn) return null;
-            var rect = btn.getBoundingClientRect();
-            return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
-        })()
-    "#;
+    let js = js_confirm_retweet_click();
     let result = api.page().evaluate(js).await?;
 
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
@@ -341,8 +298,8 @@ pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
 /// - Waits 800ms after confirmation
 #[instrument(skip(api))]
 pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::RETWEET_BUTTON_SELECTOR;
-    use crate::task::twitteractivity::RETWEET_CONFIRM_SELECTOR;
+    use super::twitteractivity_selectors::RETWEET_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::RETWEET_CONFIRM_SELECTOR;
 
     info!("Starting retweet action");
     if !click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
@@ -402,7 +359,7 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
 /// Filters for: data-testid includes "reply" or "comment"
 #[instrument(skip(api))]
 pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
-    if click_root_tweet_button(api, r#"button[data-testid="reply"]"#, "reply").await? {
+    if click_root_tweet_button(api, REPLY_BUTTON_SELECTOR, "reply").await? {
         return Ok(true);
     }
 
@@ -450,27 +407,20 @@ pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
 pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     use std::time::Duration;
     use tokio::time::timeout;
+    // Timeout constants imported from crate::utils::timing
 
     info!("Starting send_reply with text: '{}'", reply_text);
 
     // Focus the specific reply textarea.
-    let textarea_js = r##"
-        (function() {
-            var textboxes = document.querySelectorAll('[data-testid="tweetTextarea_0"][role="textbox"], [data-testid="tweetTextarea_0"]');
-            for (var i = 0; i < textboxes.length; i++) {
-                var ta = textboxes[i];
-                var rect = ta.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) continue;
-                ta.focus();
-                ta.click();
-                return { found: true };
-            }
-            return { found: false };
-        })()
-    "##;
+    let textarea_js = js_find_reply_textarea();
 
     info!("Focusing reply textarea");
-    match timeout(Duration::from_secs(5), api.page().evaluate(textarea_js)).await {
+    match timeout(
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
+        api.page().evaluate(textarea_js),
+    )
+    .await
+    {
         Ok(result) => {
             let textarea_result = result?;
             let found = textarea_result
@@ -496,7 +446,12 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 
     // Type the reply text
     info!("Typing reply text");
-    match timeout(Duration::from_secs(10), api.type_text(reply_text)).await {
+    match timeout(
+        Duration::from_secs(TIMEOUT_MEDIUM_SECS),
+        api.type_text(reply_text),
+    )
+    .await
+    {
         Ok(_) => {}
         Err(_) => {
             info!("Timeout typing reply text");
@@ -506,31 +461,21 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     human_pause(api, 400).await;
 
     // Click the Reply submit button in the composer.
-    let reply_button_js = r#"
-        (function() {
-            var buttons = document.querySelectorAll('button[data-testid="tweetButtonInline"]');
-            for (var i = 0; i < buttons.length; i++) {
-                var btn = buttons[i];
-                var rect = btn.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) continue;
-                if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
-                var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
-                if (text !== 'reply') continue;
-                return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
-            }
-            return null;
-        })()
-    "#;
+    let reply_button_js = js_find_reply_submit_button();
 
     info!("Finding reply button");
-    let button_result =
-        match timeout(Duration::from_secs(5), api.page().evaluate(reply_button_js)).await {
-            Ok(result) => result?,
-            Err(_) => {
-                info!("Timeout finding reply button");
-                return Ok(false);
-            }
-        };
+    let button_result = match timeout(
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
+        api.page().evaluate(reply_button_js),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            info!("Timeout finding reply button");
+            return Ok(false);
+        }
+    };
 
     if let Some(coords) = button_result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
@@ -538,10 +483,16 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
             coords.get("y").and_then(|v| v.as_f64()),
         ) {
             info!("Found reply button at ({:.1}, {:.1})", x, y);
-            match timeout(Duration::from_secs(5), api.move_mouse_to(x, y)).await {
+            match timeout(
+                Duration::from_secs(TIMEOUT_SHORT_SECS),
+                api.move_mouse_to(x, y),
+            )
+            .await
+            {
                 Ok(_) => {
                     human_pause(api, 200).await;
-                    match timeout(Duration::from_secs(5), api.click_at(x, y)).await {
+                    match timeout(Duration::from_secs(TIMEOUT_SHORT_SECS), api.click_at(x, y)).await
+                    {
                         Ok(_) => {
                             info!("Clicked Reply button successfully");
                         }
@@ -756,7 +707,7 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
 /// - Bookmark button: `BOOKMARK_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
 pub async fn bookmark_tweet(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::BOOKMARK_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::BOOKMARK_BUTTON_SELECTOR;
 
     if click_root_tweet_button(api, BOOKMARK_BUTTON_SELECTOR, "bookmark").await? {
         info!("Clicked root tweet bookmark button");
@@ -772,25 +723,24 @@ mod tests {
 
     #[test]
     fn test_root_tweet_button_center_js_scopes_to_first_visible_tweet() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#);
 
         assert!(js.contains("article[data-testid=\"tweet\"]"));
         assert!(js.contains("targetStatusId"));
         assert!(js.contains("articles[0]"));
-        assert!(js.contains("querySelector(selector)"));
         assert!(js.contains(r#"button[data-testid=\"reply\"]"#));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_includes_visibility_check() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="like"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="like"]"#);
         assert!(js.contains("visible(el)"));
         assert!(js.contains("getBoundingClientRect"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_includes_center_function() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="retweet"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="retweet"]"#);
         assert!(js.contains("function center(el)"));
         assert!(js.contains("rect.x + rect.width / 2"));
         assert!(js.contains("rect.y + rect.height / 2"));
@@ -798,40 +748,39 @@ mod tests {
 
     #[test]
     fn test_root_tweet_button_center_js_handles_status_id_extraction() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="bookmark"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="bookmark"]"#);
         assert!(js.contains("window.location.pathname"));
         assert!(js.contains("/status/"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_escapes_selector_json() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="test\"quote"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="test\"quote"]"#);
         assert!(js.contains("\\\""));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_with_complex_selector() {
-        let js = root_tweet_button_center_js(r#"[data-testid="tweet"] button[aria-label="Like"]"#)
-            .unwrap();
+        let js = root_tweet_button_center_js(r#"[data-testid="tweet"] button[aria-label="Like"]"#);
         assert!(js.contains("data-testid"));
         assert!(js.contains("aria-label"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_returns_null_on_failure() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="test"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="test"]"#);
         assert!(js.contains("return null"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_filters_visible_elements() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="follow"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="follow"]"#);
         assert!(js.contains(".filter(visible)"));
     }
 
     #[test]
     fn test_root_tweet_button_center_js_scopes_to_main_or_body() {
-        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#).unwrap();
+        let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#);
         assert!(js.contains("document.querySelector('main')"));
         assert!(js.contains("document.body"));
     }

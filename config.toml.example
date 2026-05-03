@@ -1,56 +1,181 @@
-# Browser Configuration Template
-# Copy to config.toml and fill in your browser endpoints
+# Rust Orchestrator Configuration Example
+# Copy this file to config.toml and customize for your environment
 
+# =============================================================================
+# BROWSER CONFIGURATION
+# =============================================================================
 [browser]
-# Auto-discovery connectors to use (leave empty to scan all)
-connectors = ["localChrome", "ixbrowser", "roxybrowser"]
+# Timeout for establishing browser connections (milliseconds)
+# Minimum: 5000ms (5 seconds)
+# Default: 30000ms (30 seconds)
+connection_timeout_ms = 30000
 
-# Connection timeout in milliseconds
-connection_timeout_ms = 10000
-
-# Max retries for browser discovery
+# Maximum number of attempts to discover available browsers
+# Minimum: 1
+# Default: 3
 max_discovery_retries = 3
-discovery_retry_delay_ms = 5000
 
-# Circuit breaker settings
-[browser.circuit_breaker]
-enabled = true
-failure_threshold = 5
-success_threshold = 3
-half_open_time_ms = 30000
+# Delay between browser discovery attempts (milliseconds)
+# Minimum: 100ms
+# Default: 500ms
+discovery_retry_delay_ms = 500
 
-# Browser profiles
+# Cursor overlay sync interval (milliseconds)
+# Set to 0 to disable cursor overlay visualization
+# Default: 0 (disabled)
+cursor_overlay_ms = 0
+
+# Maximum concurrent workers per browser session
+# Range: 1-50
+# Default: 5
+max_workers_per_session = 5
+
+# Enable click learning persistence (default: true)
+# Set to false to disable learning and adaptation
+enable_learning_persistence = true
+
+# TTL for learning data in days (0 = never expire, default: 30)
+learning_ttl_days = 30
+
+# Custom User-Agent string (optional)
+# If not set, browser's default User-Agent will be used
+# user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# Extra HTTP headers to add to all requests (optional)
+# [browser.extra_http_headers]
+# "X-Custom-Header" = "custom-value"
+
+# =============================================================================
+# BROWSER PROFILES
+# =============================================================================
+# At least one browser profile is REQUIRED
+# Supported types: "brave", "chrome", "roxybrowser"
+
 [[browser.profiles]]
-name = "chrome-1"
-type = "localChrome"
-ws_endpoint = "ws://localhost:9222"
+name = "brave-default"
+path = "/usr/bin/brave"
+type = "brave"
 
-[[browser.profiles]]
-name = "brave-1"
-type = "localBrave"
-ws_endpoint = "ws://localhost:9001"
+# [[browser.profiles]]
+# name = "chrome-dev"
+# path = "/usr/bin/google-chrome"
+# type = "chrome"
 
-[[browser.profiles]]
-name = "ixbrowser-profile-1"
-type = "ixbrowser"
-ws_endpoint = "ws://localhost:9223"
+# =============================================================================
+# ROXYBROWSER API (Optional - for cloud browser instances)
+# =============================================================================
+[browser.roxybrowser]
+enabled = false
+api_url = "http://127.0.0.1:50000"
+api_key = "your-api-key-here"
+max_profiles = 5
+profile_prefix = "auto"
 
-# Orchestrator settings
+# =============================================================================
+# NATIVE INPUT (Optional - for OS-level input when CDP is insufficient)
+# =============================================================================
+[browser.native_interaction]
+enabled = false
+backend = "enigo"  # Options: "enigo"
+
+# =============================================================================
+# ORCHESTRATOR CONFIGURATION
+# =============================================================================
 [orchestrator]
-# Max concurrent tasks across all browsers
-max_global_concurrency = 20
+# Maximum number of tasks that can run concurrently across all sessions
+# Minimum: 1
+# Default: 5
+max_global_concurrency = 5
 
-# Task timeout in milliseconds
-task_timeout_ms = 600000
+# Timeout for individual task execution (milliseconds)
+# Minimum: 1000ms (1 second)
+# Default: 60000ms (60 seconds)
+task_timeout_ms = 60000
 
-# Group timeout in milliseconds
-group_timeout_ms = 600000
+# Timeout for task groups (sequential tasks) (milliseconds)
+# Minimum: 1000ms (1 second)
+# Default: 300000ms (5 minutes)
+group_timeout_ms = 300000
 
-# Worker acquisition timeout in milliseconds
+# Timeout for acquiring a worker/session for task execution (milliseconds)
+# Minimum: 1000ms (1 second)
+# Default: 10000ms (10 seconds)
 worker_wait_timeout_ms = 10000
 
-# Stuck worker threshold in milliseconds
-stuck_worker_threshold_ms = 120000
+# Delay between starting consecutive tasks (milliseconds)
+# Range: 0-60000ms (1 minute)
+# Default: 500ms
+task_stagger_delay_ms = 500
 
-# Delay between task starts to prevent network spikes
-task_stagger_delay_ms = 2000
+# Maximum number of retry attempts for failed tasks
+# Range: 0-10
+# Default: 3
+max_retries = 3
+
+# Delay between retry attempts (milliseconds)
+# Minimum: 100ms
+# Default: 2000ms (2 seconds)
+retry_delay_ms = 2000
+
+# =============================================================================
+# CIRCUIT BREAKER CONFIGURATION (for API fault tolerance)
+# =============================================================================
+[orchestrator.circuit_breaker]
+enabled = true
+failure_threshold = 5      # Consecutive failures before opening	success_threshold = 3      # Successes required to close half-open
+half_open_time_ms = 30000  # Time before attempting recovery (30 seconds)
+
+# =============================================================================
+# TWITTER/X ACTIVITY CONFIGURATION (Optional)
+# =============================================================================
+[twitter_activity]
+# Duration to scan the feed (milliseconds)
+feed_scan_duration_ms = 60000
+
+# Number of scrolls to perform
+feed_scroll_count = 10
+
+# Number of engagement candidates to consider
+engagement_candidate_count = 5
+
+# Minimum delay between actions (milliseconds)
+min_action_delay_ms = 2000
+
+# Maximum delay between actions (milliseconds)
+max_action_delay_ms = 8000
+
+# Daily engagement limits
+[twitter_activity.engagement_limits]
+max_likes_per_day = 50
+max_retweets_per_day = 20
+max_replies_per_day = 30
+max_follows_per_day = 20
+max_bookmarks_per_day = 100
+
+# LLM configuration for tweet generation (optional)
+[twitter_activity.llm]
+enabled = false
+api_url = "https://api.openai.com/v1/chat/completions"
+api_key = "your-openai-api-key"
+model = "gpt-4"
+temperature = 0.7
+max_tokens = 280
+system_prompt = "You are a helpful assistant generating Twitter replies."
+
+# =============================================================================
+# OPENTELEMETRY TRACING CONFIGURATION (Optional)
+# =============================================================================
+[tracing]
+enabled = false
+service_name = "rust-orchestrator"
+endpoint = "http://localhost:4317"
+sample_rate = 1.0
+
+# Log level: trace, debug, info, warn, error
+log_level = "info"
+
+# Export format: "otlp", "stdout", "file"
+export_format = "otlp"
+
+# Export interval (seconds)
+export_interval_secs = 30

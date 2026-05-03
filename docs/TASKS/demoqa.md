@@ -36,4 +36,4 @@ This is a **learning task** for understanding:
 - Form filling workflows
 - Verification techniques
 
-See [Task Authoring Guide](../TASK_AUTHORING_GUIDE.md) for building your own tasks.
+See [Tutorial: Building First Task](../TUTORIAL_BUILDING_FIRST_TASK.md) for building your own tasks.

@@ -3,9 +3,9 @@
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
+use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use crate::utils::twitter::twitteractivity_humanized::human_pause;
 use crate::utils::twitter::twitteractivity_navigation::goto_home;
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
 use anyhow::Result;
 use log::info;
 use serde_json::Value;
@@ -23,10 +23,12 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
-        .map_err(|_| anyhow::anyhow!(
-            "[twitterdive] Task exceeded duration budget of {}ms",
-            duration_ms
-        ))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "[twitterdive] Task exceeded duration budget of {}ms",
+                duration_ms
+            )
+        })?
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -48,7 +50,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Navigate to tweet
     info!("[twitterdive] Navigating to tweet...");
-    api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
+    api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
+        .await?;
     api.pause(2000).await;
 
     // Extract initial tweet info
@@ -240,6 +243,6 @@ mod tests {
     #[test]
     fn task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!(duration_ms >= 48_000 && duration_ms <= 72_000);
+        assert!((48_000..=72_000).contains(&duration_ms));
     }
 }

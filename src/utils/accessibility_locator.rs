@@ -1,0 +1,611 @@
+//! Accessibility locator parser for task selector inputs.
+//!
+//! This module only handles grammar parsing and validation.
+//! Resolution against DOM/CDP is handled by separate runtime code.
+
+use std::fmt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocatorMatchMode {
+    Exact,
+    Contains,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessibilityLocator {
+    pub role: String,
+    pub name: String,
+    pub scope: Option<String>,
+    pub match_mode: LocatorMatchMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParsedSelector {
+    Css(String),
+    Accessibility(AccessibilityLocator),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LocatorParseError {
+    EmptyInput,
+    InvalidRole,
+    MissingRequiredField(&'static str),
+    MalformedSegment(String),
+    DuplicateField(&'static str),
+    UnsupportedMatchMode(String),
+    QuoteStyleNotSupported(&'static str),
+}
+
+impl fmt::Display for LocatorParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyInput => write!(f, "selector is empty"),
+            Self::InvalidRole => write!(f, "role value is invalid"),
+            Self::MissingRequiredField(field) => write!(f, "missing required field: {field}"),
+            Self::MalformedSegment(seg) => write!(f, "malformed locator segment: {seg}"),
+            Self::DuplicateField(field) => write!(f, "duplicate locator field: {field}"),
+            Self::UnsupportedMatchMode(mode) => write!(f, "unsupported match mode: {mode}"),
+            Self::QuoteStyleNotSupported(field) => {
+                write!(f, "field '{field}' must use single quotes in v1")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LocatorParseError {}
+
+/// Parse selector input into either CSS selector or accessibility locator.
+///
+/// Rules:
+/// - Non `role=` strings are treated as CSS selectors.
+/// - `role=` strings must follow:
+///   `role=<role>[name='...'][scope='...'][match=exact|contains]`
+/// - Malformed `role=` strings return parse errors (never CSS fallback).
+pub fn parse_selector_input(input: &str) -> Result<ParsedSelector, LocatorParseError> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(LocatorParseError::EmptyInput);
+    }
+
+    if !trimmed.starts_with("role=") {
+        return Ok(ParsedSelector::Css(trimmed.to_string()));
+    }
+
+    let rest = &trimmed["role=".len()..];
+    let role_end = rest.find('[').unwrap_or(rest.len());
+    let role = rest[..role_end].trim();
+    if !is_valid_role(role) {
+        return Err(LocatorParseError::InvalidRole);
+    }
+
+    let mut name: Option<String> = None;
+    let mut scope: Option<String> = None;
+    let mut match_mode = LocatorMatchMode::Exact;
+
+    let mut i = role_end;
+    while i < rest.len() {
+        if !rest[i..].starts_with('[') {
+            return Err(LocatorParseError::MalformedSegment(rest[i..].to_string()));
+        }
+        let close_rel = rest[i + 1..]
+            .find(']')
+            .ok_or_else(|| LocatorParseError::MalformedSegment(rest[i..].to_string()))?;
+        let close = i + 1 + close_rel;
+        let segment = rest[i + 1..close].trim();
+        parse_segment(segment, &mut name, &mut scope, &mut match_mode)?;
+        i = close + 1;
+    }
+
+    let name = name.ok_or(LocatorParseError::MissingRequiredField("name"))?;
+    Ok(ParsedSelector::Accessibility(AccessibilityLocator {
+        role: role.to_string(),
+        name,
+        scope,
+        match_mode,
+    }))
+}
+
+fn parse_segment(
+    segment: &str,
+    name: &mut Option<String>,
+    scope: &mut Option<String>,
+    match_mode: &mut LocatorMatchMode,
+) -> Result<(), LocatorParseError> {
+    let mut split = segment.splitn(2, '=');
+    let key = split.next().unwrap_or("").trim();
+    let value = split
+        .next()
+        .ok_or_else(|| LocatorParseError::MalformedSegment(segment.to_string()))?
+        .trim();
+
+    match key {
+        "name" => {
+            if name.is_some() {
+                return Err(LocatorParseError::DuplicateField("name"));
+            }
+            if value.starts_with('"') && value.ends_with('"') {
+                return Err(LocatorParseError::QuoteStyleNotSupported("name"));
+            }
+            *name = Some(parse_single_quoted(value, "name")?);
+        }
+        "scope" => {
+            if scope.is_some() {
+                return Err(LocatorParseError::DuplicateField("scope"));
+            }
+            if value.starts_with('"') && value.ends_with('"') {
+                return Err(LocatorParseError::QuoteStyleNotSupported("scope"));
+            }
+            *scope = Some(parse_single_quoted(value, "scope")?);
+        }
+        "match" => match value {
+            "exact" => *match_mode = LocatorMatchMode::Exact,
+            "contains" => *match_mode = LocatorMatchMode::Contains,
+            other => return Err(LocatorParseError::UnsupportedMatchMode(other.to_string())),
+        },
+        _ => {
+            return Err(LocatorParseError::MalformedSegment(segment.to_string()));
+        }
+    }
+    Ok(())
+}
+
+fn parse_single_quoted(value: &str, field: &'static str) -> Result<String, LocatorParseError> {
+    if !(value.starts_with('\'') && value.ends_with('\'')) || value.len() < 2 {
+        return Err(LocatorParseError::MalformedSegment(format!(
+            "{field} must be single-quoted"
+        )));
+    }
+    Ok(value[1..value.len() - 1].to_string())
+}
+
+fn is_valid_role(role: &str) -> bool {
+    if role.is_empty() {
+        return false;
+    }
+    role.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_css_selector_as_css_variant() {
+        let parsed = parse_selector_input("button[aria-label='Like']").unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Css("button[aria-label='Like']".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_locator_exact_defaults() {
+        let parsed = parse_selector_input("role=button[name='Save changes']").unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Accessibility(AccessibilityLocator {
+                role: "button".to_string(),
+                name: "Save changes".to_string(),
+                scope: None,
+                match_mode: LocatorMatchMode::Exact,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_locator_with_scope_and_contains() {
+        let parsed =
+            parse_selector_input("role=link[name='Profile'][scope='main'][match=contains]")
+                .unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Accessibility(AccessibilityLocator {
+                role: "link".to_string(),
+                name: "Profile".to_string(),
+                scope: Some("main".to_string()),
+                match_mode: LocatorMatchMode::Contains,
+            })
+        );
+    }
+
+    #[test]
+    fn fails_when_name_missing() {
+        let err = parse_selector_input("role=button").unwrap_err();
+        assert_eq!(err, LocatorParseError::MissingRequiredField("name"));
+    }
+
+    #[test]
+    fn fails_for_double_quote_name_in_v1() {
+        let err = parse_selector_input("role=button[name=\"Save\"]").unwrap_err();
+        assert_eq!(err, LocatorParseError::QuoteStyleNotSupported("name"));
+    }
+
+    #[test]
+    fn fails_for_unsupported_match_mode() {
+        let err = parse_selector_input("role=button[name='Save'][match=prefix]").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::UnsupportedMatchMode("prefix".to_string())
+        );
+    }
+
+    #[test]
+    fn fails_for_duplicate_name_field() {
+        let err = parse_selector_input("role=button[name='Save'][name='Again']").unwrap_err();
+        assert_eq!(err, LocatorParseError::DuplicateField("name"));
+    }
+
+    #[test]
+    fn fails_for_empty_input() {
+        let err = parse_selector_input("   ").unwrap_err();
+        assert_eq!(err, LocatorParseError::EmptyInput);
+    }
+
+    #[test]
+    fn fails_for_invalid_role_token() {
+        let err = parse_selector_input("role=Button[name='Save']").unwrap_err();
+        assert_eq!(err, LocatorParseError::InvalidRole);
+    }
+
+    #[test]
+    fn css_compat_regression_matrix() {
+        let selectors = [
+            "#submit",
+            ".btn.primary",
+            "button[aria-label='Like']",
+            "[role='button'][aria-label='Follow @user']",
+            "[data-testid='tweetButtonInline']",
+            "main div:nth-child(2) > button",
+            "input[name='q']",
+            "a[href*='/status/']",
+            "div[class*='tweet'] button:nth-of-type(1)",
+            "div[role='button']",
+            "role[name='button']",
+            "[aria-describedby='hint'][tabindex='0']",
+        ];
+
+        for selector in selectors {
+            let parsed = parse_selector_input(selector).unwrap();
+            assert_eq!(parsed, ParsedSelector::Css(selector.to_string()));
+        }
+    }
+
+    #[test]
+    fn css_compat_trims_whitespace_but_preserves_selector() {
+        let parsed = parse_selector_input("   [data-testid='like']   ").unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Css("[data-testid='like']".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_locator_with_whitespace_inside_segments() {
+        let parsed = parse_selector_input(
+            "role=button[ name = 'Follow @historyinmemes' ][ scope = 'main header' ][ match = contains ]",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Accessibility(AccessibilityLocator {
+                role: "button".to_string(),
+                name: "Follow @historyinmemes".to_string(),
+                scope: Some("main header".to_string()),
+                match_mode: LocatorMatchMode::Contains,
+            })
+        );
+    }
+
+    #[test]
+    fn fails_for_duplicate_scope_field() {
+        let err = parse_selector_input("role=button[name='Save'][scope='main'][scope='dialog']")
+            .unwrap_err();
+        assert_eq!(err, LocatorParseError::DuplicateField("scope"));
+    }
+
+    #[test]
+    fn fails_for_double_quote_scope_in_v1() {
+        let err = parse_selector_input("role=button[name='Save'][scope=\"main\"]").unwrap_err();
+        assert_eq!(err, LocatorParseError::QuoteStyleNotSupported("scope"));
+    }
+
+    #[test]
+    fn fails_for_unknown_segment_key() {
+        let err = parse_selector_input("role=button[name='Save'][foo='bar']").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::MalformedSegment("foo='bar'".to_string())
+        );
+    }
+
+    #[test]
+    fn fails_for_missing_segment_equals() {
+        let err = parse_selector_input("role=button[name]").unwrap_err();
+        assert_eq!(err, LocatorParseError::MalformedSegment("name".to_string()));
+    }
+
+    #[test]
+    fn fails_for_missing_closing_bracket() {
+        let err = parse_selector_input("role=button[name='Save'").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::MalformedSegment("[name='Save'".to_string())
+        );
+    }
+
+    #[test]
+    fn fails_for_missing_opening_bracket_before_second_segment() {
+        let err = parse_selector_input("role=button[name='Save']name='Again'").unwrap_err();
+        assert_eq!(
+            err,
+            LocatorParseError::MalformedSegment("name='Again'".to_string())
+        );
+    }
+
+    #[test]
+    fn role_prefix_without_equals_stays_css_compatible() {
+        let parsed = parse_selector_input("role[aria-label='button']").unwrap();
+        assert_eq!(
+            parsed,
+            ParsedSelector::Css("role[aria-label='button']".to_string())
+        );
+    }
+
+    #[test]
+    fn display_error_empty_input() {
+        let err = LocatorParseError::EmptyInput;
+        assert_eq!(err.to_string(), "selector is empty");
+    }
+
+    #[test]
+    fn display_error_invalid_role() {
+        let err = LocatorParseError::InvalidRole;
+        assert_eq!(err.to_string(), "role value is invalid");
+    }
+
+    #[test]
+    fn display_error_missing_required_field() {
+        let err = LocatorParseError::MissingRequiredField("name");
+        assert_eq!(err.to_string(), "missing required field: name");
+    }
+
+    #[test]
+    fn display_error_malformed_segment() {
+        let err = LocatorParseError::MalformedSegment("bad[seg".to_string());
+        assert_eq!(err.to_string(), "malformed locator segment: bad[seg");
+    }
+
+    #[test]
+    fn display_error_duplicate_field() {
+        let err = LocatorParseError::DuplicateField("scope");
+        assert_eq!(err.to_string(), "duplicate locator field: scope");
+    }
+
+    #[test]
+    fn display_error_unsupported_match_mode() {
+        let err = LocatorParseError::UnsupportedMatchMode("regex".to_string());
+        assert_eq!(err.to_string(), "unsupported match mode: regex");
+    }
+
+    #[test]
+    fn display_error_quote_style_not_supported() {
+        let err = LocatorParseError::QuoteStyleNotSupported("name");
+        assert_eq!(err.to_string(), "field 'name' must use single quotes in v1");
+    }
+
+    #[test]
+    fn is_valid_role_accepts_valid_characters() {
+        assert!(is_valid_role("button"));
+        assert!(is_valid_role("link"));
+        assert!(is_valid_role("heading"));
+        assert!(is_valid_role("button-1"));
+        assert!(is_valid_role("button_1"));
+        assert!(is_valid_role("button1"));
+    }
+
+    #[test]
+    fn is_valid_role_rejects_empty() {
+        assert!(!is_valid_role(""));
+    }
+
+    #[test]
+    fn is_valid_role_rejects_uppercase() {
+        assert!(!is_valid_role("Button"));
+        assert!(!is_valid_role("BUTTON"));
+    }
+
+    #[test]
+    fn is_valid_role_rejects_special_chars() {
+        assert!(!is_valid_role("button!"));
+        assert!(!is_valid_role("button@"));
+        assert!(!is_valid_role("button#"));
+        assert!(!is_valid_role("button$"));
+        assert!(!is_valid_role("button%"));
+    }
+
+    #[test]
+    fn parse_single_quoted_valid() {
+        assert_eq!(parse_single_quoted("'hello'", "field").unwrap(), "hello");
+        assert_eq!(parse_single_quoted("'world'", "field").unwrap(), "world");
+    }
+
+    #[test]
+    fn parse_single_quoted_empty() {
+        assert_eq!(parse_single_quoted("''", "field").unwrap(), "");
+    }
+
+    #[test]
+    fn parse_single_quoted_single_char() {
+        assert_eq!(parse_single_quoted("'a'", "field").unwrap(), "a");
+    }
+
+    #[test]
+    fn parse_single_quoted_missing_quotes() {
+        assert!(parse_single_quoted("hello", "field").is_err());
+        assert!(parse_single_quoted("'hello", "field").is_err());
+        assert!(parse_single_quoted("hello'", "field").is_err());
+    }
+
+    #[test]
+    fn parse_single_quoted_double_quotes_rejected() {
+        assert!(parse_single_quoted("\"hello\"", "field").is_err());
+    }
+
+    // ============================================================================
+    // Property-Style Safety Tests: Parser never panics on arbitrary malformed input
+    // ============================================================================
+
+    #[test]
+    fn safety_test_arbitrary_malformed_inputs_never_panic() {
+        // These are arbitrary malformed inputs that should never cause a panic
+        let malformed_inputs = [
+            // Bracket-related edge cases
+            "role=button[",
+            "role=button]",
+            "role=button[[",
+            "role=button]]",
+            "role=button][",
+            "role=button[name='test'][",
+            "role=button[name='test']][",
+            "[role=button",
+            "role=]button[",
+            // Empty and whitespace edge cases
+            "role=",
+            "role= ",
+            "role=   ",
+            "role=[name='']",
+            // Malformed segments
+            "role=button[invalid_segment]",
+            "role=button[name]",
+            "role=button[=value]",
+            "role=button[name'value']",
+            "role=button[name='value",
+            "role=button[name=value']",
+            "role=button['value']",
+            // Nested/embedded brackets
+            "role=button[name='[test]']",
+            "role=button[name=']test[']",
+            // Double brackets
+            "role=button[[name='test']]",
+            "role=button[name='test'][[scope='main']",
+            // Missing equals in various positions
+            "rolebutton[name='test']",
+            "role=buttonname='test']",
+            // Unbalanced quotes
+            "role=button[name='test\"]",
+            "role=button[name=\"test']",
+            // Special characters and unicode
+            "role=button[name='test\x00']",
+            "role=button[name='test\x1f']",
+            "role=button[name='test\x7f']",
+            "role=👆[name='test']",
+            "role=button[name='👆']",
+            "role=button[scope='🌐']",
+            // Very long inputs (to check for overflow issues)
+            &format!("role=button[name='{}']", "a".repeat(1000)),
+            &format!("role=button[scope='{}']", "b".repeat(1000)),
+            &format!("role={}[name='test']", "c".repeat(500)),
+            // Empty role with valid name
+            "role=[name='test']",
+            // Multiple equals signs
+            "role=a=b[name='test']",
+            "role=button[name='a=b']",
+            // Newlines and control characters
+            "role=button[name='test\n']",
+            "role=button[name='test\r']",
+            "role=button[name='test\t']",
+        ];
+
+        for input in malformed_inputs {
+            // Should never panic - either Ok or Err is fine
+            let _ = parse_selector_input(input);
+        }
+    }
+
+    #[test]
+    fn safety_test_malformed_locator_always_returns_error() {
+        // These malformed role= inputs should always return a LocatorParseError
+        // (never Ok as CSS, never Ok as valid AccessibilityLocator)
+        let malformed_role_inputs = [
+            "role=button[",
+            "role=button]",
+            "role=button[[",
+            "role=button[name='test'][", // unclosed bracket after valid segment
+            "role=[name='test']",        // empty role
+            "role=button[invalid_segment]", // no = in segment
+            "role=button[name]",         // no =value in segment
+        ];
+
+        for input in malformed_role_inputs {
+            let result = parse_selector_input(input);
+            // Should be an error, specifically a LocatorParseError
+            assert!(
+                result.is_err(),
+                "Input '{}' should return an error, got {:?}",
+                input,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn safety_test_empty_role_returns_invalid_role_error() {
+        // Empty role should return InvalidRole error, not be parsed as CSS
+        let empty_role_inputs = ["role=", "role= ", "role=   "];
+
+        for input in empty_role_inputs {
+            let result = parse_selector_input(input);
+            match result {
+                Err(LocatorParseError::InvalidRole) => (), // Expected
+                Ok(ParsedSelector::Css(_)) => {
+                    panic!(
+                        "Input '{}' should error with InvalidRole, not be CSS",
+                        input
+                    )
+                }
+                Ok(ParsedSelector::Accessibility(_)) => {
+                    panic!(
+                        "Input '{}' should error with InvalidRole, not be valid locator",
+                        input
+                    )
+                }
+                Err(other) => {
+                    panic!(
+                        "Input '{}' should error with InvalidRole, got {:?}",
+                        input, other
+                    )
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn safety_test_css_like_selectors_stay_as_css() {
+        // These look like CSS selectors and should be parsed as CSS
+        let css_inputs = [
+            "role[aria-label='button']",
+            "role",
+            "[role='button']",
+            "div[role]",
+            "role=", // This is edge case - empty role is invalid
+        ];
+
+        for input in css_inputs {
+            let result = parse_selector_input(input);
+            match result {
+                Ok(ParsedSelector::Css(_)) => (), // Expected
+                Ok(ParsedSelector::Accessibility(_)) => {
+                    panic!("Input '{}' should be CSS, not accessibility locator", input)
+                }
+                Err(LocatorParseError::InvalidRole) if input == "role=" => (), // Empty role is invalid
+                Err(other) => {
+                    panic!(
+                        "Input '{}' should be CSS or InvalidRole, got {:?}",
+                        input, other
+                    )
+                }
+            }
+        }
+    }
+}

@@ -1,6 +1,6 @@
 # Accessibility Locator Spec (v1)
 
-Status: Draft for approval
+Status: Approved defaults (2026-04-29), implementation in progress (feature-gated parser + shared resolver with action-path wiring)
 Owner: Runtime/Task API maintainers
 Depends on: `PROPOSAL_ACCESSIBILITY_LOCATOR.md`
 
@@ -90,6 +90,8 @@ Standardize typed errors/messages so logs and tests are deterministic.
   - valid locator syntax, multiple matches
 - `locator_scope_invalid`
   - `scope` CSS is invalid/unresolvable
+- `locator_unsupported`
+  - locator grammar is valid, but operation does not support semantic resolver semantics in v1 (for now: `html`, `attr`)
 
 Policy:
 - Do not silently reinterpret malformed locator syntax as CSS.
@@ -119,6 +121,26 @@ Suggested phased touch points:
 
 Do not duplicate parser/resolver logic across task modules.
 
+Current implementation note (2026-04-29):
+- parser implemented in `src/utils/accessibility_locator.rs`
+- feature flag `accessibility-locator` added in `Cargo.toml`
+- shared navigation dispatch implemented for:
+  - `selector_exists`
+  - `selector_is_visible`
+  - `selector_text`
+- additional shared helper coverage:
+  - `selector_value` uses accessibility resolver semantics
+  - `selector_html` / `selector_attr` are parser-aware and return deterministic `locator_unsupported` for accessibility locator input
+- deterministic error mapping implemented in shared navigation path:
+  - `locator_parse_error`
+  - `locator_not_found`
+  - `locator_ambiguous`
+  - `locator_scope_invalid`
+  - `locator_unsupported`
+- resolver decision unit tests implemented in `src/utils/navigation.rs`
+- structured selector observability fields emitted via `tracing::debug!` in shared navigation path
+- remaining v1 work: phased task migration and rollout monitoring
+
 ## 9. Observability Requirements
 
 Emit structured metadata for selector resolution attempts:
@@ -135,6 +157,7 @@ Goal: measure migration quality and flake sources.
 ### Parser tests
 - valid grammar accepted
 - invalid grammar rejected with `locator_parse_error`
+- CSS compatibility matrix (common selectors) remains CSS-routed
 
 ### Resolver tests
 - button by exact name
@@ -142,11 +165,20 @@ Goal: measure migration quality and flake sources.
 - scope-narrowed resolution
 - ambiguous match -> `locator_ambiguous`
 - no match -> `locator_not_found`
+- navigation routing tests prove CSS selectors do not enter accessibility-locator path
 
 ### Compatibility tests
 - existing CSS selectors keep behavior
 - mixed CSS and locator usage in same flow
 - visibility checks on locator targets
+
+Implemented runtime coverage:
+- `tests/task_api_behavior.rs::browser_runtime_css_compatibility_matrix_under_feature_flag`
+- `tests/task_api_behavior.rs::browser_runtime_accessibility_locator_integration_semantics`
+- `tests/task_api_behavior.rs::browser_runtime_locator_action_paths_surface_errors_and_success`
+- `tests/task_api_behavior.rs::browser_runtime_locator_action_emits_selector_telemetry_fields`
+- `src/utils/navigation.rs::tests::test_selector_observation_logs_css_mode_result_fields`
+- `src/utils/navigation.rs::tests::test_selector_observation_logs_locator_metadata_fields`
 
 ## 11. Rollout Gates
 
@@ -182,7 +214,8 @@ Gate 5: Broader adoption
 | Should scope failures be hard errors or soft not-found? | Hard error `locator_scope_invalid` | Prevents silent mis-targeting and debugging confusion |
 
 Approval checkpoint:
-- These defaults must be explicitly approved before implementation starts.
+- Defaults approved on 2026-04-29.
+- Implementation must follow this table unless a new proposal revision updates it.
 
 ## 14. Acceptance Criteria
 

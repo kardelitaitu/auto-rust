@@ -1,46 +1,41 @@
 //! Task registry validation module.
 //!
-//! Provides validation for task names and file existence:
-//! - Validates task names against known task types
-//! - Checks if task files exist in the task directory
+//! Provides validation for task names using the unified task registry.
+//! - Validates task names against the registry
 //! - Provides detailed error messages for invalid task names
+//! - Uses registry as single source of truth
 //!
-//! This module handles task name/presence validation, while `task.rs`
+//! This module handles task name validation, while `task.rs`
 //! handles task payload validation.
 
 use crate::cli::TaskDefinition;
 use crate::error::{ConfigError, Result};
+use crate::task::registry::{RegistryError, TaskRegistry};
 use log::warn;
 use std::collections::HashSet;
-use std::path::Path;
 
 /// Result of task validation
 #[derive(Debug, Clone)]
 pub struct TaskValidationResult {
     pub task_name: String,
     pub is_known: bool,
-    pub file_exists: bool,
+    pub source: String,
+    pub policy_name: String,
     pub warnings: Vec<String>,
 }
 
-/// Check if a task name is known (registered in the orchestrator)
+/// Check if a task name is known (exists in registry)
 pub fn is_known_task(task_name: &str) -> bool {
-    crate::task::is_known_task(task_name)
+    let registry = TaskRegistry::with_built_in_tasks();
+    registry.is_known(task_name)
 }
 
-/// Check if a task file exists in the task directory
-pub fn task_file_exists(task_name: &str) -> bool {
-    let clean_name = crate::task::normalize_task_name(task_name);
-
-    // Check for .rs file in src/task/ directory
-    let task_path = Path::new("src/task").join(format!("{}.rs", clean_name));
-    if task_path.exists() {
-        return true;
-    }
-
-    // Also check for .js fallback (for compatibility)
-    let js_path = Path::new("src/task").join(format!("{}.js", clean_name));
-    js_path.exists()
+/// Get task descriptor from registry
+pub fn get_task_descriptor(
+    task_name: &str,
+) -> std::result::Result<crate::task::registry::TaskDescriptor, RegistryError> {
+    let registry = TaskRegistry::with_built_in_tasks();
+    registry.lookup(task_name)
 }
 
 /// Validate a task name and return validation result
@@ -48,29 +43,45 @@ pub fn validate_task(task_name: &str) -> TaskValidationResult {
     let clean_name = crate::task::normalize_task_name(task_name);
     let mut warnings = Vec::new();
 
-    let is_known = is_known_task(clean_name);
-    let file_exists = task_file_exists(clean_name);
+    let registry = TaskRegistry::with_built_in_tasks();
 
-    if !is_known {
-        let known_tasks = crate::task::known_task_names().join(", ");
-        warnings.push(format!(
-            "Unknown task name '{}'. Known tasks: {}",
-            clean_name, known_tasks
-        ));
-    }
+    match registry.lookup(clean_name) {
+        Ok(descriptor) => TaskValidationResult {
+            task_name: clean_name.to_string(),
+            is_known: true,
+            source: format!("{:?}", descriptor.source),
+            policy_name: descriptor.policy_name.to_string(),
+            warnings,
+        },
+        Err(RegistryError::UnknownTask { .. }) => {
+            let known_tasks = registry.task_names().join(", ");
+            warnings.push(format!(
+                "Unknown task name '{}'. Known tasks: {}",
+                clean_name, known_tasks
+            ));
 
-    if !file_exists {
-        warnings.push(format!(
-            "Task file for '{}' not found in task/ directory",
-            clean_name
-        ));
-    }
+            TaskValidationResult {
+                task_name: clean_name.to_string(),
+                is_known: false,
+                source: "Unknown".to_string(),
+                policy_name: "default".to_string(),
+                warnings,
+            }
+        }
+        Err(RegistryError::Conflict { name, sources }) => {
+            warnings.push(format!(
+                "Task '{}' exists in multiple sources: {:?}",
+                name, sources
+            ));
 
-    TaskValidationResult {
-        task_name: clean_name.to_string(),
-        is_known,
-        file_exists,
-        warnings,
+            TaskValidationResult {
+                task_name: clean_name.to_string(),
+                is_known: false,
+                source: "Conflict".to_string(),
+                policy_name: "default".to_string(),
+                warnings,
+            }
+        }
     }
 }
 
@@ -149,6 +160,8 @@ mod tests {
         let result = validate_task("cookiebot");
         assert!(result.is_known);
         assert!(result.warnings.is_empty());
+        assert!(result.source.contains("BuiltInRust"));
+        assert_eq!(result.policy_name, "cookiebot");
     }
 
     #[test]
@@ -157,6 +170,7 @@ mod tests {
         assert!(!result.is_known);
         assert!(!result.warnings.is_empty());
         assert!(result.warnings[0].contains("Unknown task name"));
+        assert!(result.source.contains("Unknown"));
     }
 
     #[test]
@@ -201,6 +215,8 @@ mod tests {
         let cookiebot_result = results.iter().find(|r| r.task_name == "cookiebot").unwrap();
         assert!(cookiebot_result.is_known);
         assert!(cookiebot_result.warnings.is_empty());
+        assert!(cookiebot_result.source.contains("BuiltInRust"));
+        assert_eq!(cookiebot_result.policy_name, "cookiebot");
 
         // unknown_task should have warnings
         let unknown_result = results
@@ -209,5 +225,24 @@ mod tests {
             .unwrap();
         assert!(!unknown_result.is_known);
         assert!(!unknown_result.warnings.is_empty());
+        assert!(unknown_result.source.contains("Unknown"));
+    }
+
+    #[test]
+    fn test_get_task_descriptor_known() {
+        let result = get_task_descriptor("cookiebot");
+        assert!(result.is_ok());
+        let descriptor = result.unwrap();
+        assert_eq!(descriptor.name, "cookiebot");
+        assert!(descriptor.source.is_built_in());
+    }
+
+    #[test]
+    fn test_get_task_descriptor_unknown() {
+        let result = get_task_descriptor("nonexistent_task");
+        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(RegistryError::UnknownTask { name }) if name == "nonexistent_task")
+        );
     }
 }

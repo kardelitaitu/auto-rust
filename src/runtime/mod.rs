@@ -33,6 +33,6 @@ mod tests {
     #[test]
     fn test_runtime_module_compiles() {
         // All re-exports are just aliases - verify structure
-        assert!(true);
+        // Module tests placeholder
     }
 }

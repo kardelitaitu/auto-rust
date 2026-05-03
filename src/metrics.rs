@@ -60,6 +60,14 @@ pub const RUN_COUNTER_QUOTE_FAILURE: &str = "quote_failure";
 pub const RUN_COUNTER_DIVE_SUCCESS: &str = "dive_success";
 pub const RUN_COUNTER_DIVE_FAILURE: &str = "dive_failure";
 
+/// Retry and error recovery metrics counters.
+pub const RUN_COUNTER_RETRY_ATTEMPT: &str = "retry_attempt";
+pub const RUN_COUNTER_TRANSIENT_ERROR: &str = "transient_error";
+pub const RUN_COUNTER_PERMANENT_ERROR: &str = "permanent_error";
+pub const RUN_COUNTER_FATAL_ERROR: &str = "fatal_error";
+pub const RUN_COUNTER_CIRCUIT_BREAKER_OPEN: &str = "circuit_breaker_open";
+pub const RUN_COUNTER_GRACEFUL_DEGRADATION: &str = "graceful_degradation";
+
 /// Records detailed metrics for a single task execution.
 /// Captures timing, outcome, and execution context for performance analysis
 /// and debugging purposes.
@@ -317,10 +325,7 @@ impl MetricsCollector {
             .read()
             .iter()
             .map(|(kind, count)| {
-                let kind_str = ERROR_KIND_STRINGS
-                    .get(kind)
-                    .copied()
-                    .unwrap_or("unknown");
+                let kind_str = ERROR_KIND_STRINGS.get(kind).copied().unwrap_or("unknown");
                 (kind_str.to_string(), *count)
             })
             .collect();

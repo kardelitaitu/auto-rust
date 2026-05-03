@@ -1,3 +1,12 @@
+//! Native OS-level input simulation via enigo library.
+//!
+//! Provides fallback input methods when CDP (Chrome DevTools Protocol)
+//! input is unavailable or insufficient. Supports mouse and keyboard
+//! actions at the OS level for native application automation.
+//!
+//! This is primarily used as a fallback or for non-browser automation
+//! scenarios where direct OS interaction is required.
+
 use crate::config::NativeInputBackend;
 use anyhow::Result;
 use enigo::{
@@ -208,7 +217,7 @@ fn native_move_to_point_blocking_with_enigo(
     Ok(())
 }
 
-fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
+pub fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
     if base_ms == 0 {
         return 0;
     }
@@ -430,8 +439,8 @@ mod tests {
     fn test_jittered_delay_ms_distribution() {
         // Test that delays are distributed across the range
         let delays: Vec<u64> = (0..100).map(|_| jittered_delay_ms(100, 20)).collect();
-        let min = *delays.iter().min().unwrap();
-        let max = *delays.iter().max().unwrap();
+        let min = *delays.iter().min().expect("delays should not be empty");
+        let max = *delays.iter().max().expect("delays should not be empty");
         // Should cover most of the range
         assert!(min <= 85); // Lower bound of range
         assert!(max >= 115); // Upper bound of range

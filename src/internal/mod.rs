@@ -52,6 +52,6 @@ mod tests {
     #[test]
     fn test_internal_module_compiles() {
         // All re-exports are just aliases to utils - verify structure
-        assert!(true);
+        // Module tests placeholder
     }
 }

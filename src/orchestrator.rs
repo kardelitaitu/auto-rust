@@ -602,6 +602,7 @@ async fn execute_task_with_retry(
             session.behavior_runtime,
             config.browser.native_interaction.clone(),
             metrics.clone(),
+            &config.browser,
             policy,
             Some(cancel_token.clone()),
         );
@@ -770,7 +771,9 @@ fn should_mark_session_unhealthy(kind: TaskErrorKind, was_cancelled: bool) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{OrchestratorConfig, TracingConfig, TwitterActivityConfig};
+    use crate::config::{
+        OrchestratorConfig, TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig,
+    };
     use crate::result::TaskStatus;
     use futures::stream::FuturesUnordered;
     use tokio::time::sleep;
@@ -789,11 +792,11 @@ mod tests {
                 worker_wait_timeout_ms: 5000,
                 retry_delay_ms: 1000,
                 max_retries: 0,
-                stuck_worker_threshold_ms: 60000,
             },
             browser: Default::default(),
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         }
     }
 
@@ -860,20 +863,35 @@ mod tests {
     fn test_should_mark_session_unhealthy_comprehensive() {
         // Should mark unhealthy for these (when not cancelled)
         assert!(should_mark_session_unhealthy(TaskErrorKind::Timeout, false));
-        assert!(should_mark_session_unhealthy(TaskErrorKind::Navigation, false));
+        assert!(should_mark_session_unhealthy(
+            TaskErrorKind::Navigation,
+            false
+        ));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
 
         // Should NOT mark unhealthy for these
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, false));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, false));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            false
+        ));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Unknown,
+            false
+        ));
 
         // Cancelled tasks should NEVER mark unhealthy
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Timeout, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Navigation, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Navigation,
+            true
+        ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Session, true));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
-        assert!(!should_mark_session_unhealthy(TaskErrorKind::Validation, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::Validation,
+            true
+        ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Unknown, true));
     }
 
@@ -987,7 +1005,11 @@ mod tests {
         {
             let _slot = GlobalExecutionSlot::new(
                 global_active.clone(),
-                global_semaphore.clone().acquire_owned().await.unwrap(),
+                global_semaphore
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .expect("Semaphore acquire failed"),
             );
             assert_eq!(global_active.load(Ordering::SeqCst), 1);
         }
@@ -1005,7 +1027,11 @@ mod tests {
         for _ in 0..3 {
             slots.push(GlobalExecutionSlot::new(
                 global_active.clone(),
-                global_semaphore.clone().acquire_owned().await.unwrap(),
+                global_semaphore
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .expect("Semaphore acquire failed"),
             ));
         }
 
@@ -1020,11 +1046,19 @@ mod tests {
 
         let _slot1 = GlobalExecutionSlot::new(
             global_active.clone(),
-            semaphore.clone().acquire_owned().await.unwrap(),
+            semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("Semaphore acquire failed"),
         );
         let _slot2 = GlobalExecutionSlot::new(
             global_active.clone(),
-            semaphore.clone().acquire_owned().await.unwrap(),
+            semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("Semaphore acquire failed"),
         );
 
         assert_eq!(global_active.load(Ordering::SeqCst), 2);
@@ -1058,11 +1092,11 @@ mod tests {
                 worker_wait_timeout_ms: 10000,
                 retry_delay_ms: 2000,
                 max_retries: 3,
-                stuck_worker_threshold_ms: 120000,
             },
             browser: Default::default(),
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
 
         let orchestrator = Orchestrator::new(config.clone());
@@ -1076,9 +1110,11 @@ mod tests {
             browser: Default::default(),
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
         let orchestrator2 = Orchestrator::new(config2);
-        assert_eq!(orchestrator2.config.orchestrator.max_global_concurrency, 5); // default is 5
+        assert_eq!(orchestrator2.config.orchestrator.max_global_concurrency, 5);
+        // default is 5
     }
 
     // ========================================================================
@@ -1157,7 +1193,7 @@ mod tests {
     #[tokio::test]
     async fn test_result_aggregation_success_count() {
         // Verify the result aggregation logic for success counting
-        let results = vec![
+        let results = [
             Ok(()),
             Ok(()),
             Err(OrchestratorError::Task(TaskError::ExecutionFailed {

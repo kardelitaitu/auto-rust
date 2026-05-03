@@ -3,8 +3,114 @@
 //! Uses keyword matching and pattern detection to evaluate tweet quality
 //! and determine appropriate engagement levels. No LLM required.
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
+
+// ============================================================================
+// Strategy Pattern: Decision Engine Trait
+// ============================================================================
+
+/// Context passed to decision engines for analysis
+#[derive(Debug, Clone)]
+pub struct TweetContext {
+    pub tweet_id: String,
+    pub text: String,
+    pub author: String,
+    pub replies: Vec<String>,
+    pub persona: super::twitteractivity_persona::PersonaWeights,
+    pub task_config: super::twitteractivity_state::TaskConfig,
+}
+
+/// Extended EngagementDecision with strategy pattern fields
+#[derive(Debug, Clone)]
+pub struct EngagementDecision {
+    pub level: EngagementLevel,
+    pub score: i32,
+    pub reason: String,
+    pub multiplier: f64,
+    pub confidence: f64,
+}
+
+/// Core trait for all decision engines (Strategy Pattern)
+#[async_trait]
+pub trait DecisionEngine: Send + Sync {
+    /// Engine name for logging/metrics
+    fn name(&self) -> &'static str;
+
+    /// Make engagement decision for a tweet
+    async fn decide(&self, ctx: &TweetContext) -> EngagementDecision;
+
+    /// Check if engine is available (e.g., LLM API reachable)
+    fn is_available(&self) -> bool {
+        true
+    }
+}
+
+/// Strategy selection for decision engines
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionStrategy {
+    #[default]
+    Persona, // Rule-based only
+    LLM,     // LLM-based only
+    Hybrid,  // Combined approach
+    Unified, // Single LLM call for decision + content
+    Auto,    // Auto-select based on config
+}
+
+/// Factory for creating decision engines based on strategy
+pub struct DecisionEngineFactory;
+
+impl DecisionEngineFactory {
+    /// Create appropriate engine based on strategy and config
+    pub fn create(
+        strategy: DecisionStrategy,
+        llm_api_key: Option<String>,
+    ) -> Box<dyn DecisionEngine> {
+        use super::twitteractivity_decision_hybrid::HybridEngine;
+        use super::twitteractivity_decision_llm::LLMEngine;
+        use super::twitteractivity_decision_persona::PersonaEngine;
+        use super::twitteractivity_decision_unified::UnifiedEngine;
+
+        match strategy {
+            DecisionStrategy::Persona => Box::new(PersonaEngine::new()),
+            DecisionStrategy::LLM => {
+                if let Some(key) = llm_api_key {
+                    Box::new(LLMEngine::new(key))
+                } else {
+                    // Fallback to Persona if no API key
+                    Box::new(PersonaEngine::new())
+                }
+            }
+            DecisionStrategy::Hybrid => {
+                if let Some(key) = llm_api_key {
+                    Box::new(HybridEngine::with_llm(key, 0.3, 0.7))
+                } else {
+                    Box::new(HybridEngine::persona_only())
+                }
+            }
+            DecisionStrategy::Unified => {
+                if let Some(key) = llm_api_key {
+                    Box::new(UnifiedEngine::new(key))
+                } else {
+                    // Fallback to Persona if no API key
+                    Box::new(PersonaEngine::new())
+                }
+            }
+            DecisionStrategy::Auto => {
+                // Auto-select: use Unified if LLM available (fastest), otherwise Persona
+                if let Some(key) = llm_api_key {
+                    Box::new(UnifiedEngine::new(key))
+                } else {
+                    Box::new(PersonaEngine::new())
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
 
 /// Engagement level determines which actions are allowed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,14 +123,6 @@ pub enum EngagementLevel {
     Minimal,
     /// Skip engagement entirely
     None,
-}
-
-/// Decision result from engagement evaluation.
-#[derive(Debug, Clone)]
-pub struct EngagementDecision {
-    pub level: EngagementLevel,
-    pub score: i32,
-    pub reason: &'static str,
 }
 
 // ============================================================================
@@ -155,7 +253,9 @@ pub fn decide_engagement(tweet_text: &str, replies: &[(String, String)]) -> Enga
         return EngagementDecision {
             level: EngagementLevel::None,
             score: 0,
-            reason: "controversial topic",
+            reason: "controversial topic".to_string(),
+            multiplier: 0.0,
+            confidence: 0.95,
         };
     }
 
@@ -163,7 +263,9 @@ pub fn decide_engagement(tweet_text: &str, replies: &[(String, String)]) -> Enga
         return EngagementDecision {
             level: EngagementLevel::None,
             score: 0,
-            reason: "spam content",
+            reason: "spam content".to_string(),
+            multiplier: 0.0,
+            confidence: 0.95,
         };
     }
 
@@ -183,20 +285,34 @@ pub fn decide_engagement(tweet_text: &str, replies: &[(String, String)]) -> Enga
     }
 
     // 4. Determine engagement level based on score
-    let (level, reason) = if score >= 60 {
-        (EngagementLevel::Full, "high quality content")
+    let (level, reason, multiplier) = if score >= 60 {
+        (
+            EngagementLevel::Full,
+            "high quality content".to_string(),
+            1.5,
+        )
     } else if score >= 30 {
-        (EngagementLevel::Medium, "medium quality content")
+        (
+            EngagementLevel::Medium,
+            "medium quality content".to_string(),
+            1.0,
+        )
     } else if score >= 10 {
-        (EngagementLevel::Minimal, "low quality, like only")
+        (
+            EngagementLevel::Minimal,
+            "low quality, like only".to_string(),
+            0.5,
+        )
     } else {
-        (EngagementLevel::None, "skip: low score")
+        (EngagementLevel::None, "skip: low score".to_string(), 0.0)
     };
 
     EngagementDecision {
         level,
         score,
         reason,
+        multiplier,
+        confidence: 0.70,
     }
 }
 
@@ -529,10 +645,14 @@ mod tests {
         let decision = EngagementDecision {
             level: EngagementLevel::Full,
             score: 100,
-            reason: "test reason",
+            reason: "test reason".to_string(),
+            multiplier: 1.5,
+            confidence: 0.9,
         };
         assert_eq!(decision.level, EngagementLevel::Full);
         assert_eq!(decision.score, 100);
         assert_eq!(decision.reason, "test reason");
+        assert_eq!(decision.multiplier, 1.5);
+        assert_eq!(decision.confidence, 0.9);
     }
 }

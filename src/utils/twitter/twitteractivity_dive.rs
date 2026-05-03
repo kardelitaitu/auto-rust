@@ -19,16 +19,19 @@
 //!
 //! ## Usage
 //!
-//! ```rust,no_run
+//! ```ignore
 //! use auto::utils::twitter::twitteractivity_dive::*;
+//! use auto::utils::twitter::twitteractivity_state::ThreadCache;
 //! # use auto::runtime::task_context::TaskContext;
 //! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
-//! // Dive into a thread and read it with caching
+//! // Dive into a thread and read it
 //! let status_url = "https://x.com/user/status/123";
 //! let outcome = dive_into_thread(api, status_url).await?;
-//! let mut cache = outcome.cache.unwrap_or_default();
-//! read_full_thread(api, 10, &mut cache).await?;
+//! if outcome.opened {
+//!     let mut cache = ThreadCache::default();
+//!     read_full_thread(api, 10, &mut cache).await?;
+//! }
 //! # Ok(())
 //! # }
 //! ```

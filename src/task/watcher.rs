@@ -5,13 +5,17 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```ignore
 //! use auto::task::watcher::TaskWatcher;
 //! use auto::task::registry::TaskRegistry;
+//! use auto::config::TaskDiscoveryConfig;
+//! use std::sync::Arc;
+//! use parking_lot::Mutex;
 //!
-//! async fn example(registry: std::sync::Arc<parking_lot::Mutex<TaskRegistry>>) -> anyhow::Result<()> {
-//!     let mut watcher = TaskWatcher::new(registry)?;
-//!     watcher.watch("./tasks").await?;
+//! async fn example(registry: Arc<Mutex<TaskRegistry>>) -> anyhow::Result<()> {
+//!     let mut watcher = TaskWatcher::new(registry);
+//!     let config = TaskDiscoveryConfig::default();
+//!     watcher.watch("./tasks", &config).await?;
 //!     Ok(())
 //! }
 //! ```

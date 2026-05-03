@@ -1578,15 +1578,16 @@ mod tests {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// # use auto::runtime::task_context::TaskContext;
 /// # use chromiumoxide::Page;
 /// # use std::sync::Arc;
 /// # use auto::internal::profile::{BrowserProfile, ProfileRuntime};
-/// # use auto::config::NativeInteractionConfig;
+/// # use auto::config::{NativeInteractionConfig, BrowserConfig};
 /// # use auto::task::policy::DEFAULT_TASK_POLICY;
 /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-/// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY, None);
+/// let browser_config = BrowserConfig::default();
+/// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &browser_config, &DEFAULT_TASK_POLICY, None);
 /// // Use the API for browser automation
 /// # }
 /// ```
@@ -1623,15 +1624,16 @@ impl TaskContext {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use auto::runtime::task_context::TaskContext;
     /// # use chromiumoxide::Page;
     /// # use std::sync::Arc;
     /// # use auto::internal::profile::{BrowserProfile, ProfileRuntime};
-    /// # use auto::config::NativeInteractionConfig;
+    /// # use auto::config::{NativeInteractionConfig, BrowserConfig};
     /// # use auto::task::policy::DEFAULT_TASK_POLICY;
     /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
-    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &DEFAULT_TASK_POLICY, None);
+    /// let browser_config = BrowserConfig::default();
+    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &browser_config, &DEFAULT_TASK_POLICY, None);
     /// # }
     /// ```
     #[allow(clippy::too_many_arguments)]

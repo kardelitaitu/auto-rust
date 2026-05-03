@@ -56,7 +56,7 @@ cargo test -- --nocapture
 3. Register in `src/task/mod.rs`
 4. Add documentation in `docs/TASKS/my_task.md`
 
-See [Task Authoring Guide](TASK_AUTHORING_GUIDE.md) for full details.
+See [Tutorial: Building First Task](TUTORIAL_BUILDING_FIRST_TASK.md) for full details.
 
 ## Pull Request Template
 
@@ -111,7 +111,7 @@ src/
 ## Getting Help
 
 - Check [README.md](../README.md) for usage
-- Review [Task Authoring Guide](TASK_AUTHORING_GUIDE.md) for task development
+- Review [Tutorial: Building First Task](TUTORIAL_BUILDING_FIRST_TASK.md) for task development
 - See [API Reference](API_REFERENCE.md) for API details
 - Open an issue for bugs or feature requests
 

@@ -502,6 +502,7 @@ mod tests {
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![
                 Action::Wait { duration_ms: 100 },
                 Action::Wait { duration_ms: 200 },
@@ -528,6 +529,7 @@ mod tests {
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 100 }],
         };
 
@@ -551,6 +553,7 @@ mod tests {
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 100 }],
         };
 
@@ -593,6 +596,7 @@ mod tests {
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 100 }],
         };
 
@@ -614,6 +618,7 @@ mod tests {
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 100 }],
         };
 

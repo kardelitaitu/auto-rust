@@ -14,6 +14,7 @@ fn valid_task_def(actions: Vec<Action>) -> TaskDefinition {
         description: "dsl coverage".to_string(),
         policy: "default".to_string(),
         parameters: HashMap::new(),
+        include: vec![],
         actions,
     }
 }
@@ -157,6 +158,7 @@ fn format_task_definition_renders_parameters_and_actions() {
         description: "format coverage".to_string(),
         policy: "default".to_string(),
         parameters,
+        include: vec![],
         actions: vec![
             Action::Navigate {
                 url: "https://example.com".to_string(),

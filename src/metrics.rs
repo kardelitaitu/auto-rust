@@ -1173,15 +1173,62 @@ mod tests {
         assert_eq!(metrics.fan_out_efficiency, 80.0);
     }
 
-    #[test]
-    fn test_fan_out_efficiency_zero_planned() {
-        let metrics = FanOutMetrics {
-            planned_groups: 5,
-            completed_groups: 5,
-            planned_executions: 0,
-            actual_executions: 10,
-            fan_out_efficiency: 0.0,
-        };
-        assert_eq!(metrics.fan_out_efficiency, 0.0);
+    #[tokio::test]
+    async fn test_metrics_concurrency_stress() {
+        use std::thread;
+
+        let collector = Arc::new(MetricsCollector::new(1000));
+        let num_threads = 10;
+        let updates_per_thread = 1000;
+        let mut handles = vec![];
+
+        for t in 0..num_threads {
+            let collector = Arc::clone(&collector);
+            handles.push(thread::spawn(move || {
+                for i in 0..updates_per_thread {
+                    collector.task_started();
+
+                    let status = if i % 2 == 0 {
+                        TaskStatus::Success
+                    } else if i % 3 == 0 {
+                        TaskStatus::Timeout
+                    } else {
+                        TaskStatus::Failed
+                    };
+
+                    collector.task_completed(TaskMetrics {
+                        task_name: Arc::new(format!("task-{}", t)),
+                        status,
+                        duration_ms: 10,
+                        session_id: Arc::new(format!("session-{}", i % 5)),
+                        attempt: 1,
+                        error_kind: if status == TaskStatus::Failed {
+                            Some(TaskErrorKind::Browser)
+                        } else {
+                            None
+                        },
+                        last_error: None,
+                    });
+
+                    collector.increment_run_counter("stress_test_counter", 1);
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let stats = collector.get_stats();
+        assert_eq!(stats.total_tasks, num_threads * updates_per_thread);
+        assert_eq!(stats.active_tasks, 0);
+        assert_eq!(
+            collector.run_counter("stress_test_counter"),
+            num_threads * updates_per_thread
+        );
+
+        // Basic sanity check on success count
+        // 1000 updates, i%2 == 0 is 500 successes per thread
+        assert_eq!(stats.succeeded, num_threads * (updates_per_thread / 2));
     }
 }

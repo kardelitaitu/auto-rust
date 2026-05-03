@@ -37,9 +37,22 @@ pub struct TaskDefinition {
     /// Task parameters/inputs
     #[serde(default)]
     pub parameters: HashMap<String, ParameterDef>,
+    /// Included task files to merge
+    #[serde(default)]
+    pub include: Vec<IncludeSpec>,
     /// Sequence of actions to execute
     #[serde(default)]
     pub actions: Vec<Action>,
+}
+
+/// Specification for including another task file.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub struct IncludeSpec {
+    /// Path to the task file to include (relative or absolute)
+    pub path: String,
+    /// Optional condition for conditional inclusion
+    #[serde(default)]
+    pub condition: Option<String>,
 }
 
 fn default_policy() -> String {
@@ -285,6 +298,97 @@ pub fn validate_parameters(
     }
 }
 
+/// Resolve and merge included task files.
+///
+/// This function loads all included task files and merges their actions into the main task.
+/// It handles circular include detection and provides detailed error messages.
+///
+/// # Arguments
+/// * `def` - The task definition to resolve includes for
+/// * `base_path` - The directory containing the main task file (for relative path resolution)
+/// * `visited` - Set of already visited paths (for circular detection)
+///
+/// # Returns
+/// A new TaskDefinition with all includes resolved and merged
+///
+/// # Errors
+/// Returns error if an included file cannot be found, parsed, or if circular includes detected
+pub fn resolve_includes(
+    def: &TaskDefinition,
+    base_path: &Path,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+) -> Result<TaskDefinition> {
+    let mut resolved_def = def.clone();
+    let mut merged_actions = Vec::new();
+    let mut merged_params = def.parameters.clone();
+
+    // Track visited paths for circular detection
+    let main_path = base_path.join(&def.name);
+    visited.insert(main_path.clone());
+
+    for include_spec in &def.include {
+        // Resolve the include path
+        let include_path = if std::path::Path::new(&include_spec.path).is_absolute() {
+            std::path::PathBuf::from(&include_spec.path)
+        } else {
+            base_path.join(&include_spec.path)
+        };
+
+        // Check for circular includes
+        if visited.contains(&include_path) {
+            return Err(anyhow::anyhow!(
+                "Circular include detected: '{}' includes '{}', but '{}' was already visited",
+                def.name,
+                include_spec.path,
+                include_path.display()
+            ));
+        }
+
+        // Load the included task
+        log::info!(
+            "Resolving include: {} -> {}",
+            def.name,
+            include_path.display()
+        );
+        let included_def = parse_task_file(&include_path)
+            .with_context(|| format!("Failed to load included task '{}'", include_spec.path))?;
+
+        // Recursively resolve nested includes
+        let resolved_included = resolve_includes(&included_def, base_path, visited)?;
+
+        // Merge parameters (main task parameters take precedence)
+        for (name, param) in resolved_included.parameters {
+            merged_params.entry(name).or_insert(param);
+        }
+
+        // Log before moving actions
+        let included_actions_count = resolved_included.actions.len();
+        log::info!(
+            "Included {} actions from '{}'",
+            included_actions_count,
+            include_spec.path
+        );
+
+        // Add included actions
+        merged_actions.extend(resolved_included.actions);
+    }
+
+    // Merge: includes first, then main task actions
+    merged_actions.extend(resolved_def.actions);
+    resolved_def.actions = merged_actions;
+    resolved_def.parameters = merged_params;
+    resolved_def.include = Vec::new(); // Clear includes as they're now resolved
+
+    visited.remove(&main_path);
+    Ok(resolved_def)
+}
+
+/// Resolve includes with default empty visited set (convenience function).
+pub fn resolve_includes_simple(def: &TaskDefinition, base_path: &Path) -> Result<TaskDefinition> {
+    let mut visited = std::collections::HashSet::new();
+    resolve_includes(def, base_path, &mut visited)
+}
+
 fn validate_action(action: &Action, index: usize, errors: &mut Vec<String>) {
     match action {
         Action::If { then, r#else, .. } => {
@@ -423,6 +527,7 @@ selector = "#button"
             description: "A valid task".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 1000 }],
         };
 
@@ -436,6 +541,7 @@ selector = "#button"
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 1000 }],
         };
 
@@ -452,6 +558,7 @@ selector = "#button"
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![],
         };
 
@@ -468,6 +575,7 @@ selector = "#button"
             description: "".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 1000 }],
         };
 
@@ -612,6 +720,7 @@ actions:
             description: "Test".to_string(),
             policy: "default".to_string(),
             parameters: params,
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 100 }],
         };
 
@@ -637,6 +746,7 @@ actions:
             description: "Test".to_string(),
             policy: "default".to_string(),
             parameters: params,
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 100 }],
         };
 
@@ -654,6 +764,7 @@ actions:
             description: "Test".to_string(),
             policy: "default".to_string(),
             parameters: HashMap::new(),
+            include: vec![],
             actions: vec![Action::Wait { duration_ms: 100 }],
         };
 
@@ -662,5 +773,84 @@ actions:
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("Unknown parameter")));
+    }
+
+    #[test]
+    fn test_include_spec_default() {
+        let spec = IncludeSpec::default();
+        assert_eq!(spec.path, "");
+        assert_eq!(spec.condition, None);
+    }
+
+    #[test]
+    fn test_task_definition_with_include() {
+        let def = TaskDefinition {
+            name: "main_task".to_string(),
+            description: "Main task".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "common.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        assert_eq!(def.include.len(), 1);
+        assert_eq!(def.include[0].path, "common.task");
+    }
+
+    #[test]
+    fn test_resolve_includes_simple_no_includes() {
+        let def = TaskDefinition {
+            name: "simple_task".to_string(),
+            description: "Simple".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let temp_dir = TempDir::new().unwrap();
+        let result = resolve_includes_simple(&def, temp_dir.path());
+
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.actions.len(), 1);
+        assert!(resolved.include.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_includes_missing_file_fails() {
+        let def = TaskDefinition {
+            name: "main_task".to_string(),
+            description: "Main".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "nonexistent.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let temp_dir = TempDir::new().unwrap();
+        let result = resolve_includes_simple(&def, temp_dir.path());
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Failed to load included task"));
+    }
+
+    #[test]
+    fn test_resolve_includes_with_conditional() {
+        // Test IncludeSpec with condition field
+        let spec = IncludeSpec {
+            path: "conditional.task".to_string(),
+            condition: Some("{{enabled}} == true".to_string()),
+        };
+
+        assert_eq!(spec.path, "conditional.task");
+        assert_eq!(spec.condition, Some("{{enabled}} == true".to_string()));
     }
 }

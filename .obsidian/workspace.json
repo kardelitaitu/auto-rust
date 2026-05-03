@@ -1,0 +1,200 @@
+{
+  "main": {
+    "id": "794920153f9e0a1e",
+    "type": "split",
+    "children": [
+      {
+        "id": "d53233ca1faeb793",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "aaea3c2a09a5d4cc",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "IMPROVEMENT_PROPOSAL_task_policy.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "IMPROVEMENT_PROPOSAL_task_policy"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "eb5ac58027b39c5b",
+    "type": "split",
+    "children": [
+      {
+        "id": "f8f5e3bfd0ca705d",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5a9be2335d1099cb",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "3d06d5c11b636bc5",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "77d3e1345befc5c0",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "58e502ac4f1af51a",
+    "type": "split",
+    "children": [
+      {
+        "id": "e5480b42fc2e727c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "263f0a7ec69c9024",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "IMPROVEMENT_PROPOSAL_task_policy.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for IMPROVEMENT_PROPOSAL_task_policy"
+            }
+          },
+          {
+            "id": "92a1da0e94ab3b4a",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "IMPROVEMENT_PROPOSAL_task_policy.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from IMPROVEMENT_PROPOSAL_task_policy"
+            }
+          },
+          {
+            "id": "49a0a4b4bacdf336",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "d1df49d8dfac0cff",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "d9f2596035f8a2d6",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "IMPROVEMENT_PROPOSAL_task_policy.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of IMPROVEMENT_PROPOSAL_task_policy"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "aaea3c2a09a5d4cc",
+  "lastOpenFiles": [
+    "target/debug/deps/auto-ba496923be594396.pdb.tmp0b3e89b",
+    "target/debug/deps/auto-ba496923be594396.exe.tmp5f29aaf",
+    "target/debug/deps/rustcSx4gSX/symbols.o",
+    "target/debug/deps/rustcSx4gSX/linker-arguments",
+    "target/debug/deps/rustcSx4gSX/auto-1.natvis",
+    "target/debug/deps/rustcSx4gSX/auto-2.natvis",
+    "target/debug/deps/rustcSx4gSX/auto-0.natvis",
+    "target/debug/deps/rustcSx4gSX",
+    "target/debug/incremental/auto-3dlrzx7zvzd0q/s-hi72877ebk-07wocuc-1uoyiyqksauqgpi2lt5462aso/work-products.bin",
+    "target/debug/incremental/auto-3dlrzx7zvzd0q/s-hi72877ebk-07wocuc-1uoyiyqksauqgpi2lt5462aso/query-cache.bin",
+    "target/debug/incremental/auto-3dlrzx7zvzd0q/s-hi72877ebk-07wocuc-1uoyiyqksauqgpi2lt5462aso/dep-graph.bin"
+  ]
+}

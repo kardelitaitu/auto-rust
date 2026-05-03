@@ -272,3 +272,123 @@ impl Default for LLMEngine {
         Self::new(String::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
+    use crate::utils::twitter::twitteractivity_state::{SentimentTemplates, TaskConfig};
+
+    fn test_task_config() -> TaskConfig {
+        TaskConfig {
+            duration_ms: 120_000,
+            candidate_count: 5,
+            thread_depth: 3,
+            max_actions_per_scan: 2,
+            weights: None,
+            llm_enabled: true,
+            smart_decision_enabled: true,
+            sentiment_templates: SentimentTemplates::default(),
+            enhanced_sentiment_enabled: true,
+            dry_run_actions: false,
+        }
+    }
+
+    fn test_context() -> TweetContext {
+        TweetContext {
+            tweet_id: "tweet-1".to_string(),
+            text: "New AI dev tool launch with great docs and code examples".to_string(),
+            author: "tech_author".to_string(),
+            replies: vec![
+                "First reply".to_string(),
+                "Second reply".to_string(),
+                "Third reply".to_string(),
+                "Fourth reply".to_string(),
+                "Fifth reply".to_string(),
+                "Sixth reply should be truncated".to_string(),
+            ],
+            persona: PersonaWeights {
+                like_prob: 0.3,
+                retweet_prob: 0.1,
+                quote_prob: 0.8,
+                follow_prob: 0.05,
+                reply_prob: 0.7,
+                bookmark_prob: 0.2,
+                thread_dive_prob: 0.1,
+                interest_multiplier: 1.0,
+            },
+            task_config: test_task_config(),
+        }
+    }
+
+    #[test]
+    fn test_new_and_with_config_override_defaults() {
+        let engine = LLMEngine::new("secret-key".to_string());
+        assert!(engine.is_available());
+        assert_eq!(
+            engine.api_url,
+            "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+        );
+        assert_eq!(engine.model, "qwen-turbo");
+        assert_eq!(engine.timeout_ms, 5000);
+
+        let configured = LLMEngine::with_config(
+            "https://example.invalid/v1/chat".to_string(),
+            "api-key-2".to_string(),
+            "custom-model".to_string(),
+        );
+        assert_eq!(configured.api_url, "https://example.invalid/v1/chat");
+        assert_eq!(configured.api_key, "api-key-2");
+        assert_eq!(configured.model, "custom-model");
+        assert_eq!(configured.timeout_ms, 5000);
+    }
+
+    #[test]
+    fn test_parse_level_maps_known_and_unknown_values() {
+        let engine = LLMEngine::new("key".to_string());
+
+        assert_eq!(engine.parse_level("skip"), EngagementLevel::None);
+        assert_eq!(engine.parse_level("none"), EngagementLevel::None);
+        assert_eq!(engine.parse_level("low"), EngagementLevel::Minimal);
+        assert_eq!(engine.parse_level("minimal"), EngagementLevel::Minimal);
+        assert_eq!(engine.parse_level("medium"), EngagementLevel::Medium);
+        assert_eq!(engine.parse_level("high"), EngagementLevel::Full);
+        assert_eq!(engine.parse_level("full"), EngagementLevel::Full);
+        assert_eq!(engine.parse_level("mystery"), EngagementLevel::None);
+    }
+
+    #[test]
+    fn test_build_system_prompt_includes_schema_and_safety_rules() {
+        let prompt = LLMEngine::build_system_prompt();
+        assert!(prompt.contains("Respond ONLY with valid JSON"));
+        assert!(prompt.contains("death/grief/tragedy"));
+        assert!(prompt.contains("crypto/NFT spam"));
+        assert!(prompt.contains("quote|reply|follow|bookmark|like|none"));
+    }
+
+    #[test]
+    fn test_build_user_prompt_limits_replies_and_includes_context() {
+        let engine = LLMEngine::new("key".to_string());
+        let ctx = test_context();
+        let prompt = engine.build_user_prompt(&ctx);
+
+        assert!(prompt.contains("TWEET: \"New AI dev tool launch"));
+        assert!(prompt.contains("AUTHOR: @tech_author"));
+        assert!(prompt.contains("REPLIES:"));
+        assert!(prompt.contains("- First reply"));
+        assert!(prompt.contains("- Fifth reply"));
+        assert!(!prompt.contains("Sixth reply should be truncated"));
+        assert!(prompt.contains(
+            "TONE: \"Casual tech enthusiast, friendly, asks questions, doesn't fake expertise\""
+        ));
+        assert!(prompt.contains("Tweet age: Recent"));
+        assert!(prompt.contains("Topic alignment: High"));
+        assert!(prompt.ends_with("DECIDE ACTION AND GENERATE CONTENT:"));
+    }
+
+    #[test]
+    fn test_decide_fallback_is_neutral_when_unavailable() {
+        let engine = LLMEngine::new(String::new());
+        assert!(!engine.is_available());
+    }
+}

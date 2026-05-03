@@ -1,6 +1,7 @@
 //! Engagement logic for Twitter activity task.
 //! Contains process_candidate() and helper functions for tweet engagement.
 
+use super::twitteractivity_retry::{retry_with_backoff, RetryConfig};
 use super::twitteractivity_state::*;
 use crate::metrics::*;
 use crate::prelude::TaskContext;
@@ -264,7 +265,31 @@ pub async fn process_candidate(
             next_scroll = Instant::now() + Duration::from_secs(300); // Pause for 5 minutes during dive
             info!("Paused continuous scrolling for thread dive");
 
-            let dive_outcome = dive_into_thread(api, status_url).await?;
+            let dive_result = retry_with_backoff(
+                || dive_into_thread(api, status_url),
+                &RetryConfig::default(),
+                api,
+                "dive_into_thread",
+            )
+            .await;
+
+            let dive_outcome = match dive_result {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    warn!("Thread dive failed after retries: {}", e);
+                    api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                    api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
+                    // Resume scrolling if dive failed and skip this candidate
+                    next_scroll = original_next_scroll;
+                    return Ok(CandidateResult {
+                        should_break: false,
+                        next_scroll,
+                        actions_this_scan,
+                        actions_taken: _actions_taken,
+                        thread_cache: current_thread_cache,
+                    });
+                }
+            };
             if dive_outcome.used_fallback_target {
                 api.increment_run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, 1);
             }
@@ -277,8 +302,18 @@ pub async fn process_candidate(
                 api.increment_run_counter(RUN_COUNTER_DIVE_SUCCESS, 1);
                 // Use cache from dive outcome, initialize empty if none
                 let mut thread_cache = dive_outcome.cache.unwrap_or_default();
-                read_full_thread(api, task_config.thread_depth, &mut thread_cache).await?;
-                api.scroll_to_top().await?;
+                // Note: read_full_thread not wrapped with retry due to mutable borrow constraints
+                if let Err(e) =
+                    read_full_thread(api, task_config.thread_depth, &mut thread_cache).await
+                {
+                    warn!("Read full thread failed: {}", e);
+                    api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                    // Continue anyway - we already dived, try to scroll back
+                }
+                if let Err(e) = api.scroll_to_top().await {
+                    warn!("Scroll to top failed: {}", e);
+                    // Non-fatal, continue
+                }
                 human_pause(api, 800).await;
                 scroll_pause(api).await;
                 counters.increment_thread_dive();
@@ -326,12 +361,42 @@ pub async fn process_candidate(
             "like" => {
                 // Like can be done on feed or in detail
                 if did_dive {
-                    // In detail view, use general like function
-                    like_tweet(api).await?
+                    // In detail view, use general like function with retry
+                    match retry_with_backoff(
+                        || like_tweet(api),
+                        &RetryConfig::aggressive(),
+                        api,
+                        "like_tweet",
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
+                            warn!("Like failed after retries: {}", e);
+                            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                            api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
+                            false
+                        }
+                    }
                 } else {
-                    // On feed, use position from tweet data
+                    // On feed, use position from tweet data with retry
                     if let Some(btn_pos) = extract_tweet_button_position(tweet, "like") {
-                        like_at_position(api, btn_pos.0, btn_pos.1).await?
+                        match retry_with_backoff(
+                            || like_at_position(api, btn_pos.0, btn_pos.1),
+                            &RetryConfig::aggressive(),
+                            api,
+                            "like_at_position",
+                        )
+                        .await
+                        {
+                            Ok(result) => result,
+                            Err(e) => {
+                                warn!("Like at position failed after retries: {}", e);
+                                api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                                api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
+                                false
+                            }
+                        }
                     } else {
                         warn!("Like button not found in tweet payload for {}", tweet_id);
                         api.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 1);
@@ -351,7 +416,24 @@ pub async fn process_candidate(
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
-                        Ok(true) => retweet_tweet(api).await?,
+                        Ok(true) => {
+                            match retry_with_backoff(
+                                || retweet_tweet(api),
+                                &RetryConfig::default(),
+                                api,
+                                "retweet_tweet",
+                            )
+                            .await
+                            {
+                                Ok(result) => result,
+                                Err(e) => {
+                                    warn!("Retweet failed after retries: {}", e);
+                                    api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                                    api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
+                                    false
+                                }
+                            }
+                        }
                         Ok(false) => {
                             warn!("Skipping retweet: not on tweet page for tweet {}", tweet_id);
                             false
@@ -438,7 +520,24 @@ pub async fn process_candidate(
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
-                        Ok(true) => follow_from_tweet(api).await?,
+                        Ok(true) => {
+                            match retry_with_backoff(
+                                || follow_from_tweet(api),
+                                &RetryConfig::default(),
+                                api,
+                                "follow_from_tweet",
+                            )
+                            .await
+                            {
+                                Ok(result) => result,
+                                Err(e) => {
+                                    warn!("Follow failed after retries: {}", e);
+                                    api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                                    api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
+                                    false
+                                }
+                            }
+                        }
                         Ok(false) => {
                             warn!("Skipping follow: not on tweet page for tweet {}", tweet_id);
                             false
@@ -488,7 +587,22 @@ pub async fn process_candidate(
                                     &task_config.sentiment_templates,
                                 )
                             };
-                            reply_to_tweet(api, &reply_text).await?
+                            match retry_with_backoff(
+                                || reply_to_tweet(api, &reply_text),
+                                &RetryConfig::conservative(),
+                                api,
+                                "reply_to_tweet",
+                            )
+                            .await
+                            {
+                                Ok(result) => result,
+                                Err(e) => {
+                                    warn!("Reply failed after retries: {}", e);
+                                    api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                                    api.increment_run_counter(RUN_COUNTER_REPLY_FAILURE, 1);
+                                    false
+                                }
+                            }
                         }
                         Ok(false) => {
                             warn!("Skipping reply: not on tweet page for tweet {}", tweet_id);
@@ -513,7 +627,24 @@ pub async fn process_candidate(
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
-                        Ok(true) => bookmark_tweet(api).await?,
+                        Ok(true) => {
+                            match retry_with_backoff(
+                                || bookmark_tweet(api),
+                                &RetryConfig::aggressive(),
+                                api,
+                                "bookmark_tweet",
+                            )
+                            .await
+                            {
+                                Ok(result) => result,
+                                Err(e) => {
+                                    warn!("Bookmark failed after retries: {}", e);
+                                    api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                                    api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
+                                    false
+                                }
+                            }
+                        }
                         Ok(false) => {
                             warn!(
                                 "Skipping bookmark: not on tweet page for tweet {}",
@@ -597,7 +728,13 @@ pub async fn process_candidate(
         let home_wait_ms = rand::random::<u64>() % 2000 + 3000; // 3-5s
         human_pause(api, home_wait_ms).await;
         info!("Navigating back to home after thread dive and engagement");
-        goto_home(api).await?;
+        if let Err(e) =
+            retry_with_backoff(|| goto_home(api), &RetryConfig::default(), api, "goto_home").await
+        {
+            warn!("Navigation to home failed after retries: {}", e);
+            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+            // Continue anyway - not fatal
+        }
         scroll_pause(api).await;
         // Resume continuous scrolling now that we're back on home feed
         next_scroll = Instant::now() + scroll_interval;

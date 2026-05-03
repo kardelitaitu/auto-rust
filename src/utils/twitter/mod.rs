@@ -12,6 +12,7 @@ pub mod twitteractivity_decision_persona;
 pub mod twitteractivity_decision_unified;
 pub mod twitteractivity_dive;
 pub mod twitteractivity_engagement;
+pub mod twitteractivity_errors;
 pub mod twitteractivity_feed;
 pub mod twitteractivity_humanized;
 pub mod twitteractivity_interact;
@@ -20,6 +21,7 @@ pub mod twitteractivity_llm;
 pub mod twitteractivity_navigation;
 pub mod twitteractivity_persona;
 pub mod twitteractivity_popup;
+pub mod twitteractivity_retry;
 pub mod twitteractivity_selectors;
 pub mod twitteractivity_sentiment;
 pub mod twitteractivity_sentiment_context;
@@ -38,6 +40,8 @@ pub use twitteractivity_dive::*;
 #[allow(unused_imports)]
 pub use twitteractivity_engagement::*;
 #[allow(unused_imports)]
+pub use twitteractivity_errors::*;
+#[allow(unused_imports)]
 pub use twitteractivity_feed::*;
 #[allow(unused_imports)]
 pub use twitteractivity_humanized::*;
@@ -53,6 +57,8 @@ pub use twitteractivity_navigation::*;
 pub use twitteractivity_persona::*;
 #[allow(unused_imports)]
 pub use twitteractivity_popup::*;
+#[allow(unused_imports)]
+pub use twitteractivity_retry::*;
 #[allow(unused_imports)]
 pub use twitteractivity_selectors::*;
 #[allow(unused_imports)]

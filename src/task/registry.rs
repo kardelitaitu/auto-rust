@@ -153,24 +153,9 @@ impl TaskRegistry {
 
     /// Register all built-in Rust tasks.
     fn register_built_in_tasks(&mut self) {
-        // Demo tasks
-        self.register_built_in("cookiebot", "default");
-        self.register_built_in("demo-keyboard", "default");
-        self.register_built_in("demo-mouse", "default");
-        self.register_built_in("demoqa", "default");
-        self.register_built_in("pageview", "default");
-        self.register_built_in("task-example", "default");
-
-        // Twitter/X tasks
-        self.register_built_in("twitteractivity", "default");
-        self.register_built_in("twitterdive", "default");
-        self.register_built_in("twitterfollow", "default");
-        self.register_built_in("twitterintent", "default");
-        self.register_built_in("twitterlike", "default");
-        self.register_built_in("twitterquote", "default");
-        self.register_built_in("twitterreply", "default");
-        self.register_built_in("twitterretweet", "default");
-        self.register_built_in("twittertest", "default");
+        for &name in crate::task::TASK_NAMES {
+            self.register_built_in(name, name);
+        }
     }
 
     /// Register a built-in Rust task.
@@ -280,17 +265,19 @@ impl TaskRegistry {
     /// - [`RegistryError::UnknownTask`] if task not found
     /// - [`RegistryError::Conflict`] if task exists in multiple sources (Phase 2)
     pub fn lookup(&self, name: &str) -> Result<TaskDescriptor, RegistryError> {
-        match self.tasks.get(name) {
+        let normalized = crate::task::normalize_task_name(name);
+        match self.tasks.get(normalized) {
             Some(descriptor) => Ok(descriptor.clone()),
             None => Err(RegistryError::UnknownTask {
-                name: name.to_string(),
+                name: normalized.to_string(),
             }),
         }
     }
 
     /// Check if a task is known (exists in registry).
     pub fn is_known(&self, name: &str) -> bool {
-        self.tasks.contains_key(name)
+        let normalized = crate::task::normalize_task_name(name);
+        self.tasks.contains_key(normalized)
     }
 
     /// List all registered tasks.
@@ -393,13 +380,13 @@ pub fn format_task_list() -> String {
 
     for task in &tasks {
         let source_str = match &task.source {
-            TaskSource::BuiltInRust => "built-in",
-            TaskSource::ConfiguredPath(_) => "external",
-            TaskSource::Unknown => "unknown",
+            TaskSource::BuiltInRust => "BuiltInRust".to_string(),
+            TaskSource::ConfiguredPath(path) => format!("ConfiguredPath({})", path.display()),
+            TaskSource::Unknown => "Unknown".to_string(),
         };
 
         output.push_str(&format!(
-            "  {:20}  {:10}  {}\n",
+            "  {:20}  {:30}  policy={}\n",
             task.name, source_str, task.policy_name
         ));
     }
@@ -424,7 +411,7 @@ mod tests {
         let task = registry.lookup("cookiebot").unwrap();
         assert_eq!(task.name, "cookiebot");
         assert!(task.source.is_built_in());
-        assert_eq!(task.policy_name, "default");
+        assert_eq!(task.policy_name, "cookiebot");
     }
 
     #[test]

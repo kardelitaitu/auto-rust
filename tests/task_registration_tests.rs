@@ -138,7 +138,7 @@ fn validate_task_groups_valid() {
     assert_eq!(results.len(), 1);
     assert!(results[0].is_known);
     assert!(results[0].source.contains("BuiltInRust"));
-    assert_eq!(results[0].policy_name, "default");
+    assert_eq!(results[0].policy_name, "cookiebot");
 }
 
 /// Test validate_task_groups with invalid task

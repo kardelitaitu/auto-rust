@@ -342,24 +342,7 @@ pub static TWITTERTEST_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
 /// Looks up a task‑specific policy if one is registered,
 /// otherwise falls back to `DEFAULT_TASK_POLICY`.
 pub fn get_policy(task_name: &str) -> &'static TaskPolicy {
-    match task_name {
-        "cookiebot" => &COOKIEBOT_POLICY,
-        "pageview" => &PAGEVIEW_POLICY,
-        "twitteractivity" => &TWITTERACTIVITY_POLICY,
-        "demo-keyboard" => &DEMO_KEYBOARD_POLICY,
-        "demo-mouse" => &DEMO_MOUSE_POLICY,
-        "demoqa" => &DEMO_QA_POLICY,
-        "task-example" => &TASK_EXAMPLE_POLICY,
-        "twitterdive" => &TWITTERDIVE_POLICY,
-        "twitterfollow" => &TWITTERFOLLOW_POLICY,
-        "twitterintent" => &TWITTERINTENT_POLICY,
-        "twitterlike" => &TWITTERLIKE_POLICY,
-        "twitterquote" => &TWITTERQUOTE_POLICY,
-        "twitterreply" => &TWITTERREPLY_POLICY,
-        "twitterretweet" => &TWITTERRETWEET_POLICY,
-        "twittertest" => &TWITTERTEST_POLICY,
-        _ => &DEFAULT_TASK_POLICY,
-    }
+    get_policy_from_registry(task_name)
 }
 
 /// Get policy from registry-aware lookup.
@@ -401,10 +384,10 @@ fn match_policy_by_name(policy_name: &str) -> &'static TaskPolicy {
         "cookiebot" => &COOKIEBOT_POLICY,
         "pageview" => &PAGEVIEW_POLICY,
         "twitteractivity" => &TWITTERACTIVITY_POLICY,
-        "demo_keyboard" => &DEMO_KEYBOARD_POLICY,
-        "demo_mouse" => &DEMO_MOUSE_POLICY,
-        "demo_qa" => &DEMO_QA_POLICY,
-        "task_example" => &TASK_EXAMPLE_POLICY,
+        "demo-keyboard" | "demo_keyboard" => &DEMO_KEYBOARD_POLICY,
+        "demo-mouse" | "demo_mouse" => &DEMO_MOUSE_POLICY,
+        "demoqa" | "demo_qa" => &DEMO_QA_POLICY,
+        "task-example" | "task_example" => &TASK_EXAMPLE_POLICY,
         "twitterdive" => &TWITTERDIVE_POLICY,
         "twitterfollow" => &TWITTERFOLLOW_POLICY,
         "twitterintent" => &TWITTERINTENT_POLICY,

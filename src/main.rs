@@ -100,11 +100,11 @@ async fn run_dry_run(groups: &[Vec<cli::TaskDefinition>], config: &config::Confi
             match registry.lookup(normalized_name) {
                 Ok(descriptor) => {
                     let source_info = match &descriptor.source {
-                        auto::task::registry::TaskSource::BuiltInRust => "built-in".to_string(),
+                        auto::task::registry::TaskSource::BuiltInRust => "BuiltInRust".to_string(),
                         auto::task::registry::TaskSource::ConfiguredPath(path) => {
-                            format!("external ({})", path.display())
+                            format!("ConfiguredPath({})", path.display())
                         }
-                        auto::task::registry::TaskSource::Unknown => "unknown".to_string(),
+                        auto::task::registry::TaskSource::Unknown => "Unknown".to_string(),
                     };
 
                     println!(

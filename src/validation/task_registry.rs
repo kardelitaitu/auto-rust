@@ -161,7 +161,7 @@ mod tests {
         assert!(result.is_known);
         assert!(result.warnings.is_empty());
         assert!(result.source.contains("BuiltInRust"));
-        assert_eq!(result.policy_name, "default");
+        assert_eq!(result.policy_name, "cookiebot");
     }
 
     #[test]
@@ -216,6 +216,7 @@ mod tests {
         assert!(cookiebot_result.is_known);
         assert!(cookiebot_result.warnings.is_empty());
         assert!(cookiebot_result.source.contains("BuiltInRust"));
+        assert_eq!(cookiebot_result.policy_name, "cookiebot");
 
         // unknown_task should have warnings
         let unknown_result = results

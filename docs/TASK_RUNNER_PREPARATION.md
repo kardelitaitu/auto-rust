@@ -63,6 +63,24 @@ The foundation must stay Rust-task compatible.
 4. Make future discovery roots configurable.
 5. Keep the codebase easy to extend without changing the dispatcher again.
 
+### Registry model
+
+The registry should describe each task as a small piece of metadata instead of a raw string. At minimum, the registry needs to answer:
+
+- what the task name is
+- where the task comes from
+- which policy applies
+- whether the task is built in, configured, or unknown
+
+A practical first-pass shape is:
+
+- `TaskDescriptor { name, source, policy_name }`
+- `TaskSource::BuiltInRust` for compiled-in tasks
+- `TaskSource::ConfiguredPath(PathBuf)` for future external task roots
+- `TaskSource::Unknown` for clean error reporting
+
+Built-in tasks should remain pathless in the descriptor; paths only matter for configured sources.
+
 ---
 
 ## 4. Recommended Phase Breakdown
@@ -134,6 +152,17 @@ Add a non-invasive way to inspect registered tasks.
 - path, if applicable
 - policy name
 - known/unknown state
+
+#### Example
+
+```bash
+cargo run --list-tasks
+```
+
+```text
+✓ cookiebot       BuiltInRust                     policy=cookiebot
+✓ pageview        BuiltInRust                     policy=pageview
+```
 
 #### Acceptance criteria
 

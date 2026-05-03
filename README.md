@@ -13,6 +13,7 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
+- [Task Registry](#task-registry)
 - [Architecture](#architecture)
 - [Current Status](#current-status)
 - [Configuration](#configuration)
@@ -119,6 +120,8 @@ cargo run 'twitteractivity,duration_ms=120000,scroll_count=12'
 cargo run cookiebot.js pageview.js
 ```
 
+> **Note:** Pass CLI flags after `--`, for example `cargo run -- --list-tasks` or `cargo run -- --dry-run cookiebot`.
+
 ### API Quick Examples (v0.0.3)
 
 ```rust
@@ -152,6 +155,27 @@ RUST_LOG=debug cargo run pageview=example.com
 
 # Custom config
 cargo run -- --config path/to/config.toml cookiebot
+```
+
+### Task Registry
+
+List all built-in tasks and their policy/source metadata:
+
+```bash
+cargo run -- --list-tasks
+```
+
+Example output:
+
+```text
+Available Tasks:
+================
+
+  cookiebot             BuiltInRust                     policy=cookiebot
+  pageview              BuiltInRust                     policy=pageview
+  twitteractivity       BuiltInRust                     policy=twitteractivity
+
+Total: 15 tasks
 ```
 
 ## Architecture

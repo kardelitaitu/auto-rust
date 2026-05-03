@@ -362,6 +362,61 @@ pub fn get_policy(task_name: &str) -> &'static TaskPolicy {
     }
 }
 
+/// Get policy from registry-aware lookup.
+///
+/// This function uses the task registry to resolve the policy,
+/// ensuring policy lookup uses the same task identity as validation and execution.
+///
+/// # Arguments
+/// * `task_name` - Name of the task to look up
+///
+/// # Returns
+/// The task policy, or default policy if task not found in registry
+///
+/// # Example
+/// ```rust
+/// use auto::task::policy::get_policy_from_registry;
+///
+/// let policy = get_policy_from_registry("cookiebot");
+/// assert!(policy.permissions.allow_export_cookies);
+/// ```
+pub fn get_policy_from_registry(task_name: &str) -> &'static TaskPolicy {
+    use crate::task::normalize_task_name;
+    use crate::task::registry::TaskRegistry;
+
+    let registry = TaskRegistry::with_built_in_tasks();
+    let clean_name = normalize_task_name(task_name);
+
+    match registry.lookup(clean_name) {
+        Ok(descriptor) => match_policy_by_name(descriptor.policy_name),
+        Err(_) => &DEFAULT_TASK_POLICY,
+    }
+}
+
+/// Match policy name to actual policy.
+///
+/// Internal helper that maps policy names to their static definitions.
+fn match_policy_by_name(policy_name: &str) -> &'static TaskPolicy {
+    match policy_name {
+        "cookiebot" => &COOKIEBOT_POLICY,
+        "pageview" => &PAGEVIEW_POLICY,
+        "twitteractivity" => &TWITTERACTIVITY_POLICY,
+        "demo_keyboard" => &DEMO_KEYBOARD_POLICY,
+        "demo_mouse" => &DEMO_MOUSE_POLICY,
+        "demo_qa" => &DEMO_QA_POLICY,
+        "task_example" => &TASK_EXAMPLE_POLICY,
+        "twitterdive" => &TWITTERDIVE_POLICY,
+        "twitterfollow" => &TWITTERFOLLOW_POLICY,
+        "twitterintent" => &TWITTERINTENT_POLICY,
+        "twitterlike" => &TWITTERLIKE_POLICY,
+        "twitterquote" => &TWITTERQUOTE_POLICY,
+        "twitterreply" => &TWITTERREPLY_POLICY,
+        "twitterretweet" => &TWITTERRETWEET_POLICY,
+        "twittertest" => &TWITTERTEST_POLICY,
+        _ => &DEFAULT_TASK_POLICY,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -737,5 +792,65 @@ mod tests {
         let policy = DEFAULT_TASK_POLICY.clone();
         let cloned = policy.clone();
         assert_eq!(policy.max_duration_ms, cloned.max_duration_ms);
+    }
+
+    #[test]
+    fn test_registry_policy_lookup_matches_direct_lookup() {
+        // Verify that get_policy_from_registry returns the same results as get_policy
+        let task_names = [
+            "cookiebot",
+            "pageview",
+            "twitteractivity",
+            "demo-keyboard",
+            "demo-mouse",
+            "demoqa",
+            "task-example",
+            "twitterdive",
+            "twitterfollow",
+            "twitterintent",
+            "twitterlike",
+            "twitterquote",
+            "twitterreply",
+            "twitterretweet",
+            "twittertest",
+            "unknown_task", // Should both return default
+        ];
+
+        for task_name in &task_names {
+            let direct_policy = get_policy(task_name);
+            let registry_policy = get_policy_from_registry(task_name);
+
+            assert_eq!(
+                direct_policy.max_duration_ms, registry_policy.max_duration_ms,
+                "Timeout mismatch for task '{}'",
+                task_name
+            );
+            assert_eq!(
+                direct_policy.permissions.allow_screenshot,
+                registry_policy.permissions.allow_screenshot,
+                "Screenshot permission mismatch for task '{}'",
+                task_name
+            );
+            assert_eq!(
+                direct_policy.permissions.allow_export_cookies,
+                registry_policy.permissions.allow_export_cookies,
+                "Export cookies permission mismatch for task '{}'",
+                task_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_registry_policy_lookup_with_js_suffix() {
+        // Test that .js suffix is handled correctly
+        let policy = get_policy_from_registry("cookiebot.js");
+        assert_eq!(policy.max_duration_ms, COOKIEBOT_POLICY.max_duration_ms);
+    }
+
+    #[test]
+    fn test_registry_policy_lookup_unknown_task() {
+        // Unknown tasks should get default policy
+        let policy = get_policy_from_registry("nonexistent_task");
+        assert_eq!(policy.max_duration_ms, DEFAULT_TASK_POLICY.max_duration_ms);
     }
 }

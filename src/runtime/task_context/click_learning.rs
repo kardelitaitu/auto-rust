@@ -389,3 +389,181 @@ pub fn save_click_learning(path: &Path, state: &ClickLearningState) -> anyhow::R
     fs::write(path, json)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::profile::BrowserProfile;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_classification_and_timing_profile_basics() {
+        assert_eq!(
+            ClickTimingContext::classify_page("https://x.com/home"),
+            ClickPageContext::Social
+        );
+        assert_eq!(
+            ClickTimingContext::classify_page("https://example.com/login"),
+            ClickPageContext::Form
+        );
+        assert_eq!(
+            ClickTimingContext::classify_page("https://shop.example.com"),
+            ClickPageContext::Commerce
+        );
+        assert_eq!(
+            ClickTimingContext::classify_page("https://news.example.com/article/1"),
+            ClickPageContext::Content
+        );
+        assert_eq!(
+            ClickTimingContext::classify_page("https://example.com"),
+            ClickPageContext::Home
+        );
+        assert_eq!(
+            ClickTimingContext::classify_page("https://example.com/foo/bar/baz"),
+            ClickPageContext::Other
+        );
+
+        assert_eq!(
+            ClickTimingContext::classify_priority("button[type='submit']"),
+            ClickElementPriority::Critical
+        );
+        assert_eq!(
+            ClickTimingContext::classify_priority("div.secondary-action"),
+            ClickElementPriority::Optional
+        );
+        assert_eq!(
+            ClickTimingContext::classify_priority("button.primary-cta"),
+            ClickElementPriority::Critical
+        );
+        assert_eq!(
+            ClickTimingContext::classify_priority("span.label"),
+            ClickElementPriority::Normal
+        );
+
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(0),
+            ClickFatigueLevel::Rested
+        );
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(14),
+            ClickFatigueLevel::Rested
+        );
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(15),
+            ClickFatigueLevel::Normal
+        );
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(49),
+            ClickFatigueLevel::Normal
+        );
+        assert_eq!(
+            ClickTimingContext::classify_fatigue(50),
+            ClickFatigueLevel::Tired
+        );
+
+        let context =
+            ClickTimingContext::from_observation("https://example.com", "button", 10, 1.0);
+        let profile = context.timing_profile(100, 10, 5, &ClickAdaptation::default());
+
+        assert_eq!(profile.reaction_delay_ms, 90);
+        assert_eq!(profile.reaction_variance_pct, 10);
+        assert_eq!(profile.click_offset_px, 5);
+        assert_eq!(profile.attention_pause_ms, 60);
+        assert_eq!(profile.post_click_pause_ms, 180);
+        assert_eq!(profile.primary_timeout_ms, 4_000);
+    }
+
+    #[test]
+    fn test_learning_state_recording_and_window_cap() {
+        let mut state = ClickLearningState::default();
+        assert_eq!(state.recent_success_rate(), 1.0);
+
+        state.record("button.one", true);
+        state.record("button.one", false);
+
+        let stats = state.selector_stats("button.one");
+        assert_eq!(stats.attempts, 2);
+        assert_eq!(stats.successes, 1);
+        assert_eq!(stats.consecutive_failures, 1);
+        assert!(stats.last_updated.is_some());
+        assert_eq!(state.total_attempts, 2);
+        assert_eq!(state.total_successes, 1);
+        assert_eq!(state.recent_results.len(), 2);
+        assert_eq!(state.recent_success_rate(), 0.5);
+
+        for idx in 0..40 {
+            state.record("button.one", idx % 2 == 0);
+        }
+
+        assert_eq!(
+            state.recent_results.len(),
+            ClickLearningState::RECENT_WINDOW
+        );
+        assert_eq!(state.interaction_count, 42);
+    }
+
+    #[test]
+    fn test_adaptation_for_complex_selector_and_repeated_failures() {
+        let mut state = ClickLearningState::default();
+        let selector = "button[data-testid='submit']";
+
+        state.record(selector, false);
+        state.record(selector, false);
+        state.record(selector, false);
+
+        let context = ClickTimingContext::from_observation("https://x.com/home", selector, 60, 0.5);
+        let adaptation = state.adaptation_for(selector, &context);
+
+        assert!(adaptation.extra_stability_wait_ms >= 380);
+        assert!(adaptation.reaction_delay_multiplier > 1.7);
+        assert!(adaptation.reaction_variance_boost_pct >= 18);
+        assert!(adaptation.click_offset_adjustment_px >= 3);
+        assert!(adaptation.require_strict_verification);
+        assert!(adaptation.prefer_coordinate_fallback);
+    }
+
+    #[test]
+    fn test_click_learning_path_and_persistence_roundtrip() {
+        let mut profile = BrowserProfile::average();
+        profile.name = "Profile Name".to_string();
+
+        let path = click_learning_path("session 42", &profile).expect("path should exist");
+        let path_str = path.to_string_lossy();
+        assert!(path_str.contains("click-learning"));
+        assert!(path_str.contains("Profile_Name"));
+        assert!(path_str.contains("session_42.json"));
+
+        let tempdir = tempdir().expect("tempdir");
+        let state_path = tempdir.path().join("state.json");
+
+        let mut state = ClickLearningState::default();
+        state.record("button[data-testid='save']", true);
+        state.record("button[data-testid='save']", false);
+        state.record("button[data-testid='save']", false);
+
+        save_click_learning(&state_path, &state).expect("save state");
+        let loaded = load_click_learning(&state_path).expect("load state");
+
+        assert_eq!(loaded.interaction_count, state.interaction_count);
+        assert_eq!(loaded.total_attempts, state.total_attempts);
+        assert_eq!(loaded.total_successes, state.total_successes);
+        assert_eq!(loaded.recent_results, state.recent_results);
+        assert_eq!(
+            loaded.selector_stats("button[data-testid='save']").attempts,
+            3
+        );
+        assert_eq!(
+            loaded
+                .selector_stats("button[data-testid='save']")
+                .consecutive_failures,
+            2
+        );
+    }
+
+    #[test]
+    fn test_sanitize_path_component_fallbacks() {
+        assert_eq!(sanitize_path_component(""), "default");
+        assert_eq!(sanitize_path_component("abc-123_foo"), "abc-123_foo");
+        assert_eq!(sanitize_path_component(" spaced/name! "), "spaced_name");
+    }
+}

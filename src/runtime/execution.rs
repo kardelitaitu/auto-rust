@@ -187,4 +187,47 @@ mod tests {
         assert!(outcome.shutdown_requested);
         assert_eq!(finished.load(Ordering::SeqCst), 0);
     }
+
+    #[tokio::test]
+    async fn test_execute_task_groups_with_shutdown_before_first_group() {
+        let groups = vec![vec![TaskDefinition {
+            name: "cookiebot".to_string(),
+            payload: Default::default(),
+        }]];
+
+        let (tx, mut rx) = broadcast::channel::<()>(1);
+        let _ = tx.send(());
+
+        let finished = Arc::new(AtomicUsize::new(0));
+        let mut runner = MockTaskGroupRunner {
+            started: None,
+            finished: finished.clone(),
+            delay_ms: 1,
+        };
+
+        let outcome = execute_task_groups_with_shutdown(&groups, &mut rx, &mut runner).await;
+
+        assert_eq!(outcome.completed_groups, 0);
+        assert!(outcome.shutdown_requested);
+        assert_eq!(finished.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_execute_task_groups_with_shutdown_empty_groups() {
+        let groups: Vec<Vec<TaskDefinition>> = vec![];
+
+        let (_tx, mut rx) = broadcast::channel::<()>(1);
+        let finished = Arc::new(AtomicUsize::new(0));
+        let mut runner = MockTaskGroupRunner {
+            started: None,
+            finished: finished.clone(),
+            delay_ms: 1,
+        };
+
+        let outcome = execute_task_groups_with_shutdown(&groups, &mut rx, &mut runner).await;
+
+        assert_eq!(outcome.completed_groups, 0);
+        assert!(!outcome.shutdown_requested);
+        assert_eq!(finished.load(Ordering::SeqCst), 0);
+    }
 }

@@ -18,6 +18,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
@@ -26,6 +27,128 @@ use crate::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
 
 /// Maximum recursion depth for task calls to prevent infinite loops.
 const MAX_CALL_DEPTH: u32 = 10;
+
+/// Detailed metrics for a single action execution.
+#[derive(Debug, Clone)]
+pub struct ActionMetrics {
+    /// Action index in the task
+    pub index: usize,
+    /// Action type name
+    pub action_type: String,
+    /// Start timestamp
+    pub start_time: Instant,
+    /// End timestamp (if completed)
+    pub end_time: Option<Instant>,
+    /// Execution duration (if completed)
+    pub duration: Option<Duration>,
+    /// Whether the action succeeded
+    pub success: bool,
+    /// Error message (if failed)
+    pub error: Option<String>,
+}
+
+impl ActionMetrics {
+    /// Create a new action metrics tracker.
+    pub fn new(index: usize, action_type: &str) -> Self {
+        Self {
+            index,
+            action_type: action_type.to_string(),
+            start_time: Instant::now(),
+            end_time: None,
+            duration: None,
+            success: false,
+            error: None,
+        }
+    }
+
+    /// Mark the action as completed successfully.
+    pub fn complete(mut self) -> Self {
+        self.end_time = Some(Instant::now());
+        self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
+        self.success = true;
+        self
+    }
+
+    /// Mark the action as failed.
+    pub fn fail(mut self, error: &str) -> Self {
+        self.end_time = Some(Instant::now());
+        self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
+        self.success = false;
+        self.error = Some(error.to_string());
+        self
+    }
+}
+
+/// Comprehensive execution report for a DSL task.
+#[derive(Debug, Clone)]
+pub struct ExecutionReport {
+    /// Task name
+    pub task_name: String,
+    /// Task execution start time
+    pub start_time: Instant,
+    /// Task execution end time
+    pub end_time: Option<Instant>,
+    /// Total execution duration
+    pub total_duration: Option<Duration>,
+    /// Number of actions in the task
+    pub total_actions: u32,
+    /// Number of actions executed
+    pub actions_executed: u32,
+    /// Number of successful actions
+    pub actions_succeeded: u32,
+    /// Number of failed actions
+    pub actions_failed: u32,
+    /// Maximum call depth reached
+    pub max_call_depth: u32,
+    /// Variables defined during execution
+    pub variables_defined: usize,
+    /// Detailed metrics for each action
+    pub action_metrics: Vec<ActionMetrics>,
+    /// Overall success status
+    pub success: bool,
+}
+
+impl ExecutionReport {
+    /// Generate a human-readable summary of the execution.
+    pub fn summary(&self) -> String {
+        let duration = self
+            .total_duration
+            .map(|d| format!("{:?}", d))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        format!(
+            "Task '{}' executed {} actions in {} ({} successful, {} failed)",
+            self.task_name,
+            self.actions_executed,
+            duration,
+            self.actions_succeeded,
+            self.actions_failed
+        )
+    }
+
+    /// Export the report as JSON.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "task_name": self.task_name,
+            "total_actions": self.total_actions,
+            "actions_executed": self.actions_executed,
+            "actions_succeeded": self.actions_succeeded,
+            "actions_failed": self.actions_failed,
+            "max_call_depth": self.max_call_depth,
+            "variables_defined": self.variables_defined,
+            "success": self.success,
+            "action_metrics": self.action_metrics.iter().map(|m| {
+                serde_json::json!({
+                    "index": m.index,
+                    "action_type": &m.action_type,
+                    "success": m.success,
+                    "duration_ms": m.duration.map(|d| d.as_millis() as u64),
+                    "error": &m.error,
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
 
 /// Executor state for DSL task execution.
 pub struct DslExecutor<'a> {
@@ -39,6 +162,14 @@ pub struct DslExecutor<'a> {
     actions_executed: u32,
     /// Current call depth for recursion tracking
     call_depth: u32,
+    /// Detailed action execution metrics
+    action_metrics: Vec<ActionMetrics>,
+    /// Execution start time
+    start_time: Instant,
+    /// Number of successful actions
+    actions_succeeded: u32,
+    /// Number of failed actions
+    actions_failed: u32,
 }
 
 impl<'a> std::fmt::Debug for DslExecutor<'a> {
@@ -48,6 +179,8 @@ impl<'a> std::fmt::Debug for DslExecutor<'a> {
             .field("variables", &self.variables)
             .field("actions_executed", &self.actions_executed)
             .field("call_depth", &self.call_depth)
+            .field("actions_succeeded", &self.actions_succeeded)
+            .field("actions_failed", &self.actions_failed)
             .finish_non_exhaustive()
     }
 }
@@ -65,6 +198,10 @@ impl<'a> DslExecutor<'a> {
             variables: HashMap::new(),
             actions_executed: 0,
             call_depth: 0,
+            action_metrics: Vec::new(),
+            start_time: Instant::now(),
+            actions_succeeded: 0,
+            actions_failed: 0,
         }
     }
 
@@ -81,6 +218,10 @@ impl<'a> DslExecutor<'a> {
             variables: HashMap::new(),
             actions_executed: 0,
             call_depth,
+            action_metrics: Vec::new(),
+            start_time: Instant::now(),
+            actions_succeeded: 0,
+            actions_failed: 0,
         }
     }
 
@@ -110,6 +251,7 @@ impl<'a> DslExecutor<'a> {
     /// Execute the task definition.
     ///
     /// Runs all actions in sequence, handling control flow and variables.
+    /// Tracks detailed metrics for each action execution.
     pub async fn execute(&mut self) -> Result<()> {
         log::info!(
             "Executing DSL task '{}' with {} actions",
@@ -117,22 +259,53 @@ impl<'a> DslExecutor<'a> {
             self.task_def.actions.len()
         );
 
-        for (idx, action) in self.task_def.actions.iter().enumerate() {
+        for (idx, action) in self.task_def.actions.clone().iter().enumerate() {
+            let action_type = format!("{:?}", action)
+                .split_whitespace()
+                .next()
+                .unwrap_or("Unknown")
+                .to_string();
+            let mut metrics = ActionMetrics::new(idx, &action_type);
+
             log::debug!("Action {}: {:?}", idx + 1, action);
-            self.execute_action(action).await.with_context(|| {
-                format!(
-                    "Failed to execute action {} in task '{}'",
-                    idx + 1,
-                    self.task_def.name
-                )
-            })?;
+
+            match self.execute_action(action).await {
+                Ok(_) => {
+                    metrics = metrics.complete();
+                    self.actions_succeeded += 1;
+                    log::debug!("Action {} completed in {:?}", idx + 1, metrics.duration);
+                }
+                Err(e) => {
+                    let error_msg = format!("{}", e);
+                    metrics = metrics.fail(&error_msg);
+                    self.actions_failed += 1;
+                    log::error!(
+                        "Action {} failed after {:?}: {}",
+                        idx + 1,
+                        metrics.duration,
+                        error_msg
+                    );
+                    self.action_metrics.push(metrics);
+                    return Err(e).with_context(|| {
+                        format!(
+                            "Failed to execute action {} in task '{}'",
+                            idx + 1,
+                            self.task_def.name
+                        )
+                    });
+                }
+            }
+
+            self.action_metrics.push(metrics);
             self.actions_executed += 1;
         }
 
         log::info!(
-            "DSL task '{}' completed ({} actions executed)",
+            "DSL task '{}' completed ({} actions executed, {} succeeded, {} failed)",
             self.task_def.name,
-            self.actions_executed
+            self.actions_executed,
+            self.actions_succeeded,
+            self.actions_failed
         );
         Ok(())
     }
@@ -484,6 +657,31 @@ impl<'a> DslExecutor<'a> {
             total_actions: self.task_def.actions.len() as u32,
             variables_defined: self.variables.len(),
             max_call_depth: self.call_depth,
+        }
+    }
+
+    /// Generate a comprehensive execution report.
+    ///
+    /// # Arguments
+    /// * `success` - Whether the execution was successful overall
+    ///
+    /// # Returns
+    /// An ExecutionReport with detailed metrics about the task execution
+    pub fn execution_report(&self, success: bool) -> ExecutionReport {
+        let end_time = Instant::now();
+        ExecutionReport {
+            task_name: self.task_def.name.clone(),
+            start_time: self.start_time,
+            end_time: Some(end_time),
+            total_duration: Some(end_time.duration_since(self.start_time)),
+            total_actions: self.task_def.actions.len() as u32,
+            actions_executed: self.actions_executed,
+            actions_succeeded: self.actions_succeeded,
+            actions_failed: self.actions_failed,
+            max_call_depth: self.call_depth,
+            variables_defined: self.variables.len(),
+            action_metrics: self.action_metrics.clone(),
+            success,
         }
     }
 }

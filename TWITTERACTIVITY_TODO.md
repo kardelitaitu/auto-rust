@@ -7,7 +7,7 @@ Refactoring checklist for `src/task/twitteractivity.rs` (2154 lines) to improve 
 
 ## Final Status Summary (2026-05-03)
 
-### ✅ COMPLETED (12/15 sections)
+### ✅ COMPLETED (13/15 sections)
 - **1.x** Module Structure - God object split, navigation migrated
 - **2.x** API Cleanup - process_candidate signature refactored, documented
 - **4.2** Inline Selector Cleanup - JS generators created
@@ -18,9 +18,9 @@ Refactoring checklist for `src/task/twitteractivity.rs` (2154 lines) to improve 
 - **8.1** Session State - consolidated into SessionState struct
 - **8.2** Thread Cache - removed dead code
 - **9.1** Test Organization - plan drafted, topic modules created
+- **9.2** Advanced Test Coverage - 27 tests added (integration/statistical/property)
 
-### ⏸ DEFERRED (3/15 sections - nice-to-have)
-- **9.2** Advanced Test Coverage - core coverage strong (1986 tests)
+### ⏸ DEFERRED (2/15 sections - nice-to-have)
 - **10.1** Code Documentation - module docs adequate
 - **10.2** Runbook Documentation - for production ops only
 

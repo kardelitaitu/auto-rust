@@ -26,6 +26,9 @@ pub struct Config {
     /// OpenTelemetry tracing configuration
     #[serde(default)]
     pub tracing: TracingConfig,
+    /// Task discovery configuration (Phase 2)
+    #[serde(default)]
+    pub task_discovery: TaskDiscoveryConfig,
 }
 
 /// Configuration for browser connections and management.
@@ -372,6 +375,25 @@ fn default_otlp_endpoint() -> String {
 
 fn default_service_name() -> String {
     "auto".to_string()
+}
+
+/// Task discovery configuration (Phase 2).
+/// Controls how external tasks are discovered and loaded.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct TaskDiscoveryConfig {
+    /// Enable external task discovery (default: false - opt-in)
+    #[serde(default)]
+    pub enabled: bool,
+    /// List of directories to scan for external task files
+    #[serde(default)]
+    pub roots: Vec<String>,
+    /// File extensions to consider as task files (default: ["task"])
+    #[serde(default = "default_task_extensions")]
+    pub extensions: Vec<String>,
+}
+
+fn default_task_extensions() -> Vec<String> {
+    vec!["task".to_string()]
 }
 
 /// Engagement limits configuration for Twitter automation.
@@ -1165,6 +1187,7 @@ fn load_code_config() -> Result<Config> {
         },
         twitter_activity: TwitterActivityConfig::default(),
         tracing: TracingConfig::default(),
+        task_discovery: TaskDiscoveryConfig::default(),
     })
 }
 

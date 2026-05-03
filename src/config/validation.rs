@@ -292,6 +292,7 @@ mod tests {
             orchestrator: create_valid_orchestrator_config(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         assert!(config.validate().is_ok());
     }
@@ -306,6 +307,7 @@ mod tests {
             orchestrator,
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let err = config.validate().unwrap_err();
         assert!(
@@ -323,6 +325,7 @@ mod tests {
             orchestrator: create_valid_orchestrator_config(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let err = config.validate().unwrap_err();
         assert!(matches!(err, ConfigError::MissingField(field, _) if field == "browser.profiles"));

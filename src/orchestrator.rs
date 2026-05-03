@@ -771,7 +771,9 @@ fn should_mark_session_unhealthy(kind: TaskErrorKind, was_cancelled: bool) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{OrchestratorConfig, TracingConfig, TwitterActivityConfig};
+    use crate::config::{
+        OrchestratorConfig, TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig,
+    };
     use crate::result::TaskStatus;
     use futures::stream::FuturesUnordered;
     use tokio::time::sleep;
@@ -794,6 +796,7 @@ mod tests {
             browser: Default::default(),
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         }
     }
 
@@ -1093,6 +1096,7 @@ mod tests {
             browser: Default::default(),
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
 
         let orchestrator = Orchestrator::new(config.clone());
@@ -1106,6 +1110,7 @@ mod tests {
             browser: Default::default(),
             tracing: TracingConfig::default(),
             twitter_activity: TwitterActivityConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
         let orchestrator2 = Orchestrator::new(config2);
         assert_eq!(orchestrator2.config.orchestrator.max_global_concurrency, 5);

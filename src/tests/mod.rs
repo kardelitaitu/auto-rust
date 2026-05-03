@@ -8,7 +8,8 @@ mod task_registry_policy_tests;
 mod config_tests {
     use crate::config::{
         validate_config, BrowserConfig, CircuitBreakerConfig, Config, NativeInteractionConfig,
-        OrchestratorConfig, RoxybrowserConfig, TracingConfig, TwitterActivityConfig,
+        OrchestratorConfig, RoxybrowserConfig, TaskDiscoveryConfig, TracingConfig,
+        TwitterActivityConfig,
     };
     use std::collections::BTreeMap;
 
@@ -50,6 +51,7 @@ mod config_tests {
             },
             twitter_activity: TwitterActivityConfig::default(),
             tracing: TracingConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
 
         assert!(validate_config(&config).is_ok());
@@ -93,6 +95,7 @@ mod config_tests {
             },
             twitter_activity: TwitterActivityConfig::default(),
             tracing: TracingConfig::default(),
+            task_discovery: TaskDiscoveryConfig::default(),
         };
 
         assert!(validate_config(&config).is_err());

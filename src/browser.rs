@@ -984,6 +984,7 @@ mod tests {
             orchestrator: crate::config::OrchestratorConfig::default(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let filters: Vec<String> = vec![];
 
@@ -1006,6 +1007,7 @@ mod tests {
             orchestrator: crate::config::OrchestratorConfig::default(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let filters = vec!["brave".to_string()];
 
@@ -1034,6 +1036,7 @@ mod tests {
             orchestrator: crate::config::OrchestratorConfig::default(),
             twitter_activity: crate::config::TwitterActivityConfig::default(),
             tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
         };
         let filters: Vec<String> = vec![]; // Empty filters
 

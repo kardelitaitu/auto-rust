@@ -6,6 +6,126 @@ use log::{info, warn, LevelFilter};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartupMode {
+    ListTasks,
+    DryRun,
+    Execute,
+}
+
+fn select_startup_mode(args: &cli::Args) -> StartupMode {
+    if args.list_tasks {
+        StartupMode::ListTasks
+    } else if args.dry_run {
+        StartupMode::DryRun
+    } else {
+        StartupMode::Execute
+    }
+}
+
+fn render_list_tasks_output() -> String {
+    use auto::task::registry::format_task_list;
+
+    format_task_list()
+}
+
+fn render_dry_run_output(groups: &[Vec<cli::TaskDefinition>], config: &config::Config) -> String {
+    use auto::task::registry::{TaskRegistry, TaskSource};
+    use std::fmt::Write;
+
+    let mut output = String::new();
+    let _ = writeln!(output, "=== DRY RUN MODE ===");
+    let _ = writeln!(
+        output,
+        "No tasks will be executed. Showing execution plan only.\n"
+    );
+
+    let mut registry = TaskRegistry::with_built_in_tasks();
+    let external_loaded = registry.load_external_tasks(&config.task_discovery);
+    if external_loaded > 0 {
+        let _ = writeln!(output, "External tasks loaded: {}", external_loaded);
+    }
+
+    let diag = registry.diagnostics();
+    let _ = writeln!(output, "\nRegistry state:");
+    let _ = writeln!(output, "  Total tasks: {}", diag.total_tasks);
+    let _ = writeln!(output, "  Built-in tasks: {}", diag.built_in_tasks);
+    let _ = writeln!(output, "  External tasks: {}", diag.external_tasks);
+
+    let _ = writeln!(output, "\nExecution plan:");
+    if groups.is_empty() {
+        let _ = writeln!(output, "  No task groups specified.");
+        let _ = writeln!(output, "\n=== SUMMARY ===");
+        let _ = writeln!(output, "Task groups: 0");
+        let _ = writeln!(output, "Total task executions: 0");
+        let _ = writeln!(output, "\nDry run complete. No tasks were executed.");
+        return output;
+    }
+
+    for (group_idx, group) in groups.iter().enumerate() {
+        let _ = writeln!(
+            output,
+            "\n  Group {} ({} tasks):",
+            group_idx + 1,
+            group.len()
+        );
+
+        for (task_idx, task_def) in group.iter().enumerate() {
+            let normalized_name = auto::task::normalize_task_name(&task_def.name);
+
+            match registry.lookup(normalized_name) {
+                Ok(descriptor) => {
+                    let source_info = match &descriptor.source {
+                        TaskSource::BuiltInRust => "BuiltInRust".to_string(),
+                        TaskSource::ConfiguredPath(path) => {
+                            format!("ConfiguredPath({})", path.display())
+                        }
+                        TaskSource::Unknown => "Unknown".to_string(),
+                    };
+
+                    let _ = writeln!(
+                        output,
+                        "    {}. {} [{}] (policy: {})",
+                        task_idx + 1,
+                        task_def.name,
+                        source_info,
+                        descriptor.policy_name
+                    );
+
+                    if !task_def.payload.is_empty() {
+                        let payload_str = task_def
+                            .payload
+                            .iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let _ = writeln!(output, "       payload: {}", payload_str);
+                    }
+                }
+                Err(e) => {
+                    let _ = writeln!(
+                        output,
+                        "    {}. {} [UNKNOWN - {}]",
+                        task_idx + 1,
+                        task_def.name,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    let total_tasks: usize = groups.iter().map(|g| g.len()).sum();
+    let total_groups = groups.len();
+
+    let _ = writeln!(output, "\n=== SUMMARY ===");
+    let _ = writeln!(output, "Task groups: {}", total_groups);
+    let _ = writeln!(output, "Total task executions: {}", total_tasks);
+    let _ = writeln!(output, "\nDry run complete. No tasks were executed.");
+
+    output
+}
+
 /// Detect and set the appropriate working directory based on executable location.
 /// When running from target/debug or target/release, changes to project root.
 /// Otherwise, changes to the executable's directory.
@@ -64,84 +184,7 @@ fn run() -> Result<()> {
 ///
 /// Validates all tasks and prints execution plan without connecting to browsers.
 async fn run_dry_run(groups: &[Vec<cli::TaskDefinition>], config: &config::Config) -> Result<()> {
-    use auto::task::registry::TaskRegistry;
-
-    println!("=== DRY RUN MODE ===");
-    println!("No tasks will be executed. Showing execution plan only.\n");
-
-    // Build registry with external tasks if discovery is enabled
-    let mut registry = TaskRegistry::with_built_in_tasks();
-    let external_loaded = registry.load_external_tasks(&config.task_discovery);
-
-    if external_loaded > 0 {
-        println!("External tasks loaded: {}", external_loaded);
-    }
-
-    // Show registry diagnostics
-    let diag = registry.diagnostics();
-    println!("\nRegistry state:");
-    println!("  Total tasks: {}", diag.total_tasks);
-    println!("  Built-in tasks: {}", diag.built_in_tasks);
-    println!("  External tasks: {}", diag.external_tasks);
-
-    // Validate and show each task group
-    println!("\nExecution plan:");
-    if groups.is_empty() {
-        println!("  No task groups specified.");
-        return Ok(());
-    }
-
-    for (group_idx, group) in groups.iter().enumerate() {
-        println!("\n  Group {} ({} tasks):", group_idx + 1, group.len());
-
-        for (task_idx, task_def) in group.iter().enumerate() {
-            let normalized_name = auto::task::normalize_task_name(&task_def.name);
-
-            match registry.lookup(normalized_name) {
-                Ok(descriptor) => {
-                    let source_info = match &descriptor.source {
-                        auto::task::registry::TaskSource::BuiltInRust => "BuiltInRust".to_string(),
-                        auto::task::registry::TaskSource::ConfiguredPath(path) => {
-                            format!("ConfiguredPath({})", path.display())
-                        }
-                        auto::task::registry::TaskSource::Unknown => "Unknown".to_string(),
-                    };
-
-                    println!(
-                        "    {}. {} [{}] (policy: {})",
-                        task_idx + 1,
-                        task_def.name,
-                        source_info,
-                        descriptor.policy_name
-                    );
-
-                    // Show payload if present
-                    if !task_def.payload.is_empty() {
-                        let payload_str = task_def
-                            .payload
-                            .iter()
-                            .map(|(k, v)| format!("{}={}", k, v))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        println!("       payload: {}", payload_str);
-                    }
-                }
-                Err(e) => {
-                    println!("    {}. {} [UNKNOWN - {}]", task_idx + 1, task_def.name, e);
-                }
-            }
-        }
-    }
-
-    // Summary
-    let total_tasks: usize = groups.iter().map(|g| g.len()).sum();
-    let total_groups = groups.len();
-
-    println!("\n=== SUMMARY ===");
-    println!("Task groups: {}", total_groups);
-    println!("Total task executions: {}", total_tasks);
-    println!("\nDry run complete. No tasks were executed.");
-
+    print!("{}", render_dry_run_output(groups, config));
     Ok(())
 }
 
@@ -168,11 +211,12 @@ async fn run_async() -> Result<()> {
 
     let args = cli::parse_args();
 
-    // Handle --list-tasks flag
-    if args.list_tasks {
-        use auto::task::registry::format_task_list;
-        print!("{}", format_task_list());
-        return Ok(());
+    match select_startup_mode(&args) {
+        StartupMode::ListTasks => {
+            print!("{}", render_list_tasks_output());
+            return Ok(());
+        }
+        StartupMode::DryRun | StartupMode::Execute => {}
     }
 
     let config = config::load_config()?;
@@ -185,8 +229,7 @@ async fn run_async() -> Result<()> {
         cli::validate_task_groups_strict(&groups)?;
     }
 
-    // Handle --dry-run flag
-    if args.dry_run {
+    if matches!(select_startup_mode(&args), StartupMode::DryRun) {
         return run_dry_run(&groups, &config).await;
     }
 
@@ -281,6 +324,7 @@ async fn wait_for_shutdown(mut shutdown_rx: broadcast::Receiver<()>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use auto::cli::Args;
 
     #[test]
     fn test_session_health_degraded_empty_sessions() {
@@ -339,5 +383,103 @@ mod tests {
     fn test_format_health_warning_single_session() {
         let warning = format_health_warning(0, 1);
         assert!(warning.contains("0/1"));
+    }
+
+    #[test]
+    fn test_select_startup_mode_list_tasks_takes_precedence() {
+        let args = Args {
+            tasks: vec![],
+            browsers: None,
+            clear_learning: false,
+            list_tasks: true,
+            dry_run: true,
+        };
+
+        assert_eq!(select_startup_mode(&args), StartupMode::ListTasks);
+    }
+
+    #[test]
+    fn test_select_startup_mode_dry_run() {
+        let args = Args {
+            tasks: vec![],
+            browsers: None,
+            clear_learning: false,
+            list_tasks: false,
+            dry_run: true,
+        };
+
+        assert_eq!(select_startup_mode(&args), StartupMode::DryRun);
+    }
+
+    #[test]
+    fn test_select_startup_mode_execute() {
+        let args = Args {
+            tasks: vec![],
+            browsers: None,
+            clear_learning: false,
+            list_tasks: false,
+            dry_run: false,
+        };
+
+        assert_eq!(select_startup_mode(&args), StartupMode::Execute);
+    }
+
+    #[test]
+    fn test_render_list_tasks_output_smoke() {
+        let output = render_list_tasks_output();
+
+        assert!(output.starts_with("Available Tasks:"));
+        assert!(output.contains("cookiebot"));
+        assert!(output.contains("policy=cookiebot"));
+    }
+
+    #[test]
+    fn test_render_dry_run_output_smoke() {
+        let config = auto::config::Config {
+            browser: auto::config::BrowserConfig {
+                connection_timeout_ms: 1,
+                max_discovery_retries: 1,
+                discovery_retry_delay_ms: 1,
+                circuit_breaker: auto::config::CircuitBreakerConfig {
+                    enabled: false,
+                    failure_threshold: 1,
+                    success_threshold: 1,
+                    half_open_time_ms: 1,
+                },
+                profiles: vec![],
+                roxybrowser: auto::config::RoxybrowserConfig {
+                    enabled: false,
+                    api_url: String::new(),
+                    api_key: String::new(),
+                },
+                user_agent: None,
+                extra_http_headers: std::collections::BTreeMap::new(),
+                cursor_overlay_ms: 0,
+                native_interaction: auto::config::NativeInteractionConfig::default(),
+                max_workers_per_session: 1,
+                enable_learning_persistence: false,
+                learning_ttl_days: 0,
+            },
+            orchestrator: auto::config::OrchestratorConfig {
+                max_global_concurrency: 1,
+                task_timeout_ms: 1,
+                group_timeout_ms: 1,
+                worker_wait_timeout_ms: 1,
+                task_stagger_delay_ms: 1,
+                max_retries: 0,
+                retry_delay_ms: 1,
+            },
+            twitter_activity: auto::config::TwitterActivityConfig::default(),
+            tracing: auto::config::TracingConfig::default(),
+            task_discovery: auto::config::TaskDiscoveryConfig::default(),
+        };
+
+        let output = render_dry_run_output(&[], &config);
+
+        assert!(output.starts_with("=== DRY RUN MODE ==="));
+        assert!(output.contains("Registry state:"));
+        assert!(output.contains("Execution plan:"));
+        assert!(output.contains("No task groups specified."));
+        assert!(output.contains("Dry run complete. No tasks were executed."));
     }
 }

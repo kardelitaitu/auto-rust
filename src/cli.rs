@@ -358,6 +358,7 @@ pub fn format_task_groups(groups: &[Vec<TaskDefinition>]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use serde_json::json;
 
     #[test]
@@ -529,6 +530,43 @@ mod tests {
         assert_eq!(
             filters,
             vec!["brave".to_string(), "roxybrowser".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_args_parse_list_tasks_flag() {
+        let args = Args::try_parse_from(["auto", "--list-tasks"]).unwrap();
+
+        assert!(args.list_tasks);
+        assert!(!args.dry_run);
+        assert!(args.tasks.is_empty());
+        assert!(args.browsers.is_none());
+    }
+
+    #[test]
+    fn test_args_parse_dry_run_flag() {
+        let args = Args::try_parse_from(["auto", "--dry-run"]).unwrap();
+
+        assert!(args.dry_run);
+        assert!(!args.list_tasks);
+        assert!(args.tasks.is_empty());
+        assert!(args.browsers.is_none());
+    }
+
+    #[test]
+    fn test_args_parse_positional_tasks_with_flags() {
+        let args =
+            Args::try_parse_from(["auto", "cookiebot", "pageview=www.example.com", "--dry-run"])
+                .unwrap();
+
+        assert!(args.dry_run);
+        assert!(!args.list_tasks);
+        assert_eq!(
+            args.tasks,
+            vec![
+                "cookiebot".to_string(),
+                "pageview=www.example.com".to_string()
+            ]
         );
     }
 }

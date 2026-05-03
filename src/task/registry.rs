@@ -18,6 +18,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::task::dsl::TaskDefinition;
+
 /// Metadata describing a task in the registry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskDescriptor {
@@ -27,6 +29,8 @@ pub struct TaskDescriptor {
     pub source: TaskSource,
     /// Policy name for permission/timeout configuration
     pub policy_name: &'static str,
+    /// Parsed task definition for DSL tasks (external tasks only)
+    pub task_def: Option<TaskDefinition>,
 }
 
 /// Source of a task.
@@ -164,6 +168,7 @@ impl TaskRegistry {
             name: name.to_string(),
             source: TaskSource::BuiltInRust,
             policy_name,
+            task_def: None,
         };
         self.tasks.insert(name.to_string(), descriptor);
     }
@@ -195,6 +200,7 @@ impl TaskRegistry {
             name: name.to_string(),
             source: TaskSource::ConfiguredPath(path),
             policy_name,
+            task_def: None,
         };
         self.tasks.insert(name.to_string(), descriptor);
         Ok(())
@@ -202,7 +208,8 @@ impl TaskRegistry {
 
     /// Load external tasks from configured discovery roots.
     ///
-    /// Scans configured directories for task files and adds them to the registry.
+    /// Scans configured directories for task files, parses them as DSL tasks,
+    /// and adds them to the registry with their TaskDefinition.
     ///
     /// # Arguments
     /// * `config` - Task discovery configuration
@@ -227,25 +234,23 @@ impl TaskRegistry {
             }
 
             for extension in &config.extensions {
-                let pattern = format!("{}/*.{}", root, extension);
+                let pattern = format!("{}/*. {}", root, extension);
                 if let Ok(entries) = glob::glob(&pattern) {
                     for entry in entries.flatten() {
                         if let Some(name) = entry.file_stem().and_then(|s| s.to_str()) {
-                            // External tasks use "default" policy for now
-                            // In future, policy could be specified in task file metadata
-                            match self.register_external(name, entry.clone(), "default") {
+                            match self.load_dsl_task(name, &entry) {
                                 Ok(()) => {
-                                    log::info!("Loaded external task '{}' from {:?}", name, entry);
                                     loaded_count += 1;
                                 }
-                                Err(RegistryError::Conflict { name, sources }) => {
+                                Err(RegistryError::Conflict { name, .. }) => {
                                     log::warn!(
-                                        "Skipping external task '{}': conflicts with existing task from {:?}",
-                                        name,
-                                        sources.first().map(|s| format!("{:?}", s)).unwrap_or_default()
+                                        "Skipping external task '{}': conflicts with existing task",
+                                        name
                                     );
                                 }
-                                Err(_) => {}
+                                Err(e) => {
+                                    log::warn!("Failed to load external task '{}': {}", name, e);
+                                }
                             }
                         }
                     }
@@ -254,6 +259,53 @@ impl TaskRegistry {
         }
 
         loaded_count
+    }
+
+    /// Load and parse a DSL task from file.
+    fn load_dsl_task(&mut self, name: &str, path: &std::path::Path) -> Result<(), RegistryError> {
+        // Check for conflicts first
+        if let Some(existing) = self.tasks.get(name) {
+            return Err(RegistryError::Conflict {
+                name: name.to_string(),
+                sources: vec![
+                    existing.source.clone(),
+                    TaskSource::ConfiguredPath(path.to_path_buf()),
+                ],
+            });
+        }
+
+        // Parse the task file
+        let task_def = match crate::task::dsl::parse_task_file(path) {
+            Ok(def) => def,
+            Err(e) => {
+                log::error!("Failed to parse task file '{}': {}", path.display(), e);
+                return Err(RegistryError::UnknownTask {
+                    name: name.to_string(),
+                });
+            }
+        };
+
+        // Validate the task definition
+        if let Err(errors) = crate::task::dsl::validate_task_definition(&task_def) {
+            for error in errors {
+                log::warn!("Task '{}' validation warning: {}", name, error);
+            }
+        }
+
+        let descriptor = TaskDescriptor {
+            name: task_def.name.clone(),
+            source: TaskSource::ConfiguredPath(path.to_path_buf()),
+            policy_name: Box::leak(task_def.policy.clone().into_boxed_str()),
+            task_def: Some(task_def),
+        };
+
+        self.tasks.insert(name.to_string(), descriptor);
+        log::info!(
+            "Loaded external DSL task '{}' from {}",
+            name,
+            path.display()
+        );
+        Ok(())
     }
 
     /// Look up a task by name.
@@ -278,6 +330,21 @@ impl TaskRegistry {
     pub fn is_known(&self, name: &str) -> bool {
         let normalized = crate::task::normalize_task_name(name);
         self.tasks.contains_key(normalized)
+    }
+
+    /// Get the task definition for a DSL task.
+    ///
+    /// Returns the TaskDefinition if the task is an external DSL task,
+    /// None for built-in Rust tasks.
+    ///
+    /// # Arguments
+    /// * `name` - Task name
+    ///
+    /// # Returns
+    /// Some(TaskDefinition) if found and has a DSL definition, None otherwise
+    pub fn get_task_definition(&self, name: &str) -> Option<&TaskDefinition> {
+        let normalized = crate::task::normalize_task_name(name);
+        self.tasks.get(normalized).and_then(|d| d.task_def.as_ref())
     }
 
     /// List all registered tasks.
@@ -614,5 +681,44 @@ mod tests {
             name: "nonexistent".to_string(),
         };
         assert_eq!(err.to_string(), "Task 'nonexistent' not found");
+    }
+
+    #[test]
+    fn test_lookup_normalizes_js_suffix() {
+        let registry = TaskRegistry::with_built_in_tasks();
+
+        let task = registry.lookup("cookiebot.js").unwrap();
+
+        assert_eq!(task.name, "cookiebot");
+        assert!(task.source.is_built_in());
+    }
+
+    #[test]
+    fn test_format_task_list_includes_built_in_registry_summary() {
+        let output = format_task_list();
+
+        assert!(output.starts_with("Available Tasks:"));
+        assert!(output.contains("BuiltInRust"));
+        assert!(output.contains("cookiebot"));
+        assert!(output.contains("policy=cookiebot"));
+        assert!(output.contains("Total: 15 tasks"));
+    }
+
+    #[test]
+    fn test_registry_diagnostics_counts_external_tasks() {
+        let mut registry = TaskRegistry::with_built_in_tasks();
+        registry
+            .register_external(
+                "sample_external",
+                PathBuf::from(r"C:\external\sample_external.task"),
+                "default",
+            )
+            .unwrap();
+
+        let diag = registry.diagnostics();
+        assert_eq!(diag.total_tasks, 16);
+        assert_eq!(diag.built_in_tasks, 15);
+        assert_eq!(diag.external_tasks, 1);
+        assert!(diag.task_names.contains(&"sample_external".to_string()));
     }
 }

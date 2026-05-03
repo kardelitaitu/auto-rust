@@ -113,6 +113,15 @@ async fn execute_single_attempt(
     payload: &Value,
     config: &crate::config::Config,
 ) -> Result<()> {
+    // First check if this is a DSL task (external task with definition)
+    let registry = registry::TaskRegistry::with_built_in_tasks();
+    if let Some(task_def) = registry.get_task_definition(name) {
+        // Execute as DSL task
+        let mut executor = dsl_executor::DslExecutor::new(api, task_def);
+        return executor.execute().await;
+    }
+
+    // Otherwise execute as built-in Rust task
     match name {
         "cookiebot" => cookiebot::run(api, payload.clone())
             .await

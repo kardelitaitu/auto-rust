@@ -20,6 +20,7 @@ pub mod demo_mouse;
 pub mod demoqa;
 pub mod pageview;
 pub mod policy;
+pub mod registry;
 pub mod security;
 pub mod task_example;
 pub mod twitteractivity;

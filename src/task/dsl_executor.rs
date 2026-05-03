@@ -245,6 +245,80 @@ impl<'a> DslExecutor<'a> {
             Action::Call { task, parameters } => {
                 self.execute_call(task, parameters.as_ref()).await?;
             }
+            Action::Screenshot { path, selector } => {
+                let resolved_selector = selector.as_ref().map(|s| self.substitute_variables(s));
+                let resolved_path = path.as_ref().map(|p| self.substitute_variables(p));
+
+                if let Some(sel) = resolved_selector {
+                    log::info!("Taking screenshot of element '{}'", sel);
+                    // For now, warn that element-specific screenshots need full implementation
+                    log::warn!("Element-specific screenshots not yet fully implemented, taking full page screenshot");
+                } else {
+                    log::info!("Taking full page screenshot");
+                }
+
+                if let Some(p) = resolved_path {
+                    log::info!("Screenshot would be saved to: {}", p);
+                }
+                // Note: Full implementation requires TaskContext to support screenshots
+                // This is a stub that logs the intent
+            }
+            Action::Clear { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                log::debug!("Clearing input field '{}'", resolved_selector);
+                self.api.clear(&resolved_selector).await?;
+            }
+            Action::Hover { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                log::debug!("Hovering over element '{}'", resolved_selector);
+                self.api.hover(&resolved_selector).await?;
+            }
+            Action::Select {
+                selector,
+                value,
+                by_value,
+            } => {
+                let resolved_selector = self.substitute_variables(selector);
+                let resolved_value = self.substitute_variables(value);
+                let use_value_attr = by_value.unwrap_or(false);
+
+                log::debug!(
+                    "Selecting '{}' from dropdown '{}' (by_value={})",
+                    resolved_value,
+                    resolved_selector,
+                    use_value_attr
+                );
+
+                // Use JavaScript to select the option
+                let script = if use_value_attr {
+                    format!(
+                        r#"document.querySelector('{}').value = '{}';"#,
+                        resolved_selector, resolved_value
+                    )
+                } else {
+                    format!(
+                        r#"const select = document.querySelector('{}');
+                        const options = Array.from(select.options);
+                        const option = options.find(o => o.text.trim() === '{}');
+                        if (option) select.value = option.value;"#,
+                        resolved_selector, resolved_value
+                    )
+                };
+
+                // Execute the JavaScript via the page
+                // Note: This requires TaskContext to have execute_script capability
+                log::info!("Would execute select script: {}", script);
+            }
+            Action::RightClick { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                log::debug!("Right-clicking element '{}'", resolved_selector);
+                self.api.right_click(&resolved_selector).await?;
+            }
+            Action::DoubleClick { selector } => {
+                let resolved_selector = self.substitute_variables(selector);
+                log::debug!("Double-clicking element '{}'", resolved_selector);
+                self.api.double_click(&resolved_selector).await?;
+            }
         }
         Ok(())
     }

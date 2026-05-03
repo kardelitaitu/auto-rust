@@ -135,6 +135,29 @@ pub enum Action {
         message: String,
         level: Option<LogLevel>,
     },
+    /// Capture a screenshot of the page
+    Screenshot {
+        /// Optional path to save the screenshot (defaults to auto-generated)
+        path: Option<String>,
+        /// Optional selector to screenshot specific element (defaults to full page)
+        selector: Option<String>,
+    },
+    /// Clear an input field
+    Clear { selector: String },
+    /// Hover over an element
+    Hover { selector: String },
+    /// Select an option from a dropdown
+    Select {
+        selector: String,
+        /// Value to select (use text or value attribute)
+        value: String,
+        /// Whether to select by visible text (default) or value attribute
+        by_value: Option<bool>,
+    },
+    /// Right-click on an element
+    RightClick { selector: String },
+    /// Double-click on an element
+    DoubleClick { selector: String },
 }
 
 /// Log levels for the Log action.

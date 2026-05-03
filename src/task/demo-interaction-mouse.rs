@@ -120,7 +120,7 @@ fn main() {
 mod tests {
     #[test]
     fn test_demo_runs() {
-        main();
+        super::main();
     }
 
     #[test]

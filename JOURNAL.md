@@ -1,3 +1,81 @@
+## 2026-05-03 - Documentation Sync and Architecture Decision Records
+
+### Accomplished This Session
+
+#### Documentation Updates (9 files, +315/-28 lines)
+- **README.md**: Fixed broken TASK_AUTHORING_GUIDE link, expanded task list with 9 missing tasks
+- **ARCHITECTURE.md**: Fixed circuit breaker path (session/mod.rs), added twitter module details (27 files)
+- **AGENTS.md**: Updated date, expanded to full 27 modularized twitter files with categories
+- **ONBOARDING.md**: Fixed circuit breaker location, added mouse/ subdirectory
+- **docs/TASKS/overview.md**: Added 9 missing tasks, fixed broken link
+- **docs/TASKS/twitteractivity.md**: Added smart decisions, enhanced sentiment, dry run params
+- **docs/TASKS/demoqa.md**: Fixed broken TASK_AUTHORING_GUIDE link
+
+#### Architecture Decision Records (4 new ADRs)
+- **ADR 9**: Modularize twitteractivity into 27 files (accepted)
+- **ADR 10**: Remove thread cache for simplified LLM context (accepted)
+- **ADR 11**: Implement Smart Decision Engine 7.1 (accepted)
+- **ADR 12**: Advanced test coverage - integration/statistical/property (accepted)
+
+#### Test Coverage Completion (Section 9.2)
+- **twitteractivity_engagement.rs**: Added 27 tests across 4 modules
+  - `integration_tests` (12): Action selection, limits, text extraction
+  - `decision_integration_tests` (3): Smart decision enabled/disabled paths
+  - `statistical_tests` (5): Persona probability distribution (1000 trials, 5% tolerance)
+  - `property_tests` (8): No-panic invariants, edge cases
+- Test count: 1986 → 2014 (+28 tests)
+
+#### Verification (`./check.ps1`)
+- ✅ Build (cargo check): PASS
+- ✅ Format (cargo fmt --all -- --check): PASS
+- ✅ Clippy (cargo clippy --all-targets --all-features -- -D warnings): PASS
+- ✅ Tests (cargo nextest run --all-features --lib): **2014 passed, 5 skipped**
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass |
+| Tests | ✅ 2014 passed |
+| cargo clippy | ✅ Clean |
+| Format | ✅ Properly formatted |
+| Documentation sync | ✅ 9 files updated |
+| ADRs | ✅ 4 new decisions recorded |
+| Test coverage 9.2 | ✅ Complete |
+
+### Key Decisions Made
+1. All TASK_AUTHORING_GUIDE.md links → TUTORIAL_BUILDING_FIRST_TASK.md
+2. Documented all 15 tasks (previously only 6 listed)
+3. Recorded major architectural decisions in ADL format
+4. Test coverage now includes statistical and property-based tests
+
+### Files Modified
+1. `README.md` - Task list, broken link fix
+2. `AGENTS.md` - Date, twitter module expansion
+3. `ARCHITECTURE.md` - Circuit breaker path, twitter details
+4. `ONBOARDING.md` - Directory structure accuracy
+5. `docs/TASKS/overview.md` - Complete task table
+6. `docs/TASKS/twitteractivity.md` - Smart decision features
+7. `docs/TASKS/demoqa.md` - Link fix
+8. `docs/DECISION_LOG.md` - 4 new ADRs
+
+### Commits
+```
+commit bf97190
+Author: pi <pi@auto-rust>
+Date: Sat May 3 11:17:00 2026 +0700
+
+docs: sync documentation with current codebase (9 files, +90/-28 lines)
+
+commit 03c612e
+Author: pi <pi@auto-rust>
+Date: Sat May 3 12:03:00 2026 +0700
+
+docs: add ADRs for recent major technical decisions (9-12)
+```
+
+---
+
 ## 2026-05-02 - Test coverage improvement for twitteractivity.rs and twitterintent.rs
 
 ### Accomplished This Session

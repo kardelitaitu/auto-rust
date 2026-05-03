@@ -3,7 +3,7 @@
 
 use auto::task::{is_known_task, known_task_names, normalize_task_name, TASK_NAMES};
 use auto::validation::{
-    is_known_task as validate_is_known_task, task_file_exists, validate_task_groups,
+    get_task_descriptor, is_known_task as validate_is_known_task, validate_task_groups,
     validate_task_groups_strict,
 };
 
@@ -105,20 +105,23 @@ fn validation_is_known_task_matches_task_layer() {
     }
 }
 
-/// Test task file existence check for known tasks
+/// Test task descriptor lookup for known tasks
 #[test]
-fn task_file_exists_known_tasks() {
-    // These should exist (they're in the source)
-    assert!(task_file_exists("cookiebot"));
-    assert!(task_file_exists("pageview"));
-    assert!(task_file_exists("twitteractivity"));
+fn task_descriptor_lookup_known_tasks() {
+    let cookiebot = get_task_descriptor("cookiebot").unwrap();
+    assert_eq!(cookiebot.name, "cookiebot");
+    assert!(cookiebot.source.is_built_in());
+
+    let pageview = get_task_descriptor("pageview").unwrap();
+    assert_eq!(pageview.name, "pageview");
+    assert!(pageview.source.is_built_in());
 }
 
-/// Test task file existence check for unknown tasks
+/// Test task descriptor lookup for unknown tasks
 #[test]
-fn task_file_exists_unknown_tasks() {
-    assert!(!task_file_exists("unknown_task"));
-    assert!(!task_file_exists("fake"));
+fn task_descriptor_lookup_unknown_tasks() {
+    assert!(get_task_descriptor("unknown_task").is_err());
+    assert!(get_task_descriptor("fake").is_err());
 }
 
 /// Test validate_task_groups with valid groups
@@ -134,7 +137,8 @@ fn validate_task_groups_valid() {
     let results = validate_task_groups(&groups);
     assert_eq!(results.len(), 1);
     assert!(results[0].is_known);
-    assert!(results[0].file_exists);
+    assert!(results[0].source.contains("BuiltInRust"));
+    assert_eq!(results[0].policy_name, "default");
 }
 
 /// Test validate_task_groups with invalid task
@@ -149,9 +153,9 @@ fn validate_task_groups_invalid_task() {
 
     let results = validate_task_groups(&groups);
     assert_eq!(results.len(), 1);
-    // Unknown task should not be known and file should not exist
+    // Unknown task should not be known
     assert!(!results[0].is_known);
-    assert!(!results[0].file_exists);
+    assert!(results[0].source.contains("Unknown"));
 }
 
 /// Test validate_task_groups_strict with valid groups
@@ -244,13 +248,18 @@ fn validate_task_groups_empty_task() {
     assert!(!results[0].is_known);
 }
 
-/// Test task_file_exists with various tasks
+/// Test registry-based task validation
 #[test]
-fn task_file_exists_various_tasks() {
-    // Known tasks should have files
-    assert!(task_file_exists("cookiebot"));
-    assert!(task_file_exists("pageview"));
+fn registry_based_task_validation() {
+    use auto::task::registry::TaskRegistry;
 
-    // Unknown tasks should not have files
-    assert!(!task_file_exists("unknown_task"));
+    let registry = TaskRegistry::with_built_in_tasks();
+
+    // Known tasks should be in registry
+    assert!(registry.is_known("cookiebot"));
+    assert!(registry.is_known("pageview"));
+    assert_eq!(registry.task_count(), 15);
+
+    // Unknown tasks should not be in registry
+    assert!(!registry.is_known("unknown_task"));
 }

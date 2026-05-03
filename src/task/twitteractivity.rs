@@ -188,7 +188,6 @@ async fn run_inner(
                     scroll_interval,
                     action_tracker: &mut session.action_tracker,
                     counters: &mut session.counters,
-                    thread_cache: None,
                 };
 
                 let result =
@@ -198,7 +197,6 @@ async fn run_inner(
                     next_scroll: new_next_scroll,
                     actions_this_scan: new_actions_this_scan,
                     actions_taken: new_actions_taken,
-                    thread_cache: _,
                 } = result;
 
                 next_scroll = new_next_scroll;
@@ -255,14 +253,15 @@ fn log_summary(session: &SessionState, task_config: &TaskConfig, _api: &TaskCont
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::twitter::twitteractivity_navigation::select_entry_point;
-    use serde_json::json;
+mod test_support {
+    use serde_json::{json, Value};
 
-    #[test]
-    fn test_task_config_from_payload_with_all_fields() {
-        let payload = json!({
+    pub fn twitter_config() -> crate::config::TwitterActivityConfig {
+        crate::config::TwitterActivityConfig::default()
+    }
+
+    pub fn payload_with_all_fields() -> Value {
+        json!({
             "duration_ms": 120000,
             "candidate_count": 10,
             "thread_depth": 15,
@@ -272,9 +271,19 @@ mod tests {
             "smart_decision_enabled": true,
             "enhanced_sentiment_enabled": false,
             "dry_run_actions": true
-        });
-        let twitter_config = crate::config::TwitterActivityConfig::default();
-        let config = TaskConfig::from_payload(&payload, &twitter_config).unwrap();
+        })
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::test_support::{payload_with_all_fields, twitter_config};
+    use super::TaskConfig;
+
+    #[test]
+    fn task_config_from_payload_with_all_fields() {
+        let config =
+            TaskConfig::from_payload(&payload_with_all_fields(), &twitter_config()).unwrap();
         assert!(config.duration_ms >= 96_000 && config.duration_ms <= 144_000);
         assert_eq!(config.candidate_count, 10);
         assert_eq!(config.thread_depth, 15);
@@ -285,14 +294,16 @@ mod tests {
         assert!(!config.enhanced_sentiment_enabled);
         assert!(config.dry_run_actions);
     }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use crate::utils::twitter::twitteractivity_navigation::{select_entry_point, ENTRY_POINTS};
 
     #[test]
-    fn test_select_entry_point_returns_valid_url() {
+    fn select_entry_point_returns_valid_url() {
         let url = select_entry_point();
-        let valid_urls: Vec<&str> = crate::utils::twitter::twitteractivity_navigation::ENTRY_POINTS
-            .iter()
-            .map(|ep| ep.url)
-            .collect();
+        let valid_urls: Vec<&str> = ENTRY_POINTS.iter().map(|ep| ep.url).collect();
         assert!(valid_urls.contains(&url));
     }
 }

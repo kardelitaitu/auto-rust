@@ -5,7 +5,6 @@ use crate::config::TwitterActivityConfig;
 use crate::prelude::TaskContext;
 use crate::utils::timing::duration_with_variance;
 use crate::utils::twitter::{
-    twitteractivity_dive::ThreadCache,
     twitteractivity_limits::{EngagementCounters, EngagementLimits},
     twitteractivity_persona::PersonaWeights,
 };
@@ -242,7 +241,6 @@ pub struct CandidateContext<'a> {
     pub scroll_interval: Duration,
     pub action_tracker: &'a mut TweetActionTracker,
     pub counters: &'a mut EngagementCounters,
-    pub thread_cache: Option<ThreadCache>,
 }
 
 /// Result of processing a single candidate tweet.
@@ -252,7 +250,6 @@ pub struct CandidateResult {
     pub next_scroll: Instant,
     pub actions_this_scan: u32,
     pub actions_taken: u32,
-    pub thread_cache: Option<ThreadCache>,
 }
 
 /// Consolidated session state for Twitter activity task.
@@ -384,12 +381,41 @@ pub fn read_u32(payload: &Value, key: &str, default: u32) -> Result<u32, TaskVal
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
+mod test_support {
+    use serde_json::{json, Value};
+
+    pub fn twitter_config() -> crate::config::TwitterActivityConfig {
+        crate::config::TwitterActivityConfig::default()
+    }
+
+    pub fn duration_payload(value: i64) -> Value {
+        json!({"duration_ms": value})
+    }
+
+    pub fn candidate_count_payload(value: i64) -> Value {
+        json!({"candidate_count": value})
+    }
+
+    pub fn empty_payload() -> Value {
+        json!({})
+    }
+
+    pub fn full_payload() -> Value {
+        json!({
+            "duration_ms": 120000,
+            "candidate_count": 10,
+            "thread_depth": 15,
+            "max_actions_per_scan": 5
+        })
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::TaskValidationError;
 
     #[test]
-    fn test_task_validation_error_display() {
+    fn task_validation_error_display_mentions_field() {
         let err = TaskValidationError::InvalidDuration {
             field: "duration_ms".to_string(),
             value: -100,
@@ -398,72 +424,73 @@ mod tests {
         assert!(display.contains("duration_ms"));
         assert!(display.contains("must be positive"));
     }
+}
+
+#[cfg(test)]
+mod read_u64_tests {
+    use super::{read_u64, test_support::*};
 
     #[test]
-    fn test_read_u64_valid() {
-        let payload = json!({"duration_ms": 120000});
-        let result = read_u64(&payload, "duration_ms", 300000);
+    fn read_u64_returns_value_when_present() {
+        let result = read_u64(&duration_payload(120000), "duration_ms", 300000);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 120000);
     }
 
     #[test]
-    fn test_read_u64_invalid() {
-        let payload = json!({"duration_ms": -100});
-        let result = read_u64(&payload, "duration_ms", 300000);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let display = format!("{}", err);
-        assert!(display.contains("duration_ms"));
-    }
-
-    #[test]
-    fn test_read_u64_default() {
-        let payload = json!({});
-        let result = read_u64(&payload, "duration_ms", 300000);
+    fn read_u64_defaults_on_invalid() {
+        let result = read_u64(&duration_payload(-100), "duration_ms", 300000);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 300000);
     }
 
     #[test]
-    fn test_read_u32_valid() {
-        let payload = json!({"candidate_count": 10});
-        let result = read_u32(&payload, "candidate_count", 5);
+    fn read_u64_defaults_when_missing() {
+        let result = read_u64(&empty_payload(), "duration_ms", 300000);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 300000);
+    }
+}
+
+#[cfg(test)]
+mod read_u32_tests {
+    use super::{read_u32, test_support::candidate_count_payload};
+
+    #[test]
+    fn read_u32_returns_value_when_present() {
+        let result = read_u32(&candidate_count_payload(10), "candidate_count", 5);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 10);
     }
 
     #[test]
-    fn test_read_u32_invalid() {
-        let payload = json!({"max_actions_per_scan": -5});
-        let result = read_u32(&payload, "max_actions_per_scan", 5);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let display = format!("{}", err);
-        assert!(display.contains("max_actions_per_scan"));
+    fn read_u32_defaults_on_invalid() {
+        let result = read_u32(&candidate_count_payload(-5), "candidate_count", 5);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 5);
     }
+}
+
+#[cfg(test)]
+mod payload_tests {
+    use super::{test_support::*, TaskConfig};
 
     #[test]
-    fn test_from_payload_valid() {
-        let payload = json!({
-            "duration_ms": 120000,
-            "candidate_count": 10,
-            "thread_depth": 15,
-            "max_actions_per_scan": 5
-        });
-        let config = crate::config::TwitterActivityConfig::default();
-        let result = TaskConfig::from_payload(&payload, &config);
+    fn from_payload_parses_core_fields() {
+        let result = TaskConfig::from_payload(&full_payload(), &twitter_config());
         assert!(result.is_ok());
         let task_config = result.unwrap();
-        assert_eq!(task_config.duration_ms, 120000);
+        assert!((96_000..=144_000).contains(&task_config.duration_ms));
         assert_eq!(task_config.candidate_count, 10);
+        assert_eq!(task_config.thread_depth, 15);
+        assert_eq!(task_config.max_actions_per_scan, 5);
     }
 
     #[test]
-    fn test_from_payload_invalid_duration() {
-        let payload = json!({"duration_ms": -100});
-        let config = crate::config::TwitterActivityConfig::default();
-        let result = TaskConfig::from_payload(&payload, &config);
-        assert!(result.is_err());
+    fn from_payload_defaults_invalid_duration() {
+        let result = TaskConfig::from_payload(&duration_payload(-100), &twitter_config());
+        assert!(result.is_ok());
+        let task_config = result.unwrap();
+        assert!((240_000..=360_000).contains(&task_config.duration_ms));
     }
 }

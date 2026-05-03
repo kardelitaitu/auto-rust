@@ -1307,12 +1307,35 @@ cargo test state
 
 ### 8.2 Thread Cache Per-Tweet [Confidence: 85%]
 
-**Status:** ⏳ PENDING
+**Status:** ✅ COMPLETED - Thread cache code removed (2026-05-03)
 
-**Current Code Analysis:**
-- Thread cache is per-tweet but code is commented out
-- Comments explain it's "removed to prevent contamination"
-- Either implement properly or remove entirely
+**Decision:** Remove the thread cache code entirely
+
+**Rationale:**
+- Thread cache provided minimal real-world benefit (most tweets only get 1 action)
+- Code complexity outweighed performance gains
+- Simpler codebase = easier maintenance
+- If needed in future, can restore from git history
+
+**What was removed:**
+- `thread_cache` field from `CandidateContext`
+- `thread_cache` field from `CandidateResult`
+- `current_thread_cache` variable from `process_candidate()`
+- `get_tweet_context_for_llm()` helper function
+- `cache` field from `DiveIntoThreadOutcome`
+- Cache population logic from `dive_into_thread()`
+- All `thread_cache` references from `CandidateResult` returns
+
+**What was updated:**
+- LLM quote/reply generation now calls `extract_tweet_context()` directly
+- Fresh context extraction for each LLM call (no caching)
+- Simpler `process_candidate()` without cache management
+
+**Files modified:**
+- `src/utils/twitter/twitteractivity_state.rs` - Removed thread_cache from structs
+- `src/utils/twitter/twitteractivity_engagement.rs` - Removed cache logic and helper
+- `src/utils/twitter/twitteractivity_dive.rs` - Removed cache from outcome
+- `src/task/twitteractivity.rs` - Already clean (wasn't using thread_cache)
 
 **Proposed Changes:**
 
@@ -1375,7 +1398,13 @@ cargo test dive
 
 ### 9.1 Unit Test Organization [Confidence: 85%]
 
-**Status:** ⏳ PENDING
+**Status:** 🟡 IN PROGRESS - first merge applied in `twitteractivity.rs` (2026-05-03)
+
+**Status Summary:**
+- Added an in-file `test_support` module for shared payload/config builders.
+- Split the existing tests into topic modules (`config_tests`, `navigation_tests`).
+- Kept the first merge in-file to preserve private access and minimize churn.
+- Verified the focused `twitteractivity` test slice passes after the refactor.
 
 **Current Code Analysis:**
 - Tests are at bottom of main file
@@ -1408,58 +1437,73 @@ cargo test dive
 - Test categories: config parsing, persona weights, action selection, entry points, trackers, sentiment, engagement decisions
 
 **Conclusion:** Section 9.1 is **LOW PRIORITY** - tests are well-structured but could benefit from better organization (split into modules by topic).
-**Proposed Changes:**
+**Merge Plan (Recommended):**
 
-**Migration Steps:**
+**Phase A: Keep tests in place, add structure**
+- [ ] Introduce a `#[cfg(test)] mod test_support` block for shared builders/fixtures
+- [ ] Split the current monolithic test block into topic modules:
+  - `config_tests`
+  - `persona_tests`
+  - `navigation_tests`
+  - `limits_tests`
+  - `engagement_tests`
+  - `sentiment_tests`
+- [ ] Keep tests in-file for the first merge so private access stays simple and safe
 
-**Phase A: Move Tests**
-- [ ] Move tests to `tests/` subdirectory OR inline modules
-- [ ] Organize by module (`navigation_tests.rs`, etc.)
+**Phase B: Extract reusable helpers**
+- [ ] Move repeated payload/config builders into `test_support`
+- [ ] Add helper constructors for tweet/candidate fixtures
+- [ ] Add helper assertions for common invariants
 
-**Phase B: Create Utilities**
-- [ ] Create test utilities module for common setup
-- [ ] Mock helpers for browser interactions
-- [ ] Test data builders
+**Phase C: Optional follow-up**
+- [ ] If the inline split is stable, move only pure unit suites to `src/utils/twitter/tests/` or a `tests/` subdirectory
+- [ ] Keep logic-heavy tests near their code if they need internal visibility
 
-**Phase C: Advanced Tests**
-- [ ] Add property-based tests for probability distributions
-- [ ] Add integration tests with mocked browser
-- [ ] Add statistical tests for weight distribution
+**Phase D: Verify**
+- [ ] `cargo test --lib twitteractivity`
+- [ ] `cargo test --lib`
+- [ ] `cargo clippy --package auto --lib`
+- [ ] `check.ps1`
 
 **Dependencies Map:**
 | Item | Current Location | Target Location | Dependencies |
 |------|------------------|-----------------|--------------|
-| Tests | File bottom | Organized structure | Section 1.x |
+| Tests | File bottom | Topic modules + shared helpers | Section 1.x |
 
 **Critical Ordering:**
-1. **FIRST:** Move existing tests
-2. **SECOND:** Create utilities
-3. **THIRD:** Add advanced tests
+1. **FIRST:** Add shared helpers
+2. **SECOND:** Split into topic modules
+3. **THIRD:** Run verification
+4. **FOURTH:** Consider moving pure suites out-of-file only if stable
 
 **Potential Issues & Solutions:**
 | Issue | Solution |
 |-------|----------|
-| Private function access | Use `pub(crate)` or tests in same file |
-| Mock complexity | Use mockall crate |
+| Private function access | Keep tests in-file for the first merge |
+| Mock complexity | Use small builders and helper assertions |
+| Over-splitting | Prefer topic modules over file moves initially |
 
 **Validation Commands:**
 ```bash
-cargo test
+cargo test --lib twitteractivity
 cargo test --lib
-cargo test --test integration
+cargo clippy --package auto --lib
+check.ps1
 ```
 
 **Pros:**
-- Better test organization
-- Easier to find relevant tests
+- Better test organization without changing behavior
+- Easier to find and reuse fixtures
+- Low-risk first merge
 
 **Cons:**
-- More files to maintain
-- Refactoring effort
+- Some module churn in tests
+- Slight upfront refactor effort
 
 **Notes:**
-- Can be done gradually
-- Low priority
+- Keep the first merge mechanical only
+- Do not move production logic
+- Prefer nested modules before a full `tests/` migration
 
 **Success Criteria:**
 - [ ] All tests pass
@@ -1468,12 +1512,17 @@ cargo test --test integration
 
 ### 9.2 Test Coverage [Confidence: 85%]
 
-**Status:** ⏳ PENDING
+**Status:** ✅ FOLLOW-UP PLAN DRAFTED - advanced coverage next (2026-05-03)
+
+**Status Summary:**
+- Existing unit tests already cover like, retweet, follow, reply, limit enforcement, and tracker cooldown.
+- The highest-value gaps are advanced tests: integration, property-based, and statistical coverage.
+- No immediate core coverage bug was confirmed by the colony research.
 
 **Current Code Analysis:**
-- Missing tests for some action types
-- Limit enforcement not fully tested
-- Action tracker cooldown not verified
+- Core unit coverage is strong
+- Advanced coverage is still missing (integration, property-based, statistical)
+- No strong evidence remains for missing limit or cooldown coverage
 
 
 **Corrections from deep code review:**
@@ -1553,57 +1602,61 @@ cargo test --test integration
 - Missing: integration tests, property-based tests, statistical tests for weight distribution
 
 **Conclusion:** Test coverage is GOOD for unit tests, but lacks advanced testing (integration, property-based, statistical).
-**Proposed Changes:**
+**Follow-Up Plan (Recommended):**
 
-**Migration Steps:**
+**Phase A: Lock in edge-case coverage**
+- [ ] Add focused assertions for any action paths that are still only indirectly covered in the reorganized suite
+- [ ] Add explicit regression checks for boundary values in limit enforcement
+- [ ] Add explicit regression checks for tracker cooldown behavior in the new structure
 
-**Phase A: Core Tests**
-- [ ] Add test for `process_candidate()` with all action types
-- [ ] Add test for limit enforcement edge cases
-- [ ] Add test for action tracker cooldown logic
+**Phase B: Add advanced coverage**
+- [ ] Add deterministic statistical checks for entry-point weighting
+- [ ] Add property-based tests for randomized selection paths
+- [ ] Add integration-style tests around full task execution flow
 
-**Phase B: Statistical Tests**
-- [ ] Add test for entry point weight distribution (statistical)
-- [ ] Verify probabilities match expected distribution
-- [ ] Use chi-square or similar test
-
-**Phase C: Integration**
-- [ ] Add tests for full task execution
-- [ ] Mock browser interactions
+**Phase C: Keep CI stable**
+- [ ] Mark long-running or flaky-heavy checks as `#[ignore]` if needed
+- [ ] Prefer seeded randomness for any statistical assertions
+- [ ] Keep browser mocking lightweight and local to the test module
 
 **Dependencies Map:**
 | Item | Current Location | Target Location | Dependencies |
 |------|------------------|-----------------|--------------|
-| Tests | Missing | Added | Section 9.1 |
+| Advanced coverage | Existing unit tests | Topic-specific advanced suites | Section 9.1 |
 
 **Critical Ordering:**
-1. **FIRST:** Add core tests
-2. **SECOND:** Add statistical tests
-3. **THIRD:** Add integration tests
+1. **FIRST:** Confirm edge-case regressions stay covered after 9.1 refactor
+2. **SECOND:** Add statistical/property-based coverage
+3. **THIRD:** Add integration-style coverage
 
 **Potential Issues & Solutions:**
 | Issue | Solution |
 |-------|----------|
 | Flaky statistical tests | Use seeded RNG for determinism |
-| Slow tests | Mark as `#[ignore]` for CI optional |
+| Slow tests | Mark long-running checks as `#[ignore]` |
+| Mock complexity | Keep test doubles minimal and local |
 
 **Validation Commands:**
 ```bash
-cargo test
-cargo tarpaulin  # coverage
+cargo test --lib twitteractivity
+cargo test --lib
+cargo clippy --package auto --lib
+check.ps1
 ```
 
 **Pros:**
-- Better confidence in changes
-- Catch regressions
+- Focuses on real coverage gaps instead of duplicating existing tests
+- Preserves the current strong unit test base
+- Targets the highest-value missing confidence areas
 
 **Cons:**
-- More tests to maintain
-- Slower CI
+- Advanced tests can be slower to maintain
+- Statistical tests need seeded determinism
 
 **Notes:**
-- Focus on critical paths first
-- Can be ongoing effort
+- Core coverage is already strong; don’t duplicate it
+- Prioritize regression protection first, then advanced coverage
+- Keep new tests narrow and deterministic where possible
 
 **Success Criteria:**
 - [ ] All tests pass

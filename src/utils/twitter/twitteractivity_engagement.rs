@@ -77,8 +77,6 @@ pub async fn process_candidate(
     let mut actions_this_scan = actions_this_scan;
     let mut next_scroll = next_scroll;
     let mut _actions_taken = _actions_taken;
-    // Each tweet starts with a fresh cache. Only populated if this tweet dives.
-    let mut current_thread_cache: Option<ThreadCache> = None;
 
     // Destructure ctx for easier access (preserve original variable names)
     let tweet = ctx.tweet;
@@ -89,7 +87,6 @@ pub async fn process_candidate(
     let scroll_interval = ctx.scroll_interval;
     let action_tracker = &mut ctx.action_tracker;
     let counters = &mut ctx.counters;
-    let _current_thread_cache_unused = ctx.thread_cache;
 
     if actions_this_scan >= task_config.max_actions_per_scan {
         info!(
@@ -101,7 +98,6 @@ pub async fn process_candidate(
             next_scroll,
             actions_this_scan,
             actions_taken: _actions_taken,
-            thread_cache: current_thread_cache,
         });
     }
 
@@ -173,7 +169,6 @@ pub async fn process_candidate(
                 next_scroll,
                 actions_this_scan,
                 actions_taken: _actions_taken,
-                thread_cache: current_thread_cache,
             });
         }
     }
@@ -235,7 +230,6 @@ pub async fn process_candidate(
             next_scroll,
             actions_this_scan,
             actions_taken: _actions_taken,
-            thread_cache: current_thread_cache,
         });
     };
 
@@ -251,7 +245,6 @@ pub async fn process_candidate(
                 next_scroll,
                 actions_this_scan,
                 actions_taken: _actions_taken,
-                thread_cache: current_thread_cache,
             });
         }
         if !limits.can_dive(counters) {
@@ -286,7 +279,6 @@ pub async fn process_candidate(
                         next_scroll,
                         actions_this_scan,
                         actions_taken: _actions_taken,
-                        thread_cache: current_thread_cache,
                     });
                 }
             };
@@ -300,16 +292,7 @@ pub async fn process_candidate(
                 api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
             } else {
                 api.increment_run_counter(RUN_COUNTER_DIVE_SUCCESS, 1);
-                // Use cache from dive outcome, initialize empty if none
-                let mut thread_cache = dive_outcome.cache.unwrap_or_default();
-                // Note: read_full_thread not wrapped with retry due to mutable borrow constraints
-                if let Err(e) =
-                    read_full_thread(api, task_config.thread_depth, &mut thread_cache).await
-                {
-                    warn!("Read full thread failed: {}", e);
-                    api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                    // Continue anyway - we already dived, try to scroll back
-                }
+                // Read thread context for LLM use (not cached, extracted fresh when needed)
                 if let Err(e) = api.scroll_to_top().await {
                     warn!("Scroll to top failed: {}", e);
                     // Non-fatal, continue
@@ -322,8 +305,6 @@ pub async fn process_candidate(
                 // Record dive action
                 action_tracker.record_action(tweet_id.to_string(), "dive");
                 did_dive = true;
-                // Store cache for later LLM use
-                current_thread_cache = Some(thread_cache);
             }
         }
     }
@@ -460,8 +441,10 @@ pub async fn process_candidate(
                         Ok(true) => {
                             let quote_text = if task_config.llm_enabled {
                                 let (author, text, replies) =
-                                    get_tweet_context_for_llm(api, &current_thread_cache, "quote")
-                                        .await;
+                                    extract_tweet_context(api).await.unwrap_or_else(|e| {
+                                        warn!("Failed to extract tweet context for quote: {}", e);
+                                        ("unknown".to_string(), String::new(), Vec::new())
+                                    });
                                 match generate_quote_commentary(api, &author, &text, replies).await
                                 {
                                     Ok(commentary) => {
@@ -564,8 +547,10 @@ pub async fn process_candidate(
                         Ok(true) => {
                             let reply_text = if task_config.llm_enabled {
                                 let (author, text, replies) =
-                                    get_tweet_context_for_llm(api, &current_thread_cache, "reply")
-                                        .await;
+                                    extract_tweet_context(api).await.unwrap_or_else(|e| {
+                                        warn!("Failed to extract tweet context for reply: {}", e);
+                                        ("unknown".to_string(), String::new(), Vec::new())
+                                    });
                                 match generate_reply(api, &author, &text, replies).await {
                                     Ok(reply) => {
                                         info!("Generated LLM reply: {}", reply);
@@ -746,7 +731,6 @@ pub async fn process_candidate(
         next_scroll,
         actions_this_scan,
         actions_taken: _actions_taken,
-        thread_cache: current_thread_cache,
     })
 }
 
@@ -758,35 +742,6 @@ pub fn extract_tweet_text(tweet_obj: &Value) -> String {
         }
     }
     String::new()
-}
-
-/// Helper: extract tweet context for LLM generation, using cache if available.
-pub async fn get_tweet_context_for_llm(
-    api: &TaskContext,
-    cache: &Option<ThreadCache>,
-    action_name: &str,
-) -> (String, String, Vec<(String, String)>) {
-    if let Some(ref cache) = cache {
-        if cache.is_valid() {
-            info!(
-                "Using cached thread data for {} ({} replies)",
-                action_name,
-                cache.replies.len()
-            );
-            return (
-                cache.tweet_author.clone(),
-                cache.tweet_text.clone(),
-                cache.replies.clone(),
-            );
-        }
-    }
-    match extract_tweet_context(api).await {
-        Ok(data) => data,
-        Err(e) => {
-            warn!("Failed to extract tweet context for {}: {}", action_name, e);
-            ("unknown".to_string(), String::new(), Vec::new())
-        }
-    }
 }
 
 /// Helper: extract a per-tweet button center from candidate payload.

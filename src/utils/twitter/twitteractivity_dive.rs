@@ -75,7 +75,6 @@ impl ThreadCache {
 pub struct DiveIntoThreadOutcome {
     pub opened: bool,
     pub used_fallback_target: bool,
-    pub cache: Option<ThreadCache>,
 }
 
 fn status_id_from_url(status_url: &str) -> Option<&str> {
@@ -102,7 +101,6 @@ fn status_id_from_url(status_url: &str) -> Option<&str> {
 /// Returns `DiveIntoThreadOutcome` containing:
 /// - `opened`: Whether the thread view opened successfully
 /// - `used_fallback_target`: Whether a fallback selector was used
-/// - `cache`: Optional thread cache with initial tweet data
 ///
 /// # Errors
 ///
@@ -134,7 +132,6 @@ pub async fn dive_into_thread(
         return Ok(DiveIntoThreadOutcome {
             opened: false,
             used_fallback_target: false,
-            cache: None,
         });
     }
 
@@ -148,7 +145,6 @@ pub async fn dive_into_thread(
         return Ok(DiveIntoThreadOutcome {
             opened: false,
             used_fallback_target: false,
-            cache: None,
         });
     }
     info!("Clicked tweet link, waiting for thread view...");
@@ -194,22 +190,9 @@ pub async fn dive_into_thread(
         );
     }
 
-    let cache = if thread_opened {
-        match extract_initial_thread_data(api).await {
-            Ok(c) => Some(c),
-            Err(e) => {
-                info!("Failed to extract initial thread data: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
     Ok(DiveIntoThreadOutcome {
         opened: thread_opened,
         used_fallback_target: false,
-        cache,
     })
 }
 
@@ -618,6 +601,5 @@ mod tests {
         let outcome = DiveIntoThreadOutcome::default();
         assert!(!outcome.opened);
         assert!(!outcome.used_fallback_target);
-        assert!(outcome.cache.is_none());
     }
 }

@@ -113,7 +113,7 @@ impl Default for SentimentTemplates {
 }
 
 /// Task configuration parsed from JSON payload.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TaskConfig {
     pub duration_ms: u64,
     pub candidate_count: u32,

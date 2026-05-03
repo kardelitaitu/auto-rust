@@ -297,18 +297,23 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod config_tests {
+    use super::RetryConfig;
 
     #[test]
-    fn test_retry_config_default() {
+    fn retry_config_default_values() {
         let config = RetryConfig::default();
         assert_eq!(config.max_attempts, 3);
         assert_eq!(config.base_delay_ms, 500);
     }
+}
+
+#[cfg(test)]
+mod delay_tests {
+    use super::{calculate_delay, RetryConfig};
 
     #[test]
-    fn test_calculate_delay() {
+    fn calculate_delay_stays_in_expected_range() {
         let config = RetryConfig::default();
 
         // First attempt: base delay
@@ -319,9 +324,14 @@ mod tests {
         let d2 = calculate_delay(2, &config);
         assert!((900..=1100).contains(&d2));
     }
+}
+
+#[cfg(test)]
+mod circuit_breaker_tests {
+    use super::CircuitBreaker;
 
     #[test]
-    fn test_circuit_breaker() {
+    fn circuit_breaker_opens_and_closes_as_expected() {
         let cb = CircuitBreaker::new(3, 1000);
 
         assert!(!cb.is_open());

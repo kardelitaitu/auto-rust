@@ -191,11 +191,11 @@ pub async fn attempt_close_popup(api: &TaskContext) -> Result<bool, anyhow::Erro
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod duration_tests {
+    use super::random_duration;
 
     #[test]
-    fn test_random_duration_within_bounds() {
+    fn random_duration_stays_within_bounds() {
         for _ in 0..50 {
             let duration = random_duration(100, 200);
             let ms = duration.as_millis();
@@ -204,44 +204,77 @@ mod tests {
     }
 
     #[test]
-    fn test_random_duration_same_bounds() {
+    fn random_duration_handles_identical_bounds() {
         let duration = random_duration(100, 100);
         let ms = duration.as_millis();
         assert!((90..=110).contains(&ms)); // Allow some variance
     }
 
     #[test]
-    fn test_random_duration_zero_bounds() {
+    fn random_duration_handles_zero_bounds() {
         let duration = random_duration(0, 0);
         assert_eq!(duration.as_millis(), 0);
     }
 
     #[test]
-    fn test_random_duration_large_bounds() {
+    fn random_duration_handles_large_bounds() {
         let duration = random_duration(1000, 5000);
         let ms = duration.as_millis();
         assert!((1000..=5000).contains(&ms));
     }
 
     #[test]
-    fn test_random_duration_consistency() {
-        // Test that the function produces reasonable distribution
+    fn random_duration_has_reasonable_distribution() {
         let durations: Vec<u64> = (0..100)
             .map(|_| random_duration(100, 200).as_millis() as u64)
             .collect();
 
-        // All should be within bounds
         for duration in &durations {
             assert!((100..=200).contains(duration));
         }
 
-        // Average should be close to midpoint
         let avg = durations.iter().sum::<u64>() as f64 / durations.len() as f64;
         assert!((130.0..=170.0).contains(&avg));
     }
 
     #[test]
-    fn test_selector_close_button_returns_js() {
+    fn random_duration_is_variable() {
+        let mut durations = Vec::new();
+        for _ in 0..10 {
+            durations.push(random_duration(100, 200).as_millis());
+        }
+        let min = *durations.iter().min().unwrap();
+        let max = *durations.iter().max().unwrap();
+        assert!(max > min, "Expected variance across 10 random samples");
+    }
+
+    #[test]
+    fn random_duration_with_small_bounds_remains_safe() {
+        let duration = random_duration(0, 10);
+        let ms = duration.as_millis();
+        assert!(ms <= 10, "Duration {}ms exceeded max bound of 10ms", ms);
+    }
+
+    #[test]
+    fn random_duration_very_small_bounds_are_valid() {
+        let duration = random_duration(1, 5);
+        let ms = duration.as_millis();
+        assert!((0..=10).contains(&ms));
+    }
+}
+
+#[cfg(test)]
+mod selector_tests {
+    use super::{
+        js_extract_username_from_url, js_get_current_url, selector_all_tweets,
+        selector_close_button, selector_element_center, selector_engagement_buttons,
+        selector_feed_visible, selector_follow_button, selector_follow_confirm_modal,
+        selector_following_indicator, selector_health_check, selector_login_flow,
+        selector_popup_overlay, selector_tweet_user_avatar,
+    };
+
+    #[test]
+    fn selector_close_button_returns_js() {
         let js = selector_close_button();
         assert!(js.contains("querySelector"));
         assert!(js.contains("aria-label"));
@@ -249,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn test_selector_functions_return_valid_js() {
+    fn selector_functions_return_valid_js() {
         assert!(selector_feed_visible().contains("querySelector"));
         assert!(selector_all_tweets().contains("querySelectorAll"));
         assert!(selector_follow_button().contains("aria-label"));
@@ -265,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn test_selector_element_center_formats_correctly() {
+    fn selector_element_center_formats_correctly() {
         let js = selector_element_center("div.test");
         assert!(js.contains("div.test"));
         assert!(js.contains("getBoundingClientRect"));
@@ -274,43 +307,21 @@ mod tests {
     }
 
     #[test]
-    fn test_selector_element_center_escapes_quotes() {
+    fn selector_element_center_escapes_quotes() {
         let js = selector_element_center("div.test\"class");
         assert!(js.contains("\\\""));
         assert!(!js.contains("\"test\""));
     }
 
     #[test]
-    fn test_selector_element_center_with_complex_selector() {
+    fn selector_element_center_with_complex_selector() {
         let js = selector_element_center("[data-testid=\"tweet\"]");
         assert!(js.contains("data-testid"));
         assert!(js.contains("tweet"));
     }
 
     #[test]
-    fn test_random_duration_produces_variance() {
-        let mut durations = Vec::new();
-        for _ in 0..10 {
-            durations.push(random_duration(100, 200).as_millis());
-        }
-        // At least some variance should exist across 10 samples
-        let min = *durations.iter().min().unwrap();
-        let max = *durations.iter().max().unwrap();
-        assert!(max > min, "Expected variance across 10 random samples");
-    }
-
-    #[test]
-    fn test_random_duration_negative_bounds_clamped() {
-        // Gaussian with min=0 can produce 0-1ms values which cast to 0
-        // This is valid behavior - duration can be 0 when min_ms is 0
-        let duration = random_duration(0, 10);
-        // Duration should always be within bounds (0 to 10 ms)
-        let ms = duration.as_millis();
-        assert!(ms <= 10, "Duration {}ms exceeded max bound of 10ms", ms);
-    }
-
-    #[test]
-    fn test_selector_functions_return_non_empty() {
+    fn selector_functions_return_non_empty() {
         assert!(!selector_feed_visible().is_empty());
         assert!(!selector_all_tweets().is_empty());
         assert!(!selector_follow_button().is_empty());
@@ -318,22 +329,15 @@ mod tests {
     }
 
     #[test]
-    fn test_selector_functions_contain_function_keyword() {
+    fn selector_functions_contain_function_keyword() {
         assert!(selector_feed_visible().contains("function"));
         assert!(selector_all_tweets().contains("function"));
         assert!(selector_follow_button().contains("function"));
     }
 
     #[test]
-    fn test_selector_element_center_empty_selector() {
+    fn selector_element_center_empty_selector() {
         let js = selector_element_center("");
         assert!(js.contains("querySelector"));
-    }
-
-    #[test]
-    fn test_random_duration_very_small_bounds() {
-        let duration = random_duration(1, 5);
-        let ms = duration.as_millis();
-        assert!((0..=10).contains(&ms)); // Allow some variance
     }
 }

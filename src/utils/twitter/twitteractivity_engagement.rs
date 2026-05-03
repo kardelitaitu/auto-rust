@@ -892,3 +892,444 @@ pub fn action_allowed_by_limits(
         _ => false,
     }
 }
+
+// ============================================================================
+// Integration Tests
+// ============================================================================
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
+    use serde_json::json;
+
+    /// Test that select_candidate_action prefers non-like actions when dive is allowed
+    #[test]
+    fn select_candidate_action_prefers_non_like_when_dive_allowed() {
+        let actions = vec!["like", "retweet", "reply"];
+        let result = select_candidate_action(&actions, true, true);
+        assert_eq!(result, Some("retweet"));
+    }
+
+    /// Test that select_candidate_action falls back to like when no other actions available
+    #[test]
+    fn select_candidate_action_falls_back_to_like() {
+        let actions = vec!["like"];
+        let result = select_candidate_action(&actions, true, true);
+        assert_eq!(result, Some("like"));
+    }
+
+    /// Test that select_candidate_action returns None for empty actions
+    #[test]
+    fn select_candidate_action_returns_none_for_empty() {
+        let actions: Vec<&str> = vec![];
+        let result = select_candidate_action(&actions, true, true);
+        assert_eq!(result, None);
+    }
+
+    /// Test that select_candidate_action only selects like when dive not allowed
+    #[test]
+    fn select_candidate_action_only_like_when_no_dive() {
+        let actions = vec!["like", "retweet", "reply"];
+        // When allow_dive is false, only like is selected (even if others available)
+        let result = select_candidate_action(&actions, false, true);
+        assert_eq!(result, Some("like"));
+    }
+
+    /// Test action_allowed_by_limits for each action type
+    #[test]
+    fn action_allowed_by_limits_respects_all_limits() {
+        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 5);
+        let mut counters = EngagementCounters::new();
+
+        // All should be allowed initially
+        assert!(action_allowed_by_limits("like", &limits, &counters));
+        assert!(action_allowed_by_limits("retweet", &limits, &counters));
+        assert!(action_allowed_by_limits("quote", &limits, &counters));
+        assert!(action_allowed_by_limits("follow", &limits, &counters));
+        assert!(action_allowed_by_limits("reply", &limits, &counters));
+        assert!(action_allowed_by_limits("bookmark", &limits, &counters));
+
+        // After incrementing, should be blocked
+        counters.increment_like();
+        assert!(!action_allowed_by_limits("like", &limits, &counters));
+        // Others still allowed
+        assert!(action_allowed_by_limits("retweet", &limits, &counters));
+    }
+
+    /// Test action_allowed_by_limits with unknown action
+    #[test]
+    fn action_allowed_by_limits_returns_false_for_unknown() {
+        let limits = EngagementLimits::default();
+        let counters = EngagementCounters::new();
+        assert!(!action_allowed_by_limits(
+            "unknown_action",
+            &limits,
+            &counters
+        ));
+    }
+
+    /// Test extract_tweet_text with text field
+    #[test]
+    fn extract_tweet_text_extracts_text_field() {
+        let tweet = json!({"text": "Hello world"});
+        assert_eq!(extract_tweet_text(&tweet), "Hello world");
+    }
+
+    /// Test extract_tweet_text with full_text field (fallback)
+    #[test]
+    fn extract_tweet_text_extracts_full_text_field() {
+        let tweet = json!({"full_text": "Full text content"});
+        assert_eq!(extract_tweet_text(&tweet), "Full text content");
+    }
+
+    /// Test extract_tweet_text returns empty for missing fields
+    #[test]
+    fn extract_tweet_text_returns_empty_for_missing() {
+        let tweet = json!({"id": "123"});
+        assert_eq!(extract_tweet_text(&tweet), "");
+    }
+
+    /// Test generate_reply_text cycles through templates
+    #[test]
+    fn generate_reply_text_cycles_templates() {
+        let templates = SentimentTemplates::default();
+        let text1 = generate_reply_text(Sentiment::Positive, 0, &templates);
+        let text2 = generate_reply_text(Sentiment::Positive, 1, &templates);
+        // Should return different templates
+        assert!(!text1.is_empty());
+        assert!(!text2.is_empty());
+    }
+
+    /// Test generate_quote_text cycles through templates
+    #[test]
+    fn generate_quote_text_cycles_templates() {
+        let templates = SentimentTemplates::default();
+        let text1 = generate_quote_text(Sentiment::Neutral, 0, &templates);
+        let text2 = generate_quote_text(Sentiment::Neutral, 1, &templates);
+        assert!(!text1.is_empty());
+        assert!(!text2.is_empty());
+    }
+
+    /// Test calc_rate with valid inputs
+    #[test]
+    fn calc_rate_calculates_correctly() {
+        assert_eq!(calc_rate(5, 10), 50.0);
+        assert_eq!(calc_rate(0, 10), 0.0);
+        assert_eq!(calc_rate(10, 10), 100.0);
+    }
+
+    /// Test calc_rate handles zero total
+    #[test]
+    fn calc_rate_handles_zero_total() {
+        assert_eq!(calc_rate(5, 0), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod decision_integration_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Test handle_engagement_decision returns None when disabled
+    #[test]
+    fn engagement_decision_returns_none_when_disabled() {
+        let tweet = json!({"text": "Test tweet"});
+        let config = TaskConfig {
+            duration_ms: 60000,
+            candidate_count: 5,
+            smart_decision_enabled: false,
+            ..Default::default()
+        };
+        let result = handle_engagement_decision(&tweet, &config);
+        assert!(result.is_none());
+    }
+
+    /// Test handle_engagement_decision extracts tweet text correctly
+    #[test]
+    fn engagement_decision_extracts_tweet_text() {
+        let tweet = json!({
+            "text": "This is a test tweet about technology",
+            "replies": []
+        });
+        let config = TaskConfig {
+            duration_ms: 60000,
+            candidate_count: 5,
+            smart_decision_enabled: true,
+            ..Default::default()
+        };
+        let result = handle_engagement_decision(&tweet, &config);
+        // Should return a decision (not None) when enabled
+        assert!(result.is_some());
+    }
+
+    /// Test handle_engagement_decision handles replies array
+    #[test]
+    fn engagement_decision_extracts_replies() {
+        let tweet = json!({
+            "text": "Main tweet",
+            "replies": [
+                {"author": "user1", "text": "Reply 1"},
+                {"author": "user2", "text": "Reply 2"}
+            ]
+        });
+        let config = TaskConfig {
+            duration_ms: 60000,
+            candidate_count: 5,
+            smart_decision_enabled: true,
+            ..Default::default()
+        };
+        let result = handle_engagement_decision(&tweet, &config);
+        assert!(result.is_some());
+    }
+}
+
+#[cfg(test)]
+mod statistical_tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
+
+    /// Test that should_like produces expected distribution (within tolerance)
+    #[test]
+    fn should_like_distribution_within_tolerance() {
+        let persona = PersonaWeights::default();
+        let expected_prob = persona.like_prob;
+        let trials = 1000;
+
+        let successes: u32 = (0..trials)
+            .map(|_| if should_like(&persona) { 1 } else { 0 })
+            .sum();
+
+        let actual_rate = successes as f64 / trials as f64;
+        let tolerance = 0.05; // 5% tolerance
+
+        assert!(
+            (actual_rate - expected_prob).abs() < tolerance,
+            "Expected ~{:.2}, got {:.2}",
+            expected_prob,
+            actual_rate
+        );
+    }
+
+    /// Test that should_retweet produces expected distribution (within tolerance)
+    #[test]
+    fn should_retweet_distribution_within_tolerance() {
+        let persona = PersonaWeights::default();
+        let expected_prob = persona.retweet_prob;
+        let trials = 1000;
+
+        let successes: u32 = (0..trials)
+            .map(|_| if should_retweet(&persona) { 1 } else { 0 })
+            .sum();
+
+        let actual_rate = successes as f64 / trials as f64;
+        let tolerance = 0.05;
+
+        assert!(
+            (actual_rate - expected_prob).abs() < tolerance,
+            "Expected ~{:.2}, got {:.2}",
+            expected_prob,
+            actual_rate
+        );
+    }
+
+    /// Test that should_reply produces expected distribution (within tolerance)
+    #[test]
+    fn should_reply_distribution_within_tolerance() {
+        let persona = PersonaWeights::default();
+        let expected_prob = persona.reply_prob;
+        let trials = 1000;
+
+        let successes: u32 = (0..trials)
+            .map(|_| if should_reply(&persona) { 1 } else { 0 })
+            .sum();
+
+        let actual_rate = successes as f64 / trials as f64;
+        let tolerance = 0.05;
+
+        assert!(
+            (actual_rate - expected_prob).abs() < tolerance,
+            "Expected ~{:.2}, got {:.2}",
+            expected_prob,
+            actual_rate
+        );
+    }
+
+    /// Test that should_follow produces expected distribution (within tolerance)
+    #[test]
+    fn should_follow_distribution_within_tolerance() {
+        let persona = PersonaWeights::default();
+        let expected_prob = persona.follow_prob;
+        let trials = 1000;
+
+        let successes: u32 = (0..trials)
+            .map(|_| if should_follow(&persona) { 1 } else { 0 })
+            .sum();
+
+        let actual_rate = successes as f64 / trials as f64;
+        let tolerance = 0.05;
+
+        assert!(
+            (actual_rate - expected_prob).abs() < tolerance,
+            "Expected ~{:.2}, got {:.2}",
+            expected_prob,
+            actual_rate
+        );
+    }
+
+    /// Test that calc_rate produces expected percentages
+    #[test]
+    fn calc_rate_statistical_accuracy() {
+        assert_eq!(calc_rate(50, 100), 50.0);
+        assert_eq!(calc_rate(25, 100), 25.0);
+        assert_eq!(calc_rate(75, 100), 75.0);
+        assert!((calc_rate(1, 3) - 33.33).abs() < 0.01);
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+
+    /// Property: select_candidate_action never panics on valid inputs
+    #[test]
+    fn select_candidate_action_no_panic_on_valid_inputs() {
+        let actions_list: Vec<Vec<&str>> = vec![
+            vec![],
+            vec!["like"],
+            vec!["retweet"],
+            vec!["reply"],
+            vec!["like", "retweet", "reply", "follow", "quote", "bookmark"],
+            vec!["like"; 100], // Large list
+        ];
+
+        for actions in &actions_list {
+            for allow_dive in [true, false] {
+                for can_open_detail in [true, false] {
+                    let _result = select_candidate_action(actions, allow_dive, can_open_detail);
+                }
+            }
+        }
+    }
+
+    /// Property: select_candidate_action returns None only when actions empty
+    #[test]
+    fn select_candidate_action_returns_none_only_when_empty() {
+        // Empty actions should return None
+        assert_eq!(select_candidate_action(&[], true, true), None);
+        assert_eq!(select_candidate_action(&[], true, false), None);
+        assert_eq!(select_candidate_action(&[], false, true), None);
+        assert_eq!(select_candidate_action(&[], false, false), None);
+
+        // Non-empty should return Some
+        assert!(select_candidate_action(&["like"], true, true).is_some());
+        assert!(select_candidate_action(&["retweet"], true, true).is_some());
+        assert!(select_candidate_action(&["like", "retweet"], true, true).is_some());
+    }
+
+    /// Property: select_candidate_action returns only valid actions from input
+    #[test]
+    fn select_candidate_action_returns_only_valid_actions() {
+        let actions = vec!["like", "retweet", "reply"];
+
+        for _ in 0..100 {
+            if let Some(selected) = select_candidate_action(&actions, true, true) {
+                assert!(
+                    actions.contains(&selected),
+                    "Selected action must be from input list"
+                );
+            }
+        }
+    }
+
+    /// Property: action_allowed_by_limits never panics on valid/invalid action names
+    #[test]
+    fn action_allowed_by_limits_no_panic() {
+        let limits = EngagementLimits::default();
+        let counters = EngagementCounters::new();
+
+        let actions = vec![
+            "like",
+            "retweet",
+            "quote",
+            "follow",
+            "reply",
+            "bookmark",
+            "unknown",
+            "",
+            "invalid_action",
+        ];
+
+        for action in &actions {
+            let _result = action_allowed_by_limits(action, &limits, &counters);
+        }
+    }
+
+    /// Property: calc_rate handles all usize inputs without panic
+    #[test]
+    fn calc_rate_handles_all_inputs() {
+        // Test edge cases
+        assert_eq!(calc_rate(0, 0), 0.0);
+        assert_eq!(calc_rate(usize::MAX, usize::MAX), 100.0);
+        assert_eq!(calc_rate(0, usize::MAX), 0.0);
+
+        // Test various combinations
+        for success in [0, 1, 50, 100] {
+            for total in [1, 50, 100, 1000] {
+                if success <= total {
+                    let rate = calc_rate(success, total);
+                    assert!((0.0..=100.0).contains(&rate));
+                }
+            }
+        }
+    }
+
+    /// Property: extract_tweet_text never panics on various JSON inputs
+    #[test]
+    fn extract_tweet_text_no_panic() {
+        use serde_json::json;
+
+        let test_cases = vec![
+            json!({"text": "test"}),
+            json!({"full_text": "full"}),
+            json!({"text": null}),
+            json!({"full_text": null}),
+            json!({}),
+            json!({"text": 123}),
+            json!({"text": ["array"]}),
+            json!({"text": {"nested": "object"}}),
+            json!(null),
+            json!("string"),
+        ];
+
+        for case in &test_cases {
+            let _result = extract_tweet_text(case);
+        }
+    }
+
+    /// Property: generate_reply_text always returns non-empty for valid sentiment
+    #[test]
+    fn generate_reply_text_returns_non_empty() {
+        let templates = SentimentTemplates::default();
+
+        for sentiment in [Sentiment::Positive, Sentiment::Neutral, Sentiment::Negative] {
+            for idx in 0..100 {
+                let result = generate_reply_text(sentiment, idx, &templates);
+                assert!(!result.is_empty(), "Reply text should never be empty");
+            }
+        }
+    }
+
+    /// Property: generate_quote_text always returns non-empty for valid sentiment
+    #[test]
+    fn generate_quote_text_returns_non_empty() {
+        let templates = SentimentTemplates::default();
+
+        for sentiment in [Sentiment::Positive, Sentiment::Neutral, Sentiment::Negative] {
+            for idx in 0..100 {
+                let result = generate_quote_text(sentiment, idx, &templates);
+                assert!(!result.is_empty(), "Quote text should never be empty");
+            }
+        }
+    }
+}

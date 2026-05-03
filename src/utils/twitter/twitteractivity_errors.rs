@@ -114,11 +114,11 @@ pub fn is_auth_error<E: std::fmt::Display>(err: &E) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod classification_tests {
+    use super::{ErrorClass, ErrorClassifier};
 
     #[test]
-    fn test_transient_error_classification() {
+    fn transient_errors_classify_as_transient() {
         let err = anyhow::anyhow!("stale element reference");
         assert_eq!(err.classify(), ErrorClass::Transient);
 
@@ -130,33 +130,35 @@ mod tests {
     }
 
     #[test]
-    fn test_permanent_error_classification() {
+    fn permanent_and_fatal_errors_classify_correctly() {
         let err = anyhow::anyhow!("element not found in DOM");
         // This is actually transient - DOM may update
         assert_eq!(err.classify(), ErrorClass::Transient);
 
         let err = anyhow::anyhow!("invalid selector syntax");
         assert_eq!(err.classify(), ErrorClass::Permanent);
-    }
 
-    #[test]
-    fn test_fatal_error_classification() {
         let err = anyhow::anyhow!("browser disconnected");
         assert_eq!(err.classify(), ErrorClass::Fatal);
 
         let err = anyhow::anyhow!("target closed");
         assert_eq!(err.classify(), ErrorClass::Fatal);
     }
+}
+
+#[cfg(test)]
+mod detection_tests {
+    use super::{is_auth_error, is_rate_limit_error};
 
     #[test]
-    fn test_rate_limit_detection() {
+    fn rate_limit_detection_matches_expected_patterns() {
         assert!(is_rate_limit_error(&"rate limit exceeded"));
         assert!(is_rate_limit_error(&"429 Too Many Requests"));
         assert!(!is_rate_limit_error(&"element not found"));
     }
 
     #[test]
-    fn test_auth_error_detection() {
+    fn auth_error_detection_matches_expected_patterns() {
         assert!(is_auth_error(&"401 Unauthorized"));
         assert!(is_auth_error(&"authentication required"));
         assert!(!is_auth_error(&"network timeout"));

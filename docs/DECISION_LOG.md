@@ -17,6 +17,10 @@
 | 6 | 2026-03 | Use tokio async runtime exclusively | Accepted |
 | 7 | 2026-04 | Remove lazy_static, migrate to once_cell | Accepted |
 | 8 | 2026-04 | Dependency audit process | Accepted |
+| 9 | 2026-05 | Modularize twitteractivity into 27 files | Accepted |
+| 10 | 2026-05 | Remove thread cache (simplified LLM context) | Accepted |
+| 11 | 2026-05 | Implement Smart Decision Engine (7.1) | Accepted |
+| 12 | 2026-05 | Add advanced test coverage (integration/statistical/property) | Accepted |
 
 ---
 
@@ -493,6 +497,224 @@ Implement monthly dependency audits with documented process.
 ## Retired Decisions
 
 _None yet - all decisions remain active._
+
+---
+
+## ADR 9: Modularize twitteractivity into 27 files
+
+**Date:** 2026-05-01  
+**Status:** Accepted  
+**Deciders:** Cascade AI
+
+### Context
+
+The `twitteractivity.rs` task file had grown to ~3000 lines with mixed concerns:
+- Feed scrolling
+- Engagement logic
+- LLM integration
+- Sentiment analysis
+- Error handling
+- State management
+
+This made the code difficult to maintain, test, and navigate.
+
+### Decision
+
+Split `twitteractivity.rs` into 27 focused modules under `src/utils/twitter/`:
+
+**Core (4):** engagement, feed, dive, interact  
+**Decision (5):** decision, decision_unified, decision_hybrid, decision_llm, decision_persona  
+**Sentiment (5):** sentiment, sentiment_enhanced, sentiment_emoji, sentiment_context, sentiment_domains, sentiment_llm  
+**State (4):** state, constants, limits, persona  
+**Infrastructure (6):** navigation, selectors, humanized, popup, retry, errors  
+**LLM (2):** llm, sentiment_llm  
+
+### Consequences
+
+**Positive:**
+- Single-responsibility modules (100-800 lines each)
+- Faster compilation (parallel module compilation)
+- Easier testing (test modules per file)
+- Better code navigation
+- Isolated changes reduce merge conflicts
+
+**Negative:**
+- More files to track
+- Import management complexity
+- Need to maintain module boundaries
+
+### Implementation
+
+- Created `src/utils/twitter/` directory
+- Extracted each concern to dedicated file
+- Added re-exports in `src/utils/twitter/mod.rs`
+- Updated task file to use new modules
+- Preserved all existing functionality
+
+### References
+
+- `TWITTERACTIVITY_TODO.md` Section 8
+- `AGENTS.md` Twitter Utility Modules section
+
+---
+
+## ADR 10: Remove Thread Cache (Simplified LLM Context)
+
+**Date:** 2026-05-02  
+**Status:** Accepted  
+**Deciders:** Cascade AI
+
+### Context
+
+Thread caching was originally implemented to:
+- Store LLM context between engagements
+- Avoid re-extracting thread data
+- Improve performance on repeated dives
+
+However, it added complexity and potential for stale data.
+
+### Decision
+
+Remove thread cache entirely:
+- Deleted `thread_cache` field from `CandidateContext`
+- Removed `DiveIntoThreadOutcome.cache`
+- LLM context now extracted fresh each time
+- Simplified state management
+
+### Consequences
+
+**Positive:**
+- Reduced memory footprint
+- Eliminated stale data risk
+- Simpler code paths
+- Faster state cloning (no cache copy)
+- No cache invalidation logic needed
+
+**Negative:**
+- Slightly more DOM queries per engagement
+- Fresh extraction adds ~10-50ms per LLM call
+
+### Implementation
+
+- `src/utils/twitter/twitteractivity_state.rs`: Removed cache field
+- `src/utils/twitter/twitteractivity_engagement.rs`: Removed cache usage
+- `src/utils/twitter/twitteractivity_dive.rs`: Removed cache population
+
+### References
+
+- `TWITTERACTIVITY_TODO.md` Section 8.2
+
+---
+
+## ADR 11: Implement Smart Decision Engine (7.1)
+
+**Date:** 2026-05-02  
+**Status:** Accepted  
+**Deciders:** Cascade AI
+
+### Context
+
+Original engagement decisions were purely probability-based (persona weights). We needed more intelligent decisions that consider:
+- Tweet content quality
+- Sentiment analysis
+- Author credibility
+- Engagement history
+
+### Decision
+
+Implement unified smart decision engine in `twitteractivity_decision_unified.rs`:
+
+**Components:**
+- Multi-layer sentiment analysis (emoji → enhanced → LLM)
+- Scoring system (0-100) for engagement quality
+- Threshold-based action selection
+- Fallback to persona weights when disabled
+
+**Configuration:**
+```rust
+smart_decision_enabled: bool
+enhanced_sentiment_enabled: bool
+dry_run_actions: bool
+```
+
+### Consequences
+
+**Positive:**
+- Context-aware engagement decisions
+- Reduced low-quality engagements
+- Better rate limit avoidance
+- Configurable AI sophistication level
+
+**Negative:**
+- Additional LLM calls when enabled
+- More complex decision paths to test
+- Feature flag management overhead
+
+### Implementation
+
+- `twitteractivity_decision_unified.rs`: Main engine
+- `twitteractivity_sentiment_enhanced.rs`: Multi-layer sentiment
+- `twitteractivity_state.rs`: TaskConfig additions
+- Added 2000+ tests for decision logic
+
+### References
+
+- `TWITTERACTIVITY_TODO.md` Section 7.1
+
+---
+
+## ADR 12: Advanced Test Coverage (Integration/Statistical/Property)
+
+**Date:** 2026-05-03  
+**Status:** Accepted  
+**Deciders:** Cascade AI
+
+### Context
+
+Basic unit tests covered individual functions, but we needed:
+- Integration tests for decision flows
+- Statistical verification of probability distributions
+- Property-based tests for invariants
+
+### Decision
+
+Add comprehensive test suite to `twitteractivity_engagement.rs`:
+
+**27 new tests across 4 modules:**
+- `integration_tests` (12): Action selection, limits, text extraction
+- `decision_integration_tests` (3): Smart decision enabled/disabled
+- `statistical_tests` (5): Persona probability distribution (1000 trials, 5% tolerance)
+- `property_tests` (8): No-panic, invariants, edge cases
+
+### Consequences
+
+**Positive:**
+- 1986 → 2014 tests (net +28)
+- Statistical verification catches distribution drift
+- Property tests prevent regression panics
+- Integration tests verify decision flow
+
+**Negative:**
+- Slightly longer CI time (+1-2s)
+- More test code to maintain
+
+### Implementation
+
+```rust
+#[cfg(test)]
+mod integration_tests { /* 12 tests */ }
+
+#[cfg(test)]
+mod statistical_tests { /* 5 tests with 1000 trials */ }
+
+#[cfg(test)]
+mod property_tests { /* 8 property tests */ }
+```
+
+### References
+
+- `TWITTERACTIVITY_TODO.md` Section 9.2
+- `src/utils/twitter/twitteractivity_engagement.rs` (test modules)
 
 ---
 

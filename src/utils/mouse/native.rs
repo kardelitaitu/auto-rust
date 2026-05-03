@@ -82,7 +82,7 @@ pub struct ScreenPoint {
 }
 
 /// Native click calibration parameters for coordinate transformation.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NativeClickCalibration {
     pub scale_x: f64,
     pub scale_y: f64,
@@ -499,4 +499,259 @@ pub fn solve_calibration_from_probe_samples(
         origin_adjust_y,
         mode: candidate.mode,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_metrics() -> BrowserWindowMetrics {
+        BrowserWindowMetrics {
+            screen_x: 100.0,
+            screen_y: 100.0,
+            outer_width: 1200.0,
+            outer_height: 900.0,
+            inner_width: 1100.0,
+            inner_height: 800.0,
+            device_pixel_ratio: 2.0,
+            visual_viewport_scale: 1.0,
+            visual_viewport_offset_left: 10.0,
+            visual_viewport_offset_top: 5.0,
+        }
+    }
+
+    #[test]
+    fn test_native_click_fingerprint_rounding_and_mode() {
+        let metrics = BrowserWindowMetrics {
+            screen_x: 10.4,
+            screen_y: 20.6,
+            outer_width: 1200.4,
+            outer_height: 800.2,
+            inner_width: 1180.6,
+            inner_height: 760.8,
+            device_pixel_ratio: 1.25,
+            visual_viewport_scale: 0.75,
+            visual_viewport_offset_left: 12.2,
+            visual_viewport_offset_top: 7.7,
+        };
+
+        let fingerprint = native_click_fingerprint(&metrics, NativeClickCalibrationMode::Mac);
+        assert_eq!(fingerprint.mode, NativeClickCalibrationMode::Mac);
+        assert_eq!(fingerprint.screen_x, 10);
+        assert_eq!(fingerprint.screen_y, 21);
+        assert_eq!(fingerprint.outer_width, 1200);
+        assert_eq!(fingerprint.outer_height, 800);
+        assert_eq!(fingerprint.inner_width, 1181);
+        assert_eq!(fingerprint.inner_height, 761);
+        assert_eq!(fingerprint.device_pixel_ratio_milli, 1250);
+        assert_eq!(fingerprint.visual_viewport_scale_milli, 750);
+    }
+
+    #[test]
+    fn test_browser_content_origin_uses_platform_specific_chrome_offsets() {
+        let metrics = sample_metrics();
+
+        let (windows_x, windows_y) =
+            browser_content_origin(&metrics, 2.0, 3.0, NativeClickCalibrationMode::Windows);
+        assert_eq!(windows_x, 170.0);
+        assert_eq!(windows_y, 215.0);
+
+        let (mac_x, mac_y) =
+            browser_content_origin(&metrics, 2.0, 3.0, NativeClickCalibrationMode::Mac);
+        let (linux_x, linux_y) =
+            browser_content_origin(&metrics, 2.0, 3.0, NativeClickCalibrationMode::Linux);
+        assert_eq!(mac_x, 120.0);
+        assert_eq!(mac_y, 215.0);
+        assert_eq!(linux_x, mac_x);
+        assert_eq!(linux_y, mac_y);
+    }
+
+    #[test]
+    fn test_browser_scale_clamps_to_expected_bounds() {
+        let metrics = sample_metrics();
+        assert_eq!(
+            browser_scale(&metrics, NativeClickCalibrationMode::Windows),
+            2.0
+        );
+
+        let low = BrowserWindowMetrics {
+            device_pixel_ratio: 0.2,
+            visual_viewport_scale: 1.0,
+            ..metrics
+        };
+        assert_eq!(
+            browser_scale(&low, NativeClickCalibrationMode::Windows),
+            0.5
+        );
+
+        let high = BrowserWindowMetrics {
+            device_pixel_ratio: 10.0,
+            visual_viewport_scale: 1.0,
+            ..metrics
+        };
+        assert_eq!(
+            browser_scale(&high, NativeClickCalibrationMode::Windows),
+            4.0
+        );
+    }
+
+    #[test]
+    fn test_native_click_calibration_from_metrics_and_screen_point_projection() {
+        let metrics = sample_metrics();
+        let calibration =
+            native_click_calibration_from_metrics(&metrics, NativeClickCalibrationMode::Linux);
+        assert_eq!(calibration.scale_x, 2.0);
+        assert_eq!(calibration.scale_y, 2.0);
+        assert_eq!(calibration.origin_adjust_x, 0.0);
+        assert_eq!(calibration.origin_adjust_y, 0.0);
+        assert_eq!(calibration.mode, NativeClickCalibrationMode::Linux);
+
+        let adjusted = NativeClickCalibration {
+            scale_x: 2.0,
+            scale_y: 3.0,
+            origin_adjust_x: 1.0,
+            origin_adjust_y: -2.0,
+            mode: NativeClickCalibrationMode::Windows,
+        };
+        let point = screen_point_from_calibration(&metrics, &adjusted, 10.0, 20.0);
+        assert_eq!(point, ScreenPoint { x: 191, y: 273 });
+    }
+
+    #[test]
+    fn test_validate_native_calibration_bounds() {
+        let valid = NativeClickCalibration::default();
+        assert!(validate_native_calibration(&valid).is_ok());
+
+        let too_small = NativeClickCalibration {
+            scale_x: 0.05,
+            ..valid
+        };
+        assert!(validate_native_calibration(&too_small).is_err());
+
+        let too_large = NativeClickCalibration {
+            scale_x: 6.0,
+            ..valid
+        };
+        assert!(validate_native_calibration(&too_large).is_err());
+
+        let non_finite = NativeClickCalibration {
+            scale_x: f64::NAN,
+            ..valid
+        };
+        assert!(validate_native_calibration(&non_finite).is_err());
+    }
+
+    #[test]
+    fn test_cache_and_forced_calibration_and_trace_hooks() {
+        let cache_key = "session-1";
+        let fingerprint =
+            native_click_fingerprint(&sample_metrics(), NativeClickCalibrationMode::Windows);
+        let calibration = NativeClickCalibration {
+            scale_x: 1.5,
+            scale_y: 1.25,
+            origin_adjust_x: 3.0,
+            origin_adjust_y: -4.0,
+            mode: NativeClickCalibrationMode::Windows,
+        };
+
+        {
+            let mut cache = NATIVE_CLICK_CALIBRATION_CACHE.lock().expect("cache lock");
+            cache.clear();
+        }
+        store_native_click_calibration(cache_key, fingerprint, calibration);
+        assert_eq!(
+            cached_native_click_calibration(cache_key, fingerprint),
+            Some(calibration)
+        );
+        assert_eq!(cached_native_click_calibration("other", fingerprint), None);
+
+        let different_fingerprint = NativeClickFingerprint {
+            screen_x: fingerprint.screen_x + 1,
+            ..fingerprint
+        };
+        assert_eq!(
+            cached_native_click_calibration(cache_key, different_fingerprint),
+            None
+        );
+
+        set_nativeclick_forced_calibration_for_tests(
+            cache_key,
+            2.0,
+            3.0,
+            4.0,
+            5.0,
+            NativeClickCalibrationMode::Mac,
+        );
+        assert_eq!(
+            get_forced_calibration(cache_key),
+            Some(NativeClickCalibration {
+                scale_x: 2.0,
+                scale_y: 3.0,
+                origin_adjust_x: 4.0,
+                origin_adjust_y: 5.0,
+                mode: NativeClickCalibrationMode::Mac,
+            })
+        );
+        clear_nativeclick_forced_calibration_for_tests(cache_key);
+        assert_eq!(get_forced_calibration(cache_key), None);
+
+        clear_nativeclick_trace_hooks(cache_key);
+        record_nativeclick_trace_phase(cache_key, "start");
+        nativeclick_add_trace_hook(cache_key, "resolved");
+        assert_eq!(
+            take_nativeclick_trace_hooks(cache_key),
+            vec!["start".to_string(), "resolved".to_string()]
+        );
+        assert!(take_nativeclick_trace_hooks(cache_key).is_empty());
+    }
+
+    #[test]
+    fn test_solve_calibration_from_probe_samples_success_and_failure() {
+        let metrics = sample_metrics();
+        let candidate = NativeClickCalibration {
+            scale_x: 1.0,
+            scale_y: 1.0,
+            origin_adjust_x: 0.0,
+            origin_adjust_y: 0.0,
+            mode: NativeClickCalibrationMode::Windows,
+        };
+        let first = NativeClickProbeSample {
+            desired_x: 10.0,
+            desired_y: 20.0,
+            hit_x: 2.0,
+            hit_y: 4.0,
+        };
+        let second = NativeClickProbeSample {
+            desired_x: 20.0,
+            desired_y: 40.0,
+            hit_x: 4.0,
+            hit_y: 8.0,
+        };
+
+        let solved = solve_calibration_from_probe_samples(&metrics, candidate, first, second)
+            .expect("solvable calibration");
+        assert_eq!(solved.scale_x, 5.0);
+        assert_eq!(solved.scale_y, 5.0);
+        assert_eq!(solved.origin_adjust_x, 0.0);
+        assert_eq!(solved.origin_adjust_y, 0.0);
+        assert_eq!(solved.mode, NativeClickCalibrationMode::Windows);
+
+        let invalid = solve_calibration_from_probe_samples(
+            &metrics,
+            candidate,
+            NativeClickProbeSample {
+                desired_x: 1.0,
+                desired_y: 1.0,
+                hit_x: 0.5,
+                hit_y: 0.5,
+            },
+            NativeClickProbeSample {
+                desired_x: 2.0,
+                desired_y: 2.0,
+                hit_x: 0.9,
+                hit_y: 0.9,
+            },
+        );
+        assert!(invalid.is_none());
+    }
 }

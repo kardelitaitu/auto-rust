@@ -158,6 +158,13 @@ pub enum Action {
     RightClick { selector: String },
     /// Double-click on an element
     DoubleClick { selector: String },
+    /// Execute actions in parallel
+    Parallel {
+        /// Actions to execute concurrently
+        actions: Vec<Action>,
+        /// Maximum number of concurrent actions (default: all at once)
+        max_concurrency: Option<usize>,
+    },
 }
 
 /// Log levels for the Log action.

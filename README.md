@@ -13,6 +13,7 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
+- [DSL Task System](#dsl-task-system-v010)
 - [Task Registry](#task-registry)
 - [Architecture](#architecture)
 - [Current Status](#current-status)
@@ -121,6 +122,152 @@ cargo run cookiebot.js pageview.js
 ```
 
 > **Note:** Pass CLI flags after `--`, for example `cargo run -- --list-tasks` or `cargo run -- --dry-run cookiebot`.
+
+## DSL Task System (v0.1.0)
+
+Define automation tasks declaratively in YAML/TOML format. No Rust coding required for simple to moderately complex workflows.
+
+### Quick DSL Example
+
+Create a file `tasks/my_login.task`:
+
+```yaml
+name: my_login
+description: "Login to example.com"
+policy: default
+
+parameters:
+  username:
+    type: string
+    required: true
+  password:
+    type: string
+    required: true
+
+actions:
+  - action: navigate
+    url: "https://example.com/login"
+  
+  - action: wait_for
+    selector: "#username"
+    timeout_ms: 5000
+  
+  - action: type
+    selector: "#username"
+    text: "{{username}}"
+  
+  - action: type
+    selector: "#password"
+    text: "{{password}}"
+  
+  - action: click
+    selector: "#login-button"
+  
+  - action: wait
+    duration_ms: 2000
+  
+  - action: screenshot
+    path: "/tmp/logged_in.png"
+```
+
+Run it:
+
+```bash
+cargo run -- my_login username=admin password=secret123
+```
+
+### Available DSL Actions
+
+| Action | Purpose | Example |
+|--------|---------|---------|
+| `navigate` | Go to URL | `url: "https://example.com"` |
+| `click` | Click element | `selector: "#button"` |
+| `type` | Type text | `selector: "#input", text: "hello"` |
+| `wait` | Pause | `duration_ms: 1000` |
+| `wait_for` | Wait for element | `selector: "#result", timeout_ms: 5000` |
+| `scroll_to` | Scroll to element | `selector: "#footer"` |
+| `extract` | Get element text | `selector: "#title", variable: "title_text"` |
+| `clear` | Clear input | `selector: "#search"` |
+| `hover` | Hover element | `selector: "#menu"` |
+| `select` | Select dropdown | `selector: "#country", value: "USA"` |
+| `right_click` | Right-click | `selector: "#item"` |
+| `double_click` | Double-click | `selector: "#file"` |
+| `screenshot` | Capture screen | `path: "/tmp/page.png"` |
+| `log` | Log message | `message: "Done!", level: info` |
+| `if` | Conditional | `condition: ..., then: [...]` |
+| `loop` | Repeat actions | `count: 5, actions: [...]` |
+| `call` | Call other task | `task: "login", parameters: {...}` |
+
+### Task Composition Example
+
+Create reusable task `tasks/login.task`:
+
+```yaml
+name: login
+parameters:
+  url: { type: url, required: true }
+  username: { type: string, required: true }
+  password: { type: string, required: true }
+actions:
+  - action: navigate
+    url: "{{url}}"
+  - action: type
+    selector: "#user"
+    text: "{{username}}"
+  - action: type
+    selector: "#pass"
+    text: "{{password}}"
+  - action: click
+    selector: "#submit"
+```
+
+Create workflow `tasks/full_workflow.task`:
+
+```yaml
+name: full_workflow
+include:
+  - path: login.task
+actions:
+  - action: call
+    task: login
+    parameters:
+      url: "https://app.example.com"
+      username: "admin"
+      password: "{{admin_pass}}"
+  
+  - action: navigate
+    url: "https://app.example.com/dashboard"
+  
+  - action: screenshot
+    path: "/tmp/dashboard.png"
+```
+
+### Configuration
+
+Enable task discovery in `config.toml`:
+
+```toml
+[task_discovery]
+enabled = true
+roots = ["./tasks", "~/.config/auto/tasks"]
+extensions = ["task", "yaml", "yml"]
+```
+
+### CLI Flags
+
+```bash
+# List all tasks
+cargo run -- --list-tasks
+
+# Validate tasks
+cargo run -- --validate-tasks
+
+# Hot reload (auto-reload on file changes)
+cargo run -- --watch my_task
+
+# Dry run
+cargo run -- --dry-run my_task
+```
 
 ### API Quick Examples (v0.0.3)
 

@@ -24,6 +24,9 @@ use anyhow::{Context, Result};
 use crate::prelude::TaskContext;
 use crate::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
 
+/// Maximum recursion depth for task calls to prevent infinite loops.
+const MAX_CALL_DEPTH: u32 = 10;
+
 /// Executor state for DSL task execution.
 pub struct DslExecutor<'a> {
     /// Task context for API operations
@@ -34,6 +37,8 @@ pub struct DslExecutor<'a> {
     variables: HashMap<String, String>,
     /// Execution statistics
     actions_executed: u32,
+    /// Current call depth for recursion tracking
+    call_depth: u32,
 }
 
 impl<'a> std::fmt::Debug for DslExecutor<'a> {
@@ -42,6 +47,7 @@ impl<'a> std::fmt::Debug for DslExecutor<'a> {
             .field("task_def", &self.task_def)
             .field("variables", &self.variables)
             .field("actions_executed", &self.actions_executed)
+            .field("call_depth", &self.call_depth)
             .finish_non_exhaustive()
     }
 }
@@ -58,6 +64,23 @@ impl<'a> DslExecutor<'a> {
             task_def,
             variables: HashMap::new(),
             actions_executed: 0,
+            call_depth: 0,
+        }
+    }
+
+    /// Create a new DSL executor with specific call depth (for internal calls).
+    ///
+    /// # Arguments
+    /// * `api` - Task context for browser automation
+    /// * `task_def` - Parsed task definition
+    /// * `call_depth` - Current recursion depth
+    fn with_depth(api: &'a TaskContext, task_def: &'a TaskDefinition, call_depth: u32) -> Self {
+        Self {
+            api,
+            task_def,
+            variables: HashMap::new(),
+            actions_executed: 0,
+            call_depth,
         }
     }
 
@@ -219,12 +242,8 @@ impl<'a> DslExecutor<'a> {
                     }
                 }
             }
-            Action::Call {
-                task: _,
-                parameters: _,
-            } => {
-                // TODO: Implement Call action
-                log::warn!("Call action not yet fully implemented");
+            Action::Call { task, parameters } => {
+                self.execute_call(task, parameters.as_ref()).await?;
             }
         }
         Ok(())
@@ -312,12 +331,85 @@ impl<'a> DslExecutor<'a> {
         result
     }
 
+    /// Execute a Call action - invoke another task.
+    ///
+    /// # Arguments
+    /// * `task_name` - Name of the task to call
+    /// * `parameters` - Optional parameter overrides for the called task
+    ///
+    /// # Errors
+    /// Returns error if recursion limit exceeded, task not found, or call fails.
+    async fn execute_call(
+        &mut self,
+        task_name: &str,
+        parameters: Option<&HashMap<String, serde_yaml::Value>>,
+    ) -> Result<()> {
+        // Check recursion depth
+        if self.call_depth >= MAX_CALL_DEPTH {
+            return Err(anyhow::anyhow!(
+                "Maximum call depth ({}) exceeded when calling task '{}'",
+                MAX_CALL_DEPTH,
+                task_name
+            ));
+        }
+
+        log::info!(
+            "Calling task '{}' (depth {}/{})",
+            task_name,
+            self.call_depth + 1,
+            MAX_CALL_DEPTH
+        );
+
+        // Look up the target task
+        let registry = crate::task::registry::TaskRegistry::with_built_in_tasks();
+        let target_def = registry
+            .get_task_definition(task_name)
+            .ok_or_else(|| anyhow::anyhow!("Called task '{}' not found", task_name))?
+            .clone();
+
+        // Create child executor with incremented depth
+        let mut child_executor =
+            DslExecutor::with_depth(self.api, &target_def, self.call_depth + 1);
+
+        // Build parameter payload from parent variables + provided parameters
+        let mut child_params = serde_json::Map::new();
+
+        // First, copy parent's variables as defaults
+        for (key, value) in &self.variables {
+            child_params.insert(key.clone(), serde_json::Value::String(value.clone()));
+        }
+
+        // Then apply provided parameter overrides with variable substitution
+        if let Some(params) = parameters {
+            for (key, value) in params {
+                let value_str = match value {
+                    serde_yaml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::Number(n) => n.to_string(),
+                    serde_yaml::Value::Bool(b) => b.to_string(),
+                    _ => format!("{:?}", value),
+                };
+                let resolved_value = self.substitute_variables(&value_str);
+                child_params.insert(key.clone(), serde_json::Value::String(resolved_value));
+            }
+        }
+
+        // Initialize child with merged parameters
+        child_executor = child_executor.with_parameters(&serde_json::Value::Object(child_params));
+
+        // Execute the child task using Box::pin to avoid infinite recursion in async
+        Box::pin(child_executor.execute()).await?;
+
+        log::info!("Task '{}' completed successfully", task_name);
+        Ok(())
+    }
+
     /// Get execution statistics.
     pub fn stats(&self) -> DslExecutionStats {
         DslExecutionStats {
             actions_executed: self.actions_executed,
             total_actions: self.task_def.actions.len() as u32,
             variables_defined: self.variables.len(),
+            max_call_depth: self.call_depth,
         }
     }
 }
@@ -331,6 +423,8 @@ pub struct DslExecutionStats {
     pub total_actions: u32,
     /// Number of variables defined during execution
     pub variables_defined: usize,
+    /// Maximum call depth reached during execution
+    pub max_call_depth: u32,
 }
 
 /// Execute a DSL task definition.
@@ -420,6 +514,7 @@ mod tests {
             actions_executed: 0,
             total_actions: task_def.actions.len() as u32,
             variables_defined: 0,
+            max_call_depth: 0,
         };
 
         assert_eq!(stats.total_actions, 2);
@@ -440,11 +535,13 @@ mod tests {
             actions_executed: 1,
             total_actions: task_def.actions.len() as u32,
             variables_defined: 2,
+            max_call_depth: 0,
         };
 
         assert_eq!(stats.actions_executed, 1);
         assert_eq!(stats.total_actions, 1);
         assert_eq!(stats.variables_defined, 2);
+        assert_eq!(stats.max_call_depth, 0);
     }
 
     #[test]
@@ -508,5 +605,33 @@ mod tests {
 
         let null_payload = serde_json::Value::Null;
         assert!(null_payload.as_object().is_none());
+    }
+
+    #[test]
+    fn test_dsl_stats_includes_call_depth() {
+        let task_def = TaskDefinition {
+            name: "test".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let stats = DslExecutionStats {
+            actions_executed: 1,
+            total_actions: task_def.actions.len() as u32,
+            variables_defined: 2,
+            max_call_depth: 3,
+        };
+
+        assert_eq!(stats.max_call_depth, 3);
+    }
+
+    #[test]
+    fn test_max_call_depth_constant() {
+        // Verify the recursion limit is set appropriately
+        assert_eq!(MAX_CALL_DEPTH, 10);
+        // MAX_CALL_DEPTH is a const, so these checks are compile-time verified
+        // but we keep the assert_eq for documentation purposes
     }
 }

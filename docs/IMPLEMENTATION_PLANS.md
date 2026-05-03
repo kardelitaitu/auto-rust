@@ -232,10 +232,10 @@ Add rustdoc headers to 5+ core modules:
 ```
 
 #### Success Criteria
-- [ ] ARCHITECTURE.md covers all major components
-- [ ] ONBOARDING.md helps new devs get started in <30 min
-- [ ] DECISION_LOG.md has 5+ entries
-- [ ] 5+ modules have comprehensive rustdoc
+- [x] ARCHITECTURE.md covers all major components (✅ created)
+- [x] ONBOARDING.md helps new devs get started in <30 min (✅ created)
+- [x] DECISION_LOG.md has 5+ entries (✅ 12 ADRs recorded)
+- [ ] 5+ modules have comprehensive rustdoc (pending)
 
 ---
 

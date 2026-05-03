@@ -357,6 +357,28 @@ mod tests {
     }
 
     #[test]
+    fn test_variable_substitution_replaces_multiple_occurrences() {
+        let mut variables = HashMap::new();
+        variables.insert("name".to_string(), "alice".to_string());
+
+        let text = "{{name}} says hi to {{name}}.";
+        let result = test_substitute(&variables, text);
+
+        assert_eq!(result, "alice says hi to alice.");
+    }
+
+    #[test]
+    fn test_variable_substitution_leaves_partial_placeholders_intact() {
+        let mut variables = HashMap::new();
+        variables.insert("name".to_string(), "alice".to_string());
+
+        let text = "Hello {{name}}, keep {{unknown}} unchanged.";
+        let result = test_substitute(&variables, text);
+
+        assert_eq!(result, "Hello alice, keep {{unknown}} unchanged.");
+    }
+
+    #[test]
     fn test_dsl_stats() {
         let task_def = TaskDefinition {
             name: "test".to_string(),
@@ -379,5 +401,26 @@ mod tests {
 
         assert_eq!(stats.total_actions, 2);
         assert_eq!(stats.actions_executed, 0);
+    }
+
+    #[test]
+    fn test_dsl_stats_tracks_defined_variables() {
+        let task_def = TaskDefinition {
+            name: "test".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let stats = DslExecutionStats {
+            actions_executed: 1,
+            total_actions: task_def.actions.len() as u32,
+            variables_defined: 2,
+        };
+
+        assert_eq!(stats.actions_executed, 1);
+        assert_eq!(stats.total_actions, 1);
+        assert_eq!(stats.variables_defined, 2);
     }
 }

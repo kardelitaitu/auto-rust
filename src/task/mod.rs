@@ -34,6 +34,7 @@ pub mod twitterquote;
 pub mod twitterreply;
 pub mod twitterretweet;
 pub mod twittertest;
+pub mod watcher;
 
 // Re-exports for twitteractivity test access
 pub use crate::utils::twitter::select_entry_point;

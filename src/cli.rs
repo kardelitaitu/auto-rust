@@ -56,6 +56,13 @@ pub struct Args {
     /// Validate all external tasks and exit
     #[arg(long, help = "Validate all external task files without executing them")]
     pub validate_tasks: bool,
+
+    /// Watch external task directories for changes and auto-reload
+    #[arg(
+        long,
+        help = "Watch external task directories for changes and auto-reload tasks"
+    )]
+    pub watch: bool,
 }
 
 /// Parses command-line arguments using clap.

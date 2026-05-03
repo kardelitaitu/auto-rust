@@ -310,6 +310,25 @@ async fn run_async() -> Result<()> {
         return Ok(());
     }
 
+    // Start file watcher if --watch flag is set
+    let mut _watcher = if args.watch && !config.task_discovery.roots.is_empty() {
+        let registry = Arc::new(parking_lot::Mutex::new(
+            auto::task::registry::TaskRegistry::with_built_in_tasks(),
+        ));
+        let mut watcher = auto::task::watcher::TaskWatcher::new(registry.clone());
+        for root in &config.task_discovery.roots {
+            let root_path = std::path::Path::new(root);
+            if root_path.exists() {
+                if let Err(e) = watcher.watch(root_path, &config.task_discovery).await {
+                    warn!("Failed to watch directory '{}': {}", root, e);
+                }
+            }
+        }
+        Some(watcher)
+    } else {
+        None
+    };
+
     let mut orchestrator = orchestrator::Orchestrator::new(config);
     let metrics = Arc::new(metrics::MetricsCollector::new(1000));
 
@@ -460,6 +479,7 @@ mod tests {
             list_tasks: true,
             dry_run: true,
             validate_tasks: false,
+            watch: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ListTasks);
@@ -474,6 +494,7 @@ mod tests {
             list_tasks: false,
             dry_run: true,
             validate_tasks: false,
+            watch: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::DryRun);
@@ -488,6 +509,7 @@ mod tests {
             list_tasks: false,
             dry_run: false,
             validate_tasks: false,
+            watch: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::Execute);
@@ -502,6 +524,7 @@ mod tests {
             list_tasks: false,
             dry_run: false,
             validate_tasks: true,
+            watch: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ValidateTasks);
@@ -516,6 +539,7 @@ mod tests {
             list_tasks: false,
             dry_run: true,
             validate_tasks: true,
+            watch: false,
         };
 
         // ValidateTasks comes before DryRun in the if-else chain

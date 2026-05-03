@@ -363,6 +363,17 @@ impl TaskRegistry {
         self.tasks.len()
     }
 
+    /// Remove a task from the registry.
+    pub fn remove(&mut self, name: &str) -> Option<TaskDescriptor> {
+        let normalized = crate::task::normalize_task_name(name);
+        self.tasks.remove(normalized)
+    }
+
+    /// Insert a task descriptor directly.
+    pub fn insert(&mut self, name: String, descriptor: TaskDescriptor) {
+        self.tasks.insert(name, descriptor);
+    }
+
     /// Get all task names.
     pub fn task_names(&self) -> Vec<String> {
         let mut names: Vec<_> = self.tasks.keys().cloned().collect();

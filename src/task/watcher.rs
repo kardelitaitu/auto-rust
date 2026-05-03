@@ -1,0 +1,327 @@
+//! Task file watcher for hot reload of external tasks.
+//!
+//! This module provides file system watching capabilities for external task
+//! directories, allowing tasks to be reloaded automatically when files change.
+//!
+//! # Example
+//!
+//! ```rust
+//! use auto::task::watcher::TaskWatcher;
+//! use auto::task::registry::TaskRegistry;
+//!
+//! async fn example(registry: std::sync::Arc<parking_lot::Mutex<TaskRegistry>>) -> anyhow::Result<()> {
+//!     let mut watcher = TaskWatcher::new(registry)?;
+//!     watcher.watch("./tasks").await?;
+//!     Ok(())
+//! }
+//! ```
+
+use std::path::Path;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use parking_lot::Mutex;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+
+use crate::task::registry::TaskRegistry;
+
+/// Watcher for external task files.
+///
+/// Monitors external task directories and reloads tasks when files change.
+/// Designed to run in the background during task execution.
+pub struct TaskWatcher {
+    /// The registry to update when files change
+    registry: Arc<Mutex<TaskRegistry>>,
+    /// Channel sender for file events
+    tx: Option<mpsc::Sender<FileEvent>>,
+    /// Background watch task handle
+    handle: Option<JoinHandle<()>>,
+}
+
+/// File system events relevant to task reloading.
+#[derive(Debug, Clone)]
+pub enum FileEvent {
+    /// A task file was created
+    Created(String),
+    /// A task file was modified
+    Modified(String),
+    /// A task file was deleted
+    Deleted(String),
+    /// A task file was renamed
+    Renamed(String, String),
+}
+
+impl TaskWatcher {
+    /// Create a new task watcher.
+    ///
+    /// # Arguments
+    /// * `registry` - The task registry to update when files change
+    ///
+    /// # Returns
+    /// A new TaskWatcher instance
+    pub fn new(registry: Arc<Mutex<TaskRegistry>>) -> Self {
+        Self {
+            registry,
+            tx: None,
+            handle: None,
+        }
+    }
+
+    /// Start watching a directory for task file changes.
+    ///
+    /// # Arguments
+    /// * `path` - Directory to watch
+    /// * `config` - Task discovery configuration for reloading
+    ///
+    /// # Returns
+    /// Ok(()) on success
+    ///
+    /// # Errors
+    /// Returns error if watcher cannot be created
+    pub async fn watch(
+        &mut self,
+        path: impl AsRef<Path>,
+        task_config: &crate::config::TaskDiscoveryConfig,
+    ) -> Result<()> {
+        let (tx, mut rx) = mpsc::channel(100);
+        self.tx = Some(tx);
+
+        let path = path.as_ref().to_path_buf();
+        let registry = self.registry.clone();
+        let config = task_config.clone();
+
+        // Create notify watcher
+        let watcher_tx = self.tx.as_ref().unwrap().clone();
+        let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| match res {
+            Ok(event) => {
+                if let Err(e) = Self::handle_notify_event(&event, &watcher_tx) {
+                    log::debug!("Failed to handle notify event: {}", e);
+                }
+            }
+            Err(e) => log::warn!("File watcher error: {}", e),
+        })
+        .context("Failed to create file watcher")?;
+
+        // Watch the directory
+        watcher
+            .watch(&path, RecursiveMode::NonRecursive)
+            .context("Failed to watch directory")?;
+
+        // Start background processing task
+        let handle = tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    FileEvent::Created(path) | FileEvent::Modified(path) => {
+                        log::info!("Task file changed: {}", path);
+                        let mut reg = registry.lock();
+                        // Reload the specific task
+                        if let Some(name) = std::path::Path::new(&path)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                        {
+                            if let Err(e) = Self::reload_task(&mut reg, name, &path, &config) {
+                                log::warn!("Failed to reload task '{}': {}", name, e);
+                            }
+                        }
+                    }
+                    FileEvent::Deleted(path) => {
+                        log::info!("Task file deleted: {}", path);
+                        // Remove from registry
+                        let mut reg = registry.lock();
+                        if let Some(name) = std::path::Path::new(&path)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                        {
+                            let _ = reg.remove(name);
+                        }
+                    }
+                    FileEvent::Renamed(old, new) => {
+                        log::info!("Task file renamed: {} -> {}", old, new);
+                        let mut reg = registry.lock();
+                        // Remove old, add new
+                        if let Some(old_name) = std::path::Path::new(&old)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                        {
+                            let _ = reg.remove(old_name);
+                        }
+                        if let Some(new_name) = std::path::Path::new(&new)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                        {
+                            if let Err(e) = Self::reload_task(&mut reg, new_name, &new, &config) {
+                                log::warn!("Failed to reload task '{}': {}", new_name, e);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        self.handle = Some(handle);
+        log::info!("Started watching task directory: {}", path.display());
+
+        // Keep watcher alive
+        std::mem::forget(watcher);
+
+        Ok(())
+    }
+
+    /// Stop the watcher.
+    pub fn stop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+            log::info!("Task watcher stopped");
+        }
+    }
+
+    /// Handle a notify event and convert to FileEvent.
+    fn handle_notify_event(event: &Event, tx: &mpsc::Sender<FileEvent>) -> Result<()> {
+        use notify::EventKind;
+
+        let paths: Vec<_> = event
+            .paths
+            .iter()
+            .filter(|p| {
+                p.extension()
+                    .map(|e| e == "task" || e == "yaml" || e == "yml" || e == "toml")
+                    .unwrap_or(false)
+            })
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        match &event.kind {
+            EventKind::Create(_) => {
+                for path in paths {
+                    let _ = tx.try_send(FileEvent::Created(path));
+                }
+            }
+            EventKind::Modify(_) => {
+                for path in paths {
+                    let _ = tx.try_send(FileEvent::Modified(path));
+                }
+            }
+            EventKind::Remove(_) => {
+                for path in paths {
+                    let _ = tx.try_send(FileEvent::Deleted(path));
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Reload a single task.
+    fn reload_task(
+        registry: &mut TaskRegistry,
+        name: &str,
+        path: &str,
+        _config: &crate::config::TaskDiscoveryConfig,
+    ) -> Result<()> {
+        let path = std::path::Path::new(path);
+        if !path.exists() {
+            return Err(anyhow::anyhow!(
+                "Task file does not exist: {}",
+                path.display()
+            ));
+        }
+
+        // Remove old version if exists
+        registry.remove(name);
+
+        // Try to load as DSL task
+        match crate::task::dsl::parse_task_file(path) {
+            Ok(task_def) => {
+                // Validate
+                if let Err(errors) = crate::task::dsl::validate_task_definition(&task_def) {
+                    log::warn!(
+                        "Reloaded task '{}' has validation errors: {:?}",
+                        name,
+                        errors
+                    );
+                }
+
+                // Update registry
+                use crate::task::registry::{TaskDescriptor, TaskSource};
+                let descriptor = TaskDescriptor {
+                    name: task_def.name.clone(),
+                    source: TaskSource::ConfiguredPath(path.to_path_buf()),
+                    policy_name: Box::leak(task_def.policy.clone().into_boxed_str()),
+                    task_def: Some(task_def),
+                };
+                registry.insert(name.to_string(), descriptor);
+                log::info!("Reloaded task '{}' from {}", name, path.display());
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Failed to parse task file: {}", e));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::registry::TaskRegistry;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_file_event_variants() {
+        let created = FileEvent::Created("/path/task.task".to_string());
+        let modified = FileEvent::Modified("/path/task.task".to_string());
+        let deleted = FileEvent::Deleted("/path/task.task".to_string());
+        let renamed =
+            FileEvent::Renamed("/path/old.task".to_string(), "/path/new.task".to_string());
+
+        // Just verify they can be created and debug formatted
+        assert!(format!("{:?}", created).contains("Created"));
+        assert!(format!("{:?}", modified).contains("Modified"));
+        assert!(format!("{:?}", deleted).contains("Deleted"));
+        assert!(format!("{:?}", renamed).contains("Renamed"));
+    }
+
+    #[test]
+    fn test_task_registry_remove() {
+        let mut registry = TaskRegistry::new();
+        registry
+            .register_external("test_task", PathBuf::from("/test.task"), "default")
+            .unwrap();
+
+        assert!(registry.is_known("test_task"));
+        let removed = registry.remove("test_task");
+        assert!(removed.is_some());
+        assert!(!registry.is_known("test_task"));
+    }
+
+    #[test]
+    fn test_task_registry_remove_unknown() {
+        let mut registry = TaskRegistry::new();
+        let removed = registry.remove("unknown_task");
+        assert!(removed.is_none());
+    }
+
+    #[test]
+    fn test_task_registry_insert() {
+        let mut registry = TaskRegistry::new();
+        use crate::task::registry::{TaskDescriptor, TaskSource};
+
+        let descriptor = TaskDescriptor {
+            name: "inserted_task".to_string(),
+            source: TaskSource::ConfiguredPath(PathBuf::from("/inserted.task")),
+            policy_name: "default",
+            task_def: None,
+        };
+
+        registry.insert("inserted_task".to_string(), descriptor);
+        assert!(registry.is_known("inserted_task"));
+    }
+}

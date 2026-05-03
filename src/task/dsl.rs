@@ -304,6 +304,8 @@ pub fn format_task_definition(def: &TaskDefinition) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_parse_simple_yaml_task() {
@@ -481,5 +483,56 @@ actions:
 
         let def = parse_task_yaml(yaml).unwrap();
         assert_eq!(def.policy, "default");
+    }
+
+    #[test]
+    fn test_parse_task_file_missing_file_reports_read_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.task");
+
+        let err = parse_task_file(&path).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("Failed to read task file"));
+        assert!(msg.contains("missing.task"));
+    }
+
+    #[test]
+    fn test_parse_task_file_invalid_yaml_reports_parse_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("broken.yaml");
+        fs::write(&path, "name: broken_task\nactions:\n  - action: wait\n    duration_ms: not-a-number\n")
+            .unwrap();
+
+        let err = parse_task_file(&path).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("Failed to parse task YAML"));
+    }
+
+    #[test]
+    fn test_parse_task_file_invalid_toml_reports_parse_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("broken.toml");
+        fs::write(&path, "name = \"broken_task\"\n[[actions]]\naction = \"wait\"\nduration_ms = \"oops\"\n")
+            .unwrap();
+
+        let err = parse_task_file(&path).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("Failed to parse task TOML"));
+    }
+
+    #[test]
+    fn test_parse_task_file_invalid_unknown_extension_reports_fallback_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("broken.task");
+        fs::write(&path, "not valid yaml or toml").unwrap();
+
+        let err = parse_task_file(&path).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("Failed to parse task file as YAML or TOML"));
+        assert!(msg.contains("broken.task"));
     }
 }

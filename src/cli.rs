@@ -45,6 +45,13 @@ pub struct Args {
         help = "List all available tasks with source and policy information"
     )]
     pub list_tasks: bool,
+
+    /// Simulate execution without running tasks
+    #[arg(
+        long,
+        help = "Show what would be executed without actually running tasks"
+    )]
+    pub dry_run: bool,
 }
 
 /// Parses command-line arguments using clap.

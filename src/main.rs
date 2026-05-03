@@ -60,6 +60,91 @@ fn run() -> Result<()> {
     rt.block_on(async { run_async().await })
 }
 
+/// Run in dry-run mode: show what would be executed without actually running.
+///
+/// Validates all tasks and prints execution plan without connecting to browsers.
+async fn run_dry_run(groups: &[Vec<cli::TaskDefinition>], config: &config::Config) -> Result<()> {
+    use auto::task::registry::TaskRegistry;
+
+    println!("=== DRY RUN MODE ===");
+    println!("No tasks will be executed. Showing execution plan only.\n");
+
+    // Build registry with external tasks if discovery is enabled
+    let mut registry = TaskRegistry::with_built_in_tasks();
+    let external_loaded = registry.load_external_tasks(&config.task_discovery);
+
+    if external_loaded > 0 {
+        println!("External tasks loaded: {}", external_loaded);
+    }
+
+    // Show registry diagnostics
+    let diag = registry.diagnostics();
+    println!("\nRegistry state:");
+    println!("  Total tasks: {}", diag.total_tasks);
+    println!("  Built-in tasks: {}", diag.built_in_tasks);
+    println!("  External tasks: {}", diag.external_tasks);
+
+    // Validate and show each task group
+    println!("\nExecution plan:");
+    if groups.is_empty() {
+        println!("  No task groups specified.");
+        return Ok(());
+    }
+
+    for (group_idx, group) in groups.iter().enumerate() {
+        println!("\n  Group {} ({} tasks):", group_idx + 1, group.len());
+
+        for (task_idx, task_def) in group.iter().enumerate() {
+            let normalized_name = auto::task::normalize_task_name(&task_def.name);
+
+            match registry.lookup(normalized_name) {
+                Ok(descriptor) => {
+                    let source_info = match &descriptor.source {
+                        auto::task::registry::TaskSource::BuiltInRust => "built-in".to_string(),
+                        auto::task::registry::TaskSource::ConfiguredPath(path) => {
+                            format!("external ({})", path.display())
+                        }
+                        auto::task::registry::TaskSource::Unknown => "unknown".to_string(),
+                    };
+
+                    println!(
+                        "    {}. {} [{}] (policy: {})",
+                        task_idx + 1,
+                        task_def.name,
+                        source_info,
+                        descriptor.policy_name
+                    );
+
+                    // Show payload if present
+                    if !task_def.payload.is_empty() {
+                        let payload_str = task_def
+                            .payload
+                            .iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        println!("       payload: {}", payload_str);
+                    }
+                }
+                Err(e) => {
+                    println!("    {}. {} [UNKNOWN - {}]", task_idx + 1, task_def.name, e);
+                }
+            }
+        }
+    }
+
+    // Summary
+    let total_tasks: usize = groups.iter().map(|g| g.len()).sum();
+    let total_groups = groups.len();
+
+    println!("\n=== SUMMARY ===");
+    println!("Task groups: {}", total_groups);
+    println!("Total task executions: {}", total_tasks);
+    println!("\nDry run complete. No tasks were executed.");
+
+    Ok(())
+}
+
 async fn run_async() -> Result<()> {
     let logger = logger::FileLogger::new("log")?;
     log::set_boxed_logger(Box::new(logger))?;
@@ -98,6 +183,11 @@ async fn run_async() -> Result<()> {
 
     if !groups.is_empty() {
         cli::validate_task_groups_strict(&groups)?;
+    }
+
+    // Handle --dry-run flag
+    if args.dry_run {
+        return run_dry_run(&groups, &config).await;
     }
 
     let sessions = browser::discover_browsers_with_filters(&config, &browser_filters).await?;

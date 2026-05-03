@@ -84,10 +84,22 @@ impl std::fmt::Display for RegistryError {
                 write!(f, "Task '{}' not found", name)
             }
             RegistryError::Conflict { name, sources } => {
+                let formatted_sources: Vec<String> = sources
+                    .iter()
+                    .map(|s| match s {
+                        TaskSource::BuiltInRust => "built-in (rust)".to_string(),
+                        TaskSource::ConfiguredPath(path) => {
+                            format!("external file: {}", path.display())
+                        }
+                        TaskSource::Unknown => "unknown source".to_string(),
+                    })
+                    .collect();
+
                 write!(
                     f,
-                    "Task '{}' exists in multiple sources: {:?}",
-                    name, sources
+                    "Task name conflict: '{}' found in multiple sources:\n  - {}",
+                    name,
+                    formatted_sources.join("\n  - ")
                 )
             }
         }
@@ -241,10 +253,11 @@ impl TaskRegistry {
                                     log::info!("Loaded external task '{}' from {:?}", name, entry);
                                     loaded_count += 1;
                                 }
-                                Err(RegistryError::Conflict { name, .. }) => {
+                                Err(RegistryError::Conflict { name, sources }) => {
                                     log::warn!(
-                                        "Skipping external task '{}' - conflicts with existing task",
-                                        name
+                                        "Skipping external task '{}': conflicts with existing task from {:?}",
+                                        name,
+                                        sources.first().map(|s| format!("{:?}", s)).unwrap_or_default()
                                     );
                                 }
                                 Err(_) => {}
@@ -300,6 +313,71 @@ impl TaskRegistry {
         names.sort();
         names
     }
+
+    /// Check for potential conflicts with external tasks.
+    ///
+    /// Returns a list of task names that would conflict if loaded from the given paths.
+    /// This is useful for pre-flight checks before loading external tasks.
+    ///
+    /// # Arguments
+    /// * `paths` - Iterator of (name, path) tuples to check
+    ///
+    /// # Returns
+    /// Vector of task names that already exist in the registry
+    pub fn check_conflicts<'a>(
+        &self,
+        paths: impl Iterator<Item = (&'a str, &'a std::path::Path)>,
+    ) -> Vec<(String, TaskSource, PathBuf)> {
+        let mut conflicts = Vec::new();
+
+        for (name, path) in paths {
+            if let Some(existing) = self.tasks.get(name) {
+                conflicts.push((
+                    name.to_string(),
+                    existing.source.clone(),
+                    path.to_path_buf(),
+                ));
+            }
+        }
+
+        conflicts
+    }
+
+    /// Generate a diagnostics report for the registry.
+    ///
+    /// Returns detailed information about tasks, sources, and any issues.
+    pub fn diagnostics(&self) -> RegistryDiagnostics {
+        let built_in_count = self
+            .tasks
+            .values()
+            .filter(|t| t.source.is_built_in())
+            .count();
+        let external_count = self
+            .tasks
+            .values()
+            .filter(|t| t.source.is_configured())
+            .count();
+
+        RegistryDiagnostics {
+            total_tasks: self.tasks.len(),
+            built_in_tasks: built_in_count,
+            external_tasks: external_count,
+            task_names: self.task_names(),
+        }
+    }
+}
+
+/// Diagnostics information about the registry state.
+#[derive(Debug, Clone)]
+pub struct RegistryDiagnostics {
+    /// Total number of registered tasks
+    pub total_tasks: usize,
+    /// Number of built-in Rust tasks
+    pub built_in_tasks: usize,
+    /// Number of external configured tasks
+    pub external_tasks: usize,
+    /// All task names (sorted)
+    pub task_names: Vec<String>,
 }
 
 /// Format the task list for display (--list-tasks output).
@@ -487,5 +565,67 @@ mod tests {
 
         let loaded = registry.load_external_tasks(&config);
         assert_eq!(loaded, 0);
+    }
+
+    #[test]
+    fn test_registry_diagnostics() {
+        let registry = TaskRegistry::with_built_in_tasks();
+        let diag = registry.diagnostics();
+
+        assert_eq!(diag.total_tasks, 15);
+        assert_eq!(diag.built_in_tasks, 15);
+        assert_eq!(diag.external_tasks, 0);
+        assert_eq!(diag.task_names.len(), 15);
+        assert!(diag.task_names.contains(&"cookiebot".to_string()));
+    }
+
+    #[test]
+    fn test_check_conflicts_with_builtin() {
+        let registry = TaskRegistry::with_built_in_tasks();
+        let external_path = PathBuf::from("/external/cookiebot.task");
+
+        let conflicts =
+            registry.check_conflicts([("cookiebot", external_path.as_path())].into_iter());
+
+        assert_eq!(conflicts.len(), 1);
+        let (name, source, path) = &conflicts[0];
+        assert_eq!(name, "cookiebot");
+        assert!(source.is_built_in());
+        assert_eq!(path, &external_path);
+    }
+
+    #[test]
+    fn test_check_conflicts_no_conflict() {
+        let registry = TaskRegistry::with_built_in_tasks();
+        let external_path = PathBuf::from("/external/new_task.task");
+
+        let conflicts =
+            registry.check_conflicts([("new_task", external_path.as_path())].into_iter());
+
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_conflict_error_display_format() {
+        let err = RegistryError::Conflict {
+            name: "my_task".to_string(),
+            sources: vec![
+                TaskSource::BuiltInRust,
+                TaskSource::ConfiguredPath(PathBuf::from("/external/my_task.task")),
+            ],
+        };
+
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("Task name conflict: 'my_task'"));
+        assert!(err_msg.contains("built-in (rust)"));
+        assert!(err_msg.contains("external file:"));
+    }
+
+    #[test]
+    fn test_unknown_task_error_display() {
+        let err = RegistryError::UnknownTask {
+            name: "nonexistent".to_string(),
+        };
+        assert_eq!(err.to_string(), "Task 'nonexistent' not found");
     }
 }

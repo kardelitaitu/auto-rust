@@ -6,6 +6,10 @@
 
 pub mod twitteractivity_constants;
 pub mod twitteractivity_decision;
+pub mod twitteractivity_decision_hybrid;
+pub mod twitteractivity_decision_llm;
+pub mod twitteractivity_decision_persona;
+pub mod twitteractivity_decision_unified;
 pub mod twitteractivity_dive;
 pub mod twitteractivity_engagement;
 pub mod twitteractivity_feed;

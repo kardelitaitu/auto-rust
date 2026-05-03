@@ -45,7 +45,7 @@
 //! - These can be adjusted per operation if needed
 
 use crate::prelude::TaskContext;
-use crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS;
+use crate::utils::timing::{DEFAULT_NAVIGATION_TIMEOUT_MS, TIMEOUT_MEDIUM_MS};
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -53,21 +53,18 @@ use std::time::Instant;
 use tracing::instrument;
 
 use super::{
-    twitteractivity_humanized::*,
-    twitteractivity_interact::*,
-    twitteractivity_popup::*,
+    twitteractivity_humanized::*, twitteractivity_interact::*, twitteractivity_popup::*,
     twitteractivity_selectors::*,
 };
 
-/// Default timeout for wait operations in milliseconds
-const DEFAULT_WAIT_TIMEOUT_MS: u64 = 15_000;
+// Use TIMEOUT_MEDIUM_MS (15s) from timing module for wait operations
 
 /// Navigates to Twitter/X home timeline.
 /// Uses mouse click on home logo element instead of URL navigation.
 #[instrument(skip(api))]
 pub async fn goto_home(api: &TaskContext) -> Result<()> {
     let selector = r#"a[aria-label="X"]"#;
-    let timeout_ms = DEFAULT_WAIT_TIMEOUT_MS;
+    let timeout_ms = TIMEOUT_MEDIUM_MS;
 
     // Wait for home logo to be visible
     if !api
@@ -166,7 +163,7 @@ pub async fn goto_notifications(api: &TaskContext) -> Result<()> {
             "main[role='main']",
             "a[aria-label='Notifications']",
         ],
-        DEFAULT_WAIT_TIMEOUT_MS,
+        TIMEOUT_MEDIUM_MS,
     )
     .await
     .ok();
@@ -259,8 +256,6 @@ pub async fn check_selector_health(api: &TaskContext) -> Result<()> {
     Ok(())
 }
 
-
-
 // Navigation functions moved from twitteractivity.rs
 
 /// Select a weighted entry point randomly
@@ -329,10 +324,6 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
     Ok(())
 }
 
-
-
-
-
 pub async fn phase1_navigation(api: &TaskContext) -> Result<()> {
     info!("Phase 1: Navigation to entry point");
     let entry_url = select_entry_point();
@@ -361,7 +352,6 @@ pub async fn phase1_navigation(api: &TaskContext) -> Result<()> {
 
     Ok(())
 }
-
 
 // Navigation entry points and functions
 pub struct EntryPoint {
@@ -433,10 +423,9 @@ pub const ENTRY_POINTS: [EntryPoint; 15] = [
     },
     EntryPoint {
         url: "https://x.com/explore/tabs/for_you",
-        weight: 1,
+        weight: 2,
     },
 ];
-
 
 #[cfg(test)]
 mod tests {
@@ -448,19 +437,19 @@ mod tests {
     }
 
     #[test]
-    fn test_default_wait_timeout_constant() {
-        assert_eq!(DEFAULT_WAIT_TIMEOUT_MS, 15_000);
+    fn test_timeout_medium_constant() {
+        assert_eq!(TIMEOUT_MEDIUM_MS, 15_000);
     }
 
     #[test]
     fn test_timeout_constants_are_positive() {
         const { assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > 0) }
-        const { assert!(DEFAULT_WAIT_TIMEOUT_MS > 0) }
+        const { assert!(TIMEOUT_MEDIUM_MS > 0) }
     }
 
     #[test]
-    fn test_navigation_timeout_greater_than_wait_timeout() {
-        const { assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > DEFAULT_WAIT_TIMEOUT_MS) }
+    fn test_navigation_timeout_greater_than_medium_timeout() {
+        const { assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > TIMEOUT_MEDIUM_MS) }
     }
 
     #[test]
@@ -583,5 +572,109 @@ mod tests {
         let js = selector_popup_overlay();
         assert!(js.contains("dialog"));
         assert!(js.contains("aria-modal"));
+    }
+
+    /// Property-based test: entry point weights must sum to 100
+    #[test]
+    fn test_entry_point_weights_sum_to_100() {
+        let total: u32 = ENTRY_POINTS.iter().map(|e| e.weight).sum();
+        assert_eq!(
+            total, 100,
+            "ENTRY_POINTS weights must sum to 100, got {}",
+            total
+        );
+    }
+
+    /// Property-based test: verify home feed gets ~59% of selections over 1000 samples
+    /// Uses deterministic seeding for reproducibility
+    #[test]
+    fn test_entry_point_distribution_properties() {
+        use rand::rngs::StdRng;
+        use rand::Rng;
+        use rand::SeedableRng;
+
+        const SAMPLES: usize = 1000;
+        const HOME_URL: &str = "https://x.com/";
+        const TOLERANCE: f64 = 0.05; // 5% tolerance
+
+        // Calculate expected probability
+        let total_weight: u32 = ENTRY_POINTS.iter().map(|e| e.weight).sum();
+        let home_entry = ENTRY_POINTS.iter().find(|e| e.url == HOME_URL).unwrap();
+        let expected_prob = home_entry.weight as f64 / total_weight as f64;
+
+        // Run 1000 samples with seeded RNG for reproducibility
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut home_count = 0;
+
+        for _ in 0..SAMPLES {
+            let random = rng.gen::<u32>() % total_weight;
+            let mut cumulative = 0;
+            let mut selected = "";
+            for entry in ENTRY_POINTS.iter() {
+                cumulative += entry.weight;
+                if random < cumulative {
+                    selected = entry.url;
+                    break;
+                }
+            }
+            if selected == HOME_URL {
+                home_count += 1;
+            }
+        }
+
+        let actual_prob = home_count as f64 / SAMPLES as f64;
+        let diff = (actual_prob - expected_prob).abs();
+
+        assert!(
+            diff <= TOLERANCE,
+            "Home feed distribution deviated too much: expected {:.2}%, got {:.2}% (diff {:.2}%)",
+            expected_prob * 100.0,
+            actual_prob * 100.0,
+            diff * 100.0
+        );
+    }
+
+    /// Property: select_entry_point never returns empty string or panics
+    #[test]
+    fn test_select_entry_point_never_empty() {
+        for _ in 0..100 {
+            let url = select_entry_point();
+            assert!(!url.is_empty(), "Entry point URL must not be empty");
+            assert!(url.starts_with("https://"), "Entry point must use HTTPS");
+            assert!(
+                url.contains("x.com") || url.contains("twitter.com"),
+                "Entry point must be X/Twitter domain"
+            );
+        }
+    }
+
+    /// Property: all entry point URLs are unique
+    #[test]
+    fn test_entry_points_unique_urls() {
+        let mut urls = std::collections::HashSet::new();
+        for entry in ENTRY_POINTS.iter() {
+            assert!(
+                urls.insert(entry.url),
+                "Duplicate entry point URL: {}",
+                entry.url
+            );
+        }
+        assert_eq!(
+            urls.len(),
+            ENTRY_POINTS.len(),
+            "All entry point URLs should be unique"
+        );
+    }
+
+    /// Property: all entry point weights are positive
+    #[test]
+    fn test_entry_point_weights_positive() {
+        for entry in ENTRY_POINTS.iter() {
+            assert!(
+                entry.weight > 0,
+                "Entry point weight must be positive: {}",
+                entry.url
+            );
+        }
     }
 }

@@ -48,6 +48,7 @@
 //! - Random variation in timing to avoid patterns
 
 use crate::prelude::TaskContext;
+use crate::utils::timing::{TIMEOUT_MEDIUM_SECS, TIMEOUT_SHORT_SECS};
 use anyhow::Result;
 use log::info;
 use rand;
@@ -203,7 +204,7 @@ pub async fn navigate_to_tweet(api: &TaskContext, x: f64, y: f64) -> Result<bool
 /// - Like button: `LIKE_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
 pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::LIKE_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::LIKE_BUTTON_SELECTOR;
 
     if click_root_tweet_button(api, LIKE_BUTTON_SELECTOR, "like").await? {
         info!("Clicked root tweet like button");
@@ -246,7 +247,7 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
 /// Filters for: data-testid includes "retweet" but not "unretweet"
 #[instrument(skip(api))]
 pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::RETWEET_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::RETWEET_BUTTON_SELECTOR;
 
     if click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
         return Ok(true);
@@ -341,8 +342,8 @@ pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
 /// - Waits 800ms after confirmation
 #[instrument(skip(api))]
 pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::RETWEET_BUTTON_SELECTOR;
-    use crate::task::twitteractivity::RETWEET_CONFIRM_SELECTOR;
+    use super::twitteractivity_selectors::RETWEET_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::RETWEET_CONFIRM_SELECTOR;
 
     info!("Starting retweet action");
     if !click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
@@ -450,11 +451,12 @@ pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
 pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     use std::time::Duration;
     use tokio::time::timeout;
+    // Timeout constants imported from crate::utils::timing
 
     info!("Starting send_reply with text: '{}'", reply_text);
 
     // Focus the specific reply textarea.
-    let textarea_js = r##"
+    let textarea_js = r#"
         (function() {
             var textboxes = document.querySelectorAll('[data-testid="tweetTextarea_0"][role="textbox"], [data-testid="tweetTextarea_0"]');
             for (var i = 0; i < textboxes.length; i++) {
@@ -467,10 +469,15 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
             }
             return { found: false };
         })()
-    "##;
+    "#;
 
     info!("Focusing reply textarea");
-    match timeout(Duration::from_secs(5), api.page().evaluate(textarea_js)).await {
+    match timeout(
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
+        api.page().evaluate(textarea_js),
+    )
+    .await
+    {
         Ok(result) => {
             let textarea_result = result?;
             let found = textarea_result
@@ -496,7 +503,12 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 
     // Type the reply text
     info!("Typing reply text");
-    match timeout(Duration::from_secs(10), api.type_text(reply_text)).await {
+    match timeout(
+        Duration::from_secs(TIMEOUT_MEDIUM_SECS),
+        api.type_text(reply_text),
+    )
+    .await
+    {
         Ok(_) => {}
         Err(_) => {
             info!("Timeout typing reply text");
@@ -523,14 +535,18 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     "#;
 
     info!("Finding reply button");
-    let button_result =
-        match timeout(Duration::from_secs(5), api.page().evaluate(reply_button_js)).await {
-            Ok(result) => result?,
-            Err(_) => {
-                info!("Timeout finding reply button");
-                return Ok(false);
-            }
-        };
+    let button_result = match timeout(
+        Duration::from_secs(TIMEOUT_SHORT_SECS),
+        api.page().evaluate(reply_button_js),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            info!("Timeout finding reply button");
+            return Ok(false);
+        }
+    };
 
     if let Some(coords) = button_result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
@@ -538,10 +554,16 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
             coords.get("y").and_then(|v| v.as_f64()),
         ) {
             info!("Found reply button at ({:.1}, {:.1})", x, y);
-            match timeout(Duration::from_secs(5), api.move_mouse_to(x, y)).await {
+            match timeout(
+                Duration::from_secs(TIMEOUT_SHORT_SECS),
+                api.move_mouse_to(x, y),
+            )
+            .await
+            {
                 Ok(_) => {
                     human_pause(api, 200).await;
-                    match timeout(Duration::from_secs(5), api.click_at(x, y)).await {
+                    match timeout(Duration::from_secs(TIMEOUT_SHORT_SECS), api.click_at(x, y)).await
+                    {
                         Ok(_) => {
                             info!("Clicked Reply button successfully");
                         }
@@ -756,7 +778,7 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
 /// - Bookmark button: `BOOKMARK_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
 pub async fn bookmark_tweet(api: &TaskContext) -> Result<bool> {
-    use crate::task::twitteractivity::BOOKMARK_BUTTON_SELECTOR;
+    use super::twitteractivity_selectors::BOOKMARK_BUTTON_SELECTOR;
 
     if click_root_tweet_button(api, BOOKMARK_BUTTON_SELECTOR, "bookmark").await? {
         info!("Clicked root tweet bookmark button");

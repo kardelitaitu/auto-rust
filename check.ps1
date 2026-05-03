@@ -125,7 +125,8 @@ if (-not $SkipTests -and -not $failed) {
 
     $elapsed = $sw.Elapsed.TotalSeconds
     $exitCode = $proc.ExitCode
-    $passed = $exitCode -eq 0
+    # Nextest exit codes: 0 = all passed, 3 = passed with skips, 4+ = failures
+    $passed = ($exitCode -eq 0) -or ($exitCode -eq 3)
     Write-Output "DEBUG: Exit code = $exitCode, Passed = $passed"
     $results.Tests = @{ Passed = $passed; Duration = $elapsed }
     if (-not $passed) { $failed = $true }

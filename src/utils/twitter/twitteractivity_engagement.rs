@@ -10,7 +10,7 @@ use crate::utils::twitter::{
     twitteractivity_dive::*,
     twitteractivity_humanized::*,
     twitteractivity_interact::*,
-    twitteractivity_limits::{EngagementLimits, EngagementCounters},
+    twitteractivity_limits::{EngagementCounters, EngagementLimits},
     twitteractivity_llm::*,
     twitteractivity_navigation::*,
     twitteractivity_persona::*,
@@ -515,7 +515,10 @@ pub async fn process_candidate(
                     {
                         Ok(true) => bookmark_tweet(api).await?,
                         Ok(false) => {
-                            warn!("Skipping bookmark: not on tweet page for tweet {}", tweet_id);
+                            warn!(
+                                "Skipping bookmark: not on tweet page for tweet {}",
+                                tweet_id
+                            );
                             false
                         }
                         Err(e) => {

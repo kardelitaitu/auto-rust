@@ -83,97 +83,23 @@
 
 ## P1: Critical (High Impact, Low Effort)
 
-- [x] **unwrap() Reduction** - DONE (target MET)
-  - Status: Production code: ~15 unwraps (target: <20) ✅
-  - Status: Test code: ~200+ unwraps (acceptable in tests)
-  - Total: ~230+ (mostly test code - acceptable)
-  - Subtasks:
-    - [x] **Verification** - DONE
-      - [x] Run `cargo test --all-features` - all tests pass
-      - [x] Run `cargo clippy --all-targets --all-features -- -D warnings` - clean
-      - [x] Re-count unwraps: production code ~15 (<20 target) ✅ DONE
-    - [x] Audit Phase - DONE
-    - [x] session/ mod.rs (Critical - 30 unwraps) - DONE
-    - [x] task_context.rs (Critical - 4 unwraps) - DONE
-    - [x] navigation.rs (High - 17 unwraps) - DONE
-    - [x] twitteractivity_interact.rs (High - 9 unwraps) - DONE
-    - [x] result.rs (Low - 11 unwraps) - DONE
-    - [x] state/overlay.rs (Low - 11 unwraps) - DONE
-    - [x] llm/unified_processor.rs (MED - 13 unwraps) - DONE
-    - [x] llm/unified_action_processor.rs (MED - 10 unwraps) - DONE
-    - [x] llm/sentiment_aware_processor.rs (MED - 9 unwraps) - DONE
-    - [x] llm/client.rs (MED - 9 unwraps) - DONE
-    - [x] orchestrator.rs (MED - 4 unwraps) - DONE
-    - [x] api/client.rs (MED - 5 unwraps) - DONE
-    - [x] native_input.rs (Medium - 2 unwraps) - DONE
-    - [x] mouse.rs (Low - 2 unwraps) - DONE
-    - [x] cli.rs (Critical - 1 unwrap) - DONE
+- [x] **unwrap() Reduction** - DONE (2026-04) - Production: ~15 unwraps (<20 target), 1838+ tests pass, clippy clean ✅
 
-- [x] **Split Large Files** - DONE
-  - task_context.rs (5,880 LOC) → 4 modules - DONE
-  - mouse.rs (3,773 LOC) → 3 modules - DONE
+- [x] **Split Large Files** - DONE (2026-04) - task_context.rs → 4 modules, mouse.rs → 3 modules
 
-- [x] **Fix Remaining Warnings** - DONE (0 warnings)
+- [x] **Fix Remaining Warnings** - DONE (0 warnings), cargo-nextest CI (2-10x faster)
 
 ## P2: Important (Medium Term)
 
-- [x] **Dependency Audit** - DONE (2026-05-01)
-  - [x] Run `cargo tree` to visualize dependency graph
-  - [x] Identify unused dependencies with manual review
-  - [x] Check for duplicate transitive dependencies (`cargo tree -d`)
-  - [x] Review outdated dependencies (manual inspection)
-  - [x] Update high-priority dependencies (security patches)
-  - [x] Document findings in `docs/DEPENDENCY_AUDIT.md`
-  - [x] Remove redundant deps, update `Cargo.lock`
-  - **Results:** 3 deps removed (urlencoding, humantime, lazy_static)
-  - **Impact:** 37 direct deps (was 39), cleaner dependency tree
+- [x] **Dependency Audit** - DONE (2026-05-01) - Removed 3 deps (urlencoding, humantime, lazy_static), 37 direct deps (was 39)
 
-- [ ] **Add Benchmark Suite**
-  - Status: No performance benchmarks currently
-  - Action: Add `criterion` for hot paths
-  - Subtasks:
-    - [ ] Add `criterion` to `[dev-dependencies]` in `Cargo.toml`
-    - [ ] Create `src/benches/` directory with `trajectory_bench.rs`, `locator_bench.rs`, and `scorer_bench.rs`
-    - [ ] Benchmark `MusclePath` generation (`src/utils/mouse/trajectory.rs`)
-    - [ ] Benchmark `parse_selector_input` (`src/utils/accessibility_locator.rs`)
-    - [ ] Benchmark `PredictiveScorer` logic (`src/adaptive/predictive_scorer.rs`)
-    - [ ] Document baseline metrics in `docs/PERFORMANCE.md`
-  - Benefit: Prevent performance regressions in critical interaction/parsing paths
-  - Effort: ~2 days
+- [x] **Add Benchmark Suite** - DONE (2026-05-02) - `criterion` in dev-deps, 3 benches (trajectory, accessibility_locator, predictive_scorer), PERFORMANCE.md docs
 
-- [x] **Increase Bus Factor** - DONE (2026-05-01)
-  - [x] Create `docs/ARCHITECTURE.md` with core design decisions (ADRs)
-  - [x] Create `docs/ONBOARDING.md` for new contributors
-  - [x] Add module-level rustdoc to 5+ core modules
-  - [x] Create `docs/DECISION_LOG.md` for major technical decisions (8 ADRs added)
-  - **Impact:** Team scalability, reduced single-point-of-failure, faster onboarding
+- [x] **Increase Bus Factor** - DONE (2026-05-01) - ARCHITECTURE.md, ONBOARDING.md, DECISION_LOG.md (8 ADRs)
 
-- [x] **Config Loading Normalization** ✅ COMPLETE (2026-05-02)
-  - Status: Basic TOML + Env loading present; dead fields exist
-  - Action: Audit, validate, and document configuration
-  - Subtasks:
-    - [x] Audit `Config` fields and remove dead/reserved fields (`connectors`, `stuck_worker_threshold_ms`)
-    - [x] Implement `Validate` trait in `src/config/validation.rs` with semantic bounds checking
-    - [x] Create `config.toml.example` with detailed comments for every available setting
-    - [x] Add 15 config validation unit tests (edge cases: zero concurrency, invalid timeouts, missing profiles)
-  - **Results:** 2 dead fields removed, 15 validation tests added, comprehensive example config
-  - **Impact:** Reduced config-related bugs, better UX for config errors
-  - Effort: ~1 day
+- [x] **Config Loading Normalization** - DONE (2026-05-02) - Removed 2 dead fields, 15 validation tests, config.toml.example with full documentation
 
-- [x] **Click-Learning Persistence** ✅ COMPLETE (2026-05-02)
-  - Status: Logic tightly coupled to `TaskContext`; simple JSON persistence
-  - Action: Decouple adaptation logic and harden persistence
-  - Subtasks:
-    - [x] Decouple adaptation logic from `TaskContext` into `src/adaptive/learning_engine.rs`
-    - [x] Implement `LearningEngine` service with clean API (record, adaptation_for, clear, prune_expired)
-    - [x] Add `last_updated` timestamp to `SelectorLearningStats` for TTL management
-    - [x] Implement prune_expired method to clean data older than TTL (30 days default)
-    - [x] Add `enable_learning_persistence` flag and `learning_ttl_days` to `BrowserConfig`
-    - [x] Add CLI flag `auto --clear-learning` to reset learned patterns
-    - [x] 12 comprehensive unit tests (convergence, decay, TTL, persistence, backward compat)
-  - **Results:** LearningEngine decouples click learning, TTL cleanup, privacy controls
-  - **Impact:** Smarter automation over time, reduced manual corrections
-  - Effort: ~2-3 days
+- [x] **Click-Learning Persistence** - DONE (2026-05-02) - `LearningEngine` decoupled from TaskContext, TTL cleanup, 12 unit tests, `--clear-learning` CLI flag
 
 ## P3: Lower Priority (Large Refactorings)
 

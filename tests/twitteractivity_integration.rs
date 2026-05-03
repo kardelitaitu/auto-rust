@@ -4,7 +4,7 @@
 //! without requiring a live browser.
 
 use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
-use auto::task::twitteractivity::{TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
+use auto::task::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
 use auto::utils::twitter::{
     twitteractivity_persona::select_persona_weights,
     twitteractivity_sentiment::{analyze_tweet_sentiment, sentiment_score, Sentiment},
@@ -157,7 +157,7 @@ fn twitteractivity_action_chaining_same_action_after_cooldown() {
 /// Tests entry point selection returns valid URLs.
 #[test]
 fn twitteractivity_entry_point_selection_returns_valid_url() {
-    use auto::task::twitteractivity::select_entry_point;
+    // select_entry_point already imported at top
 
     // Test multiple selections to ensure all return valid URLs
     for _ in 0..10 {
@@ -176,7 +176,7 @@ fn twitteractivity_entry_point_selection_returns_valid_url() {
 /// Tests that entry point selection includes home URL.
 #[test]
 fn twitteractivity_entry_point_selection_includes_home() {
-    use auto::task::twitteractivity::select_entry_point;
+    // select_entry_point already imported at top
 
     // Sample many times to ensure home URL is in the distribution
     let mut found_home = false;
@@ -439,7 +439,7 @@ fn twitteractivity_action_chaining_overwrites_previous() {
 /// Tests that entry point selection has expected distribution.
 #[test]
 fn twitteractivity_entry_point_selection_distribution() {
-    use auto::task::twitteractivity::select_entry_point;
+    // select_entry_point already imported at top
 
     // Sample many times to check distribution
     let mut counts = std::collections::HashMap::new();

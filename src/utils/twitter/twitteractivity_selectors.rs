@@ -237,6 +237,70 @@ pub fn js_get_current_url() -> &'static str {
     r#"window.location.href"#
 }
 
+// --- CSS Selector Constants ---
+
+/// Home logo selector (X logo)
+pub const HOME_LOGO_SELECTOR: &str = r#"a[aria-label=\"X\"]"#;
+
+/// Tweet link selector (links to individual tweets)
+pub const TWEET_LINK_SELECTOR: &str = r#"a[href*=\"/status/\"]"#;
+
+/// Tweet detail/dialog selector
+pub const TWEET_DETAIL_SELECTOR: &str = r#"div[role=\"dialog\"]"#;
+
+/// Tweet detail fallback selectors
+pub const TWEET_DETAIL_FALLBACK1: &str = r#"div[data-testid=\"tweetDetail\"]"#;
+pub const TWEET_DETAIL_FALLBACK2: &str = r#"div[data-testid=\"tweetThread\"]"#;
+pub const TWEET_DETAIL_FALLBACK3: &str = r#"[aria-label=\"Timeline: Thread\"]"#;
+pub const TWEET_DETAIL_FALLBACK4: &str = r#"article[data-testid=\"tweet\"]"#;
+
+/// Retweet button selector
+pub const RETWEET_BUTTON_SELECTOR: &str = r#"button[data-testid=\"retweet\"]"#;
+
+/// Retweet confirm button selector
+pub const RETWEET_CONFIRM_SELECTOR: &str = r#"div[data-testid=\"retweetConfirm\"]"#;
+
+/// Like button selector
+pub const LIKE_BUTTON_SELECTOR: &str = r#"button[data-testid=\"like\"]"#;
+
+/// Follow button selector (ending with -follow)
+pub const FOLLOW_BUTTON_SELECTOR: &str = r#"button[data-testid$=\"-follow\"]"#;
+
+/// Bookmark button selector
+pub const BOOKMARK_BUTTON_SELECTOR: &str = r#"button[data-testid=\"bookmark\"]"#;
+
+// --- Additional Selector Constants (for inline selector cleanup) ---
+
+/// Tweet textarea selector (for reply composition)
+pub const TWEET_TEXTAREA_SELECTOR: &str = r#"[data-testid=\"tweetTextarea_0\"]"#;
+
+/// Role textbox selector
+pub const ROLE_TEXTBOX_SELECTOR: &str = r#"[role=\"textbox\"]"#;
+
+/// Button with role=button selector
+pub const BUTTON_ROLE_BUTTON_SELECTOR: &str = r#"button, [role=\"button\"]"#;
+
+/// Subscribe button selector (for follow checks)
+pub const SUBSCRIBE_BUTTON_SELECTOR: &str = r#"button[data-testid*=\"-subscribe\"]"#;
+
+/// Article tweet selector (for feed scanning)
+pub const ARTICLE_TWEET_SELECTOR: &str = r#"article[data-testid=\"tweet\"]"#;
+
+/// Tweet text selector
+pub const TWEET_TEXT_SELECTOR: &str = r#"[data-testid=\"tweetText\"]"#;
+
+/// Reply button selector
+pub const REPLY_BUTTON_SELECTOR: &str = r#"button[data-testid=\"reply\"]"#;
+
+/// Tweet reply selector (for extracting replies)
+pub const TWEET_REPLY_SELECTOR: &str = r#"[data-testid=\"tweetReply\"]"#;
+
+/// Dir auto span selector (for reply author extraction)
+pub const DIR_AUTO_SPAN_SELECTOR: &str = r#"[dir=\"auto\"] span:first-child"#;
+
+/// Tweet button selector (generic button search)
+pub const TWEET_BUTTON_SELECTOR: &str = r#"button[data-testid], a[data-testid]"#;
+
 /// Returns JS to extract username from a profile page (if navigated to /username).
 pub fn js_extract_username_from_url() -> &'static str {
     r#"

@@ -3,16 +3,56 @@
 
 use crate::config::TwitterActivityConfig;
 use crate::prelude::TaskContext;
+use crate::utils::timing::duration_with_variance;
 use crate::utils::twitter::{
     twitteractivity_dive::ThreadCache,
-    twitteractivity_limits::{EngagementLimits, EngagementCounters},
+    twitteractivity_limits::{EngagementCounters, EngagementLimits},
     twitteractivity_persona::PersonaWeights,
 };
-use crate::utils::timing::duration_with_variance;
 use log::info;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+
+/// Validation errors for task payload.
+#[derive(Debug)]
+pub enum TaskValidationError {
+    InvalidDuration { field: String, value: i64 },
+    InvalidCandidateCount { field: String, value: i64 },
+    InvalidThreadDepth { field: String, value: i64 },
+    InvalidMaxActionsPerScan { field: String, value: i64 },
+    InvalidPositiveNumber { field: String, value: i64 },
+}
+
+impl std::fmt::Display for TaskValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskValidationError::InvalidDuration { field, value } => write!(
+                f,
+                "Invalid value for '{}': {} (must be positive)",
+                field, value
+            ),
+            TaskValidationError::InvalidCandidateCount { field, value } => {
+                write!(f, "Invalid value for '{}': {} (must be u32)", field, value)
+            }
+            TaskValidationError::InvalidThreadDepth { field, value } => {
+                write!(f, "Invalid value for '{}': {} (must be u32)", field, value)
+            }
+            TaskValidationError::InvalidMaxActionsPerScan { field, value } => write!(
+                f,
+                "Invalid value for '{}': {} (must be u32, min 1)",
+                field, value
+            ),
+            TaskValidationError::InvalidPositiveNumber { field, value } => write!(
+                f,
+                "Invalid value for '{}': {} (must be positive)",
+                field, value
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TaskValidationError {}
 
 /// Configuration for reply and quote text templates by sentiment.
 #[derive(Debug, Clone)]
@@ -90,20 +130,22 @@ pub struct TaskConfig {
 
 impl TaskConfig {
     /// Parse task configuration from JSON payload with defaults
-    pub fn from_payload(payload: &Value, config: &TwitterActivityConfig) -> Self {
-        let duration_ms =
-            duration_with_variance(read_u64(payload, "duration_ms", 300_000), 20);
+    pub fn from_payload(
+        payload: &Value,
+        config: &TwitterActivityConfig,
+    ) -> Result<Self, TaskValidationError> {
+        let duration_ms = duration_with_variance(read_u64(payload, "duration_ms", 300_000)?, 20);
         let candidate_count = read_u32(
             payload,
             "candidate_count",
             config.engagement_candidate_count,
-        );
-        let thread_depth = read_u32(payload, "thread_depth", 3);
+        )?;
+        let thread_depth = read_u32(payload, "thread_depth", 3)?;
         let max_actions_per_scan = read_u32(
             payload,
             "max_actions_per_scan",
             config.engagement_candidate_count,
-        )
+        )?
         .max(1);
         let weights = payload.get("weights").cloned();
 
@@ -133,7 +175,7 @@ impl TaskConfig {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        Self {
+        Ok(Self {
             duration_ms,
             candidate_count,
             thread_depth,
@@ -144,7 +186,7 @@ impl TaskConfig {
             sentiment_templates,
             enhanced_sentiment_enabled,
             dry_run_actions,
-        }
+        })
     }
 }
 
@@ -168,9 +210,9 @@ impl TweetActionTracker {
     /// Check if an action is allowed on this tweet (prevents rapid action chains).
     pub fn can_perform_action(&self, tweet_id: &str, _action_type: &str) -> bool {
         if let Some((_, last_time)) = self.last_action.get(tweet_id) {
-            let elased = last_time.elapsed();
+            let elapsed = last_time.elapsed();
             // Enforce minimum delay between actions on same tweet
-            if elased.as_millis() < self.min_delay_ms as u128 {
+            if elapsed.as_millis() < self.min_delay_ms as u128 {
                 return false;
             }
         }
@@ -213,16 +255,39 @@ pub struct CandidateResult {
     pub thread_cache: Option<ThreadCache>,
 }
 
-/// Helper: read numeric fields from payload with defaults (u64)
-pub fn read_u64(payload: &Value, key: &str, default: u64) -> u64 {
-    payload.get(key).and_then(|v| v.as_u64()).unwrap_or(default)
+/// Helper: read numeric fields from payload with validation (u64)
+pub fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64, TaskValidationError> {
+    payload
+        .get(key)
+        .and_then(|v| v.as_u64())
+        .map(|v| {
+            if v > 0 {
+                Ok(v)
+            } else {
+                Err(TaskValidationError::InvalidPositiveNumber {
+                    field: key.to_string(),
+                    value: v as i64,
+                })
+            }
+        })
+        .unwrap_or(Ok(default))
 }
 
-/// Helper: read numeric fields from payload with defaults (u32)
-pub fn read_u32(payload: &Value, key: &str, default: u32) -> u32 {
+/// Helper: read numeric fields from payload with validation (u32)
+pub fn read_u32(payload: &Value, key: &str, default: u32) -> Result<u32, TaskValidationError> {
     payload
         .get(key)
         .and_then(|v| v.as_u64())
         .and_then(|v| u32::try_from(v).ok())
-        .unwrap_or(default)
+        .map(|v| {
+            if v > 0 {
+                Ok(v)
+            } else {
+                Err(TaskValidationError::InvalidPositiveNumber {
+                    field: key.to_string(),
+                    value: v as i64,
+                })
+            }
+        })
+        .unwrap_or(Ok(default))
 }

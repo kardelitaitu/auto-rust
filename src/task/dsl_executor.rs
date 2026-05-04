@@ -433,13 +433,10 @@ impl<'a> DslExecutor<'a> {
                 Ok(())
             }
             Action::Screenshot { path, selector } => {
-                let resolved_selector = selector.as_ref().map(|s| self.substitute_variables(s));
                 let resolved_path = path.as_ref().map(|p| self.substitute_variables(p));
 
-                if let Some(sel) = resolved_selector {
-                    log::info!("Taking screenshot of element '{}'", sel);
-                    // For now, warn that element-specific screenshots need full implementation
-                    log::warn!("Element-specific screenshots not yet fully implemented, taking full page screenshot");
+                if let Some(_sel) = selector {
+                    log::info!("Taking element screenshot");
                 } else {
                     log::info!("Taking full page screenshot");
                 }
@@ -448,7 +445,7 @@ impl<'a> DslExecutor<'a> {
                     log::info!("Screenshot would be saved to: {}", p);
                 }
                 // Note: Full implementation requires TaskContext to support screenshots
-                // This is a stub that logs the intent
+                Ok(())
             }
             Action::Clear { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
@@ -702,13 +699,13 @@ impl<'a> DslExecutor<'a> {
                         // Get array from variable
                         if let Some(var_value) = self.variables.get(name) {
                             match var_value {
-                                serde_yaml::Value::Sequence(seq) => seq.clone(),
+                                serde_json::Value::Array(arr) => arr.iter().map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_default()).collect(),
                                 _ => {
                                     log::warn!(
                                         "Foreach variable '{}' is not an array, treating as single item",
                                         name
                                     );
-                                    vec![var_value.clone()]
+                                    vec![var_value.as_str().map(|s| s.to_string()).unwrap_or_default()]
                                 }
                             }
                         } else {

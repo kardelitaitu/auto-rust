@@ -197,6 +197,123 @@ cargo run -- my_login username=admin password=secret123
 | `if` | Conditional | `condition: ..., then: [...]` |
 | `loop` | Repeat actions | `count: 5, actions: [...]` |
 | `call` | Call other task | `task: "login", parameters: {...}` |
+| `foreach` | Iterate collection | `variable: "item", collection: ...` |
+| `while` | Loop while condition | `condition: ..., actions: [...]` |
+| `retry` | Retry with backoff | `actions: [...], max_attempts: 3` |
+| `try` | Error handling | `try_actions: [...], catch_actions: [...]` |
+
+### Control Flow Examples
+
+#### If/Then/Else
+```yaml
+- if:
+    condition:
+      element_visible: "#premium-content"
+    then:
+      - log:
+          message: "Premium user detected"
+          level: info
+      - click:
+          selector: "#premium-button"
+    else:
+      - log:
+          message: "Standard user"
+          level: info
+```
+
+#### Foreach (Iterate over collection)
+```yaml
+# Array collection
+- foreach:
+    variable: "product"
+    collection:
+      type: array
+      values: ["iPhone", "iPad", "MacBook"]
+    actions:
+      - log:
+          message: "Checking {{product}}..."
+          level: info
+
+# Range collection
+- foreach:
+    variable: "index"
+    collection:
+      type: range
+      start: 1
+      end: 6
+    actions:
+      - log:
+          message: "Processing item {{index}}"
+          level: info
+
+# DOM elements collection
+- foreach:
+    variable: "item"
+    collection:
+      type: elements
+      selector: ".product-item"
+    max_iterations: 10
+    actions:
+      - click:
+          selector: "{{item}}"
+```
+
+#### While (Condition-based loop)
+```yaml
+# Wait for loading to complete
+- while:
+    condition:
+      element_visible: ".loading-spinner"
+    max_iterations: 30
+    actions:
+      - wait:
+          duration_ms: 500
+      - log:
+          message: "Still loading..."
+          level: debug
+
+# Wait for element to appear
+- while:
+    condition:
+      element_not_exists: "#content"
+    max_iterations: 20
+    actions:
+      - wait:
+          duration_ms: 250
+```
+
+#### Retry (Automatic retry with backoff)
+```yaml
+- retry:
+    actions:
+      - click:
+          selector: "#flaky-button"
+    max_attempts: 5
+    initial_delay_ms: 1000
+    max_delay_ms: 30000
+    backoff_multiplier: 2.0
+    jitter: true
+    retry_on: ["timeout", "network"]
+```
+
+#### Try/Catch/Finally
+```yaml
+- try:
+    try_actions:
+      - click:
+          selector: "#primary-button"
+    catch_actions:
+      - log:
+          message: "Primary failed, using fallback"
+          level: warn
+      - click:
+          selector: "#fallback-button"
+    error_variable: "error_message"
+    finally_actions:
+      - log:
+          message: "Attempt complete"
+          level: info
+```
 
 ### Task Composition Example
 

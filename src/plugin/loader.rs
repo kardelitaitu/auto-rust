@@ -165,29 +165,28 @@ impl PluginLoader {
         Ok(manifests)
     }
 
-    /// Find manifests in a specific directory (recursive helper)
+    /// Find manifests in a specific directory (iterative to avoid recursion)
     async fn find_manifests_in_dir(&self, dir: &Path) -> Result<Vec<PathBuf>> {
         let mut manifests = Vec::new();
+        let mut queue = vec![dir.to_path_buf()];
 
-        let entries = tokio::fs::read_dir(dir)
-            .await
-            .with_context(|| format!("Failed to read directory: {}", dir.display()))?;
+        while let Some(current_dir) = queue.pop() {
+            let mut entries = tokio::fs::read_dir(&current_dir).await?;
 
-        let mut entries = entries;
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
 
-            if path.is_dir() && self.config.recursive {
-                let sub_manifests = self.find_manifests_in_dir(&path).await?;
-                manifests.extend(sub_manifests);
-            } else if self.is_manifest_file(&path) {
-                let name = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
+                if path.is_dir() && self.config.recursive {
+                    queue.push(path);
+                } else if self.is_manifest_file(&path) {
+                    let name = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
 
-                if self.should_load_plugin(&name) {
-                    manifests.push(path);
+                    if self.should_load_plugin(&name) {
+                        manifests.push(path);
+                    }
                 }
             }
         }

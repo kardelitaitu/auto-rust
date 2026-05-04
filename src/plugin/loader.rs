@@ -88,7 +88,10 @@ impl PluginLoader {
         let manifest_paths = self.find_manifests().await?;
 
         for manifest_path in manifest_paths {
-            match self.load_plugin_from_manifest(&manifest_path, registry).await {
+            match self
+                .load_plugin_from_manifest(&manifest_path, registry)
+                .await
+            {
                 Ok(name) => {
                     result.loaded.push(name);
                 }
@@ -97,7 +100,11 @@ impl PluginLoader {
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| "unknown".to_string());
-                    log::warn!("Failed to load plugin from '{}': {}", manifest_path.display(), e);
+                    log::warn!(
+                        "Failed to load plugin from '{}': {}",
+                        manifest_path.display(),
+                        e
+                    );
                     result.failed.push((name, e.to_string()));
                 }
             }
@@ -125,8 +132,14 @@ impl PluginLoader {
     async fn find_manifests(&self) -> Result<Vec<PathBuf>> {
         let mut manifests = Vec::new();
 
-        let entries = tokio::fs::read_dir(&self.config.plugin_dir).await
-            .with_context(|| format!("Failed to read plugin directory: {}", self.config.plugin_dir.display()))?;
+        let entries = tokio::fs::read_dir(&self.config.plugin_dir)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to read plugin directory: {}",
+                    self.config.plugin_dir.display()
+                )
+            })?;
 
         let mut entries = entries;
         while let Some(entry) = entries.next_entry().await? {
@@ -138,7 +151,8 @@ impl PluginLoader {
                 manifests.extend(sub_manifests);
             } else if self.is_manifest_file(&path) {
                 // Check allowlist/denylist
-                let name = path.file_stem()
+                let name = path
+                    .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
 
@@ -155,7 +169,8 @@ impl PluginLoader {
     async fn find_manifests_in_dir(&self, dir: &Path) -> Result<Vec<PathBuf>> {
         let mut manifests = Vec::new();
 
-        let entries = tokio::fs::read_dir(dir).await
+        let entries = tokio::fs::read_dir(dir)
+            .await
             .with_context(|| format!("Failed to read directory: {}", dir.display()))?;
 
         let mut entries = entries;
@@ -166,7 +181,8 @@ impl PluginLoader {
                 let sub_manifests = self.find_manifests_in_dir(&path).await?;
                 manifests.extend(sub_manifests);
             } else if self.is_manifest_file(&path) {
-                let name = path.file_stem()
+                let name = path
+                    .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
 
@@ -181,7 +197,8 @@ impl PluginLoader {
 
     /// Check if a path is a manifest file
     fn is_manifest_file(&self, path: &Path) -> bool {
-        let ext = path.extension()
+        let ext = path
+            .extension()
             .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_default();
 
@@ -210,20 +227,30 @@ impl PluginLoader {
         registry: &mut PluginRegistry,
     ) -> Result<String> {
         // Read manifest file
-        let content = tokio::fs::read_to_string(manifest_path).await
+        let content = tokio::fs::read_to_string(manifest_path)
+            .await
             .with_context(|| format!("Failed to read manifest: {}", manifest_path.display()))?;
 
         // Parse manifest based on extension
-        let manifest = if manifest_path.extension().map(|e| e == "toml").unwrap_or(false) {
+        let manifest = if manifest_path
+            .extension()
+            .map(|e| e == "toml")
+            .unwrap_or(false)
+        {
             PluginManifest::from_toml(&content)?
-        } else if manifest_path.extension().map(|e| e == "json").unwrap_or(false) {
+        } else if manifest_path
+            .extension()
+            .map(|e| e == "json")
+            .unwrap_or(false)
+        {
             PluginManifest::from_json(&content)?
         } else {
             PluginManifest::from_yaml(&content)?
         };
 
         // Resolve WASM path
-        let wasm_path = manifest_path.parent()
+        let wasm_path = manifest_path
+            .parent()
             .unwrap_or(&self.config.plugin_dir)
             .join(&manifest.entry_point);
 
@@ -245,7 +272,11 @@ impl PluginLoader {
         // Register with registry
         registry.register(manifest, plugin)?;
 
-        log::info!("Loaded plugin '{}' from {}", manifest.name, manifest_path.display());
+        log::info!(
+            "Loaded plugin '{}' from {}",
+            manifest.name,
+            manifest_path.display()
+        );
 
         Ok(manifest.name.clone())
     }
@@ -335,7 +366,10 @@ mod tests {
     #[test]
     fn test_loader_config_default() {
         let config = PluginLoaderConfig::default();
-        assert_eq!(config.plugin_dir, PathBuf::from(super::super::DEFAULT_PLUGIN_DIR));
+        assert_eq!(
+            config.plugin_dir,
+            PathBuf::from(super::super::DEFAULT_PLUGIN_DIR)
+        );
         assert!(config.enabled);
         assert!(config.allowlist.is_empty());
         assert!(config.denylist.is_empty());
@@ -407,7 +441,9 @@ mod tests {
         assert!(result.all_succeeded());
         assert!(result.any_succeeded());
 
-        result.failed.push(("plugin3".to_string(), "error".to_string()));
+        result
+            .failed
+            .push(("plugin3".to_string(), "error".to_string()));
         assert_eq!(result.total(), 3);
         assert!(!result.all_succeeded());
         assert!(result.any_succeeded());

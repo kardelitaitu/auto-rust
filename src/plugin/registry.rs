@@ -6,7 +6,10 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use super::{plugin::{BoxedPlugin, HookResult, PluginContext, PluginHook, PluginInfo}, manifest::PluginManifest};
+use super::{
+    manifest::PluginManifest,
+    plugin::{BoxedPlugin, HookResult, PluginContext, PluginHook, PluginInfo},
+};
 
 /// Errors that can occur in the plugin registry
 #[derive(Debug, thiserror::Error)]
@@ -127,7 +130,9 @@ impl PluginRegistry {
         self.load_order
             .iter()
             .filter_map(|name| {
-                self.plugins.get(name).map(|p| PluginInfo::from_plugin(p.as_ref()))
+                self.plugins
+                    .get(name)
+                    .map(|p| PluginInfo::from_plugin(p.as_ref()))
             })
             .collect()
     }
@@ -257,8 +262,8 @@ impl PluginRegistry {
 
 #[cfg(test)]
 mod tests {
+    use super::super::plugin::{HookResult, Plugin, PluginContext, PluginHook};
     use super::*;
-    use super::super::plugin::{Plugin, HookResult, PluginContext, PluginHook};
 
     struct TestPlugin {
         name: String,
@@ -360,7 +365,9 @@ mod tests {
             version: "2.0.0".to_string(),
         });
 
-        registry.register(manifest1, plugin1 as BoxedPlugin).unwrap();
+        registry
+            .register(manifest1, plugin1 as BoxedPlugin)
+            .unwrap();
         let result = registry.register(manifest2, plugin2 as BoxedPlugin);
         assert!(matches!(result, Err(RegistryError::DuplicatePlugin(_))));
     }

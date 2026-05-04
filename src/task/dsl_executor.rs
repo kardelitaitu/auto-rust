@@ -662,11 +662,9 @@ impl<'a> DslExecutor<'a> {
                 // Resolve collection based on type
                 let values = match collection {
                     crate::task::dsl::ForeachCollection::Array { values } => values.clone(),
-                    crate::task::dsl::ForeachCollection::Range { start, end } => {
-                        (*start..*end)
-                            .map(|i| serde_yaml::Value::Number(i.into()))
-                            .collect()
-                    }
+                    crate::task::dsl::ForeachCollection::Range { start, end } => (*start..*end)
+                        .map(|i| serde_yaml::Value::Number(i.into()))
+                        .collect(),
                     crate::task::dsl::ForeachCollection::Elements { selector } => {
                         // Count matching elements and create index-based values
                         let resolved_selector = self.substitute_variables(selector);
@@ -679,7 +677,8 @@ impl<'a> DslExecutor<'a> {
                             .map(|i| {
                                 serde_yaml::Value::String(format!(
                                     "{}:nth-of-type({})",
-                                    resolved_selector, i + 1
+                                    resolved_selector,
+                                    i + 1
                                 ))
                             })
                             .collect()
@@ -698,7 +697,10 @@ impl<'a> DslExecutor<'a> {
                                 }
                             }
                         } else {
-                            log::warn!("Foreach variable '{}' not found, using empty collection", name);
+                            log::warn!(
+                                "Foreach variable '{}' not found, using empty collection",
+                                name
+                            );
                             vec![]
                         }
                     }
@@ -713,7 +715,13 @@ impl<'a> DslExecutor<'a> {
                 let mut iteration_count = 0;
                 for value in values.iter().take(max_iterations as usize) {
                     iteration_count += 1;
-                    log::debug!("Foreach iteration {}/{}: {} = {:?}", iteration_count, max_iterations.min(values.len() as u32), variable, value);
+                    log::debug!(
+                        "Foreach iteration {}/{}: {} = {:?}",
+                        iteration_count,
+                        max_iterations.min(values.len() as u32),
+                        variable,
+                        value
+                    );
 
                     // Bind variable for this iteration
                     self.variables.insert(variable.clone(), value.clone());
@@ -724,10 +732,7 @@ impl<'a> DslExecutor<'a> {
                     }
                 }
 
-                log::info!(
-                    "Foreach loop completed {} iterations",
-                    iteration_count
-                );
+                log::info!("Foreach loop completed {} iterations", iteration_count);
             }
         }
         Ok(())
@@ -1285,12 +1290,10 @@ mod tests {
                     serde_yaml::Value::String("third".to_string()),
                 ],
             },
-            actions: vec![
-                Action::Log {
-                    message: "Processing {{item}}".to_string(),
-                    level: Some(crate::task::dsl::LogLevel::Info),
-                },
-            ],
+            actions: vec![Action::Log {
+                message: "Processing {{item}}".to_string(),
+                level: Some(crate::task::dsl::LogLevel::Info),
+            }],
             max_iterations: Some(10),
         };
 

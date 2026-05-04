@@ -333,6 +333,8 @@ pub fn validate_task_definition(def: &TaskDefinition) -> Result<(), Vec<String>>
 /// - All required parameters are provided
 /// - Provided parameters match expected types
 /// - Unknown parameters are flagged
+/// - URL parameters are valid URLs
+/// - Selector parameters contain valid CSS selectors
 ///
 /// # Arguments
 /// * `def` - Task definition with parameter specs
@@ -352,14 +354,37 @@ pub fn validate_parameters(
     // Check required parameters
     for (name, param_def) in &def.parameters {
         if param_def.required && !obj.contains_key(name) && param_def.default.is_none() {
-            errors.push(format!("Missing required parameter: '{}'", name));
+            errors.push(format!(
+                "Missing required parameter '{}' ({}): {}",
+                name,
+                format_parameter_type(&param_def.r#type),
+                param_def.description
+            ));
         }
     }
 
     // Check for unknown parameters
     for (name, _) in obj {
         if !def.parameters.contains_key(name) {
-            errors.push(format!("Unknown parameter: '{}'", name));
+            let known: Vec<_> = def.parameters.keys().collect();
+            errors.push(format!(
+                "Unknown parameter '{}'. Known parameters: {}",
+                name,
+                if known.is_empty() {
+                    "none".to_string()
+                } else {
+                    known.join(", ")
+                }
+            ));
+        }
+    }
+
+    // Validate types for provided parameters
+    for (name, value) in obj {
+        if let Some(param_def) = def.parameters.get(name) {
+            if let Err(type_error) = validate_parameter_type(name, value, &param_def.r#type) {
+                errors.push(type_error);
+            }
         }
     }
 
@@ -367,6 +392,183 @@ pub fn validate_parameters(
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+/// Format parameter type for display
+fn format_parameter_type(param_type: &ParameterType) -> &'static str {
+    match param_type {
+        ParameterType::String => "string",
+        ParameterType::Integer => "integer",
+        ParameterType::Boolean => "boolean",
+        ParameterType::Url => "url",
+        ParameterType::Selector => "selector",
+    }
+}
+
+/// Validate a single parameter value against its expected type
+fn validate_parameter_type(
+    name: &str,
+    value: &serde_json::Value,
+    param_type: &ParameterType,
+) -> Result<(), String> {
+    match param_type {
+        ParameterType::String => {
+            if !value.is_string() {
+                Err(format!(
+                    "Parameter '{}' must be a string, got: {}",
+                    name,
+                    json_type_name(value)
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        ParameterType::Integer => {
+            if !value.is_i64() && !value.is_u64() {
+                Err(format!(
+                    "Parameter '{}' must be an integer, got: {}",
+                    name,
+                    json_type_name(value)
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        ParameterType::Boolean => {
+            if !value.is_boolean() {
+                Err(format!(
+                    "Parameter '{}' must be a boolean (true/false), got: {}",
+                    name,
+                    json_type_name(value)
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        ParameterType::Url => {
+            if let Some(url_str) = value.as_str() {
+                if url_str.is_empty() {
+                    Err(format!("Parameter '{}' URL cannot be empty", name))
+                } else if !url_str.starts_with("http://") && !url_str.starts_with("https://") {
+                    Err(format!(
+                        "Parameter '{}' must be a valid URL starting with http:// or https://, got: '{}'",
+                        name, url_str
+                    ))
+                } else {
+                    Ok(())
+                }
+            } else {
+                Err(format!(
+                    "Parameter '{}' must be a URL string, got: {}",
+                    name,
+                    json_type_name(value)
+                ))
+            }
+        }
+        ParameterType::Selector => {
+            if let Some(selector) = value.as_str() {
+                if selector.is_empty() {
+                    Err(format!("Parameter '{}' selector cannot be empty", name))
+                } else {
+                    // Basic CSS selector validation - check for common issues
+                    validate_css_selector(name, selector)
+                }
+            } else {
+                Err(format!(
+                    "Parameter '{}' must be a CSS selector string, got: {}",
+                    name,
+                    json_type_name(value)
+                ))
+            }
+        }
+    }
+}
+
+/// Basic CSS selector validation
+fn validate_css_selector(name: &str, selector: &str) -> Result<(), String> {
+    // Check for common invalid patterns
+    if selector.starts_with(' ') || selector.ends_with(' ') {
+        return Err(format!(
+            "Parameter '{}' selector should not start or end with spaces: '{}'",
+            name, selector
+        ));
+    }
+
+    // Check for doubled spaces
+    if selector.contains("  ") {
+        return Err(format!(
+            "Parameter '{}' selector contains doubled spaces: '{}'",
+            name, selector
+        ));
+    }
+
+    // Check for unbalanced brackets
+    let open_brackets = selector.matches('[').count();
+    let close_brackets = selector.matches(']').count();
+    if open_brackets != close_brackets {
+        return Err(format!(
+            "Parameter '{}' selector has unbalanced brackets: '{}'",
+            name, selector
+        ));
+    }
+
+    // Check for unbalanced parentheses
+    let open_parens = selector.matches('(').count();
+    let close_parens = selector.matches(')').count();
+    if open_parens != close_parens {
+        return Err(format!(
+            "Parameter '{}' selector has unbalanced parentheses: '{}'",
+            name, selector
+        ));
+    }
+
+    // Check for unbalanced quotes
+    let single_quotes = selector.matches('\'').count();
+    let double_quotes = selector.matches('"').count();
+    if single_quotes % 2 != 0 {
+        return Err(format!(
+            "Parameter '{}' selector has unbalanced single quotes: '{}'",
+            name, selector
+        ));
+    }
+    if double_quotes % 2 != 0 {
+        return Err(format!(
+            "Parameter '{}' selector has unbalanced double quotes: '{}'",
+            name, selector
+        ));
+    }
+
+    Ok(())
+}
+
+/// Get a human-readable name for a JSON value type
+fn json_type_name(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(_) => "boolean".to_string(),
+        serde_json::Value::Number(n) => {
+            if n.is_i64() || n.is_u64() {
+                "integer".to_string()
+            } else {
+                "float".to_string()
+            }
+        }
+        serde_json::Value::String(_) => "string".to_string(),
+        serde_json::Value::Array(_) => "array".to_string(),
+        serde_json::Value::Object(_) => "object".to_string(),
+    }
+}
+
+/// Apply default values to missing optional parameters
+pub fn apply_defaults(def: &TaskDefinition, params: &mut serde_json::Map<String, serde_json::Value>) {
+    for (name, param_def) in &def.parameters {
+        if !params.contains_key(name) {
+            if let Some(ref default) = param_def.default {
+                log::debug!("Applying default value for parameter '{}'", name);
+                params.insert(name.clone(), default.clone());
+            }
+        }
     }
 }
 
@@ -924,5 +1126,326 @@ actions:
 
         assert_eq!(spec.path, "conditional.task");
         assert_eq!(spec.condition, Some("{{enabled}} == true".to_string()));
+    }
+
+    // ============================================================================
+    // Parameter Validation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_validate_parameters_all_valid() {
+        use std::collections::HashMap;
+
+        let mut params = HashMap::new();
+        params.insert(
+            "url".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Url,
+                description: "Target URL".to_string(),
+                required: true,
+                default: None,
+            },
+        );
+        params.insert(
+            "timeout".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Integer,
+                description: "Timeout in ms".to_string(),
+                required: false,
+                default: Some(serde_json::json!(5000)),
+            },
+        );
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({
+            "url": "https://example.com",
+            "timeout": 3000
+        });
+
+        let result = validate_parameters(&task, &provided);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_parameters_missing_required() {
+        use std::collections::HashMap;
+
+        let mut params = HashMap::new();
+        params.insert(
+            "required_param".to_string(),
+            ParameterDef {
+                r#type: ParameterType::String,
+                description: "A required parameter".to_string(),
+                required: true,
+                default: None,
+            },
+        );
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({});
+
+        let result = validate_parameters(&task, &provided);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("Missing required parameter"));
+        assert!(errors[0].contains("required_param"));
+    }
+
+    #[test]
+    fn test_validate_parameters_unknown_parameter() {
+        use std::collections::HashMap;
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({
+            "unknown_param": "value"
+        });
+
+        let result = validate_parameters(&task, &provided);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("Unknown parameter"));
+        assert!(errors[0].contains("unknown_param"));
+    }
+
+    #[test]
+    fn test_validate_parameters_type_mismatch_string() {
+        use std::collections::HashMap;
+
+        let mut params = HashMap::new();
+        params.insert(
+            "name".to_string(),
+            ParameterDef {
+                r#type: ParameterType::String,
+                description: "Name parameter".to_string(),
+                required: true,
+                default: None,
+            },
+        );
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({
+            "name": 123  // Should be string
+        });
+
+        let result = validate_parameters(&task, &provided);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("must be a string"));
+    }
+
+    #[test]
+    fn test_validate_parameters_type_mismatch_integer() {
+        use std::collections::HashMap;
+
+        let mut params = HashMap::new();
+        params.insert(
+            "count".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Integer,
+                description: "Count parameter".to_string(),
+                required: true,
+                default: None,
+            },
+        );
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({
+            "count": "not a number"  // Should be integer
+        });
+
+        let result = validate_parameters(&task, &provided);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("must be an integer"));
+    }
+
+    #[test]
+    fn test_validate_parameters_invalid_url() {
+        use std::collections::HashMap;
+
+        let mut params = HashMap::new();
+        params.insert(
+            "url".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Url,
+                description: "URL parameter".to_string(),
+                required: true,
+                default: None,
+            },
+        );
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({
+            "url": "not-a-valid-url"
+        });
+
+        let result = validate_parameters(&task, &provided);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("must be a valid URL"));
+    }
+
+    #[test]
+    fn test_validate_parameters_valid_url() {
+        use std::collections::HashMap;
+
+        let mut params = HashMap::new();
+        params.insert(
+            "url".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Url,
+                description: "URL parameter".to_string(),
+                required: true,
+                default: None,
+            },
+        );
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let provided = serde_json::json!({
+            "url": "https://example.com"
+        });
+
+        let result = validate_parameters(&task, &provided);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_css_selector_unbalanced_brackets() {
+        let result = super::validate_css_selector("test", "[data-id");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unbalanced brackets"));
+    }
+
+    #[test]
+    fn test_validate_css_selector_unbalanced_parens() {
+        let result = super::validate_css_selector("test", ":has(.item");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unbalanced parentheses"));
+    }
+
+    #[test]
+    fn test_validate_css_selector_unbalanced_quotes() {
+        let result = super::validate_css_selector("test", "[data-val='test]");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unbalanced single quotes"));
+    }
+
+    #[test]
+    fn test_validate_css_selector_leading_trailing_spaces() {
+        let result = super::validate_css_selector("test", " .item ");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("start or end with spaces"));
+    }
+
+    #[test]
+    fn test_validate_css_selector_valid() {
+        let result = super::validate_css_selector("test", "#main .content[data-id='123']");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_apply_defaults() {
+        use std::collections::HashMap;
+
+        let mut params = HashMap::new();
+        params.insert(
+            "timeout".to_string(),
+            ParameterDef {
+                r#type: ParameterType::Integer,
+                description: "Timeout".to_string(),
+                required: false,
+                default: Some(serde_json::json!(5000)),
+            },
+        );
+
+        let task = TaskDefinition {
+            name: "test".to_string(),
+            description: "Test task".to_string(),
+            policy: "default".to_string(),
+            parameters: params,
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let mut provided = serde_json::Map::new();
+        super::apply_defaults(&task, &mut provided);
+
+        assert_eq!(provided.get("timeout"), Some(&serde_json::json!(5000)));
+    }
+
+    #[test]
+    fn test_format_parameter_type() {
+        assert_eq!(super::format_parameter_type(&ParameterType::String), "string");
+        assert_eq!(super::format_parameter_type(&ParameterType::Integer), "integer");
+        assert_eq!(super::format_parameter_type(&ParameterType::Boolean), "boolean");
+        assert_eq!(super::format_parameter_type(&ParameterType::Url), "url");
+        assert_eq!(super::format_parameter_type(&ParameterType::Selector), "selector");
+    }
+
+    #[test]
+    fn test_json_type_name() {
+        assert_eq!(super::json_type_name(&serde_json::Value::Null), "null");
+        assert_eq!(super::json_type_name(&serde_json::json!(true)), "boolean");
+        assert_eq!(super::json_type_name(&serde_json::json!(42)), "integer");
+        assert_eq!(super::json_type_name(&serde_json::json!(3.14)), "float");
+        assert_eq!(super::json_type_name(&serde_json::json!("test")), "string");
+        assert_eq!(super::json_type_name(&serde_json::json!([])), "array");
+        assert_eq!(super::json_type_name(&serde_json::json!({})), "object");
     }
 }

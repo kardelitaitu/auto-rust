@@ -12,7 +12,7 @@ pub mod plugin;
 pub mod registry;
 
 pub use loader::PluginLoader;
-pub use manifest::{PluginManifest, PluginCapability};
+pub use manifest::{PluginCapability, PluginManifest};
 pub use plugin::{Plugin, PluginContext, PluginHook};
 pub use registry::{PluginRegistry, RegistryError};
 

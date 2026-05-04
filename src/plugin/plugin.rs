@@ -38,10 +38,8 @@ impl PluginContext {
 
     /// Add a parameter to the context
     pub fn with_parameter(mut self, key: impl Into<String>, value: impl Serialize) -> Result<Self> {
-        self.parameters.insert(
-            key.into(),
-            serde_json::to_value(value)?,
-        );
+        self.parameters
+            .insert(key.into(), serde_json::to_value(value)?);
         Ok(self)
     }
 }

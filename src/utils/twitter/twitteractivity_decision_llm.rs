@@ -96,13 +96,14 @@ impl LLMEngine {
     fn build_system_prompt() -> String {
         r#"You are an engagement decision engine for Twitter/X. Analyze tweets and replies to decide engagement intensity.
 
-Return ONLY JSON:
+Respond ONLY with valid JSON in this format:
 {
   "score": 0-100,
   "level": "Skip|Low|Medium|High",
   "reason": "one sentence",
   "multiplier": 0.0-3.0,
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "actions": ["quote|reply|follow|bookmark|like|none"]
 }
 
 Rules:
@@ -129,11 +130,17 @@ CRITICAL:
             }
         }
 
-        // Add persona context
-        prompt.push_str(&format!(
-            "\nPERSONA: (like_prob: {:.2}, reply_prob: {:.2})",
-            ctx.persona.like_prob, ctx.persona.reply_prob
-        ));
+        // Add tone context
+        prompt.push_str(
+            "\nTONE: \"Casual tech enthusiast, friendly, asks questions, doesn't fake expertise\"",
+        );
+
+        // Add tweet metadata
+        prompt.push_str(&format!("\nTweet age: {}\n", ctx.tweet_age));
+        prompt.push_str(&format!("Topic alignment: {}\n", ctx.topic_alignment));
+
+        // Final prompt instruction
+        prompt.push_str("\nDECIDE ACTION AND GENERATE CONTENT:");
 
         prompt
     }
@@ -318,6 +325,8 @@ mod tests {
                 interest_multiplier: 1.0,
             },
             task_config: test_task_config(),
+            tweet_age: "Recent".to_string(),
+            topic_alignment: "High".to_string(),
         }
     }
 

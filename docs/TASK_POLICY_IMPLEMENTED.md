@@ -2,7 +2,7 @@
 
 > **Status:** ✅ Complete  
 > **Date:** 2026-04-26  
-> **Proposal:** [IMPROVEMENT_PROPOSAL_TASK_POLICY.md](IMPROVEMENT_PROPOSAL_TASK_POLICY.md)
+> **Proposal:** [IMPROVEMENT_PROPOSAL_TASK_POLICY.md](IMPROVEMENT_PROPOSAL_task_policy.md)
 
 The Task Policy Enforcement system has been fully implemented across all three phases.
 

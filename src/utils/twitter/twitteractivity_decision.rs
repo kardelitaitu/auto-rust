@@ -20,6 +20,10 @@ pub struct TweetContext {
     pub replies: Vec<String>,
     pub persona: super::twitteractivity_persona::PersonaWeights,
     pub task_config: super::twitteractivity_state::TaskConfig,
+    /// Human-readable description of tweet age (e.g., "Recent", "1 hour ago", "Yesterday")
+    pub tweet_age: String,
+    /// Topic alignment score/description (e.g., "High", "Medium", "Low")
+    pub topic_alignment: String,
 }
 
 /// Extended EngagementDecision with strategy pattern fields

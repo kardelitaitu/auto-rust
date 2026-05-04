@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use futures::future::join_all;
+use rand::Rng;
 
 use crate::prelude::TaskContext;
 use crate::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
@@ -553,6 +554,103 @@ impl<'a> DslExecutor<'a> {
                     actions.len()
                 );
             }
+            Action::Retry {
+                actions,
+                max_attempts,
+                initial_delay_ms,
+                max_delay_ms,
+                backoff_multiplier,
+                jitter,
+                retry_on,
+            } => {
+                let max_attempts = max_attempts.unwrap_or(3).max(1);
+                let initial_delay_ms = initial_delay_ms.unwrap_or(1000);
+                let max_delay_ms = max_delay_ms.unwrap_or(30000);
+                let backoff_multiplier = backoff_multiplier.unwrap_or(2.0).max(1.0);
+                let use_jitter = jitter.unwrap_or(true);
+
+                log::info!(
+                    "Executing retry block with max {} attempts, initial delay {}ms",
+                    max_attempts,
+                    initial_delay_ms
+                );
+
+                let mut last_error: Option<anyhow::Error> = None;
+                let mut current_delay_ms = initial_delay_ms;
+
+                for attempt in 1..=max_attempts {
+                    log::debug!("Retry attempt {}/{}", attempt, max_attempts);
+
+                    // Try executing all actions
+                    let mut attempt_success = true;
+                    for action in actions {
+                        if let Err(e) = self.execute_action(action).await {
+                            let error_msg = e.to_string();
+
+                            // Check if we should retry on this error
+                            if let Some(ref retry_patterns) = retry_on {
+                                let should_retry = retry_patterns.iter().any(|pattern| {
+                                    error_msg.to_lowercase().contains(&pattern.to_lowercase())
+                                });
+                                if !should_retry {
+                                    log::warn!(
+                                        "Error does not match retry patterns, failing immediately: {}",
+                                        error_msg
+                                    );
+                                    return Err(e);
+                                }
+                            }
+
+                            attempt_success = false;
+                            last_error = Some(e);
+                            break;
+                        }
+                    }
+
+                    if attempt_success {
+                        log::info!(
+                            "Retry block succeeded on attempt {}/{}",
+                            attempt,
+                            max_attempts
+                        );
+                        return Ok(());
+                    }
+
+                    // Don't delay after the last attempt
+                    if attempt < max_attempts {
+                        let delay_with_jitter = if use_jitter {
+                            // Add 0-20% random jitter
+                            let jitter_factor = 1.0 + (rand::random::<f64>() * 0.2);
+                            (current_delay_ms as f64 * jitter_factor) as u64
+                        } else {
+                            current_delay_ms
+                        };
+
+                        log::debug!(
+                            "Attempt {}/{} failed, waiting {}ms before retry",
+                            attempt,
+                            max_attempts,
+                            delay_with_jitter
+                        );
+
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_with_jitter))
+                            .await;
+
+                        // Exponential backoff with cap
+                        current_delay_ms = ((current_delay_ms as f64 * backoff_multiplier) as u64)
+                            .min(max_delay_ms);
+                    }
+                }
+
+                // All attempts exhausted
+                return Err(anyhow::anyhow!(
+                    "Retry block failed after {} attempts. Last error: {}",
+                    max_attempts,
+                    last_error
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "Unknown error".to_string())
+                ));
+            }
         }
         Ok(())
     }
@@ -1014,6 +1112,84 @@ mod tests {
                 assert_eq!(*max_concurrency, None);
             }
             _ => panic!("Expected Parallel action"),
+        }
+    }
+
+    #[test]
+    fn test_retry_action_struct() {
+        // Test Retry action with all parameters
+        let retry_action = Action::Retry {
+            actions: vec![
+                Action::Wait { duration_ms: 100 },
+                Action::Click {
+                    selector: "#button".to_string(),
+                },
+            ],
+            max_attempts: Some(5),
+            initial_delay_ms: Some(500),
+            max_delay_ms: Some(10000),
+            backoff_multiplier: Some(1.5),
+            jitter: Some(true),
+            retry_on: Some(vec!["timeout".to_string(), "network".to_string()]),
+        };
+
+        match &retry_action {
+            Action::Retry {
+                actions,
+                max_attempts,
+                initial_delay_ms,
+                max_delay_ms,
+                backoff_multiplier,
+                jitter,
+                retry_on,
+            } => {
+                assert_eq!(actions.len(), 2);
+                assert_eq!(*max_attempts, Some(5));
+                assert_eq!(*initial_delay_ms, Some(500));
+                assert_eq!(*max_delay_ms, Some(10000));
+                assert_eq!(*backoff_multiplier, Some(1.5));
+                assert_eq!(*jitter, Some(true));
+                assert_eq!(
+                    retry_on.as_ref().unwrap(),
+                    &vec!["timeout".to_string(), "network".to_string()]
+                );
+            }
+            _ => panic!("Expected Retry action"),
+        }
+    }
+
+    #[test]
+    fn test_retry_action_defaults() {
+        // Test Retry action with minimal parameters (defaults)
+        let retry_action = Action::Retry {
+            actions: vec![Action::Wait { duration_ms: 100 }],
+            max_attempts: None,
+            initial_delay_ms: None,
+            max_delay_ms: None,
+            backoff_multiplier: None,
+            jitter: None,
+            retry_on: None,
+        };
+
+        match &retry_action {
+            Action::Retry {
+                actions,
+                max_attempts,
+                initial_delay_ms,
+                max_delay_ms,
+                backoff_multiplier,
+                jitter,
+                retry_on,
+            } => {
+                assert_eq!(actions.len(), 1);
+                assert!(max_attempts.is_none());
+                assert!(initial_delay_ms.is_none());
+                assert!(max_delay_ms.is_none());
+                assert!(backoff_multiplier.is_none());
+                assert!(jitter.is_none());
+                assert!(retry_on.is_none());
+            }
+            _ => panic!("Expected Retry action"),
         }
     }
 }

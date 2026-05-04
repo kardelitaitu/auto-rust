@@ -1,0 +1,86 @@
+# Retry Flaky Operation Template
+# Demonstrates retry logic with exponential backoff for unreliable operations
+
+name: retry-flaky-operation
+description: "Retry flaky operations with exponential backoff and jitter"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "URL that may have flaky loading"
+  target_selector:
+    type: selector
+    required: true
+    description: "Element that may not load immediately"
+  max_attempts:
+    type: integer
+    required: false
+    default: 5
+    description: "Maximum retry attempts"
+  initial_delay_ms:
+    type: integer
+    required: false
+    default: 1000
+    description: "Initial delay between retries (ms)"
+  retry_errors:
+    type: string
+    required: false
+    default: "timeout,network,element not found"
+    description: "Comma-separated error patterns to retry on"
+
+actions:
+  - log:
+      message: "Attempting to load {{url}} with retry logic..."
+      level: info
+  
+  # Use retry block for the flaky operation
+  - retry:
+      max_attempts: "{{max_attempts}}"
+      initial_delay_ms: "{{initial_delay_ms}}"
+      max_delay_ms: 30000
+      backoff_multiplier: 2.0
+      jitter: true
+      retry_on:
+        - "timeout"
+        - "network"
+        - "not found"
+        - "failed"
+      actions:
+        - navigate:
+            url: "{{url}}"
+        
+        - wait:
+            duration_ms: 500
+        
+        - if:
+            condition:
+              element_visible: "{{target_selector}}"
+            then:
+              - log:
+                  message: "Target element found successfully!"
+                  level: info
+              - extract:
+                  selector: "{{target_selector}}"
+                  variable: "found_content"
+            else:
+              - log:
+                  message: "Element not visible yet, will retry..."
+                  level: warn
+              # Intentionally fail to trigger retry
+              - click:
+                  selector: "#this-element-does-not-exist-trigger-retry"
+  
+  - log:
+      message: "Operation completed successfully after retries"
+      level: info
+  
+  - screenshot:
+      path: "/tmp/retry-success.png"
+
+# Usage:
+#   auto-rust --task retry-flaky-operation --url "https://unreliable-site.com" --target_selector "#main-content"
+#   
+#   With custom retry settings:
+#   auto-rust --task retry-flaky-operation --url "https://slow-site.com" --target_selector ".data-loaded" --max_attempts 10 --initial_delay_ms 2000

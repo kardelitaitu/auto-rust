@@ -165,6 +165,23 @@ pub enum Action {
         /// Maximum number of concurrent actions (default: all at once)
         max_concurrency: Option<usize>,
     },
+    /// Retry actions with exponential backoff
+    Retry {
+        /// Actions to retry on failure
+        actions: Vec<Action>,
+        /// Maximum number of retry attempts (default: 3)
+        max_attempts: Option<u32>,
+        /// Initial delay in milliseconds (default: 1000)
+        initial_delay_ms: Option<u64>,
+        /// Maximum delay in milliseconds (default: 30000)
+        max_delay_ms: Option<u64>,
+        /// Multiplier for exponential backoff (default: 2.0)
+        backoff_multiplier: Option<f64>,
+        /// Add random jitter to prevent thundering herd (default: true)
+        jitter: Option<bool>,
+        /// Only retry on specific error patterns (default: retry all)
+        retry_on: Option<Vec<String>>,
+    },
 }
 
 /// Log levels for the Log action.

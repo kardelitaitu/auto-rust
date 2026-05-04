@@ -1,0 +1,16 @@
+name = "my-plugin"
+version = "0.1.0"
+api_version = "1.0.0"
+author = "Your Name"
+description = "A custom plugin for auto-rust that adds new DSL actions"
+entry_point = "my-plugin.wasm"
+
+dependencies = []
+
+capabilities = ["custom_actions", "task_hooks", "validators"]
+
+[config]
+# Plugin-specific configuration
+debug = false
+timeout_ms = 5000
+max_retries = 3

@@ -26,6 +26,7 @@ pub mod llm;
 pub mod logger;
 pub mod metrics;
 pub mod orchestrator;
+pub mod plugin;
 pub mod result;
 pub mod runtime;
 pub mod session;

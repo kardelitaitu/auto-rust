@@ -8,6 +8,7 @@
 
 pub mod loader;
 pub mod manifest;
+#[allow(clippy::module_inception)]
 pub mod plugin;
 pub mod registry;
 

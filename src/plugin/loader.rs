@@ -362,8 +362,6 @@ impl super::Plugin for StubPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use tempfile::TempDir;
 
     #[test]
     fn test_loader_config_default() {

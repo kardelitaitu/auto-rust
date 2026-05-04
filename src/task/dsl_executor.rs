@@ -20,10 +20,10 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
-use futures::future::join_all;
 use crate::prelude::TaskContext;
 use crate::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
+use anyhow::{Context, Result};
+use futures::future::join_all;
 
 /// Maximum recursion depth for task calls to prevent infinite loops.
 const MAX_CALL_DEPTH: u32 = 10;
@@ -339,7 +339,8 @@ impl<'a> DslExecutor<'a> {
             } => {
                 let resolved_selector = self.substitute_variables(selector);
                 let timeout = timeout_ms.unwrap_or(5000);
-                let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout);
+                let deadline =
+                    tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout);
                 while tokio::time::Instant::now() < deadline {
                     if self.api.exists(&resolved_selector).await? {
                         return Ok(());
@@ -596,7 +597,7 @@ impl<'a> DslExecutor<'a> {
                     // Try executing all actions
                     let mut attempt_success = true;
                     for action in actions {
-                        if let Err(e) = self.execute_action(action).await {
+                        if let Err(e) = Box::pin(self.execute_action(action)).await {
                             let error_msg = e.to_string();
 
                             // Check if we should retry on this error
@@ -656,13 +657,13 @@ impl<'a> DslExecutor<'a> {
                 }
 
                 // All attempts exhausted
-                return Err(anyhow::anyhow!(
+                Err(anyhow::anyhow!(
                     "Retry block failed after {} attempts. Last error: {}",
                     max_attempts,
                     last_error
                         .map(|e| e.to_string())
                         .unwrap_or_else(|| "Unknown error".to_string())
-                ));
+                ))
             }
             Action::Foreach {
                 variable,
@@ -674,9 +675,10 @@ impl<'a> DslExecutor<'a> {
 
                 // Resolve collection based on type
                 let values: Vec<String> = match collection {
-                    crate::task::dsl::ForeachCollection::Array { values } => {
-                        values.iter().map(|v| v.as_str().unwrap_or("").to_string()).collect()
-                    }
+                    crate::task::dsl::ForeachCollection::Array { values } => values
+                        .iter()
+                        .map(|v| v.as_str().unwrap_or("").to_string())
+                        .collect(),
                     crate::task::dsl::ForeachCollection::Range { start, end } => {
                         (*start..*end).map(|i| i.to_string()).collect()
                     }
@@ -733,7 +735,7 @@ impl<'a> DslExecutor<'a> {
 
                     // Execute actions for this iteration
                     for action in actions {
-                        self.execute_action(action).await?;
+                        Box::pin(self.execute_action(action)).await?;
                     }
                 }
 
@@ -747,10 +749,7 @@ impl<'a> DslExecutor<'a> {
             } => {
                 let max_iterations = max_iterations.unwrap_or(1000);
 
-                log::info!(
-                    "Starting while loop with max {} iterations",
-                    max_iterations
-                );
+                log::info!("Starting while loop with max {} iterations", max_iterations);
 
                 let mut iteration_count = 0;
                 loop {
@@ -775,11 +774,15 @@ impl<'a> DslExecutor<'a> {
                     }
 
                     iteration_count += 1;
-                    log::debug!("While iteration {}/{}: condition met", iteration_count, max_iterations);
+                    log::debug!(
+                        "While iteration {}/{}: condition met",
+                        iteration_count,
+                        max_iterations
+                    );
 
                     // Execute actions for this iteration
                     for action in actions {
-                        self.execute_action(action).await?;
+                        Box::pin(self.execute_action(action)).await?;
                     }
                 }
 
@@ -792,16 +795,13 @@ impl<'a> DslExecutor<'a> {
                 error_variable,
                 finally_actions,
             } => {
-                log::info!(
-                    "Executing try block with {} action(s)",
-                    try_actions.len()
-                );
+                log::info!("Executing try block with {} action(s)", try_actions.len());
 
                 let mut try_result: Result<()> = Ok(());
 
                 // Execute try block
                 for action in try_actions {
-                    if let Err(e) = self.execute_action(action).await {
+                    if let Err(e) = Box::pin(self.execute_action(action)).await {
                         log::warn!("Error in try block: {}", e);
                         try_result = Err(e);
                         break;
@@ -811,25 +811,18 @@ impl<'a> DslExecutor<'a> {
                 // If error occurred and catch block exists, execute it
                 if let Err(ref e) = try_result {
                     if let Some(catch) = catch_actions {
-                        log::info!(
-                            "Executing catch block with {} action(s)",
-                            catch.len()
-                        );
+                        log::info!("Executing catch block with {} action(s)", catch.len());
 
                         // Store error message in variable if specified
                         if let Some(var_name) = error_variable {
                             let error_msg = format!("{}", e);
-                            log::debug!(
-                                "Storing error in variable '{}': {}",
-                                var_name,
-                                error_msg
-                            );
+                            log::debug!("Storing error in variable '{}': {}", var_name, error_msg);
                             self.variables.insert(var_name.clone(), error_msg);
                         }
 
                         // Execute catch actions
                         for action in catch {
-                            if let Err(catch_err) = self.execute_action(action).await {
+                            if let Err(catch_err) = Box::pin(self.execute_action(action)).await {
                                 log::error!("Error in catch block: {}", catch_err);
                                 // Catch block errors propagate up
                                 return Err(catch_err);
@@ -845,13 +838,10 @@ impl<'a> DslExecutor<'a> {
 
                 // Finally block always executes if present
                 if let Some(finally) = finally_actions {
-                    log::info!(
-                        "Executing finally block with {} action(s)",
-                        finally.len()
-                    );
+                    log::info!("Executing finally block with {} action(s)", finally.len());
 
                     for action in finally {
-                        if let Err(e) = self.execute_action(action).await {
+                        if let Err(e) = Box::pin(self.execute_action(action)).await {
                             log::error!("Error in finally block: {}", e);
                             // Finally block errors propagate
                             return Err(e);
@@ -1649,12 +1639,10 @@ mod tests {
                 },
             ]),
             error_variable: Some("error_msg".to_string()),
-            finally_actions: Some(vec![
-                Action::Log {
-                    message: "Cleanup".to_string(),
-                    level: Some(crate::task::dsl::LogLevel::Info),
-                },
-            ]),
+            finally_actions: Some(vec![Action::Log {
+                message: "Cleanup".to_string(),
+                level: Some(crate::task::dsl::LogLevel::Info),
+            }]),
         };
 
         match &try_action {

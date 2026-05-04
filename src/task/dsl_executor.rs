@@ -734,6 +734,51 @@ impl<'a> DslExecutor<'a> {
 
                 log::info!("Foreach loop completed {} iterations", iteration_count);
             }
+            Action::While {
+                condition,
+                actions,
+                max_iterations,
+            } => {
+                let max_iterations = max_iterations.unwrap_or(1000);
+
+                log::info!(
+                    "Starting while loop with max {} iterations",
+                    max_iterations
+                );
+
+                let mut iteration_count = 0;
+                loop {
+                    // Check max iterations safety limit
+                    if iteration_count >= max_iterations {
+                        log::warn!(
+                            "While loop reached max iterations ({}), breaking",
+                            max_iterations
+                        );
+                        break;
+                    }
+
+                    // Evaluate condition
+                    let condition_met = self.evaluate_condition(condition).await?;
+
+                    if !condition_met {
+                        log::debug!(
+                            "While condition no longer met after {} iterations",
+                            iteration_count
+                        );
+                        break;
+                    }
+
+                    iteration_count += 1;
+                    log::debug!("While iteration {}/{}: condition met", iteration_count, max_iterations);
+
+                    // Execute actions for this iteration
+                    for action in actions {
+                        self.execute_action(action).await?;
+                    }
+                }
+
+                log::info!("While loop completed {} iterations", iteration_count);
+            }
         }
         Ok(())
     }
@@ -1427,6 +1472,78 @@ mod tests {
                 }
             }
             _ => panic!("Expected Foreach action"),
+        }
+    }
+
+    #[test]
+    fn test_while_action_with_element_exists_condition() {
+        use crate::task::dsl::Condition;
+
+        // Test While with element exists condition
+        let while_action = Action::While {
+            condition: Condition::ElementExists {
+                selector: ".loading".to_string(),
+            },
+            actions: vec![
+                Action::Wait { duration_ms: 500 },
+                Action::Log {
+                    message: "Still loading...".to_string(),
+                    level: Some(crate::task::dsl::LogLevel::Debug),
+                },
+            ],
+            max_iterations: Some(20),
+        };
+
+        match &while_action {
+            Action::While {
+                condition,
+                actions,
+                max_iterations,
+            } => {
+                assert_eq!(*max_iterations, Some(20));
+                assert_eq!(actions.len(), 2);
+
+                match condition {
+                    Condition::ElementExists { selector } => {
+                        assert_eq!(selector, ".loading");
+                    }
+                    _ => panic!("Expected ElementExists condition"),
+                }
+            }
+            _ => panic!("Expected While action"),
+        }
+    }
+
+    #[test]
+    fn test_while_action_defaults() {
+        use crate::task::dsl::Condition;
+
+        // Test While with minimal parameters (defaults)
+        let while_action = Action::While {
+            condition: Condition::ElementVisible {
+                selector: ".spinner".to_string(),
+            },
+            actions: vec![Action::Wait { duration_ms: 100 }],
+            max_iterations: None, // Should default to 1000
+        };
+
+        match &while_action {
+            Action::While {
+                condition,
+                actions,
+                max_iterations,
+            } => {
+                assert!(max_iterations.is_none()); // Defaults to 1000 at runtime
+                assert_eq!(actions.len(), 1);
+
+                match condition {
+                    Condition::ElementVisible { selector } => {
+                        assert_eq!(selector, ".spinner");
+                    }
+                    _ => panic!("Expected ElementVisible condition"),
+                }
+            }
+            _ => panic!("Expected While action"),
         }
     }
 }

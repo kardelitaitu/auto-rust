@@ -1,0 +1,211 @@
+# Wait for Loading Template
+# Demonstrates while loop for waiting on dynamic content
+
+name: wait-for-loading
+description: "Wait for page elements to appear/disappear using while loops"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Page URL to navigate to"
+  loading_selector:
+    type: selector
+    required: false
+    default: ".loading, .spinner, [data-loading]"
+    description: "Selector for loading indicator"
+  target_selector:
+    type: selector
+    required: true
+    description: "Element to wait for after loading completes"
+  max_wait_seconds:
+    type: integer
+    required: false
+    default: 30
+    description: "Maximum seconds to wait for loading"
+  poll_interval_ms:
+    type: integer
+    required: false
+    default: 500
+    description: "Milliseconds between checks"
+
+actions:
+  - log:
+      message: "Navigating to {{url}}..."
+      level: info
+  
+  - navigate:
+      url: "{{url}}"
+  
+  - log:
+      message: "Waiting for loading to complete (checking {{loading_selector}})..."
+      level: info
+  
+  # While loading indicator is visible, wait
+  - while:
+      condition:
+        element_visible: "{{loading_selector}}"
+      max_iterations: "{{max_wait_seconds}}"  # Converted to iterations
+      actions:
+        - log:
+            message: "Still loading..."
+            level: debug
+        - wait:
+            duration_ms: "{{poll_interval_ms}}"
+  
+  - log:
+      message: "Loading complete! Waiting for target element..."
+      level: info
+  
+  # Wait for target element to appear
+  - while:
+      condition:
+        element_not_exists: "{{target_selector}}"
+      max_iterations: 20
+      actions:
+        - log:
+            message: "Target not ready yet, waiting..."
+            level: debug
+        - wait:
+            duration_ms: 250
+  
+  - log:
+      message: "Target element is ready!"
+      level: info
+  
+  - if:
+      condition:
+        element_visible: "{{target_selector}}"
+      then:
+        - extract:
+            selector: "{{target_selector}}"
+            variable: "target_content"
+        - log:
+            message: "Content loaded: {{target_content}}"
+            level: info
+        - screenshot:
+            path: "/tmp/content-loaded.png"
+      else:
+        - log:
+            message: "Target element not visible after loading!"
+            level: error
+
+# Alternative: Wait for element to disappear
+---
+name: wait-for-element-gone
+description: "Wait until an element disappears from the page"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Page URL"
+  gone_selector:
+    type: selector
+    required: true
+    description: "Element that should disappear"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - log:
+      message: "Waiting for {{gone_selector}} to disappear..."
+      level: info
+  
+  # While element exists, keep waiting
+  - while:
+      condition:
+        element_exists: "{{gone_selector}}"
+      max_iterations: 60
+      actions:
+        - log:
+            message: "Element still present, waiting..."
+            level: debug
+        - wait:
+            duration_ms: 1000
+  
+  - log:
+      message: "Element has disappeared!"
+      level: info
+
+# Alternative: Poll for value change
+---
+name: poll-for-value
+description: "Poll until a value meets a condition"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Page URL"
+  counter_selector:
+    type: selector
+    required: true
+    description: "Counter element to watch"
+  target_value:
+    type: integer
+    required: true
+    description: "Target value to reach"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - log:
+      message: "Polling for counter to reach {{target_value}}..."
+      level: info
+  
+  # Initialize previous value
+  - set:
+      name: "previous_value"
+      value: "0"
+  
+  # While counter is less than target, keep waiting
+  - while:
+      condition:
+        comparison:
+          left: "{{counter_value}}"
+          operator: "<"
+          right: "{{target_value}}"
+      max_iterations: 100
+      actions:
+        - extract:
+            selector: "{{counter_selector}}"
+            variable: "counter_value"
+        
+        - if:
+            condition:
+              comparison:
+                left: "{{counter_value}}"
+                operator: "!="
+                right: "{{previous_value}}"
+            then:
+              - log:
+                  message: "Counter updated: {{counter_value}} / {{target_value}}"
+                  level: info
+              - set:
+                  name: "previous_value"
+                  value: "{{counter_value}}"
+        
+        - wait:
+            duration_ms: 500
+  
+  - log:
+      message: "Target value reached!"
+      level: info
+  - screenshot:
+      path: "/tmp/target-reached.png"
+
+# Usage:
+#   Wait for loading spinner:
+#   auto-rust --task wait-for-loading --url "https://slow-site.com" --target_selector "#content"
+#
+#   Wait for overlay to disappear:
+#   auto-rust --task wait-for-element-gone --url "https://example.com" --gone_selector ".modal-overlay"
+#
+#   Poll for counter:
+#   auto-rust --task poll-for-value --url "https://progress.example.com" --counter_selector "#progress-count" --target_value 100

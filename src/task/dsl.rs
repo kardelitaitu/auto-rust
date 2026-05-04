@@ -193,6 +193,15 @@ pub enum Action {
         /// Maximum number of iterations (default: 100, safety limit)
         max_iterations: Option<u32>,
     },
+    /// While loop with condition-based execution
+    While {
+        /// Condition to evaluate before each iteration
+        condition: Condition,
+        /// Actions to execute while condition is true
+        actions: Vec<Action>,
+        /// Maximum number of iterations (default: 1000, safety limit)
+        max_iterations: Option<u32>,
+    },
 }
 
 /// Collection types for the Foreach action.

@@ -779,6 +779,85 @@ impl<'a> DslExecutor<'a> {
 
                 log::info!("While loop completed {} iterations", iteration_count);
             }
+            Action::Try {
+                try_actions,
+                catch_actions,
+                error_variable,
+                finally_actions,
+            } => {
+                log::info!(
+                    "Executing try block with {} action(s)",
+                    try_actions.len()
+                );
+
+                let mut try_result: Result<()> = Ok(());
+
+                // Execute try block
+                for action in try_actions {
+                    if let Err(e) = self.execute_action(action).await {
+                        log::warn!("Error in try block: {}", e);
+                        try_result = Err(e);
+                        break;
+                    }
+                }
+
+                // If error occurred and catch block exists, execute it
+                if let Err(ref e) = try_result {
+                    if let Some(catch) = catch_actions {
+                        log::info!(
+                            "Executing catch block with {} action(s)",
+                            catch.len()
+                        );
+
+                        // Store error message in variable if specified
+                        if let Some(var_name) = error_variable {
+                            let error_msg = format!("{}", e);
+                            log::debug!(
+                                "Storing error in variable '{}': {}",
+                                var_name,
+                                error_msg
+                            );
+                            self.state
+                                .lock()
+                                .await
+                                .insert(var_name.clone(), error_msg);
+                        }
+
+                        // Execute catch actions
+                        for action in catch {
+                            if let Err(catch_err) = self.execute_action(action).await {
+                                log::error!("Error in catch block: {}", catch_err);
+                                // Catch block errors propagate up
+                                return Err(catch_err);
+                            }
+                        }
+                    } else {
+                        // No catch block - error propagates
+                        return Err(anyhow::anyhow!("Try block failed: {}", e));
+                    }
+                } else {
+                    log::debug!("Try block completed successfully");
+                }
+
+                // Finally block always executes if present
+                if let Some(finally) = finally_actions {
+                    log::info!(
+                        "Executing finally block with {} action(s)",
+                        finally.len()
+                    );
+
+                    for action in finally {
+                        if let Err(e) = self.execute_action(action).await {
+                            log::error!("Error in finally block: {}", e);
+                            // Finally block errors propagate
+                            return Err(e);
+                        }
+                    }
+                }
+
+                // Return success (catch handled any try errors)
+                Ok(())
+            }
         }
         Ok(())
     }
@@ -1544,6 +1623,106 @@ mod tests {
                 }
             }
             _ => panic!("Expected While action"),
+        }
+    }
+
+    #[test]
+    fn test_try_action_with_catch_and_finally() {
+        // Test Try with all components
+        let try_action = Action::Try {
+            try_actions: vec![
+                Action::Click {
+                    selector: "#risky-button".to_string(),
+                },
+                Action::Wait { duration_ms: 100 },
+            ],
+            catch_actions: Some(vec![
+                Action::Log {
+                    message: "Button not found, using fallback".to_string(),
+                    level: Some(crate::task::dsl::LogLevel::Warn),
+                },
+                Action::Click {
+                    selector: "#fallback-button".to_string(),
+                },
+            ]),
+            error_variable: Some("error_msg".to_string()),
+            finally_actions: Some(vec![
+                Action::Log {
+                    message: "Cleanup".to_string(),
+                    level: Some(crate::task::dsl::LogLevel::Info),
+                },
+            ]),
+        };
+
+        match &try_action {
+            Action::Try {
+                try_actions,
+                catch_actions,
+                error_variable,
+                finally_actions,
+            } => {
+                assert_eq!(try_actions.len(), 2);
+                assert!(catch_actions.is_some());
+                assert_eq!(catch_actions.as_ref().unwrap().len(), 2);
+                assert_eq!(error_variable, &Some("error_msg".to_string()));
+                assert!(finally_actions.is_some());
+                assert_eq!(finally_actions.as_ref().unwrap().len(), 1);
+            }
+            _ => panic!("Expected Try action"),
+        }
+    }
+
+    #[test]
+    fn test_try_action_minimal() {
+        // Test Try with just try block (no catch/finally)
+        let try_action = Action::Try {
+            try_actions: vec![Action::Wait { duration_ms: 100 }],
+            catch_actions: None,
+            error_variable: None,
+            finally_actions: None,
+        };
+
+        match &try_action {
+            Action::Try {
+                try_actions,
+                catch_actions,
+                error_variable,
+                finally_actions,
+            } => {
+                assert_eq!(try_actions.len(), 1);
+                assert!(catch_actions.is_none());
+                assert!(error_variable.is_none());
+                assert!(finally_actions.is_none());
+            }
+            _ => panic!("Expected Try action"),
+        }
+    }
+
+    #[test]
+    fn test_try_action_with_error_variable_only() {
+        // Test Try with error variable but no catch (for logging)
+        let try_action = Action::Try {
+            try_actions: vec![Action::Click {
+                selector: "#button".to_string(),
+            }],
+            catch_actions: None,
+            error_variable: Some("last_error".to_string()),
+            finally_actions: Some(vec![Action::Log {
+                message: "{{last_error}}".to_string(),
+                level: Some(crate::task::dsl::LogLevel::Error),
+            }]),
+        };
+
+        match &try_action {
+            Action::Try {
+                error_variable,
+                finally_actions,
+                ..
+            } => {
+                assert_eq!(error_variable, &Some("last_error".to_string()));
+                assert!(finally_actions.is_some());
+            }
+            _ => panic!("Expected Try action"),
         }
     }
 }

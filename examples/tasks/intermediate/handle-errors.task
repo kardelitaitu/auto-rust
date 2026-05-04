@@ -1,0 +1,172 @@
+# Error Handling Template
+# Demonstrates try/catch/finally for graceful error recovery
+
+name: handle-errors
+description: "Handle failures gracefully with try/catch/finally blocks"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Target URL to test"
+  primary_selector:
+    type: selector
+    required: true
+    description: "Primary element to interact with"
+  fallback_selector:
+    type: selector
+    required: true
+    description: "Fallback element if primary fails"
+
+actions:
+  - log:
+      message: "Starting error handling demo..."
+      level: info
+  
+  - navigate:
+      url: "{{url}}"
+  
+  # Try block: Attempt primary interaction
+  - try:
+      try_actions:
+        - log:
+            message: "Attempting to click primary element: {{primary_selector}}"
+            level: info
+        - click:
+            selector: "{{primary_selector}}"
+        - wait:
+            duration_ms: 500
+        - log:
+            message: "Primary interaction successful!"
+            level: info
+      catch_actions:
+        - log:
+            message: "Primary failed, using fallback: {{fallback_selector}}"
+            level: warn
+        - click:
+            selector: "{{fallback_selector}}"
+        - wait:
+            duration_ms: 500
+      error_variable: "error_message"
+      finally_actions:
+        - log:
+            message: "Interaction attempt complete (error: {{error_message | default('none')}})"
+            level: info
+  
+  - log:
+      message: "Demo completed successfully!"
+      level: info
+
+# Alternative: Just log errors without fallback
+---
+name: log-errors-only
+description: "Try an action and just log if it fails (no recovery)"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Page URL"
+  test_selector:
+    type: selector
+    required: true
+    description: "Element to test"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - try:
+      try_actions:
+        - click:
+            selector: "{{test_selector}}"
+      # No catch - errors propagate up
+      error_variable: "click_error"
+      finally_actions:
+        - if:
+            condition:
+              variable_set: "click_error"
+            then:
+              - log:
+                  message: "Click failed with: {{click_error}}"
+                  level: error
+              - screenshot:
+                  path: "/tmp/error-screenshot.png"
+            else:
+              - log:
+                  message: "Click succeeded!"
+                  level: info
+
+# Alternative: Nested try blocks for complex recovery
+---
+name: nested-recovery
+description: "Multiple fallback strategies with nested try blocks"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Page URL"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  # Outer try: Main workflow
+  - try:
+      try_actions:
+        # Inner try: Primary action with fallback
+        - try:
+            try_actions:
+              - click:
+                  selector: "#primary-button"
+            catch_actions:
+              - log:
+                  message: "Primary button not found"
+                  level: warn
+            error_variable: "primary_error"
+        
+        # Check if primary succeeded
+        - if:
+            condition:
+              variable_not_set: "primary_error"
+            then:
+              - log:
+                  message: "Using primary flow"
+                  level: info
+            else:
+              # Secondary try: Alternative action
+              - try:
+                  try_actions:
+                    - click:
+                        selector: "#secondary-button"
+                  catch_actions:
+                    - log:
+                        message: "Secondary also failed, using last resort"
+                        level: error
+                    - click:
+                        selector: "body"  # Click anywhere as last resort
+                  error_variable: "secondary_error"
+      catch_actions:
+        - log:
+            message: "All recovery strategies failed"
+            level: error
+        - screenshot:
+            path: "/tmp/recovery-failed.png"
+      finally_actions:
+        - log:
+            message: "Workflow attempt complete"
+            level: info
+
+# Usage:
+#   Basic error handling:
+#   auto-rust --task handle-errors --url "https://example.com" --primary_selector "#main-btn" --fallback_selector "#alt-btn"
+#
+#   Error logging only:
+#   auto-rust --task log-errors-only --url "https://example.com" --test_selector "#risky-element"
+#
+#   Complex nested recovery:
+#   auto-rust --task nested-recovery --url "https://complex-site.com"

@@ -202,6 +202,17 @@ pub enum Action {
         /// Maximum number of iterations (default: 1000, safety limit)
         max_iterations: Option<u32>,
     },
+    /// Try-catch-finally for error handling
+    Try {
+        /// Actions to attempt (try block)
+        try_actions: Vec<Action>,
+        /// Actions to execute on error (catch block)
+        catch_actions: Option<Vec<Action>>,
+        /// Variable name to store error message
+        error_variable: Option<String>,
+        /// Actions to always execute (finally block)
+        finally_actions: Option<Vec<Action>>,
+    },
 }
 
 /// Collection types for the Foreach action.

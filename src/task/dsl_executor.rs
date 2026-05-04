@@ -494,6 +494,7 @@ impl<'a> DslExecutor<'a> {
                 // Execute the JavaScript via the page
                 // Note: This requires TaskContext to have execute_script capability
                 log::info!("Would execute select script: {}", script);
+                Ok(())
             }
             Action::RightClick { selector } => {
                 let resolved_selector = self.substitute_variables(selector);

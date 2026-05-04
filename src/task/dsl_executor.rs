@@ -626,7 +626,7 @@ impl<'a> DslExecutor<'a> {
                             "Retry attempt {}/{} succeeded after {}ms pause",
                             attempt,
                             max_attempts,
-                            delay
+                            current_delay_ms
                         );
                         Ok(())
                     }

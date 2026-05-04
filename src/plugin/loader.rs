@@ -166,11 +166,7 @@ impl PluginLoader {
     }
 
     /// Find manifests in a specific directory (recursive helper)
-    fn find_manifests_in_dir(
-        &self,
-        dir: &Path,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<PathBuf>>> + Send + '_>> {
-        Box::pin(async move {
+    async fn find_manifests_in_dir(&self, dir: &Path) -> Result<Vec<PathBuf>> {
         let mut manifests = Vec::new();
 
         let entries = tokio::fs::read_dir(dir)
@@ -197,7 +193,6 @@ impl PluginLoader {
         }
 
         Ok(manifests)
-        })
     }
 
     /// Check if a path is a manifest file

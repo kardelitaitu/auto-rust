@@ -590,11 +590,43 @@ pub fn apply_defaults(
             if let Some(ref default) = param_def.default {
                 log::debug!("Applying default value for parameter '{}'", name);
                 // Convert serde_yaml::Value to serde_json::Value
-                let json_default =
-                    serde_json::Value::String(default.as_str().unwrap_or("").to_string());
+                let json_default = yaml_to_json(default);
                 params.insert(name.clone(), json_default);
             }
         }
+    }
+}
+
+/// Convert a serde_yaml::Value to serde_json::Value
+fn yaml_to_json(value: &serde_yaml::Value) -> serde_json::Value {
+    match value {
+        serde_yaml::Value::Null => serde_json::Value::Null,
+        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
+        serde_yaml::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_json::Value::Number(i.into())
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(f).unwrap_or_else(|| 0.into()),
+                )
+            } else {
+                serde_json::Value::String(n.to_string())
+            }
+        }
+        serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
+        serde_yaml::Value::Sequence(arr) => {
+            serde_json::Value::Array(arr.iter().map(yaml_to_json).collect())
+        }
+        serde_yaml::Value::Mapping(map) => {
+            let mut obj = serde_json::Map::new();
+            for (k, v) in map.iter() {
+                if let Some(key) = k.as_str() {
+                    obj.insert(key.to_string(), yaml_to_json(v));
+                }
+            }
+            serde_json::Value::Object(obj)
+        }
+        _ => serde_json::Value::Null,
     }
 }
 

@@ -651,6 +651,84 @@ impl<'a> DslExecutor<'a> {
                         .unwrap_or_else(|| "Unknown error".to_string())
                 ));
             }
+            Action::Foreach {
+                variable,
+                collection,
+                actions,
+                max_iterations,
+            } => {
+                let max_iterations = max_iterations.unwrap_or(100);
+
+                // Resolve collection based on type
+                let values = match collection {
+                    crate::task::dsl::ForeachCollection::Array { values } => values.clone(),
+                    crate::task::dsl::ForeachCollection::Range { start, end } => {
+                        (*start..*end)
+                            .map(|i| serde_yaml::Value::Number(i.into()))
+                            .collect()
+                    }
+                    crate::task::dsl::ForeachCollection::Elements { selector } => {
+                        // Count matching elements and create index-based values
+                        let resolved_selector = self.substitute_variables(selector);
+                        let count = self
+                            .api
+                            .count_elements(&resolved_selector)
+                            .await
+                            .unwrap_or(0);
+                        (0..count)
+                            .map(|i| {
+                                serde_yaml::Value::String(format!(
+                                    "{}:nth-of-type({})",
+                                    resolved_selector, i + 1
+                                ))
+                            })
+                            .collect()
+                    }
+                    crate::task::dsl::ForeachCollection::Variable { name } => {
+                        // Get array from variable
+                        if let Some(var_value) = self.variables.get(name) {
+                            match var_value {
+                                serde_yaml::Value::Sequence(seq) => seq.clone(),
+                                _ => {
+                                    log::warn!(
+                                        "Foreach variable '{}' is not an array, treating as single item",
+                                        name
+                                    );
+                                    vec![var_value.clone()]
+                                }
+                            }
+                        } else {
+                            log::warn!("Foreach variable '{}' not found, using empty collection", name);
+                            vec![]
+                        }
+                    }
+                };
+
+                log::info!(
+                    "Starting foreach loop over {} items with max {} iterations",
+                    values.len(),
+                    max_iterations
+                );
+
+                let mut iteration_count = 0;
+                for value in values.iter().take(max_iterations as usize) {
+                    iteration_count += 1;
+                    log::debug!("Foreach iteration {}/{}: {} = {:?}", iteration_count, max_iterations.min(values.len() as u32), variable, value);
+
+                    // Bind variable for this iteration
+                    self.variables.insert(variable.clone(), value.clone());
+
+                    // Execute actions for this iteration
+                    for action in actions {
+                        self.execute_action(action).await?;
+                    }
+                }
+
+                log::info!(
+                    "Foreach loop completed {} iterations",
+                    iteration_count
+                );
+            }
         }
         Ok(())
     }
@@ -1190,6 +1268,162 @@ mod tests {
                 assert!(retry_on.is_none());
             }
             _ => panic!("Expected Retry action"),
+        }
+    }
+
+    #[test]
+    fn test_foreach_action_with_array_collection() {
+        use crate::task::dsl::ForeachCollection;
+
+        // Test Foreach with array collection
+        let foreach_action = Action::Foreach {
+            variable: "item".to_string(),
+            collection: ForeachCollection::Array {
+                values: vec![
+                    serde_yaml::Value::String("first".to_string()),
+                    serde_yaml::Value::String("second".to_string()),
+                    serde_yaml::Value::String("third".to_string()),
+                ],
+            },
+            actions: vec![
+                Action::Log {
+                    message: "Processing {{item}}".to_string(),
+                    level: Some(crate::task::dsl::LogLevel::Info),
+                },
+            ],
+            max_iterations: Some(10),
+        };
+
+        match &foreach_action {
+            Action::Foreach {
+                variable,
+                collection,
+                actions,
+                max_iterations,
+            } => {
+                assert_eq!(variable, "item");
+                assert_eq!(*max_iterations, Some(10));
+                assert_eq!(actions.len(), 1);
+
+                match collection {
+                    ForeachCollection::Array { values } => {
+                        assert_eq!(values.len(), 3);
+                    }
+                    _ => panic!("Expected Array collection"),
+                }
+            }
+            _ => panic!("Expected Foreach action"),
+        }
+    }
+
+    #[test]
+    fn test_foreach_action_with_range_collection() {
+        use crate::task::dsl::ForeachCollection;
+
+        // Test Foreach with range collection
+        let foreach_action = Action::Foreach {
+            variable: "index".to_string(),
+            collection: ForeachCollection::Range { start: 0, end: 5 },
+            actions: vec![Action::Wait { duration_ms: 100 }],
+            max_iterations: Some(100),
+        };
+
+        match &foreach_action {
+            Action::Foreach {
+                variable,
+                collection,
+                actions,
+                max_iterations,
+            } => {
+                assert_eq!(variable, "index");
+                assert_eq!(*max_iterations, Some(100));
+                assert_eq!(actions.len(), 1);
+
+                match collection {
+                    ForeachCollection::Range { start, end } => {
+                        assert_eq!(*start, 0);
+                        assert_eq!(*end, 5);
+                    }
+                    _ => panic!("Expected Range collection"),
+                }
+            }
+            _ => panic!("Expected Foreach action"),
+        }
+    }
+
+    #[test]
+    fn test_foreach_action_with_elements_collection() {
+        use crate::task::dsl::ForeachCollection;
+
+        // Test Foreach with DOM elements collection
+        let foreach_action = Action::Foreach {
+            variable: "element".to_string(),
+            collection: ForeachCollection::Elements {
+                selector: ".item".to_string(),
+            },
+            actions: vec![Action::Click {
+                selector: "{{element}}".to_string(),
+            }],
+            max_iterations: Some(20),
+        };
+
+        match &foreach_action {
+            Action::Foreach {
+                variable,
+                collection,
+                actions,
+                max_iterations,
+            } => {
+                assert_eq!(variable, "element");
+                assert_eq!(*max_iterations, Some(20));
+                assert_eq!(actions.len(), 1);
+
+                match collection {
+                    ForeachCollection::Elements { selector } => {
+                        assert_eq!(selector, ".item");
+                    }
+                    _ => panic!("Expected Elements collection"),
+                }
+            }
+            _ => panic!("Expected Foreach action"),
+        }
+    }
+
+    #[test]
+    fn test_foreach_action_with_variable_collection() {
+        use crate::task::dsl::ForeachCollection;
+
+        // Test Foreach with variable collection
+        let foreach_action = Action::Foreach {
+            variable: "url".to_string(),
+            collection: ForeachCollection::Variable {
+                name: "urls".to_string(),
+            },
+            actions: vec![Action::Navigate {
+                url: "{{url}}".to_string(),
+            }],
+            max_iterations: None, // Should default to 100
+        };
+
+        match &foreach_action {
+            Action::Foreach {
+                variable,
+                collection,
+                actions,
+                max_iterations,
+            } => {
+                assert_eq!(variable, "url");
+                assert!(max_iterations.is_none());
+                assert_eq!(actions.len(), 1);
+
+                match collection {
+                    ForeachCollection::Variable { name } => {
+                        assert_eq!(name, "urls");
+                    }
+                    _ => panic!("Expected Variable collection"),
+                }
+            }
+            _ => panic!("Expected Foreach action"),
         }
     }
 }

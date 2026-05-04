@@ -182,6 +182,31 @@ pub enum Action {
         /// Only retry on specific error patterns (default: retry all)
         retry_on: Option<Vec<String>>,
     },
+    /// Iterate over a collection with a loop variable
+    Foreach {
+        /// Variable name to bind each iteration value (e.g., "item", "index")
+        variable: String,
+        /// Collection to iterate over: array, range, or selector for DOM elements
+        collection: ForeachCollection,
+        /// Actions to execute for each iteration
+        actions: Vec<Action>,
+        /// Maximum number of iterations (default: 100, safety limit)
+        max_iterations: Option<u32>,
+    },
+}
+
+/// Collection types for the Foreach action.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ForeachCollection {
+    /// Array of values to iterate over
+    Array { values: Vec<serde_yaml::Value> },
+    /// Range of integers (inclusive start, exclusive end)
+    Range { start: i64, end: i64 },
+    /// DOM elements matching a selector
+    Elements { selector: String },
+    /// Use a variable containing an array
+    Variable { name: String },
 }
 
 /// Log levels for the Log action.

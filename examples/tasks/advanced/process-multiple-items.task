@@ -1,0 +1,181 @@
+# Process Multiple Items Template
+# Demonstrates foreach iteration over collections of items
+
+name: process-multiple-items
+description: "Iterate over multiple items and process each one"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Page URL containing items to process"
+  item_selector:
+    type: selector
+    required: false
+    default: ".product-item, .list-item, .card"
+    description: "CSS selector for items to iterate over"
+  max_items:
+    type: integer
+    required: false
+    default: 10
+    description: "Maximum number of items to process"
+
+actions:
+  - log:
+      message: "Navigating to {{url}} to process items..."
+      level: info
+  
+  - navigate:
+      url: "{{url}}"
+  
+  - wait:
+      duration_ms: 2000
+  
+  - log:
+      message: "Starting to process up to {{max_items}} items..."
+      level: info
+  
+  # Iterate over each item found on the page
+  - foreach:
+      variable: "item"
+      collection:
+        type: elements
+        selector: "{{item_selector}}"
+      max_iterations: "{{max_items}}"
+      actions:
+        - log:
+            message: "Processing item: {{item}}"
+            level: info
+        
+        # Extract item details
+        - extract:
+            selector: "{{item}} .title, {{item}} h3, {{item}} .heading"
+            variable: "item_title"
+        
+        - extract:
+            selector: "{{item}} .price, {{item}} .cost, {{item}} [data-price]"
+            variable: "item_price"
+        
+        - log:
+            message: "Item: {{item_title}} - Price: {{item_price}}"
+            level: info
+        
+        # Click on the item if it's clickable
+        - if:
+            condition:
+              element_visible: "{{item}} a, {{item}} button, {{item}}[role='button']"
+            then:
+              - click:
+                  selector: "{{item}} a:first-of-type, {{item}} button:first-of-type"
+              - wait:
+                  duration_ms: 1000
+              - screenshot:
+                  path: "/tmp/item-detail.png"
+              - navigate:
+                  url: "{{url}}"  # Return to list
+              - wait:
+                  duration_ms: 1000
+  
+  - log:
+      message: "Finished processing items"
+      level: info
+  
+  - screenshot:
+      path: "/tmp/process-complete.png"
+
+# Alternative: Using foreach with a predefined array
+---
+name: process-predefined-urls
+description: "Process a list of predefined URLs"
+policy: default
+
+parameters:
+  base_url:
+    type: url
+    required: true
+    description: "Base URL for the site"
+
+actions:
+  # Define URLs via array collection
+  - foreach:
+      variable: "page_url"
+      collection:
+        type: array
+        values:
+          - "/products"
+          - "/services"
+          - "/about"
+          - "/contact"
+      max_iterations: 10
+      actions:
+        - navigate:
+            url: "{{base_url}}{{page_url}}"
+        - wait:
+            duration_ms: 1500
+        - log:
+            message: "Visited: {{page_url}}"
+            level: info
+        - screenshot:
+            path: "/tmp/page-{{page_url}}.png"
+
+# Alternative: Using foreach with a range
+---
+name: paginated-scrape
+description: "Scrape multiple pages using range iteration"
+policy: default
+
+parameters:
+  base_url:
+    type: url
+    required: true
+    description: "Base URL with {page} placeholder"
+  start_page:
+    type: integer
+    required: false
+    default: 1
+    description: "Starting page number"
+  end_page:
+    type: integer
+    required: false
+    default: 5
+    description: "Ending page number (exclusive)"
+
+actions:
+  - log:
+      message: "Scraping pages {{start_page}} to {{end_page}}..."
+      level: info
+  
+  - foreach:
+      variable: "page_num"
+      collection:
+        type: range
+        start: "{{start_page}}"
+        end: "{{end_page}}"
+      max_iterations: 20
+      actions:
+        - log:
+            message: "Processing page {{page_num}}..."
+            level: info
+        - navigate:
+            url: "{{base_url}}?page={{page_num}}"
+        - wait:
+            duration_ms: 2000
+        - extract:
+            selector: ".results-count, .total-items"
+            variable: "results_count"
+        - log:
+            message: "Page {{page_num}} has {{results_count}} results"
+            level: info
+        - screenshot:
+            path: "/tmp/page-{{page_num}}.png"
+
+# Usage:
+#   Process items on a page:
+#   auto-rust --task process-multiple-items --url "https://example.com/products" --item_selector ".product" --max_items 5
+#
+#   Process predefined URLs:
+#   auto-rust --task process-predefined-urls --base_url "https://example.com"
+#
+#   Scrape paginated results:
+#   auto-rust --task paginated-scrape --base_url "https://example.com/search" --start_page 1 --end_page 6

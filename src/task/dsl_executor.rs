@@ -316,18 +316,22 @@ impl<'a> DslExecutor<'a> {
             Action::Navigate { url } => {
                 let resolved_url = self.substitute_variables(url);
                 self.api.navigate(&resolved_url, 30000).await?;
+                Ok(())
             }
             Action::Click { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
                 self.api.click(&resolved_selector).await?;
+                Ok(())
             }
             Action::Type { selector, text } => {
                 let resolved_selector = self.substitute_variables(selector);
                 let resolved_text = self.substitute_variables(text);
                 self.api.r#type(&resolved_selector, &resolved_text).await?;
+                Ok(())
             }
             Action::Wait { duration_ms } => {
                 tokio::time::sleep(tokio::time::Duration::from_millis(*duration_ms)).await;
+                Ok(())
             }
             Action::WaitFor {
                 selector,
@@ -335,19 +339,22 @@ impl<'a> DslExecutor<'a> {
             } => {
                 let resolved_selector = self.substitute_variables(selector);
                 let timeout = timeout_ms.unwrap_or(5000);
-                self.api
-                    .wait_for(&resolved_selector, timeout)
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "Element '{}' not found within {}ms",
-                            resolved_selector, timeout
-                        )
-                    })?;
+                let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout);
+                while tokio::time::Instant::now() < deadline {
+                    if self.api.exists(&resolved_selector).await? {
+                        return Ok(());
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+                Err(anyhow::anyhow!(
+                    "Timeout waiting for element: {}",
+                    resolved_selector
+                ))
             }
             Action::ScrollTo { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
                 self.api.scroll_to(&resolved_selector).await?;
+                Ok(())
             }
             Action::Extract { selector, variable } => {
                 let resolved_selector = self.substitute_variables(selector);
@@ -356,9 +363,11 @@ impl<'a> DslExecutor<'a> {
                     log::debug!("Extracting variable '{}': {}", var_name, text);
                     self.variables.insert(var_name.clone(), text);
                 }
+                Ok(())
             }
             Action::Execute { script: _ } => {
                 log::warn!("Execute action not yet implemented");
+                Ok(())
             }
             Action::Log { message, level } => {
                 let resolved_message = self.substitute_variables(message);
@@ -368,6 +377,7 @@ impl<'a> DslExecutor<'a> {
                     LogLevel::Warn => log::warn!("{}", resolved_message),
                     LogLevel::Error => log::error!("{}", resolved_message),
                 }
+                Ok(())
             }
             Action::If {
                 condition,
@@ -378,11 +388,13 @@ impl<'a> DslExecutor<'a> {
                     for action in then {
                         Box::pin(self.execute_action(action)).await?;
                     }
-                } else if let Some(else_actions) = r#else {
+                }
+                if let Some(else_actions) = r#else {
                     for action in else_actions {
                         Box::pin(self.execute_action(action)).await?;
                     }
                 }
+                Ok(())
             }
             Action::Loop {
                 count,
@@ -414,9 +426,11 @@ impl<'a> DslExecutor<'a> {
                         Box::pin(self.execute_action(action)).await?;
                     }
                 }
+                Ok(())
             }
             Action::Call { task, parameters } => {
                 self.execute_call(task, parameters.as_ref()).await?;
+                Ok(())
             }
             Action::Screenshot { path, selector } => {
                 let resolved_selector = selector.as_ref().map(|s| self.substitute_variables(s));
@@ -440,11 +454,13 @@ impl<'a> DslExecutor<'a> {
                 let resolved_selector = self.substitute_variables(selector);
                 log::debug!("Clearing input field '{}'", resolved_selector);
                 self.api.clear(&resolved_selector).await?;
+                Ok(())
             }
             Action::Hover { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
                 log::debug!("Hovering over element '{}'", resolved_selector);
                 self.api.hover(&resolved_selector).await?;
+                Ok(())
             }
             Action::Select {
                 selector,
@@ -486,11 +502,13 @@ impl<'a> DslExecutor<'a> {
                 let resolved_selector = self.substitute_variables(selector);
                 log::debug!("Right-clicking element '{}'", resolved_selector);
                 self.api.right_click(&resolved_selector).await?;
+                Ok(())
             }
             Action::DoubleClick { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
                 log::debug!("Double-clicking element '{}'", resolved_selector);
                 self.api.double_click(&resolved_selector).await?;
+                Ok(())
             }
             Action::Parallel {
                 actions,
@@ -547,10 +565,8 @@ impl<'a> DslExecutor<'a> {
                     ));
                 }
 
-                log::info!(
-                    "All {} parallel actions completed successfully",
-                    actions.len()
-                );
+                log::info!("Parallel execution complete");
+                Ok(())
             }
             Action::Retry {
                 actions,
@@ -607,11 +623,12 @@ impl<'a> DslExecutor<'a> {
 
                     if attempt_success {
                         log::info!(
-                            "Retry block succeeded on attempt {}/{}",
+                            "Retry attempt {}/{} succeeded after {}ms pause",
                             attempt,
-                            max_attempts
+                            max_attempts,
+                            delay
                         );
-                        return Ok(());
+                        Ok(())
                     }
 
                     // Don't delay after the last attempt
@@ -731,6 +748,7 @@ impl<'a> DslExecutor<'a> {
                 }
 
                 log::info!("Foreach loop completed {} iterations", iteration_count);
+                Ok(())
             }
             Action::While {
                 condition,
@@ -776,6 +794,7 @@ impl<'a> DslExecutor<'a> {
                 }
 
                 log::info!("While loop completed {} iterations", iteration_count);
+                Ok(())
             }
             Action::Try {
                 try_actions,

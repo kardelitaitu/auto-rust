@@ -386,7 +386,7 @@ pub fn validate_parameters(
     // Check for unknown parameters
     for (name, _) in obj {
         if !def.parameters.contains_key(name) {
-            let known: Vec<_> = def.parameters.keys().collect();
+            let known: Vec<String> = def.parameters.keys().cloned().collect();
             errors.push(format!(
                 "Unknown parameter '{}'. Known parameters: {}",
                 name,

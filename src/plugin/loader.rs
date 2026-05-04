@@ -166,7 +166,11 @@ impl PluginLoader {
     }
 
     /// Find manifests in a specific directory (recursive helper)
-    async fn find_manifests_in_dir(&self, dir: &Path) -> Result<Vec<PathBuf>> {
+    fn find_manifests_in_dir(
+        &self,
+        dir: &Path,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<PathBuf>>> + Send + '_>> {
+        Box::pin(async move {
         let mut manifests = Vec::new();
 
         let entries = tokio::fs::read_dir(dir)
@@ -193,6 +197,7 @@ impl PluginLoader {
         }
 
         Ok(manifests)
+        })
     }
 
     /// Check if a path is a manifest file
@@ -263,6 +268,9 @@ impl PluginLoader {
             );
         }
 
+        // Store name before moving manifest
+        let plugin_name = manifest.name.clone();
+
         // For now, create a stub plugin (WASM loading would be implemented here)
         // In a full implementation, this would load and instantiate the WASM module
         let plugin = Box::new(StubPlugin {
@@ -274,11 +282,11 @@ impl PluginLoader {
 
         log::info!(
             "Loaded plugin '{}' from {}",
-            manifest.name,
+            plugin_name,
             manifest_path.display()
         );
 
-        Ok(manifest.name.clone())
+        Ok(plugin_name)
     }
 }
 

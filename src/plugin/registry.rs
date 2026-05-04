@@ -85,7 +85,7 @@ impl PluginRegistry {
 
         self.manifests.insert(name.clone(), manifest);
         self.plugins.insert(name.clone(), plugin);
-        self.load_order.push(name);
+        self.load_order.push(name.clone());
 
         log::info!("Registered plugin: {}", name);
         Ok(())

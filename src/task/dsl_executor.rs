@@ -22,8 +22,6 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use futures::future::join_all;
-use rand::Rng;
-
 use crate::prelude::TaskContext;
 use crate::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
 
@@ -859,7 +857,6 @@ impl<'a> DslExecutor<'a> {
                 Ok(())
             }
         }
-        Ok(())
     }
 
     /// Evaluate a condition.

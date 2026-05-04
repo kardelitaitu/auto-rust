@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::{manifest::PluginManifest, registry::PluginRegistry, PLUGIN_EXTENSION};
+use super::{manifest::PluginManifest, registry::PluginRegistry};
 
 /// Configuration for plugin loading
 #[derive(Debug, Clone)]

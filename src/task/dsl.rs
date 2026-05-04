@@ -586,7 +586,9 @@ pub fn apply_defaults(def: &TaskDefinition, params: &mut serde_json::Map<String,
         if !params.contains_key(name) {
             if let Some(ref default) = param_def.default {
                 log::debug!("Applying default value for parameter '{}'", name);
-                params.insert(name.clone(), default.clone());
+                // Convert serde_yaml::Value to serde_json::Value
+                let json_default = serde_json::Value::String(default.as_str().unwrap_or("").to_string());
+                params.insert(name.clone(), json_default);
             }
         }
     }

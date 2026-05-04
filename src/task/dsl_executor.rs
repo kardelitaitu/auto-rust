@@ -626,7 +626,7 @@ impl<'a> DslExecutor<'a> {
                             max_attempts,
                             current_delay_ms
                         );
-                        Ok(())
+                        return Ok(());
                     }
 
                     // Don't delay after the last attempt
@@ -673,11 +673,13 @@ impl<'a> DslExecutor<'a> {
                 let max_iterations = max_iterations.unwrap_or(100);
 
                 // Resolve collection based on type
-                let values = match collection {
-                    crate::task::dsl::ForeachCollection::Array { values } => values.clone(),
-                    crate::task::dsl::ForeachCollection::Range { start, end } => (*start..*end)
-                        .map(|i| serde_yaml::Value::Number(i.into()))
-                        .collect(),
+                let values: Vec<String> = match collection {
+                    crate::task::dsl::ForeachCollection::Array { values } => {
+                        values.iter().map(|v| v.as_str().unwrap_or("").to_string()).collect()
+                    }
+                    crate::task::dsl::ForeachCollection::Range { start, end } => {
+                        (*start..*end).map(|i| i.to_string()).collect()
+                    }
                     crate::task::dsl::ForeachCollection::Elements { selector } => {
                         // Count matching elements and create index-based values
                         let resolved_selector = self.substitute_variables(selector);
@@ -687,27 +689,17 @@ impl<'a> DslExecutor<'a> {
                             .await
                             .unwrap_or(0);
                         (0..count)
-                            .map(|i| {
-                                serde_yaml::Value::String(format!(
-                                    "{}:nth-of-type({})",
-                                    resolved_selector,
-                                    i + 1
-                                ))
-                            })
+                            .map(|i| format!("{}:nth-of-type({})", resolved_selector, i + 1))
                             .collect()
                     }
                     crate::task::dsl::ForeachCollection::Variable { name } => {
-                        // Get array from variable
+                        // Get value from variable - treat as single item or comma-separated list
                         if let Some(var_value) = self.variables.get(name) {
-                            match var_value {
-                                serde_json::Value::Array(arr) => arr.iter().map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_default()).collect(),
-                                _ => {
-                                    log::warn!(
-                                        "Foreach variable '{}' is not an array, treating as single item",
-                                        name
-                                    );
-                                    vec![var_value.as_str().map(|s| s.to_string()).unwrap_or_default()]
-                                }
+                            // Check if value contains commas - if so, split it
+                            if var_value.contains(',') {
+                                var_value.split(',').map(|s| s.trim().to_string()).collect()
+                            } else {
+                                vec![var_value.clone()]
                             }
                         } else {
                             log::warn!(
@@ -832,10 +824,7 @@ impl<'a> DslExecutor<'a> {
                                 var_name,
                                 error_msg
                             );
-                            self.state
-                                .lock()
-                                .await
-                                .insert(var_name.clone(), error_msg);
+                            self.variables.insert(var_name.clone(), error_msg);
                         }
 
                         // Execute catch actions

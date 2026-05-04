@@ -1,0 +1,81 @@
+# Form Login Template
+# Standard login form pattern with username/password fields
+
+name: form-login
+description: "Fill and submit a standard login form"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Login page URL"
+  username:
+    type: string
+    required: true
+    description: "Username/email field value"
+  password:
+    type: string
+    required: true
+    description: "Password field value"
+  username_selector:
+    type: selector
+    required: false
+    default: "#username, input[type='email'], input[name='username']"
+    description: "CSS selector for username field"
+  password_selector:
+    type: selector
+    required: false
+    default: "#password, input[type='password'], input[name='password']"
+    description: "CSS selector for password field"
+  submit_selector:
+    type: selector
+    required: false
+    default: "button[type='submit'], input[type='submit'], .btn-login, #login-btn"
+    description: "CSS selector for submit button"
+  success_selector:
+    type: selector
+    required: false
+    default: ".dashboard, .welcome, .logged-in, nav.user-menu"
+    description: "CSS selector indicating successful login"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - wait_for:
+      selector: "{{username_selector}}"
+      timeout_ms: 5000
+  
+  - type:
+      selector: "{{username_selector}}"
+      text: "{{username}}"
+  
+  - type:
+      selector: "{{password_selector}}"
+      text: "{{password}}"
+  
+  - click:
+      selector: "{{submit_selector}}"
+  
+  - wait:
+      duration_ms: 2000
+  
+  - if:
+      condition:
+        element_visible: "{{success_selector}}"
+      then:
+        - log:
+            message: "Login successful!"
+            level: info
+        - extract:
+            selector: "{{success_selector}}"
+            variable: "welcome_message"
+      else:
+        - log:
+            message: "Login may have failed - success indicator not found"
+            level: warn
+        - screenshot:
+            path: "/tmp/login-result.png"
+
+# Usage: auto-rust --task form-login --url "https://example.com/login" --username "user@example.com" --password "secret123"

@@ -1,0 +1,88 @@
+# Conditional Click Template
+# Handle elements that may or may not exist with conditional logic
+
+name: conditional-click
+description: "Click elements conditionally based on their existence/state"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Target page URL"
+  primary_button:
+    type: selector
+    required: true
+    description: "Primary button to click if available"
+  fallback_button:
+    type: selector
+    required: true
+    description: "Fallback button if primary not available"
+  confirmation_selector:
+    type: selector
+    required: false
+    description: "Element that confirms successful action"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - wait:
+      duration_ms: 1500
+  
+  - if:
+      condition:
+        element_visible: "{{primary_button}}"
+      then:
+        - log:
+            message: "Primary button found, clicking..."
+            level: info
+        - click:
+            selector: "{{primary_button}}"
+        - extract:
+            selector: "{{primary_button}}"
+            variable: "clicked_button"
+      else:
+        - log:
+            message: "Primary button not visible, trying fallback..."
+            level: info
+        - if:
+            condition:
+              element_visible: "{{fallback_button}}"
+            then:
+              - click:
+                  selector: "{{fallback_button}}"
+              - extract:
+                  selector: "{{fallback_button}}"
+                  variable: "clicked_button"
+            else:
+              - log:
+                  message: "Neither button found!"
+                  level: error
+              - screenshot:
+                  path: "/tmp/missing-buttons.png"
+  
+  - wait:
+      duration_ms: 1000
+  
+  # Check for confirmation if specified
+  - if:
+      condition:
+        not:
+          variable_equals:
+            name: "confirmation_selector"
+            value: ""
+      then:
+        - if:
+            condition:
+              element_visible: "{{confirmation_selector}}"
+            then:
+              - log:
+                  message: "Action confirmed successfully"
+                  level: info
+            else:
+              - log:
+                  message: "Confirmation element not found - action may have failed"
+                  level: warn
+
+# Usage: auto-rust --task conditional-click --url "https://example.com/action" --primary_button "#main-btn" --fallback_button "#alt-btn" --confirmation_selector ".success-message"

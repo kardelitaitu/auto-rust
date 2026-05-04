@@ -1,0 +1,90 @@
+# Parallel Scrape Template
+# Demonstrates parallel execution for scraping multiple sections simultaneously
+
+name: parallel-scrape
+description: "Scrape multiple page sections in parallel for faster data collection"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Page URL to scrape"
+  sections:
+    type: string
+    required: false
+    default: "header,content,sidebar,footer"
+    description: "Comma-separated list of sections to scrape"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - wait:
+      duration_ms: 2000
+  
+  - log:
+      message: "Starting parallel scrape of sections: {{sections}}"
+      level: info
+  
+  # Execute extraction tasks in parallel
+  - parallel:
+      max_concurrency: 4
+      actions:
+        # Extract header content
+        - if:
+            condition:
+              element_exists: "header, .header, .site-header, nav"
+            then:
+              - extract:
+                  selector: "header, .header, .site-header"
+                  variable: "header_content"
+              - log:
+                  message: "Header extracted"
+                  level: debug
+        
+        # Extract main content
+        - if:
+            condition:
+              element_exists: "main, .content, .main-content, article, #content"
+            then:
+              - extract:
+                  selector: "main, .content, .main-content, article"
+                  variable: "main_content"
+              - log:
+                  message: "Main content extracted"
+                  level: debug
+        
+        # Extract sidebar
+        - if:
+            condition:
+              element_exists: "aside, .sidebar, .side-content"
+            then:
+              - extract:
+                  selector: "aside, .sidebar"
+                  variable: "sidebar_content"
+              - log:
+                  message: "Sidebar extracted"
+                  level: debug
+        
+        # Extract footer
+        - if:
+            condition:
+              element_exists: "footer, .footer, .site-footer"
+            then:
+              - extract:
+                  selector: "footer, .footer, .site-footer"
+                  variable: "footer_content"
+              - log:
+                  message: "Footer extracted"
+                  level: debug
+  
+  - log:
+      message: "Parallel scrape complete"
+      level: info
+  
+  # Try to take a full page screenshot
+  - screenshot:
+      path: "/tmp/parallel-scrape-result.png"
+
+# Usage: auto-rust --task parallel-scrape --url "https://example.com"

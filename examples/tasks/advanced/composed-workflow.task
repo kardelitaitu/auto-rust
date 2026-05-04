@@ -1,0 +1,103 @@
+# Composed Workflow Template
+# Demonstrates task composition - calling other tasks as building blocks
+
+name: composed-workflow
+description: "Complex workflow composed of smaller reusable task calls"
+policy: default
+
+parameters:
+  target_url:
+    type: url
+    required: true
+    description: "Starting URL for the workflow"
+  search_query:
+    type: string
+    required: true
+    description: "What to search for"
+  login_required:
+    type: boolean
+    required: false
+    default: false
+    description: "Whether login is required before search"
+  username:
+    type: string
+    required: false
+    description: "Username for login (if login_required=true)"
+  password:
+    type: string
+    required: false
+    description: "Password for login (if login_required=true)"
+
+actions:
+  - log:
+      message: "Starting composed workflow for: {{target_url}}"
+      level: info
+  
+  # Step 1: Navigate to the site
+  - call:
+      task: simple-navigation
+      parameters:
+        url: "{{target_url}}"
+        wait_ms: 3000
+  
+  # Step 2: Login if required
+  - if:
+      condition:
+        variable_equals:
+          name: "login_required"
+          value: true
+      then:
+        - log:
+            message: "Login required, proceeding with authentication..."
+            level: info
+        - call:
+            task: form-login
+            parameters:
+              url: "{{target_url}}"
+              username: "{{username}}"
+              password: "{{password}}"
+              username_selector: "#email, input[type='email']"
+              password_selector: "#password, input[type='password']"
+  
+  # Step 3: Perform search and extract results
+  - if:
+      condition:
+        not:
+          variable_equals:
+            name: "search_query"
+            value: ""
+      then:
+        - log:
+            message: "Executing search for: {{search_query}}"
+            level: info
+        - call:
+            task: search-and-extract
+            parameters:
+              url: "{{target_url}}"
+              search_term: "{{search_query}}"
+              max_results: 3
+  
+  # Step 4: Conditional interaction based on results
+  - log:
+      message: "Checking for interactive elements..."
+      level: info
+  
+  - call:
+      task: conditional-click
+      parameters:
+        url: "{{target_url}}"
+        primary_button: ".primary-action, .main-cta, #action-btn"
+        fallback_button: ".secondary-action, .alt-btn"
+  
+  - log:
+      message: "Composed workflow complete!"
+      level: info
+  
+  - screenshot:
+      path: "/tmp/workflow-final-state.png"
+
+# Usage: 
+#   auto-rust --task composed-workflow --target_url "https://example.com" --search_query "products"
+#   
+#   With login:
+#   auto-rust --task composed-workflow --target_url "https://example.com" --login_required true --username "user@example.com" --password "secret" --search_query "dashboard"

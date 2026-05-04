@@ -1,0 +1,89 @@
+# Search and Extract Template
+# Search for content and extract results from multiple elements
+
+name: search-and-extract
+description: "Perform a search and extract results from result items"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Search page URL"
+  search_term:
+    type: string
+    required: true
+    description: "Term to search for"
+  search_input_selector:
+    type: selector
+    required: false
+    default: "input[type='search'], input[name='q'], #search-input, .search-field"
+    description: "Search input field selector"
+  search_button_selector:
+    type: selector
+    required: false
+    default: "button[type='submit'], .search-btn, #search-button"
+    description: "Search button selector"
+  result_item_selector:
+    type: selector
+    required: false
+    default: ".result-item, .search-result, .item, article"
+    description: "Selector for individual result items"
+  max_results:
+    type: integer
+    required: false
+    default: 5
+    description: "Maximum number of results to extract"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - wait_for:
+      selector: "{{search_input_selector}}"
+      timeout_ms: 5000
+  
+  - log:
+      message: "Searching for: {{search_term}}"
+      level: info
+  
+  - clear:
+      selector: "{{search_input_selector}}"
+  
+  - type:
+      selector: "{{search_input_selector}}"
+      text: "{{search_term}}"
+  
+  - click:
+      selector: "{{search_button_selector}}"
+  
+  - wait:
+      duration_ms: 2000
+  
+  - log:
+      message: "Extracting up to {{max_results}} results..."
+      level: info
+  
+  # Extract first result title
+  - extract:
+      selector: "{{result_item_selector}}:nth-child(1) .title, {{result_item_selector}}:first-child h3, {{result_item_selector}}:first-child .heading"
+      variable: "result_1_title"
+  
+  # Extract second result title
+  - extract:
+      selector: "{{result_item_selector}}:nth-child(2) .title, {{result_item_selector}}:nth-of-type(2) h3"
+      variable: "result_2_title"
+  
+  # Extract third result title
+  - extract:
+      selector: "{{result_item_selector}}:nth-child(3) .title, {{result_item_selector}}:nth-of-type(3) h3"
+      variable: "result_3_title"
+  
+  - log:
+      message: "Extraction complete. Found: {{result_1_title}}, {{result_2_title}}, {{result_3_title}}"
+      level: info
+  
+  - screenshot:
+      path: "/tmp/search-results.png"
+
+# Usage: auto-rust --task search-and-extract --url "https://example.com/search" --search_term "rust programming"

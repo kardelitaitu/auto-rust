@@ -1,0 +1,34 @@
+# Simple Navigation Template
+# Basic example of navigating to a URL and waiting for page load
+
+name: simple-navigation
+description: "Navigate to a URL and verify page loaded"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Target URL to navigate to"
+  wait_ms:
+    type: integer
+    required: false
+    default: 2000
+    description: "Wait time after navigation in milliseconds"
+
+actions:
+  - navigate:
+      url: "{{url}}"
+  
+  - log:
+      message: "Navigated to {{url}}, waiting {{wait_ms}}ms"
+      level: info
+  
+  - wait:
+      duration_ms: "{{wait_ms}}"
+  
+  - log:
+      message: "Navigation complete"
+      level: info
+
+# Usage: auto-rust --task simple-navigation --url "https://example.com" --wait_ms 3000

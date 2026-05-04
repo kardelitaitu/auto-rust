@@ -34,6 +34,7 @@ pub mod twitterquote;
 pub mod twitterreply;
 pub mod twitterretweet;
 pub mod twittertest;
+pub mod validation;
 pub mod watcher;
 
 // Re-exports for twitteractivity test access

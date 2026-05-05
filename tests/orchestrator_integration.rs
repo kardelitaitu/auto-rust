@@ -14,6 +14,7 @@ use auto::{
 };
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
 
 // ============================================================================
 // Helper Functions
@@ -159,14 +160,13 @@ async fn test_cancellation_stops_execution() {
         payload: Default::default(),
     }];
 
-    // Note: Testing cancellation requires access to internal cancellation token
-    // This is a placeholder for the actual shutdown handling test
-    let result = orchestrator.execute_group(&tasks, &sessions, metrics).await;
+    let cancel_token = CancellationToken::new();
+    cancel_token.cancel();
+    let result = orchestrator
+        .execute_group_with_cancel(&tasks, &sessions, metrics, cancel_token)
+        .await;
 
-    // Just verify it runs for now
-    if result.is_err() {
-        eprintln!("execute_group failed: {:?}", result);
-    }
+    assert!(result.is_err(), "cancelled execution should stop the group");
 }
 
 // ============================================================================

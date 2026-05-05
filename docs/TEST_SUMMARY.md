@@ -1,6 +1,6 @@
 # Test Summary
 
-> Coverage reports for codebase modules. Run `cargo tarpaulin --out Html --output-dir ./coverage` to update.
+> Coverage reports for codebase modules. Run `cargo tarpaulin --out Html --output-dir ./target/reports/coverage` to update.
 
 ---
 

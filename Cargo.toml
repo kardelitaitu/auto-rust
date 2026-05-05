@@ -120,12 +120,16 @@ path = "src/task/demo-interaction-mouse.rs"
 
 [[bench]]
 name = "trajectory"
+path = "src/benchmarks/trajectory.rs"
 harness = false
 
 [[bench]]
 name = "accessibility_locator"
+path = "src/benchmarks/accessibility_locator.rs"
 harness = false
+required-features = ["accessibility-locator"]
 
 [[bench]]
 name = "predictive_scorer"
+path = "src/benchmarks/predictive_scorer.rs"
 harness = false

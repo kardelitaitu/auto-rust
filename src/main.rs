@@ -1,10 +1,10 @@
 use anyhow::Result;
 use auto::runtime::execution::{execute_task_groups_with_shutdown, RuntimeGroupRunner};
+use auto::runtime::shutdown::ShutdownManager;
 use auto::session::cleanup::cleanup_managed_tabs;
 use auto::{browser, cli, config, health_logger, logger, metrics, orchestrator};
 use log::{info, warn, LevelFilter};
 use std::sync::Arc;
-use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StartupMode {
@@ -256,19 +256,8 @@ async fn run_async() -> Result<()> {
 
     info!("Rust Orchestrator - Starting up...");
 
-    // Create shutdown channel for graceful termination
-    let (shutdown_tx, _shutdown_rx) = broadcast::channel::<()>(1);
-    let shutdown_tx = Arc::new(shutdown_tx);
-
-    // Set up signal handlers for graceful shutdown
-    let shutdown_tx_clone = shutdown_tx.clone();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to listen for Ctrl+C");
-        info!("\nReceived shutdown signal (Ctrl+C)");
-        let _ = shutdown_tx_clone.send(());
-    });
+    let shutdown = ShutdownManager::new();
+    let _shutdown_signal_handle = shutdown.spawn_ctrl_c_listener();
 
     let args = cli::parse_args();
 
@@ -304,8 +293,7 @@ async fn run_async() -> Result<()> {
 
     if args.tasks.is_empty() {
         info!("No tasks specified. System initialized in idle mode.");
-        // Wait for shutdown signal in idle mode
-        wait_for_shutdown(shutdown_tx.subscribe()).await;
+        shutdown.wait().await;
         info!("Shutdown signal received. Script stopped, browser left unchanged.");
         return Ok(());
     }
@@ -338,7 +326,7 @@ async fn run_async() -> Result<()> {
     let _health_handle = health_logger.start();
 
     // Execute task groups with shutdown awareness
-    let mut shutdown_rx = shutdown_tx.subscribe();
+    let mut shutdown_rx = shutdown.subscribe();
     let mut group_runner = RuntimeGroupRunner {
         orchestrator: &mut orchestrator,
         sessions: &sessions,
@@ -399,11 +387,6 @@ async fn run_async() -> Result<()> {
         groups.len()
     );
     Ok(())
-}
-
-/// Wait for shutdown signal
-async fn wait_for_shutdown(mut shutdown_rx: broadcast::Receiver<()>) {
-    let _ = shutdown_rx.recv().await;
 }
 
 #[cfg(test)]

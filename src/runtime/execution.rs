@@ -12,12 +12,18 @@ use crate::cli::TaskDefinition;
 use crate::metrics::MetricsCollector;
 use crate::orchestrator::Orchestrator;
 use crate::session::Session;
+use tokio_util::sync::CancellationToken;
 
 /// Trait for running task groups.
 #[async_trait(?Send)]
 pub trait TaskGroupRunner {
     /// Execute a single task group.
-    async fn run_group(&mut self, index: usize, group: &[TaskDefinition]);
+    async fn run_group(
+        &mut self,
+        index: usize,
+        group: &[TaskDefinition],
+        cancel_token: CancellationToken,
+    );
 }
 
 /// Runtime implementation of task group runner.
@@ -34,7 +40,12 @@ pub struct RuntimeGroupRunner<'a> {
 
 #[async_trait(?Send)]
 impl TaskGroupRunner for RuntimeGroupRunner<'_> {
-    async fn run_group(&mut self, index: usize, group: &[TaskDefinition]) {
+    async fn run_group(
+        &mut self,
+        index: usize,
+        group: &[TaskDefinition],
+        cancel_token: CancellationToken,
+    ) {
         use crate::cli::format_task_groups;
 
         let task_groups_display = format_task_groups(&[group.to_vec()]);
@@ -46,7 +57,7 @@ impl TaskGroupRunner for RuntimeGroupRunner<'_> {
 
         let result = self
             .orchestrator
-            .execute_group(group, self.sessions, self.metrics.clone())
+            .execute_group_with_cancel(group, self.sessions, self.metrics.clone(), cancel_token)
             .await;
         if let Err(e) = result {
             warn!("Group {} failed: {}", index + 1, e);
@@ -75,7 +86,7 @@ pub async fn execute_task_groups_with_shutdown<R>(
 where
     R: TaskGroupRunner + ?Sized,
 {
-    let mut group_index = 0;
+    let mut completed_groups = 0;
     let mut shutdown_requested = false;
 
     for (i, group) in groups.iter().enumerate() {
@@ -85,19 +96,25 @@ where
             break;
         }
 
-        group_index = i + 1;
+        let group_cancel = CancellationToken::new();
+        let mut run_group = Box::pin(runner.run_group(i, group, group_cancel.clone()));
+
         tokio::select! {
             _ = shutdown_rx.recv() => {
                 info!("Shutdown requested, stopping during group {}", i + 1);
                 shutdown_requested = true;
+                group_cancel.cancel();
+                run_group.await;
                 break;
             }
-            _ = runner.run_group(i, group) => {}
+            _ = &mut run_group => {
+                completed_groups += 1;
+            }
         }
     }
 
     GroupExecutionOutcome {
-        completed_groups: group_index,
+        completed_groups,
         shutdown_requested,
     }
 }
@@ -117,11 +134,19 @@ mod tests {
 
     #[async_trait(?Send)]
     impl TaskGroupRunner for MockTaskGroupRunner {
-        async fn run_group(&mut self, _index: usize, _group: &[TaskDefinition]) {
+        async fn run_group(
+            &mut self,
+            _index: usize,
+            _group: &[TaskDefinition],
+            cancel_token: CancellationToken,
+        ) {
             if let Some(started) = self.started.take() {
                 let _ = started.send(());
             }
-            tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+            tokio::select! {
+                _ = cancel_token.cancelled() => return,
+                _ = tokio::time::sleep(Duration::from_millis(self.delay_ms)) => {}
+            }
             self.finished.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -183,7 +208,7 @@ mod tests {
         let outcome = execute_task_groups_with_shutdown(&groups, &mut rx, &mut runner).await;
 
         sender_task.await.expect("sender task should finish");
-        assert_eq!(outcome.completed_groups, 1);
+        assert_eq!(outcome.completed_groups, 0);
         assert!(outcome.shutdown_requested);
         assert_eq!(finished.load(Ordering::SeqCst), 0);
     }

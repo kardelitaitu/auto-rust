@@ -25,6 +25,7 @@ pub mod orchestrator {
 }
 
 pub mod execution;
+pub mod shutdown;
 pub mod task_context;
 
 #[cfg(test)]

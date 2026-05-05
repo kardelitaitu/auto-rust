@@ -1,14 +1,28 @@
+# development
+
 # OS files
 .DS_Store
 Thumbs.db
 nul
+CON
+PRN
+AUX
+COM[1-9]
+LPT[1-9]
+$RECYCLE.BIN/
+desktop.ini
 
 # Editor / IDE files
 .llm-context/
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json  # Keep this if you share debug configs
 *.swp
 *.swo
+.idea/
+*.iws
+*.iml
 
 # Local config and secrets
 .env
@@ -50,3 +64,5 @@ data/screenshot/
 
 # Ignore all improvement proposals (they are generated and should not be committed)
 IMPROVEMENT*
+
+

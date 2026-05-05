@@ -13,8 +13,8 @@ use crate::config::Config;
 use crate::error::{OrchestratorError, Result, SessionError, TaskError};
 use crate::logger::{scoped_log_context, LogContext};
 use crate::metrics::MetricsCollector;
-use crate::result::{TaskErrorKind, TaskResult};
-use crate::session::Session;
+use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
+use crate::session::{Session, SessionState};
 use futures::stream::{FuturesUnordered, StreamExt};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -95,6 +95,64 @@ impl GlobalExecutionSlot {
 impl Drop for GlobalExecutionSlot {
     fn drop(&mut self) {
         self.active_counter.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+struct SessionExecutionGuard<'a> {
+    session: &'a Session,
+    active: bool,
+}
+
+impl<'a> SessionExecutionGuard<'a> {
+    fn new(session: &'a Session) -> Self {
+        session.set_state(SessionState::Busy);
+        Self {
+            session,
+            active: true,
+        }
+    }
+
+    fn mark_idle(&mut self) {
+        self.session.set_state(SessionState::Idle);
+        self.active = false;
+    }
+
+    fn mark_failed(&mut self) {
+        self.session.set_state(SessionState::Failed);
+        self.active = false;
+    }
+}
+
+impl Drop for SessionExecutionGuard<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            self.session.set_state(SessionState::Idle);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TaskAttemptFailure {
+    message: String,
+    kind: TaskErrorKind,
+    cancelled: bool,
+}
+
+impl TaskAttemptFailure {
+    fn failed(message: String, kind: TaskErrorKind) -> Self {
+        Self {
+            message,
+            kind,
+            cancelled: false,
+        }
+    }
+
+    fn cancelled(message: String, kind: TaskErrorKind) -> Self {
+        Self {
+            message,
+            kind,
+            cancelled: true,
+        }
     }
 }
 
@@ -219,6 +277,18 @@ impl Orchestrator {
         sessions: &[Session],
         metrics: Arc<MetricsCollector>,
     ) -> Result<()> {
+        self.execute_group_with_cancel(group, sessions, metrics, CancellationToken::new())
+            .await
+    }
+
+    /// Executes a group of tasks with an external cancellation token.
+    pub async fn execute_group_with_cancel(
+        &mut self,
+        group: &[TaskDefinition],
+        sessions: &[Session],
+        metrics: Arc<MetricsCollector>,
+        cancel_token: CancellationToken,
+    ) -> Result<()> {
         if sessions.is_empty() {
             return Err(OrchestratorError::Session(
                 SessionError::InitializationFailed("No active sessions available".to_string()),
@@ -240,7 +310,7 @@ impl Orchestrator {
 
         // Apply group timeout
         let group_timeout = Duration::from_millis(self.config.orchestrator.group_timeout_ms);
-        let group_cancel = CancellationToken::new();
+        let group_cancel = cancel_token.child_token();
 
         let mut task_futures: FuturesUnordered<_> = group
             .iter()
@@ -259,7 +329,6 @@ impl Orchestrator {
                     // Stagger task starts to prevent network spikes
                     tokio::select! {
                         _ = cancel_token.cancelled() => {
-                            global_active.fetch_sub(1, Ordering::SeqCst);
                             return Ok(());
                         }
                         _ = tokio::time::sleep(Duration::from_millis(
@@ -287,6 +356,7 @@ impl Orchestrator {
         tokio::pin!(group_deadline);
         let mut results = Vec::with_capacity(group.len());
         let mut timed_out = false;
+        let mut cancelled = false;
 
         while !task_futures.is_empty() {
             tokio::select! {
@@ -297,6 +367,10 @@ impl Orchestrator {
                         self.config.orchestrator.group_timeout_ms
                     );
                     group_cancel.cancel();
+                }
+                _ = group_cancel.cancelled(), if !timed_out && !cancelled => {
+                    cancelled = true;
+                    warn!("Group cancelled, waiting for outstanding tasks to stop");
                 }
                 maybe_result = task_futures.next() => {
                     if let Some(result) = maybe_result {
@@ -311,6 +385,12 @@ impl Orchestrator {
                 task_name: "task group".to_string(),
                 timeout_ms: self.config.orchestrator.group_timeout_ms,
             }));
+        }
+
+        if cancelled {
+            return Err(OrchestratorError::Task(TaskError::Cancelled(
+                "task group cancelled by shutdown request".to_string(),
+            )));
         }
 
         let success_count = results.iter().filter(|r| r.is_ok()).count();
@@ -521,10 +601,9 @@ async fn execute_task_with_retry(
         );
     }
 
-    // Set Busy state for observability. Note: This is NOT exclusive locking;
-    // multiple tasks may pass the check and set Busy concurrently, which is
-    // intentional for the broadcast execution model.
-    session.set_state(crate::session::SessionState::Busy);
+    // This guard prevents cancellation/error paths from leaving the session
+    // permanently Busy before page acquisition or explicit final cleanup.
+    let mut session_guard = SessionExecutionGuard::new(session);
 
     let permit = match tokio::select! {
         permit = session.acquire_worker(config.orchestrator.worker_wait_timeout_ms) => permit,
@@ -576,7 +655,7 @@ async fn execute_task_with_retry(
         task_def.name, session.id, timeout_display, max_retries
     );
 
-    let mut last_failure: Option<(String, TaskErrorKind)> = None;
+    let mut last_failure: Option<TaskAttemptFailure> = None;
     let mut attempt = 0;
 
     for current_attempt in 1..=retry_policy.max_retries + 1 {
@@ -585,7 +664,7 @@ async fn execute_task_with_retry(
                 "task_cancel | task={} session={} stage=pre_attempt attempt={}",
                 task_def.name, session.id, current_attempt
             );
-            last_failure = Some((
+            last_failure = Some(TaskAttemptFailure::cancelled(
                 format!("Task {} cancelled during group shutdown", task_def.name),
                 TaskErrorKind::Timeout,
             ));
@@ -614,7 +693,7 @@ async fn execute_task_with_retry(
                     "task_cancel | task={} session={} stage=execution attempt={}",
                     task_def.name, session.id, current_attempt
                 );
-                last_failure = Some((
+                last_failure = Some(TaskAttemptFailure::cancelled(
                     format!("Task {} cancelled during execution", task_def.name),
                     TaskErrorKind::Timeout,
                 ));
@@ -632,7 +711,7 @@ async fn execute_task_with_retry(
                 session.release_page(page).await;
                 drop(permit);
                 session.mark_healthy();
-                session.set_state(crate::session::SessionState::Idle);
+                session_guard.mark_idle();
                 return task_result.with_attempt(current_attempt, max_retries);
             }
             Ok(Ok(task_result)) => {
@@ -644,16 +723,24 @@ async fn execute_task_with_retry(
                 let kind = task_result
                     .error_kind
                     .unwrap_or_else(|| TaskErrorKind::classify(&error));
-                last_failure = Some((error, kind));
+                let failure = if matches!(task_result.status, TaskStatus::Cancelled) {
+                    TaskAttemptFailure::cancelled(error, kind)
+                } else {
+                    TaskAttemptFailure::failed(error, kind)
+                };
+                last_failure = Some(failure);
             }
             Ok(Err(e)) => {
                 drop(task_ctx);
                 let error = e.to_string();
-                last_failure = Some((error.clone(), TaskErrorKind::classify(&error)));
+                last_failure = Some(TaskAttemptFailure::failed(
+                    error.clone(),
+                    TaskErrorKind::classify(&error),
+                ));
             }
             Err(_) => {
                 drop(task_ctx);
-                last_failure = Some((
+                last_failure = Some(TaskAttemptFailure::failed(
                     format!(
                         "Task '{}' exceeded policy timeout of {}ms",
                         task_def.name, policy.max_duration_ms
@@ -677,7 +764,7 @@ async fn execute_task_with_retry(
 
         if !last_failure
             .as_ref()
-            .map(|(_, kind)| kind.is_retryable())
+            .map(|failure| failure.kind.is_retryable())
             .unwrap_or(false)
         {
             break;
@@ -692,7 +779,7 @@ async fn execute_task_with_retry(
             delay.as_millis(),
             last_failure
                 .as_ref()
-                .map(|(_, kind)| *kind)
+                .map(|failure| failure.kind)
                 .unwrap_or(TaskErrorKind::Unknown)
         );
         tokio::select! {
@@ -701,7 +788,7 @@ async fn execute_task_with_retry(
                     "task_cancel | task={} session={} stage=backoff attempt={}",
                     task_def.name, session.id, current_attempt
                 );
-                last_failure = Some((
+                last_failure = Some(TaskAttemptFailure::cancelled(
                     format!("Task {} cancelled during retry backoff", task_def.name),
                     TaskErrorKind::Timeout,
                 ));
@@ -716,20 +803,23 @@ async fn execute_task_with_retry(
 
     let was_cancelled = last_failure
         .as_ref()
-        .map(|(msg, _)| msg.contains("cancelled"))
+        .map(|failure| failure.cancelled)
         .unwrap_or(false);
     if !was_cancelled {
         session.increment_failure();
     }
 
-    let (msg, kind) = last_failure
-        .unwrap_or_else(|| ("Unknown task failure".to_string(), TaskErrorKind::Unknown));
+    let failure = last_failure.unwrap_or_else(|| {
+        TaskAttemptFailure::failed("Unknown task failure".to_string(), TaskErrorKind::Unknown)
+    });
+    let msg = failure.message;
+    let kind = failure.kind;
     if should_mark_session_unhealthy(kind, was_cancelled) {
         session.mark_unhealthy();
-        session.set_state(crate::session::SessionState::Failed);
+        session_guard.mark_failed();
     } else {
         // Transition back to Idle if session is still healthy
-        session.set_state(crate::session::SessionState::Idle);
+        session_guard.mark_idle();
     }
 
     info!(

@@ -877,6 +877,7 @@ export MAX_GLOBAL_CONCURRENCY=10
 
 | Document | Purpose |
 |----------|---------|
+| [docs/specs/README.md](docs/specs/README.md) | Two-agent spec workflow and handoff contract |
 | [docs/TASKS/overview.md](docs/TASKS/overview.md) | All tasks and how to run them |
 | [docs/TASKS/cookiebot.md](docs/TASKS/cookiebot.md) | Cookie management task |
 | [docs/TASKS/pageview.md](docs/TASKS/pageview.md) | Page browsing task |

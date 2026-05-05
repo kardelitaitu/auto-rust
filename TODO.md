@@ -103,6 +103,20 @@
 
 ## P3: Lower Priority (Large Refactorings)
 
+- [ ] **Session execution guard + deterministic shutdown tests**
+  - Files: `src/orchestrator.rs`, `src/session/mod.rs`, `src/runtime/execution.rs`, `tests/graceful_shutdown_integration.rs`, `tests/orchestrator_integration.rs`
+  - Goal: Make task cleanup reliable across success, failure, timeout, and cancellation.
+  - Subtasks:
+    - [x] Introduce a small execution guard for session state cleanup (`Busy` -> `Idle`/`Failed`) and page/permit release
+    - [x] Ensure every early return after `Busy` state restores session state correctly
+    - [x] Make cancellation outcome explicit instead of detecting cancellation from error message text
+    - [x] Replace placeholder shutdown integration tests with deterministic mock-based tests
+    - [ ] Add tests for cancellation before worker acquisition, during task execution, during backoff, and after page acquisition
+  - Progress:
+    - 2026-05-05: Added `SessionExecutionGuard`, explicit `TaskAttemptFailure.cancelled`, browser-free active-group shutdown test, and updated cancellation integration path to use `execute_group_with_cancel`.
+  - **Impact:** Lower risk of stuck busy sessions, leaked pages, bad health state, and shutdown regressions
+  - Effort: ~2-4 days
+
 - [ ] **TaskContext click / interaction pipeline**
   - Files: `src/runtime/task_context.rs`, `src/capabilities/mouse.rs`, `src/utils/mouse.rs`, `src/state/overlay.rs`
   - Goal: Isolate "how the system adapts" from mouse interaction mechanics
@@ -118,10 +132,12 @@
   - Files: `src/main.rs`, `src/runtime/execution.rs`, `src/orchestrator.rs`
   - Goal: Make "run groups until shutdown" a clearer boundary
   - Subtasks:
-    - [ ] Centralize signal handling in `src/runtime/shutdown.rs` with a `ShutdownManager`
+    - [x] Centralize signal handling in `src/runtime/shutdown.rs` with a `ShutdownManager`
     - [ ] Implement coordinated shutdown: block new tasks -> wait for active -> close browsers -> exit
     - [ ] Propagate `CancellationToken` to all async capability loops (waiting for selectors, etc.)
     - [ ] Add integration tests for graceful shutdown during active task groups
+  - Progress:
+    - 2026-05-05: Ctrl+C handling moved into runtime `ShutdownManager`; active group shutdown now cancels cooperatively and waits for task futures before exit handling.
   - **Impact:** Eliminate zombie processes, clean restarts
   - Effort: ~3-4 days
 

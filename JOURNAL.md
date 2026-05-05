@@ -1,3 +1,64 @@
+## 2026-05-05 - Workspace Spec System
+
+### Accomplished This Session
+
+#### Two-Agent Spec Workflow
+- **docs/specs/README.md**: Added the workspace contract for spec-first planning and implementation handoff.
+- **docs/specs/_template/**: Added the reusable spec package template with required files and placeholders.
+- **docs/specs/_active/** and **docs/specs/_done/**: Added active/done buckets for initiative lifecycle management.
+
+#### Repo Integration
+- **README.md**: Linked the spec workspace from the main documentation table.
+- **docs/CONTRIBUTING.md**: Added the two-agent workflow rules for non-trivial changes.
+- **docs/SUMMARY.md**: Added the spec workspace to the documentation index.
+- **AGENTS.md**: Added workspace-specific instructions for future agents.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Spec workspace | ✅ Added |
+| Template files | ✅ Added |
+| Docs navigation | ✅ Updated |
+
+---
+
+## 2026-05-05 - Runtime Shutdown Coordination Step 1
+
+### Accomplished This Session
+
+#### Session Execution Guard
+- **src/orchestrator.rs**: Added `SessionExecutionGuard` so task execution paths that set `Busy` automatically restore `Idle` unless final cleanup marks the session failed.
+- **src/orchestrator.rs**: Added explicit `TaskAttemptFailure.cancelled` tracking so cancellation is no longer inferred from error message text.
+
+#### Deterministic Shutdown Tests
+- **tests/graceful_shutdown_integration.rs**: Migrated shutdown channel checks to `ShutdownManager`.
+- **tests/graceful_shutdown_integration.rs**: Added a browser-free active-group cancellation test using a mock `TaskGroupRunner`.
+- **tests/orchestrator_integration.rs**: Updated cancellation path to call `execute_group_with_cancel`.
+
+#### Shutdown Manager
+- **src/runtime/shutdown.rs**: Added `ShutdownManager` to centralize Ctrl+C signal wiring, shutdown subscriptions, explicit shutdown requests, and idle waiting.
+- **src/main.rs**: Replaced local broadcast channel setup with `ShutdownManager`.
+- **src/runtime/mod.rs**: Exported the new shutdown module.
+
+#### Cooperative Group Cancellation
+- **src/runtime/execution.rs**: Passed a `CancellationToken` into group runners, cancelled the active group on shutdown, and waited for it to unwind before returning.
+- **src/orchestrator.rs**: Added `execute_group_with_cancel()` so runtime shutdown can flow into task execution instead of dropping the active group future.
+- **src/orchestrator.rs**: Removed an incorrect active-task counter decrement on pre-slot cancellation.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass (`cargo check`) |
+| Runtime execution tests | ✅ 4 passed |
+| Shutdown manager tests | ✅ 3 passed |
+| Graceful shutdown integration tests | ✅ 9 passed |
+| Orchestrator integration tests | ✅ 2 passed, 5 ignored |
+| Format | ✅ Applied |
+
+---
+
 ## 2026-05-04 - Build Fix: Async Recursion and Clippy Warnings
 
 ### Accomplished This Session
@@ -607,3 +668,29 @@ Completed comprehensive test coverage for the accessibility locator feature acro
 - `tests/task_api_behavior.rs` - 8 new tests
 - `src/task/twitterfollow.rs` - 6 new tests
 - `TODO.md` - Marked phases complete
+
+## 2026-05-05 - Moved benchmark harnesses into src
+
+### Accomplished This Session
+
+#### Benchmark Layout
+- **src/benchmarks/trajectory.rs**: moved from root `benches/` and rewired to `src/utils/mouse/trajectory.rs`
+- **src/benchmarks/accessibility_locator.rs**: moved from root `benches/`, kept feature-gated, rewired to the real parser
+- **src/benchmarks/predictive_scorer.rs**: moved from root `benches/`, now uses the real scorer with a small benchmark helper
+
+#### Library Surface
+- **src/adaptive/mod.rs**: exported `predictive_scorer` so the benchmark target can compile
+- **src/adaptive/predictive_scorer.rs**: added a hidden benchmark helper and made the scorer self-contained enough to compile cleanly
+
+#### Cleanup
+- **benches/**: removed the empty root folder after verification
+- **docs/specs/_done/benchmarks-in-src/**: archived the spec package after implementation
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Build | ✅ Pass |
+| Tests | ✅ 2223 passed / 5 skipped |
+| cargo fmt | ✅ Clean |
+| cargo clippy | ✅ Clean |

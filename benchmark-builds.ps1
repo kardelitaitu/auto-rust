@@ -1,16 +1,25 @@
-# Build Performance Benchmark Script (sccache-free)
-# Tests baseline vs lld-link across dev/release.
+# Build Performance Benchmark Script
+# Measures baseline vs lld-link across dev/release.
+# Cargo benchmark harness source lives in src/benchmarks/; this script only measures build performance.
 # Usage: .\benchmark-builds.ps1
 #        .\benchmark-builds.ps1 -Quick
 
 param([switch]$Quick)
 
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+$repoRoot = $PSScriptRoot
+$configFile = Join-Path $repoRoot ".cargo\config.toml"
+$configBackup = "$configFile.bak"
+$resultsDir = Join-Path $repoRoot "target\reports\build-performance"
+$resultsFile = Join-Path $resultsDir "benchmark-results.csv"
 $results = @()
-$configFile = "C:\My Script\auto-rust\.cargo\config.toml"
 $startTime = Get-Date
 $threadCount = (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors | Measure-Object -Sum | Select-Object -ExpandProperty Sum
 $ramGB = [math]::Round(((Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum) / 1GB, 0)
+
+$script:originalConfigExisted = Test-Path $configFile
+if ($script:originalConfigExisted) {
+    Copy-Item -LiteralPath $configFile -Destination $configBackup -Force
+}
 
 function Write-Section {
     param([string]$Title)
@@ -24,7 +33,7 @@ function Set-CargoConfig {
     param([bool]$LldLink)
     $ll = if ($LldLink) { 'linker = "C:\\Program Files\\LLVM\\bin\\lld-link.exe"' } else { '# linker = "C:\\Program Files\\LLVM\\bin\\lld-link.exe"' }
     $config = @"
-# Build Performance Benchmark Config (sccache-free)
+# Build Performance Benchmark Config
 
 [build]
 jobs = 16
@@ -67,7 +76,18 @@ lto = "off"
 codegen-units = 64
 opt-level = 2
 "@
-    Set-Content -Path $configFile -Value $config -Encoding UTF8
+    Set-Content -LiteralPath $configFile -Value $config -Encoding UTF8
+}
+
+function Restore-CargoConfig {
+    if ($script:originalConfigExisted) {
+        Move-Item -LiteralPath $configBackup -Destination $configFile -Force
+        return
+    }
+
+    if (Test-Path $configFile) {
+        Remove-Item -LiteralPath $configFile -Force
+    }
 }
 
 function Invoke-CargoClean {
@@ -85,7 +105,7 @@ function Measure-Build {
     $elapsed = $sw.Elapsed.TotalSeconds
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "FAILED ($([math]::Round($elapsed, 1))s)" -ForegroundColor Red
+        Write-Host ("FAILED ({0}s)" -f [math]::Round($elapsed, 1)) -ForegroundColor Red
         $script:results += @{ Time = $elapsed; Profile = $Profile; Description = $Description; Success = $false }
         return
     }
@@ -94,64 +114,70 @@ function Measure-Build {
     $script:results += @{ Time = $elapsed; Profile = $Profile; Description = $Description; Success = $true }
 }
 
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " BUILD PERFORMANCE BENCHMARK" -ForegroundColor Cyan
-Write-Host (" {0} | {1} threads, {2}GB RAM" -f (Get-Date -Format "HH:mm:ss"), $threadCount, $ramGB) -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ("Mode: " + $(if ($Quick) { "QUICK (dev only)" } else { "FULL (dev + release)" })) -ForegroundColor Yellow
-
-Write-Section "CONFIG 1: BASELINE (lld=OFF)"
-Set-CargoConfig -LldLink $false
-Invoke-CargoClean
-Measure-Build -Profile "dev" -Description "BASELINE dev COLD"
-Measure-Build -Profile "dev" -Description "BASELINE dev WARM"
-if (-not $Quick) {
-    Measure-Build -Profile "release" -Description "BASELINE release COLD"
-    Measure-Build -Profile "release" -Description "BASELINE release WARM"
-}
-
-Write-Section "CONFIG 2: LLD-LINK (lld=ON)"
-Set-CargoConfig -LldLink $true
-Invoke-CargoClean
-Measure-Build -Profile "dev" -Description "LLD dev COLD"
-Measure-Build -Profile "dev" -Description "LLD dev WARM"
-if (-not $Quick) {
-    Measure-Build -Profile "release" -Description "LLD release COLD"
-    Measure-Build -Profile "release" -Description "LLD release WARM"
-}
-
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " RESULTS SUMMARY" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-
-foreach ($profile in @("dev", "release")) {
-    $profileResults = $results | Where-Object { $_.Profile -eq $profile -and $_.Success }
-    if (-not $profileResults) { continue }
+try {
     Write-Host ""
-    Write-Host ("--- {0} ---" -f $profile.ToUpper()) -ForegroundColor Yellow
-    Write-Host ("  {0,-24} {1,7} {2,12}" -f "Config", "Time(s)", "vs Baseline")
-    Write-Host "  " + ("-" * 48)
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host " BUILD PERFORMANCE BENCHMARK" -ForegroundColor Cyan
+    Write-Host (" {0} | {1} threads, {2}GB RAM" -f (Get-Date -Format "HH:mm:ss"), $threadCount, $ramGB) -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ("Mode: " + $(if ($Quick) { "QUICK (dev only)" } else { "FULL (dev + release)" })) -ForegroundColor Yellow
 
-    $baselineCold = $profileResults | Where-Object { $_.Description -match "BASELINE.*COLD" } | Select-Object -First 1
-    $baselineTime = if ($baselineCold) { $baselineCold.Time } else { 0 }
+    Write-Section "CONFIG 1: BASELINE (lld=OFF)"
+    Set-CargoConfig -LldLink $false
+    Invoke-CargoClean
+    Measure-Build -Profile "dev" -Description "BASELINE dev COLD"
+    Measure-Build -Profile "dev" -Description "BASELINE dev WARM"
+    if (-not $Quick) {
+        Measure-Build -Profile "release" -Description "BASELINE release COLD"
+        Measure-Build -Profile "release" -Description "BASELINE release WARM"
+    }
 
-    foreach ($desc in ($profileResults | Select-Object -ExpandProperty Description | Sort-Object)) {
-        $r = $profileResults | Where-Object { $_.Description -eq $desc } | Select-Object -First 1
-        $pct = if ($baselineTime -gt 0) {
-            $delta = ($baselineTime - $r.Time) / $baselineTime * 100
-            if ($delta -gt 0.5) { "+" + [math]::Round($delta, 1) + "%" }
-            elseif ($delta -lt -0.5) { [math]::Round($delta, 1) + "%" }
-            else { "0%" }
-        } else { "-" }
-        Write-Host ("  {0,-24} {1,7} {2,12}" -f $desc, [math]::Round($r.Time, 1), $pct)
+    Write-Section "CONFIG 2: LLD-LINK (lld=ON)"
+    Set-CargoConfig -LldLink $true
+    Invoke-CargoClean
+    Measure-Build -Profile "dev" -Description "LLD dev COLD"
+    Measure-Build -Profile "dev" -Description "LLD dev WARM"
+    if (-not $Quick) {
+        Measure-Build -Profile "release" -Description "LLD release COLD"
+        Measure-Build -Profile "release" -Description "LLD release WARM"
+    }
+
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host " RESULTS SUMMARY" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+
+    foreach ($profile in @("dev", "release")) {
+        $profileResults = $results | Where-Object { $_.Profile -eq $profile -and $_.Success }
+        if (-not $profileResults) { continue }
+        Write-Host ""
+        Write-Host ("--- {0} ---" -f $profile.ToUpper()) -ForegroundColor Yellow
+        Write-Host ("  {0,-24} {1,7} {2,12}" -f "Config", "Time(s)", "vs Baseline")
+        Write-Host "  " + ("-" * 48)
+
+        $baselineCold = $profileResults | Where-Object { $_.Description -match "BASELINE.*COLD" } | Select-Object -First 1
+        $baselineTime = if ($baselineCold) { $baselineCold.Time } else { 0 }
+
+        foreach ($desc in ($profileResults | Select-Object -ExpandProperty Description | Sort-Object)) {
+            $r = $profileResults | Where-Object { $_.Description -eq $desc } | Select-Object -First 1
+            $pct = if ($baselineTime -gt 0) {
+                $delta = ($baselineTime - $r.Time) / $baselineTime * 100
+                if ($delta -gt 0.5) { "+" + ([math]::Round($delta, 1).ToString()) + "%" }
+                elseif ($delta -lt -0.5) { ([math]::Round($delta, 1).ToString()) + "%" }
+                else { "0%" }
+            } else { "-" }
+            Write-Host ("  {0,-24} {1,7} {2,12}" -f $desc, [math]::Round($r.Time, 1), $pct)
+        }
     }
 }
+finally {
+    Restore-CargoConfig
+}
 
-$elapsed = Get-Date - $startTime
+$elapsed = (Get-Date) - $startTime
 Write-Host ""
-Write-Host ("Total benchmark time: {0}m {1}s" -f [math]::Floor($elapsed.TotalMinutes), [math]::Round($elapsed.Seconds)) -ForegroundColor Gray
+Write-Host ("Total benchmark time: {0}m {1}s" -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds) -ForegroundColor Gray
 
-$results | Where-Object { $_.Success } | Export-Csv -Path "C:\My Script\auto-rust\benchmark-results.csv" -NoTypeInformation -Encoding UTF8
-Write-Host "Results exported to benchmark-results.csv" -ForegroundColor Gray
+New-Item -ItemType Directory -Path $resultsDir -Force | Out-Null
+$results | Where-Object { $_.Success } | Export-Csv -Path $resultsFile -NoTypeInformation -Encoding UTF8
+Write-Host ("Results exported to {0}" -f $resultsFile) -ForegroundColor Gray

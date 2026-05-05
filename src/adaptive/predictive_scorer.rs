@@ -1,10 +1,14 @@
 //! Predictive engagement scorer using ML-based predictions.
 //! Provides engagement success probability and optimal action recommendations.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
-use crate::adaptive::learning_engine::{ActionSuccessPatterns, UserBehaviorProfile};
-use crate::metrics::TwitterActivityRunCounters;
+#[derive(Debug, Clone, Default)]
+pub struct UserBehaviorProfile {
+    pub successful_actions: HashMap<String, u32>,
+}
 
 /// Predictive engagement scorer that uses ML models for engagement prediction.
 pub struct PredictiveEngagementScorer {
@@ -84,6 +88,7 @@ struct FeatureExtractor {
 }
 
 /// Text-based feature extraction.
+#[derive(Debug, Clone, Default)]
 struct TextFeatures {
     // Sentiment score
     sentiment: f32,
@@ -98,6 +103,7 @@ struct TextFeatures {
 }
 
 /// Temporal feature extraction.
+#[derive(Debug, Clone)]
 struct TemporalFeatures {
     // Hour of day (0-23)
     hour: u8,
@@ -112,6 +118,7 @@ struct TemporalFeatures {
 }
 
 /// User-based feature extraction.
+#[derive(Debug, Clone)]
 struct UserFeatures {
     // User reputation score
     reputation: f32,
@@ -126,6 +133,7 @@ struct UserFeatures {
 }
 
 /// Contextual feature extraction.
+#[derive(Debug, Clone, Default)]
 struct ContextFeatures {
     // Thread depth
     thread_depth: u32,
@@ -187,7 +195,7 @@ impl PredictiveEngagementScorer {
     }
 
     /// Predict engagement success for a tweet.
-    pub fn predict_engagement(
+    fn predict_engagement(
         &self,
         tweet_text: &str,
         user_profile: &UserBehaviorProfile,
@@ -199,8 +207,10 @@ impl PredictiveEngagementScorer {
         let all_features = self.feature_extractor.combine_features(
             text_features,
             self.feature_extractor.extract_user_features(user_profile),
-            self.feature_extractor.extract_temporal_features(temporal_context),
-            self.feature_extractor.extract_context_features(context_features),
+            self.feature_extractor
+                .extract_temporal_features(temporal_context),
+            self.feature_extractor
+                .extract_context_features(context_features),
         );
 
         // Make prediction
@@ -226,13 +236,34 @@ impl PredictiveEngagementScorer {
     }
 
     /// Update model based on actual engagement outcome.
-    pub fn update_model(
+    fn update_model(
         &mut self,
         prediction: &EngagementPrediction,
         actual_success: bool,
         features: &FeatureVector,
     ) {
-        self.engagement_model.update(prediction, actual_success, features);
+        self.engagement_model
+            .update(prediction, actual_success, features);
+    }
+
+    #[doc(hidden)]
+    pub fn benchmark_predict_engagement(&self, tweet_text: &str) -> EngagementPrediction {
+        let user_profile = UserBehaviorProfile::default();
+        let temporal_context = TemporalFeatures::default();
+        let context_features = ContextFeatures::default();
+
+        self.predict_engagement(
+            tweet_text,
+            &user_profile,
+            &temporal_context,
+            &context_features,
+        )
+    }
+}
+
+impl Default for PredictiveEngagementScorer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -245,17 +276,22 @@ impl EngagementModel {
         }
     }
 
-    fn predict(&self, features: &FeatureVector) -> (f32, f32, Vec<String>) {
+    fn predict(&self, _features: &FeatureVector) -> (f32, f32, Vec<String>) {
         // Simplified prediction logic
         // In production, this would use actual ML model inference
         let base_score = 0.5;
         let confidence = 0.8;
         let key_factors = vec!["sentiment".to_string(), "timing".to_string()];
-        
+
         (base_score, confidence, key_factors)
     }
 
-    fn update(&mut self, _prediction: &EngagementPrediction, _actual: bool, _features: &FeatureVector) {
+    fn update(
+        &mut self,
+        _prediction: &EngagementPrediction,
+        _actual: bool,
+        _features: &FeatureVector,
+    ) {
         // Update model weights based on prediction accuracy
         // This would implement online learning in production
     }
@@ -291,7 +327,7 @@ impl FeatureExtractor {
     fn extract_user_features(&self, profile: &UserBehaviorProfile) -> UserFeatures {
         UserFeatures {
             reputation: 0.7,
-            follower_count: profile.successful_actions.get("like").copied().unwrap_or(0) as f32,
+            follower_count: profile.successful_actions.get("like").copied().unwrap_or(0),
             following_count: 100,
             account_age: 365,
             engagement_rate: 0.1,
@@ -382,7 +418,7 @@ impl Default for UserFeatures {
     }
 }
 
-impl Default for ActionRecommender {
+impl ActionRecommender {
     fn new() -> Self {
         Self {
             action_rankings: HashMap::new(),
@@ -390,9 +426,41 @@ impl Default for ActionRecommender {
             content_suggestions: vec![],
         }
     }
+
+    fn get_best_action(&self, features: &FeatureVector) -> String {
+        if features.text.length > 140 {
+            "Reply".to_string()
+        } else if features.context.reply_count > 5 {
+            "Retweet".to_string()
+        } else if features.user.engagement_rate > 0.15 {
+            "Like".to_string()
+        } else if features.temporal.is_peak {
+            "Follow".to_string()
+        } else {
+            "Skip".to_string()
+        }
+    }
+
+    fn get_optimal_timing(&self, temporal_context: &TemporalFeatures) -> u8 {
+        if temporal_context.is_peak {
+            temporal_context.hour
+        } else {
+            self.timing_recommendations
+                .optimal_times
+                .first()
+                .copied()
+                .unwrap_or(12)
+        }
+    }
 }
 
-impl TimingRecommendations {
+impl Default for ActionRecommender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for TimingRecommendations {
     fn default() -> Self {
         Self {
             optimal_times: vec![9, 12, 18],
@@ -412,14 +480,10 @@ mod tests {
         let user_profile = UserBehaviorProfile::default();
         let temporal = TemporalFeatures::default();
         let context = ContextFeatures::default();
-        
-        let prediction = scorer.predict_engagement(
-            "test tweet",
-            &user_profile,
-            &temporal,
-            &context
-        );
-        
+
+        let prediction =
+            scorer.predict_engagement("test tweet", &user_profile, &temporal, &context);
+
         assert!(prediction.success_probability >= 0.0);
         assert!(prediction.success_probability <= 1.0);
         assert!(!prediction.recommended_action.is_empty());
@@ -429,7 +493,7 @@ mod tests {
     fn test_feature_extraction() {
         let extractor = FeatureExtractor::new();
         let features = extractor.extract_text_features("Hello world!");
-        
+
         assert_eq!(features.length, 12);
         assert!(features.sentiment >= 0.0);
     }
@@ -455,7 +519,7 @@ mod tests {
             &TemporalFeatures::default(),
             &ContextFeatures::default(),
         );
-        
+
         assert!(prediction.confidence >= 0.0);
         assert!(prediction.confidence <= 1.0);
     }
@@ -469,7 +533,7 @@ mod tests {
             &TemporalFeatures::default(),
             &ContextFeatures::default(),
         );
-        
+
         assert!(prediction.expected_engagement >= 0.0);
         assert!(prediction.expected_engagement <= 1.0);
     }
@@ -483,7 +547,7 @@ mod tests {
             &TemporalFeatures::default(),
             &ContextFeatures::default(),
         );
-        
+
         assert!(prediction.optimal_time < 24);
     }
 
@@ -496,7 +560,7 @@ mod tests {
             &TemporalFeatures::default(),
             &ContextFeatures::default(),
         );
-        
+
         assert!(!prediction.key_factors.is_empty());
     }
 
@@ -591,7 +655,10 @@ mod tests {
     #[test]
     fn test_temporal_features_extraction() {
         let extractor = FeatureExtractor::new();
-        let temporal = TemporalFeatures { hour: 15, ..Default::default() };
+        let temporal = TemporalFeatures {
+            hour: 15,
+            ..Default::default()
+        };
         let features = extractor.extract_temporal_features(&temporal);
         assert_eq!(features.hour, 15);
     }
@@ -599,7 +666,10 @@ mod tests {
     #[test]
     fn test_context_features_extraction() {
         let extractor = FeatureExtractor::new();
-        let context = ContextFeatures { reply_count: 10, ..Default::default() };
+        let context = ContextFeatures {
+            reply_count: 10,
+            ..Default::default()
+        };
         let features = extractor.extract_context_features(&context);
         assert_eq!(features.reply_count, 10);
     }
@@ -626,7 +696,6 @@ mod integration_tests {
         let scorer = PredictiveEngagementScorer::new();
         let user_profile = UserBehaviorProfile {
             successful_actions: [("like".to_string(), 5)].into(),
-            ..Default::default()
         };
         let temporal = TemporalFeatures {
             hour: 12,
@@ -637,14 +706,10 @@ mod integration_tests {
             reply_count: 5,
             ..Default::default()
         };
-        
-        let prediction = scorer.predict_engagement(
-            "Great content!",
-            &user_profile,
-            &temporal,
-            &context
-        );
-        
+
+        let prediction =
+            scorer.predict_engagement("Great content!", &user_profile, &temporal, &context);
+
         assert!(prediction.success_probability > 0.0);
         assert!(prediction.confidence > 0.0);
     }

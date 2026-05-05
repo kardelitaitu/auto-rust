@@ -1,9 +1,16 @@
 **AI Assistant Operating Manual for rust-orchestrator**
-*Last Updated: May 3, 2026*
+*Last Updated: May 5, 2026*
 
 ---
 
 **PRIORITY ORDER: MCP tools FIRST, shell commands ONLY as fallback.**
+
+### Workspace Spec System
+- For non-trivial changes, create a spec package in `docs/specs/_active/<initiative>/` from `docs/specs/_template/` before editing code.
+- The spec agent owns planning docs only: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`.
+- The implementer agent owns code changes, tests, docs updates, and `implementation-notes.md`.
+- Move the spec folder to `_done/` only after `./check.ps1` passes.
+- If scope changes during implementation, update the spec first.
 
 ### When to use which MCP tool:
 

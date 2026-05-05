@@ -1,0 +1,30 @@
+version: 1
+id: <initiative-id>
+title: <initiative title>
+status: draft
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - <primary area>
+files:
+  code:
+    - <file-or-folder>
+  docs:
+    - README.md
+    - baseline.md
+    - internal-api-outline.md
+    - plan.md
+    - validation-checklist.md
+    - ci-commands.md
+    - decisions.md
+    - quality-rules.md
+    - implementation-notes.md
+acceptance:
+  - <measurable condition 1>
+  - <measurable condition 2>
+non_goals:
+  - <explicit non-goal>
+risks:
+  - <known risk>
+

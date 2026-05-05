@@ -29,6 +29,14 @@ cargo clippy --all-targets --all-features
 
 ## Making Changes
 
+### Two-Agent Workflow
+
+For non-trivial work, create a spec package in `docs/specs/_active/<initiative>/` before changing code.
+
+- Spec agent writes: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`
+- Implementer agent updates code, tests, docs, and `implementation-notes.md`
+- Move the folder to `_done/` only after `./check.ps1` passes
+
 ### Code Style
 
 - Follow Rust best practices and idioms

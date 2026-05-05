@@ -6,5 +6,6 @@
 //! - Automated adjustment based on success/failure feedback
 
 pub mod learning_engine;
+pub mod predictive_scorer;
 
 pub use learning_engine::LearningEngine;

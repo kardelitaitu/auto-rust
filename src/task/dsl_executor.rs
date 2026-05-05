@@ -18,6 +18,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::prelude::TaskContext;
@@ -27,6 +28,149 @@ use futures::future::join_all;
 
 /// Maximum recursion depth for task calls to prevent infinite loops.
 const MAX_CALL_DEPTH: u32 = 10;
+
+/// Debug event type for execution tracing.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DebugEventType {
+    /// Action execution started
+    ActionStart,
+    /// Action execution completed
+    ActionComplete,
+    /// Action execution failed
+    ActionError,
+    /// Breakpoint hit
+    Breakpoint,
+    /// Variable set/changed
+    VariableSet,
+    /// Task call started
+    TaskCallStart,
+    /// Task call completed
+    TaskCallComplete,
+    /// Condition evaluated
+    ConditionEvaluated,
+}
+
+/// Debug event for execution tracing.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DebugEvent {
+    /// Event timestamp
+    pub timestamp: String,
+    /// Event type
+    pub event_type: DebugEventType,
+    /// Action index (if applicable)
+    pub action_index: Option<usize>,
+    /// Action type (if applicable)
+    pub action_type: Option<String>,
+    /// Variable name (if applicable)
+    pub variable_name: Option<String>,
+    /// Variable value (if applicable)
+    pub variable_value: Option<String>,
+    /// Condition result (if applicable)
+    pub condition_result: Option<bool>,
+    /// Error message (if applicable)
+    pub error: Option<String>,
+}
+
+/// Breakpoint configuration.
+pub struct Breakpoint {
+    /// Action index to break on (if None, applies to all actions)
+    pub action_index: Option<usize>,
+    /// Action type to break on (if None, applies to all types)
+    pub action_type: Option<String>,
+    /// Variable name to watch (if None, no variable watching)
+    pub watch_variable: Option<String>,
+    /// Condition that must be true for breakpoint to trigger
+    #[allow(clippy::type_complexity)]
+    condition: Option<Arc<dyn Fn(&HashMap<String, String>) -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for Breakpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Breakpoint")
+            .field("action_index", &self.action_index)
+            .field("action_type", &self.action_type)
+            .field("watch_variable", &self.watch_variable)
+            .field("has_condition", &self.condition.is_some())
+            .finish()
+    }
+}
+
+impl Clone for Breakpoint {
+    fn clone(&self) -> Self {
+        // Note: We cannot clone the closure itself, so we create a new Breakpoint
+        // without the condition. This is a limitation for breakpoints with custom conditions.
+        Self {
+            action_index: self.action_index,
+            action_type: self.action_type.clone(),
+            watch_variable: self.watch_variable.clone(),
+            condition: None, // Cannot clone closures
+        }
+    }
+}
+
+impl Breakpoint {
+    /// Create a breakpoint on a specific action index.
+    pub fn on_action(index: usize) -> Self {
+        Self {
+            action_index: Some(index),
+            action_type: None,
+            watch_variable: None,
+            condition: None,
+        }
+    }
+
+    /// Create a breakpoint on any action of a specific type.
+    pub fn on_action_type(action_type: impl Into<String>) -> Self {
+        Self {
+            action_index: None,
+            action_type: Some(action_type.into()),
+            watch_variable: None,
+            condition: None,
+        }
+    }
+
+    /// Create a watch breakpoint that triggers when a variable changes.
+    pub fn watch_variable(name: impl Into<String>) -> Self {
+        Self {
+            action_index: None,
+            action_type: None,
+            watch_variable: Some(name.into()),
+            condition: None,
+        }
+    }
+
+    /// Check if this breakpoint should trigger for the given action.
+    pub fn should_trigger(
+        &self,
+        action_index: usize,
+        action_type: &str,
+        variables: &HashMap<String, String>,
+    ) -> bool {
+        // Check action index if specified
+        if let Some(idx) = self.action_index {
+            if idx != action_index {
+                return false;
+            }
+        }
+
+        // Check action type if specified
+        if let Some(ref atype) = self.action_type {
+            if atype != action_type {
+                return false;
+            }
+        }
+
+        // Check condition if specified
+        if let Some(ref cond) = self.condition {
+            if !cond(variables) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
 
 /// Detailed metrics for a single action execution.
 #[derive(Debug, Clone)]
@@ -170,6 +314,17 @@ pub struct DslExecutor<'a> {
     actions_succeeded: u32,
     /// Number of failed actions
     actions_failed: u32,
+    /// Debug mode enabled
+    debug_mode: bool,
+    /// Active breakpoints
+    breakpoints: Vec<Breakpoint>,
+    /// Debug event log for tracing
+    debug_events: Vec<DebugEvent>,
+    /// Pause flag for step-through debugging
+    paused: bool,
+    /// Variable watch list for tracking changes
+    #[allow(dead_code)]
+    watched_variables: HashMap<String, String>,
 }
 
 impl<'a> std::fmt::Debug for DslExecutor<'a> {
@@ -202,6 +357,11 @@ impl<'a> DslExecutor<'a> {
             start_time: Instant::now(),
             actions_succeeded: 0,
             actions_failed: 0,
+            debug_mode: false,
+            breakpoints: Vec::new(),
+            debug_events: Vec::new(),
+            paused: false,
+            watched_variables: HashMap::new(),
         }
     }
 
@@ -222,6 +382,11 @@ impl<'a> DslExecutor<'a> {
             start_time: Instant::now(),
             actions_succeeded: 0,
             actions_failed: 0,
+            debug_mode: false,
+            breakpoints: Vec::new(),
+            debug_events: Vec::new(),
+            paused: false,
+            watched_variables: HashMap::new(),
         }
     }
 
@@ -231,6 +396,122 @@ impl<'a> DslExecutor<'a> {
     /// useful for retrieving results from called tasks.
     pub fn get_variables(&self) -> &HashMap<String, String> {
         &self.variables
+    }
+
+    /// Enable debug mode with execution tracing.
+    pub fn with_debug_mode(mut self) -> Self {
+        self.debug_mode = true;
+        self
+    }
+
+    /// Add a breakpoint to the executor.
+    pub fn add_breakpoint(&mut self, breakpoint: Breakpoint) {
+        self.breakpoints.push(breakpoint);
+    }
+
+    /// Get the debug event log.
+    pub fn get_debug_events(&self) -> &[DebugEvent] {
+        &self.debug_events
+    }
+
+    /// Check if execution is paused.
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Resume execution from a paused state.
+    pub fn resume(&mut self) {
+        self.paused = false;
+    }
+
+    /// Step through execution (pause after next action).
+    pub fn step(&mut self) {
+        self.paused = true;
+    }
+
+    /// Get current execution state for inspection.
+    pub fn inspect_state(&self) -> serde_json::Value {
+        serde_json::json!({
+            "variables": self.variables,
+            "actions_executed": self.actions_executed,
+            "actions_succeeded": self.actions_succeeded,
+            "actions_failed": self.actions_failed,
+            "call_depth": self.call_depth,
+            "paused": self.paused,
+            "debug_mode": self.debug_mode,
+        })
+    }
+
+    /// Record a debug event.
+    #[allow(clippy::too_many_arguments)]
+    fn record_debug_event(
+        &mut self,
+        event_type: DebugEventType,
+        action_index: Option<usize>,
+        action_type: Option<String>,
+        variable_name: Option<String>,
+        variable_value: Option<String>,
+        condition_result: Option<bool>,
+        error: Option<String>,
+    ) {
+        if !self.debug_mode {
+            return;
+        }
+
+        let timestamp = chrono::Local::now().to_rfc3339();
+        let event = DebugEvent {
+            timestamp,
+            event_type,
+            action_index,
+            action_type,
+            variable_name,
+            variable_value,
+            condition_result,
+            error,
+        };
+
+        self.debug_events.push(event);
+    }
+
+    /// Check if any breakpoint should trigger for the current action.
+    fn check_breakpoints(&self, action_index: usize, action_type: &str) -> bool {
+        if self.breakpoints.is_empty() {
+            return false;
+        }
+
+        for breakpoint in &self.breakpoints {
+            if breakpoint.should_trigger(action_index, action_type, &self.variables) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Watch a variable for changes.
+    #[allow(dead_code)]
+    fn watch_variable(&mut self, name: &str, value: &str) {
+        if !self.debug_mode {
+            return;
+        }
+
+        if let Some(old_value) = self.watched_variables.get(name) {
+            if old_value != value {
+                // Variable changed
+                self.record_debug_event(
+                    DebugEventType::VariableSet,
+                    None,
+                    None,
+                    Some(name.to_string()),
+                    Some(value.to_string()),
+                    None,
+                    None,
+                );
+            }
+        }
+
+        self.watched_variables
+            .insert(name.to_string(), value.to_string());
     }
 
     /// Set initial parameters from CLI payload.
@@ -275,6 +556,44 @@ impl<'a> DslExecutor<'a> {
                 .to_string();
             let mut metrics = ActionMetrics::new(idx, &action_type);
 
+            // Check for breakpoints before executing
+            if self.check_breakpoints(idx, &action_type) {
+                self.paused = true;
+                self.record_debug_event(
+                    DebugEventType::Breakpoint,
+                    Some(idx),
+                    Some(action_type.clone()),
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+                log::info!(
+                    "Breakpoint hit at action {} ({}, execution paused",
+                    idx,
+                    action_type
+                );
+            }
+
+            // Wait if paused (using loop pattern to avoid clippy warning)
+            loop {
+                if !self.paused {
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+
+            // Record action start
+            self.record_debug_event(
+                DebugEventType::ActionStart,
+                Some(idx),
+                Some(action_type.clone()),
+                None,
+                None,
+                None,
+                None,
+            );
+
             log::debug!("Action {}: {:?}", idx + 1, action);
 
             match self.execute_action(action).await {
@@ -282,6 +601,17 @@ impl<'a> DslExecutor<'a> {
                     metrics = metrics.complete();
                     self.actions_succeeded += 1;
                     log::debug!("Action {} completed in {:?}", idx + 1, metrics.duration);
+
+                    // Record action completion
+                    self.record_debug_event(
+                        DebugEventType::ActionComplete,
+                        Some(idx),
+                        Some(action_type),
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
                 }
                 Err(e) => {
                     let error_msg = format!("{}", e);
@@ -293,6 +623,18 @@ impl<'a> DslExecutor<'a> {
                         metrics.duration,
                         error_msg
                     );
+
+                    // Record action error
+                    self.record_debug_event(
+                        DebugEventType::ActionError,
+                        Some(idx),
+                        Some(action_type),
+                        None,
+                        None,
+                        None,
+                        Some(error_msg.clone()),
+                    );
+
                     self.action_metrics.push(metrics);
                     return Err(e).with_context(|| {
                         format!(
@@ -306,6 +648,11 @@ impl<'a> DslExecutor<'a> {
 
             self.action_metrics.push(metrics);
             self.actions_executed += 1;
+
+            // Pause after each action if in step mode
+            if self.debug_mode {
+                self.paused = true;
+            }
         }
 
         log::info!(

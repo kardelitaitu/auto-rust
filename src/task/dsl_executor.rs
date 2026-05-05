@@ -29,6 +29,218 @@ use futures::future::join_all;
 /// Maximum recursion depth for task calls to prevent infinite loops.
 const MAX_CALL_DEPTH: u32 = 10;
 
+/// Maximum selector cache size (LRU eviction).
+const SELECTOR_CACHE_SIZE: usize = 100;
+
+/// Selector cache entry with expiration.
+#[derive(Debug, Clone)]
+struct SelectorCacheEntry {
+    /// Whether the selector exists
+    exists: bool,
+    /// Whether the selector is visible
+    #[allow(dead_code)]
+    visible: bool,
+    /// Text content (if extracted)
+    #[allow(dead_code)]
+    text: Option<String>,
+    /// Element count (for collection selectors)
+    #[allow(dead_code)]
+    count: usize,
+    /// Timestamp when cached
+    cached_at: Instant,
+    /// TTL for this cache entry
+    ttl: Duration,
+}
+
+impl SelectorCacheEntry {
+    /// Create a new cache entry with default TTL of 5 seconds.
+    fn new(exists: bool, visible: bool, text: Option<String>, count: usize) -> Self {
+        Self {
+            exists,
+            visible,
+            text,
+            count,
+            cached_at: Instant::now(),
+            ttl: Duration::from_secs(5),
+        }
+    }
+
+    /// Check if this cache entry is still valid.
+    fn is_valid(&self) -> bool {
+        Instant::now().duration_since(self.cached_at) < self.ttl
+    }
+}
+
+/// Selector cache with LRU eviction and TTL.
+struct SelectorCache {
+    /// Cache storage with access order tracking
+    cache: HashMap<String, (SelectorCacheEntry, Instant)>,
+    /// Cache hit counter for metrics
+    hits: u64,
+    /// Cache miss counter for metrics
+    misses: u64,
+    /// Total cache evictions
+    evictions: u64,
+}
+
+impl SelectorCache {
+    /// Create a new selector cache.
+    fn new() -> Self {
+        Self {
+            cache: HashMap::with_capacity(SELECTOR_CACHE_SIZE),
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+        }
+    }
+
+    /// Get a cached entry if it exists and is still valid.
+    fn get(&mut self, selector: &str) -> Option<&SelectorCacheEntry> {
+        // Remove expired entries first
+        let now = Instant::now();
+        let expired: Vec<String> = self
+            .cache
+            .iter()
+            .filter(|(_, (entry, _))| !entry.is_valid())
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in expired {
+            self.cache.remove(&key);
+        }
+
+        // Check if selector exists and is valid
+        if let Some((entry, _)) = self.cache.get(selector) {
+            if entry.is_valid() {
+                self.hits += 1;
+                // Update access time for LRU tracking
+                if let Some((_, last_accessed)) = self.cache.get_mut(selector) {
+                    *last_accessed = now;
+                }
+                // Return entry from cache
+                return self.cache.get(selector).map(|(e, _)| e);
+            }
+            // Entry expired
+            self.cache.remove(selector);
+        }
+        self.misses += 1;
+        None
+    }
+
+    /// Insert a new entry into the cache.
+    fn insert(&mut self, selector: String, entry: SelectorCacheEntry) {
+        // Evict oldest entry if at capacity
+        if self.cache.len() >= SELECTOR_CACHE_SIZE {
+            if let Some(oldest) = self
+                .cache
+                .iter()
+                .min_by_key(|(_, (_, accessed))| *accessed)
+                .map(|(k, _)| k.clone())
+            {
+                self.cache.remove(&oldest);
+                self.evictions += 1;
+            }
+        }
+        self.cache.insert(selector, (entry, Instant::now()));
+    }
+
+    /// Invalidate all cached entries for a selector.
+    #[allow(dead_code)]
+    fn invalidate(&mut self, selector: &str) {
+        self.cache.remove(selector);
+    }
+
+    /// Clear all cached entries.
+    #[allow(dead_code)]
+    fn clear(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Get cache statistics.
+    fn stats(&self) -> CacheStats {
+        CacheStats {
+            size: self.cache.len(),
+            hits: self.hits,
+            misses: self.misses,
+            evictions: self.evictions,
+            hit_rate: if self.hits + self.misses > 0 {
+                self.hits as f64 / (self.hits + self.misses) as f64
+            } else {
+                0.0
+            },
+        }
+    }
+}
+
+/// Cache statistics for performance monitoring.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CacheStats {
+    /// Current cache size
+    pub size: usize,
+    /// Number of cache hits
+    pub hits: u64,
+    /// Number of cache misses
+    pub misses: u64,
+    /// Number of evictions
+    pub evictions: u64,
+    /// Cache hit rate (0.0 - 1.0)
+    pub hit_rate: f64,
+}
+
+/// Performance profiler for action execution.
+#[derive(Debug, Default)]
+pub struct ActionProfiler {
+    /// Action type
+    pub action_type: String,
+    /// Total executions
+    pub total_executions: u64,
+    /// Total duration across all executions
+    pub total_duration: Duration,
+    /// Minimum execution time
+    pub min_duration: Option<Duration>,
+    /// Maximum execution time
+    pub max_duration: Option<Duration>,
+    /// Number of failures
+    pub failures: u64,
+}
+
+impl ActionProfiler {
+    /// Record an action execution.
+    #[allow(dead_code)]
+    fn record(&mut self, duration: Duration, success: bool) {
+        self.total_executions += 1;
+        self.total_duration += duration;
+
+        if let Some(min) = self.min_duration {
+            if duration < min {
+                self.min_duration = Some(duration);
+            }
+        } else {
+            self.min_duration = Some(duration);
+        }
+
+        if let Some(max) = self.max_duration {
+            if duration > max {
+                self.max_duration = Some(duration);
+            }
+        } else {
+            self.max_duration = Some(duration);
+        }
+
+        if !success {
+            self.failures += 1;
+        }
+    }
+
+    /// Get average execution duration.
+    fn average_duration(&self) -> Option<Duration> {
+        if self.total_executions > 0 {
+            Some(self.total_duration / self.total_executions as u32)
+        } else {
+            None
+        }
+    }
+}
+
 /// Debug event type for execution tracing.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -325,6 +537,12 @@ pub struct DslExecutor<'a> {
     /// Variable watch list for tracking changes
     #[allow(dead_code)]
     watched_variables: HashMap<String, String>,
+    /// Selector cache for DOM queries
+    selector_cache: SelectorCache,
+    /// Performance profilers for action types
+    action_profilers: HashMap<String, ActionProfiler>,
+    /// Enable selector caching
+    cache_enabled: bool,
 }
 
 impl<'a> std::fmt::Debug for DslExecutor<'a> {
@@ -362,6 +580,9 @@ impl<'a> DslExecutor<'a> {
             debug_events: Vec::new(),
             paused: false,
             watched_variables: HashMap::new(),
+            selector_cache: SelectorCache::new(),
+            action_profilers: HashMap::new(),
+            cache_enabled: true,
         }
     }
 
@@ -387,6 +608,9 @@ impl<'a> DslExecutor<'a> {
             debug_events: Vec::new(),
             paused: false,
             watched_variables: HashMap::new(),
+            selector_cache: SelectorCache::new(),
+            action_profilers: HashMap::new(),
+            cache_enabled: true,
         }
     }
 
@@ -512,6 +736,130 @@ impl<'a> DslExecutor<'a> {
 
         self.watched_variables
             .insert(name.to_string(), value.to_string());
+    }
+
+    /// Enable selector caching.
+    pub fn enable_caching(&mut self) {
+        self.cache_enabled = true;
+    }
+
+    /// Disable selector caching.
+    pub fn disable_caching(&mut self) {
+        self.cache_enabled = false;
+        self.selector_cache.clear();
+    }
+
+    /// Get cache statistics.
+    pub fn get_cache_stats(&self) -> CacheStats {
+        self.selector_cache.stats()
+    }
+
+    /// Get performance profiling data.
+    pub fn get_profiler_stats(&self) -> HashMap<String, serde_json::Value> {
+        self.action_profilers
+            .iter()
+            .map(|(action_type, profiler)| {
+                let stats = serde_json::json!({
+                    "action_type": action_type,
+                    "total_executions": profiler.total_executions,
+                    "total_duration_ms": profiler.total_duration.as_millis() as u64,
+                    "average_duration_ms": profiler.average_duration().map(|d| d.as_millis() as u64),
+                    "min_duration_ms": profiler.min_duration.map(|d| d.as_millis() as u64),
+                    "max_duration_ms": profiler.max_duration.map(|d| d.as_millis() as u64),
+                    "failures": profiler.failures,
+                });
+                (action_type.clone(), stats)
+            })
+            .collect()
+    }
+
+    /// Clear the selector cache.
+    pub fn clear_cache(&mut self) {
+        self.selector_cache.clear();
+    }
+
+    /// Record action execution in profiler.
+    #[allow(dead_code)]
+    fn record_profile(&mut self, action_type: &str, duration: Duration, success: bool) {
+        let profiler = self
+            .action_profilers
+            .entry(action_type.to_string())
+            .or_insert_with(|| ActionProfiler {
+                action_type: action_type.to_string(),
+                ..Default::default()
+            });
+        profiler.record(duration, success);
+    }
+
+    /// Cached wrapper for checking element existence.
+    async fn cached_exists(&mut self, selector: &str) -> Result<bool> {
+        if !self.cache_enabled {
+            return self.api.exists(selector).await;
+        }
+
+        // Check cache
+        if let Some(entry) = self.selector_cache.get(selector) {
+            return Ok(entry.exists);
+        }
+
+        // Fetch and cache
+        let exists = self.api.exists(selector).await?;
+        let visible = self.api.visible(selector).await.unwrap_or(false);
+        let entry = SelectorCacheEntry::new(exists, visible, None, 0);
+        self.selector_cache.insert(selector.to_string(), entry);
+
+        Ok(exists)
+    }
+
+    /// Cached wrapper for checking element visibility.
+    #[allow(dead_code)]
+    async fn cached_visible(&mut self, selector: &str) -> Result<bool> {
+        if !self.cache_enabled {
+            return self.api.visible(selector).await;
+        }
+
+        // Check cache
+        if let Some(entry) = self.selector_cache.get(selector) {
+            return Ok(entry.visible);
+        }
+
+        // Fetch and cache
+        let exists = self.api.exists(selector).await.unwrap_or(false);
+        let visible = self.api.visible(selector).await?;
+        let entry = SelectorCacheEntry::new(exists, visible, None, 0);
+        self.selector_cache.insert(selector.to_string(), entry);
+
+        Ok(visible)
+    }
+
+    /// Cached wrapper for getting element text.
+    #[allow(dead_code)]
+    async fn cached_text(&mut self, selector: &str) -> Result<Option<String>> {
+        if !self.cache_enabled {
+            return self.api.text(selector).await;
+        }
+
+        // Check cache
+        if let Some(entry) = self.selector_cache.get(selector) {
+            if entry.text.is_some() {
+                return Ok(entry.text.clone());
+            }
+        }
+
+        // Fetch and cache with full data
+        let exists = self.api.exists(selector).await.unwrap_or(false);
+        let visible = self.api.visible(selector).await.unwrap_or(false);
+        let text = self.api.text(selector).await?;
+        let entry = SelectorCacheEntry::new(exists, visible, text.clone(), 0);
+        self.selector_cache.insert(selector.to_string(), entry);
+
+        Ok(text)
+    }
+
+    /// Invalidate cache for a selector (call after mutations).
+    #[allow(dead_code)]
+    fn invalidate_cache(&mut self, selector: &str) {
+        self.selector_cache.invalidate(selector);
     }
 
     /// Set initial parameters from CLI payload.
@@ -697,7 +1045,8 @@ impl<'a> DslExecutor<'a> {
                 let deadline =
                     tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout);
                 while tokio::time::Instant::now() < deadline {
-                    if self.api.exists(&resolved_selector).await? {
+                    // Use cached check for better performance
+                    if self.cached_exists(&resolved_selector).await? {
                         return Ok(());
                     }
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

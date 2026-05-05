@@ -119,6 +119,8 @@ pub struct TaskValidator {
     known_tasks: HashSet<String>,
     /// Parameters defined for this task
     parameters: HashMap<String, ParameterDef>,
+    /// Current task name being validated (for circular reference detection)
+    current_task: Option<String>,
 }
 
 impl TaskValidator {
@@ -128,7 +130,14 @@ impl TaskValidator {
             max_nesting_depth: 10,
             known_tasks: HashSet::new(),
             parameters: HashMap::new(),
+            current_task: None,
         }
+    }
+
+    /// Set the current task name (for circular reference detection).
+    pub fn with_current_task(mut self, name: impl Into<String>) -> Self {
+        self.current_task = Some(name.into());
+        self
     }
 
     /// Set the maximum nesting depth.
@@ -150,19 +159,38 @@ impl TaskValidator {
     }
 
     /// Validate a complete task definition.
+    ///
+    /// Automatically sets the current task name for circular reference detection.
     pub fn validate(&self, def: &TaskDefinition) -> ValidationReport {
         let mut report = ValidationReport::new(def.name.clone());
 
+        // Create a validator with current task name for circular detection
+        let validator = if self.current_task.is_none() {
+            TaskValidator {
+                max_nesting_depth: self.max_nesting_depth,
+                known_tasks: self.known_tasks.clone(),
+                parameters: self.parameters.clone(),
+                current_task: Some(def.name.clone()),
+            }
+        } else {
+            TaskValidator {
+                max_nesting_depth: self.max_nesting_depth,
+                known_tasks: self.known_tasks.clone(),
+                parameters: self.parameters.clone(),
+                current_task: self.current_task.clone(),
+            }
+        };
+
         // Basic task structure validation
-        self.validate_task_structure(def, &mut report);
+        validator.validate_task_structure(def, &mut report);
 
         // Validate all actions
         for (idx, action) in def.actions.iter().enumerate() {
             let path = format!("actions[{}]", idx);
-            self.validate_action(action, &path, 0, &mut report);
+            validator.validate_action(action, &path, 0, &mut report);
         }
 
-        report.action_count = self.count_actions(&def.actions);
+        report.action_count = validator.count_actions(&def.actions);
 
         report
     }
@@ -385,11 +413,24 @@ impl TaskValidator {
             } => {
                 if task.is_empty() {
                     report.error(format!("{}: Task name cannot be empty", path));
-                } else if !self.known_tasks.is_empty() && !self.known_tasks.contains(task) {
-                    report.warning(format!(
-                        "{}: Task '{}' is not in the known task list",
-                        path, task
-                    ));
+                } else {
+                    // Check for direct circular reference (task calls itself)
+                    if let Some(ref current) = self.current_task {
+                        if task == current {
+                            report.error(format!(
+                                "{}: Task '{}' calls itself (circular reference)",
+                                path, task
+                            ));
+                        }
+                    }
+
+                    // Check if task is in known list (if provided)
+                    if !self.known_tasks.is_empty() && !self.known_tasks.contains(task) {
+                        report.warning(format!(
+                            "{}: Task '{}' is not in the known task list",
+                            path, task
+                        ));
+                    }
                 }
                 report.tasks_called.insert(task.clone());
             }
@@ -1149,5 +1190,163 @@ mod tests {
 
         let count = validator.count_actions(&actions);
         assert_eq!(count, 5); // 1 Wait + 1 If + 2 in 'then' + 1 in 'else'
+    }
+
+    #[test]
+    fn test_circular_reference_self_call() {
+        // Task that calls itself (direct circular reference)
+        let task = TaskDefinition {
+            name: "self_calling".to_string(),
+            description: "Calls itself".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Call {
+                task: "self_calling".to_string(), // Calls itself!
+                parameters: None,
+            }],
+        };
+
+        let report = validate_task(&task);
+
+        assert!(!report.is_valid(), "Self-calling task should be invalid");
+        assert!(
+            report.issues.iter().any(|i| {
+                i.message().contains("circular reference") || i.message().contains("calls itself")
+            }),
+            "Should report circular reference error"
+        );
+    }
+
+    #[test]
+    fn test_no_false_circular_positive() {
+        // Task that calls a DIFFERENT task (not circular)
+        let task = TaskDefinition {
+            name: "caller".to_string(),
+            description: "Calls another task".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Call {
+                task: "callee".to_string(), // Different task name
+                parameters: None,
+            }],
+        };
+
+        let report = validate_task(&task);
+
+        // Should NOT have circular reference error
+        assert!(!report.issues.iter().any(|i| {
+            i.message().contains("circular reference") || i.message().contains("calls itself")
+        }));
+    }
+
+    #[test]
+    fn test_deep_nesting_limit() {
+        // Create deeply nested If actions
+        fn create_nested_if(depth: usize) -> Action {
+            if depth == 0 {
+                Action::Wait { duration_ms: 100 }
+            } else {
+                Action::If {
+                    condition: Condition::ElementExists {
+                        selector: format!("#level{}", depth),
+                    },
+                    then: vec![create_nested_if(depth - 1)],
+                    r#else: None,
+                }
+            }
+        }
+
+        // Task with 12 levels of nesting (exceeds default limit of 10)
+        let task = TaskDefinition {
+            name: "deep_nested".to_string(),
+            description: "Very deeply nested".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![create_nested_if(12)],
+        };
+
+        let report = validate_task(&task);
+
+        assert!(!report.is_valid(), "Should fail due to nesting depth");
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.message().contains("nesting depth")),
+            "Should report nesting depth error"
+        );
+    }
+
+    #[test]
+    fn test_custom_nesting_limit() {
+        // Task with 8 levels of nesting
+        fn create_nested_if(depth: usize) -> Action {
+            if depth == 0 {
+                Action::Wait { duration_ms: 100 }
+            } else {
+                Action::If {
+                    condition: Condition::ElementExists {
+                        selector: format!("#level{}", depth),
+                    },
+                    then: vec![create_nested_if(depth - 1)],
+                    r#else: None,
+                }
+            }
+        }
+
+        let task = TaskDefinition {
+            name: "medium_nested".to_string(),
+            description: "Medium nesting".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![create_nested_if(8)], // 8 levels
+        };
+
+        // With default limit of 10, should pass
+        let report = TaskValidator::new().validate(&task);
+        assert!(report.is_valid(), "8 levels should pass with limit of 10");
+
+        // With custom limit of 5, should fail
+        let report = TaskValidator::new()
+            .with_max_nesting_depth(5)
+            .validate(&task);
+        assert!(!report.is_valid(), "8 levels should fail with limit of 5");
+    }
+
+    #[test]
+    fn test_multiple_call_actions_tracked() {
+        // Task that calls multiple other tasks
+        let task = TaskDefinition {
+            name: "multi_caller".to_string(),
+            description: "Calls multiple tasks".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![
+                Action::Call {
+                    task: "task_a".to_string(),
+                    parameters: None,
+                },
+                Action::Call {
+                    task: "task_b".to_string(),
+                    parameters: None,
+                },
+                Action::Call {
+                    task: "task_c".to_string(),
+                    parameters: None,
+                },
+            ],
+        };
+
+        let report = validate_task(&task);
+
+        assert!(report.tasks_called.contains("task_a"));
+        assert!(report.tasks_called.contains("task_b"));
+        assert!(report.tasks_called.contains("task_c"));
+        assert_eq!(report.tasks_called.len(), 3);
     }
 }

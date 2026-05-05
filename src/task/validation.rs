@@ -1148,6 +1148,6 @@ mod tests {
         ];
 
         let count = validator.count_actions(&actions);
-        assert_eq!(count, 4); // 1 + 2 + 1
+        assert_eq!(count, 5); // 1 Wait + 1 If + 2 in 'then' + 1 in 'else'
     }
 }

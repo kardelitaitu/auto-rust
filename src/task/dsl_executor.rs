@@ -225,6 +225,14 @@ impl<'a> DslExecutor<'a> {
         }
     }
 
+    /// Get a reference to the variables map.
+    ///
+    /// This allows accessing variables set during execution,
+    /// useful for retrieving results from called tasks.
+    pub fn get_variables(&self) -> &HashMap<String, String> {
+        &self.variables
+    }
+
     /// Set initial parameters from CLI payload.
     ///
     /// Parameters are converted from serde_json::Value to String
@@ -974,8 +982,7 @@ impl<'a> DslExecutor<'a> {
             .clone();
 
         // Create child executor with incremented depth
-        let mut child_executor =
-            DslExecutor::with_depth(self.api, &target_def, self.call_depth + 1);
+        let child_executor = DslExecutor::with_depth(self.api, &target_def, self.call_depth + 1);
 
         // Build parameter payload from parent variables + provided parameters
         let mut child_params = serde_json::Map::new();
@@ -1000,10 +1007,24 @@ impl<'a> DslExecutor<'a> {
         }
 
         // Initialize child with merged parameters
-        child_executor = child_executor.with_parameters(&serde_json::Value::Object(child_params));
+        let mut child_executor =
+            child_executor.with_parameters(&serde_json::Value::Object(child_params));
 
         // Execute the child task using Box::pin to avoid infinite recursion in async
         Box::pin(child_executor.execute()).await?;
+
+        // Merge child's variables back into parent (for return values)
+        for (key, value) in child_executor.get_variables() {
+            if !self.variables.contains_key(key) {
+                log::debug!(
+                    "Inheriting variable '{}' from child task '{}': {}",
+                    key,
+                    task_name,
+                    value
+                );
+                self.variables.insert(key.clone(), value.clone());
+            }
+        }
 
         log::info!("Task '{}' completed successfully", task_name);
         Ok(())

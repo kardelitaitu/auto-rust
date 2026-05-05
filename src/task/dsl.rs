@@ -250,10 +250,44 @@ pub enum Condition {
     ElementVisible { selector: String },
     /// Check text content equals value
     TextEquals { selector: String, value: String },
+    /// Check text matches regex pattern
+    TextMatches { selector: String, pattern: String },
     /// Check if variable equals value
     VariableEquals {
         name: String,
         value: serde_yaml::Value,
+    },
+    /// Check if variable matches regex pattern
+    VariableMatches { name: String, pattern: String },
+    /// Check numeric variable is greater than value
+    NumericGreaterThan { name: String, value: f64 },
+    /// Check numeric variable is less than value
+    NumericLessThan { name: String, value: f64 },
+    /// Check numeric variable is within range (inclusive)
+    NumericRange { name: String, min: f64, max: f64 },
+    /// Check if date string is before reference date
+    DateBefore {
+        name: String,
+        date: String,
+        format: Option<String>,
+    },
+    /// Check if date string is after reference date
+    DateAfter {
+        name: String,
+        date: String,
+        format: Option<String>,
+    },
+    /// Check if array variable contains a value
+    ArrayContains {
+        name: String,
+        value: serde_yaml::Value,
+    },
+    /// Check if array variable length matches
+    ArrayLength {
+        name: String,
+        min: Option<usize>,
+        max: Option<usize>,
+        exact: Option<usize>,
     },
     /// Logical AND of multiple conditions
     And { conditions: Vec<Condition> },

@@ -725,6 +725,105 @@ impl TaskValidator {
                     self.extract_variables(s, report);
                 }
             }
+            Condition::TextMatches { selector, pattern } => {
+                self.validate_selector(selector, path, report);
+                if pattern.is_empty() {
+                    report.warning(format!("{}: TextMatches pattern is empty", path));
+                } else if regex::Regex::new(pattern).is_err() {
+                    report.error(format!("{}: TextMatches pattern is invalid regex", path));
+                }
+            }
+            Condition::VariableMatches { name, pattern } => {
+                if name.is_empty() {
+                    report.error(format!("{}: Variable name cannot be empty", path));
+                } else {
+                    report.variables_referenced.insert(name.clone());
+                }
+                if pattern.is_empty() {
+                    report.warning(format!("{}: VariableMatches pattern is empty", path));
+                } else if regex::Regex::new(pattern).is_err() {
+                    report.error(format!(
+                        "{}: VariableMatches pattern is invalid regex",
+                        path
+                    ));
+                }
+            }
+            Condition::NumericGreaterThan { name, value: _ }
+            | Condition::NumericLessThan { name, value: _ } => {
+                if name.is_empty() {
+                    report.error(format!("{}: Variable name cannot be empty", path));
+                } else {
+                    report.variables_referenced.insert(name.clone());
+                }
+            }
+            Condition::NumericRange { name, min, max } => {
+                if name.is_empty() {
+                    report.error(format!("{}: Variable name cannot be empty", path));
+                } else {
+                    report.variables_referenced.insert(name.clone());
+                }
+                if min > max {
+                    report.warning(format!(
+                        "{}: NumericRange min ({}) is greater than max ({})",
+                        path, min, max
+                    ));
+                }
+            }
+            Condition::DateBefore { name, date, format }
+            | Condition::DateAfter { name, date, format } => {
+                if name.is_empty() {
+                    report.error(format!("{}: Variable name cannot be empty", path));
+                } else {
+                    report.variables_referenced.insert(name.clone());
+                }
+                if date.is_empty() {
+                    report.warning(format!("{}: Date comparison date is empty", path));
+                }
+                if let Some(fmt) = format {
+                    if fmt.is_empty() {
+                        report
+                            .warning(format!("{}: Date format is empty (will use default)", path));
+                    }
+                }
+            }
+            Condition::ArrayContains { name, value } => {
+                if name.is_empty() {
+                    report.error(format!("{}: Variable name cannot be empty", path));
+                } else {
+                    report.variables_referenced.insert(name.clone());
+                }
+                if let Some(s) = value.as_str() {
+                    self.extract_variables(s, report);
+                }
+            }
+            Condition::ArrayLength {
+                name,
+                min,
+                max,
+                exact,
+            } => {
+                if name.is_empty() {
+                    report.error(format!("{}: Variable name cannot be empty", path));
+                } else {
+                    report.variables_referenced.insert(name.clone());
+                }
+                // Validate that at least one constraint is provided
+                if min.is_none() && max.is_none() && exact.is_none() {
+                    report.warning(format!(
+                        "{}: ArrayLength has no constraints (min/max/exact)",
+                        path
+                    ));
+                }
+                // Validate range consistency
+                if let (Some(min_val), Some(max_val)) = (min, max) {
+                    if min_val > max_val {
+                        report.warning(format!(
+                            "{}: ArrayLength min ({}) is greater than max ({})",
+                            path, min_val, max_val
+                        ));
+                    }
+                }
+            }
             Condition::Not { condition: inner } => {
                 self.validate_condition(inner, &format!("{}[not]", path), report);
             }

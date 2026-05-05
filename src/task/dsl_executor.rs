@@ -901,6 +901,121 @@ impl<'a> DslExecutor<'a> {
                     Ok(false)
                 }
             }
+            Condition::TextMatches { selector, pattern } => {
+                let resolved_selector = self.substitute_variables(selector);
+                let resolved_pattern = self.substitute_variables(pattern);
+                match self.api.text(&resolved_selector).await {
+                    Ok(Some(text)) => {
+                        let regex = regex::Regex::new(&resolved_pattern)
+                            .map_err(|e| anyhow::anyhow!("Invalid regex pattern: {}", e))?;
+                        Ok(regex.is_match(&text))
+                    }
+                    _ => Ok(false),
+                }
+            }
+            Condition::VariableMatches { name, pattern } => {
+                if let Some(var_value) = self.variables.get(name) {
+                    let resolved_pattern = self.substitute_variables(pattern);
+                    let regex = regex::Regex::new(&resolved_pattern)
+                        .map_err(|e| anyhow::anyhow!("Invalid regex pattern: {}", e))?;
+                    Ok(regex.is_match(var_value))
+                } else {
+                    Ok(false)
+                }
+            }
+            Condition::NumericGreaterThan { name, value } => {
+                if let Some(var_value) = self.variables.get(name) {
+                    if let Ok(num) = var_value.parse::<f64>() {
+                        Ok(num > *value)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
+            Condition::NumericLessThan { name, value } => {
+                if let Some(var_value) = self.variables.get(name) {
+                    if let Ok(num) = var_value.parse::<f64>() {
+                        Ok(num < *value)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
+            Condition::NumericRange { name, min, max } => {
+                if let Some(var_value) = self.variables.get(name) {
+                    if let Ok(num) = var_value.parse::<f64>() {
+                        Ok(num >= *min && num <= *max)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
+            Condition::DateBefore { name, date, format } => {
+                self.evaluate_date_comparison(name, date, format, true)
+                    .await
+            }
+            Condition::DateAfter { name, date, format } => {
+                self.evaluate_date_comparison(name, date, format, false)
+                    .await
+            }
+            Condition::ArrayContains { name, value } => {
+                if let Some(var_value) = self.variables.get(name) {
+                    // Try to parse as JSON array
+                    if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(var_value) {
+                        let search_json = serde_json::to_string(value).unwrap_or_default();
+                        let search_value: serde_json::Value =
+                            serde_json::from_str(&search_json).unwrap_or_default();
+                        Ok(array.contains(&search_value))
+                    } else {
+                        // Check if variable contains the value as substring
+                        let search_str = match value {
+                            serde_yaml::Value::String(s) => s.clone(),
+                            serde_yaml::Value::Number(n) => n.to_string(),
+                            serde_yaml::Value::Bool(b) => b.to_string(),
+                            _ => var_value.clone(),
+                        };
+                        Ok(var_value.contains(&search_str))
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
+            Condition::ArrayLength {
+                name,
+                min,
+                max,
+                exact,
+            } => {
+                if let Some(var_value) = self.variables.get(name) {
+                    // Try to parse as JSON array
+                    if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(var_value) {
+                        let len = array.len();
+                        if let Some(exact_len) = exact {
+                            return Ok(len == *exact_len);
+                        }
+                        let min_ok = min.is_none_or(|m| len >= m);
+                        let max_ok = max.is_none_or(|m| len <= m);
+                        Ok(min_ok && max_ok)
+                    } else {
+                        // Treat as single element if not parseable as array
+                        if let Some(exact_len) = exact {
+                            Ok(*exact_len == 1)
+                        } else {
+                            let min_ok = min.is_none_or(|m| 1 >= m);
+                            let max_ok = max.is_none_or(|m| 1 <= m);
+                            Ok(min_ok && max_ok)
+                        }
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
             Condition::And { conditions } => Self::evaluate_conditions_and(self, conditions).await,
             Condition::Or { conditions } => Self::evaluate_conditions_or(self, conditions).await,
             Condition::Not { condition } => {
@@ -928,6 +1043,54 @@ impl<'a> DslExecutor<'a> {
             }
         }
         Ok(false)
+    }
+
+    /// Helper to evaluate date comparisons.
+    async fn evaluate_date_comparison(
+        &self,
+        name: &str,
+        date: &str,
+        format: &Option<String>,
+        is_before: bool,
+    ) -> Result<bool> {
+        if let Some(var_value) = self.variables.get(name) {
+            let date_format = format.as_deref().unwrap_or("%Y-%m-%d");
+
+            // Parse the variable date
+            let var_date = chrono::NaiveDate::parse_from_str(var_value, date_format);
+            let var_datetime = chrono::NaiveDateTime::parse_from_str(var_value, date_format);
+
+            // Parse the reference date
+            let ref_date = chrono::NaiveDate::parse_from_str(date, date_format);
+            let ref_datetime = chrono::NaiveDateTime::parse_from_str(date, date_format);
+
+            match (var_date, ref_date, var_datetime, ref_datetime) {
+                (Ok(v), Ok(r), _, _) => {
+                    if is_before {
+                        Ok(v < r)
+                    } else {
+                        Ok(v > r)
+                    }
+                }
+                (_, _, Ok(v), Ok(r)) => {
+                    if is_before {
+                        Ok(v < r)
+                    } else {
+                        Ok(v > r)
+                    }
+                }
+                _ => {
+                    // Try comparing as strings (ISO 8601 format)
+                    if is_before {
+                        Ok(var_value.as_str() < date)
+                    } else {
+                        Ok(var_value.as_str() > date)
+                    }
+                }
+            }
+        } else {
+            Ok(false)
+        }
     }
 
     /// Substitute variables in a string.

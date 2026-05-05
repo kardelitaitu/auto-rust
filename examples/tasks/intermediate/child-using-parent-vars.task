@@ -1,0 +1,71 @@
+# Child Task: Uses Parent Variables
+# This task demonstrates receiving variables from parent through inheritance
+# Note: No parameters needed for api_key or csrf_token - they come from parent!
+
+name: child-using-parent-vars
+description: "Demonstrates using variables inherited from parent task"
+policy: default
+
+parameters:
+  endpoint:
+    type: string
+    required: true
+    description: "API endpoint to call"
+
+actions:
+  - log:
+      message: "Child task started"
+      level: info
+
+  # These variables come from the PARENT task automatically!
+  - log:
+      message: "Using inherited API key: {{api_key}}"
+      level: info
+  
+  - log:
+      message: "Using inherited CSRF token: {{csrf_token}}"
+      level: info
+
+  # Simulate API call using inherited credentials
+  - log:
+      message: "Making authenticated request to {{endpoint}}"
+      level: info
+
+  # In a real scenario, you'd use these variables for API authentication
+  # For demo, we just show they are available
+  - if:
+      condition:
+        not:
+          variable_equals:
+            name: api_key
+            value: ""  # Check if api_key was inherited
+      then:
+        - log:
+            message: "✓ API key successfully inherited from parent"
+            level: info
+      else:
+        - log:
+            message: "✗ API key not found - was task called from parent?"
+            level: warn
+
+  - if:
+      condition:
+        not:
+          variable_equals:
+            name: csrf_token
+            value: ""  # Check if csrf_token was inherited
+      then:
+        - log:
+            message: "✓ CSRF token successfully inherited from parent"
+            level: info
+      else:
+        - log:
+            message: "✗ CSRF token not found - was extract action run in parent?"
+            level: warn
+
+  - log:
+      message: "Child task completed"
+      level: info
+
+# Note: This task is designed to be called by variable-inheritance.task
+# Running it standalone will show warnings about missing inherited variables

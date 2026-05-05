@@ -1,0 +1,69 @@
+# Search Processor (Intermediate Task in Chain)
+# Level 2: Called by chained-calls, calls execute-search
+
+name: search-processor
+description: "Intermediate task that calls the actual search implementation"
+policy: default
+
+parameters:
+  base_url:
+    type: url
+    required: true
+    description: "Base URL for search"
+  query:
+    type: string
+    required: true
+    description: "Search query string"
+
+actions:
+  - log:
+      message: "Level 2: search-processor starting"
+      level: info
+  
+  - log:
+      message: "Will search for '{{query}}' at {{base_url}}"
+      level: info
+
+  # Pre-process the search
+  - log:
+      message: "Pre-processing search query..."
+      level: info
+
+  # Set up search context
+  - navigate:
+      url: "{{base_url}}"
+
+  - wait:
+      duration_ms: 1500
+
+  # Level 2 -> Level 3: Call the actual search implementation
+  - log:
+      message: "Calling execute-search (Level 3)..."
+      level: info
+
+  - call:
+      task: execute-search
+      parameters:
+        search_input: "#search-input"
+        search_button: "#search-btn"
+        term: "{{query}}"
+
+  # The execute-search task will set:
+  # - result_count
+  # - first_result_title
+  # These get merged back through the chain!
+
+  - log:
+      message: "Level 2 received from Level 3: {{result_count}} results"
+      level: info
+
+  - log:
+      message: "First result: {{first_result_title}}"
+      level: info
+
+  - log:
+      message: "Level 2: search-processor complete - returning to Level 1"
+      level: info
+
+# Note: This task is designed to be called by chained-calls.task
+# It demonstrates being both a caller (to execute-search) and callee (from chained-calls)

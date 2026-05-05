@@ -1,0 +1,51 @@
+# Variable Inheritance Pattern
+# Demonstrates how parent task variables are automatically available to child tasks
+
+name: variable-inheritance
+description: "Shows how variables flow from parent to child tasks without explicit passing"
+policy: default
+
+parameters:
+  target_url:
+    type: url
+    required: true
+    description: "Base URL for the operation"
+  api_key:
+    type: string
+    required: true
+    description: "API key for authentication"
+
+actions:
+  - log:
+      message: "=== Variable Inheritance Demo ==="
+      level: info
+
+  # Set variables in parent
+  - navigate:
+      url: "{{target_url}}"
+  
+  - extract:
+      selector: "meta[name='csrf-token']"
+      variable: csrf_token
+  
+  - log:
+      message: "Set parent variables: api_key={{api_key}}, csrf_token={{csrf_token}}"
+      level: info
+
+  # Call child task - notice we DON'T pass api_key or csrf_token explicitly
+  # They are inherited automatically!
+  - call:
+      task: child-using-parent-vars
+      parameters:
+        endpoint: "/api/data"  # Only pass what's specific to the child
+  
+  - log:
+      message: "Child task completed using inherited variables"
+      level: info
+
+  - log:
+      message: "=== Demo Complete ==="
+      level: info
+
+# Usage:
+#   auto-rust --task variable-inheritance --target_url "https://app.example.com" --api_key "sk-12345"

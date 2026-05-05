@@ -1,0 +1,77 @@
+# Scrape Product Info - Returns Values to Parent
+# This task "returns" data by setting variables that get merged back to parent
+
+name: scrape-product-info
+description: "Scrapes product details and returns them as variables"
+policy: default
+
+parameters:
+  url:
+    type: url
+    required: true
+    description: "Product page URL to scrape"
+
+actions:
+  - log:
+      message: "Scraping product info from {{url}}"
+      level: info
+
+  - navigate:
+      url: "{{url}}"
+
+  - wait:
+      duration_ms: 2000
+
+  # "Return" product_name by setting variable
+  - extract:
+      selector: "h1.product-title, .product-name, h1"
+      variable: product_name
+  
+  - log:
+      message: "Found product: {{product_name}}"
+      level: info
+
+  # "Return" product_price by setting variable
+  - extract:
+      selector: ".price, .product-price, [data-price]"
+      variable: product_price
+
+  - log:
+      message: "Price: {{product_price}}"
+      level: info
+
+  # "Return" availability status
+  - if:
+      condition:
+        element_visible: ".in-stock, .available, .add-to-cart"
+      then:
+        - extract:
+            selector: ".availability-status, .stock-status"
+            variable: availability
+        - log:
+            message: "Status: {{availability}}"
+            level: info
+      else:
+        - log:
+            message: "Product appears to be out of stock"
+            level: warn
+        - type:  # Set variable directly when extract won't work
+            selector: "body"
+            text: "out_of_stock"
+            # Note: This is a workaround - in real implementation
+            # you'd use a proper variable setting action
+
+  # All variables set here will be "returned" to parent:
+  # - product_name
+  # - product_price  
+  # - availability
+
+  - log:
+      message: "Product scraping complete - returning data to parent"
+      level: info
+
+# Usage (standalone):
+#   auto-rust --task scrape-product-info --url "https://shop.example.com/products/123"
+#
+# Usage (from parent):
+#   See return-values-pattern.task for parent task example

@@ -1,0 +1,73 @@
+# Return Values Pattern
+# Demonstrates how child tasks can "return" data to parent via extract actions
+
+name: return-values-pattern
+description: "Shows how child tasks return data to parent through variables"
+policy: default
+
+parameters:
+  product_url:
+    type: url
+    required: true
+    description: "URL of product page to scrape"
+
+actions:
+  - log:
+      message: "=== Return Values Pattern Demo ==="
+      level: info
+
+  # Step 1: Call child task to get product info
+  # The child will "return" product_name, product_price, and availability
+  - call:
+      task: scrape-product-info
+      parameters:
+        url: "{{product_url}}"
+  
+  # Step 2: Use the "returned" values from child
+  # These variables were set in the child and merged back into parent!
+  - log:
+      message: "Product: {{product_name}}"
+      level: info
+  
+  - log:
+      message: "Price: {{product_price}}"
+      level: info
+
+  - if:
+      condition:
+        variable_equals:
+          name: availability
+          value: "in_stock"
+      then:
+        - log:
+            message: "✓ Product is available!"
+            level: info
+        - screenshot:
+            path: "/tmp/product-available.png"
+      else:
+        - log:
+            message: "✗ Product is not available"
+            level: warn
+
+  # Step 3: Call another task with the returned data
+  - if:
+      condition:
+        variable_equals:
+          name: availability
+          value: "in_stock"
+      then:
+        - log:
+            message: "Adding to price comparison..."
+            level: info
+        - call:
+            task: log-price-data
+            parameters:
+              name: "{{product_name}}"
+              price: "{{product_price}}"
+
+  - log:
+      message: "=== Demo Complete ==="
+      level: info
+
+# Usage:
+#   auto-rust --task return-values-pattern --product_url "https://shop.example.com/products/123"

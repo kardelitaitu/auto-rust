@@ -1,0 +1,68 @@
+# Chained Calls Pattern (A -> B -> C)
+# Demonstrates calling a task that calls another task (3-level composition)
+
+name: chained-calls
+description: "Shows multi-level task composition (parent -> child -> grandchild)"
+policy: default
+
+parameters:
+  start_url:
+    type: url
+    required: true
+    description: "Starting URL for the chain"
+  search_term:
+    type: string
+    required: true
+    description: "What to search for"
+
+actions:
+  - log:
+      message: "=== Chained Calls Pattern Demo ==="
+      level: info
+  
+  - log:
+      message: "Level 1: Parent task (chained-calls) starting"
+      level: info
+
+  # Level 1 -> Level 2: Call search-processor (intermediate task)
+  # This task will in turn call another task
+  - call:
+      task: search-processor
+      parameters:
+        base_url: "{{start_url}}"
+        query: "{{search_term}}"
+  
+  # Use variables returned from the chain
+  - log:
+      message: "Back in parent - results from chain:"
+      level: info
+  
+  - log:
+      message: "Search returned {{result_count}} items"
+      level: info
+
+  - log:
+      message: "First result: {{first_result_title}}"
+      level: info
+
+  - log:
+      message: "=== Chain Complete ==="
+      level: info
+
+# Call chain visualization:
+#
+#   chained-calls (Level 1 - Parent)
+#        |
+#        v
+#   search-processor (Level 2 - Child)
+#        |
+#        v
+#   execute-search (Level 3 - Grandchild)
+#
+# Variables flow up the chain:
+#   execute-search sets: result_count, first_result_title
+#   search-processor inherits and returns them
+#   chained-calls receives and uses them
+
+# Usage:
+#   auto-rust --task chained-calls --start_url "https://search.example.com" --search_term "rust programming"

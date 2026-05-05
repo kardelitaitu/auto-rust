@@ -1,0 +1,47 @@
+# Log Price Data
+# Receives data from parent task and logs it
+
+name: log-price-data
+description: "Logs price information for comparison tracking"
+policy: default
+
+parameters:
+  name:
+    type: string
+    required: true
+    description: "Product name"
+  price:
+    type: string
+    required: true
+    description: "Product price"
+
+actions:
+  - log:
+      message: "=== Price Data Entry ==="
+      level: info
+
+  - log:
+      message: "Product: {{name}}"
+      level: info
+
+  - log:
+      message: "Price: {{price}}"
+      level: info
+
+  - log:
+      message: "Timestamp: {{current_time}}"
+      level: info
+  
+  - log:
+      message: "========================"
+      level: info
+
+  # In a real scenario, you might:
+  # - Write to a file
+  # - Send to a database
+  # - Post to an API
+  # - Compare with historical prices
+
+  - log:
+      message: "Price data logged successfully"
+      level: info

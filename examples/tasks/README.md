@@ -37,12 +37,25 @@ More complex workflows with conditions and data extraction.
 | `conditional-click` | Handle optional UI elements | if/else, element_exists, element_visible |
 
 ### Advanced Templates
-Complex compositions demonstrating parallel execution and task calling.
+Complex compositions demonstrating parallel execution, task calling, and variable patterns.
 
 | Template | Purpose | Key Actions |
 |----------|---------|-------------|
 | `parallel-scrape` | Scrape multiple sections concurrently | parallel, extract |
 | `composed-workflow` | Chain multiple tasks together | call, if/else |
+| `variable-inheritance` | Show parent variables flowing to child | call, extract |
+| `return-values-pattern` | Child tasks returning data to parent | call, extract, if/else |
+| `chained-calls` | 3-level task composition (A -> B -> C) | call (multi-level) |
+
+### Intermediate Templates
+Reusable tasks designed to be called by other tasks.
+
+| Template | Purpose | Called By |
+|----------|---------|-----------|
+| `child-using-parent-vars` | Uses inherited variables | variable-inheritance |
+| `scrape-product-info` | Returns product data | return-values-pattern |
+| `search-processor` | Intermediate in call chain | chained-calls |
+| `log-price-data` | Logs pricing information | return-values-pattern |
 
 ## Template Structure
 
@@ -120,6 +133,75 @@ actions:
       url: "{{target_url}}"
       wait_ms: 3000
 ```
+
+## Composition Patterns
+
+### Basic Call
+```yaml
+- call:
+    task: simple-navigation
+    parameters:
+      url: "{{target_url}}"
+      wait_ms: 3000
+```
+
+### Variable Inheritance (Parent → Child)
+Parent sets variables, child uses them automatically:
+```yaml
+# Parent task
+actions:
+  - extract:
+      selector: "#api-key"
+      variable: api_key
+  - call:
+      task: child-task
+      # api_key is inherited - no need to pass explicitly!
+
+# Child task
+actions:
+  - log:
+      message: "Using {{api_key}}"  # Variable from parent
+```
+
+### Return Values (Child → Parent)
+Child sets variables, parent receives them:
+```yaml
+# Child task
+actions:
+  - extract:
+      selector: "#price"
+      variable: product_price
+  # product_price "returns" to parent
+
+# Parent task
+actions:
+  - call:
+      task: child-task
+  - log:
+      message: "Price was {{product_price}}"  # From child!
+```
+
+### Chained Calls (Multi-Level)
+Tasks calling tasks calling tasks:
+```yaml
+# Level 1: chained-calls.task
+- call:
+    task: search-processor  # Level 2
+
+# Level 2: search-processor.task
+- call:
+    task: execute-search    # Level 3
+
+# Variables bubble up: Level 3 -> Level 2 -> Level 1
+```
+
+**See the new composition templates for complete examples:**
+- `advanced/variable-inheritance.task` - Variable flow from parent to child
+- `advanced/return-values-pattern.task` - Child returning data to parent  
+- `advanced/chained-calls.task` - 3-level task composition
+- `intermediate/child-using-parent-vars.task` - Reusable component using inherited data
+- `intermediate/scrape-product-info.task` - Data extraction service
+- `basic/execute-search.task` - Leaf node in call chain
 
 ## Creating Your Own Templates
 

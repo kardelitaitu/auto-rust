@@ -1,0 +1,82 @@
+# Execute Search (Leaf Task in Chain)
+# Level 3: Called by search-processor, performs actual search operation
+
+name: execute-search
+description: "Performs a search operation and returns results"
+policy: default
+
+parameters:
+  search_input:
+    type: selector
+    required: true
+    description: "CSS selector for search input field"
+  search_button:
+    type: selector
+    required: true
+    description: "CSS selector for search button"
+  term:
+    type: string
+    required: true
+    description: "Search term to enter"
+
+actions:
+  - log:
+      message: "Level 3: execute-search starting (leaf node)"
+      level: info
+
+  # Perform the search
+  - type:
+      selector: "{{search_input}}"
+      text: "{{term}}"
+
+  - click:
+      selector: "{{search_button}}"
+
+  - wait:
+      duration_ms: 3000
+
+  # "Return" result count
+  - if:
+      condition:
+        element_visible: ".search-results, .results-list, .result-item"
+      then:
+        - extract:
+            selector: ".result-count, .results-count, .total-results"
+            variable: result_count
+        - log:
+            message: "Found {{result_count}} results"
+            level: info
+      else:
+        - log:
+            message: "No results found or selector mismatch"
+            level: warn
+        - type:  # Set default when no results
+            selector: "body"
+            text: "0"
+
+  # "Return" first result title
+  - if:
+      condition:
+        element_visible: ".result-item:first-child h2, .result:first-child .title, .result-title"
+      then:
+        - extract:
+            selector: ".result-item:first-child h2, .result:first-child .title"
+            variable: first_result_title
+        - log:
+            message: "First result: {{first_result_title}}"
+            level: info
+      else:
+        - log:
+            message: "Could not extract first result title"
+            level: warn
+
+  - log:
+      message: "Level 3: execute-search complete - returning to Level 2"
+      level: info
+
+# Variables "returned" to parent:
+# - result_count: Number of search results
+# - first_result_title: Title of first result
+#
+# These bubble up through:
+#   execute-search (Level 3) -> search-processor (Level 2) -> chained-calls (Level 1)

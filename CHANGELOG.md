@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-05
+
+### Added
+
+#### Enhanced Conditions (8 New Condition Types)
+- `text_matches` - Regex pattern matching on element text
+- `variable_matches` - Regex matching on variable values
+- `numeric_greater_than` / `numeric_less_than` - Numeric comparisons
+- `numeric_range` - Inclusive range checks with min/max bounds
+- `date_before` / `date_after` - Date/time comparisons with optional format strings
+- `array_contains` - Check if array contains value
+- `array_length` - Array length validation with min/max/exact
+
+#### DSL Debugging Features
+- Breakpoint system with multiple trigger types:
+  - Action index breakpoints (pause at specific action)
+  - Action type breakpoints (pause on any action of type)
+  - Variable watch breakpoints (trigger on variable changes)
+  - Conditional breakpoints (custom closure conditions)
+- Execution tracing with `DebugEvent` log
+- Variable inspection mid-execution via `inspect_state()`
+- Pause/resume/step-through execution control
+- Debug event types: ActionStart, ActionComplete, ActionError, VariableSet, ConditionEvaluated
+
+#### Performance Optimizations
+- **Selector Caching** - LRU cache for DOM queries:
+  - 100 entry capacity with automatic eviction
+  - 5-second TTL for cache entries
+  - Hit rate tracking and statistics via `CacheStats`
+  - Smart invalidation on mutations
+- **Action Profiling** - Per-action-type performance tracking:
+  - Total executions, total/average/min/max duration
+  - Failure rate monitoring
+  - JSON export via `get_profiler_stats()`
+
+#### New DSL Actions
+- `parallel` - Execute actions concurrently with configurable max_concurrency
+
+### Changed
+- `WaitFor` action now uses cached element existence checks for better performance
+- `DslExecutor` constructors now initialize selector cache and profilers by default
+
 ## [0.1.0] - 2026-05-04
 
 ### Added

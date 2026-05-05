@@ -106,7 +106,7 @@ let validator = TaskValidator::new()
 
 ### Action Types
 
-All 17 action types are validated:
+All 23 action types are validated:
 
 - **Navigation**: `navigate` - URL format validation
 - **Interaction**: `click`, `type`, `clear`, `hover`, `select`, `right_click`, `double_click`
@@ -114,6 +114,8 @@ All 17 action types are validated:
 - **Extraction**: `extract` - Variable naming
 - **Execution**: `execute` - Script presence
 - **Control Flow**: `if`, `loop`, `call`, `parallel`, `retry`, `foreach`, `while`, `try`
+- **Screenshot**: `screenshot` - Path validation
+- **Logging**: `log` - Message and level validation
 
 ### Selector Validation
 
@@ -172,6 +174,36 @@ actions:
     then: []                        # Warning: Empty then block
     else:
       - wait: { duration_ms: 100 }
+```
+
+### Enhanced Conditions (12 Types)
+
+| Condition | Validation Checks |
+|-----------|-------------------|
+| `element_visible` / `element_exists` | Valid selector format |
+| `variable_equals` | Variable name non-empty |
+| `text_matches` / `variable_matches` | Valid regex pattern, non-empty selector/variable |
+| `numeric_greater_than` / `numeric_less_than` / `numeric_range` | Variable name non-empty, numeric value |
+| `date_before` / `date_after` | Variable name non-empty, valid date string |
+| `array_contains` / `array_length` | Variable name non-empty |
+
+**Regex Validation:**
+```yaml
+- if:
+    condition:
+      text_matches:
+        selector: "#status"
+        pattern: "[invalid("          # Error: Invalid regex
+```
+
+**Numeric Range Validation:**
+```yaml
+- if:
+    condition:
+      numeric_range:
+        name: "score"
+        min: 100
+        max: 50                      # Error: min > max
 ```
 
 ### Loop

@@ -308,6 +308,145 @@ pub struct BrowserData {
 | DOM Inspection | `allow_dom_inspection` | - |
 | Browser Mgmt | `allow_browser_export` | `allow_browser_import` |
 
+## DSL Executor APIs
+
+The `DslExecutor` provides programmatic control over declarative task execution.
+
+### Basic Usage
+
+```rust
+use auto::task::dsl_executor::DslExecutor;
+use auto::task::dsl::TaskDefinition;
+
+let task_def = TaskDefinition::from_yaml_file("tasks/my_task.yaml")?;
+let mut executor = DslExecutor::new(api, &task_def);
+executor.execute().await?;
+```
+
+### Debugging APIs
+
+#### Enable Debug Mode
+```rust
+pub fn with_debug_mode(mut self, enabled: bool) -> Self
+```
+
+#### Add Breakpoints
+```rust
+use auto::task::dsl_executor::Breakpoint;
+
+// Break at specific action index
+executor.add_breakpoint(Breakpoint::on_action(5));
+
+// Break on action type
+executor.add_breakpoint(Breakpoint::on_action_type("click"));
+
+// Break on variable change
+executor.add_breakpoint(Breakpoint::watch_variable("user_id"));
+
+// Break with custom condition
+executor.add_breakpoint(
+    Breakpoint::on_action_type("extract")
+        .with_condition(|vars| vars.get("status") == Some(&"error".to_string()))
+);
+```
+
+#### Execution Control
+```rust
+// Check if paused
+pub fn is_paused(&self) -> bool
+
+// Resume execution
+pub fn resume(&mut self)
+
+// Step through (execute one action, then pause)
+pub fn step(&mut self)
+```
+
+#### Inspect State
+```rust
+// Get execution state as JSON
+pub fn inspect_state(&self) -> serde_json::Value
+
+// Get debug event log
+pub fn get_debug_events(&self) -> &[DebugEvent]
+```
+
+### Performance APIs
+
+#### Cache Control
+```rust
+// Enable selector caching (enabled by default)
+pub fn enable_caching(&mut self)
+
+// Disable caching and clear cache
+pub fn disable_caching(&mut self)
+
+// Clear cache without disabling
+pub fn clear_cache(&mut self)
+
+// Get cache statistics
+pub fn get_cache_stats(&self) -> CacheStats
+```
+
+**CacheStats struct:**
+```rust
+pub struct CacheStats {
+    pub size: usize,           // Current cache size
+    pub hits: u64,             // Cache hit count
+    pub misses: u64,           // Cache miss count
+    pub evictions: u64,        // Total evictions
+    pub hit_rate: f64,         // Hit rate (0.0 - 1.0)
+}
+```
+
+#### Action Profiling
+```rust
+// Get profiling statistics
+pub fn get_profiler_stats(&self) -> HashMap<String, serde_json::Value>
+```
+
+**Example profiler output:**
+```json
+{
+  "click": {
+    "action_type": "click",
+    "total_executions": 42,
+    "total_duration_ms": 8400,
+    "average_duration_ms": 200,
+    "min_duration_ms": 150,
+    "max_duration_ms": 350,
+    "failures": 2
+  }
+}
+```
+
+### Execution Report
+
+```rust
+// Get execution report (after execute())
+let report = executor.execution_report(true);
+println!("{}", report.summary());
+// Task 'login' executed 5 actions in 1.23s (4 successful, 1 failed)
+
+// Export to JSON
+let json = report.to_json();
+```
+
+**ExecutionReport fields:**
+```rust
+pub struct ExecutionReport {
+    pub task_name: String,
+    pub total_actions: u32,
+    pub actions_executed: u32,
+    pub actions_succeeded: u32,
+    pub actions_failed: u32,
+    pub max_call_depth: u32,
+    pub variables_defined: usize,
+    pub success: bool,
+    pub action_metrics: Vec<ActionMetrics>,
+}
+```
+
 ## Best Practices
 
 1. **Use high-level verbs** - Prefer `api.click()` over low-level mouse utilities

@@ -201,6 +201,115 @@ cargo run -- my_login username=admin password=secret123
 | `while` | Loop while condition | `condition: ..., actions: [...]` |
 | `retry` | Retry with backoff | `actions: [...], max_attempts: 3` |
 | `try` | Error handling | `try_actions: [...], catch_actions: [...]` |
+| `parallel` | Execute concurrently | `actions: [...], max_concurrency: 3` |
+
+### Enhanced Conditions
+
+12 condition types for powerful control flow:
+
+| Condition | Description | Example |
+|-----------|-------------|---------|
+| `element_visible` | Element is visible | `selector: "#modal"` |
+| `element_exists` | Element exists in DOM | `selector: "#result"` |
+| `variable_equals` | Variable equals value | `name: "status", value: "active"` |
+| `text_matches` | Regex pattern match on text | `selector: "#msg", pattern: "^Hello"` |
+| `variable_matches` | Regex match on variable | `name: "email", pattern: ".*@.*\\..*"` |
+| `numeric_greater_than` | Number > value | `name: "count", value: 5` |
+| `numeric_less_than` | Number < value | `name: "price", value: 100.0` |
+| `numeric_range` | Number in range | `name: "score", min: 0, max: 100` |
+| `date_before` | Date comparison | `name: "expiry", date: "2026-12-31"` |
+| `date_after` | Date comparison | `name: "created", date: "2026-01-01"` |
+| `array_contains` | Array contains value | `name: "tags", value: "urgent"` |
+| `array_length` | Array length check | `name: "items", min: 1, max: 10` |
+
+**Example with enhanced conditions:**
+```yaml
+- if:
+    condition:
+      text_matches:
+        selector: "#order-status"
+        pattern: "Order #(\\d+) confirmed"
+    then:
+      - log:
+          message: "Order confirmed!"
+          level: info
+
+- if:
+    condition:
+      numeric_range:
+        name: "total_price"
+        min: 10.0
+        max: 1000.0
+    then:
+      - click:
+          selector: "#checkout-button"
+```
+
+### DSL Debugging
+
+Debug complex tasks with breakpoints and execution tracing:
+
+```rust
+use auto::task::dsl_executor::{DslExecutor, Breakpoint};
+
+let mut executor = DslExecutor::new(api, &task_def);
+
+// Enable debug mode
+executor.with_debug_mode(true);
+
+// Add breakpoints
+executor.add_breakpoint(Breakpoint::on_action(5));           // At action index 5
+executor.add_breakpoint(Breakpoint::on_action_type("click")); // On any click
+executor.add_breakpoint(Breakpoint::watch_variable("user_id")); // When user_id changes
+
+// Execute with debugging
+executor.execute().await?;
+
+// Get execution trace
+let events = executor.get_debug_events();
+for event in events {
+    println!("[{}] {:?}", event.timestamp, event.event_type);
+}
+
+// Inspect state
+let state = executor.inspect_state();
+println!("Variables: {:?}", state["variables"]);
+
+// Pause/Resume control
+if executor.is_paused() {
+    executor.resume();  // Continue execution
+    executor.step();    // Execute one action then pause
+}
+```
+
+### Performance Optimizations
+
+**Selector Caching** - Automatic LRU cache for DOM queries:
+```rust
+// Caching enabled by default (100 entries, 5s TTL)
+let mut executor = DslExecutor::new(api, &task_def);
+
+// Control caching
+executor.enable_caching();      // Enable (default)
+executor.disable_caching();     // Disable and clear
+executor.clear_cache();         // Clear without disabling
+
+// Monitor performance
+let stats = executor.get_cache_stats();
+println!("Cache hit rate: {:.1}%", stats.hit_rate * 100.0);
+```
+
+**Action Profiling** - Per-action-type performance tracking:
+```rust
+let profiler_stats = executor.get_profiler_stats();
+for (action_type, stats) in profiler_stats {
+    println!("{}: {} executions, avg {}ms",
+        action_type,
+        stats["total_executions"],
+        stats["average_duration_ms"].as_u64().unwrap_or(0)
+    );
+}
+```
 
 ### Control Flow Examples
 

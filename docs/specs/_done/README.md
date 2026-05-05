@@ -1,4 +1,5 @@
 # Done Specs
 
-Archive approved and verified initiative folders here.
+Place only done initiative folders here.
 
+`minimal-spec-example/` is the smallest reference package.

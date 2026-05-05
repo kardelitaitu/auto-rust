@@ -1,3 +1,139 @@
+## 2026-05-05 - Root Implementer Skill
+
+### Accomplished This Session
+
+#### Skill File
+- **SKILL.md**: Added a root-level code-implementer skill for spec-driven implementation work.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Root skill | ✅ Added |
+
+---
+
+## 2026-05-05 - Commit Reminder Cleanup
+
+### Accomplished This Session
+
+#### Commit Guidance
+- **check.ps1**: Rewrote the post-check commit reminder to be shorter, more specific, and easier to reuse.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Commit reminder | ✅ Clearer |
+
+---
+
+## 2026-05-05 - AGENTS Role Split
+
+### Accomplished This Session
+
+#### Role Definition
+- **AGENTS.md**: Split the workspace guidance into distinct `Spec Agent` and `Implementer Agent` sections so future agents have a clearer ownership boundary.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Role split | ✅ Explicit |
+
+---
+
+## 2026-05-05 - Fast Spec Iteration Split
+
+### Accomplished This Session
+
+#### Fast Path
+- **check-fast.ps1**: Added a scoped iteration check that runs `spec-lint`, file-level `rustfmt`, and target-scoped `cargo check` / `cargo clippy` based on changed paths.
+- **AGENTS.md**: Told agents to use `check-fast.ps1` while iterating and keep `check.ps1` as the full pre-push gate.
+
+#### Spec Guidance
+- **docs/specs/README.md**: Added the fast-path rule to the enforcement section.
+- **docs/specs/_template/README.md**: Added the fast/full check split to the template rules.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Fast path | ✅ Added |
+| Full gate | ✅ Preserved |
+| Agent guidance | ✅ Updated |
+| Fast check verification | ✅ Pass |
+
+---
+
+## 2026-05-05 - Spec Template Wording Tune
+
+### Accomplished This Session
+
+#### Template Clarity
+- **docs/specs/_template/README.md**: Reworded the summary guidance to tell small agents exactly what the one-paragraph summary should cover.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Template summary guidance | ✅ Clearer |
+
+---
+
+## 2026-05-05 - Spec System Tightening
+
+### Accomplished This Session
+
+#### Contract Simplification
+- **docs/specs/README.md**: Trimmed the workspace doc to the core contract, lifecycle, and enforcement rules.
+- **docs/specs/_template/README.md**: Shortened the template and made the rules more prescriptive.
+- **docs/specs/_active/README.md**: Restricted the bucket to approved and implementing specs only.
+- **docs/specs/_done/README.md**: Reduced the archive doc and pointed to the smallest reference package.
+
+#### Golden Example
+- **docs/specs/_done/minimal-spec-example/**: Added a minimal archived spec package as the small-agent reference shape.
+
+#### Enforcement
+- **spec-lint.ps1**: Added a spec validator for required files, spec metadata, folder/status consistency, and done-package completeness.
+- **check.ps1**: Wired spec lint into the standard check flow.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Spec lint | ✅ Pass |
+| Check script wiring | ✅ Pass |
+| Golden example | ✅ Added |
+| Active bucket rule | ✅ Narrowed |
+
+---
+
+## 2026-05-05 - Spec System Clarity Pass
+
+### Accomplished This Session
+
+#### Spec Workflow Tightening
+- **docs/specs/README.md**: Added explicit lifecycle mapping, file ownership, a simple reading order, and a worked example reference.
+- **docs/specs/_template/README.md**: Added a clearer reading order and an explicit rule for `implementation-notes.md` ownership.
+- **docs/specs/_active/README.md**: Clarified that only approved and implementing specs belong there.
+- **docs/specs/_done/README.md**: Clarified that archived specs are reference examples.
+
+#### Example Normalization
+- **docs/specs/_done/benchmarks-in-src/spec.yaml**: Replaced the misleading `implementer: pending` value with an implementation owner.
+- **docs/specs/_done/benchmarks-in-src/README.md**: Marked the archived spec as the current worked example.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Lifecycle mapping | ✅ Explicit |
+| Ownership rules | ✅ Explicit |
+| Worked example | ✅ Clear |
+| Journal entry | ✅ Appended |
+
+---
+
 ## 2026-05-05 - Workspace Spec System
 
 ### Accomplished This Session

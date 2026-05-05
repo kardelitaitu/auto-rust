@@ -7,7 +7,7 @@ Implementer: `pending`
 
 ## Summary
 
-Describe the problem, why it matters, and the target outcome.
+Explain the problem, why it matters, and the target outcome in one paragraph.
 
 ## Scope
 
@@ -26,7 +26,14 @@ Describe the problem, why it matters, and the target outcome.
 - `quality-rules.md`
 - `implementation-notes.md`
 
+## Rules
+
+- Keep the spec short.
+- Put only approved or implementing specs in `_active/`.
+- Put only done specs in `_done/`.
+- Start `implementation-notes.md` empty.
+- Use `.\check-fast.ps1` while iterating and `.\check.ps1` before push.
+
 ## Next Step
 
 Write the spec package before any code changes.
-

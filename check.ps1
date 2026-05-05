@@ -15,7 +15,8 @@ param(
     [switch]$SkipTests,
     [switch]$SkipClippy,
     [switch]$SkipFormat,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$SkipSpecLint
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,6 +42,7 @@ function Write-Header($title) {
 }
 
 $results = @{
+    SpecLint = @{ Passed = $false; Duration = 0 }
     Build  = @{ Passed = $false; Duration = 0 }
     Format = @{ Passed = $false; Duration = 0 }
     Clippy = @{ Passed = $false; Duration = 0 }
@@ -65,6 +67,19 @@ function Write-StepResult($passed) {
     } else {
         Write-Status "FAIL" "Red"
     }
+}
+
+# ---- SPEC LINT -------------------------------------------------------
+if (-not $SkipSpecLint) {
+    Write-StepHeader $stepNum "Spec lint (.\spec-lint.ps1)"
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $proc = Start-Process pwsh -ArgumentList "-NoProfile","-NonInteractive","-File",".\spec-lint.ps1" -NoNewWindow -PassThru -Wait
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $proc.ExitCode -eq 0
+    $results.SpecLint = @{ Passed = $passed; Duration = $elapsed }
+    Write-StepResult $passed
+    if (-not $passed) { $failed = $true }
+    $stepNum++
 }
 
 # ---- BUILD -----------------------------------------------------------
@@ -150,7 +165,7 @@ if (-not $SkipTests -and -not $failed) {
 $total = ((Get-Date) - $startTime).TotalSeconds
 Write-Status "CI CHECKER REPORT:" "Yellow"
 $p = 0; $f = 0
-$runOrder = @("Build", "Format", "Clippy", "Tests")
+$runOrder = @("SpecLint", "Build", "Format", "Clippy", "Tests")
 foreach ($name in $runOrder) {
     $r = $results.$name
     if ($r.Duration -gt 0 -or $r.Passed) {
@@ -167,13 +182,14 @@ Write-Status "----------------------------------------------" "Cyan"
 if ($f -eq 0) {
     Write-Status "All checks passed! Ready for commit." "Green"
     Write-Status "COMMIT REMINDER:" "Yellow"
-    Write-Output "  - Describe the WHY, not the what"
-    Write-Output "  - Format: 'type: description (reason/impact)'"
-    Write-Output "  - Examples:"
-    Write-Output "      'feat: add twitterquote task with LLM integration'"
-    Write-Output "      'fix: handle rate limit in twitterfollow retry logic'"
-    Write-Output "      'docs: rewrite README with TOC (843 -> 350 lines)'"
-    Write-Output "  - DO NOT use: 'update', 'fix', 'changes'"
+    Write-Output "  - Say why the change matters, not just what changed"
+    Write-Output "  - Use: 'type: short summary (reason/impact)'"
+    Write-Output "  - Keep it specific and scoped to one concern"
+    Write-Output "  - Good examples:"
+    Write-Output "      'feat: add twitterquote task (reuse LLM reply flow)'"
+    Write-Output "      'fix: handle rate limits in twitterfollow (retry stability)'"
+    Write-Output "      'docs: trim README TOC (faster first read)'"
+    Write-Output "  - Avoid generic commits like: 'update', 'fix', 'changes'"
     exit 0
 } else {
     Write-Status "Some checks failed. Fix before committing." "Red"

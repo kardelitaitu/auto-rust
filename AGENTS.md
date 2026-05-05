@@ -5,12 +5,18 @@
 
 **PRIORITY ORDER: MCP tools FIRST, shell commands ONLY as fallback.**
 
-### Workspace Spec System
-- For non-trivial changes, create a spec package in `docs/specs/_active/<initiative>/` from `docs/specs/_template/` before editing code.
-- The spec agent owns planning docs only: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`.
-- The implementer agent owns code changes, tests, docs updates, and `implementation-notes.md`.
-- Move the spec folder to `_done/` only after `./check.ps1` passes.
-- If scope changes during implementation, update the spec first.
+### Role Split
+
+#### Spec Agent
+- Write the spec package from `docs/specs/_template/` before code changes.
+- Own planning docs only: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`.
+- Keep specs short, measurable, and easy to review.
+
+#### Implementer Agent
+- Edit code, tests, docs updates, and `implementation-notes.md` after spec approval.
+- Use `.\check-fast.ps1` during implementation for scoped iteration.
+- Move the spec folder to `_done/` only after `.\check.ps1` passes.
+- Update the spec first if scope changes.
 
 ### When to use which MCP tool:
 
@@ -142,7 +148,7 @@ Need external app integration (GitHub, Slack)?
    - `feat: add twitterquote task with LLM integration`
    - `fix: handle rate limit in twitterfollow retry logic`
 8. **Never push to remote without running verification commands** - always execute this before `git push`:
-   - `.\check.ps1` (runs full CI suite: test, fmt, clippy, build check)
+   - `.\check.ps1` (full CI gate)
    - Ensure all checks pass before pushing to remote repository
 
 ### Codebase rules

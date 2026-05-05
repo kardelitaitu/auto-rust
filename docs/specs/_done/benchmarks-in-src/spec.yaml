@@ -3,7 +3,7 @@ id: benchmarks-in-src
 title: Move benchmark harnesses into src
 status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P3
 area:
   - benchmarks

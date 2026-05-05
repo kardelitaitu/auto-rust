@@ -1,61 +1,27 @@
 # Spec Workspace
 
-This folder is the handoff boundary between the planning agent and implementation agents.
+This is the contract between spec planning and implementation.
 
-## Roles
+## Contract
 
-- Spec agent: analyze the codebase, write the spec package, and do not change code.
-- Implementer agent: follow the approved spec, change code/tests/docs, and update implementation notes.
+- One initiative per folder.
+- Spec agent writes the spec package only.
+- Implementer edits code, tests, and docs only after approval.
+- Keep `implementation-notes.md` append-only.
 
 ## Lifecycle
 
-`draft` -> `approved` -> `implementing` -> `verified` -> `done`
+| Status | Folder |
+|---|---|
+| `draft` | `_template/` working copy |
+| `approved` | `_active/<initiative>/` |
+| `implementing` | `_active/<initiative>/` |
+| `done` | `_done/<initiative>/` |
 
-## Folder Layout
+## Enforcement
 
-```text
-docs/specs/
-  README.md
-  _template/
-  _active/
-  _done/
-```
-
-## Required Files For Each Initiative
-
-- `README.md`
-- `spec.yaml`
-- `baseline.md`
-- `internal-api-outline.md`
-- `plan.md`
-- `validation-checklist.md`
-- `ci-commands.md`
-- `decisions.md`
-- `quality-rules.md`
-- `implementation-notes.md`
-
-## Working Rules
-
-- One spec folder per initiative.
-- Keep active work in `_active/`.
-- Move the folder to `_done/` only after `./check.ps1` passes.
-- Update the spec before changing scope.
-- Keep implementation notes append-only.
-- Do not mix unrelated tasks in one spec.
-
-## Handoff Sequence
-
-1. Spec agent writes the spec package from the current codebase state.
-2. Human reviews the spec and approves scope.
-3. Implementer agent edits code and tests against the spec.
-4. Implementer agent updates docs and implementation notes.
-5. Full verification runs, then the spec moves to `_done/`.
-
-## Best Practice
-
-- Make the spec small enough to review.
-- Make acceptance criteria measurable.
-- Keep commands in `ci-commands.md` exact and copyable.
-- Keep decisions in `decisions.md` instead of hiding them in code comments.
-- Use `quality-rules.md` for invariants and review rules.
-
+- `_active/` may contain only `approved` and `implementing` specs.
+- `_done/` may contain only `done` specs.
+- Use `.\check-fast.ps1` during implementation.
+- Move a spec to `_done/` only after `.\check.ps1` passes.
+- Run `spec-lint.ps1` before handoff.

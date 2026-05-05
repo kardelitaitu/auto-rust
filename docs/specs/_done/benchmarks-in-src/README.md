@@ -3,12 +3,14 @@
 Status: `done`
 
 Owner: `spec-agent`
-Implementer: `pending`
+Implementer: `implementation-agent`
 
 ## Summary
 
 Move the Criterion benchmark harnesses from the root `benches/` folder into `src/`
 while keeping them as separate benchmark targets, not runtime library modules.
+
+This folder is the current worked example for the spec system.
 
 ## Scope
 

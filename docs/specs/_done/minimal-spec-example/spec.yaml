@@ -1,0 +1,29 @@
+version: 1
+id: minimal-spec-example
+title: Minimal spec example
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P4
+area:
+  - spec-system
+files:
+  code:
+    - docs/specs/README.md
+  docs:
+    - README.md
+    - baseline.md
+    - internal-api-outline.md
+    - plan.md
+    - validation-checklist.md
+    - ci-commands.md
+    - decisions.md
+    - quality-rules.md
+    - implementation-notes.md
+acceptance:
+  - The package is complete and status matches the folder.
+  - The package stays short enough for a small agent to read quickly.
+non_goals:
+  - Do not change runtime code.
+risks:
+  - Template changes can drift from the example.

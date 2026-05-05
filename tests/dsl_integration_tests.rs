@@ -678,11 +678,11 @@ fn test_task_composition_variable_references() {
                 let mut params = HashMap::new();
                 params.insert(
                     "url".to_string(),
-                    serde_yaml::Value::String("{{base_url}}/api".to_string()),
+                    serde_yaml::Value::String("${base_url}/api".to_string()),
                 );
                 params.insert(
                     "auth".to_string(),
-                    serde_yaml::Value::String("Bearer {{token}}".to_string()),
+                    serde_yaml::Value::String("Bearer ${token}".to_string()),
                 );
                 params
             }),

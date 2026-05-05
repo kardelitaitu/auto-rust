@@ -407,10 +407,7 @@ impl TaskValidator {
                     );
                 }
             }
-            Action::Call {
-                task,
-                parameters: _,
-            } => {
+            Action::Call { task, parameters } => {
                 if task.is_empty() {
                     report.error(format!("{}: Task name cannot be empty", path));
                 } else {
@@ -432,6 +429,17 @@ impl TaskValidator {
                         ));
                     }
                 }
+
+                // Extract variables from parameter values
+                if let Some(params) = parameters {
+                    for value in params.values() {
+                        // Convert serde_yaml::Value to string for variable extraction
+                        if let Some(s) = value.as_str() {
+                            self.extract_variables(s, report);
+                        }
+                    }
+                }
+
                 report.tasks_called.insert(task.clone());
             }
             Action::Screenshot {

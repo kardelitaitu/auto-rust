@@ -315,7 +315,96 @@ cargo run -- my_login username=admin password=secret123
           level: info
 ```
 
-### Task Composition Example
+### Task Composition (Call Action)
+
+Tasks can call other tasks as subroutines, enabling modular, reusable automation workflows.
+
+#### Call Action Reference
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `task` | string | Yes | Name of the task to call |
+| `parameters` | object | No | Key-value pairs passed to the called task |
+
+#### Variable Inheritance (Parent → Child)
+
+When a task calls another, **parent variables are automatically available** to the child:
+
+```yaml
+# Parent task: fetch_and_process.task
+name: fetch_and_process
+actions:
+  - action: navigate
+    url: "https://api.example.com"
+  
+  - action: extract
+    selector: "#api-key"
+    variable: api_key    # Set in parent
+  
+  - action: call
+    task: fetch_data
+    parameters:
+      endpoint: "/users"  # Explicit parameter
+      # api_key is inherited automatically!
+```
+
+```yaml
+# Child task: fetch_data.task
+name: fetch_data
+parameters:
+  endpoint: { type: string, required: true }
+actions:
+  - action: log
+    message: "Using API key: {{api_key}}"  # Inherited from parent
+    level: info
+  - action: log
+    message: "Fetching from {{endpoint}}"   # Explicit parameter
+    level: info
+```
+
+#### Return Values (Child → Parent)
+
+Child tasks can **return data** to parents via `extract` actions. Variables set in the child are merged back into the parent:
+
+```yaml
+# Child task: get_user_info.task
+name: get_user_info
+parameters:
+  user_id: { type: string, required: true }
+actions:
+  - action: navigate
+    url: "https://app.example.com/users/{{user_id}}"
+  - action: extract
+    selector: "#user-name"
+    variable: user_name    # Will be returned to parent
+  - action: extract
+    selector: "#user-email"
+    variable: user_email   # Will be returned to parent
+```
+
+```yaml
+# Parent task: notify_users.task
+name: notify_users
+actions:
+  - action: call
+    task: get_user_info
+    parameters:
+      user_id: "12345"
+  
+  - action: log
+    message: "Found user: {{user_name}} ({{user_email}})"  # From child!
+    level: info
+```
+
+#### Recursion Limits
+
+Task composition supports up to **10 levels of nesting** (configurable). Exceeding this limit causes execution to fail with a clear error:
+
+```
+Maximum call depth (10) exceeded when calling task 'recursive_task'
+```
+
+#### Complete Example: Login + Dashboard Workflow
 
 Create reusable task `tasks/login.task`:
 
@@ -336,6 +425,12 @@ actions:
     text: "{{password}}"
   - action: click
     selector: "#submit"
+  - action: wait_for
+    selector: "#dashboard"
+    timeout_ms: 5000
+  - action: extract
+    selector: "#user-id"
+    variable: logged_in_user_id
 ```
 
 Create workflow `tasks/full_workflow.task`:
@@ -351,6 +446,10 @@ actions:
       url: "https://app.example.com"
       username: "admin"
       password: "{{admin_pass}}"
+  
+  - action: log
+    message: "Logged in as user {{logged_in_user_id}}"  # From login task
+    level: info
   
   - action: navigate
     url: "https://app.example.com/dashboard"

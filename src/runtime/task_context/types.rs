@@ -7,6 +7,204 @@ use crate::utils::mouse::CursorMovementConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ============================================================================
+// Interaction Pipeline Types
+// ============================================================================
+/// The kind of interaction being performed through the shared pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InteractionKind {
+    /// Click with human-like cursor movement
+    Click,
+    /// Native OS-level click
+    NativeClick,
+    /// Type text with human-like timing
+    Type,
+    /// Press individual keys
+    Keyboard,
+    /// Focus an element
+    Focus,
+    /// Select all text in an element
+    SelectAll,
+    /// Clear input content
+    Clear,
+    /// Hover over an element
+    Hover,
+}
+
+/// Request for an interaction through the shared pipeline.
+#[derive(Debug, Clone)]
+pub struct InteractionRequest {
+    /// The kind of interaction to perform
+    pub kind: InteractionKind,
+    /// The target selector
+    pub selector: String,
+    /// Optional text for type/keyboard actions
+    pub text: Option<String>,
+    /// Whether to verify the interaction succeeded
+    pub verify: bool,
+    /// Whether to allow fallback behavior on failure
+    pub allow_fallback: bool,
+    /// Minimum pause after interaction (ms)
+    pub post_action_pause_ms: u64,
+}
+
+impl InteractionRequest {
+    /// Create a new click interaction request
+    pub fn click(selector: impl Into<String>) -> Self {
+        Self {
+            kind: InteractionKind::Click,
+            selector: selector.into(),
+            text: None,
+            verify: true,
+            allow_fallback: true,
+            post_action_pause_ms: 120,
+        }
+    }
+
+    /// Create a new type interaction request
+    pub fn type_text(selector: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            kind: InteractionKind::Type,
+            selector: selector.into(),
+            text: Some(text.into()),
+            verify: true,
+            allow_fallback: true,
+            post_action_pause_ms: 120,
+        }
+    }
+
+    /// Create a new focus interaction request
+    pub fn focus(selector: impl Into<String>) -> Self {
+        Self {
+            kind: InteractionKind::Focus,
+            selector: selector.into(),
+            text: None,
+            verify: true,
+            allow_fallback: false,
+            post_action_pause_ms: 80,
+        }
+    }
+
+    /// Create a new clear interaction request
+    pub fn clear(selector: impl Into<String>) -> Self {
+        Self {
+            kind: InteractionKind::Clear,
+            selector: selector.into(),
+            text: None,
+            verify: true,
+            allow_fallback: false,
+            post_action_pause_ms: 100,
+        }
+    }
+
+    /// Create a new select_all interaction request
+    pub fn select_all(selector: impl Into<String>) -> Self {
+        Self {
+            kind: InteractionKind::SelectAll,
+            selector: selector.into(),
+            text: None,
+            verify: true,
+            allow_fallback: false,
+            post_action_pause_ms: 80,
+        }
+    }
+
+    /// Disable verification for this interaction
+    pub fn without_verification(mut self) -> Self {
+        self.verify = false;
+        self
+    }
+
+    /// Disable fallback for this interaction
+    pub fn without_fallback(mut self) -> Self {
+        self.allow_fallback = false;
+        self
+    }
+
+    /// Set a custom post-action pause
+    pub fn with_pause(mut self, ms: u64) -> Self {
+        self.post_action_pause_ms = ms;
+        self
+    }
+}
+
+/// Result of an interaction through the shared pipeline.
+#[derive(Debug, Clone)]
+pub struct InteractionResult {
+    /// Whether the interaction succeeded
+    pub success: bool,
+    /// Whether fallback was used to achieve success
+    pub fallback_used: bool,
+    /// Whether verification was performed and passed
+    pub verified: bool,
+    /// X coordinate of the interaction (if applicable)
+    pub x: Option<f64>,
+    /// Y coordinate of the interaction (if applicable)
+    pub y: Option<f64>,
+    /// Error message if interaction failed
+    pub error: Option<String>,
+}
+
+impl InteractionResult {
+    /// Create a successful result
+    pub fn success() -> Self {
+        Self {
+            success: true,
+            fallback_used: false,
+            verified: true,
+            x: None,
+            y: None,
+            error: None,
+        }
+    }
+
+    /// Create a successful result with coordinates
+    pub fn success_at(x: f64, y: f64) -> Self {
+        Self {
+            success: true,
+            fallback_used: false,
+            verified: true,
+            x: Some(x),
+            y: Some(y),
+            error: None,
+        }
+    }
+
+    /// Create a successful result with fallback
+    pub fn fallback_success() -> Self {
+        Self {
+            success: true,
+            fallback_used: true,
+            verified: true,
+            x: None,
+            y: None,
+            error: None,
+        }
+    }
+
+    /// Create a failed result
+    pub fn failed(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            fallback_used: false,
+            verified: false,
+            x: None,
+            y: None,
+            error: Some(error.into()),
+        }
+    }
+
+    /// Check if result is success
+    pub fn is_success(&self) -> bool {
+        self.success
+    }
+
+    /// Check if fallback was used
+    pub fn is_fallback(&self) -> bool {
+        self.fallback_used
+    }
+}
+
 /// HTTP response structure for network operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpResponse {

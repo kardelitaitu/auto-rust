@@ -68,6 +68,7 @@ use crate::ClipboardState;
 // Submodules
 pub mod click_learning;
 pub mod interaction;
+pub mod interaction_pipeline;
 pub mod query;
 pub mod types;
 
@@ -77,9 +78,10 @@ pub use click_learning::{
     ClickElementPriority, ClickFatigueLevel, ClickLearningState, ClickPageContext,
     ClickTimingContext, ClickTimingProfile, SelectorLearningStats,
 };
+pub use interaction_pipeline::execute_interaction;
 pub use types::{
-    ClickAndWaitOutcome, FileMetadata, FocusOutcome, FocusStatus, HttpResponse,
-    RandomCursorOutcome, Rect, WaitForVisibleStatus,
+    ClickAndWaitOutcome, FileMetadata, FocusOutcome, FocusStatus, HttpResponse, InteractionKind,
+    InteractionRequest, InteractionResult, RandomCursorOutcome, Rect, WaitForVisibleStatus,
 };
 
 // Query and interaction modules are public for standalone use
@@ -5329,6 +5331,40 @@ impl TaskContext {
         self.press("Backspace").await
     }
 
+    /// Execute an interaction through the shared pipeline.
+    ///
+    /// This method provides a unified interface for browser interactions,
+    /// ensuring consistent preflight, execution, verification, and
+    /// postflight behavior across all interaction types.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The interaction request specifying kind, selector, and options
+    ///
+    /// # Returns
+    ///
+    /// Returns an `InteractionResult` with success status, coordinates (if applicable),
+    /// and error information (if failed).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use auto::runtime::task_context::{TaskContext, InteractionRequest};
+    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
+    /// // Click using the pipeline
+    /// let result = api.interact(InteractionRequest::click("#submit")).await?;
+    /// assert!(result.is_success());
+    ///
+    /// // Type using the pipeline
+    /// let result = api.interact(InteractionRequest::type_text("#input", "hello")).await?;
+    /// assert!(result.is_success());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn interact(&self, request: InteractionRequest) -> Result<InteractionResult> {
+        interaction_pipeline::execute_interaction(self, request).await
+    }
+
     async fn verify_selector_hit(&self, selector: &str, x: f64, y: f64) -> Result<bool> {
         let selector_js = serde_json::to_string(selector)?;
         let js = format!(
@@ -5360,6 +5396,84 @@ impl TaskContext {
         let base_ms = action_delay.min_ms.clamp(120, 1_500).max(min_budget_ms);
         let variance_pct = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
         timing::uniform_pause(base_ms, variance_pct).await;
+    }
+
+    // ============================================================================
+    // Internal Pipeline Methods
+    // ============================================================================
+    // These methods are used by the interaction pipeline. They mirror the public
+    // API but allow the pipeline to orchestrate preflight, execution, and
+    // postflight consistently across all interaction types.
+
+    /// Internal click method for pipeline use (includes learning/retry logic)
+    pub(crate) async fn click_internal(&self, selector: &str) -> Result<ClickOutcome> {
+        self.click(selector).await
+    }
+
+    /// Internal native click method for pipeline use
+    pub(crate) async fn nativeclick_internal(&self, selector: &str) -> Result<ClickOutcome> {
+        self.nativeclick(selector).await
+    }
+
+    /// Internal focus method for pipeline use
+    pub(crate) async fn focus_internal(&self, selector: &str) -> Result<FocusOutcome> {
+        self.focus(selector).await
+    }
+
+    /// Internal hover method for pipeline use
+    pub(crate) async fn hover_internal(&self, selector: &str) -> Result<HoverOutcome> {
+        self.hover(selector).await
+    }
+
+    /// Internal keyboard method for pipeline use
+    pub(crate) async fn keyboard_internal(&self, selector: &str, text: &str) -> Result<()> {
+        self.keyboard(selector, text).await
+    }
+
+    /// Internal select_all method for pipeline use
+    pub(crate) async fn select_all_internal(&self, selector: &str) -> Result<()> {
+        self.select_all(selector).await
+    }
+
+    /// Internal clear method for pipeline use
+    pub(crate) async fn clear_internal(&self, selector: &str) -> Result<()> {
+        self.clear(selector).await
+    }
+
+    /// Coordinate fallback click for pipeline use
+    /// Gets element coordinates and clicks at that position directly
+    pub(crate) async fn click_coordinate_fallback(&self, selector: &str) -> Result<ClickOutcome> {
+        // Get element bounding rect for coordinates
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({});
+                if (!el) return null;
+                const rect = el.getBoundingClientRect();
+                return {{ x: rect.left + rect.width/2, y: rect.top + rect.height/2 }};
+            }})()"#,
+            serde_json::to_string(selector)?
+        );
+
+        let eval = self.page().evaluate(js).await?;
+        let coords = eval.value();
+
+        let (x, y) = match coords {
+            Some(v) => (
+                v.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                v.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            ),
+            None => return Err(anyhow::anyhow!("Element not found for coordinate fallback")),
+        };
+
+        self.click_at(x, y).await?;
+
+        Ok(ClickOutcome {
+            click: ClickStatus::Success,
+            x,
+            y,
+            screen_x: None,
+            screen_y: None,
+        })
     }
 
     async fn execute_nativecursor(&self, query: Option<&str>) -> Result<NativeCursorOutcome> {

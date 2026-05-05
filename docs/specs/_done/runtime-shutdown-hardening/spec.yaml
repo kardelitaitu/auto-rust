@@ -1,0 +1,46 @@
+version: 1
+id: runtime-shutdown-hardening
+title: Runtime shutdown hardening
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P3
+area:
+  - runtime
+  - shutdown
+  - orchestrator
+  - session
+  - tests
+files:
+  code:
+    - src/orchestrator.rs
+    - src/runtime/execution.rs
+    - src/runtime/shutdown.rs
+    - src/session/mod.rs
+    - src/utils/navigation.rs
+    - tests/graceful_shutdown_integration.rs
+    - tests/orchestrator_integration.rs
+  docs:
+    - docs/specs/_done/runtime-shutdown-hardening/README.md
+    - docs/specs/_done/runtime-shutdown-hardening/baseline.md
+    - docs/specs/_done/runtime-shutdown-hardening/internal-api-outline.md
+    - docs/specs/_done/runtime-shutdown-hardening/plan.md
+    - docs/specs/_done/runtime-shutdown-hardening/validation-checklist.md
+    - docs/specs/_done/runtime-shutdown-hardening/ci-commands.md
+    - docs/specs/_done/runtime-shutdown-hardening/decisions.md
+    - docs/specs/_done/runtime-shutdown-hardening/quality-rules.md
+    - docs/specs/_done/runtime-shutdown-hardening/implementation-notes.md
+acceptance:
+  - Cancellation before worker acquisition does not leave the session stuck in Busy.
+  - Cancellation during task execution unwinds cleanly and releases owned runtime resources.
+  - Cancellation during backoff stops retry flow without hiding the cancellation cause.
+  - Cancellation after page acquisition releases the page or permit path correctly.
+  - Final session state resolves to Idle or Failed, never stale Busy.
+  - Cancellation remains explicit and is not inferred from error message text.
+non_goals:
+  - Do not redesign CLI parsing or task registration.
+  - Do not redesign browser discovery or session construction.
+  - Do not introduce a new task interaction pipeline in this spec.
+risks:
+  - Test timing can become flaky if the timing cases are not isolated from real browser startup.
+  - Cleanup regressions can hide behind generic error handling if cancellation is not modeled explicitly.

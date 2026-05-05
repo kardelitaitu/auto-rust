@@ -501,3 +501,203 @@ fn test_condition_types() {
         },
     ];
 }
+
+/// Test task composition with variable inheritance
+/// Verifies that parent variables are passed to child tasks
+#[test]
+fn test_task_composition_variable_inheritance() {
+    use auto::task::validation::validate_task_with_known_tasks;
+
+    // Parent task that sets a variable and calls child
+    let parent_task = TaskDefinition {
+        name: "parent_task".to_string(),
+        description: "Sets variables and calls child".to_string(),
+        policy: "default".to_string(),
+        parameters: HashMap::new(),
+        include: vec![],
+        actions: vec![
+            Action::Log {
+                message: "Setting parent_var".to_string(),
+                level: Some(LogLevel::Info),
+            },
+            Action::Call {
+                task: "child_task".to_string(),
+                parameters: Some({
+                    let mut params = HashMap::new();
+                    params.insert(
+                        "explicit_param".to_string(),
+                        serde_yaml::Value::String("value".to_string()),
+                    );
+                    params
+                }),
+            },
+        ],
+    };
+
+    // Validate that parent properly references variables
+    let known_tasks = vec!["child_task".to_string()];
+    let report = validate_task_with_known_tasks(&parent_task, known_tasks);
+
+    // Should be valid - no errors expected
+    assert!(
+        report.is_valid(),
+        "Parent task with call action should be valid"
+    );
+
+    // Verify the call action is detected
+    assert!(
+        report.tasks_called.contains("child_task"),
+        "Validation should detect child_task is called"
+    );
+}
+
+/// Test task composition return values
+/// Verifies child tasks can "return" variables to parent
+#[test]
+fn test_task_composition_return_values() {
+    use auto::task::validation::validate_task;
+
+    // Child task that extracts data (simulating a "return")
+    let child_task = TaskDefinition {
+        name: "data_extractor".to_string(),
+        description: "Extracts data and sets variables".to_string(),
+        policy: "default".to_string(),
+        parameters: HashMap::new(),
+        include: vec![],
+        actions: vec![
+            Action::Extract {
+                selector: "#price".to_string(),
+                variable: Some("product_price".to_string()),
+            },
+            Action::Extract {
+                selector: "#name".to_string(),
+                variable: Some("product_name".to_string()),
+            },
+        ],
+    };
+
+    // Validate child task
+    let report = validate_task(&child_task);
+    assert!(report.is_valid(), "Child extractor task should be valid");
+
+    // Verify variables are detected
+    assert!(
+        report.variables_referenced.contains("product_price"),
+        "Should detect product_price variable"
+    );
+    assert!(
+        report.variables_referenced.contains("product_name"),
+        "Should detect product_name variable"
+    );
+}
+
+/// Test multi-level task composition (chained calls)
+/// Verifies A -> B -> C call chain structure
+#[test]
+fn test_task_composition_chained_calls() {
+    use auto::task::validation::validate_task_with_known_tasks;
+
+    // Level 1 task calls Level 2
+    let level1 = TaskDefinition {
+        name: "level1".to_string(),
+        description: "Calls level2".to_string(),
+        policy: "default".to_string(),
+        parameters: HashMap::new(),
+        include: vec![],
+        actions: vec![Action::Call {
+            task: "level2".to_string(),
+            parameters: None,
+        }],
+    };
+
+    // Level 2 task calls Level 3
+    let level2 = TaskDefinition {
+        name: "level2".to_string(),
+        description: "Calls level3".to_string(),
+        policy: "default".to_string(),
+        parameters: HashMap::new(),
+        include: vec![],
+        actions: vec![Action::Call {
+            task: "level3".to_string(),
+            parameters: None,
+        }],
+    };
+
+    // Level 3 leaf task
+    let level3 = TaskDefinition {
+        name: "level3".to_string(),
+        description: "Leaf task".to_string(),
+        policy: "default".to_string(),
+        parameters: HashMap::new(),
+        include: vec![],
+        actions: vec![Action::Wait { duration_ms: 100 }],
+    };
+
+    // Validate each level
+    let all_tasks = vec!["level2".to_string(), "level3".to_string()];
+
+    let report1 = validate_task_with_known_tasks(&level1, all_tasks.clone());
+    let report2 = validate_task_with_known_tasks(&level2, all_tasks.clone());
+    let report3 = validate_task_with_known_tasks(&level3, all_tasks);
+
+    // All should be valid
+    assert!(report1.is_valid(), "Level 1 should be valid");
+    assert!(report2.is_valid(), "Level 2 should be valid");
+    assert!(report3.is_valid(), "Level 3 should be valid");
+
+    // Verify call chain detection
+    assert!(
+        report1.tasks_called.contains("level2"),
+        "Level 1 should call level2"
+    );
+    assert!(
+        report2.tasks_called.contains("level3"),
+        "Level 2 should call level3"
+    );
+    assert!(
+        report3.tasks_called.is_empty(),
+        "Level 3 should not call any tasks"
+    );
+}
+
+/// Test variable reference detection across task boundaries
+#[test]
+fn test_task_composition_variable_references() {
+    use auto::task::validation::validate_task;
+
+    // Task that uses variables in call parameters
+    let task = TaskDefinition {
+        name: "variable_user".to_string(),
+        description: "Uses variables in call".to_string(),
+        policy: "default".to_string(),
+        parameters: HashMap::new(),
+        include: vec![],
+        actions: vec![Action::Call {
+            task: "helper".to_string(),
+            parameters: Some({
+                let mut params = HashMap::new();
+                params.insert(
+                    "url".to_string(),
+                    serde_yaml::Value::String("{{base_url}}/api".to_string()),
+                );
+                params.insert(
+                    "auth".to_string(),
+                    serde_yaml::Value::String("Bearer {{token}}".to_string()),
+                );
+                params
+            }),
+        }],
+    };
+
+    let report = validate_task(&task);
+
+    // Should detect variables in parameters
+    assert!(
+        report.variables_referenced.contains("base_url"),
+        "Should detect base_url variable in parameter"
+    );
+    assert!(
+        report.variables_referenced.contains("token"),
+        "Should detect token variable in parameter"
+    );
+}

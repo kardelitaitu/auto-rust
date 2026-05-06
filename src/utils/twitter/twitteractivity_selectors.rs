@@ -387,9 +387,20 @@ pub fn js_root_tweet_button_center(selector: &str) -> String {
                 return {{ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }};
             }}
 
-            var articles = Array.prototype.slice.call(
-                document.querySelectorAll('article[data-testid="tweet"]')
-            ).filter(visible);
+            var modal = document.querySelector('div[role="dialog"]');
+            var articles = [];
+            if (modal && visible(modal)) {{
+                articles = Array.prototype.slice.call(
+                    modal.querySelectorAll('article[data-testid="tweet"]')
+                ).filter(visible);
+            }}
+
+            if (articles.length === 0) {{
+                articles = Array.prototype.slice.call(
+                    document.querySelectorAll('article[data-testid="tweet"]')
+                ).filter(visible);
+            }}
+
             var statusMatch = window.location.pathname.match(/\/status\/(\d+)/);
             var targetStatusId = statusMatch ? statusMatch[1] : null;
             var targetArticle = null;

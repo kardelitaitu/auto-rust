@@ -87,7 +87,29 @@ pub async fn is_on_home_feed(api: &TaskContext) -> Result<bool> {
 #[instrument(skip(api))]
 pub async fn is_on_tweet_page(api: &TaskContext) -> Result<bool> {
     let url = get_current_url(api).await?;
-    Ok(url.contains("/status/") || url.contains("x.com/") && url.contains("/status/"))
+    if url.contains("/status/") {
+        return Ok(true);
+    }
+
+    // Check for tweet detail modal visibility
+    let js = r#"
+        (function() {
+            const modal = document.querySelector('div[role="dialog"]');
+            if (modal) {
+                const rect = modal.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) return true;
+            }
+            const detail = document.querySelector('div[data-testid="tweetDetail"]');
+            if (detail) {
+                const rect = detail.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) return true;
+            }
+            return false;
+        })()
+    "#;
+
+    let result = api.page().evaluate(js).await?;
+    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
 fn root_tweet_button_center_js(selector: &str) -> String {

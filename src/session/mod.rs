@@ -6,6 +6,10 @@
 //! - Health monitoring and failure tracking
 //! - Graceful shutdown and cleanup
 
+pub mod connector;
+pub mod factory;
+pub mod pool;
+
 use crate::internal::profile::{random_preset, randomize_profile, BrowserProfile, ProfileRuntime};
 use crate::state::{bind_page_overlay, unbind_page_overlay, SessionOverlayState};
 use chromiumoxide::cdp::browser_protocol::target::TargetId;

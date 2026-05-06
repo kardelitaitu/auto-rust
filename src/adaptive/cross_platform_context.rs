@@ -7,7 +7,7 @@ use std::time::Duration;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::utils::twitter::twitteractivity_sentiment::{Sentiment, analyze_tweet_sentiment};
+use crate::utils::twitter::sentiment::{Sentiment, analyze_tweet_sentiment};
 
 /// Cross-platform context manager for multi-platform automation.
 pub struct CrossPlatformContext {

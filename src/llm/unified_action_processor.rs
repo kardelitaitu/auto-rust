@@ -2,7 +2,8 @@
 //! Integrates sentiment analysis with reply/quote generation.
 
 use crate::llm::unified_processor::{SentimentAwareProcessor, ReplyWithSentiment, QuoteWithSentiment};
-use crate::utils::twitter::twitteractivity_sentiment::{Sentiment, SentimentAnalysis};
+use crate::llm::unified_processor::SentimentAnalysis;
+use crate::utils::twitter::sentiment::Sentiment;
 use crate::adaptive::learning_engine::{EngagementGoal, AdaptiveLearningEngine};
 
 pub struct UnifiedActionProcessor {

@@ -3,7 +3,7 @@
 
 use crate::llm::unified_processor::UnifiedActionProcessor;
 use crate::utils::twitter::twitteractivity_feed;
-use crate::utils::twitter::twitteractivity_sentiment::Sentiment;
+use crate::utils::twitter::sentiment::Sentiment;
 
 #[tokio::test]
 async fn test_unified_llm_batch_20_replies() {

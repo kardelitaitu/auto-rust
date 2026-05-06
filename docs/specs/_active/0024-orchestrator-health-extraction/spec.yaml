@@ -1,0 +1,20 @@
+version: 1
+id: 0024-orchestrator-health-extraction
+title: Orchestrator Health Monitor Extraction
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - core-orchestrator
+files:
+  code:
+    - src/orchestrator.rs
+  docs:
+    - docs/specs/_active/0024-orchestrator-health-extraction/README.md
+    - docs/specs/_active/0024-orchestrator-health-extraction/plan.md
+    - docs/specs/_active/0024-orchestrator-health-extraction/validation.md
+    - docs/specs/_active/0024-orchestrator-health-extraction/notes.md
+acceptance: []
+non_goals: []
+risks: []

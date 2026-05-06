@@ -7,15 +7,11 @@
 use async_trait::async_trait;
 use log::warn;
 
-use super::types::{DecisionEngine, DecisionStrategy, EngagementDecision, TweetContext};
 use super::strategies::{
-    DecisionStrategyImpl,
-    legacy::LegacyStrategy,
-    persona::PersonaStrategy,
-    llm::LlmStrategy,
-    hybrid::HybridStrategy,
-    unified::UnifiedStrategy,
+    hybrid::HybridStrategy, legacy::LegacyStrategy, llm::LlmStrategy, persona::PersonaStrategy,
+    unified::UnifiedStrategy, DecisionStrategyImpl,
 };
+use super::types::{DecisionEngine, DecisionStrategy, EngagementDecision, TweetContext};
 
 /// Unified engine that can use any decision strategy.
 pub struct UnifiedEngine {
@@ -46,13 +42,19 @@ impl UnifiedEngine {
     fn create_strategies(
         strategy: DecisionStrategy,
         api_key: Option<String>,
-    ) -> (Box<dyn DecisionStrategyImpl>, Option<Box<dyn DecisionStrategyImpl>>) {
+    ) -> (
+        Box<dyn DecisionStrategyImpl>,
+        Option<Box<dyn DecisionStrategyImpl>>,
+    ) {
         match strategy {
             DecisionStrategy::Legacy => (Box::new(LegacyStrategy), None),
             DecisionStrategy::Persona => (Box::new(PersonaStrategy::new()), None),
             DecisionStrategy::Llm => {
                 if let Some(key) = api_key {
-                    (Box::new(LlmStrategy::new(key)), Some(Box::new(PersonaStrategy::new())))
+                    (
+                        Box::new(LlmStrategy::new(key)),
+                        Some(Box::new(PersonaStrategy::new())),
+                    )
                 } else {
                     (Box::new(PersonaStrategy::new()), None)
                 }
@@ -66,14 +68,20 @@ impl UnifiedEngine {
             }
             DecisionStrategy::Unified => {
                 if let Some(key) = api_key {
-                    (Box::new(UnifiedStrategy::new(key)), Some(Box::new(PersonaStrategy::new())))
+                    (
+                        Box::new(UnifiedStrategy::new(key)),
+                        Some(Box::new(PersonaStrategy::new())),
+                    )
                 } else {
                     (Box::new(PersonaStrategy::new()), None)
                 }
             }
             DecisionStrategy::Auto => {
                 if let Some(key) = api_key {
-                    (Box::new(UnifiedStrategy::new(key)), Some(Box::new(PersonaStrategy::new())))
+                    (
+                        Box::new(UnifiedStrategy::new(key)),
+                        Some(Box::new(PersonaStrategy::new())),
+                    )
                 } else {
                     (Box::new(PersonaStrategy::new()), None)
                 }

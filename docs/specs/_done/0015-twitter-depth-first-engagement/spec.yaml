@@ -1,0 +1,31 @@
+version: 1
+id: 0015-twitter-depth-first-engagement
+title: Twitter Depth-First Thread Engagement
+status: done
+owner: spec-agent
+implementer: cascade
+priority: P1
+area:
+  - twitter-activity
+files:
+  code:
+    - src/utils/twitter/twitteractivity_engagement.rs
+    - src/utils/twitter/twitteractivity_interact.rs
+    - src/utils/twitter/twitteractivity_selectors.rs
+    - src/utils/twitter/twitteractivity_dive.rs
+  docs:
+    - docs/specs/_done/0015-twitter-depth-first-engagement/README.md
+    - docs/specs/_done/0015-twitter-depth-first-engagement/plan.md
+    - docs/specs/_done/0015-twitter-depth-first-engagement/validation.md
+    - docs/specs/_done/0015-twitter-depth-first-engagement/notes.md
+acceptance:
+  - Automation can engage with multiple high-quality replies during a single thread dive.
+  - Thread replies are scanned and filtered using existing Smart Decision logic.
+  - Reduced navigation overhead (fewer jumps back to home feed).
+  - Main loop respects global engagement limits across both root tweets and replies.
+non_goals:
+  - Infinite thread depth (limit to top-level replies or a configurable depth).
+  - Engaging with every single reply (only high-quality candidates).
+risks:
+  - Increased time spent inside a single thread could lead to "getting stuck" if scrolling fails.
+  - Engagement limits could be hit faster, requiring smarter prioritization.

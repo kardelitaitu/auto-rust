@@ -1,0 +1,20 @@
+version: 1
+id: 0019-task-context-test-extraction
+title: TaskContext Integration Test Extraction
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - runtime
+files:
+  code:
+    - src/runtime/task_context.rs
+  docs:
+    - docs/specs/_active/0019-task-context-test-extraction/README.md
+    - docs/specs/_active/0019-task-context-test-extraction/plan.md
+    - docs/specs/_active/0019-task-context-test-extraction/validation.md
+    - docs/specs/_active/0019-task-context-test-extraction/notes.md
+acceptance: []
+non_goals: []
+risks: []

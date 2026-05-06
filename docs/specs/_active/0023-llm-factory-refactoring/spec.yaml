@@ -1,0 +1,20 @@
+version: 1
+id: 0023-llm-factory-refactoring
+title: LLM Client Factory Modularization
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - llm
+files:
+  code:
+    - src/llm/client.rs
+  docs:
+    - docs/specs/_active/0023-llm-factory-refactoring/README.md
+    - docs/specs/_active/0023-llm-factory-refactoring/plan.md
+    - docs/specs/_active/0023-llm-factory-refactoring/validation.md
+    - docs/specs/_active/0023-llm-factory-refactoring/notes.md
+acceptance: []
+non_goals: []
+risks: []

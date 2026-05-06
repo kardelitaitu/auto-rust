@@ -3,7 +3,7 @@
 
 use crate::llm::models::ChatMessage;
 use crate::llm::reply_strategies;
-use crate::utils::twitter::twitteractivity_sentiment::Sentiment;
+use crate::utils::twitter::sentiment::Sentiment;
 use serde_json::Value;
 
 /// Sentiment analysis result with confidence score.
@@ -269,9 +269,9 @@ impl UnifiedLLMProcessor {
 
     /// Analyze sentiment from text using sentiment analysis utilities.
     pub fn analyze_sentiment_from_text(text: &str) -> SentimentAnalysis {
-        use crate::utils::twitter::twitteractivity_sentiment::analyze_sentiment;
+        use crate::utils::twitter::sentiment::analyze_sentiment_sync;
 
-        let sentiment = analyze_sentiment(text);
+        let sentiment = analyze_sentiment_sync(text);
         let indicators = Self::extract_sentiment_indicators(text);
         let confidence = Self::calculate_confidence(text, &indicators);
 

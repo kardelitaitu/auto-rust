@@ -1,0 +1,38 @@
+version: 1
+id: 0001-benchmarks-in-src
+title: Move benchmark harnesses into src
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P3
+area:
+  - benchmarks
+  - cargo
+  - src-layout
+files:
+  code:
+    - Cargo.toml
+    - benches/
+    - src/benchmarks/
+    - src/benchmark_support/
+    - src/utils/mouse/trajectory.rs
+    - src/utils/accessibility_locator.rs
+    - src/adaptive/predictive_scorer.rs
+    - src/adaptive/mod.rs
+    - src/utils/mod.rs
+  docs:
+    - docs/specs/_done/0001-benchmarks-in-src/README.md
+    - docs/specs/_done/0001-benchmarks-in-src/plan.md
+    - docs/specs/_done/0001-benchmarks-in-src/validation.md
+    - docs/specs/_done/0001-benchmarks-in-src/notes.md
+acceptance:
+  - Benchmark harnesses live under src/ and Cargo points at the new paths.
+  - Benchmark code uses real library modules, not copied benchmark-only logic.
+  - cargo bench and ./check.ps1 pass after the move.
+  - Root benches/ is removed after parity is confirmed.
+non_goals:
+  - Do not turn benchmark files into runtime modules.
+  - Do not widen public API beyond the minimal seam needed for benchmarks.
+risks:
+  - accessibility locator is feature-gated today.
+  - predictive scorer may need a small public seam before it can be benchmarked.

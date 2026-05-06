@@ -3,7 +3,8 @@
 
 use crate::llm::models::ChatMessage;
 use crate::llm::reply_strategies;
-use crate::utils::twitter::twitteractivity_sentiment::{analyze_sentiment, SentimentAnalysis};
+use crate::llm::unified_processor::SentimentAnalysis;
+use crate::utils::twitter::sentiment::{Sentiment, analyze_sentiment_sync};
 
 pub struct SentimentAwareProcessor {
     llm: crate::llm::Llm,
@@ -111,7 +112,7 @@ impl SentimentAwareProcessor {
         let content = Self::clean_response_content(response);
         
         // Use actual sentiment analysis on the LLM response
-        let sentiment = analyze_sentiment(&content);
+        let sentiment = analyze_sentiment_sync(&content);
         let indicators = Self::extract_sentiment_indicators_static(&content);
         let confidence = Self::calculate_confidence(&content, &indicators);
         
@@ -137,7 +138,7 @@ impl SentimentAwareProcessor {
         response: &str,
     ) -> Result<SentimentAnalysis, anyhow::Error> {
         let content = Self::clean_response_content(response);
-        let sentiment = analyze_sentiment(&content);
+        let sentiment = analyze_sentiment_sync(&content);
         let indicators = Self::extract_sentiment_indicators_static(&content);
         let confidence = Self::calculate_confidence(&content, &indicators);
         

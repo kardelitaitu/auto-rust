@@ -1,7 +1,7 @@
 //! Enhanced sentiment analysis with contextual understanding.
 //! Incorporates thread context, user reputation, and temporal factors beyond basic keyword matching.
 
-use crate::utils::twitter::twitteractivity_sentiment::{analyze_sentiment, Sentiment};
+use crate::utils::twitter::sentiment::{analyze_sentiment_sync, Sentiment};
 use serde_json::Value;
 
 /// Thread context information for sentiment analysis.
@@ -168,7 +168,7 @@ impl EnhancedSentimentAnalyzer {
         temporal_factors: Option<&TemporalFactors>,
     ) -> EnhancedSentimentResult {
         // Get base sentiment analysis
-        let base_sentiment = analyze_sentiment(tweet_text);
+        let base_sentiment = analyze_sentiment_sync(tweet_text);
         let base_score = sentiment_to_score(base_sentiment);
 
         // Initialize score breakdown
@@ -798,7 +798,7 @@ pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
                 (Some(author), Some(text)) => {
                     if let (Some(author_str), Some(text_str)) = (author.as_str(), text.as_str()) {
                         if !author_str.trim().is_empty() && !text_str.trim().is_empty() {
-                            let sentiment = analyze_sentiment(text_str);
+                            let sentiment = analyze_sentiment_sync(text_str);
                             reply_sentiments.push(sentiment_to_score(sentiment));
                             valid_replies += 1;
                         } else {

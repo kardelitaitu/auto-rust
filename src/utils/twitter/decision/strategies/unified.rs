@@ -3,14 +3,16 @@
 //! Makes a SINGLE LLM call that returns both engagement decision and
 //! generated content (reply or quote). Ported from `twitteractivity_decision_unified.rs`.
 
+use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
+use crate::utils::twitter::decision::types::{
+    DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext,
+};
 use async_trait::async_trait;
-use log::{info, warn, error};
+use log::{error, info, warn};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
-use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
-use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext};
 
 /// Unified analysis response - decision + content in one struct
 #[derive(Debug, Clone, Deserialize)]
@@ -28,6 +30,7 @@ pub struct UnifiedAnalysis {
     /// Whether to engage at all
     pub engage: bool,
     /// Generated content (for quote or reply), null otherwise
+    #[allow(dead_code)]
     pub reply: Option<String>,
 }
 
@@ -244,8 +247,15 @@ Respond ONLY with valid JSON matching this exact schema:
 
         // Tragedy keywords
         let tragedy = [
-            "died", "death", "passed away", "funeral", "grief", "tragedy",
-            "killed", "murdered", "suicide",
+            "died",
+            "death",
+            "passed away",
+            "funeral",
+            "grief",
+            "tragedy",
+            "killed",
+            "murdered",
+            "suicide",
         ];
         if tragedy.iter().any(|kw| combined.contains(kw)) {
             return Some("Safety: tragedy/grief detected".to_string());
@@ -253,7 +263,12 @@ Respond ONLY with valid JSON matching this exact schema:
 
         // Crypto scam patterns
         let crypto_scam = [
-            "dm me", "dm for", "check my bio", "guaranteed profit", "100x gem", "airdrop",
+            "dm me",
+            "dm for",
+            "check my bio",
+            "guaranteed profit",
+            "100x gem",
+            "airdrop",
         ];
         if crypto_scam.iter().any(|kw| combined.contains(kw)) {
             return Some("Safety: potential crypto scam".to_string());

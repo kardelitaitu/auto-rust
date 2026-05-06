@@ -1,0 +1,27 @@
+version: 1
+id: 0012-twitter-modal-awareness
+title: Twitter Modal Awareness and Selector Priority
+status: done
+owner: spec-agent
+implementer: archived-pending
+priority: P1
+area:
+  - twitter-activity
+files:
+  code:
+    - src/utils/twitter/twitteractivity_interact.rs
+    - src/utils/twitter/twitteractivity_selectors.rs
+  docs:
+    - docs/specs/_done/0012-twitter-modal-awareness/README.md
+    - docs/specs/_done/0012-twitter-modal-awareness/plan.md
+    - docs/specs/_done/0012-twitter-modal-awareness/validation.md
+    - docs/specs/_done/0012-twitter-modal-awareness/notes.md
+acceptance:
+  - is_on_tweet_page returns true when a tweet modal is visible even if URL is x.com/home
+  - Engagement buttons inside modals are prioritized over background feed tweets
+  - Retweet, Like, and Reply actions work correctly inside Twitter thread modals
+non_goals:
+  - Support for every possible Twitter overlay (only thread modals for now)
+risks:
+  - DOM changes in Twitter's modal structure could break selectors
+  - False positives in modal detection if multiple dialogs are present

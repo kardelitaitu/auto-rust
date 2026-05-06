@@ -2,8 +2,8 @@
 //!
 //! Ported from the original `twitteractivity_decision.rs` module.
 
-use async_trait::async_trait;
 use crate::utils::twitter::decision::types::{EngagementDecision, EngagementLevel, TweetContext};
+use async_trait::async_trait;
 
 // ============================================================================
 // Keyword Blocklists

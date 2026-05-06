@@ -205,7 +205,9 @@ pub async fn dive_into_thread(
 pub async fn identify_thread_replies(api: &TaskContext) -> Result<Vec<serde_json::Value>> {
     let js = js_identify_thread_replies();
     let result = api.page().evaluate(js).await?;
-    let value = result.value().context("Failed to identify thread replies")?;
+    let value = result
+        .value()
+        .context("Failed to identify thread replies")?;
 
     if let Some(arr) = value.as_array() {
         Ok(arr.clone())

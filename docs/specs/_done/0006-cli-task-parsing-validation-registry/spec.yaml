@@ -1,0 +1,42 @@
+version: 1
+id: 0006-cli-task-parsing-validation-registry
+title: CLI task parsing, validation, and registry
+status: done
+owner: spec-agent
+implementer: code-implementer
+priority: P2
+area:
+  - cli
+  - validation
+  - registry
+  - tests
+files:
+  code:
+    - src/cli/mod.rs
+    - src/cli/parser.rs
+    - src/main.rs
+    - src/task/mod.rs
+    - src/task/registry.rs
+    - src/validation/mod.rs
+    - src/validation/task.rs
+    - src/validation/task_registry.rs
+  docs:
+    - docs/specs/_done/0006-cli-task-parsing-validation-registry/README.md
+    - docs/specs/_done/0006-cli-task-parsing-validation-registry/plan.md
+    - docs/specs/_done/0006-cli-task-parsing-validation-registry/validation.md
+    - docs/specs/_done/0006-cli-task-parsing-validation-registry/notes.md
+acceptance:
+  - Task group parsing and formatting keep the current behavior while moving parser logic behind a clearer boundary.
+  - Task validation is resolved from the task name and registry state during CLI parsing.
+  - `--help-task` reports task-specific payload guidance without changing the task runtime path.
+  - `TaskRegistry` remains the source of truth for task existence and metadata.
+  - Existing CLI startup modes continue to work.
+  - .\check-fast.ps1 and .\check.ps1 pass after the change lands.
+non_goals:
+  - Do not refactor browser discovery or session assembly.
+  - Do not change task execution semantics.
+  - Do not alter the public task API surface.
+  - Do not add coverage tooling changes here.
+risks:
+  - Moving parser logic can accidentally change task-group edge cases if tests are too shallow.
+  - `--help-task` output can become brittle if it depends on verbose formatting instead of stable fields.

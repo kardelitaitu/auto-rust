@@ -1,0 +1,20 @@
+version: 1
+id: 0021-twitter-engagement-refactoring
+title: Twitter Engagement Module Refactoring
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - twitter-activity
+files:
+  code: []
+  docs:
+    - docs/specs/_active/0021-twitter-engagement-refactoring/README.md
+    - docs/specs/_active/0021-twitter-engagement-refactoring/plan.md
+    - docs/specs/_active/0021-twitter-engagement-refactoring/validation.md
+    - docs/specs/_active/0021-twitter-engagement-refactoring/notes.md
+acceptance:
+  - Spec implemented successfully
+non_goals: []
+risks: []

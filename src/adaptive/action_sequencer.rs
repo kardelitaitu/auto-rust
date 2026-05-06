@@ -5,7 +5,8 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use crate::adaptive::learning_engine::{EngagementGoal, UserBehaviorProfile};
-use crate::utils::twitter::twitteractivity_sentiment::{Sentiment, SentimentAnalysis};
+use crate::llm::unified_processor::SentimentAnalysis;
+use crate::utils::twitter::sentiment::Sentiment;
 
 /// Intelligent action planner that sequences engagement actions.
 pub struct ActionPlanner {

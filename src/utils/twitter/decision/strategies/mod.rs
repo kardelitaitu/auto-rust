@@ -1,7 +1,7 @@
 //! Decision strategy implementations.
 
-use async_trait::async_trait;
 use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, TweetContext};
+use async_trait::async_trait;
 
 pub(crate) mod hybrid;
 pub(crate) mod legacy;

@@ -1,0 +1,20 @@
+version: 1
+id: 0018-mouse-utility-refactoring
+title: Mouse Utility Refactoring
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - utilities
+files:
+  code:
+    - src/utils/mouse.rs
+  docs:
+    - docs/specs/_active/0018-mouse-utility-refactoring/README.md
+    - docs/specs/_active/0018-mouse-utility-refactoring/plan.md
+    - docs/specs/_active/0018-mouse-utility-refactoring/validation.md
+    - docs/specs/_active/0018-mouse-utility-refactoring/notes.md
+acceptance: []
+non_goals: []
+risks: []

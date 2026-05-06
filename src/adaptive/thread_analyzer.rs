@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use crate::utils::twitter::twitteractivity_sentiment::{Sentiment, analyze_tweet_sentiment};
+use crate::utils::twitter::sentiment::{Sentiment, analyze_tweet_sentiment};
 
 /// Complete conversation context for a thread.
 #[derive(Debug, Clone, Default)]

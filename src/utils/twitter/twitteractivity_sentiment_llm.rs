@@ -3,7 +3,7 @@
 
 use crate::llm::client::LlmClient;
 use crate::llm::models::ChatMessage;
-use crate::utils::twitter::twitteractivity_sentiment::Sentiment;
+use crate::utils::twitter::sentiment::Sentiment;
 use anyhow::Result;
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
@@ -169,7 +169,7 @@ pub async fn analyze_sentiment_hybrid(
     }
 
     // Fallback to keyword-based analysis
-    let sentiment = crate::utils::twitter::analyze_sentiment(tweet_text);
+    let sentiment = crate::utils::twitter::sentiment::analyze_sentiment_sync(tweet_text);
 
     // Cache result
     cache_sentiment(cache_key, sentiment).await;

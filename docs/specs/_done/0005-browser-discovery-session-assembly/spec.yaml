@@ -1,0 +1,41 @@
+version: 1
+id: 0005-browser-discovery-session-assembly
+title: Browser discovery and session assembly
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P2
+area:
+  - browser
+  - session
+  - config
+  - tests
+files:
+  code:
+    - src/browser.rs
+    - src/session/mod.rs
+    - src/session/connector.rs
+    - src/session/factory.rs
+    - src/session/pool.rs
+    - src/config/mod.rs
+    - tests/browser_discovery.rs
+  docs:
+    - docs/specs/_done/0005-browser-discovery-session-assembly/README.md
+    - docs/specs/_done/0005-browser-discovery-session-assembly/plan.md
+    - docs/specs/_done/0005-browser-discovery-session-assembly/validation.md
+    - docs/specs/_done/0005-browser-discovery-session-assembly/notes.md
+acceptance:
+  - BrowserConnector exists as the discovery/connect boundary for the supported browser sources.
+  - SessionFactory owns `Session` construction and attaches browser capability data.
+  - SessionPoolManager handles parallel discovery and retry without changing the current filter semantics.
+  - `browser.rs` becomes a thin orchestration layer instead of the place where discovery and assembly are coupled.
+  - Existing browser filter and connection timeout behavior remain stable.
+  - .\check-fast.ps1 and .\check.ps1 pass after the refactor lands.
+non_goals:
+  - Do not change task parsing or CLI dispatch.
+  - Do not change task execution or shutdown semantics.
+  - Do not add new browser driver families.
+  - Do not refactor task interaction code here.
+risks:
+  - Startup flow can become harder to follow if the connector split is too large.
+  - Discovery retries can get flaky if tests depend on real browser timing instead of mocks.

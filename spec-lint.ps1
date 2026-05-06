@@ -24,14 +24,9 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RequiredFiles = @(
     "README.md",
     "spec.yaml",
-    "baseline.md",
-    "internal-api-outline.md",
     "plan.md",
-    "validation-checklist.md",
-    "ci-commands.md",
-    "decisions.md",
-    "quality-rules.md",
-    "implementation-notes.md"
+    "validation.md",
+    "notes.md"
 )
 
 function Throw-SpecLintError([string]$message) {
@@ -191,7 +186,7 @@ $issues = New-Object System.Collections.Generic.List[object]
 foreach ($pkg in $packages) {
     $readmePath = Join-Path $pkg.Path "README.md"
     $specPath = Join-Path $pkg.Path "spec.yaml"
-    $notesPath = Join-Path $pkg.Path "implementation-notes.md"
+    $notesPath = Join-Path $pkg.Path "notes.md"
     $folderName = Split-Path $pkg.Path -Leaf
 
     $missing = New-Object System.Collections.Generic.List[string]

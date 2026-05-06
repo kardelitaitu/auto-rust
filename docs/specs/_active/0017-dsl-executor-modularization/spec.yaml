@@ -1,0 +1,20 @@
+version: 1
+id: 0017-dsl-executor-modularization
+title: DSL Executor Modularization
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - task-runner
+files:
+  code:
+    - src/task/dsl_executor.rs
+  docs:
+    - docs/specs/_active/0017-dsl-executor-modularization/README.md
+    - docs/specs/_active/0017-dsl-executor-modularization/plan.md
+    - docs/specs/_active/0017-dsl-executor-modularization/validation.md
+    - docs/specs/_active/0017-dsl-executor-modularization/notes.md
+acceptance: []
+non_goals: []
+risks: []

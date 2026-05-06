@@ -3,11 +3,13 @@
 //! Rule-based engine using persona weights and keyword analysis.
 //! Ported from `twitteractivity_decision_persona.rs`.
 
+use crate::utils::twitter::decision::strategies::legacy::LegacyStrategy;
+use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
+use crate::utils::twitter::decision::types::{
+    DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext,
+};
 use async_trait::async_trait;
 use log::info;
-use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
-use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext};
-use crate::utils::twitter::decision::strategies::legacy::LegacyStrategy;
 
 /// Rule-based decision engine using persona configuration.
 pub(crate) struct PersonaStrategy {
@@ -23,27 +25,85 @@ impl PersonaStrategy {
     pub fn new() -> Self {
         Self {
             controversial_keywords: vec![
-                "election", "vote", "democrat", "republican", "congress", "senate",
-                "woke", "fascist", "liberal", "conservative", "biden", "trump",
-                "abortion", "gun control", "immigration", "taxes",
-                "exposed", "cancelled", "drama", "beef", "feud", "scandal",
-                "controversy", "backlash", "callout", "nsfw", "onlyfans",
-                "adult content", "xxx",
+                "election",
+                "vote",
+                "democrat",
+                "republican",
+                "congress",
+                "senate",
+                "woke",
+                "fascist",
+                "liberal",
+                "conservative",
+                "biden",
+                "trump",
+                "abortion",
+                "gun control",
+                "immigration",
+                "taxes",
+                "exposed",
+                "cancelled",
+                "drama",
+                "beef",
+                "feud",
+                "scandal",
+                "controversy",
+                "backlash",
+                "callout",
+                "nsfw",
+                "onlyfans",
+                "adult content",
+                "xxx",
             ],
             spam_patterns: vec![
-                "follow for follow", "f4f", "l4l", "like4like", "follow4follow",
-                "check my bio", "link in bio", "dm me", "dm for", "1000x",
-                "guaranteed gains", "buy now", "🚀🚀🚀", "💰💰💰",
+                "follow for follow",
+                "f4f",
+                "l4l",
+                "like4like",
+                "follow4follow",
+                "check my bio",
+                "link in bio",
+                "dm me",
+                "dm for",
+                "1000x",
+                "guaranteed gains",
+                "buy now",
+                "🚀🚀🚀",
+                "💰💰💰",
             ],
             tragedy_keywords: vec![
-                "passed away", "died", "death", "funeral", "grief", "mourning",
-                "rest in peace", "rip", "lost my", "my grandmother", "my grandfather",
-                "my mother died", "my father died", "miss her so much", "miss him so much",
-                "devastated", "heartbroken", "tragedy", "accident", "cancer battle",
+                "passed away",
+                "died",
+                "death",
+                "funeral",
+                "grief",
+                "mourning",
+                "rest in peace",
+                "rip",
+                "lost my",
+                "my grandmother",
+                "my grandfather",
+                "my mother died",
+                "my father died",
+                "miss her so much",
+                "miss him so much",
+                "devastated",
+                "heartbroken",
+                "tragedy",
+                "accident",
+                "cancer battle",
             ],
             crypto_keywords: vec![
-                "nft", "crypto", "bitcoin", "ethereum", "blockchain", "buy my nft",
-                "mint now", "limited nft", "airdrop", "token",
+                "nft",
+                "crypto",
+                "bitcoin",
+                "ethereum",
+                "blockchain",
+                "buy my nft",
+                "mint now",
+                "limited nft",
+                "airdrop",
+                "token",
             ],
             _base: LegacyStrategy,
         }

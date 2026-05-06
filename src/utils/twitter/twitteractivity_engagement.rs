@@ -8,6 +8,7 @@ use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
 use crate::utils::twitter::{
     decision::*,
+    sentiment::Sentiment,
     twitteractivity_dive::*,
     twitteractivity_humanized::*,
     twitteractivity_interact::*,
@@ -15,11 +16,6 @@ use crate::utils::twitter::{
     twitteractivity_llm::*,
     twitteractivity_navigation::*,
     twitteractivity_persona::*,
-    twitteractivity_sentiment::*,
-    twitteractivity_sentiment_enhanced::{
-        extract_temporal_factors, extract_thread_context, extract_user_reputation,
-        EnhancedSentimentAnalyzer, EnhancedSentimentResult,
-    },
 };
 use anyhow::Result;
 use log::{info, warn};
@@ -38,8 +34,14 @@ pub async fn handle_engagement_decision(
 
     // Extract tweet text
     let tweet_text = tweet.get("text").and_then(|v| v.as_str()).unwrap_or("");
-    let tweet_id = tweet.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let author = tweet.get("author").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let tweet_id = tweet
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let author = tweet
+        .get("author")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
 
     // Extract replies from tweet data
     let mut replies: Vec<String> = Vec::new();
@@ -84,7 +86,7 @@ pub async fn handle_engagement_decision(
 
     // In a real scenario, we'd get the API key from environment or config
     let engine = DecisionEngineFactory::create(strategy, None);
-    
+
     Some(engine.decide(&ctx).await)
 }
 
@@ -124,12 +126,12 @@ pub async fn process_candidate(
     }
 
     // Analyze sentiment with enhanced context when enabled
+    let analyzer = crate::utils::twitter::sentiment::SentimentAnalyzer::new();
+    let tweet_text = extract_tweet_text(tweet);
     let sentiment_result = if task_config.enhanced_sentiment_enabled {
-        let analyzer = EnhancedSentimentAnalyzer::default();
-        let tweet_text = extract_tweet_text(tweet);
-        let thread_context = extract_thread_context(tweet);
-        let user_reputation = extract_user_reputation(tweet);
-        let temporal_factors = extract_temporal_factors(tweet);
+        let thread_context = crate::utils::twitter::sentiment::extract_thread_context(tweet);
+        let user_reputation = crate::utils::twitter::sentiment::extract_user_reputation(tweet);
+        let temporal_factors = crate::utils::twitter::sentiment::extract_temporal_factors(tweet);
 
         analyzer.analyze_enhanced(
             &tweet_text,
@@ -139,22 +141,21 @@ pub async fn process_candidate(
         )
     } else {
         // Fallback to basic sentiment analysis
-        let sentiment = analyze_tweet_sentiment(tweet);
-        EnhancedSentimentResult {
+        let sentiment = analyzer.analyze_sentiment_sync(&tweet_text);
+        crate::utils::twitter::sentiment::EnhancedSentimentResult {
             base_sentiment: sentiment,
             final_sentiment: sentiment,
-            base_score: sentiment_score(sentiment) as f32,
-            final_score: sentiment_score(sentiment) as f32,
+            base_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
+            final_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
             confidence: 0.7, // Default confidence for basic analysis
-            score_breakdown:
-                crate::utils::twitter::twitteractivity_sentiment_enhanced::ScoreBreakdown {
-                    text_score: sentiment_score(sentiment) as f32,
-                    emoji_score: 0.0,
-                    domain_score: 0.0,
-                    context_score: 0.0,
-                    reputation_score: 0.0,
-                    temporal_score: 0.0,
-                },
+            score_breakdown: crate::utils::twitter::sentiment::ScoreBreakdown {
+                text_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
+                emoji_score: 0.0,
+                domain_score: 0.0,
+                context_score: 0.0,
+                reputation_score: 0.0,
+                temporal_score: 0.0,
+            },
         }
     };
 
@@ -177,7 +178,8 @@ pub async fn process_candidate(
     }
 
     // Smart decision check (V3 feature - rule-based)
-    let engagement_decision = handle_engagement_decision(tweet, task_config, &candidate_persona).await;
+    let engagement_decision =
+        handle_engagement_decision(tweet, task_config, &candidate_persona).await;
 
     // Skip if smart decision says None
     if let Some(ref decision) = engagement_decision {
@@ -751,22 +753,32 @@ pub async fn process_candidate(
                     }
 
                     // Run smart decision for this reply
-                    if let Some(decision) = handle_engagement_decision(&reply, task_config, persona).await {
+                    if let Some(decision) =
+                        handle_engagement_decision(&reply, task_config, persona).await
+                    {
                         // For replies, we only do "Like" for safety and simplicity
                         if decision.score > 30 {
                             if let Some(pos) = reply.get("like_pos").and_then(|v| v.as_object()) {
                                 let x = pos.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                 let y = pos.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                let reply_id = reply.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                let reply_id = reply
+                                    .get("id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
 
-                                info!("Depth-First: Engaging with high-quality reply {} (score: {})", reply_id, decision.score);
-                                
+                                info!(
+                                    "Depth-First: Engaging with high-quality reply {} (score: {})",
+                                    reply_id, decision.score
+                                );
+
                                 match retry_with_backoff(
                                     || like_at_position(api, x, y),
                                     &RetryConfig::aggressive(),
                                     api,
                                     "depth_first_like",
-                                ).await {
+                                )
+                                .await
+                                {
                                     Ok(true) => {
                                         info!("Successfully liked reply");
                                         counters.increment_like();
@@ -1114,8 +1126,8 @@ mod integration_tests {
 #[cfg(test)]
 mod decision_integration_tests {
     use super::*;
-    use serde_json::json;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
+    use serde_json::json;
 
     /// Test handle_engagement_decision returns None when disabled
     #[tokio::test]

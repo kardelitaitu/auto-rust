@@ -1,0 +1,20 @@
+version: 1
+id: 0025-task-validation-flattening
+title: Task Validation Deep Nesting Flattening
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - task-runner
+files:
+  code:
+    - src/task/validation.rs
+  docs:
+    - docs/specs/_active/0025-task-validation-flattening/README.md
+    - docs/specs/_active/0025-task-validation-flattening/plan.md
+    - docs/specs/_active/0025-task-validation-flattening/validation.md
+    - docs/specs/_active/0025-task-validation-flattening/notes.md
+acceptance: []
+non_goals: []
+risks: []

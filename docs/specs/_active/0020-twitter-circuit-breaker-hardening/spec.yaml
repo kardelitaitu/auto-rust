@@ -1,0 +1,20 @@
+version: 1
+id: 0020-twitter-circuit-breaker-hardening
+title: Twitter Circuit Breaker Hardening
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - twitter-activity
+files:
+  code: []
+  docs:
+    - docs/specs/_active/0020-twitter-circuit-breaker-hardening/README.md
+    - docs/specs/_active/0020-twitter-circuit-breaker-hardening/plan.md
+    - docs/specs/_active/0020-twitter-circuit-breaker-hardening/validation.md
+    - docs/specs/_active/0020-twitter-circuit-breaker-hardening/notes.md
+acceptance:
+  - Spec implemented successfully
+non_goals: []
+risks: []

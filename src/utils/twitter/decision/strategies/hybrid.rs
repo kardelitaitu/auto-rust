@@ -3,10 +3,14 @@
 //! Uses weighted ensemble of PersonaStrategy and LlmStrategy.
 //! Ported from `twitteractivity_decision_hybrid.rs`.
 
+use crate::utils::twitter::decision::strategies::{
+    llm::LlmStrategy, persona::PersonaStrategy, DecisionStrategyImpl,
+};
+use crate::utils::twitter::decision::types::{
+    DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext,
+};
 use async_trait::async_trait;
 use log::info;
-use crate::utils::twitter::decision::strategies::{DecisionStrategyImpl, persona::PersonaStrategy, llm::LlmStrategy};
-use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext};
 
 /// Strategy for combining multiple engine decisions
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -14,10 +18,13 @@ pub enum CombinationStrategy {
     /// Weighted average of all engine scores
     WeightedAverage,
     /// Pick the best (highest confidence) decision
+    #[allow(dead_code)]
     BestConfidence,
     /// Use LLM if available, fallback to Persona
+    #[allow(dead_code)]
     LLMPrimary,
     /// Always require Persona approval (conservative)
+    #[allow(dead_code)]
     Consensus,
 }
 

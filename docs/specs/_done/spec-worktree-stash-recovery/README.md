@@ -1,6 +1,6 @@
 # Spec Worktree Stash Recovery
 
-Status: `implementing`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `gemini-cli`
@@ -34,6 +34,18 @@ Add a small git-stash checkpoint workflow for spec-package driven development. B
 - `quality-rules.md`
 - `implementation-notes.md`
 
-## Next Step
+## Implementation
 
-Implement the checkpoint and restore scripts, then update the spec workflow docs to show the recovery path.
+✅ **Completed**: The checkpoint and restore scripts have been implemented and validated:
+- `spec-stash.ps1` - Creates named git stash checkpoints
+- `spec-restore.ps1` - Restores from stash checkpoints
+- `AGENTS.md` - Updated with workflow guidance
+
+**Usage**:
+```powershell
+# Create checkpoint
+.\spec-stash.ps1 "checkpoint-name"
+
+# Restore checkpoint
+.\spec-restore.ps1
+```

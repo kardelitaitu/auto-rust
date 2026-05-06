@@ -368,13 +368,7 @@ pub fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64, TaskVal
                 })
             }
         })
-        .unwrap_or_else(|| {
-            // If field is missing, reject with validation error instead of defaulting
-            Err(TaskValidationError::InvalidPositiveNumber {
-                field: key.to_string(),
-                value: 0,
-            })
-        })
+        .unwrap_or(Ok(default))
 }
 
 /// Helper: read numeric fields from payload with validation (u32)
@@ -394,13 +388,7 @@ pub fn read_u32(payload: &Value, key: &str, default: u32) -> Result<u32, TaskVal
                 })
             }
         })
-        .unwrap_or_else(|| {
-            // If field is missing, reject with validation error instead of defaulting
-            Err(TaskValidationError::InvalidPositiveNumber {
-                field: key.to_string(),
-                value: 0,
-            })
-        })
+        .unwrap_or(Ok(default))
 }
 
 #[cfg(test)]

@@ -230,6 +230,99 @@ pub fn validate_task(name: &str, payload: Value) -> Result<()> {
     TaskPayload::new(name.to_string(), payload).validate()
 }
 
+/// Information about a task's validation requirements.
+/// Used by CLI help system to display payload guidance.
+#[derive(Debug, Clone)]
+pub struct TaskValidationInfo {
+    /// Human-readable description of expected payload
+    pub description: String,
+    /// Example CLI invocations
+    pub examples: Vec<String>,
+    /// Required field names
+    pub required_fields: Vec<String>,
+    /// Optional field names
+    pub optional_fields: Vec<String>,
+}
+
+/// Get validation information for a specific task.
+///
+/// Returns structured info about the task's expected payload,
+/// used by the `--help-task` CLI feature.
+///
+/// # Arguments
+/// * `task_name` - The name of the task to get info for
+///
+/// # Returns
+/// Option containing validation info if the task is known
+pub fn get_task_validation_info(task_name: &str) -> Option<TaskValidationInfo> {
+    match task_name {
+        "cookiebot" => Some(TaskValidationInfo {
+            description: "Object with optional configuration".to_string(),
+            examples: vec![
+                "cookiebot".to_string(),
+                "cookiebot={\"data_file\": \"custom.txt\"}".to_string(),
+            ],
+            required_fields: vec![],
+            optional_fields: vec!["data_file".to_string()],
+        }),
+        "pageview" => Some(TaskValidationInfo {
+            description: "Object with url or value field".to_string(),
+            examples: vec![
+                "pageview=https://example.com".to_string(),
+                "pageview=url=https://example.com".to_string(),
+                "pageview={\"url\": \"https://example.com\"}".to_string(),
+            ],
+            required_fields: vec!["url or value".to_string()],
+            optional_fields: vec![],
+        }),
+        "twitterfollow" => Some(TaskValidationInfo {
+            description: "Object with username, url, or value field".to_string(),
+            examples: vec![
+                "twitterfollow=elonmusk".to_string(),
+                "twitterfollow=https://x.com/elonmusk".to_string(),
+                "twitterfollow={\"username\": \"elonmusk\"}".to_string(),
+            ],
+            required_fields: vec!["username, url, or value".to_string()],
+            optional_fields: vec![],
+        }),
+        "twitterquote" => Some(TaskValidationInfo {
+            description: "Object with url/value and optional quote_text".to_string(),
+            examples: vec![
+                "twitterquote=https://x.com/user/status/123".to_string(),
+                "twitterquote={\"url\": \"...\", \"quote_text\": \"comment\"}".to_string(),
+            ],
+            required_fields: vec!["url or value".to_string()],
+            optional_fields: vec!["quote_text (max 280 chars)".to_string()],
+        }),
+        "twitterreply" => Some(TaskValidationInfo {
+            description: "Object with url or value pointing to tweet".to_string(),
+            examples: vec!["twitterreply=https://x.com/user/status/123".to_string()],
+            required_fields: vec!["url or value".to_string()],
+            optional_fields: vec![],
+        }),
+        "twitteractivity" => Some(TaskValidationInfo {
+            description: "Object with optional engagement configuration".to_string(),
+            examples: vec![
+                "twitteractivity".to_string(),
+                "twitteractivity={\"duration_ms\": 120000}".to_string(),
+            ],
+            required_fields: vec![],
+            optional_fields: vec!["duration_ms".to_string(), "weights".to_string()],
+        }),
+        "demoqa" | "demo-keyboard" | "demo-mouse" | "twitterdive" | "twitterlike"
+        | "twitterretweet" | "twittertest" | "task-example" => Some(TaskValidationInfo {
+            description: "Object with task-specific parameters".to_string(),
+            examples: vec![
+                format!("{}={{}}", task_name),
+                format!("{}={{\"key\": \"value\"}}", task_name),
+            ],
+            required_fields: vec![],
+            optional_fields: vec!["task-specific fields".to_string()],
+        }),
+        _ => None,
+    }
+}
+
 /// Resolves the target URL for `pageview`.
 ///
 /// Accepts both `url` and the legacy `value` alias so validation and task

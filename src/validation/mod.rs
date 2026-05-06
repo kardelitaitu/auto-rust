@@ -2,7 +2,7 @@ pub mod task;
 pub mod task_registry;
 
 // Payload validation (from task.rs)
-pub use task::validate_task;
+pub use task::{get_task_validation_info, validate_task, TaskValidationInfo};
 
 // Task name/presence validation (from task_registry.rs)
 pub use task_registry::{

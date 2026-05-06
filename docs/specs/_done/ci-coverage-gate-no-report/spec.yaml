@@ -1,9 +1,9 @@
 version: 1
 id: ci-coverage-gate-no-report
 title: CI coverage gate with no report
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-pending
 priority: P3
 area:
   - ci

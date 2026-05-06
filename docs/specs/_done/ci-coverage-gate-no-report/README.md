@@ -1,6 +1,6 @@
 # CI Coverage Gate No Report
 
-Status: `approved`
+Status: Done (Archived)
 
 Owner: `spec-agent`
 Implementer: `pending`

@@ -1,0 +1,42 @@
+version: 1
+id: twitter-integration-tests
+title: Twitter Activity Integration Tests
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P1
+area:
+  - twitter-activity
+files:
+  code:
+    - tests/twitteractivity_integration.rs
+    - tests/twitteractivity_mock.rs
+    - src/utils/twitter/
+  docs:
+    - docs/specs/_active/twitter-integration-tests/README.md
+    - docs/specs/_active/twitter-integration-tests/baseline.md
+    - docs/specs/_active/twitter-integration-tests/internal-api-outline.md
+    - docs/specs/_active/twitter-integration-tests/plan.md
+    - docs/specs/_active/twitter-integration-tests/validation-checklist.md
+    - docs/specs/_active/twitter-integration-tests/ci-commands.md
+    - docs/specs/_active/twitter-integration-tests/decisions.md
+    - docs/specs/_active/twitter-integration-tests/quality-rules.md
+    - docs/specs/_active/twitter-integration-tests/implementation-notes.md
+acceptance:
+  - Mock browser framework for Twitter DOM simulation
+  - Integration tests for full feed loop execution
+  - Integration tests for thread dive scenarios
+  - Integration tests for limit enforcement
+  - Integration tests for error recovery paths
+  - 80%+ coverage of twitter module public API
+  - Tests run in < 30 seconds total
+  - No external dependencies (pure mock-based)
+non_goals:
+  - End-to-end tests with real browser
+  - Performance benchmarks
+  - Visual regression tests
+  - Load/stress testing
+risks:
+  - Mock DOM may not capture all real Twitter quirks
+  - Test maintenance burden as Twitter UI changes
+  - Large mock data fixtures needed

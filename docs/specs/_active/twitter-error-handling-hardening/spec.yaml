@@ -1,0 +1,41 @@
+version: 1
+id: twitter-error-handling-hardening
+title: Twitter Error Handling Hardening
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - twitter-activity
+files:
+  code:
+    - src/utils/twitter/twitteractivity_retry.rs
+    - src/utils/twitter/twitteractivity_state.rs
+    - src/utils/twitter/twitteractivity_llm.rs
+    - src/utils/twitter/twitteractivity_persona.rs
+  docs:
+    - docs/specs/_active/twitter-error-handling-hardening/README.md
+    - docs/specs/_active/twitter-error-handling-hardening/baseline.md
+    - docs/specs/_active/twitter-error-handling-hardening/internal-api-outline.md
+    - docs/specs/_active/twitter-error-handling-hardening/plan.md
+    - docs/specs/_active/twitter-error-handling-hardening/validation-checklist.md
+    - docs/specs/_active/twitter-error-handling-hardening/ci-commands.md
+    - docs/specs/_active/twitter-error-handling-hardening/decisions.md
+    - docs/specs/_active/twitter-error-handling-hardening/quality-rules.md
+    - docs/specs/_active/twitter-error-handling-hardening/implementation-notes.md
+acceptance:
+  - unwrap() count reduced by 80% in target files
+  - All unwrap() calls have documented safety invariants or are replaced
+  - New error types for Twitter-specific failure modes
+  - Circuit breaker pattern implemented for retry logic
+  - No panic paths in hot code paths
+  - All errors properly propagate with context
+non_goals:
+  - Eliminating all unwrap() (some are truly invariant-safe)
+  - Changing retry algorithms
+  - Adding new error recovery strategies
+  - Changes to non-twitter modules
+risks:
+  - Replacing unwrap() with ? may change error types - cascade effect
+  - Some unwraps may be safety-critical - need careful analysis
+  - Error type changes may break existing error handling

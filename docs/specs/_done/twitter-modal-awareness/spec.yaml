@@ -12,15 +12,15 @@ files:
     - src/utils/twitter/twitteractivity_interact.rs
     - src/utils/twitter/twitteractivity_selectors.rs
   docs:
-    - docs/specs/_active/twitter-modal-awareness/README.md
-    - docs/specs/_active/twitter-modal-awareness/baseline.md
-    - docs/specs/_active/twitter-modal-awareness/internal-api-outline.md
-    - docs/specs/_active/twitter-modal-awareness/plan.md
-    - docs/specs/_active/twitter-modal-awareness/validation-checklist.md
-    - docs/specs/_active/twitter-modal-awareness/ci-commands.md
-    - docs/specs/_active/twitter-modal-awareness/decisions.md
-    - docs/specs/_active/twitter-modal-awareness/quality-rules.md
-    - docs/specs/_active/twitter-modal-awareness/implementation-notes.md
+    - docs/specs/_done/twitter-modal-awareness/README.md
+    - docs/specs/_done/twitter-modal-awareness/baseline.md
+    - docs/specs/_done/twitter-modal-awareness/internal-api-outline.md
+    - docs/specs/_done/twitter-modal-awareness/plan.md
+    - docs/specs/_done/twitter-modal-awareness/validation-checklist.md
+    - docs/specs/_done/twitter-modal-awareness/ci-commands.md
+    - docs/specs/_done/twitter-modal-awareness/decisions.md
+    - docs/specs/_done/twitter-modal-awareness/quality-rules.md
+    - docs/specs/_done/twitter-modal-awareness/implementation-notes.md
 acceptance:
   - is_on_tweet_page returns true when a tweet modal is visible even if URL is x.com/home
   - Engagement buttons inside modals are prioritized over background feed tweets

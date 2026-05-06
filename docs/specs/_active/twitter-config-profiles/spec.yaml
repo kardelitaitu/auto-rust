@@ -1,0 +1,42 @@
+version: 1
+id: twitter-config-profiles
+title: Twitter Configuration Profiles
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P3
+area:
+  - twitter-activity
+files:
+  code:
+    - src/config/mod.rs
+    - src/config/twitter_activity.rs
+    - src/utils/twitter/twitteractivity_persona.rs
+    - config/default.toml
+  docs:
+    - docs/specs/_active/twitter-config-profiles/README.md
+    - docs/specs/_active/twitter-config-profiles/baseline.md
+    - docs/specs/_active/twitter-config-profiles/internal-api-outline.md
+    - docs/specs/_active/twitter-config-profiles/plan.md
+    - docs/specs/_active/twitter-config-profiles/validation-checklist.md
+    - docs/specs/_active/twitter-config-profiles/ci-commands.md
+    - docs/specs/_active/twitter-config-profiles/decisions.md
+    - docs/specs/_active/twitter-config-profiles/quality-rules.md
+    - docs/specs/_active/twitter-config-profiles/implementation-notes.md
+acceptance:
+  - 3 predefined profiles: cautious, moderate, aggressive
+  - Single `profile = "moderate"` config option replaces 50+ individual settings
+  - Profiles are comprehensive (cover all action types, limits, timing)
+  - Individual settings can override profile defaults
+  - Migration path from existing configs documented
+  - Backward compatible (existing configs still work)
+  - Profile validation on startup
+non_goals:
+  - Dynamic profile switching during task
+  - User-defined custom profiles
+  - ML-based profile optimization
+  - Profile import/export functionality
+risks:
+  - Existing users with complex configs may resist migration
+  - Default profile selection affects all existing users
+  - Profile tuning requires production testing

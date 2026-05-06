@@ -1,0 +1,25 @@
+version: 1
+id: twitter-test-extraction
+title: Twitter Integration Test Extraction
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - twitter-activity
+files:
+  code: []
+  docs:
+    - docs/specs/_active/twitter-test-extraction/README.md
+    - docs/specs/_active/twitter-test-extraction/baseline.md
+    - docs/specs/_active/twitter-test-extraction/internal-api-outline.md
+    - docs/specs/_active/twitter-test-extraction/plan.md
+    - docs/specs/_active/twitter-test-extraction/validation-checklist.md
+    - docs/specs/_active/twitter-test-extraction/ci-commands.md
+    - docs/specs/_active/twitter-test-extraction/decisions.md
+    - docs/specs/_active/twitter-test-extraction/quality-rules.md
+    - docs/specs/_active/twitter-test-extraction/implementation-notes.md
+acceptance:
+  - Spec implemented successfully
+non_goals: []
+risks: []

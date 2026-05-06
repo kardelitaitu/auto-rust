@@ -1,0 +1,25 @@
+version: 1
+id: task-context-test-extraction
+title: TaskContext Integration Test Extraction
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - runtime
+files:
+  code:
+    - src/runtime/task_context.rs
+  docs:
+    - docs/specs/_active/task-context-test-extraction/README.md
+    - docs/specs/_active/task-context-test-extraction/baseline.md
+    - docs/specs/_active/task-context-test-extraction/internal-api-outline.md
+    - docs/specs/_active/task-context-test-extraction/plan.md
+    - docs/specs/_active/task-context-test-extraction/validation-checklist.md
+    - docs/specs/_active/task-context-test-extraction/ci-commands.md
+    - docs/specs/_active/task-context-test-extraction/decisions.md
+    - docs/specs/_active/task-context-test-extraction/quality-rules.md
+    - docs/specs/_active/task-context-test-extraction/implementation-notes.md
+acceptance: []
+non_goals: []
+risks: []

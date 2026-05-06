@@ -1,0 +1,25 @@
+version: 1
+id: dsl-executor-modularization
+title: DSL Executor Modularization
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - task-runner
+files:
+  code:
+    - src/task/dsl_executor.rs
+  docs:
+    - docs/specs/_active/dsl-executor-modularization/README.md
+    - docs/specs/_active/dsl-executor-modularization/baseline.md
+    - docs/specs/_active/dsl-executor-modularization/internal-api-outline.md
+    - docs/specs/_active/dsl-executor-modularization/plan.md
+    - docs/specs/_active/dsl-executor-modularization/validation-checklist.md
+    - docs/specs/_active/dsl-executor-modularization/ci-commands.md
+    - docs/specs/_active/dsl-executor-modularization/decisions.md
+    - docs/specs/_active/dsl-executor-modularization/quality-rules.md
+    - docs/specs/_active/dsl-executor-modularization/implementation-notes.md
+acceptance: []
+non_goals: []
+risks: []

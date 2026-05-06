@@ -13,15 +13,15 @@ files:
   code:
     - .github/workflows/ci.yml
   docs:
-    - docs/specs/_active/ci-coverage-gate-no-report/README.md
-    - docs/specs/_active/ci-coverage-gate-no-report/baseline.md
-    - docs/specs/_active/ci-coverage-gate-no-report/internal-api-outline.md
-    - docs/specs/_active/ci-coverage-gate-no-report/plan.md
-    - docs/specs/_active/ci-coverage-gate-no-report/validation-checklist.md
-    - docs/specs/_active/ci-coverage-gate-no-report/ci-commands.md
-    - docs/specs/_active/ci-coverage-gate-no-report/decisions.md
-    - docs/specs/_active/ci-coverage-gate-no-report/quality-rules.md
-    - docs/specs/_active/ci-coverage-gate-no-report/implementation-notes.md
+    - docs/specs/_done/ci-coverage-gate-no-report/README.md
+    - docs/specs/_done/ci-coverage-gate-no-report/baseline.md
+    - docs/specs/_done/ci-coverage-gate-no-report/internal-api-outline.md
+    - docs/specs/_done/ci-coverage-gate-no-report/plan.md
+    - docs/specs/_done/ci-coverage-gate-no-report/validation-checklist.md
+    - docs/specs/_done/ci-coverage-gate-no-report/ci-commands.md
+    - docs/specs/_done/ci-coverage-gate-no-report/decisions.md
+    - docs/specs/_done/ci-coverage-gate-no-report/quality-rules.md
+    - docs/specs/_done/ci-coverage-gate-no-report/implementation-notes.md
 acceptance:
   - CI keeps the 40% coverage floor.
   - CI no longer generates HTML, JSON, or uploaded coverage artifacts.
@@ -35,4 +35,3 @@ non_goals:
 risks:
   - Removing the report may hide detail that some contributors still want locally.
   - A no-report gate can still be slower than a plain test job.
-

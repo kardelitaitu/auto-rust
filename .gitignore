@@ -13,6 +13,7 @@ $RECYCLE.BIN/
 desktop.ini
 
 # Editor / IDE files
+.obsidian/
 .llm-context/
 .idea/
 .vscode/*

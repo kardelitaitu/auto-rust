@@ -1,6 +1,7 @@
 use anyhow::Result;
 use auto::config::{BrowserConfig, NativeClickCalibrationMode, NativeInteractionConfig};
 use auto::metrics::{MetricsCollector, RUN_COUNTER_CLICK_FALLBACK_HIT};
+use auto::prelude::mouse::HoverStatus;
 use auto::result::{TaskErrorKind, TaskResult, TaskStatus};
 use auto::runtime::task_context::{FocusStatus, TaskContext, WaitForVisibleStatus};
 use auto::session::Session;
@@ -8,12 +9,12 @@ use auto::task::policy::{TaskPermissions, TaskPolicy, DEFAULT_TASK_POLICY};
 use auto::utils::mouse::{
     clear_nativeclick_forced_calibration_for_tests, clear_nativeclick_trace_hooks,
     set_nativeclick_forced_calibration_for_tests, take_nativeclick_trace_hooks, ClickStatus,
-    HoverStatus,
 };
 use chromiumoxide::Browser;
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;

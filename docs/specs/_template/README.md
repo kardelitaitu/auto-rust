@@ -37,7 +37,7 @@ Explain the problem, why it matters, and the target outcome in one paragraph.
 - Restore with `.\spec-restore.ps1` if the handoff breaks the tree.
 - Run `spec-lint.ps1` before handoff; it prints the exact package and fix to apply.
 - Use `.\check-fast.ps1` while iterating and `.\check.ps1` before push.
-- **Archive rule**: Use the archive helper `.\docs\specs\_active\spec-package-archive-safety\spec-archive.ps1` to move completed specs to `_done/`. This ensures both status fields are properly synchronized to `done` and the implementer field is normalized to `archived-*`.
+- **Archive rule**: Use the archive helper `.\spec-archive.ps1` to move completed specs to `_done/`. This ensures both status fields are properly synchronized to `done` and the implementer field is normalized to `archived-*`.
 
 ## Next Step
 

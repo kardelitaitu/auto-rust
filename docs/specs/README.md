@@ -35,7 +35,7 @@ This is the contract between spec planning and implementation.
 
 When a spec package is complete and ready for archival:
 
-1. **Use the archive helper**: `.\docs\specs\_active\spec-package-archive-safety\spec-archive.ps1 <package-name>`
+1. **Use the archive helper**: `.\spec-archive.ps1 <package-name>`
 2. **The archive helper will**:
    - Validate the package has required files (spec.yaml, README.md)
    - Confirm the package is in an archiveable state (approved or implementing)

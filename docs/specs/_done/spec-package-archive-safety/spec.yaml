@@ -1,7 +1,7 @@
 version: 1
 id: spec-package-archive-safety
 title: Spec package archive safety
-status: approved
+status: done
 owner: spec-agent
 implementer: done
 priority: P2
@@ -17,15 +17,15 @@ files:
   docs:
     - docs/specs/README.md
     - docs/specs/_template/README.md
-    - docs/specs/_active/spec-package-archive-safety/README.md
-    - docs/specs/_active/spec-package-archive-safety/baseline.md
-    - docs/specs/_active/spec-package-archive-safety/internal-api-outline.md
-    - docs/specs/_active/spec-package-archive-safety/plan.md
-    - docs/specs/_active/spec-package-archive-safety/validation-checklist.md
-    - docs/specs/_active/spec-package-archive-safety/ci-commands.md
-    - docs/specs/_active/spec-package-archive-safety/decisions.md
-    - docs/specs/_active/spec-package-archive-safety/quality-rules.md
-    - docs/specs/_active/spec-package-archive-safety/implementation-notes.md
+    - docs/specs/_done/spec-package-archive-safety/README.md
+    - docs/specs/_done/spec-package-archive-safety/baseline.md
+    - docs/specs/_done/spec-package-archive-safety/internal-api-outline.md
+    - docs/specs/_done/spec-package-archive-safety/plan.md
+    - docs/specs/_done/spec-package-archive-safety/validation-checklist.md
+    - docs/specs/_done/spec-package-archive-safety/ci-commands.md
+    - docs/specs/_done/spec-package-archive-safety/decisions.md
+    - docs/specs/_done/spec-package-archive-safety/quality-rules.md
+    - docs/specs/_done/spec-package-archive-safety/implementation-notes.md
 acceptance:
   - Archive helper moves an approved or implementing package to `_done/` and rewrites both status fields to `done`.
   - `_done` packages cannot remain in a non-done status after archival.

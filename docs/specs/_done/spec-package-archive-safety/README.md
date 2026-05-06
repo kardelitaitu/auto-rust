@@ -1,6 +1,6 @@
 # Spec Package Archive Safety
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

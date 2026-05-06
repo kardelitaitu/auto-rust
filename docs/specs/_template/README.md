@@ -32,6 +32,8 @@ Explain the problem, why it matters, and the target outcome in one paragraph.
 - Put only approved or implementing specs in `_active/`.
 - Put only done specs in `_done/`.
 - Start `implementation-notes.md` empty.
+- Do not include `spec-lint.ps1` in a normal feature spec.
+- Run `spec-lint.ps1` before handoff; it prints the exact package and fix to apply.
 - Use `.\check-fast.ps1` while iterating and `.\check.ps1` before push.
 
 ## Next Step

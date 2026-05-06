@@ -1,0 +1,41 @@
+version: 1
+id: coverage-measurement-improvements
+title: Coverage measurement improvements
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P3
+area:
+  - coverage
+  - ci
+  - tests
+  - tooling
+files:
+  code:
+    - coverage.ps1
+    - .github/workflows/ci.yml
+  docs:
+    - docs/specs/_done/coverage-measurement-improvements/README.md
+    - docs/specs/_done/coverage-measurement-improvements/baseline.md
+    - docs/specs/_done/coverage-measurement-improvements/internal-api-outline.md
+    - docs/specs/_done/coverage-measurement-improvements/plan.md
+    - docs/specs/_done/coverage-measurement-improvements/validation-checklist.md
+    - docs/specs/_done/coverage-measurement-improvements/ci-commands.md
+    - docs/specs/_done/coverage-measurement-improvements/decisions.md
+    - docs/specs/_done/coverage-measurement-improvements/quality-rules.md
+    - docs/specs/_done/coverage-measurement-improvements/implementation-notes.md
+acceptance:
+  - The coverage workflow uses `cargo-llvm-cov` as the primary measurement path.
+  - Integration tests are included in the measured coverage run.
+  - CI fails when the configured coverage floor for the new-code surface is below 40%.
+  - A stable machine-readable coverage summary is emitted for trend tracking.
+  - The local coverage entry point remains simple enough to run from the repo root.
+  - `.\check-fast.ps1` and `.\check.ps1` stay usable after the workflow changes.
+non_goals:
+  - Do not change runtime behavior.
+  - Do not refactor task, browser, or session code.
+  - Do not replace the full CI gate scripts.
+  - Do not add a broad test rewrite just to raise the percentage.
+risks:
+  - Coverage tooling can become flaky if the CI job depends on stale build artifacts or unsupported report formats.
+  - A threshold based on the wrong scope can create false confidence or noisy failures.

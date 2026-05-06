@@ -1,9 +1,9 @@
 version: 1
 id: taskcontext-interaction-pipeline
 title: TaskContext interaction pipeline
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: code-implementer
 priority: P3
 area:
   - runtime
@@ -23,15 +23,15 @@ files:
     - src/utils/navigation.rs
     - tests/task_api_behavior.rs
   docs:
-    - docs/specs/_active/taskcontext-interaction-pipeline/README.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/baseline.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/internal-api-outline.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/plan.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/validation-checklist.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/ci-commands.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/decisions.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/quality-rules.md
-    - docs/specs/_active/taskcontext-interaction-pipeline/implementation-notes.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/README.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/baseline.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/internal-api-outline.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/plan.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/validation-checklist.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/ci-commands.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/decisions.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/quality-rules.md
+    - docs/specs/_done/taskcontext-interaction-pipeline/implementation-notes.md
 acceptance:
   - Click and type share a common internal interaction pipeline instead of duplicating preflight and postflight logic.
   - The public TaskContext verbs keep the same names and signatures.

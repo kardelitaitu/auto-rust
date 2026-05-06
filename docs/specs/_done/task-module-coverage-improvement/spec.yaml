@@ -1,0 +1,42 @@
+version: 1
+id: task-module-coverage-improvement
+title: Task module coverage improvement
+status: done
+owner: spec-agent
+implementer: code-implementer
+priority: P3
+area:
+  - task
+  - tests
+  - coverage
+files:
+  code:
+    - src/task/twitteractivity.rs
+    - src/task/twitterfollow.rs
+    - src/task/twitterintent.rs
+    - tests/task_api_behavior.rs
+  docs:
+    - docs/specs/_done/task-module-coverage-improvement/README.md
+    - docs/specs/_done/task-module-coverage-improvement/baseline.md
+    - docs/specs/_done/task-module-coverage-improvement/internal-api-outline.md
+    - docs/specs/_done/task-module-coverage-improvement/plan.md
+    - docs/specs/_done/task-module-coverage-improvement/validation-checklist.md
+    - docs/specs/_done/task-module-coverage-improvement/ci-commands.md
+    - docs/specs/_done/task-module-coverage-improvement/decisions.md
+    - docs/specs/_done/task-module-coverage-improvement/quality-rules.md
+    - docs/specs/_done/task-module-coverage-improvement/implementation-notes.md
+acceptance:
+  - twitteractivity.rs gains new tests for payload/config helpers and entry-point selection.
+  - twitterfollow.rs gains new tests for candidate ordering and URL or username extraction.
+  - twitterintent.rs gains new tests for intent parsing and payload URL extraction.
+  - Any browser-backed checks stay narrow and deterministic.
+  - Public task behavior stays stable in the existing task API behavior coverage.
+  - .\check-fast.ps1 and .\check.ps1 pass after the coverage work lands.
+non_goals:
+  - Do not refactor CLI registry or task parsing.
+  - Do not redesign browser discovery or session assembly.
+  - Do not change the public task API surface.
+  - Do not use this spec for coverage tooling changes.
+risks:
+  - Browser-heavy tests can become flaky if the spec grows beyond helper coverage.
+  - Tests that lock onto exact log text can become brittle when messages are tuned.

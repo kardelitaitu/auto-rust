@@ -1,9 +1,9 @@
 # TaskContext Interaction Pipeline
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
-Implementer: `pending`
+Implementer: `code-implementer`
 
 ## Summary
 
@@ -35,6 +35,11 @@ Unify click and type behavior behind one TaskContext interaction pipeline so the
 - `quality-rules.md`
 - `implementation-notes.md`
 
-## Next Step
+## Completed
 
-Give this package to the implementer agent after the shutdown spec handoff is complete.
+- Shared interaction types added (InteractionKind, InteractionRequest, InteractionResult)
+- Interaction pipeline module created with preflight/execution/postflight
+- Internal pipeline methods added to TaskContext
+- Public `interact()` method provides unified pipeline access
+- 16 deterministic tests added for pipeline reliability
+- All 2243 tests pass, CI checks pass

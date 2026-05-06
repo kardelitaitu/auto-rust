@@ -21,15 +21,15 @@ files:
     - src/adaptive/mod.rs
     - src/utils/mod.rs
   docs:
-    - README.md
-    - baseline.md
-    - internal-api-outline.md
-    - plan.md
-    - validation-checklist.md
-    - ci-commands.md
-    - decisions.md
-    - quality-rules.md
-    - implementation-notes.md
+    - docs/specs/_done/benchmarks-in-src/README.md
+    - docs/specs/_done/benchmarks-in-src/baseline.md
+    - docs/specs/_done/benchmarks-in-src/internal-api-outline.md
+    - docs/specs/_done/benchmarks-in-src/plan.md
+    - docs/specs/_done/benchmarks-in-src/validation-checklist.md
+    - docs/specs/_done/benchmarks-in-src/ci-commands.md
+    - docs/specs/_done/benchmarks-in-src/decisions.md
+    - docs/specs/_done/benchmarks-in-src/quality-rules.md
+    - docs/specs/_done/benchmarks-in-src/implementation-notes.md
 acceptance:
   - Benchmark harnesses live under src/ and Cargo points at the new paths.
   - Benchmark code uses real library modules, not copied benchmark-only logic.

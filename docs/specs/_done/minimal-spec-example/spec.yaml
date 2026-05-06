@@ -11,15 +11,15 @@ files:
   code:
     - docs/specs/README.md
   docs:
-    - README.md
-    - baseline.md
-    - internal-api-outline.md
-    - plan.md
-    - validation-checklist.md
-    - ci-commands.md
-    - decisions.md
-    - quality-rules.md
-    - implementation-notes.md
+    - docs/specs/_done/minimal-spec-example/README.md
+    - docs/specs/_done/minimal-spec-example/baseline.md
+    - docs/specs/_done/minimal-spec-example/internal-api-outline.md
+    - docs/specs/_done/minimal-spec-example/plan.md
+    - docs/specs/_done/minimal-spec-example/validation-checklist.md
+    - docs/specs/_done/minimal-spec-example/ci-commands.md
+    - docs/specs/_done/minimal-spec-example/decisions.md
+    - docs/specs/_done/minimal-spec-example/quality-rules.md
+    - docs/specs/_done/minimal-spec-example/implementation-notes.md
 acceptance:
   - The package is complete and status matches the folder.
   - The package stays short enough for a small agent to read quickly.

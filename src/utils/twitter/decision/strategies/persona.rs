@@ -1,116 +1,61 @@
-//! Persona-based decision engine for Twitter engagement.
+//! Persona-based decision strategy.
 //!
 //! Rule-based engine using persona weights and keyword analysis.
-//! No LLM required - fast and deterministic.
+//! Ported from `twitteractivity_decision_persona.rs`.
 
-use super::twitteractivity_decision::{
-    DecisionEngine, EngagementDecision, EngagementLevel, TweetContext,
-};
 use async_trait::async_trait;
 use log::info;
+use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
+use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext};
+use crate::utils::twitter::decision::strategies::legacy::LegacyStrategy;
 
-/// Rule-based decision engine using persona configuration
-pub struct PersonaEngine {
+/// Rule-based decision engine using persona configuration.
+pub(crate) struct PersonaStrategy {
     controversial_keywords: Vec<&'static str>,
     spam_patterns: Vec<&'static str>,
     tragedy_keywords: Vec<&'static str>,
     crypto_keywords: Vec<&'static str>,
+    /// Base legacy strategy for shared logic
+    _base: LegacyStrategy,
 }
 
-impl PersonaEngine {
+impl PersonaStrategy {
     pub fn new() -> Self {
         Self {
             controversial_keywords: vec![
-                "election",
-                "vote",
-                "democrat",
-                "republican",
-                "congress",
-                "senate",
-                "woke",
-                "fascist",
-                "liberal",
-                "conservative",
-                "biden",
-                "trump",
-                "abortion",
-                "gun control",
-                "immigration",
-                "taxes",
-                "exposed",
-                "cancelled",
-                "drama",
-                "beef",
-                "feud",
-                "scandal",
-                "controversy",
-                "backlash",
-                "callout",
-                "nsfw",
-                "onlyfans",
-                "adult content",
-                "xxx",
+                "election", "vote", "democrat", "republican", "congress", "senate",
+                "woke", "fascist", "liberal", "conservative", "biden", "trump",
+                "abortion", "gun control", "immigration", "taxes",
+                "exposed", "cancelled", "drama", "beef", "feud", "scandal",
+                "controversy", "backlash", "callout", "nsfw", "onlyfans",
+                "adult content", "xxx",
             ],
             spam_patterns: vec![
-                "follow for follow",
-                "f4f",
-                "l4l",
-                "like4like",
-                "follow4follow",
-                "check my bio",
-                "link in bio",
-                "dm me",
-                "dm for",
-                "1000x",
-                "guaranteed gains",
-                "buy now",
-                "🚀🚀🚀",
-                "💰💰💰",
+                "follow for follow", "f4f", "l4l", "like4like", "follow4follow",
+                "check my bio", "link in bio", "dm me", "dm for", "1000x",
+                "guaranteed gains", "buy now", "🚀🚀🚀", "💰💰💰",
             ],
             tragedy_keywords: vec![
-                "passed away",
-                "died",
-                "death",
-                "funeral",
-                "grief",
-                "mourning",
-                "rest in peace",
-                "rip",
-                "lost my",
-                "my grandmother",
-                "my grandfather",
-                "my mother died",
-                "my father died",
-                "miss her so much",
-                "miss him so much",
-                "devastated",
-                "heartbroken",
-                "tragedy",
-                "accident",
-                "cancer battle",
+                "passed away", "died", "death", "funeral", "grief", "mourning",
+                "rest in peace", "rip", "lost my", "my grandmother", "my grandfather",
+                "my mother died", "my father died", "miss her so much", "miss him so much",
+                "devastated", "heartbroken", "tragedy", "accident", "cancer battle",
             ],
             crypto_keywords: vec![
-                "nft",
-                "crypto",
-                "bitcoin",
-                "ethereum",
-                "blockchain",
-                "buy my nft",
-                "mint now",
-                "limited nft",
-                "airdrop",
-                "token",
+                "nft", "crypto", "bitcoin", "ethereum", "blockchain", "buy my nft",
+                "mint now", "limited nft", "airdrop", "token",
             ],
+            _base: LegacyStrategy,
         }
     }
 
-    /// Check if text contains any keywords from list
+    /// Check if text contains any keywords from list.
     fn contains_any(&self, text: &str, keywords: &[&str]) -> bool {
         let text_lower = text.to_lowercase();
         keywords.iter().any(|kw| text_lower.contains(kw))
     }
 
-    /// Calculate base score from persona weights
+    /// Calculate base score from persona weights.
     fn calculate_base_score(&self, ctx: &TweetContext) -> f64 {
         let persona = &ctx.persona;
 
@@ -127,7 +72,7 @@ impl PersonaEngine {
         (avg_prob * 100.0).min(100.0)
     }
 
-    /// Analyze replies for community reception
+    /// Analyze replies for community reception.
     fn analyze_replies(&self, ctx: &TweetContext) -> f64 {
         if ctx.replies.is_empty() {
             return 50.0; // Neutral if no replies
@@ -175,11 +120,7 @@ impl PersonaEngine {
 }
 
 #[async_trait]
-impl DecisionEngine for PersonaEngine {
-    fn name(&self) -> &'static str {
-        "persona"
-    }
-
+impl DecisionStrategyImpl for PersonaStrategy {
     async fn decide(&self, ctx: &TweetContext) -> EngagementDecision {
         let text = &ctx.text;
         let replies_combined = ctx.replies.join(" ");
@@ -187,7 +128,7 @@ impl DecisionEngine for PersonaEngine {
 
         // 1. CRITICAL: Check for tragedy (NEVER engage)
         if self.contains_any(&combined_text, &self.tragedy_keywords) {
-            info!("PersonaEngine: Tragedy detected, skipping");
+            info!("PersonaStrategy: Tragedy detected, skipping");
             return EngagementDecision {
                 level: EngagementLevel::None,
                 score: 5,
@@ -201,7 +142,7 @@ impl DecisionEngine for PersonaEngine {
         if self.contains_any(&combined_text, &self.crypto_keywords)
             || self.contains_any(&combined_text, &self.spam_patterns)
         {
-            info!("PersonaEngine: Spam/crypto detected, skipping");
+            info!("PersonaStrategy: Spam/crypto detected, skipping");
             return EngagementDecision {
                 level: EngagementLevel::None,
                 score: 5,
@@ -213,7 +154,7 @@ impl DecisionEngine for PersonaEngine {
 
         // 3. Check for controversial topics
         if self.contains_any(&combined_text, &self.controversial_keywords) {
-            info!("PersonaEngine: Controversial topic detected, low engagement");
+            info!("PersonaStrategy: Controversial topic detected, low engagement");
             return EngagementDecision {
                 level: EngagementLevel::Minimal,
                 score: 25,
@@ -256,7 +197,7 @@ impl DecisionEngine for PersonaEngine {
         };
 
         info!(
-            "PersonaEngine: score={:.1}, level={:?}, multiplier={:.2}",
+            "PersonaStrategy: score={:.1}, level={:?}, multiplier={:.2}",
             final_score, level, multiplier
         );
 
@@ -268,9 +209,17 @@ impl DecisionEngine for PersonaEngine {
             confidence: 0.70,
         }
     }
+
+    fn strategy_type(&self) -> DecisionStrategy {
+        DecisionStrategy::Persona
+    }
+
+    fn name(&self) -> &'static str {
+        "persona"
+    }
 }
 
-impl Default for PersonaEngine {
+impl Default for PersonaStrategy {
     fn default() -> Self {
         Self::new()
     }

@@ -1,9 +1,9 @@
 version: 1
 id: twitter-depth-first-engagement
 title: Twitter Depth-First Thread Engagement
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: cascade
 priority: P1
 area:
   - twitter-activity
@@ -12,16 +12,17 @@ files:
     - src/utils/twitter/twitteractivity_engagement.rs
     - src/utils/twitter/twitteractivity_interact.rs
     - src/utils/twitter/twitteractivity_selectors.rs
+    - src/utils/twitter/twitteractivity_dive.rs
   docs:
-    - docs/specs/_active/twitter-depth-first-engagement/README.md
-    - docs/specs/_active/twitter-depth-first-engagement/baseline.md
-    - docs/specs/_active/twitter-depth-first-engagement/internal-api-outline.md
-    - docs/specs/_active/twitter-depth-first-engagement/plan.md
-    - docs/specs/_active/twitter-depth-first-engagement/validation-checklist.md
-    - docs/specs/_active/twitter-depth-first-engagement/ci-commands.md
-    - docs/specs/_active/twitter-depth-first-engagement/decisions.md
-    - docs/specs/_active/twitter-depth-first-engagement/quality-rules.md
-    - docs/specs/_active/twitter-depth-first-engagement/implementation-notes.md
+    - docs/specs/_done/twitter-depth-first-engagement/README.md
+    - docs/specs/_done/twitter-depth-first-engagement/baseline.md
+    - docs/specs/_done/twitter-depth-first-engagement/internal-api-outline.md
+    - docs/specs/_done/twitter-depth-first-engagement/plan.md
+    - docs/specs/_done/twitter-depth-first-engagement/validation-checklist.md
+    - docs/specs/_done/twitter-depth-first-engagement/ci-commands.md
+    - docs/specs/_done/twitter-depth-first-engagement/decisions.md
+    - docs/specs/_done/twitter-depth-first-engagement/quality-rules.md
+    - docs/specs/_done/twitter-depth-first-engagement/implementation-notes.md
 acceptance:
   - Automation can engage with multiple high-quality replies during a single thread dive.
   - Thread replies are scanned and filtered using existing Smart Decision logic.

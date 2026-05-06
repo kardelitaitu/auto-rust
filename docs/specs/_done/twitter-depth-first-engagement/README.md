@@ -1,6 +1,6 @@
 # Twitter Depth-First Thread Engagement
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

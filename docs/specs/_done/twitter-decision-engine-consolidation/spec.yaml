@@ -1,0 +1,37 @@
+version: 1
+id: twitter-decision-engine-consolidation
+title: Twitter Decision Engine Consolidation
+status: done
+owner: spec-agent
+implementer: cascade
+priority: P1
+area:
+  - twitter-activity
+files:
+  code:
+    - src/utils/twitter/decision/
+    - src/utils/twitter/mod.rs
+  docs:
+    - docs/specs/_done/twitter-decision-engine-consolidation/README.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/baseline.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/internal-api-outline.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/plan.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/validation-checklist.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/ci-commands.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/decisions.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/quality-rules.md
+    - docs/specs/_done/twitter-decision-engine-consolidation/implementation-notes.md
+acceptance:
+  - Single unified decision engine replaces 5 separate engines
+  - All existing decision strategies (legacy, hybrid, LLM, persona) available as plugins
+  - No regression in decision quality (measured by action appropriateness)
+  - Public API surface reduced by 60% (fewer exports from mod.rs)
+  - Test coverage maintained or improved
+non_goals:
+  - Changing decision logic algorithms (preserve existing behavior)
+  - Adding new decision strategies
+  - Modifying downstream consumers (engagement.rs, etc.)
+risks:
+  - Subtle behavior changes during consolidation if logic is not preserved exactly
+  - Breaking changes to internal APIs used by engagement module
+  - Increased complexity in unified engine if plugin system is over-engineered

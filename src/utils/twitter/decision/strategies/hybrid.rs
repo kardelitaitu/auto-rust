@@ -1,15 +1,12 @@
-//! Hybrid decision engine combining multiple strategies.
+//! Hybrid decision strategy combining multiple approaches.
 //!
-//! Uses weighted ensemble of PersonaEngine and LLMEngine.
-//! Falls back gracefully if LLM is unavailable.
+//! Uses weighted ensemble of PersonaStrategy and LlmStrategy.
+//! Ported from `twitteractivity_decision_hybrid.rs`.
 
-use super::twitteractivity_decision::{
-    DecisionEngine, EngagementDecision, EngagementLevel, TweetContext,
-};
-use super::twitteractivity_decision_llm::LLMEngine;
-use super::twitteractivity_decision_persona::PersonaEngine;
 use async_trait::async_trait;
 use log::info;
+use crate::utils::twitter::decision::strategies::{DecisionStrategyImpl, persona::PersonaStrategy, llm::LlmStrategy};
+use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext};
 
 /// Strategy for combining multiple engine decisions
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -24,48 +21,42 @@ pub enum CombinationStrategy {
     Consensus,
 }
 
-/// Hybrid engine combining Persona and LLM strategies
-pub struct HybridEngine {
-    persona: PersonaEngine,
-    llm: Option<LLMEngine>,
+/// Hybrid strategy implementation.
+pub(crate) struct HybridStrategy {
+    persona: PersonaStrategy,
+    llm: Option<LlmStrategy>,
     persona_weight: f64,
     llm_weight: f64,
-    strategy: CombinationStrategy,
+    combination: CombinationStrategy,
 }
 
-impl HybridEngine {
-    /// Create hybrid engine with LLM
+impl HybridStrategy {
+    /// Create hybrid strategy with LLM
     pub fn with_llm(llm_api_key: String, persona_weight: f64, llm_weight: f64) -> Self {
         let llm = if llm_api_key.is_empty() {
             None
         } else {
-            Some(LLMEngine::new(llm_api_key))
+            Some(LlmStrategy::new(llm_api_key))
         };
 
         Self {
-            persona: PersonaEngine::new(),
+            persona: PersonaStrategy::new(),
             llm,
             persona_weight: persona_weight.clamp(0.0, 1.0),
             llm_weight: llm_weight.clamp(0.0, 1.0),
-            strategy: CombinationStrategy::WeightedAverage,
+            combination: CombinationStrategy::WeightedAverage,
         }
     }
 
-    /// Create hybrid engine with only Persona (LLM disabled)
+    /// Create hybrid strategy with only Persona (LLM disabled)
     pub fn persona_only() -> Self {
         Self {
-            persona: PersonaEngine::new(),
+            persona: PersonaStrategy::new(),
             llm: None,
             persona_weight: 1.0,
             llm_weight: 0.0,
-            strategy: CombinationStrategy::WeightedAverage,
+            combination: CombinationStrategy::WeightedAverage,
         }
-    }
-
-    /// Set combination strategy
-    pub fn with_strategy(mut self, strategy: CombinationStrategy) -> Self {
-        self.strategy = strategy;
-        self
     }
 
     /// Weighted average combination
@@ -187,19 +178,10 @@ impl HybridEngine {
 }
 
 #[async_trait]
-impl DecisionEngine for HybridEngine {
-    fn name(&self) -> &'static str {
-        "hybrid"
-    }
-
-    fn is_available(&self) -> bool {
-        // Available if at least Persona is available (always true)
-        true
-    }
-
+impl DecisionStrategyImpl for HybridStrategy {
     async fn decide(&self, ctx: &TweetContext) -> EngagementDecision {
         info!(
-            "HybridEngine: Combining Persona (weight={:.2}) and LLM (weight={:.2}, available={})",
+            "HybridStrategy: Combining Persona (weight={:.2}) and LLM (weight={:.2}, available={})",
             self.persona_weight,
             self.llm_weight,
             self.llm.is_some()
@@ -220,10 +202,10 @@ impl DecisionEngine for HybridEngine {
         };
 
         // Combine based on strategy
-        match (self.strategy, llm_decision) {
+        match (self.combination, llm_decision) {
             // No LLM available - use Persona only
             (_, None) => {
-                info!("HybridEngine: LLM unavailable, using Persona only");
+                info!("HybridStrategy: LLM unavailable, using Persona only");
                 let mut decision = persona_decision;
                 decision.reason = format!("Persona only (LLM unavailable): {}", decision.reason);
                 decision
@@ -250,9 +232,17 @@ impl DecisionEngine for HybridEngine {
             }
         }
     }
+
+    fn strategy_type(&self) -> DecisionStrategy {
+        DecisionStrategy::Hybrid
+    }
+
+    fn name(&self) -> &'static str {
+        "hybrid"
+    }
 }
 
-impl Default for HybridEngine {
+impl Default for HybridStrategy {
     fn default() -> Self {
         Self::persona_only()
     }

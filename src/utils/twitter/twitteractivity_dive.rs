@@ -199,6 +199,21 @@ pub async fn dive_into_thread(
     })
 }
 
+/// Identifies engageable replies in the current thread view.
+/// Returns a list of reply candidates with metadata and coordinates.
+#[instrument(skip(api))]
+pub async fn identify_thread_replies(api: &TaskContext) -> Result<Vec<serde_json::Value>> {
+    let js = js_identify_thread_replies();
+    let result = api.page().evaluate(js).await?;
+    let value = result.value().context("Failed to identify thread replies")?;
+
+    if let Some(arr) = value.as_array() {
+        Ok(arr.clone())
+    } else {
+        Ok(Vec::new())
+    }
+}
+
 /// Reads the full thread by scrolling through it with incremental reply extraction.
 ///
 /// This function simulates human-like reading of a Twitter thread by scrolling

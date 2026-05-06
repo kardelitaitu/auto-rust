@@ -7,7 +7,7 @@ use crate::metrics::*;
 use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
 use crate::utils::twitter::{
-    twitteractivity_decision::*,
+    decision::*,
     twitteractivity_dive::*,
     twitteractivity_humanized::*,
     twitteractivity_interact::*,
@@ -27,29 +27,28 @@ use serde_json::Value;
 use std::time::{Duration, Instant};
 
 /// Smart decision check for engagement.
-pub fn handle_engagement_decision(
+pub async fn handle_engagement_decision(
     tweet: &Value,
     task_config: &TaskConfig,
+    persona: &PersonaWeights,
 ) -> Option<EngagementDecision> {
     if !task_config.smart_decision_enabled {
         return None;
     }
 
-    // Extract tweet text (already extracted by identify_engagement_candidates)
+    // Extract tweet text
     let tweet_text = tweet.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let tweet_id = tweet.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let author = tweet.get("author").and_then(|v| v.as_str()).unwrap_or("unknown");
 
-    // Extract replies from tweet data (already parsed by identify_engagement_candidates)
-    let mut replies: Vec<(String, String)> = Vec::new();
+    // Extract replies from tweet data
+    let mut replies: Vec<String> = Vec::new();
     if let Some(replies_array) = tweet.get("replies").and_then(|v| v.as_array()) {
         for reply_value in replies_array {
             if let Some(reply_obj) = reply_value.as_object() {
-                if let (Some(author_value), Some(text_value)) =
-                    (reply_obj.get("author"), reply_obj.get("text"))
-                {
-                    if let (Some(author_str), Some(text_str)) =
-                        (author_value.as_str(), text_value.as_str())
-                    {
-                        replies.push((author_str.to_string(), text_str.to_string()));
+                if let Some(text_value) = reply_obj.get("text") {
+                    if let Some(text_str) = text_value.as_str() {
+                        replies.push(text_str.to_string());
                     }
                 }
             }
@@ -57,13 +56,36 @@ pub fn handle_engagement_decision(
     }
 
     info!(
-        "Smart decision: tweet='{}' ({} chars), replies={}",
-        tweet_text,
-        tweet_text.len(),
+        "Smart decision: tweet_id={} author=@{} replies={}",
+        tweet_id,
+        author,
         replies.len()
     );
 
-    Some(decide_engagement(tweet_text, &replies))
+    // Create context for decision engine
+    let ctx = TweetContext {
+        tweet_id: tweet_id.to_string(),
+        text: tweet_text.to_string(),
+        author: author.to_string(),
+        replies,
+        persona: persona.clone(),
+        task_config: task_config.clone(),
+        tweet_age: "Recent".to_string(), // Default for feed view
+        topic_alignment: "Unknown".to_string(),
+    };
+
+    // Use Factory to create appropriate engine
+    // For feed scan, we typically use Legacy or Persona strategy unless LLM is explicitly requested
+    let strategy = if task_config.llm_enabled {
+        DecisionStrategy::Auto
+    } else {
+        DecisionStrategy::Legacy
+    };
+
+    // In a real scenario, we'd get the API key from environment or config
+    let engine = DecisionEngineFactory::create(strategy, None);
+    
+    Some(engine.decide(&ctx).await)
 }
 
 /// Process a single candidate tweet for engagement.
@@ -155,7 +177,7 @@ pub async fn process_candidate(
     }
 
     // Smart decision check (V3 feature - rule-based)
-    let engagement_decision = handle_engagement_decision(tweet, task_config);
+    let engagement_decision = handle_engagement_decision(tweet, task_config, &candidate_persona).await;
 
     // Skip if smart decision says None
     if let Some(ref decision) = engagement_decision {
@@ -310,6 +332,7 @@ pub async fn process_candidate(
     }
 
     // Perform the selected action.
+    let mut root_action_success = false;
     for action in [selected_action] {
         if task_config.dry_run_actions {
             if action != "like" && !did_dive {
@@ -323,6 +346,7 @@ pub async fn process_candidate(
                 "Dry-run: would perform {} on tweet {} (did_dive={})",
                 action, tweet_id, did_dive
             );
+            root_action_success = true; // Pretend success for sub-loop simulation
             continue;
         }
 
@@ -648,6 +672,7 @@ pub async fn process_candidate(
         };
 
         if success {
+            root_action_success = true;
             // Update counters and record action
             match action {
                 "like" => {
@@ -703,6 +728,66 @@ pub async fn process_candidate(
                 "reply" => api.increment_run_counter(RUN_COUNTER_REPLY_FAILURE, 1),
                 "bookmark" => api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1),
                 _ => {}
+            }
+        }
+    }
+
+    // Depth-First Engagement: Engage with replies if we dived and root engagement was successful
+    if did_dive && root_action_success {
+        match identify_thread_replies(api).await {
+            Ok(replies) => {
+                let mut replies_engaged = 0;
+                let max_replies = rand::random::<u32>() % 2 + 1; // Engage with 1-2 replies
+
+                for reply in replies {
+                    if replies_engaged >= max_replies {
+                        break;
+                    }
+                    if actions_this_scan >= task_config.max_actions_per_scan {
+                        break;
+                    }
+                    if !limits.can_like(counters) {
+                        break;
+                    }
+
+                    // Run smart decision for this reply
+                    if let Some(decision) = handle_engagement_decision(&reply, task_config, persona).await {
+                        // For replies, we only do "Like" for safety and simplicity
+                        if decision.score > 30 {
+                            if let Some(pos) = reply.get("like_pos").and_then(|v| v.as_object()) {
+                                let x = pos.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let y = pos.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let reply_id = reply.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+
+                                info!("Depth-First: Engaging with high-quality reply {} (score: {})", reply_id, decision.score);
+                                
+                                match retry_with_backoff(
+                                    || like_at_position(api, x, y),
+                                    &RetryConfig::aggressive(),
+                                    api,
+                                    "depth_first_like",
+                                ).await {
+                                    Ok(true) => {
+                                        info!("Successfully liked reply");
+                                        counters.increment_like();
+                                        _actions_taken += 1;
+                                        actions_this_scan += 1;
+                                        replies_engaged += 1;
+                                        api.increment_run_counter(RUN_COUNTER_LIKE_SUCCESS, 1);
+                                        // Human-like reading pause between replies
+                                        human_pause(api, 1500).await;
+                                    }
+                                    _ => {
+                                        warn!("Failed to like reply");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Depth-First: Failed to identify replies: {}", e);
             }
         }
     }
@@ -1030,10 +1115,11 @@ mod integration_tests {
 mod decision_integration_tests {
     use super::*;
     use serde_json::json;
+    use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
 
     /// Test handle_engagement_decision returns None when disabled
-    #[test]
-    fn engagement_decision_returns_none_when_disabled() {
+    #[tokio::test]
+    async fn engagement_decision_returns_none_when_disabled() {
         let tweet = json!({"text": "Test tweet"});
         let config = TaskConfig {
             duration_ms: 60000,
@@ -1041,13 +1127,14 @@ mod decision_integration_tests {
             smart_decision_enabled: false,
             ..Default::default()
         };
-        let result = handle_engagement_decision(&tweet, &config);
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona).await;
         assert!(result.is_none());
     }
 
     /// Test handle_engagement_decision extracts tweet text correctly
-    #[test]
-    fn engagement_decision_extracts_tweet_text() {
+    #[tokio::test]
+    async fn engagement_decision_extracts_tweet_text() {
         let tweet = json!({
             "text": "This is a test tweet about technology",
             "replies": []
@@ -1058,14 +1145,15 @@ mod decision_integration_tests {
             smart_decision_enabled: true,
             ..Default::default()
         };
-        let result = handle_engagement_decision(&tweet, &config);
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona).await;
         // Should return a decision (not None) when enabled
         assert!(result.is_some());
     }
 
     /// Test handle_engagement_decision handles replies array
-    #[test]
-    fn engagement_decision_extracts_replies() {
+    #[tokio::test]
+    async fn engagement_decision_extracts_replies() {
         let tweet = json!({
             "text": "Main tweet",
             "replies": [
@@ -1079,7 +1167,8 @@ mod decision_integration_tests {
             smart_decision_enabled: true,
             ..Default::default()
         };
-        let result = handle_engagement_decision(&tweet, &config);
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona).await;
         assert!(result.is_some());
     }
 }

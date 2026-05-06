@@ -1,18 +1,16 @@
-//! Unified decision + content generation engine for Twitter automation.
+//! Unified decision + content generation strategy.
 //!
 //! Makes a SINGLE LLM call that returns both engagement decision and
-//! generated content (reply or quote). Optimized for latency and simplicity.
+//! generated content (reply or quote). Ported from `twitteractivity_decision_unified.rs`.
 
 use async_trait::async_trait;
+use log::{info, warn, error};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
-use tracing::{error, info, warn};
-
-use super::twitteractivity_decision::{
-    DecisionEngine, EngagementDecision, EngagementLevel, TweetContext,
-};
+use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
+use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext};
 
 /// Unified analysis response - decision + content in one struct
 #[derive(Debug, Clone, Deserialize)]
@@ -71,38 +69,10 @@ impl UnifiedAnalysis {
             confidence: self.confidence,
         }
     }
-
-    /// Get action type from actions string
-    pub fn action_type(&self) -> ActionType {
-        match self.actions.as_str() {
-            "quote" => ActionType::Quote,
-            "reply" => ActionType::Reply,
-            "follow" => ActionType::Follow,
-            "bookmark" => ActionType::Bookmark,
-            "like" => ActionType::Like,
-            _ => ActionType::None,
-        }
-    }
-
-    /// Get content if this is a quote or reply action
-    pub fn content(&self) -> Option<&str> {
-        self.reply.as_deref()
-    }
 }
 
-/// Action types from unified analysis
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ActionType {
-    Quote,
-    Reply,
-    Follow,
-    Bookmark,
-    Like,
-    None,
-}
-
-/// Unified engine - single LLM call for decision + content
-pub struct UnifiedEngine {
+/// Unified strategy - single LLM call for decision + content
+pub(crate) struct UnifiedStrategy {
     api_key: String,
     api_url: String,
     model: String,
@@ -110,8 +80,8 @@ pub struct UnifiedEngine {
     client: Client,
 }
 
-impl UnifiedEngine {
-    /// Create new unified engine with Qwen-Turbo defaults
+impl UnifiedStrategy {
+    /// Create new unified strategy with Qwen-Turbo defaults
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
@@ -121,25 +91,6 @@ impl UnifiedEngine {
             timeout_ms: 5000,
             client: Client::new(),
         }
-    }
-
-    /// Configure with custom settings
-    pub fn with_config(
-        mut self,
-        api_url: Option<String>,
-        model: Option<String>,
-        timeout_ms: Option<u64>,
-    ) -> Self {
-        if let Some(url) = api_url {
-            self.api_url = url;
-        }
-        if let Some(m) = model {
-            self.model = m;
-        }
-        if let Some(t) = timeout_ms {
-            self.timeout_ms = t;
-        }
-        self
     }
 
     /// Build system prompt for unified analysis
@@ -197,8 +148,7 @@ Respond ONLY with valid JSON matching this exact schema:
 
         // Add context hints
         prompt.push_str(&format!(
-            "CONTEXT:\n- Tweet age: {}\n- Topic alignment: {}\n",
-            self.format_tweet_age(&ctx.task_config),
+            "CONTEXT:\n- Tweet age: Recent\n- Topic alignment: {}\n",
             if self.is_topic_aligned(&ctx.text) {
                 "High"
             } else {
@@ -213,7 +163,7 @@ Respond ONLY with valid JSON matching this exact schema:
     /// Infer persona tone description
     fn infer_persona_tone(
         &self,
-        persona: &super::twitteractivity_persona::PersonaWeights,
+        persona: &crate::utils::twitter::twitteractivity_persona::PersonaWeights,
     ) -> String {
         if persona.reply_prob > 0.5 {
             "Casual tech enthusiast, friendly, asks questions, doesn't fake expertise"
@@ -223,12 +173,6 @@ Respond ONLY with valid JSON matching this exact schema:
             "Balanced engagement style"
         }
         .to_string()
-    }
-
-    /// Format tweet age hint
-    fn format_tweet_age(&self, _config: &super::twitteractivity_state::TaskConfig) -> String {
-        // Simplified - in production would use actual timestamp
-        "Recent".to_string()
     }
 
     /// Check if topic is aligned with tech/dev focus
@@ -300,15 +244,8 @@ Respond ONLY with valid JSON matching this exact schema:
 
         // Tragedy keywords
         let tragedy = [
-            "died",
-            "death",
-            "passed away",
-            "funeral",
-            "grief",
-            "tragedy",
-            "killed",
-            "murdered",
-            "suicide",
+            "died", "death", "passed away", "funeral", "grief", "tragedy",
+            "killed", "murdered", "suicide",
         ];
         if tragedy.iter().any(|kw| combined.contains(kw)) {
             return Some("Safety: tragedy/grief detected".to_string());
@@ -316,12 +253,7 @@ Respond ONLY with valid JSON matching this exact schema:
 
         // Crypto scam patterns
         let crypto_scam = [
-            "dm me",
-            "dm for",
-            "check my bio",
-            "guaranteed profit",
-            "100x gem",
-            "airdrop",
+            "dm me", "dm for", "check my bio", "guaranteed profit", "100x gem", "airdrop",
         ];
         if crypto_scam.iter().any(|kw| combined.contains(kw)) {
             return Some("Safety: potential crypto scam".to_string());
@@ -338,19 +270,11 @@ Respond ONLY with valid JSON matching this exact schema:
 }
 
 #[async_trait]
-impl DecisionEngine for UnifiedEngine {
-    fn name(&self) -> &'static str {
-        "UnifiedEngine"
-    }
-
-    fn is_available(&self) -> bool {
-        !self.api_key.is_empty()
-    }
-
+impl DecisionStrategyImpl for UnifiedStrategy {
     async fn decide(&self, ctx: &TweetContext) -> EngagementDecision {
         // 1. Pre-flight safety check (fast path)
         if let Some(safety_reason) = self.check_safety(ctx) {
-            info!("UnifiedEngine: Safety trigger - {}", safety_reason);
+            info!("UnifiedStrategy: Safety trigger - {}", safety_reason);
             return UnifiedAnalysis::skip(&safety_reason).to_engagement_decision();
         }
 
@@ -359,109 +283,34 @@ impl DecisionEngine for UnifiedEngine {
             Ok(response) => match serde_json::from_str::<UnifiedAnalysis>(&response) {
                 Ok(a) => a,
                 Err(e) => {
-                    error!("UnifiedEngine: JSON parse error: {}", e);
+                    error!("UnifiedStrategy: JSON parse error: {}", e);
                     UnifiedAnalysis::skip("Parse error")
                 }
             },
             Err(e) => {
-                warn!("UnifiedEngine: LLM call failed: {}", e);
+                warn!("UnifiedStrategy: LLM call failed: {}", e);
                 UnifiedAnalysis::skip("LLM unavailable")
             }
         };
 
         // 3. Log decision
         info!(
-            "UnifiedEngine: score={}, level={}, action={}, engage={}",
+            "UnifiedStrategy: score={}, level={}, action={}, engage={}",
             analysis.score, analysis.level, analysis.actions, analysis.engage
         );
 
         analysis.to_engagement_decision()
     }
-}
 
-/// Builder for creating unified engine with custom config
-pub struct UnifiedEngineBuilder {
-    api_key: String,
-    api_url: Option<String>,
-    model: Option<String>,
-    timeout_ms: Option<u64>,
-}
-
-impl UnifiedEngineBuilder {
-    pub fn new(api_key: String) -> Self {
-        Self {
-            api_key,
-            api_url: None,
-            model: None,
-            timeout_ms: None,
-        }
+    fn strategy_type(&self) -> DecisionStrategy {
+        DecisionStrategy::Unified
     }
 
-    pub fn api_url(mut self, url: String) -> Self {
-        self.api_url = Some(url);
-        self
+    fn is_available(&self) -> bool {
+        !self.api_key.is_empty()
     }
 
-    pub fn model(mut self, model: String) -> Self {
-        self.model = Some(model);
-        self
-    }
-
-    pub fn timeout(mut self, ms: u64) -> Self {
-        self.timeout_ms = Some(ms);
-        self
-    }
-
-    pub fn build(self) -> UnifiedEngine {
-        UnifiedEngine::new(self.api_key).with_config(self.api_url, self.model, self.timeout_ms)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_unified_analysis_to_decision() {
-        let analysis = UnifiedAnalysis {
-            score: 85,
-            level: "Full".to_string(),
-            reason: "Test reason".to_string(),
-            confidence: 0.9,
-            actions: "reply".to_string(),
-            engage: true,
-            reply: Some("Test reply".to_string()),
-        };
-
-        let decision = analysis.to_engagement_decision();
-        assert_eq!(decision.level, EngagementLevel::Full);
-        assert_eq!(decision.score, 85);
-        assert_eq!(decision.multiplier, 1.5);
-        assert_eq!(decision.confidence, 0.9);
-    }
-
-    #[test]
-    fn test_action_type_parsing() {
-        let analysis = UnifiedAnalysis {
-            score: 50,
-            level: "Medium".to_string(),
-            reason: "Test".to_string(),
-            confidence: 0.7,
-            actions: "quote".to_string(),
-            engage: true,
-            reply: Some("Quote text".to_string()),
-        };
-
-        assert_eq!(analysis.action_type(), ActionType::Quote);
-        assert_eq!(analysis.content(), Some("Quote text"));
-    }
-
-    #[test]
-    fn test_skip_response() {
-        let skip = UnifiedAnalysis::skip("Safety: tragedy");
-        assert!(!skip.engage);
-        assert_eq!(skip.level, "Skip");
-        assert_eq!(skip.actions, "none");
-        assert!(skip.reply.is_none());
+    fn name(&self) -> &'static str {
+        "unified"
     }
 }

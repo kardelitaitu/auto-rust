@@ -5,11 +5,7 @@
 //! for DOM queries and interactions.
 
 pub mod twitteractivity_constants;
-pub mod twitteractivity_decision;
-pub mod twitteractivity_decision_hybrid;
-pub mod twitteractivity_decision_llm;
-pub mod twitteractivity_decision_persona;
-pub mod twitteractivity_decision_unified;
+pub mod decision;
 pub mod twitteractivity_dive;
 pub mod twitteractivity_engagement;
 pub mod twitteractivity_errors;
@@ -34,7 +30,7 @@ pub mod twitteractivity_state;
 #[allow(unused_imports)]
 pub use twitteractivity_constants::*;
 #[allow(unused_imports)]
-pub use twitteractivity_decision::*;
+pub use decision::*;
 #[allow(unused_imports)]
 pub use twitteractivity_dive::*;
 #[allow(unused_imports)]

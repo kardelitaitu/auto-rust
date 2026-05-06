@@ -1,20 +1,18 @@
-//! LLM-based decision engine for Twitter engagement.
+//! LLM-based decision strategy.
 //!
 //! Uses Qwen-Turbo via Alibaba Cloud for smart engagement decisions.
-//! Analyzes tweet content and replies to determine engagement quality.
+//! Ported from `twitteractivity_decision_llm.rs`.
 
-use super::twitteractivity_decision::{
-    DecisionEngine, EngagementDecision, EngagementLevel, TweetContext,
-};
-use anyhow::Result;
 use async_trait::async_trait;
 use log::{info, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
+use crate::utils::twitter::decision::types::{DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext};
 
-/// LLM-powered decision engine
-pub struct LLMEngine {
+/// LLM-powered decision strategy.
+pub(crate) struct LlmStrategy {
     api_url: String,
     api_key: String,
     model: String,
@@ -63,27 +61,13 @@ struct LlmDecision {
     confidence: f64,
 }
 
-impl LLMEngine {
-    /// Create new LLM engine with Qwen-Turbo defaults
+impl LlmStrategy {
+    /// Create new LLM strategy with Qwen-Turbo defaults
     pub fn new(api_key: String) -> Self {
         Self {
             api_url: "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation".to_string(),
             api_key,
             model: "qwen-turbo".to_string(),
-            timeout_ms: 5000,
-            client: Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("Failed to create HTTP client"),
-        }
-    }
-
-    /// Create with custom configuration
-    pub fn with_config(api_url: String, api_key: String, model: String) -> Self {
-        Self {
-            api_url,
-            api_key,
-            model,
             timeout_ms: 5000,
             client: Client::builder()
                 .timeout(Duration::from_secs(10))
@@ -146,7 +130,7 @@ CRITICAL:
     }
 
     /// Call LLM API and parse response
-    async fn call_llm(&self, ctx: &TweetContext) -> Result<LlmDecision> {
+    async fn call_llm(&self, ctx: &TweetContext) -> anyhow::Result<LlmDecision> {
         let request = LlmRequest {
             model: self.model.clone(),
             messages: vec![
@@ -202,19 +186,11 @@ CRITICAL:
 }
 
 #[async_trait]
-impl DecisionEngine for LLMEngine {
-    fn name(&self) -> &'static str {
-        "llm"
-    }
-
-    fn is_available(&self) -> bool {
-        !self.api_key.is_empty() && !self.api_url.is_empty()
-    }
-
+impl DecisionStrategyImpl for LlmStrategy {
     async fn decide(&self, ctx: &TweetContext) -> EngagementDecision {
         // Check if available
         if !self.is_available() {
-            warn!("LLMEngine not available (no API key), returning neutral decision");
+            warn!("LlmStrategy not available (no API key), returning neutral decision");
             return EngagementDecision {
                 level: EngagementLevel::Medium,
                 score: 50,
@@ -225,7 +201,7 @@ impl DecisionEngine for LLMEngine {
         }
 
         info!(
-            "LLMEngine: Analyzing tweet from @{} with {} replies",
+            "LlmStrategy: Analyzing tweet from @{} with {} replies",
             ctx.author,
             ctx.replies.len()
         );
@@ -235,7 +211,7 @@ impl DecisionEngine for LLMEngine {
         {
             Ok(Ok(decision)) => {
                 info!(
-                    "LLMEngine: score={}, level={}, multiplier={:.2}, confidence={:.2}",
+                    "LlmStrategy: score={}, level={}, multiplier={:.2}, confidence={:.2}",
                     decision.score, decision.level, decision.multiplier, decision.confidence
                 );
 
@@ -248,7 +224,7 @@ impl DecisionEngine for LLMEngine {
                 }
             }
             Ok(Err(e)) => {
-                warn!("LLMEngine error: {}, falling back to neutral", e);
+                warn!("LlmStrategy error: {}, falling back to neutral", e);
                 EngagementDecision {
                     level: EngagementLevel::Medium,
                     score: 50,
@@ -259,7 +235,7 @@ impl DecisionEngine for LLMEngine {
             }
             Err(_) => {
                 warn!(
-                    "LLMEngine timeout after {}ms, falling back",
+                    "LlmStrategy timeout after {}ms, falling back",
                     self.timeout_ms
                 );
                 EngagementDecision {
@@ -272,133 +248,16 @@ impl DecisionEngine for LLMEngine {
             }
         }
     }
-}
 
-impl Default for LLMEngine {
-    fn default() -> Self {
-        Self::new(String::new())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
-    use crate::utils::twitter::twitteractivity_state::{SentimentTemplates, TaskConfig};
-
-    fn test_task_config() -> TaskConfig {
-        TaskConfig {
-            duration_ms: 120_000,
-            candidate_count: 5,
-            thread_depth: 3,
-            max_actions_per_scan: 2,
-            scroll_count: 12,
-            weights: None,
-            llm_enabled: true,
-            smart_decision_enabled: true,
-            sentiment_templates: SentimentTemplates::default(),
-            enhanced_sentiment_enabled: true,
-            dry_run_actions: false,
-        }
+    fn strategy_type(&self) -> DecisionStrategy {
+        DecisionStrategy::Llm
     }
 
-    fn test_context() -> TweetContext {
-        TweetContext {
-            tweet_id: "tweet-1".to_string(),
-            text: "New AI dev tool launch with great docs and code examples".to_string(),
-            author: "tech_author".to_string(),
-            replies: vec![
-                "First reply".to_string(),
-                "Second reply".to_string(),
-                "Third reply".to_string(),
-                "Fourth reply".to_string(),
-                "Fifth reply".to_string(),
-                "Sixth reply should be truncated".to_string(),
-            ],
-            persona: PersonaWeights {
-                like_prob: 0.3,
-                retweet_prob: 0.1,
-                quote_prob: 0.8,
-                follow_prob: 0.05,
-                reply_prob: 0.7,
-                bookmark_prob: 0.2,
-                thread_dive_prob: 0.1,
-                interest_multiplier: 1.0,
-            },
-            task_config: test_task_config(),
-            tweet_age: "Recent".to_string(),
-            topic_alignment: "High".to_string(),
-        }
+    fn is_available(&self) -> bool {
+        !self.api_key.is_empty() && !self.api_url.is_empty()
     }
 
-    #[test]
-    fn test_new_and_with_config_override_defaults() {
-        let engine = LLMEngine::new("secret-key".to_string());
-        assert!(engine.is_available());
-        assert_eq!(
-            engine.api_url,
-            "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
-        );
-        assert_eq!(engine.model, "qwen-turbo");
-        assert_eq!(engine.timeout_ms, 5000);
-
-        let configured = LLMEngine::with_config(
-            "https://example.invalid/v1/chat".to_string(),
-            "api-key-2".to_string(),
-            "custom-model".to_string(),
-        );
-        assert_eq!(configured.api_url, "https://example.invalid/v1/chat");
-        assert_eq!(configured.api_key, "api-key-2");
-        assert_eq!(configured.model, "custom-model");
-        assert_eq!(configured.timeout_ms, 5000);
-    }
-
-    #[test]
-    fn test_parse_level_maps_known_and_unknown_values() {
-        let engine = LLMEngine::new("key".to_string());
-
-        assert_eq!(engine.parse_level("skip"), EngagementLevel::None);
-        assert_eq!(engine.parse_level("none"), EngagementLevel::None);
-        assert_eq!(engine.parse_level("low"), EngagementLevel::Minimal);
-        assert_eq!(engine.parse_level("minimal"), EngagementLevel::Minimal);
-        assert_eq!(engine.parse_level("medium"), EngagementLevel::Medium);
-        assert_eq!(engine.parse_level("high"), EngagementLevel::Full);
-        assert_eq!(engine.parse_level("full"), EngagementLevel::Full);
-        assert_eq!(engine.parse_level("mystery"), EngagementLevel::None);
-    }
-
-    #[test]
-    fn test_build_system_prompt_includes_schema_and_safety_rules() {
-        let prompt = LLMEngine::build_system_prompt();
-        assert!(prompt.contains("Respond ONLY with valid JSON"));
-        assert!(prompt.contains("death/grief/tragedy"));
-        assert!(prompt.contains("crypto/NFT spam"));
-        assert!(prompt.contains("quote|reply|follow|bookmark|like|none"));
-    }
-
-    #[test]
-    fn test_build_user_prompt_limits_replies_and_includes_context() {
-        let engine = LLMEngine::new("key".to_string());
-        let ctx = test_context();
-        let prompt = engine.build_user_prompt(&ctx);
-
-        assert!(prompt.contains("TWEET: \"New AI dev tool launch"));
-        assert!(prompt.contains("AUTHOR: @tech_author"));
-        assert!(prompt.contains("REPLIES:"));
-        assert!(prompt.contains("- First reply"));
-        assert!(prompt.contains("- Fifth reply"));
-        assert!(!prompt.contains("Sixth reply should be truncated"));
-        assert!(prompt.contains(
-            "TONE: \"Casual tech enthusiast, friendly, asks questions, doesn't fake expertise\""
-        ));
-        assert!(prompt.contains("Tweet age: Recent"));
-        assert!(prompt.contains("Topic alignment: High"));
-        assert!(prompt.ends_with("DECIDE ACTION AND GENERATE CONTENT:"));
-    }
-
-    #[test]
-    fn test_decide_fallback_is_neutral_when_unavailable() {
-        let engine = LLMEngine::new(String::new());
-        assert!(!engine.is_available());
+    fn name(&self) -> &'static str {
+        "llm"
     }
 }

@@ -19,9 +19,9 @@ pub struct TweetContext {
     /// Top replies for sentiment analysis
     pub replies: Vec<String>,
     /// Persona weights for decision modification
-    pub persona: super::twitteractivity_persona::PersonaWeights,
+    pub persona: crate::utils::twitter::twitteractivity_persona::PersonaWeights,
     /// Task configuration
-    pub task_config: super::twitteractivity_state::TaskConfig,
+    pub task_config: crate::utils::twitter::twitteractivity_state::TaskConfig,
     /// Human-readable tweet age description
     pub tweet_age: String,
     /// Topic alignment score/description

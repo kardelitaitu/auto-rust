@@ -1,6 +1,6 @@
 # Twitter Decision Engine Consolidation
 
-Status: `implementing`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `cascade`

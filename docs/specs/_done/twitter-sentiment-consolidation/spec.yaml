@@ -1,0 +1,25 @@
+version: 1
+id: twitter-sentiment-consolidation
+title: Twitter Sentiment Analysis Consolidation
+status: done
+owner: spec-agent
+implementer: implementer-agent
+priority: P2
+area:
+  - twitter-activity
+files:
+  code: []
+  docs:
+    - docs/specs/_done/twitter-sentiment-consolidation/README.md
+    - docs/specs/_done/twitter-sentiment-consolidation/baseline.md
+    - docs/specs/_done/twitter-sentiment-consolidation/internal-api-outline.md
+    - docs/specs/_done/twitter-sentiment-consolidation/plan.md
+    - docs/specs/_done/twitter-sentiment-consolidation/validation-checklist.md
+    - docs/specs/_done/twitter-sentiment-consolidation/ci-commands.md
+    - docs/specs/_done/twitter-sentiment-consolidation/decisions.md
+    - docs/specs/_done/twitter-sentiment-consolidation/quality-rules.md
+    - docs/specs/_done/twitter-sentiment-consolidation/implementation-notes.md
+acceptance:
+  - Spec implemented successfully
+non_goals: []
+risks: []

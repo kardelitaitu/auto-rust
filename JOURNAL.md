@@ -981,3 +981,19 @@ Completed comprehensive test coverage for the accessibility locator feature acro
 | spec-lint | ✅ Pass |
 | Build | ⚪ Not run |
 | Tests | ⚪ Not applicable |
+
+## 2026-05-06 - CI coverage gate no report
+
+### Accomplished This Session
+
+#### CI Workflow
+- **.github/workflows/ci.yml**: replaced coverage report generation and artifact upload with a no-report coverage gate
+- **docs/specs/_active/ci-coverage-gate-no-report/**: added a spec package for the CI-only coverage policy change
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| spec-lint | ✅ Pass |
+| Build | ✅ Pass |
+| Tests | ✅ Pass |

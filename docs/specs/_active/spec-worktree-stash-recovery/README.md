@@ -1,9 +1,9 @@
 # Spec Worktree Stash Recovery
 
-Status: `approved`
+Status: `implementing`
 
 Owner: `spec-agent`
-Implementer: `pending`
+Implementer: `gemini-cli`
 
 ## Summary
 

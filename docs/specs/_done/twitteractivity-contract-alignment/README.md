@@ -1,9 +1,9 @@
 # TwitterActivity Contract Alignment
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
-Implementer: `pending`
+Implementer: `archived-spec-agent`
 
 ## Summary
 

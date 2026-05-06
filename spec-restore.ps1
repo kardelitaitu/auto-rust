@@ -1,41 +1,48 @@
-#!/usr/bin/env pwsh
-[CmdletBinding()]
-param(
-    [string]$Ref,
-    [switch]$Pop
+# spec-restore.ps1 - Restore from a git stash checkpoint
+# Usage: .\spec-restore.ps1 [stash-ref]
+
+param (
+    [Parameter(Mandatory=$false)]
+    [string]$StashRef = "stash@{0}"
 )
 
-$ErrorActionPreference = "Stop"
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
-
-function Throw-RestoreError([string]$message) {
-    throw $message
+# Ensure we are in the repository root
+if (-not (Test-Path ".git")) {
+    Write-Error "Error: Must run from the repository root (directory containing .git)."
+    exit 1
 }
 
-function Ensure-RepoRoot {
-    $repoRoot = (& git rev-parse --show-toplevel 2>$null).Trim()
-    if (-not $repoRoot) {
-        Throw-RestoreError "spec-restore: not inside a git repository"
+# Verify the stash ref exists
+$stashList = git stash list
+if ([string]::IsNullOrWhiteSpace($stashList)) {
+    Write-Error "Error: No stashes found."
+    exit 1
+}
+
+$found = $false
+foreach ($line in $stashList -split "`r?`n") {
+    if ($line -like "$StashRef*") {
+        $found = $true
+        Write-Host "Found checkpoint: $line"
+        break
     }
-    Set-Location $repoRoot
-    return $repoRoot
 }
 
-Set-Location $root
-$repoRoot = Ensure-RepoRoot
-
-if ([string]::IsNullOrWhiteSpace($Ref)) {
-    $Ref = "stash@{0}"
+if (-not $found) {
+    Write-Error "Error: Stash reference '$StashRef' not found."
+    Write-Host "Available stashes:"
+    git stash list
+    exit 1
 }
 
-$mode = if ($Pop) { "pop" } else { "apply" }
-Write-Host "spec-restore: $mode $Ref"
+# Perform a safe apply
+Write-Host "Restoring checkpoint '$StashRef'..."
+git stash apply $StashRef
 
-& git stash $mode --index $Ref
 if ($LASTEXITCODE -ne 0) {
-    Throw-RestoreError "spec-restore: git stash $mode failed for $Ref"
+    Write-Error "Error: Failed to apply stash. You may have merge conflicts."
+    exit $LASTEXITCODE
 }
 
-if (-not $Pop) {
-    Write-Host "spec-restore: checkpoint retained; use -Pop after verifying the restore"
-}
+Write-Host "`nCheckpoint restored successfully."
+Write-Host "Note: The stash entry remains in your stash list. Use 'git stash drop $StashRef' if you want to remove it."

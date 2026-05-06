@@ -1,60 +1,38 @@
-#!/usr/bin/env pwsh
-[CmdletBinding()]
-param(
-    [string]$Spec,
-    [string]$Reason = "checkpoint"
+# spec-stash.ps1 - Create a named git stash checkpoint
+# Usage: .\spec-stash.ps1 <checkpoint-name>
+
+param (
+    [Parameter(Mandatory=$true)]
+    [string]$Name
 )
 
-$ErrorActionPreference = "Stop"
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
-
-function Throw-CheckpointError([string]$message) {
-    throw $message
+# Ensure we are in the repository root
+if (-not (Test-Path ".git")) {
+    Write-Error "Error: Must run from the repository root (directory containing .git)."
+    exit 1
 }
 
-function Ensure-RepoRoot {
-    $repoRoot = (& git rev-parse --show-toplevel 2>$null).Trim()
-    if (-not $repoRoot) {
-        Throw-CheckpointError "spec-stash: not inside a git repository"
-    }
-    Set-Location $repoRoot
-    return $repoRoot
-}
-
-function Get-CleanStatus {
-    $status = & git status --porcelain
-    if ($LASTEXITCODE -ne 0) {
-        Throw-CheckpointError "spec-stash: unable to read git status"
-    }
-    return $status
-}
-
-Set-Location $root
-$repoRoot = Ensure-RepoRoot
-$status = Get-CleanStatus
-
+# Check if there are any changes to stash
+$status = git status --porcelain
 if ([string]::IsNullOrWhiteSpace($status)) {
-    Write-Host "spec-stash: clean worktree, nothing to save"
+    Write-Host "No changes to checkpoint."
     exit 0
 }
 
-$messageParts = @("spec-checkpoint")
-if ($Spec) { $messageParts += $Spec }
-if ($Reason) { $messageParts += $Reason }
-$message = $messageParts -join ": "
+# Create the stash
+$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$stashMessage = "spec-checkpoint: $Name ($timestamp)"
+Write-Host "Creating checkpoint: $stashMessage..."
 
-& git stash push -u -m $message
+$stashResult = git stash push --include-untracked --message "$stashMessage"
 if ($LASTEXITCODE -ne 0) {
-    Throw-CheckpointError "spec-stash: git stash push failed"
+    Write-Error "Error: Failed to create stash."
+    exit $LASTEXITCODE
 }
 
-$latest = & git stash list -n 1 --format='%gd | %gs'
-if ($LASTEXITCODE -ne 0) {
-    Throw-CheckpointError "spec-stash: unable to read the created stash ref"
-}
-
-if ($latest) {
-    Write-Host "spec-stash: saved $latest"
-} else {
-    Write-Host "spec-stash: saved checkpoint"
-}
+# Get the stash ref (it's always stash@{0} after a push)
+$stashRef = "stash@{0}"
+Write-Host "Checkpoint created successfully: $stashRef"
+Write-Host "Description: $stashMessage"
+Write-Host "`nTo restore this checkpoint, use:"
+Write-Host ".\spec-restore.ps1 $stashRef"

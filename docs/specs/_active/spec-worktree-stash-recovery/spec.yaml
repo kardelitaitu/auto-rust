@@ -1,9 +1,9 @@
 version: 1
 id: spec-worktree-stash-recovery
 title: Spec worktree stash recovery
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-gemini-cli
 priority: P2
 area:
   - docs
@@ -16,15 +16,15 @@ files:
     - spec-restore.ps1
     - AGENTS.md
   docs:
-    - docs/specs/_active/spec-worktree-stash-recovery/README.md
-    - docs/specs/_active/spec-worktree-stash-recovery/baseline.md
-    - docs/specs/_active/spec-worktree-stash-recovery/internal-api-outline.md
-    - docs/specs/_active/spec-worktree-stash-recovery/plan.md
-    - docs/specs/_active/spec-worktree-stash-recovery/validation-checklist.md
-    - docs/specs/_active/spec-worktree-stash-recovery/ci-commands.md
-    - docs/specs/_active/spec-worktree-stash-recovery/decisions.md
-    - docs/specs/_active/spec-worktree-stash-recovery/quality-rules.md
-    - docs/specs/_active/spec-worktree-stash-recovery/implementation-notes.md
+    - docs/specs/_done/spec-worktree-stash-recovery/README.md
+    - docs/specs/_done/spec-worktree-stash-recovery/baseline.md
+    - docs/specs/_done/spec-worktree-stash-recovery/internal-api-outline.md
+    - docs/specs/_done/spec-worktree-stash-recovery/plan.md
+    - docs/specs/_done/spec-worktree-stash-recovery/validation-checklist.md
+    - docs/specs/_done/spec-worktree-stash-recovery/ci-commands.md
+    - docs/specs/_done/spec-worktree-stash-recovery/decisions.md
+    - docs/specs/_done/spec-worktree-stash-recovery/quality-rules.md
+    - docs/specs/_done/spec-worktree-stash-recovery/implementation-notes.md
 acceptance:
   - `spec-stash.ps1` creates a named git stash checkpoint that includes untracked files and prints the created stash ref.
   - `spec-restore.ps1` can apply the latest stash checkpoint or a named ref and uses a safer apply-first flow by default.

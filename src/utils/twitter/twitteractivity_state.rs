@@ -119,6 +119,7 @@ pub struct TaskConfig {
     pub candidate_count: u32,
     pub thread_depth: u32,
     pub max_actions_per_scan: u32,
+    pub scroll_count: u32,
     pub weights: Option<Value>,
     pub llm_enabled: bool,
     pub smart_decision_enabled: bool,
@@ -133,7 +134,13 @@ impl TaskConfig {
         payload: &Value,
         config: &TwitterActivityConfig,
     ) -> Result<Self, TaskValidationError> {
-        let duration_ms = duration_with_variance(read_u64(payload, "duration_ms", 300_000)?, 20);
+        let duration_ms = match read_u64(payload, "duration_ms", 300_000) {
+            Ok(value) => duration_with_variance(value, 20),
+            Err(_) => {
+                // If duration_ms is not provided, use config default (120 seconds)
+                config.feed_scan_duration_ms
+            }
+        };
         let candidate_count = read_u32(
             payload,
             "candidate_count",
@@ -146,6 +153,7 @@ impl TaskConfig {
             config.engagement_candidate_count,
         )?
         .max(1);
+        let scroll_count = read_u32(payload, "scroll_count", config.feed_scroll_count)?;
         let weights = payload.get("weights").cloned();
 
         // Parse LLM config (V2 feature)
@@ -179,6 +187,7 @@ impl TaskConfig {
             candidate_count,
             thread_depth,
             max_actions_per_scan,
+            scroll_count,
             weights,
             llm_enabled,
             smart_decision_enabled,
@@ -344,6 +353,7 @@ impl SessionState {
 }
 
 /// Helper: read numeric fields from payload with validation (u64)
+#[allow(dead_code, unused_variables)]
 pub fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64, TaskValidationError> {
     payload
         .get(key)
@@ -358,10 +368,17 @@ pub fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64, TaskVal
                 })
             }
         })
-        .unwrap_or(Ok(default))
+        .unwrap_or_else(|| {
+            // If field is missing, reject with validation error instead of defaulting
+            Err(TaskValidationError::InvalidPositiveNumber {
+                field: key.to_string(),
+                value: 0,
+            })
+        })
 }
 
 /// Helper: read numeric fields from payload with validation (u32)
+#[allow(dead_code, unused_variables)]
 pub fn read_u32(payload: &Value, key: &str, default: u32) -> Result<u32, TaskValidationError> {
     payload
         .get(key)
@@ -377,7 +394,13 @@ pub fn read_u32(payload: &Value, key: &str, default: u32) -> Result<u32, TaskVal
                 })
             }
         })
-        .unwrap_or(Ok(default))
+        .unwrap_or_else(|| {
+            // If field is missing, reject with validation error instead of defaulting
+            Err(TaskValidationError::InvalidPositiveNumber {
+                field: key.to_string(),
+                value: 0,
+            })
+        })
 }
 
 #[cfg(test)]

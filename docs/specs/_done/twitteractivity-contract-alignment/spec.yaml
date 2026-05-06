@@ -1,9 +1,9 @@
 version: 1
 id: twitteractivity-contract-alignment
 title: TwitterActivity contract alignment
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-spec-agent
 priority: P3
 area:
   - task
@@ -21,15 +21,15 @@ files:
     - docs/TASKS/twitteractivity.md
     - README.md
     - config/default.toml
-    - docs/specs/_active/twitteractivity-contract-alignment/README.md
-    - docs/specs/_active/twitteractivity-contract-alignment/baseline.md
-    - docs/specs/_active/twitteractivity-contract-alignment/internal-api-outline.md
-    - docs/specs/_active/twitteractivity-contract-alignment/plan.md
-    - docs/specs/_active/twitteractivity-contract-alignment/validation-checklist.md
-    - docs/specs/_active/twitteractivity-contract-alignment/ci-commands.md
-    - docs/specs/_active/twitteractivity-contract-alignment/decisions.md
-    - docs/specs/_active/twitteractivity-contract-alignment/quality-rules.md
-    - docs/specs/_active/twitteractivity-contract-alignment/implementation-notes.md
+    - docs/specs/_done/twitteractivity-contract-alignment/README.md
+    - docs/specs/_done/twitteractivity-contract-alignment/baseline.md
+    - docs/specs/_done/twitteractivity-contract-alignment/internal-api-outline.md
+    - docs/specs/_done/twitteractivity-contract-alignment/plan.md
+    - docs/specs/_done/twitteractivity-contract-alignment/validation-checklist.md
+    - docs/specs/_done/twitteractivity-contract-alignment/ci-commands.md
+    - docs/specs/_done/twitteractivity-contract-alignment/decisions.md
+    - docs/specs/_done/twitteractivity-contract-alignment/quality-rules.md
+    - docs/specs/_done/twitteractivity-contract-alignment/implementation-notes.md
 acceptance:
   - Missing `duration_ms` resolves from the task config instead of a hardcoded fallback.
   - `scroll_count` is part of the runtime contract and actually affects the feed scroll budget.

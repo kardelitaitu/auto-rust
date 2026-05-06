@@ -292,6 +292,7 @@ mod tests {
             candidate_count: 5,
             thread_depth: 3,
             max_actions_per_scan: 2,
+            scroll_count: 12,
             weights: None,
             llm_enabled: true,
             smart_decision_enabled: true,

@@ -46,3 +46,25 @@ When a spec package is complete and ready for archival:
 4. **Validation**: Run `spec-lint.ps1` after archival to ensure no status mismatches
 
 **Note**: The archive helper is the normal handoff step. Do not manually move packages without using the archive helper, as this can cause status field mismatches that will fail linting.
+
+## Recovery Workflow
+
+To protect the worktree during handoffs between agents:
+
+1. **Checkpoint**: Before handing a package to another agent, create a worktree snapshot:
+   ```powershell
+   .\spec-stash.ps1 "my-checkpoint-name"
+   ```
+   This creates a git stash named `spec-checkpoint: my-checkpoint-name` that includes untracked files.
+
+2. **Record**: Note the stash reference (e.g., `stash@{0}`) printed by the script.
+
+3. **Restore**: If an agent breaks the worktree or makes undesirable changes, restore from the checkpoint:
+   ```powershell
+   # Restore the latest checkpoint
+   .\spec-restore.ps1
+
+   # Restore a specific checkpoint ref
+   .\spec-restore.ps1 "stash@{1}"
+   ```
+   The restore script uses `git stash apply`, meaning the checkpoint remains in your stash list until explicitly dropped.

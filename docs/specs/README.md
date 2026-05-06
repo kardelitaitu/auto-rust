@@ -7,7 +7,9 @@ This is the contract between spec planning and implementation.
 - One initiative per folder.
 - Spec agent writes the spec package only.
 - Implementer edits code, tests, and docs only after approval.
-- `spec-lint.ps1` is system-owned; regular feature specs must not target it.
+- `spec-lint.ps1` is system-owned, read-only, and regular feature specs must not target it.
+- Before a risky handoff, checkpoint the worktree with `.\spec-stash.ps1` and keep the ref.
+- If a handoff breaks the tree, restore with `.\spec-restore.ps1`.
 - Keep `implementation-notes.md` append-only.
 
 ## Lifecycle
@@ -27,3 +29,20 @@ This is the contract between spec planning and implementation.
 - Use `.\check-fast.ps1` during implementation.
 - Move a spec to `_done/` only after `.\check.ps1` passes.
 - Run `spec-lint.ps1` before handoff.
+- Keep stash checkpoints named so a smaller agent can recover them without guessing.
+
+## Archive Workflow
+
+When a spec package is complete and ready for archival:
+
+1. **Use the archive helper**: `.\docs\specs\_active\spec-package-archive-safety\spec-archive.ps1 <package-name>`
+2. **The archive helper will**:
+   - Validate the package has required files (spec.yaml, README.md)
+   - Confirm the package is in an archiveable state (approved or implementing)
+   - Rewrite both `README.md` and `spec.yaml` status fields to `done`
+   - Normalize the implementer field to `archived-*` convention
+   - Move the folder from `_active/` to `_done/`
+3. **Status synchronization**: Both status fields must be `done` after archival
+4. **Validation**: Run `spec-lint.ps1` after archival to ensure no status mismatches
+
+**Note**: The archive helper is the normal handoff step. Do not manually move packages without using the archive helper, as this can cause status field mismatches that will fail linting.

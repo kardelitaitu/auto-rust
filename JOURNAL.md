@@ -917,6 +917,38 @@ Completed comprehensive test coverage for the accessibility locator feature acro
 | Build | ⚪ Not run |
 | Tests | ⚪ Not applicable |
 
+## 2026-05-06 - Spec lint strict read-only
+
+### Accomplished This Session
+
+#### Spec System
+- **spec-lint.ps1**: added a self-check that scans the executable body for file-writing cmdlets and fails if it ever stops being read-only
+- **docs/specs/README.md** and **docs/specs/_template/README.md**: now call out the read-only lint contract explicitly
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| spec-lint | ✅ Pass |
+| Build | ⚪ Not run |
+| Tests | ⚪ Not applicable |
+
+## 2026-05-06 - Spec lint repair
+
+### Accomplished This Session
+
+#### Spec System
+- **spec-lint.ps1**: repaired the validator to use a single coherent package scan, aggregate issues, and print fix hints per package
+- **spec-lint.ps1**: restored the `_template`, `_active`, and `_done` status rules with exact docs-path checks
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| spec-lint | ✅ Pass |
+| Build | ⚪ Not run |
+| Tests | ⚪ Not applicable |
+
 ## 2026-05-06 - Spec lint lock
 
 ### Accomplished This Session

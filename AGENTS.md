@@ -12,6 +12,7 @@
 - Own planning docs only: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`.
 - Keep specs short, measurable, and easy to review.
 - `spec-lint.ps1` is system-owned; only touch it for a spec-system or tooling task.
+- Before handing a package to another agent, checkpoint the worktree with `.\spec-stash.ps1`.
 
 #### Implementer Agent
 - Edit code, tests, docs updates, and `implementation-notes.md` after spec approval.
@@ -19,6 +20,7 @@
 - Move the spec folder to `_done/` only after `.\check.ps1` passes.
 - Update the spec first if scope changes.
 - Do not edit `spec-lint.ps1` unless the current task explicitly targets the spec system.
+- If a handoff breaks the worktree, restore from a named checkpoint with `.\spec-restore.ps1`.
 
 ### When to use which MCP tool:
 

@@ -135,7 +135,7 @@ if (-not $SkipTests -and -not $failed) {
 
     # Run nextest silently (output to file only), then get exit code
     $proc = Start-Process pwsh -ArgumentList "-NoProfile", "-NonI", "-Command",
-        "& { `$out = cargo nextest run --all-features --lib 2>&1; `$e = $LASTEXITCODE; `$out | Out-File '$testTmp'; exit `$e }" `
+        "& { `$out = cargo nextest run --all-features --lib 2>&1; `$e = `$LASTEXITCODE; `$out | Out-File '$testTmp'; exit `$e }" `
         -NoNewWindow -PassThru -Wait
 
     $elapsed = $sw.Elapsed.TotalSeconds

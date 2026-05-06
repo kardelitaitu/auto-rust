@@ -3,7 +3,7 @@ id: spec-package-archive-safety
 title: Spec package archive safety
 status: approved
 owner: spec-agent
-implementer: pending
+implementer: done
 priority: P2
 area:
   - docs

@@ -1,3 +1,72 @@
+## 2026-05-06 - TwitterActivity Contract Spec
+
+### Accomplished This Session
+
+#### Spec Package
+- **docs/specs/_active/twitteractivity-contract-alignment/**: added a spec for duration default alignment, scroll budget wiring, strict payload validation, and docs sync.
+- **TODO_twitteractivity.md**: reduced to a pointer so the spec package is the source of truth.
+
+#### Spec Lint Fix
+- **docs/specs/_done/browser-discovery-session-assembly/**: corrected archived spec status so `spec-lint.ps1` passes.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| TwitterActivity spec | ✅ Added |
+| spec-lint | ✅ Pass |
+
+---
+
+## 2026-05-06 - TwitterActivity Repair TODO
+
+### Accomplished This Session
+
+#### Review Output
+- **TODO_twitteractivity.md**: added a root-level repair checklist for the TwitterActivity task.
+- **src/task/twitteractivity.rs**: identified duration default drift, unused `scroll_count` wiring, and validation drift.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Repair TODO | ✅ Added |
+
+---
+
+## 2026-05-06 - TODO Impact Rerank
+
+### Accomplished This Session
+
+#### Task Ordering
+- **TODO.md**: reranked unfinished items by impact so browser discovery stays first, coverage measurement comes next, and locator rollout monitoring stays last.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| TODO order | ✅ Updated |
+
+---
+
+## 2026-05-06 - Coverage Measurement Spec Draft
+
+### Accomplished This Session
+
+#### Spec Package
+- **docs/specs/_active/coverage-measurement-improvements/README.md**: drafted a coverage measurement spec for `cargo-llvm-cov`, CI gating, and trend outputs.
+- **docs/specs/_active/coverage-measurement-improvements/spec.yaml**: set the package status, scope, acceptance criteria, and non-goals.
+- **docs/specs/_active/coverage-measurement-improvements/**: added baseline, boundaries, plan, validation, commands, decisions, quality rules, and empty implementation notes.
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Spec lint | ✅ Pass |
+| Coverage spec | ✅ Drafted |
+
+---
+
 ## 2026-05-05 - Root Implementer Skill
 
 ### Accomplished This Session
@@ -830,3 +899,53 @@ Completed comprehensive test coverage for the accessibility locator feature acro
 | Tests | ✅ 2223 passed / 5 skipped |
 | cargo fmt | ✅ Clean |
 | cargo clippy | ✅ Clean |
+
+## 2026-05-06 - Spec lint hardening
+
+### Accomplished This Session
+
+#### Spec System
+- **spec-lint.ps1**: rewrote lint to aggregate package issues, show fix hints, and validate archived package paths instead of stopping on the first failure
+- **docs/specs/\_done/**: normalized archived package status and docs-path drift so lint is honest again
+- **docs/specs/README.md** and **docs/specs/\_template/README.md**: documented the stricter lint output and `-Directory` targeting mode
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| spec-lint | ✅ Pass |
+| Build | ⚪ Not run |
+| Tests | ⚪ Not applicable |
+
+## 2026-05-06 - Spec lint lock
+
+### Accomplished This Session
+
+#### Spec System
+- **AGENTS.md**: marked `spec-lint.ps1` as system-owned so normal implementers do not touch it
+- **docs/specs/README.md** and **docs/specs/_template/README.md**: told spec authors not to target `spec-lint.ps1` in normal feature specs
+- **spec-lint.ps1**: added a self-identifying header comment so the ownership is obvious in the file itself
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| spec-lint | ✅ Pass |
+| Build | ⚪ Not run |
+| Tests | ⚪ Not applicable |
+
+## 2026-05-06 - Spec package archive safety
+
+### Accomplished This Session
+
+#### Spec Workflow
+- **docs/specs/_active/spec-package-archive-safety/**: added a new spec package for archive helper flow, lint feedback, and workflow docs
+- **spec-lint.ps1**: verified the current `_done` status rule so the new spec targets the real failure mode
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| spec-lint | ✅ Pass |
+| Build | ⚪ Not run |
+| Tests | ⚪ Not applicable |

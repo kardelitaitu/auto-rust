@@ -11,12 +11,14 @@
 - Write the spec package from `docs/specs/_template/` before code changes.
 - Own planning docs only: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`.
 - Keep specs short, measurable, and easy to review.
+- `spec-lint.ps1` is system-owned; only touch it for a spec-system or tooling task.
 
 #### Implementer Agent
 - Edit code, tests, docs updates, and `implementation-notes.md` after spec approval.
 - Use `.\check-fast.ps1` during implementation for scoped iteration.
 - Move the spec folder to `_done/` only after `.\check.ps1` passes.
 - Update the spec first if scope changes.
+- Do not edit `spec-lint.ps1` unless the current task explicitly targets the spec system.
 
 ### When to use which MCP tool:
 

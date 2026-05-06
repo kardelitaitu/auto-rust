@@ -103,7 +103,7 @@
 
 ## P3: Lower Priority (Large Refactorings)
 
-- [ ] **Session execution guard + deterministic shutdown tests**
+- [x] **Session execution guard + deterministic shutdown tests** - DONE
   - Files: `src/orchestrator.rs`, `src/session/mod.rs`, `src/runtime/execution.rs`, `tests/graceful_shutdown_integration.rs`, `tests/orchestrator_integration.rs`
   - Goal: Make task cleanup reliable across success, failure, timeout, and cancellation.
   - Subtasks:
@@ -111,44 +111,44 @@
     - [x] Ensure every early return after `Busy` state restores session state correctly
     - [x] Make cancellation outcome explicit instead of detecting cancellation from error message text
     - [x] Replace placeholder shutdown integration tests with deterministic mock-based tests
-    - [ ] Add tests for cancellation before worker acquisition, during task execution, during backoff, and after page acquisition
+    - [x] Add tests for cancellation before worker acquisition, during task execution, during backoff, and after page acquisition
   - Progress:
     - 2026-05-05: Added `SessionExecutionGuard`, explicit `TaskAttemptFailure.cancelled`, browser-free active-group shutdown test, and updated cancellation integration path to use `execute_group_with_cancel`.
   - **Impact:** Lower risk of stuck busy sessions, leaked pages, bad health state, and shutdown regressions
   - Effort: ~2-4 days
 
-- [ ] **TaskContext click / interaction pipeline**
+- [x] **TaskContext click / interaction pipeline** - DONE
   - Files: `src/runtime/task_context.rs`, `src/capabilities/mouse.rs`, `src/utils/mouse.rs`, `src/state/overlay.rs`
   - Goal: Isolate "how the system adapts" from mouse interaction mechanics
   - Subtasks:
-    - [ ] Create `src/runtime/task_context/interaction_pipeline.rs` to unify click/type execution
-    - [ ] Implement standardized `InteractionResult` including pre/post state and adaptation context
-    - [ ] Consolidate CDP-based and Native-based click paths into a unified decision branching point
-    - [ ] Add post-action auto-verification (e.g., checking if element state changed as expected)
+    - [x] Create `src/runtime/task_context/interaction_pipeline.rs` to unify click/type execution
+    - [x] Implement standardized `InteractionResult` including pre/post state and adaptation context
+    - [x] Consolidate CDP-based and Native-based click paths into a unified decision branching point
+    - [x] Add post-action auto-verification (e.g., checking if element state changed as expected)
   - **Impact:** More reliable clicks, easier to debug, consistent behavior
   - Effort: ~3-5 days
 
-- [ ] **Runtime shutdown + group execution coordination**
+- [x] **Runtime shutdown + group execution coordination** - DONE
   - Files: `src/main.rs`, `src/runtime/execution.rs`, `src/orchestrator.rs`
   - Goal: Make "run groups until shutdown" a clearer boundary
   - Subtasks:
     - [x] Centralize signal handling in `src/runtime/shutdown.rs` with a `ShutdownManager`
-    - [ ] Implement coordinated shutdown: block new tasks -> wait for active -> close browsers -> exit
-    - [ ] Propagate `CancellationToken` to all async capability loops (waiting for selectors, etc.)
-    - [ ] Add integration tests for graceful shutdown during active task groups
+    - [x] Implement coordinated shutdown: block new tasks -> wait for active -> close browsers -> exit
+    - [x] Propagate `CancellationToken` to all async capability loops (waiting for selectors, etc.)
+    - [x] Add integration tests for graceful shutdown during active task groups
   - Progress:
     - 2026-05-05: Ctrl+C handling moved into runtime `ShutdownManager`; active group shutdown now cancels cooperatively and waits for task futures before exit handling.
   - **Impact:** Eliminate zombie processes, clean restarts
   - Effort: ~3-4 days
 
-- [ ] **CLI task parsing + validation + registry**
+- [x] **CLI task parsing + validation + registry** - DONE
   - Files: `src/cli.rs`, `src/task/mod.rs`, `src/validation/*`
   - Goal: Make CLI behavior more self-contained and extendable
   - Subtasks:
-    - [ ] Decouple `TaskRegistry` into a standalone system that supports dynamic registration
-    - [ ] Move CLI-specific formatting and complex parsing to `src/cli/parser.rs`
-    - [ ] Implement payload schema validation based on task name during parsing
-    - [ ] Add "Task Help" CLI command (e.g., `auto --help-task cookiebot`) showing expected payload
+    - [x] Decouple `TaskRegistry` into a standalone system that supports dynamic registration
+    - [x] Move CLI-specific formatting and complex parsing to `src/cli/parser.rs`
+    - [x] Implement payload schema validation based on task name during parsing
+    - [x] Add "Task Help" CLI command (e.g., `auto --help-task cookiebot`) showing expected payload
   - **Impact:** Cleaner `main.rs`, easier CLI testing, better help documentation
   - Effort: ~2-3 days
 
@@ -166,46 +166,13 @@
 
 ---
 
-## Accessibility Locator Test Coverage Program
-
-### Coverage Targets (Gate to Expand Rollout)
-- [x] `src/utils/accessibility_locator.rs` line coverage >= 95% - DONE
-- [x] `src/utils/navigation.rs` line coverage >= 90% - DONE
-- [x] locator paths in `src/runtime/task_context.rs` line coverage >= 85% - DONE
-- [x] `src/task/twitterfollow.rs` line coverage >= 90% - DONE
-- [x] zero flaky failures across 5 consecutive feature-on CI runs - DONE
-- [x] Brave and Chrome browser ports configurable via environment variables - DONE
-
-### Current Progress (2026-04-29)
-- Full feature-on test sweep has one unrelated existing failure:
-  - `runtime::task_context::tests::test_pageview_policy_has_screenshot_only`
-
-### Phase 7: CI Quality Gates (Deferred - Only Active Item)
-- [ ] ~~Add feature-on CI lane with hard fail rules:~~
-  - ~~`cargo check --features accessibility-locator`~~
-  - ~~`cargo test --features accessibility-locator`~~
-- [ ] ~~Add runtime lane (when `TASK_API_TEST_WS` available):~~
-  - ~~run locator runtime matrix tests~~
-  - ~~enforce no skip on critical locator suites in that environment~~
-- [ ] ~~Add coverage report artifact (line + branch) for feature-on runs~~
-- **Reason:** Current `--all-features` CI coverage is sufficient. Runtime lane requires browser-in-CI setup which is complex. Coverage artifacts already generated locally via `cargo tarpaulin`.
-
-### Exit Criteria (Definition of High Coverage)
-- [x] Phases 1-6 complete (comprehensive test coverage achieved)
-- [x] Coverage targets met
-  - `src/utils/accessibility_locator.rs` >= 95% ✓
-  - `src/utils/navigation.rs` >= 90% ✓
-  - `src/runtime/task_context.rs` >= 85% ✓
-  - `src/task/twitterfollow.rs` >= 90% ✓
-- [ ] No flaky locator tests in 5 consecutive CI runs (monitoring)
-- [ ] Rollout monitoring period passes without regression spike
-- [ ] Rollback trigger/action documented before default-on decision
-
-**Phase 7 deferred** - Current `--all-features` CI coverage sufficient.
-
----
-
 ## Test Coverage Improvement Program
+
+### Coverage Measurement Improvements
+
+- [ ] Add coverage gate to CI (fail if < 40% on new code)
+- [ ] Consider `cargo-llvm-cov` for integration test coverage
+- [ ] Track coverage trends over time
 
 > Based on TEST_SUMMARY.md analysis (38.2% overall, but misleading due to tarpaulin not counting integration tests).
 > Focus on genuinely under-tested modules, not browser-dependent code that's already covered via integration tests.
@@ -262,11 +229,10 @@
   - ✅ Muscle path: convergence, progression, max steps, jitter
   - Note: Core trajectory module now fully tested
 
-- [ ] **src/task/*.rs** (Medium Priority - Next candidate)
-  - twitteractivity.rs (14.9%)
-  - twitterfollow.rs (22.6%) - Note: Locator tests added, coverage improved
-  - twitterintent.rs (43.8%)
-  - Generic task execution patterns
+- [x] **src/task/*.rs** - DONE (task module coverage improvement complete)
+  - twitteractivity.rs, twitterfollow.rs, and twitterintent.rs coverage work landed
+  - Public task behavior stayed stable
+  - Coverage tooling changes were kept out of this bucket
 
 ### Low Priority (Already Well Covered)
 
@@ -275,11 +241,35 @@ These appear low in tarpaulin but are well-tested via integration tests:
 - **src/runtime/task_context.rs** - Actually well covered via browser tests
 - **src/utils/accessibility_locator.rs** - Actually well covered (Phases 1-6)
 
-### Coverage Measurement Improvements
+## Accessibility Locator Test Coverage Program
 
-- [ ] Consider `cargo-llvm-cov` for integration test coverage
-- [ ] Add coverage gate to CI (fail if < 40% on new code)
-- [ ] Track coverage trends over time
+### Coverage Targets (Gate to Expand Rollout)
+- [x] `src/utils/accessibility_locator.rs` line coverage >= 95% - DONE
+- [x] `src/utils/navigation.rs` line coverage >= 90% - DONE
+- [x] locator paths in `src/runtime/task_context.rs` line coverage >= 85% - DONE
+- [x] `src/task/twitterfollow.rs` line coverage >= 90% - DONE
+- [x] zero flaky failures across 5 consecutive feature-on CI runs - DONE
+- [x] Brave and Chrome browser ports configurable via environment variables - DONE
+
+### Current Progress (2026-04-29)
+- Full feature-on test sweep has one unrelated existing failure:
+  - `runtime::task_context::tests::test_pageview_policy_has_screenshot_only`
+
+### Phase 7: CI Quality Gates (Deferred)
+- **Reason:** Current `--all-features` CI coverage is sufficient. Runtime lane requires browser-in-CI setup which is complex. Coverage artifacts already generated locally via `cargo tarpaulin`.
+
+### Exit Criteria (Definition of High Coverage)
+- [x] Phases 1-6 complete (comprehensive test coverage achieved)
+- [x] Coverage targets met
+  - `src/utils/accessibility_locator.rs` >= 95% ✓
+  - `src/utils/navigation.rs` >= 90% ✓
+  - `src/runtime/task_context.rs` >= 85% ✓
+  - `src/task/twitterfollow.rs` >= 90% ✓
+- [ ] Rollout monitoring period passes without regression spike
+- [ ] No flaky locator tests in 5 consecutive CI runs (monitoring)
+- [ ] Rollback trigger/action documented before default-on decision
+
+**Phase 7 deferred** - Current `--all-features` CI coverage sufficient.
 
 ### Target Outcomes
 

@@ -14,7 +14,7 @@ use std::path::Path;
 /// Top-level configuration structure for the Rust Orchestrator.
 /// Contains all settings for browser connections, task orchestration, and system behavior.
 /// Configuration can be loaded from TOML files with environment variable overrides.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct Config {
     /// Browser connection and discovery settings
     pub browser: BrowserConfig,
@@ -172,7 +172,6 @@ impl Default for NativeInteractionConfig {
 /// Configuration for circuit breaker pattern implementation.
 /// Circuit breakers prevent cascading failures by temporarily stopping requests
 /// to services that are failing repeatedly.
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CircuitBreakerConfig {
     /// Whether the circuit breaker is enabled

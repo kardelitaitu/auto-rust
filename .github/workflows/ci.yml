@@ -64,3 +64,43 @@ jobs:
 
       - name: Build (release)
         run: cargo check --release
+
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        run: cargo install --locked cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: |
+          mkdir -p target/reports/coverage
+          cargo llvm-cov --workspace --all-features --html --output-dir target/reports/coverage/html --json --output-path target/reports/coverage/coverage.json
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(cat target/reports/coverage/coverage.json | jq -r '.data[0].totals.lines.percent')
+          echo "Coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 40" | bc -l)); then
+            echo "❌ Coverage ${COVERAGE}% is below 40% threshold"
+            exit 1
+          else
+            echo "✅ Coverage ${COVERAGE}% meets 40% threshold"
+          fi
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/reports/coverage/
+          retention-days: 30

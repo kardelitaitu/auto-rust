@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StartupMode {
+    HelpTask,
     ListTasks,
     ValidateTasks,
     DryRun,
@@ -15,7 +16,9 @@ enum StartupMode {
 }
 
 fn select_startup_mode(args: &cli::Args) -> StartupMode {
-    if args.list_tasks {
+    if args.help_task.is_some() {
+        StartupMode::HelpTask
+    } else if args.list_tasks {
         StartupMode::ListTasks
     } else if args.validate_tasks {
         StartupMode::ValidateTasks
@@ -262,6 +265,12 @@ async fn run_async() -> Result<()> {
     let args = cli::parse_args();
 
     match select_startup_mode(&args) {
+        StartupMode::HelpTask => {
+            if let Some(task_name) = &args.help_task {
+                print!("{}", cli::render_task_help(task_name));
+            }
+            return Ok(());
+        }
         StartupMode::ListTasks => {
             print!("{}", render_list_tasks_output());
             return Ok(());
@@ -463,6 +472,7 @@ mod tests {
             dry_run: true,
             validate_tasks: false,
             watch: false,
+            help_task: None,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ListTasks);
@@ -478,6 +488,7 @@ mod tests {
             dry_run: true,
             validate_tasks: false,
             watch: false,
+            help_task: None,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::DryRun);
@@ -493,6 +504,7 @@ mod tests {
             dry_run: false,
             validate_tasks: false,
             watch: false,
+            help_task: None,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::Execute);
@@ -508,6 +520,7 @@ mod tests {
             dry_run: false,
             validate_tasks: true,
             watch: false,
+            help_task: None,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ValidateTasks);
@@ -523,10 +536,44 @@ mod tests {
             dry_run: true,
             validate_tasks: true,
             watch: false,
+            help_task: None,
         };
 
         // ValidateTasks comes before DryRun in the if-else chain
         assert_eq!(select_startup_mode(&args), StartupMode::ValidateTasks);
+    }
+
+    #[test]
+    fn test_select_startup_mode_help_task_takes_precedence() {
+        let args = Args {
+            tasks: vec![],
+            browsers: None,
+            clear_learning: false,
+            list_tasks: true,
+            dry_run: true,
+            validate_tasks: true,
+            watch: false,
+            help_task: Some("cookiebot".to_string()),
+        };
+
+        // HelpTask should take precedence over all other flags
+        assert_eq!(select_startup_mode(&args), StartupMode::HelpTask);
+    }
+
+    #[test]
+    fn test_select_startup_mode_help_task_only() {
+        let args = Args {
+            tasks: vec![],
+            browsers: None,
+            clear_learning: false,
+            list_tasks: false,
+            dry_run: false,
+            validate_tasks: false,
+            watch: false,
+            help_task: Some("pageview".to_string()),
+        };
+
+        assert_eq!(select_startup_mode(&args), StartupMode::HelpTask);
     }
 
     #[test]

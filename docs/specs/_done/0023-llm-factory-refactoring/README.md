@@ -1,6 +1,6 @@
 # LLM Client Factory Modularization
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

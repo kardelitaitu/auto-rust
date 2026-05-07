@@ -1,9 +1,9 @@
 version: 1
 id: 0023-llm-factory-refactoring
 title: LLM Client Factory Modularization
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived
 priority: P2
 area:
   - llm
@@ -11,15 +11,14 @@ files:
   code:
     - src/llm/client.rs
   docs:
-    - docs/specs/_active/0023-llm-factory-refactoring/README.md
-    - docs/specs/_active/0023-llm-factory-refactoring/plan.md
-    - docs/specs/_active/0023-llm-factory-refactoring/validation.md
-    - docs/specs/_active/0023-llm-factory-refactoring/notes.md
+    - docs/specs/_done/0023-llm-factory-refactoring/README.md
+    - docs/specs/_done/0023-llm-factory-refactoring/plan.md
+    - docs/specs/_done/0023-llm-factory-refactoring/validation.md
+    - docs/specs/_done/0023-llm-factory-refactoring/notes.md
 acceptance:
-  - DECISION MADE: Extract providers, close spec, or refactor
-  - If refactoring: Actual improvement, not fixing imaginary 1,092-line function
-  - If closing: Document why original premise was false (54 lines, not 1,092)
-  - All existing tests pass (no regressions)
+  - Spec killed: original premise was false (54 lines, not 1,092)
+  - Build passes: cargo check successful
+  - All existing tests pass
   - No change in external behavior
 non_goals:
   - Fix non-existent "God Function"

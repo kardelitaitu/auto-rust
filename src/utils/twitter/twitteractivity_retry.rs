@@ -8,10 +8,12 @@ use log::{debug, info, warn};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 use crate::prelude::TaskContext;
+use crate::utils::twitter::twitteractivity_errors::ErrorClass;
 
-use super::twitteractivity_errors::{ErrorClass, ErrorClassifier};
+use super::twitteractivity_errors::{ErrorClassifier};
 use super::twitteractivity_humanized::human_pause;
 
 /// Configuration for retry behavior.
@@ -77,61 +79,58 @@ pub struct RetryStats {
 /// Circuit breaker for preventing cascade failures.
 #[derive(Debug, Clone)]
 pub struct CircuitBreaker {
-    /// Threshold for opening the circuit (consecutive failures).
     threshold: u32,
-    /// Timeout before attempting reset (half-open).
     reset_timeout: Duration,
-    /// Current consecutive failure count.
     failures: Arc<AtomicU32>,
-    /// Last failure timestamp.
-    last_failure: Arc<std::sync::Mutex<Option<Instant>>>,
-    /// Whether circuit is currently open.
-    is_open: Arc<std::sync::Mutex<bool>>,
+    last_failure: Arc<RwLock<Option<Instant>>>,
+    is_open: Arc<RwLock<bool>>,
 }
 
 impl CircuitBreaker {
-    /// Create a new circuit breaker.
     pub fn new(threshold: u32, reset_timeout_ms: u64) -> Self {
         Self {
             threshold,
             reset_timeout: Duration::from_millis(reset_timeout_ms),
             failures: Arc::new(AtomicU32::new(0)),
-            last_failure: Arc::new(std::sync::Mutex::new(None)),
-            is_open: Arc::new(std::sync::Mutex::new(false)),
+            last_failure: Arc::new(RwLock::new(None)),
+            is_open: Arc::new(RwLock::new(false)),
         }
     }
 
-    /// Check if circuit is open (too many failures).
-    pub fn is_open(&self) -> bool {
-        let is_open = *self.is_open.lock().unwrap();
+    pub async fn is_open(&self) -> bool {
+        let is_open = *self.is_open.read().await;
         if is_open {
-            // Check if we should try half-open
-            let last = *self.last_failure.lock().unwrap();
-            if let Some(last_time) = last {
+            let last_failure_lock = self.last_failure.read().await;
+            if let Some(last_time) = *last_failure_lock {
                 if last_time.elapsed() > self.reset_timeout {
-                    // Try half-open - reset and allow one attempt
-                    *self.is_open.lock().unwrap() = false;
+                    drop(last_failure_lock);
+                    let mut is_open_write = self.is_open.write().await;
+                    *is_open_write = false;
                     self.failures.store(0, Ordering::SeqCst);
                     return false;
                 }
             }
+            return true;
         }
-        is_open
+        false
     }
 
-    /// Record a success - reset failure count.
-    pub fn record_success(&self) {
+    pub async fn record_success(&self) {
         self.failures.store(0, Ordering::SeqCst);
-        *self.last_failure.lock().unwrap() = None;
-        *self.is_open.lock().unwrap() = false;
+        let mut last_failure = self.last_failure.write().await;
+        *last_failure = None;
+        let mut is_open = self.is_open.write().await;
+        *is_open = false;
     }
 
-    /// Record a failure - increment count and possibly open circuit.
-    pub fn record_failure(&self) {
+    pub async fn record_failure(&self) {
         let failures = self.failures.fetch_add(1, Ordering::SeqCst) + 1;
-        *self.last_failure.lock().unwrap() = Some(Instant::now());
+        let mut last_failure = self.last_failure.write().await;
+        *last_failure = Some(Instant::now());
+        
         if failures >= self.threshold {
-            *self.is_open.lock().unwrap() = true;
+            let mut is_open = self.is_open.write().await;
+            *is_open = true;
             warn!(
                 "Circuit breaker opened after {} consecutive failures",
                 failures
@@ -139,23 +138,22 @@ impl CircuitBreaker {
         }
     }
 
-    /// Execute an operation with circuit breaker protection.
     pub async fn execute<T, F, Fut>(&self, operation: F) -> Result<T>
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
-        if self.is_open() {
+        if self.is_open().await {
             return Err(anyhow::anyhow!("Circuit breaker is open"));
         }
 
         match operation().await {
             Ok(result) => {
-                self.record_success();
+                self.record_success().await;
                 Ok(result)
             }
             Err(e) => {
-                self.record_failure();
+                self.record_failure().await;
                 Err(e)
             }
         }
@@ -330,21 +328,21 @@ mod delay_tests {
 mod circuit_breaker_tests {
     use super::CircuitBreaker;
 
-    #[test]
-    fn circuit_breaker_opens_and_closes_as_expected() {
+    #[tokio::test]
+    async fn circuit_breaker_opens_and_closes_as_expected() {
         let cb = CircuitBreaker::new(3, 1000);
 
-        assert!(!cb.is_open());
+        assert!(!cb.is_open().await);
 
-        cb.record_failure();
-        cb.record_failure();
-        assert!(!cb.is_open());
+        cb.record_failure().await;
+        cb.record_failure().await;
+        assert!(!cb.is_open().await);
 
-        cb.record_failure();
-        assert!(cb.is_open());
+        cb.record_failure().await;
+        assert!(cb.is_open().await);
 
         // After success, should be closed
-        cb.record_success();
-        assert!(!cb.is_open());
+        cb.record_success().await;
+        assert!(!cb.is_open().await);
     }
 }

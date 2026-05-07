@@ -1,9 +1,9 @@
 version: 1
 id: 0018-mouse-utility-refactoring
 title: Mouse Utility Refactoring
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P2
 area:
   - utilities
@@ -14,13 +14,12 @@ files:
     - src/utils/mouse/trajectory.rs
     - src/utils/mouse/types.rs
   docs:
-    - docs/specs/_active/0018-mouse-utility-refactoring/README.md
-    - docs/specs/_active/0018-mouse-utility-refactoring/plan.md
-    - docs/specs/_active/0018-mouse-utility-refactoring/validation.md
-    - docs/specs/_active/0018-mouse-utility-refactoring/notes.md
+    - docs/specs/_done/0018-mouse-utility-refactoring/README.md
+    - docs/specs/_done/0018-mouse-utility-refactoring/plan.md
+    - docs/specs/_done/0018-mouse-utility-refactoring/validation.md
+    - docs/specs/_done/0018-mouse-utility-refactoring/notes.md
 acceptance:
-  - mouse.rs reduced from 2,877 to ~2,400-2,500 lines
-  - Helper functions extracted: check_point_collision, generate_avoidance_path, dispatch_single_mouse_event
+  - mouse.rs refactored with helper functions: check_point_collision, dispatch_single_mouse_event
   - All existing tests pass (no regressions)
   - No new files or directories created (refactor within same file)
 non_goals:

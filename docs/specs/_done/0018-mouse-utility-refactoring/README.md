@@ -1,9 +1,9 @@
 # Mouse Utility Refactoring
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
-Implementer: `pending`
+Implementer: `implementation-agent`
 
 ## Summary
 The `mouse.rs` file is 2,877 lines with ~80 functions. The file already has 3 submodules (`native.rs` 680 lines, `trajectory.rs` 500 lines, `types.rs` 74 lines) which handle complex algorithms. However, the root `mouse.rs` file still contains ~1,600 lines of logic that should be refactored into helper functions for better readability.

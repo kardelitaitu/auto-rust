@@ -131,6 +131,97 @@ impl UnifiedLLMProcessor {
         Self::parse_line_based_batch_response(response, expected_count)
     }
 
+    /// Clean LLM response to extract valid JSON.
+    /// Removes markdown code blocks, leading/trailing text, etc.
+    fn clean_llm_json_response(response: &str) -> String {
+        let trimmed = response.trim();
+
+        // Try to extract JSON from markdown code blocks
+        // Pattern: ```json ... ``` or ``` ... ```
+        if trimmed.starts_with("```") {
+            // Find the end of the opening marker
+            let start = if trimmed.starts_with("```json") {
+                trimmed.find("```json").unwrap_or(0) + 7
+            } else {
+                trimmed.find("```").unwrap_or(0) + 3
+            };
+
+            // Find the closing marker
+            if let Some(end) = trimmed.rfind("```") {
+                if end > start {
+                    return trimmed[start..end].trim().to_string();
+                }
+            }
+        }
+
+        // Try to find JSON array or object in the response
+        // Look for first [ or { and find matching end
+        if let Some(start) = trimmed.find('[').or(trimmed.find('{')) {
+            // Find matching end bracket
+            let mut depth = 0;
+            let mut in_string = false;
+            let mut escape_next = false;
+
+            for (i, ch) in trimmed[start..].char_indices() {
+                if escape_next {
+                    escape_next = false;
+                    continue;
+                }
+
+                match ch {
+                    '\\' if in_string => escape_next = true,
+                    '"' => in_string = !in_string,
+                    '{' | '[' if !in_string => depth += 1,
+                    '}' | ']' if !in_string => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return trimmed[start..start + i + 1].trim().to_string();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Try a more aggressive approach: find the last valid JSON
+        // by trying to parse from each [ or { until success
+        for start in [trimmed.find('['), trimmed.find('{')]
+            .iter()
+            .filter_map(|&x| x)
+        {
+            let candidate = &trimmed[start..];
+            if serde_json::from_str::<Value>(candidate).is_ok() {
+                // Valid JSON found, now find the end
+                let mut depth = 0;
+                let mut in_string = false;
+                let mut escape_next = false;
+
+                for (i, ch) in candidate.char_indices() {
+                    if escape_next {
+                        escape_next = false;
+                        continue;
+                    }
+
+                    match ch {
+                        '\\' if in_string => escape_next = true,
+                        '"' => in_string = !in_string,
+                        '{' | '[' if !in_string => depth += 1,
+                        '}' | ']' if !in_string => {
+                            depth -= 1;
+                            if depth == 0 {
+                                return candidate[..i + 1].trim().to_string();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Fallback: return trimmed response
+        trimmed.to_string()
+    }
+
     /// Check if the response appears to be JSON formatted.
     fn is_json_response(response: &str) -> bool {
         let trimmed = response.trim();
@@ -142,7 +233,10 @@ impl UnifiedLLMProcessor {
         response: &str,
         expected_count: usize,
     ) -> Result<Vec<UnifiedReplyResponse>, anyhow::Error> {
-        let json: Value = serde_json::from_str(response)?;
+        // Strip common LLM response wrappers (markdown code blocks, etc.)
+        let cleaned = Self::clean_llm_json_response(response);
+
+        let json: Value = serde_json::from_str(&cleaned)?;
         let mut results = Vec::new();
 
         // Handle array of responses

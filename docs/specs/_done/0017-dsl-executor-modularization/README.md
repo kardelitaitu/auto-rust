@@ -1,9 +1,9 @@
 # DSL Executor Modularization
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
-Implementer: `pending`
+Implementer: `implementation-agent`
 
 ## Summary
 **MEASUREMENT UPDATE**: Original spec claims were slightly off, but core problem is **real**:

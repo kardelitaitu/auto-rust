@@ -832,6 +832,16 @@ impl TaskValidator {
                     self.validate_condition(cond, &format!("{}[{}]", path, idx), report);
                 }
             }
+            Condition::True | Condition::False => {
+                // Always true or false, nothing to validate
+            }
+            Condition::VariableDefined { name } | Condition::VariableNotDefined { name } => {
+                if name.is_empty() {
+                    report.error(format!("{}: Variable name cannot be empty", path));
+                } else {
+                    report.variables_referenced.insert(name.clone());
+                }
+            }
         }
     }
 

@@ -14,11 +14,6 @@ pub mod session {
     pub use crate::session::{Session, SessionState};
 }
 
-pub mod health_monitor {
-    #[allow(unused_imports)]
-    pub use crate::health_monitor::{HealthMonitor, HealthState};
-}
-
 pub mod orchestrator {
     #[allow(unused_imports)]
     pub use crate::orchestrator::Orchestrator;

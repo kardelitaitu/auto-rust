@@ -20,7 +20,6 @@ pub mod cli;
 pub mod config;
 pub mod error;
 pub mod health_logger;
-pub mod health_monitor;
 pub mod internal;
 pub mod llm;
 pub mod logger;

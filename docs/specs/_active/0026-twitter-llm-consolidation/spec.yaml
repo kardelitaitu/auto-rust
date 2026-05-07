@@ -1,0 +1,33 @@
+version: 1
+id: 0026-twitter-llm-consolidation
+title: Twitter LLM Module Consolidation
+status: pending
+owner: spec-agent
+implementer: pending
+priority: P3
+area:
+  - twitter-activity
+files:
+  code:
+    - src/utils/twitter/twitteractivity_persona.rs
+    - src/utils/twitter/twitteractivity_constants.rs
+    - src/utils/twitter/twitteractivity_errors.rs
+    - src/utils/twitter/twitteractivity_retry.rs
+    - src/utils/twitter/sentiment/
+  docs:
+    - docs/specs/_active/0026-twitter-llm-consolidation/README.md
+    - docs/specs/_active/0026-twitter-llm-consolidation/plan.md
+    - docs/specs/_active/0026-twitter-llm-consolidation/validation.md
+    - docs/specs/_active/0026-twitter-llm-consolidation/notes.md
+acceptance:
+  - Twitter module file count reduced from 27 to ~20-22 files
+  - All existing tests pass (no regressions)
+  - Public API preserved (all imports work)
+non_goals:
+  - Change functionality
+  - Merge large modules (>500 lines)
+  - Rewrite module logic
+risks:
+  - Breaking imports across codebase
+  - Losing module-level documentation
+  - Merge conflicts with other specs

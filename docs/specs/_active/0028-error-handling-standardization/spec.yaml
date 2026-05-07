@@ -1,0 +1,28 @@
+version: 1
+id: 0028-error-handling-standardization
+title: Error Handling Standardization
+status: pending
+owner: spec-agent
+implementer: pending
+priority: P3
+area:
+  - core
+files:
+  code: []
+  docs:
+    - docs/specs/_active/0028-error-handling-standardization/README.md
+    - docs/specs/_active/0028-error-handling-standardization/plan.md
+    - docs/specs/_active/0028-error-handling-standardization/validation.md
+    - docs/specs/_active/0028-error-handling-standardization/notes.md
+acceptance:
+  - Consistent error handling across all modules
+  - All errors have proper context
+  - Error handling documented in rustdoc
+non_goals:
+  - Change error semantics
+  - Break API compatibility
+  - Remove all custom error types
+risks:
+  - Breaking error handling in existing code
+  - Losing error type information
+  - Test failures due to error message changes

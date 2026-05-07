@@ -1,0 +1,29 @@
+version: 1
+id: 0030-dead-code-cleanup
+title: Dead Code Cleanup Round 2
+status: pending
+owner: spec-agent
+implementer: pending
+priority: P3
+area:
+  - core
+files:
+  code: []
+  docs:
+    - docs/specs/_active/0030-dead-code-cleanup/README.md
+    - docs/specs/_active/0030-dead-code-cleanup/plan.md
+    - docs/specs/_active/0030-dead-code-cleanup/validation.md
+    - docs/specs/_active/0030-dead-code-cleanup/notes.md
+acceptance:
+  - No clippy warnings for dead code
+  - All 2212+ tests pass
+  - Unused imports removed
+  - Unreachable code cleaned up
+non_goals:
+  - Change functionality
+  - Remove public API
+  - Rewrite modules
+risks:
+  - Removing code that's actually used
+  - Breaking tests
+  - Missing feature flags

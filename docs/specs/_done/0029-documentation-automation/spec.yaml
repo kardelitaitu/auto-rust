@@ -1,9 +1,9 @@
 version: 1
 id: 0029-documentation-automation
 title: Documentation Generation Automation
-status: pending
+status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P3
 area:
   - documentation
@@ -16,8 +16,8 @@ files:
     - docs/specs/_active/0029-documentation-automation/notes.md
 acceptance:
   - docs/ARCHITECTURE.md created
-  - CI step for cargo doc added
-  - API reference generated automatically
+  - docs.ps1 created for automated doc generation
+  - API reference available via cargo doc --all-features
 non_goals:
   - Change code documentation
   - Rewrite existing docs

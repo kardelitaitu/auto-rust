@@ -1,3 +1,74 @@
+## 2026-05-08 - Spec Review and Documentation Automation
+
+### Accomplished This Session
+
+#### Spec Review (5 new specs)
+- **Reviewed**: All 5 specs created yesterday (0026-0030) against actual codebase
+- **Found invalid**: 4 specs with false claims or no real problems:
+  - 0026-twitter-llm-consolidation: persona.rs is 532 lines (not 74 as claimed)
+  - 0027-cli-refactoring: Already modular (cli/mod.rs + cli/parser.rs)
+  - 0028-error-handling-standardization: No evidence of mixed error types
+  - 0030-dead-code-cleanup: 0 clippy warnings for dead code
+- **Kept valid**: 0029-documentation-automation (ARCHITECTURE.md didn't exist)
+
+#### Spec Deletions
+- **Deleted**: 4 invalid specs from `_active/`
+- **Committed**: `docs: delete 4 invalid specs (0026 twitter-llm, 0027 cli, 0028 error-handling, 0030 dead-code)`
+- **Pushed**: to origin/main (commit c55c017)
+
+#### Documentation Automation (Spec 0029)
+- **Created**: `docs/ARCHITECTURE.md` with:
+  - Module hierarchy diagram (task, utils, cli, llm, config)
+  - Data flow overview (User Input → CLI → TaskContext → DslExecutor → Browser)
+  - Key design decisions (DSL, Twitter module org, Mouse simulation, Browser abstraction, LLM integration)
+  - Extension points (adding new task types, Twitter features, browsers)
+  - Testing strategy and performance considerations
+- **Created**: `docs.ps1` for automated documentation generation
+  - Runs `cargo doc --all-features`
+  - Copies ARCHITECTURE.md to target/doc/
+- **Updated**: Spec 0029 files (README.md, spec.yaml) to status: done
+- **Moved**: Spec 0029 from `_active/` to `_done/`
+- **Committed**: `docs: implement spec 0029 documentation-automation (create ARCHITECTURE.md, docs.ps1, move spec to _done)`
+- **Pushed**: to origin/main (commit c0e86fb)
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Spec review | ✅ 4 invalid deleted, 1 valid kept |
+| Spec 0029 | ✅ Implemented (ARCHITECTURE.md + docs.ps1) |
+| _active/ | ✅ Empty (all specs reviewed) |
+| _done/ | ✅ 4 specs (0017, 0018, 0021, 0029) |
+| CI checks | ✅ All 5 checks pass (2212 tests) |
+
+### Key Decisions Made
+1. **Verify claims first**: Check specs against actual codebase before implementing
+2. **Delete false specs**: Don't waste time on invalid premises (like 0023/0024/0025)
+3. **Keep meaningful specs**: 0029 was valid - architecture doc was missing
+4. **Document architecture**: Help new developers understand the codebase quickly
+5. **Automate docs**: `docs.ps1` generates API docs + architecture in one command
+
+### Files Modified/Created
+1. `docs/ARCHITECTURE.md` - New (comprehensive architecture document)
+2. `docs.ps1` - New (documentation generation script)
+3. `docs/specs/_done/0029-documentation-automation/` - Moved + updated
+4. `docs/specs/_active/0026-0030/` - Deleted (4 specs)
+
+### Commits
+```
+commit c0e86fb
+Author: implementation-agent
+Date: Fri May 8 05:46:00 2026 +0700
+
+    docs: implement spec 0029 documentation-automation (create ARCHITECTURE.md, docs.ps1 for cargo doc generation, move spec to _done)
+
+commit c55c017
+Author: implementation-agent
+Date: Fri May 8 05:46:00 2026 +0700
+
+    docs: delete 4 invalid specs (0026 twitter-llm, 0027 cli, 0028 error-handling, 0030 dead-code - claims were false/unnecessary)
+```
+
 ## 2026-05-07 - Twitter Sentiment Consolidation
 
 ### Accomplished This Session

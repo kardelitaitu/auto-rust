@@ -1,0 +1,30 @@
+version: 1
+id: 0031-twitteractivity-content-load-delay
+title: TwitterActivity Scroll Timing Fixes
+status: approved
+owner: spec-agent
+priority: P1
+area:
+  - twitter-activity
+files:
+  code:
+    - src/task/twitteractivity.rs
+  docs:
+    - docs/specs/_active/0031-twitteractivity-content-load-delay/README.md
+    - docs/specs/_active/0031-twitteractivity-content-load-delay/plan.md
+    - docs/specs/_active/0031-twitteractivity-content-load-delay/validation.md
+    - docs/specs/_active/0031-twitteractivity-content-load-delay/notes.md
+acceptance:
+  - api.pause(scroll_pause_ms) added after scroll_read() in run_inner()
+  - Content load delay uses profile.scroll.pause_ms value
+  - identify_engagement_candidates() runs after pause (not before)
+  - next_scroll initialized to Instant::now() + scroll_interval (not Instant::now())
+  - First iteration scans initial content before scrolling
+  - Repo CI gate passes after changes
+non_goals:
+  - Change scroll_read() built-in pause behavior
+  - Add complex wait_for_selector() logic
+  - Modify scroll interval or candidate scan interval
+risks:
+  - Double pause (built-in 300-900ms + new scroll_pause_ms) may slow feed scanning
+  - scroll_pause_ms value may be too short or too long for content loading

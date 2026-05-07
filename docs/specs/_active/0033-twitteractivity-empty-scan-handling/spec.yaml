@@ -1,0 +1,29 @@
+version: 1
+id: 0033-twitteractivity-empty-scan-handling
+title: TwitterActivity Empty Scan Early Exit
+status: approved
+owner: spec-agent
+priority: P2
+area:
+  - twitter-activity
+files:
+  code:
+    - src/task/twitteractivity.rs
+  docs:
+    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/README.md
+    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/plan.md
+    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/validation.md
+    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/notes.md
+acceptance:
+  - Consecutive empty scan counter added (consecutive_empty_scans)
+  - Reset counter when candidates found
+  - Log warning on empty scan with attempt count
+  - Break loop after 3+ consecutive empty scans
+  - Repo CI gate passes after change
+non_goals:
+  - Add exponential backoff timing
+  - Change candidate_scan_interval
+  - Modify identify_engagement_candidates() behavior
+risks:
+  - Breaking too early on slow-loading feeds (use 3 scan threshold to mitigate)
+  - Log noise if feed is legitimately empty (warning level appropriate)

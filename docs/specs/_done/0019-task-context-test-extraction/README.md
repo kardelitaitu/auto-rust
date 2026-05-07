@@ -1,6 +1,6 @@
 # TaskContext Integration Test Extraction
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

@@ -15,6 +15,21 @@ files:
     - docs/specs/_active/0017-dsl-executor-modularization/plan.md
     - docs/specs/_active/0017-dsl-executor-modularization/validation.md
     - docs/specs/_active/0017-dsl-executor-modularization/notes.md
-acceptance: []
-non_goals: []
-risks: []
+acceptance:
+  - dsl_executor.rs reduced from 2,362 to <1,000 lines
+  - Modular structure created: dsl/cache.rs, dsl/evaluator.rs, dsl/executor.rs, dsl/control_flow.rs
+  - All existing tests pass (no regressions)
+  - No change in DSL execution behavior
+  - Cache functionality preserved (LRU eviction, TTL)
+  - Debug/tracing features preserved
+non_goals:
+  - Change DSL syntax or semantics
+  - Rewrite core execution logic
+  - Add new DSL features
+  - Break existing task definitions
+risks:
+  - Breaking DSL task execution
+  - Losing cache state between refactored modules
+  - Test failures due to moved code
+  - Performance regression from additional abstraction
+  - Debug/tracing functionality breaks

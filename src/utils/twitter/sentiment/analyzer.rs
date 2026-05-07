@@ -568,6 +568,12 @@ impl std::fmt::Debug for SentimentAnalyzer {
     }
 }
 
+impl Default for SentimentAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SentimentAnalyzer {
     /// Create a new sentiment analyzer with default configuration.
     pub fn new() -> Self {
@@ -640,10 +646,10 @@ impl SentimentAnalyzer {
             }
         }
 
-        // Classify based on total score with hysteresis
-        if total_score > 1.0 {
+        // Classify based on total score
+        if total_score > 0.3 {
             Sentiment::Positive
-        } else if total_score < -1.0 {
+        } else if total_score < -0.3 {
             Sentiment::Negative
         } else {
             Sentiment::Neutral
@@ -661,9 +667,9 @@ impl SentimentAnalyzer {
         }
 
         // Classify based on total score
-        if total_score > 1.0 {
+        if total_score > 0.3 {
             Sentiment::Positive
-        } else if total_score < -1.0 {
+        } else if total_score < -0.3 {
             Sentiment::Negative
         } else {
             Sentiment::Neutral
@@ -1058,9 +1064,9 @@ impl SentimentStats {
     }
 
     pub fn dominant(&self) -> Sentiment {
-        if self.positive >= self.neutral && self.positive >= self.negative {
+        if self.positive > self.neutral && self.positive > self.negative {
             Sentiment::Positive
-        } else if self.negative >= self.neutral && self.negative >= self.positive {
+        } else if self.negative > self.neutral && self.negative > self.positive {
             Sentiment::Negative
         } else {
             Sentiment::Neutral
@@ -1135,17 +1141,14 @@ pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
     if let Some(replies) = tweet_obj.get("replies").and_then(|v| v.as_array()) {
         for reply in replies {
             // Validate reply structure
-            match (reply.get("author"), reply.get("text")) {
-                (Some(author), Some(text)) => {
-                    if let (Some(author_str), Some(text_str)) = (author.as_str(), text.as_str()) {
-                        if !author_str.trim().is_empty() && !text_str.trim().is_empty() {
-                            let sentiment = analyze_sentiment_sync(text_str);
-                            reply_sentiments.push(sentiment_to_score(sentiment));
-                            _valid_replies += 1;
-                        }
+            if let (Some(author), Some(text)) = (reply.get("author"), reply.get("text")) {
+                if let (Some(author_str), Some(text_str)) = (author.as_str(), text.as_str()) {
+                    if !author_str.trim().is_empty() && !text_str.trim().is_empty() {
+                        let sentiment = analyze_sentiment_sync(text_str);
+                        reply_sentiments.push(sentiment_to_score(sentiment));
+                        _valid_replies += 1;
                     }
                 }
-                _ => {}
             }
         }
     }

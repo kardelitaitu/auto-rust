@@ -102,7 +102,7 @@ impl DecisionEngine for UnifiedEngine {
     }
 
     fn is_available(&self) -> bool {
-        self.strategy.is_available() || self.fallback.as_ref().map_or(false, |f| f.is_available())
+        self.strategy.is_available() || self.fallback.as_ref().is_some_and(|f| f.is_available())
     }
 
     async fn decide(&self, ctx: &TweetContext) -> EngagementDecision {

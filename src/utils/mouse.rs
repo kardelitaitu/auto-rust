@@ -664,13 +664,15 @@ async fn dispatch_click(page: &Page, x: f64, y: f64, button: MouseButton) -> Res
     Ok(())
 }
 
-async fn dispatch_mouse_action(
+/// Dispatch a single mouse event using CDP, with JS fallback.
+async fn dispatch_single_mouse_event(
     page: &Page,
     x: f64,
     y: f64,
     button_idx: u16,
     event_type: &str,
 ) -> Result<()> {
+    // Try CDP dispatch first
     if let Some(cdp_type) = map_cdp_event_type(event_type) {
         let button = map_cdp_button(button_idx);
         let buttons = match cdp_type {
@@ -698,7 +700,7 @@ async fn dispatch_mouse_action(
         return Ok(());
     }
 
-    // Fallback path for environments where CDP mouse dispatch fails.
+    // Fallback to JS dispatch
     let eval = page.evaluate(format!(
         "(function() {{
             const el = document.elementFromPoint({}, {});
@@ -719,14 +721,24 @@ async fn dispatch_mouse_action(
 
     let result = timeout(Duration::from_secs(2), eval)
         .await
-        .map_err(|_| anyhow::anyhow!("dispatch_mouse_action timed out"))??;
+        .map_err(|_| anyhow::anyhow!("dispatch_single_mouse_event timed out"))??;
 
     let did_dispatch = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
     if !did_dispatch {
-        anyhow::bail!("dispatch_mouse_action found no element at ({x:.1},{y:.1})");
+        anyhow::bail!("dispatch_single_mouse_event found no element at ({x:.1},{y:.1})");
     }
 
     Ok(())
+}
+
+async fn dispatch_mouse_action(
+    page: &Page,
+    x: f64,
+    y: f64,
+    button_idx: u16,
+    event_type: &str,
+) -> Result<()> {
+    dispatch_single_mouse_event(page, x, y, button_idx, event_type).await
 }
 
 fn map_cdp_button(button_idx: u16) -> Option<CdpMouseButton> {
@@ -1277,6 +1289,39 @@ async fn move_along_points_adaptive(
     Ok(())
 }
 
+/// Check if a single point collides with a UI element.
+/// Returns true if the point is over an interactive element.
+async fn check_point_collision(page: &Page, point: &Point) -> Result<bool> {
+    let js = format!(
+        r#"(() => {{
+            const el = document.elementFromPoint({}, {});
+            if (el && el !== document.body && el !== document.documentElement) {{
+                // Check if it's a significant UI element
+                const tag = el.tagName.toLowerCase();
+                const role = el.getAttribute('role');
+                const ariaLabel = el.getAttribute('aria-label');
+
+                // Consider it a collision if it's interactive or labeled
+                if (tag === 'button' || tag === 'a' || tag === 'input' ||
+                    tag === 'select' || role === 'button' || role === 'link' ||
+                    (ariaLabel && ariaLabel.trim().length > 0)) {{
+                    return true;
+                }}
+            }}
+            return false;
+        }})()"#,
+        point.x, point.y
+    );
+
+    if let Ok(result) = page.evaluate(js).await {
+        if let Some(collision) = result.value().and_then(|v| v.as_bool()) {
+            return Ok(collision);
+        }
+    }
+
+    Ok(false)
+}
+
 /// Detects UI elements that would cause unwanted hovers along cursor path
 async fn detect_ui_collisions_along_path(page: &Page, points: &[Point]) -> Result<Vec<Point>> {
     let mut collision_points = Vec::new();
@@ -1287,37 +1332,8 @@ async fn detect_ui_collisions_along_path(page: &Page, points: &[Point]) -> Resul
             continue; // Skip most points for performance
         }
 
-        let js = format!(
-            r#"(() => {{
-                const el = document.elementFromPoint({}, {});
-                if (el && el !== document.body && el !== document.documentElement) {{
-                    // Check if it's a significant UI element
-                    const tag = el.tagName.toLowerCase();
-                    const role = el.getAttribute('role');
-                    const ariaLabel = el.getAttribute('aria-label');
-
-                    // Consider it a collision if it's interactive or labeled
-                    if (tag === 'button' || tag === 'a' || tag === 'input' ||
-                        tag === 'select' || role === 'button' || role === 'link' ||
-                        (ariaLabel && ariaLabel.trim().length > 0)) {{
-                        return {{ x: {}, y: {}, significant: true }};
-                    }}
-                }}
-                return null;
-            }})()"#,
-            point.x, point.y, point.x, point.y
-        );
-
-        if let Ok(result) = page.evaluate(js).await {
-            if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-                if obj
-                    .get("significant")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-                {
-                    collision_points.push(*point);
-                }
-            }
+        if check_point_collision(page, point).await? {
+            collision_points.push(*point);
         }
     }
 

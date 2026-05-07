@@ -90,6 +90,131 @@ pub async fn handle_engagement_decision(
     Some(engine.decide(&ctx).await)
 }
 
+/// Analyze tweet sentiment and modulate persona weights accordingly.
+fn modulate_persona_by_sentiment(
+    tweet: &Value,
+    task_config: &TaskConfig,
+    persona: &PersonaWeights,
+) -> (Sentiment, PersonaWeights) {
+    let analyzer = crate::utils::twitter::sentiment::SentimentAnalyzer::new();
+    let tweet_text = extract_tweet_text(tweet);
+    let sentiment_result = if task_config.enhanced_sentiment_enabled {
+        let thread_context = crate::utils::twitter::sentiment::extract_thread_context(tweet);
+        let user_reputation = crate::utils::twitter::sentiment::extract_user_reputation(tweet);
+        let temporal_factors = crate::utils::twitter::sentiment::extract_temporal_factors(tweet);
+        analyzer.analyze_enhanced(
+            &tweet_text,
+            thread_context.as_ref(),
+            user_reputation.as_ref(),
+            temporal_factors.as_ref(),
+        )
+    } else {
+        // Fallback to basic sentiment analysis
+        let sentiment = analyzer.analyze_sentiment_sync(&tweet_text);
+        crate::utils::twitter::sentiment::EnhancedSentimentResult {
+            base_sentiment: sentiment,
+            final_sentiment: sentiment,
+            base_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
+            final_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
+            confidence: 0.7, // Default confidence for basic analysis
+            score_breakdown: crate::utils::twitter::sentiment::ScoreBreakdown {
+                text_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
+                emoji_score: 0.0,
+                domain_score: 0.0,
+                context_score: 0.0,
+                reputation_score: 0.0,
+                temporal_score: 0.0,
+            },
+        }
+    };
+
+    let sentiment = sentiment_result.final_sentiment;
+    let mut candidate_persona = persona.clone();
+    // Modulate weights by sentiment with enhanced scoring
+    candidate_persona.interest_multiplier = match sentiment {
+        Sentiment::Negative => 0.3, // suppress engagement on negative tweets
+        Sentiment::Positive => 1.4, // boost positive (lightly more than basic)
+        Sentiment::Neutral => 1.0,
+    };
+
+    // Additional modulation based on confidence
+    if sentiment_result.confidence > 0.8 {
+        // High confidence - amplify the effect
+        candidate_persona.interest_multiplier *= 1.1;
+    } else if sentiment_result.confidence < 0.5 {
+        // Low confidence - reduce the effect
+        candidate_persona.interest_multiplier *= 0.9;
+    }
+
+    (sentiment, candidate_persona)
+}
+
+/// Engage with replies in depth-first manner.
+async fn engage_replies(
+    api: &TaskContext,
+    persona: &PersonaWeights,
+    task_config: &TaskConfig,
+    limits: &EngagementLimits,
+    counters: &mut EngagementCounters,
+    actions_this_scan: &mut u32,
+    _actions_taken: &mut u32,
+) -> Result<()> {
+    match identify_thread_replies(api).await {
+        Ok(replies) => {
+            let mut replies_engaged = 0;
+            let max_replies = rand::random::<u32>() % 2 + 1;
+            for reply in replies {
+                if replies_engaged >= max_replies {
+                    break;
+                }
+                if *actions_this_scan >= task_config.max_actions_per_scan {
+                    break;
+                }
+                if !limits.can_like(counters) {
+                    break;
+                }
+                // Run smart decision for this reply
+                if let Some(decision) =
+                    handle_engagement_decision(&reply, task_config, persona).await
+                {
+                    if decision.score > 30 {
+                        if let Some(pos) = reply.get("like_pos").and_then(|v| v.as_object()) {
+                            let x = pos.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let y = pos.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            match retry_with_backoff(
+                                || like_at_position(api, x, y),
+                                &RetryConfig::aggressive(),
+                                api,
+                                "depth_first_like",
+                            )
+                            .await
+                            {
+                                Ok(true) => {
+                                    info!("Successfully liked reply");
+                                    counters.increment_like();
+                                    *_actions_taken += 1;
+                                    *actions_this_scan += 1;
+                                    replies_engaged += 1;
+                                    api.increment_run_counter(RUN_COUNTER_LIKE_SUCCESS, 1);
+                                    // Human-like reading pause between replies
+                                    human_pause(api, 1500).await;
+                                }
+                                _ => {
+                                    warn!("Failed to like reply");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Depth-First: Failed to identify replies: {}", e);
+        }
+    }
+    Ok(())
+}
+
 /// Process a single candidate tweet for engagement.
 #[allow(clippy::too_many_arguments)]
 pub async fn process_candidate(
@@ -125,57 +250,8 @@ pub async fn process_candidate(
         });
     }
 
-    // Analyze sentiment with enhanced context when enabled
-    let analyzer = crate::utils::twitter::sentiment::SentimentAnalyzer::new();
-    let tweet_text = extract_tweet_text(tweet);
-    let sentiment_result = if task_config.enhanced_sentiment_enabled {
-        let thread_context = crate::utils::twitter::sentiment::extract_thread_context(tweet);
-        let user_reputation = crate::utils::twitter::sentiment::extract_user_reputation(tweet);
-        let temporal_factors = crate::utils::twitter::sentiment::extract_temporal_factors(tweet);
-
-        analyzer.analyze_enhanced(
-            &tweet_text,
-            thread_context.as_ref(),
-            user_reputation.as_ref(),
-            temporal_factors.as_ref(),
-        )
-    } else {
-        // Fallback to basic sentiment analysis
-        let sentiment = analyzer.analyze_sentiment_sync(&tweet_text);
-        crate::utils::twitter::sentiment::EnhancedSentimentResult {
-            base_sentiment: sentiment,
-            final_sentiment: sentiment,
-            base_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
-            final_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
-            confidence: 0.7, // Default confidence for basic analysis
-            score_breakdown: crate::utils::twitter::sentiment::ScoreBreakdown {
-                text_score: crate::utils::twitter::sentiment::sentiment_score(sentiment) as f32,
-                emoji_score: 0.0,
-                domain_score: 0.0,
-                context_score: 0.0,
-                reputation_score: 0.0,
-                temporal_score: 0.0,
-            },
-        }
-    };
-
-    let sentiment = sentiment_result.final_sentiment;
-    let mut candidate_persona = persona.clone();
-    // Modulate weights by sentiment with enhanced scoring
-    candidate_persona.interest_multiplier = match sentiment {
-        Sentiment::Negative => 0.3, // suppress engagement on negative tweets
-        Sentiment::Positive => 1.4, // boost positive (slightly more than basic)
-        Sentiment::Neutral => 1.0,
-    };
-
-    // Additional modulation based on confidence
-    if sentiment_result.confidence > 0.8 {
-        // High confidence - amplify the effect
-        candidate_persona.interest_multiplier *= 1.1;
-    } else if sentiment_result.confidence < 0.5 {
-        // Low confidence - reduce the effect
-        candidate_persona.interest_multiplier *= 0.9;
-    }
+    // Analyze sentiment and modulate persona
+    let (sentiment, candidate_persona) = modulate_persona_by_sentiment(tweet, task_config, persona);
 
     // Smart decision check (V3 feature - rule-based)
     let engagement_decision =
@@ -736,72 +812,16 @@ pub async fn process_candidate(
 
     // Depth-First Engagement: Engage with replies if we dived and root engagement was successful
     if did_dive && root_action_success {
-        match identify_thread_replies(api).await {
-            Ok(replies) => {
-                let mut replies_engaged = 0;
-                let max_replies = rand::random::<u32>() % 2 + 1; // Engage with 1-2 replies
-
-                for reply in replies {
-                    if replies_engaged >= max_replies {
-                        break;
-                    }
-                    if actions_this_scan >= task_config.max_actions_per_scan {
-                        break;
-                    }
-                    if !limits.can_like(counters) {
-                        break;
-                    }
-
-                    // Run smart decision for this reply
-                    if let Some(decision) =
-                        handle_engagement_decision(&reply, task_config, persona).await
-                    {
-                        // For replies, we only do "Like" for safety and simplicity
-                        if decision.score > 30 {
-                            if let Some(pos) = reply.get("like_pos").and_then(|v| v.as_object()) {
-                                let x = pos.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                let y = pos.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                let reply_id = reply
-                                    .get("id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown");
-
-                                info!(
-                                    "Depth-First: Engaging with high-quality reply {} (score: {})",
-                                    reply_id, decision.score
-                                );
-
-                                match retry_with_backoff(
-                                    || like_at_position(api, x, y),
-                                    &RetryConfig::aggressive(),
-                                    api,
-                                    "depth_first_like",
-                                )
-                                .await
-                                {
-                                    Ok(true) => {
-                                        info!("Successfully liked reply");
-                                        counters.increment_like();
-                                        _actions_taken += 1;
-                                        actions_this_scan += 1;
-                                        replies_engaged += 1;
-                                        api.increment_run_counter(RUN_COUNTER_LIKE_SUCCESS, 1);
-                                        // Human-like reading pause between replies
-                                        human_pause(api, 1500).await;
-                                    }
-                                    _ => {
-                                        warn!("Failed to like reply");
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("Depth-First: Failed to identify replies: {}", e);
-            }
-        }
+        engage_replies(
+            api,
+            &candidate_persona,
+            task_config,
+            limits,
+            counters,
+            &mut actions_this_scan,
+            &mut _actions_taken,
+        )
+        .await?;
     }
 
     // Navigate back to home after dive

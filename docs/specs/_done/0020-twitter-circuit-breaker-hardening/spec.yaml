@@ -3,7 +3,7 @@ id: 0020-twitter-circuit-breaker-hardening
 title: Twitter Circuit Breaker Hardening
 status: done
 owner: spec-agent
-implementer: pending
+implementer: spec-agent
 priority: P2
 area:
   - twitter-activity

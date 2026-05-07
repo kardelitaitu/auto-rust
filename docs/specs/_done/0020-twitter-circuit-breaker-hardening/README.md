@@ -1,6 +1,6 @@
 # Twitter Circuit Breaker Hardening
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

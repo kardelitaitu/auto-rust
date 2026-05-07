@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use crate::prelude::TaskContext;
 use crate::utils::twitter::twitteractivity_errors::ErrorClass;
 
-use super::twitteractivity_errors::{ErrorClassifier};
+use super::twitteractivity_errors::ErrorClassifier;
 use super::twitteractivity_humanized::human_pause;
 
 /// Configuration for retry behavior.
@@ -127,7 +127,7 @@ impl CircuitBreaker {
         let failures = self.failures.fetch_add(1, Ordering::SeqCst) + 1;
         let mut last_failure = self.last_failure.write().await;
         *last_failure = Some(Instant::now());
-        
+
         if failures >= self.threshold {
             let mut is_open = self.is_open.write().await;
             *is_open = true;

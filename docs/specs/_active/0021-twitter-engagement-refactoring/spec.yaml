@@ -8,13 +8,24 @@ priority: P2
 area:
   - twitter-activity
 files:
-  code: []
+  code:
+    - src/utils/twitter/twitteractivity_engagement.rs
   docs:
     - docs/specs/_active/0021-twitter-engagement-refactoring/README.md
     - docs/specs/_active/0021-twitter-engagement-refactoring/plan.md
     - docs/specs/_active/0021-twitter-engagement-refactoring/validation.md
     - docs/specs/_active/0021-twitter-engagement-refactoring/notes.md
 acceptance:
-  - Spec implemented successfully
-non_goals: []
-risks: []
+  - process_candidate reduced from 762 lines to ~200-300 lines
+  - Helper functions extracted: engage_replies, execute_engagement_action, modulate_persona_by_sentiment
+  - All existing tests pass (no regressions)
+  - No new files or directories created (refactor within same file)
+non_goals:
+  - Create new directory structure
+  - Move code to other files
+  - Extract tests to tests/ directory
+  - Change business logic or action behavior
+risks:
+  - Breaking process_candidate flow during refactoring
+  - Incorrectly passing state between extracted functions
+  - Test failures due to signature changes

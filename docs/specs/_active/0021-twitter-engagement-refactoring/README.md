@@ -6,25 +6,25 @@ Owner: `spec-agent`
 Implementer: `pending`
 
 ## Summary
-The `twitteractivity_engagement.rs` file has grown into a "God Object" exceeding 1,400 lines, with its core function `process_candidate` handling over 700 lines of disparate logic (sentiment modulation, action dispatch, rate limit checks, and thread diving). This spec proposes splitting the file into a focused `engagement/` directory to adhere to the Single Responsibility Principle and drastically improve maintainability.
+The `twitteractivity_engagement.rs` file has a `process_candidate` function spanning 762 lines (lines 95-857). While the twitter module is already well-modularized (27 files in `src/utils/twitter/`), this core function mixes sentiment analysis, action selection, thread diving, and depth-first engagement in one large block. This spec proposes refactoring within the file to extract helper functions and reduce cognitive load.
 
 ## Scope
-- **In scope**: Splitting `twitteractivity_engagement.rs` into smaller modules (e.g., `engagement/dive.rs`, `engagement/actions.rs`, `engagement/limits.rs`). Refactoring `process_candidate` into a pipeline-based approach.
-- **Out of scope**: Changing the underlying business rules for engagement or rewriting the DOM interaction logic inside `interact.rs`.
+- **In scope**: Extract helper functions from `process_candidate` within `twitteractivity_engagement.rs` to reduce its size from 762 lines to ~200-300 lines. Keep all code in the same file.
+- **Out of scope**: Creating new directory structure, moving code to other files, changing the underlying business rules.
 
 ## Next Step
-Extract `process_candidate` sub-routines into a new module structure.
+Extract `process_candidate` sub-routines into helper functions within the same file.
 
 # Baseline
 
 ## What I Find
-The `twitteractivity_engagement.rs` file is currently **1,425 lines** long. The central function `process_candidate` spans **730 lines** and manages everything from sentiment modulation to hardcoded retry loops and deep nested iterations.
+The `twitteractivity_engagement.rs` file is **1,325 lines** long. The central function `process_candidate` spans **762 lines** (lines 95-857) and handles sentiment modulation, action dispatch, retry logic, and depth-first engagement reply scanning.
 
 ## What I Claim
-This massive file violates the Single Responsibility Principle (SRP). It is extremely difficult to unit test effectively because `process_candidate` requires 4 complex arguments and modifies state across 6 distinct sub-domains. Modularizing this file will cut cognitive load and reduce the risk of bug introduction during future features.
+While not a "God Object" (twitter module is already well-modularized), the `process_candidate` function is too large and mixes multiple concerns inline. Extracting helpers will improve readability and testability without adding unnecessary abstraction.
 
 ## What Is the Proof
-1. `process_candidate` takes `CandidateContext` but unpacks and mutates counters, action trackers, DOM state, and persona weights inline.
-2. Hardcoded retry loops for actions like `like_tweet` or `retweet_tweet` are deeply nested inside a massive `for action in [selected_action]` loop.
-3. The recent addition of Depth-First Engagement added another deep loop inside this structure, exacerbating the complexity.
+1. `process_candidate` handles 6+ concerns: sentiment analysis, smart decisions, action selection, thread diving, action execution (like/retweet/quote/reply/follow/bookmark), and depth-first reply engagement.
+2. The depth-first engagement loop (lines 737-857) is 120 lines of nested logic.
+3. Action execution block (lines 362-710) has repetitive patterns for each action type.
 

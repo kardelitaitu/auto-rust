@@ -10,11 +10,25 @@ area:
 files:
   code:
     - src/utils/mouse.rs
+    - src/utils/mouse/native.rs
+    - src/utils/mouse/trajectory.rs
+    - src/utils/mouse/types.rs
   docs:
     - docs/specs/_active/0018-mouse-utility-refactoring/README.md
     - docs/specs/_active/0018-mouse-utility-refactoring/plan.md
     - docs/specs/_active/0018-mouse-utility-refactoring/validation.md
     - docs/specs/_active/0018-mouse-utility-refactoring/notes.md
-acceptance: []
-non_goals: []
-risks: []
+acceptance:
+  - mouse.rs reduced from 2,877 to ~2,400-2,500 lines
+  - Helper functions extracted: check_point_collision, generate_avoidance_path, dispatch_single_mouse_event
+  - All existing tests pass (no regressions)
+  - No new files or directories created (refactor within same file)
+non_goals:
+  - Create new submodules (already has native, trajectory, types)
+  - Move code to other files
+  - Extract tests to tests/ directory
+  - Change mouse movement behavior or algorithms
+risks:
+  - Breaking mouse movement flow during refactoring
+  - Incorrectly passing state between extracted functions
+  - Test failures due to signature changes

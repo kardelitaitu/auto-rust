@@ -114,6 +114,9 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install --locked cargo-llvm-cov
 
+      - name: Create coverage output dir
+        run: mkdir -p target/reports/coverage
+
       - name: Run coverage gate and write summary
         run: cargo llvm-cov --workspace --all-features --json --output-path target/reports/coverage/coverage.json --fail-under-lines 40
 

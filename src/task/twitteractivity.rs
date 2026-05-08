@@ -147,7 +147,7 @@ async fn run_inner(
             crate::utils::twitter::twitteractivity_constants::MIN_CANDIDATE_SCAN_INTERVAL_MS,
         )
     };
-    let mut next_scroll = Instant::now();
+    let mut next_scroll = Instant::now() + scroll_interval;
     let mut next_candidate_scan = Instant::now();
 
     while !session.is_expired() {
@@ -164,6 +164,7 @@ async fn run_inner(
                 .scroll_read(1, scroll_amount, smooth, profile.scroll.back_scroll)
                 .await;
             next_scroll = now + scroll_interval;
+            api.pause(scroll_pause_ms).await;
         }
 
         // Identify candidate tweets

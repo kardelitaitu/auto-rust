@@ -130,6 +130,7 @@ async fn run_inner(
     info!("Phase 2: Scanning feed for {} ms", task_config.duration_ms);
     let mut actions_taken = 0u32;
     let mut consecutive_scroll_failures = 0u32;
+    let mut consecutive_empty_scans = 0u32;
 
     let profile = api.behavior_runtime();
     let scroll_amount = if config.twitter_activity.scroll_amount_pixels > 0 {
@@ -189,6 +190,8 @@ async fn run_inner(
         next_candidate_scan = Instant::now() + candidate_scan_interval;
 
         if !candidates.is_empty() {
+            consecutive_empty_scans = 0;
+
             let to_consider = candidates
                 .iter()
                 .take(task_config.candidate_count as usize)

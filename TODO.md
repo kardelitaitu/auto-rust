@@ -184,7 +184,7 @@
 > **Current state:** `.config/nextest.toml` only has `[profile.ci] fail-fast = true` (verified 2026-05-08)
 
 ### Profile Slow Tests **(Confidence: 85%)**
-- [ ] **Profile slow tests with a temporary low `slow-timeout`** - (95% confidence)
+- [x] **Profile slow tests with a temporary low `slow-timeout`** - (95% confidence) - DONE (2026-05-08); 500ms and 100ms thresholds produced no `SLOW` output in the current lib suite
   - Command: set a temporary `slow-timeout` override, then run `cargo nextest run --all-features --profile ci --status-level slow --final-status-level slow`
   - Identify the top 20 slowest tests from `SLOW` output
   - Analyze why they're slow (sleep, retry, timeout)
@@ -207,11 +207,10 @@
   - **Effort:** 0.5 day
 
 - [ ] **Add .config/nextest.toml optimizations:** - (90% confidence)
-  - [ ] Add timeouts: `[profile.default] timeout = 60s`
-  - [ ] Add output format: `[profile.default] failure-output = "immediate-final"`
-  - [ ] Retry failed tests once: `[profile.ci] retries = 1`
-  - [ ] Profile-based timeouts: `[profile.ci] timeout = 30s`
-  - **Current config:** Only has `[profile.ci] fail-fast = true` (verified)
+  - [x] Add output format: `[profile.ci] failure-output = "immediate-final"`
+  - [x] Retry failed tests once: `[profile.ci] retries = 1`
+  - [x] Profile-based timeouts: `[profile.ci] slow-timeout = { period = "60s", terminate-after = 5, grace-period = "30s" }`
+  - **Current config:** `[profile.ci] fail-fast = true`, `retries = 1`, `failure-output = "immediate-final"`, `slow-timeout = { period = "60s", terminate-after = 5, grace-period = "30s" }`
   - **Effort:** 0.5 day
 
 - [ ] **CI cache optimization:** - (75% confidence)

@@ -1,5 +1,7 @@
 # Task Policy Implementation Summary
 
+last audited 08-05-26 by Kilo
+
 > **Status:** ✅ Complete  
 > **Date:** 2026-04-26  
 > **Proposal:** [IMPROVEMENT_PROPOSAL_TASK_POLICY.md](IMPROVEMENT_PROPOSAL_task_policy.md)
@@ -14,19 +16,19 @@ The Task Policy Enforcement system has been fully implemented across all three p
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `TaskPolicy` | `src/task/policy.rs:17` | Timeout + permissions container |
-| `TaskPermissions` | `src/task/policy.rs:58` | 8 boolean permission flags |
-| `DEFAULT_TASK_POLICY` | `src/task/policy.rs:103` | 60s timeout, all permissions false |
-| `SessionData` | `src/task/policy.rs:95` | Cookie + localStorage export format |
+| `TaskPolicy` | `src/task/policy.rs:13` | Timeout + permissions container |
+| `TaskPermissions` | `src/task/policy.rs:87` | 12 boolean permission flags |
+| `DEFAULT_TASK_POLICY` | `src/task/policy.rs:123` | 60s timeout, all permissions false |
+| `SessionData` | `src/task/policy.rs:145` | Cookie + localStorage export format |
 | `effective_permissions()` | `src/task/policy.rs:28` | Handles implied permissions |
-| `get_policy()` | `src/task/policy.rs:292` | Task name → policy lookup |
+| `get_policy()` | `src/task/policy.rs:344` | Task name → policy lookup |
 | Task Error Variants | `src/error.rs:125` | `PermissionDenied`, `InvalidPath`, `CdpError`, `ClipboardError` |
 
-**15 Task-Specific Policies Defined:**
+**16 Policies Defined (15 task-specific + 1 base):
 - `COOKIEBOT_POLICY` (30s) - export_cookies, screenshot
 - `PAGEVIEW_POLICY` (30s) - screenshot
 - `TWITTERACTIVITY_POLICY` (5min) - export_cookies, clipboard, read_data, screenshot
-- `TWITTER_BASE_POLICY` (45s) - screenshot, export_cookies, clipboard
+- `TWITTER_BASE_POLICY` (45s) - screenshot, export_cookies, clipboard (base for Twitter tasks)
 - 8 Twitter task policies inheriting from base
 - 3 Demo policies with no permissions
 - `TASK_EXAMPLE_POLICY` (60s, no permissions)
@@ -52,19 +54,22 @@ The Task Policy Enforcement system has been fully implemented across all three p
 
 ### Phase 3: Feature Gating ✅
 
-All 9 permission-gated operations implemented in `TaskContext`:
+All 12 permission-gated operations implemented in `TaskContext` (mapped to `TaskPermissions` flags):
 
-| Operation | Permission | Location |
-|-----------|------------|----------|
-| `screenshot()` | `allow_screenshot` | `src/runtime/task_context.rs:1289` |
-| `export_cookies()` | `allow_export_cookies` | `src/runtime/task_context.rs:1305` |
-| `import_cookies()` | `allow_import_cookies` | `src/runtime/task_context.rs:1372` |
-| `read_clipboard()` | `allow_session_clipboard` | `src/runtime/task_context.rs:1326` |
-| `write_clipboard()` | `allow_session_clipboard` | `src/runtime/task_context.rs:1340` |
-| `read_data_file()` | `allow_read_data` | `src/runtime/task_context.rs:1381` |
-| `write_data_file()` | `allow_write_data` | `src/runtime/task_context.rs:1397` |
-| `export_session()` | `allow_export_session` | `src/runtime/task_context.rs:1453` |
-| `import_session()` | `allow_import_session` | `src/runtime/task_context.rs:1517` |
+| Permission Flag | Gated Operations | Location |
+|-----------|-------------------|----------|
+| `allow_screenshot` | `screenshot()`, `screenshot_with_quality()` | `src/runtime/task_context.rs:1903` |
+| `allow_export_cookies` | `export_cookies()`, `export_cookies_for_domain()`, `export_session_cookies()` | `src/runtime/task_context.rs:2008` |
+| `allow_import_cookies` | `import_cookies()` | `src/runtime/task_context.rs:2808` |
+| `allow_session_clipboard` | `read_clipboard()`, `write_clipboard()` | `src/runtime/task_context.rs:1326`, `1340` |
+| `allow_read_data` | `read_data_file()` | `src/runtime/task_context.rs:1381` |
+| `allow_write_data` | `write_data_file()` | `src/runtime/task_context.rs:1397` |
+| `allow_export_session` | `export_session()` | `src/runtime/task_context.rs:3109` |
+| `allow_import_session` | `import_session()` | `src/runtime/task_context.rs:3547` |
+| `allow_http_requests` | `http_get()`, `http_post_json()`, `download_file()` | `src/runtime/task_context.rs:2886`, `2964`, `3046` |
+| `allow_dom_inspection` | `get_computed_style()`, `get_element_rect()`, `get_scroll_position()`, `count_elements()`, `is_in_viewport()` | `src/runtime/task_context.rs:3208`, `3285`, `3364`, `3432`, `3503` |
+| `allow_browser_export` | `export_browser()` | `src/runtime/task_context.rs:3625` |
+| `allow_browser_import` | `import_browser()` | `src/runtime/task_context.rs:3793` |
 
 **Permission Denial Pattern:**
 ```rust

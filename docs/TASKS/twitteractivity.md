@@ -1,5 +1,7 @@
 # Twitter Activity Task
 
+last audited 08-05-26 by Kilo
+
 Simulates human-like Twitter/X engagement with persona-based behavior.
 
 ## Quick Start
@@ -102,10 +104,10 @@ dry_run_actions = false            # Simulate actions without executing
 The implementation lives in `src/utils/twitter/` and is split into focused modules with rustdoc coverage.
 
 **Core Engagement:**
-- `twitteractivity_engagement.rs`: Main `process_candidate()` logic and action orchestration
+- `twitteractivity.rs`: Main engagement logic and action orchestration
 - `twitteractivity_feed.rs`: Feed scrolling, candidate identification, and progress tracking
 - `twitteractivity_dive.rs`: Thread diving and reading
-- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark)
+- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark) - located in `src/utils/twitter/`
 
 **Decision & Strategy:**
 - `twitteractivity_decision.rs`: Legacy engagement decision logic
@@ -144,10 +146,10 @@ All functions include detailed rustdoc with Arguments, Returns, Errors, Behavior
 
 ## Related Tasks
 
-- [`twitterdive`](twitterdive.md) - Thread diving and reading
+- `twitterdive` - Thread diving and reading
 - [`twitterfollow`](twitterfollow.md) - Profile following
-- [`twitterintent`](twitterintent.md) - Intent-based actions
-- [`twitterlike`](twitterlike.md) - Like specific tweets
-- [`twitterquote`](twitterquote.md) - Quote tweets with LLM
+- `twitterintent` - Intent-based actions
+- `twitterlike` - Like specific tweets
+- `twitterquote` - Quote tweets with LLM
 - [`twitterreply`](twitterreply.md) - Tweet replies
-- [`twitterretweet`](twitterretweet.md) - Retweet specific tweets
+- `twitterretweet` - Retweet specific tweets

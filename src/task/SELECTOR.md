@@ -1,5 +1,7 @@
 # Selector Standard
 
+last audited 08-05-26 by Kilo
+
 This file defines the selector approach for task code.
 
 ## Goal

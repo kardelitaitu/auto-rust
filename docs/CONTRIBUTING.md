@@ -1,5 +1,7 @@
 # Contributing Guide
 
+last audited 08-05-26 by Kilo
+
 Thank you for contributing to the Rust Orchestrator!
 
 ## Development Setup
@@ -105,14 +107,21 @@ test: add integration test for graceful shutdown
 
 ```
 src/
+├── adaptive/     # Adaptive learning module
 ├── api/          # API client
-├── browser.rs    # Browser management
-├── cli.rs        # Command line interface
-├── config.rs     # Configuration loader
+├── benchmarks/   # Performance benchmarks
 ├── capabilities/ # Task-facing actions (mouse, keyboard, scroll)
+├── cli/          # Command line interface
+├── config/       # Configuration loader
 ├── internal/     # Framework helpers
+├── llm/          # LLM integration
+├── plugin/       # Plugin system
+├── runtime/      # Browser/session/page lifecycle
+├── session/      # Session management
+├── state/        # Session-scoped handles
 ├── task/         # Automation tasks
 ├── utils/        # Low-level utilities
+├── validation/   # Validation utilities
 └── ...
 ```
 

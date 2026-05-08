@@ -1,5 +1,7 @@
 # Twitter Activity — Helper Modules Specification
 
+> *Last audited: 08-05-26 by Kilo*
+
 This document specifies all helper modules that support the `twitteractivity` task. All helper modules reside in `src/utils/twitter/` as a cohesive utility layer. The main task (`task/twitteractivity.rs`) imports and uses these helpers via `crate::utils::twitter::...`.
 
 ---
@@ -53,9 +55,9 @@ pub async fn select_entry_point(config: &TwitterConfig) -> Result<String> {
 
 ```rust
 use crate::prelude::TaskContext;
+use crate::utils::twitter::twitteractivity_selectors::*;
 use anyhow::Result;
 use serde_json::Value;
-use crate::utils::twitter::twitteractivity_selectors::*;
 
 /// Representation of a tweet found in the feed.
 #[derive(Debug, Clone)]
@@ -204,6 +206,8 @@ pub async fn click_tweet(ctx: &TaskContext, tweet: &super::TweetMetadata) -> Res
 use crate::prelude::TaskContext;
 use crate::utils::page_size::get_element_center;
 use crate::utils::twitter::twitteractivity_selectors::*;
+use anyhow::{bail, Result};
+use log::info;
 
 /// Like a tweet — clicks like button and verifies state flips to "liked".
 pub async fn like_tweet(ctx: &TaskContext, tweet: &super::TweetMetadata) -> Result<()> {
@@ -292,6 +296,7 @@ pub async fn bookmark_tweet(_ctx: &TaskContext, _tweet: &super::TweetMetadata) -
 use crate::prelude::TaskContext;
 use crate::utils::page_size::get_element_center;
 use crate::utils::twitter::twitteractivity_selectors::*;
+use anyhow::Result;
 
 pub async fn close_all_modals(ctx: &TaskContext) -> Result<()> {
     let dismiss_selectors = [
@@ -434,6 +439,7 @@ Humanization helpers specific to Twitter interaction:
 
 ```rust
 use crate::prelude::TaskContext;
+use anyhow::Result;
 
 /// Hover briefly before clicking (simulates visual verification).
 pub async fn hover_before_click(ctx: &TaskContext, x: f64, y: f64) -> Result<()> {

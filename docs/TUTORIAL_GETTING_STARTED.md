@@ -1,5 +1,7 @@
 # Tutorial: Getting Started with Auto-Rust
 
+last audited 08-05-26 by Kilo
+
 A comprehensive video tutorial script for new users.
 
 ## Video Metadata
@@ -62,8 +64,8 @@ cargo test
 auto-rust/
 ├── src/           # Core source code
 ├── docs/          # Documentation
-├── tasks/         # Task definitions
-├── data/          # Data files (cookies, exports)
+├── config/        # Configuration files
+├── tests/         # Integration tests
 └── Cargo.toml     # Project manifest
 ```
 
@@ -85,10 +87,10 @@ cargo run cookiebot=https://example.com
 
 ### Understanding the Output
 ```
-[2024-01-15T10:30:00Z INFO auto::task] Running task: cookiebot
-[2024-01-15T10:30:02Z INFO auto::task] Navigated to https://example.com
-[2024-01-15T10:30:03Z INFO auto::task] Clicked cookie consent button
-[2024-01-15T10:30:05Z INFO auto::task] Task completed successfully
+[2026-01-15T10:30:00Z INFO auto::task] Running task: cookiebot
+[2026-01-15T10:30:02Z INFO auto::task] Navigated to https://example.com
+[2026-01-15T10:30:03Z INFO auto::task] Clicked cookie consent button
+[2026-01-15T10:30:05Z INFO auto::task] Task completed successfully
 ```
 
 ### Key Concepts Demonstrated
@@ -106,8 +108,8 @@ cargo run cookiebot=https://example.com
 
 ### Browser Configuration
 ```bash
-# Connect to specific browsers
-cargo run -- --browsers chrome,firefox cookiebot
+# Connect to specific browser
+cargo run -- --browsers brave cookiebot
 
 # All connected browsers will run the task in parallel
 ```
@@ -119,12 +121,14 @@ cargo run -- --browsers chrome,firefox cookiebot
 4. Broadcasts tasks to all connected browsers
 5. Collects results from each session
 
+### Supported Browsers
+- **Brave**: `--remote-debugging-port=9001`
+- **RoxyBrowser**: API integration
+
 ### Verifying Multiple Connections
 ```bash
 # Check browser connections in logs
-[2024-01-15T10:30:00Z INFO auto::orchestrator] Connected to browser: chrome
-[2024-01-15T10:30:00Z INFO auto::orchestrator] Connected to browser: firefox
-[2024-01-15T10:30:01Z INFO auto::orchestrator] Broadcasting task to 2 browsers
+[2026-01-15T10:30:00Z INFO auto::orchestrator] Connected to browser: brave
 ```
 
 ---
@@ -165,25 +169,36 @@ Group 3: [logout] ──parallel──> [Browser A, Browser B, Browser C]
 
 ### Config File Location
 ```
-data/config/config.toml
+config/default.toml
 ```
 
 ### Basic Configuration
 ```toml
 [orchestrator]
 timeout_ms = 30000
-max_concurrent_tasks = 10
+max_global_concurrency = 10
 
 [browser]
-headless = false
-default_timeout_ms = 10000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 5000
+
+[[browser.profiles]]
+name = "brave-local"
+type = "brave"
 ```
 
 ### Environment Variables
 ```bash
-# Override config with env vars
-export AUTO_BROWSER_HEADLESS=true
-export AUTO_ORCHESTRATOR_TIMEOUT_MS=60000
+# RoxyBrowser
+export ROXYBROWSER_API_URL="https://api.roxybrowser.com/"
+export ROXYBROWSER_API_KEY="your-api-key"
+
+# Orchestrator
+export MAX_GLOBAL_CONCURRENCY="10"
+export TASK_TIMEOUT_MS="300000"
+
+# Logging
+export RUST_LOG="info,orchestrator=debug"
 ```
 
 ---
@@ -196,9 +211,9 @@ export AUTO_ORCHESTRATOR_TIMEOUT_MS=60000
 ```
 Error: No browsers available
 ```
-**Solution**: Start Chrome/Firefox with remote debugging enabled:
+**Solution**: Start Brave with remote debugging enabled:
 ```bash
-chrome --remote-debugging-port=9222
+brave --remote-debugging-port=9001
 ```
 
 #### Task Timeout

@@ -1,5 +1,7 @@
 # Twitter Activity — Metrics & Observability
 
+> *Last audited: 08-05-26 by Kilo*
+
 This document covers logging, metrics collection, and `run-summary.json` integration for the Twitter activity task.
 
 ---

@@ -1,5 +1,7 @@
 # Auto
 
+last audited 08-05-26 by Kilo
+
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 ![Tokio](https://img.shields.io/badge/Tokio-000000?style=for-the-badge&logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -594,7 +596,7 @@ cargo run -- --watch my_task
 cargo run -- --dry-run my_task
 ```
 
-### API Quick Examples (v0.0.3)
+### API Quick Examples (v0.1.0)
 
 ```rust
 // Cookie Management - Check if logged in
@@ -695,7 +697,7 @@ Total: 15 tasks
 
 This project is actively maintained and used in production environments.
 
-### v0.0.3 Features (Latest)
+### v0.1.0 Features (Latest)
 
 **26 New TaskContext APIs** with permission-based security:
 

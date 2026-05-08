@@ -1,5 +1,7 @@
 # Release v0.0.3 - Browser Management APIs
 
+**⚠️ SUPERSEDED:** This release is superseded by [v0.1.0](../RELEASE_NOTES_v0.1.0.md) and [v0.1.1](../RELEASE_NOTES_v0.1.1.md).
+
 **Release Date:** April 27, 2026  
 **Tag:** `v0.0.3`
 
@@ -124,7 +126,7 @@ let config: serde_json::Value = ctx.read_json_data("config/app.json")?;
 
 ## Full Changelog
 
-See [journal.md](journal.md) for detailed development history.
+See [JOURNAL.md](../JOURNAL.md) for detailed development history.
 
 ---
 

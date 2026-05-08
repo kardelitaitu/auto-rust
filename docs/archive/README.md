@@ -1,5 +1,7 @@
 # Archive
 
+last audited 08-05-26 by Kilo
+
 Historical docs live here.
 Active planning lives in `docs/specs/`.
 

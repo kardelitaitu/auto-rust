@@ -1,6 +1,7 @@
+last audited 08-05-26 by Kilo
 # API Usage Guide
 
-Practical recipes and patterns for using the v0.0.3 TaskContext APIs.
+Practical recipes and patterns for using the v0.1.0 TaskContext APIs.
 
 ## Table of Contents
 
@@ -138,7 +139,7 @@ async fn transfer_session(
     to_url: &str,
 ) -> Result<()> {
     // Navigate to source page
-    ctx.page.goto(from_url).await?;
+    ctx.navigate(from_url).await?;
     
     // Export session data
     let cookies = ctx.export_cookies_for_domain("example.com").await?;
@@ -158,7 +159,7 @@ async fn transfer_session(
     }
     
     // Navigate to destination and restore
-    ctx.page.goto(to_url).await?;
+    ctx.navigate(to_url).await?;
     ctx.import_local_storage("", &session_data.local_storage).await?;
     
     println!("Session transferred from {} to {}", from_url, to_url);
@@ -553,7 +554,7 @@ async fn restore_test_snapshot(
     ctx.import_browser(&browser_data).await?;
     
     // Navigate to original URL
-    ctx.page.goto(&browser_data.source).await?;
+    ctx.navigate(&browser_data.source).await?;
     
     println!("Browser state restored successfully");
     Ok(())

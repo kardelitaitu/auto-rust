@@ -1,5 +1,7 @@
 # Twitter Agent — State Machine & Cycle Flow
 
+> *Last audited: 08-05-26 by Kilo*
+
 This document describes the `TwitterAgent` orchestrator: its state, per-cycle execution flow, and helper methods. All code uses the actual `TaskContext` API and the renamed helper modules (`twitteractivity_*`).
 
 ---

@@ -1,6 +1,8 @@
 # Onboarding Guide
 
-> **Welcome to rust-orchestrator!**  
+last audited 08-05-26 by Kilo
+
+> **Welcome to auto-rust!**  
 > This guide will help you get started with development in ~30 minutes.
 
 ## Table of Contents
@@ -20,7 +22,7 @@
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Rust | 1.75+ | Language compiler |
+| Rust | 1.70+ | Language compiler |
 | Git | 2.30+ | Version control |
 | Chrome/Chromium | 90+ | Browser for testing |
 | PowerShell/Bash | Any | Running scripts |

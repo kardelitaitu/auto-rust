@@ -1,5 +1,7 @@
 # Twitter Activity — Implementation Plan
 
+> *Last audited: 08-05-26 by Kilo*
+
 This document covers implementation milestones, rollout strategy, known gaps, references, and decisions log.
 
 ---
@@ -96,7 +98,7 @@ pub async fn validate_selectors(ctx: &TaskContext) -> Result<()> {
 
 **M1: Navigation & Entry Points**
 - [ ] Implement `select_entry_point()` in `src/utils/twitter/twitteractivity_navigation.rs`
-- [ ] `TwitterAgent::run_cycle()` calls `crate::utils::twitter::select_entry_point(&config).await` → URL
+- [ ] `TwitterAgent::run_cycle()` calls `crate::utils::twitter::select_entry_point(&config).await?` → URL
 - [ ] Then calls `ctx.navigate(&url, 15000)` + `ctx.wait_for_load(5000)`
 
 **M2: Feed Scanning & Tweet Extraction**

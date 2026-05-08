@@ -1,3 +1,4 @@
+last audited 08-05-26 by Kilo
 # Auto-Rust Architecture
 
 ## Overview
@@ -34,8 +35,8 @@ src/
 │   │   ├── trajectory.rs  # Bezier/Arc/Zigzag curves (500 lines)
 │   │   └── types.rs       # Point, PathStyle, etc. (74 lines)
 │   ├── twitter/            # Twitter automation (27 files)
-│   │   ├── twitteractivity_engagement.rs  # Core engagement logic
-│   │   ├── twitteractivity_*.rs          # 26 other twitter modules
+│   │   ├── twitteractivity.rs          # Core engagement logic
+│   │   ├── twitteractivity_*.rs     # Other twitter modules
 │   │   └── sentiment/                   # Sentiment analysis sub-modules
 │   ├── math.rs             # Gaussian, random_in_range utilities
 │   ├── scroll.rs           # Page scrolling utilities
@@ -71,7 +72,7 @@ DslExecutor::execute()
     └──► executor.rs (dispatch actions)
             │
             ▼
-        twitteractivity_engagement.rs (for Twitter tasks)
+        twitteractivity.rs (for Twitter tasks)
             │
             ▼
         twitteractivity_interact.rs (click, type, hover, etc.)

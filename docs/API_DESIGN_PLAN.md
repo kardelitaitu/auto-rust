@@ -1,8 +1,10 @@
 # API Design Plan: Permission-Gated Task Context Methods
 
+last audited 08-05-26 by Kilo
+
 **Document Purpose**: Define consistent, discoverable API methods for all permission-gated operations in TaskContext.
 
-**Target Version**: v0.0.3
+**Target Version**: v0.1.0
 **Status**: Draft with Implementation Confidence Assessment
 
 ## Browser Management Research Update

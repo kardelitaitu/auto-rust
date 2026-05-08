@@ -1,3 +1,4 @@
+last audited 08-05-26 by Kilo
 # API Reference
 
 Complete reference for the TaskContext API and interaction patterns.
@@ -63,14 +64,14 @@ api.nativeclick("button.submit").await?;
 ## Mouse Interactions
 
 ```rust
-api.click(selector: &str) -> Result<()>
-api.nativeclick(selector: &str) -> Result<()>
-api.click_and_wait(click_selector: &str, wait_selector: &str) -> Result<()>
-api.double_click(selector: &str) -> Result<()>
-api.middle_click(selector: &str) -> Result<()>
-api.right_click(selector: &str) -> Result<()>
-api.drag(from: &str, to: &str) -> Result<()>
-api.hover(selector: &str) -> Result<()>
+api.click(selector: &str) -> Result<ClickOutcome>
+api.nativeclick(selector: &str) -> Result<ClickOutcome>
+api.click_and_wait(click_selector: &str, wait_selector: &str) -> Result<ClickOutcome>
+api.double_click(selector: &str) -> Result<ClickOutcome>
+api.middle_click(selector: &str) -> Result<ClickOutcome>
+api.right_click(selector: &str) -> Result<ClickOutcome>
+api.drag(from: &str, to: &str) -> Result<ClickOutcome>
+api.hover(selector: &str) -> Result<ClickOutcome>
 ```
 
 ## Native Cursor
@@ -140,7 +141,7 @@ Native clicks log in format:
 clicked (<selector>) at x,y
 ```
 
-## v0.0.3 API Reference
+## v0.1.1 API Reference
 
 26 new APIs with permission-based security. All APIs require explicit `TaskPolicy` permissions - see [Task Policy Documentation](TASK_POLICY_IMPLEMENTED.md).
 

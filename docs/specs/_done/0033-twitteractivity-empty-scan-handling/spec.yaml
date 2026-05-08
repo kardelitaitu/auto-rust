@@ -10,10 +10,10 @@ files:
   code:
     - src/task/twitteractivity.rs
   docs:
-    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/README.md
-    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/plan.md
-    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/validation.md
-    - docs/specs/_active/0033-twitteractivity-empty-scan-handling/notes.md
+    - docs/specs/_done/0033-twitteractivity-empty-scan-handling/README.md
+    - docs/specs/_done/0033-twitteractivity-empty-scan-handling/plan.md
+    - docs/specs/_done/0033-twitteractivity-empty-scan-handling/validation.md
+    - docs/specs/_done/0033-twitteractivity-empty-scan-handling/notes.md
 acceptance:
   - Consecutive empty scan counter added (consecutive_empty_scans)
   - Reset counter when candidates found

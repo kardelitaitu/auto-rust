@@ -1,5 +1,7 @@
 # Architecture Decision Log (ADL)
 
+last audited 08-05-26 by Kilo
+
 > **Purpose:** Record significant technical decisions and their rationale  
 > **Format:** ADR (Architecture Decision Record) inspired by [adr.github.io](https://adr.github.io/)
 

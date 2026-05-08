@@ -1,11 +1,12 @@
 # TwitterActivity Empty Scan Early Exit
 
-Status: `approved`
+Status: `done`
+
 Owner: `spec-agent`
 
 ## Dependency:
 
-Implement after `0031-twitteractivity-content-load-delay`. This package assumes the revised loop order already exists so empty-scan handling sits on the updated cadence.
+Implement after `0031-twitteractivity-content-load-delay`. This package assumes the revised loop order, post-scroll pause, and scroll-error handling already exist.
 
 ## Summary:
 
@@ -13,7 +14,7 @@ If `identify_engagement_candidates()` returns empty repeatedly, the loop waits `
 
 ## Problem:
 
-In `src/task/twitteractivity.rs` lines 169-215:
+In `src/task/twitteractivity.rs` lines 169-245:
 
 ```rust
 // Identify candidate tweets
@@ -66,7 +67,12 @@ next_candidate_scan = Instant::now() + candidate_scan_interval;
 
 if !candidates.is_empty() {
     consecutive_empty_scans = 0;  // Reset on success
-    // Process candidates...
+    
+    let to_consider = candidates
+        .iter()
+        .take(task_config.candidate_count as usize)
+        .collect::<Vec<_>>();
+    // ... process candidates
 } else {
     consecutive_empty_scans += 1;
     log::warn!(
@@ -88,13 +94,13 @@ if !candidates.is_empty() {
 
 ## Acceptance Criteria:
 
-- [ ] `consecutive_empty_scans` counter added (initialized to 0)
-- [ ] On non-empty scan: reset counter to 0
-- [ ] On empty scan: increment counter, log warning with attempt number
-- [ ] After 3+ consecutive empty scans: log error and `break`
-- [ ] `./check.ps1` passes
-- [ ] `cargo clippy` passes with no warnings
+- [x] `consecutive_empty_scans` counter added (initialized to 0)
+- [x] On non-empty scan: reset counter to 0
+- [x] On empty scan: increment counter, log warning with attempt number
+- [x] After 3+ consecutive empty scans: log error and `break`
+- [x] `./check.ps1` passes
+- [x] `cargo clippy` passes with no warnings
 
 ## Status:
 
-**Approved** - Ready for implementation
+**Done** - Implemented by other agent

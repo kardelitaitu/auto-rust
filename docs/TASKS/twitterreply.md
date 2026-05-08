@@ -1,5 +1,7 @@
 # Twitter Reply Task
 
+last audited 08-05-26 by Kilo
+
 Extract tweet context and compose human-like replies with optional LLM integration.
 
 ## Quick Start

@@ -10,10 +10,10 @@ files:
   code:
     - src/task/twitteractivity.rs
   docs:
-    - docs/specs/_active/0032-twitteractivity-scroll-error-handling/README.md
-    - docs/specs/_active/0032-twitteractivity-scroll-error-handling/plan.md
-    - docs/specs/_active/0032-twitteractivity-scroll-error-handling/validation.md
-    - docs/specs/_active/0032-twitteractivity-scroll-error-handling/notes.md
+    - docs/specs/_done/0032-twitteractivity-scroll-error-handling/README.md
+    - docs/specs/_done/0032-twitteractivity-scroll-error-handling/plan.md
+    - docs/specs/_done/0032-twitteractivity-scroll-error-handling/validation.md
+    - docs/specs/_done/0032-twitteractivity-scroll-error-handling/notes.md
 acceptance:
   - Consecutive scroll failure counter added (consecutive_scroll_failures)
   - Log warning on scroll failure with attempt count

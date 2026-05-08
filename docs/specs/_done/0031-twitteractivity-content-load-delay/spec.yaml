@@ -10,10 +10,10 @@ files:
   code:
     - src/task/twitteractivity.rs
   docs:
-    - docs/specs/_active/0031-twitteractivity-content-load-delay/README.md
-    - docs/specs/_active/0031-twitteractivity-content-load-delay/plan.md
-    - docs/specs/_active/0031-twitteractivity-content-load-delay/validation.md
-    - docs/specs/_active/0031-twitteractivity-content-load-delay/notes.md
+    - docs/specs/_done/0031-twitteractivity-content-load-delay/README.md
+    - docs/specs/_done/0031-twitteractivity-content-load-delay/plan.md
+    - docs/specs/_done/0031-twitteractivity-content-load-delay/validation.md
+    - docs/specs/_done/0031-twitteractivity-content-load-delay/notes.md
 acceptance:
   - api.pause(scroll_pause_ms) added after scroll_read() in run_inner()
   - Content load delay uses profile.scroll.pause_ms value

@@ -1,3 +1,4 @@
+last audited 08-05-26 by Kilo
 # Pre-flight Validation Guide
 
 The validation module provides comprehensive static analysis for task definitions, catching errors before execution begins.
@@ -280,16 +281,7 @@ pub async fn execute_with_validation(
 
 ### CLI Integration
 
-```bash
-# Validate all tasks
-cargo run -- --validate-tasks
-
-# Validate specific task
-cargo run -- --validate my_task
-
-# Dry run (validation + simulation)
-cargo run -- --dry-run my_task
-```
+No CLI validation flags are currently implemented. Validate tasks programmatically via `validate_task()` or `TaskValidator`.
 
 ## Error Examples
 
@@ -421,5 +413,5 @@ impl ValidationReport {
 ## See Also
 
 - [DSL Task Syntax](API_REFERENCE.md#dsl-task-syntax)
-- [Task Composition](README.md#task-composition-call-action)
+- [Task Composition](../README.md#task-composition-call-action)
 - [Testing Guide](TEST_SUMMARY.md)

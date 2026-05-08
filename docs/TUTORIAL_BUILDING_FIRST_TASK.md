@@ -1,12 +1,14 @@
 # Tutorial: Building Your First Task
 
+last audited 08-05-26 by Kilo
+
 A comprehensive video tutorial script for creating custom automation tasks.
 
 ## Video Metadata
 - **Duration**: 20-25 minutes
 - **Target Audience**: Developers ready to extend Auto-Rust
 - **Prerequisites**: Completed "Getting Started" tutorial, basic Rust async knowledge
-- **Outcome**: User creates and runs a custom data extraction task
+- **Outcome**: User creates and runs a custom data extraction task.
 
 ---
 
@@ -38,13 +40,13 @@ A comprehensive video tutorial script for creating custom automation tasks.
 
 ### The Task Function Signature
 ```rust
-use crate::runtime::task_context::TaskContext;
+use crate::prelude::TaskContext;
 use anyhow::Result;
 use serde_json::Value;
 
-pub async fn my_task(
-    ctx: &TaskContext,
-    payload: Value
+pub async fn run(
+    api: &TaskContext,
+    payload: Value,
 ) -> Result<()> {
     // Task implementation
     Ok(())
@@ -52,33 +54,34 @@ pub async fn my_task(
 ```
 
 ### Key Components
-1. **TaskContext**: Provides browser automation APIs
+1. **TaskContext**: Provides browser automation APIs (parameter named `api`)
 2. **Payload**: JSON configuration from CLI
 3. **Result**: Success or typed error for failure
 
 ### Task File Location
 ```
 src/task/
-├── mod.rs           # Task registration
+├── mod.rs           # Task registration and module declarations
 ├── cookiebot.rs     # Example task
 └── price_tracker.rs # Our new task ← here
 ```
 
 ### Task Registration
+Tasks are registered in `src/task/mod.rs` via the `TASK_NAMES` array and handled in `perform_task()`:
+
 ```rust
 // In src/task/mod.rs
-mod price_tracker;
+// 1. Declare the module
+pub mod price_tracker;
 
-pub async fn run_task(
-    task_name: &str,
-    ctx: &TaskContext,
-    payload: Value
-) -> Result<TaskResult> {
-    match task_name {
-        "price_tracker" => price_tracker::run(ctx, payload).await,
-        // ... other tasks
-    }
-}
+// 2. Add to TASK_NAMES array
+pub const TASK_NAMES: &[&str] = &[
+    // ... other tasks
+    "price_tracker",
+];
+
+// 3. Implementation is handled by perform_task() which calls:
+// price_tracker::run(api, payload).await
 ```
 
 ---
@@ -98,11 +101,10 @@ touch src/task/price_tracker.rs
 //! Extracts product information from e-commerce sites and tracks
 //! price changes across multiple runs.
 
-use crate::runtime::task_context::TaskContext;
+use crate::prelude::TaskContext;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 
 /// Product data structure
 #[derive(Debug, Serialize, Deserialize)]
@@ -127,12 +129,12 @@ struct ExtractionResult {
 /// Run the price tracking task.
 ///
 /// # Arguments
-/// * `ctx` - Task context for browser automation
+/// * `api` - Task context for browser automation
 /// * `payload` - Configuration with target URL and selectors
 ///
 /// # Returns
 /// Ok(()) on successful extraction
-pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
+pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     // Extract configuration from payload
     let url = payload
         .get("url")
@@ -141,15 +143,16 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
 
     println!("Starting price tracker for: {}", url);
 
-    // Navigate to target page
-    ctx.navigate(url).await?;
-    ctx.wait_for_visible(".product-list").await?;
+    // Navigate to target page (requires timeout_ms parameter)
+    api.navigate(url, 30_000).await?;
+    // Wait for element to appear (uses wait_for with selector + timeout)
+    api.wait_for(".product-list", 5_000).await?;
 
     // Extract product data
-    let products = extract_products(ctx).await?;
+    let products = extract_products(api).await?;
 
     // Save results
-    save_results(ctx, &products, url).await?;
+    save_results(api, &products, url).await?;
 
     println!("Extracted {} products", products.len());
     Ok(())
@@ -176,11 +179,11 @@ pub async fn run(ctx: &TaskContext, payload: Value) -> Result<()> {
 ### Extraction Implementation
 ```rust
 /// Extract all products from the current page.
-async fn extract_products(ctx: &TaskContext) -> Result<Vec<Product>> {
+async fn extract_products(api: &TaskContext) -> Result<Vec<Product>> {
     let mut products = Vec::new();
 
     // Count total products
-    let count = ctx.count_elements(".product-card").await?;
+    let count = api.count_elements(".product-card").await?;
     println!("Found {} products on page", count);
 
     // Extract each product
@@ -188,21 +191,21 @@ async fn extract_products(ctx: &TaskContext) -> Result<Vec<Product>> {
         let selector = format!(".product-card:nth-child({})", i + 1);
 
         // Ensure element is visible
-        if !ctx.is_in_viewport(&selector).await? {
-            ctx.scroll_to(&selector).await?;
-            ctx.pause(300).await;
+        if !api.is_in_viewport(&selector).await? {
+            api.scroll_to(&selector).await?;
+            api.pause(300).await;
         }
 
         // Extract product data
-        let name = ctx
+        let name = api
             .text(&format!("{} .product-name", selector))
             .await?;
 
-        let price = ctx
+        let price = api
             .text(&format!("{} .product-price", selector))
             .await?;
 
-        let url = ctx
+        let url = api
             .attr(&format!("{} .product-link", selector), "href")
             .await?;
 
@@ -220,7 +223,7 @@ async fn extract_products(ctx: &TaskContext) -> Result<Vec<Product>> {
 ### Error Handling Pattern
 ```rust
 // Handle missing elements gracefully
-let price = match ctx.text(&format!("{} .product-price", selector)).await {
+let price = match api.text(&format!("{} .product-price", selector)).await {
     Ok(p) => p,
     Err(_) => {
         println!("Warning: Could not extract price for item {}", i);
@@ -240,7 +243,7 @@ let price = match ctx.text(&format!("{} .product-price", selector)).await {
 ```rust
 /// Save extraction results to data file.
 async fn save_results(
-    ctx: &TaskContext,
+    api: &TaskContext,
     products: &[Product],
     source_url: &str,
 ) -> Result<()> {
@@ -253,12 +256,13 @@ async fn save_results(
 
     // Generate filename with timestamp
     let filename = format!(
-        "results/price_tracker_{}.json",
+        "price_tracker_{}.json",
         chrono::Utc::now().format("%Y%m%d_%H%M%S")
     );
 
-    // Write to data directory
-    ctx.write_json_data(&filename, &result).await?;
+    // Write to data directory using write_data_file
+    let json = serde_json::to_string_pretty(&result)?;
+    api.write_data_file(&filename, json.as_bytes()).await?;
     println!("Results saved to: {}", filename);
 
     Ok(())
@@ -268,19 +272,20 @@ async fn save_results(
 ### Loading Previous Results
 ```rust
 /// Load previous extraction results if available.
-async fn load_previous_results(ctx: &TaskContext) -> Result<Option<ExtractionResult>> {
-    // List all result files
-    let files = ctx.list_data_files(Some("results")).await?;
+fn load_previous_results() -> Result<Option<ExtractionResult>> {
+    // List all result files from data directory
+    let entries = std::fs::read_dir("data")?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            name.starts_with("price_tracker_") && name.ends_with(".json")
+        })
+        .collect::<Vec<_>>();
 
-    // Find most recent price tracker file
-    let latest = files
-        .iter()
-        .filter(|f| f.starts_with("price_tracker_"))
-        .max();
-
-    if let Some(filename) = latest {
-        let path = format!("results/{}", filename);
-        let result: ExtractionResult = ctx.read_json_data(&path).await?;
+    if let Some(entry) = entries.last() {
+        let path = entry.path();
+        let content = std::fs::read_to_string(path)?;
+        let result: ExtractionResult = serde_json::from_str(&content)?;
         return Ok(Some(result));
     }
 
@@ -329,13 +334,13 @@ fn detect_changes(
 ### Pagination Detection
 ```rust
 /// Check if there's a next page and navigate to it.
-async fn has_next_page(ctx: &TaskContext) -> Result<bool> {
+async fn has_next_page(api: &TaskContext) -> Result<bool> {
     // Check for next page button/link
-    let has_next = ctx.exists(".pagination .next-page").await?;
+    let has_next = api.exists(".pagination .next-page").await?;
 
     if has_next {
         // Check if it's disabled (last page)
-        let disabled = ctx
+        let disabled = api
             .attr(".pagination .next-page", "disabled")
             .await
             .is_ok();
@@ -350,7 +355,7 @@ async fn has_next_page(ctx: &TaskContext) -> Result<bool> {
 ### Pagination Loop
 ```rust
 /// Extract products from all pages.
-async fn extract_all_pages(ctx: &TaskContext) -> Result<Vec<Product>> {
+async fn extract_all_pages(api: &TaskContext) -> Result<Vec<Product>> {
     let mut all_products = Vec::new();
     let mut page_count = 0;
 
@@ -358,18 +363,18 @@ async fn extract_all_pages(ctx: &TaskContext) -> Result<Vec<Product>> {
         println!("Processing page {}", page_count + 1);
 
         // Extract from current page
-        let products = extract_products(ctx).await?;
+        let products = extract_products(api).await?;
         all_products.extend(products);
 
         // Check for next page
-        if !has_next_page(ctx).await? {
+        if !has_next_page(api).await? {
             break;
         }
 
         // Navigate to next page
-        ctx.click(".pagination .next-page").await?;
-        ctx.wait_for_visible(".product-list").await?;
-        ctx.pause(1000).await; // Let page settle
+        api.click(".pagination .next-page").await?;
+        api.wait_for(".product-list", 5_000).await?;
+        api.pause(1000).await; // Let page settle
 
         page_count += 1;
 
@@ -440,10 +445,10 @@ mod tests {
 cargo run price_tracker url=https://example-shop.com/products
 
 # Check output
-ls data/results/price_tracker_*.json
+ls data/price_tracker_*.json
 
 # View results
-cat data/results/price_tracker_20240115_103000.json
+cat data/price_tracker_*.json
 ```
 
 ---
@@ -496,28 +501,26 @@ cargo run price_tracker '
 ```rust
 /// Extract with automatic retry on failure.
 async fn extract_with_retry(
-    ctx: &TaskContext,
+    api: &TaskContext,
     max_attempts: u32,
 ) -> Result<Vec<Product>> {
     let mut last_error = None;
 
     for attempt in 1..=max_attempts {
-        match extract_all_pages(ctx).await {
+        match extract_all_pages(api).await {
             Ok(products) => return Ok(products),
             Err(e) => {
                 println!("Attempt {} failed: {}", attempt, e);
                 last_error = Some(e);
 
                 if attempt < max_attempts {
-                    ctx.pause(2000 * attempt as u64).await;
+                    api.pause(2000 * attempt as u64).await;
                 }
             }
         }
     }
 
-    Err(last_error.unwrap_or_else(||
-        anyhow::anyhow!("All retry attempts failed")
-    ))
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All retry attempts failed")))
 }
 ```
 
@@ -535,7 +538,7 @@ async fn extract_with_retry(
 ✅ Unit and integration tests
 
 ### Key Takeaways
-1. **Task Pattern**: Context + Payload → Result
+1. **Task Pattern**: `api: &TaskContext` + `payload: Value` → `Result<()>`
 2. **Error Handling**: Graceful degradation over hard failures
 3. **Testing**: Unit test logic, integration test browser interaction
 4. **Configuration**: JSON payload for flexible task behavior

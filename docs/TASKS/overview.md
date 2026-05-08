@@ -1,3 +1,4 @@
+last audited 08-05-26 by Kilo
 # Task Overview
 
 Tasks are the automation units in the Rust Orchestrator. Each task is a Rust async function that runs browser automation actions through a `TaskContext`.
@@ -23,20 +24,20 @@ cargo run cookiebot pageview=reddit.com then cookiebot
 | Task | Description | Doc |
 |------|-------------|-----|
 | `cookiebot` | Cookie/consent dialog management | [cookiebot.md](cookiebot.md) |
-| `demo-keyboard` | Keyboard interaction demo | - |
-| `demo-mouse` | Mouse movement demo | - |
+| `demo-keyboard` | Keyboard interaction demo | text only |
+| `demo-mouse` | Mouse movement demo | text only |
 | `demoqa` | Demo text box automation | [demoqa.md](demoqa.md) |
 | `pageview` | Human-like page browsing | [pageview.md](pageview.md) |
-| `task-example` | Example task template | - |
+| `task-example` | Example task template | text only |
 | `twitteractivity` | Full Twitter/X engagement with smart decisions | [twitteractivity.md](twitteractivity.md) |
-| `twitterdive` | Thread diving and reading | - |
+| `twitterdive` | Thread diving and reading | text only |
 | `twitterfollow` | Profile following | [twitterfollow.md](twitterfollow.md) |
-| `twitterintent` | Intent-based actions (like, follow) | - |
-| `twitterlike` | Like specific tweets | - |
-| `twitterquote` | Quote tweets with LLM | - |
+| `twitterintent` | Intent-based actions (like, follow) | text only |
+| `twitterlike` | Like specific tweets | text only |
+| `twitterquote` | Quote tweets with LLM | text only |
 | `twitterreply` | Tweet replies with LLM | [twitterreply.md](twitterreply.md) |
-| `twitterretweet` | Retweet specific tweets | - |
-| `twittertest` | Twitter automation smoke tests | - |
+| `twitterretweet` | Retweet specific tweets | text only |
+| `twittertest` | Twitter automation smoke tests | text only |
 
 ## Task Syntax
 
@@ -48,6 +49,8 @@ taskname.js                   # .js extension auto-stripped
 ```
 
 Parameters are passed as `serde_json::Value` to the task's `run()` function.
+
+Entries marked `text only` do not have a dedicated task doc page yet.
 
 ## Creating New Tasks
 

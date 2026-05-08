@@ -1,5 +1,7 @@
 # Twitter Activity — Configuration & Profile
 
+> *Last audited: 08-05-26 by Kilo*
+
 This document covers all configuration-related aspects of the Twitter activity task:
 - Config schema extensions (`[twitter]` section in `config/default.toml`)
 - Environment variable overrides
@@ -394,4 +396,4 @@ V1 will use **mostly mouse actions**; keyboard-only for search (if implemented).
 
 ---
 
-*This document is part of the Twitter Activity task planning suite. See [README.md](README.md) for navigation.
+*This document is part of the Twitter Activity task planning suite. See [README.md](README.md) for navigation.*

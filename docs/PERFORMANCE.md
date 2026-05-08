@@ -1,6 +1,8 @@
 # Performance Baseline and Benchmarks
 
-This document tracks performance baselines for critical hot paths in the auto-rust codebase. Use benchmarks to detect regressions and validate optimizations.
+last audited 08-05-26 by Kilo
+
+This document tracks performance baselines for critical hot paths in the auto-rust codebase.
 
 ## Running Benchmarks
 

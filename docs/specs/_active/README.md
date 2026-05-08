@@ -13,4 +13,4 @@ Implement these loop changes in this order:
 
 ## New Active Specs
 
-No regression specs are currently active.
+No active specs are currently open.

@@ -104,6 +104,7 @@ pub async fn perform_task(
                 last_error: Some(error_msg),
                 error_kind: Some(error_kind),
                 duration_ms: start.elapsed().as_millis() as u64,
+                metadata: None,
             })
         }
     }

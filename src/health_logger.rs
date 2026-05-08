@@ -272,6 +272,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: None,
+            metadata: None,
         });
 
         let logger = HealthLogger::new(config, metrics.clone());

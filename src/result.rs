@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Represents the outcome status of a task execution.
 /// Used to categorize whether a task completed successfully, failed, or timed out.
@@ -31,6 +32,9 @@ pub struct TaskResult {
     pub error_kind: Option<TaskErrorKind>,
     /// Total execution time in milliseconds
     pub duration_ms: u64,
+    /// Optional task-specific metadata
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<BTreeMap<String, String>>,
 }
 
 impl TaskResult {
@@ -50,6 +54,7 @@ impl TaskResult {
             last_error: None,
             error_kind: None,
             duration_ms,
+            metadata: None,
         }
     }
 
@@ -67,6 +72,7 @@ impl TaskResult {
             last_error: Some(error),
             error_kind: Some(error_kind),
             duration_ms,
+            metadata: None,
         }
     }
 
@@ -78,6 +84,7 @@ impl TaskResult {
             last_error: Some(error),
             error_kind: Some(error_kind),
             duration_ms,
+            metadata: None,
         }
     }
 
@@ -922,6 +929,7 @@ mod tests {
             last_error: Some("test error".to_string()),
             error_kind: Some(TaskErrorKind::Browser),
             duration_ms: 1000,
+            metadata: None,
         };
         assert_eq!(result.attempt, 5);
         assert_eq!(result.max_retries, 10);

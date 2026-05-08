@@ -127,6 +127,7 @@ mod metrics_tests {
             attempt: 1,
             error_kind: None,
             last_error: None,
+            metadata: None,
         });
 
         assert_eq!(mc.success_rate(), 100.0);

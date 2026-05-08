@@ -12,7 +12,7 @@ use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -90,6 +90,8 @@ pub struct TaskMetrics {
     pub error_kind: Option<TaskErrorKind>,
     /// Error message for failed outcomes
     pub last_error: Option<String>,
+    /// Optional task-specific metadata
+    pub metadata: Option<BTreeMap<String, String>>,
 }
 
 /// Memory usage snapshot for monitoring
@@ -315,6 +317,7 @@ impl MetricsCollector {
             attempt: result.attempt,
             error_kind: result.error_kind,
             last_error: result.last_error.clone(),
+            metadata: result.metadata.clone(),
         });
     }
 
@@ -587,6 +590,9 @@ pub struct RunSummary {
     pub task_breakdown: FxHashMap<String, OutcomeBreakdown>,
     /// Outcome counts grouped by session id (converted from Arc<String>)
     pub session_breakdown: FxHashMap<String, OutcomeBreakdown>,
+    /// Optional task-specific metadata records
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub task_metadata: Vec<TaskMetadataRecord>,
     /// Structured counters emitted from twitteractivity task execution
     pub twitteractivity_counters: TwitterActivityRunCounters,
     /// Structured counters emitted from task-api click learning
@@ -595,6 +601,15 @@ pub struct RunSummary {
     pub native_input_lock_metrics: NativeInputLockRunMetrics,
     /// Phase 4: Planned vs executed fan-out metrics
     pub fan_out_metrics: FanOutMetrics,
+}
+
+/// Task metadata entry exported into run-summary.json.
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskMetadataRecord {
+    pub task_name: String,
+    pub session_id: String,
+    pub attempt: u32,
+    pub metadata: BTreeMap<String, String>,
 }
 
 /// Metrics tracking planned vs actual parallel execution (fan-out).
@@ -693,6 +708,20 @@ impl MetricsCollector {
             max_hold_ms: native_lock.max_hold_ms,
             avg_hold_ms: native_lock.avg_hold_ms,
         };
+        let task_metadata = {
+            let history = self.task_history.read();
+            history
+                .iter()
+                .filter_map(|task| {
+                    task.metadata.as_ref().map(|metadata| TaskMetadataRecord {
+                        task_name: task.task_name.as_ref().clone(),
+                        session_id: task.session_id.as_ref().clone(),
+                        attempt: task.attempt,
+                        metadata: metadata.clone(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
 
         // Calculate fan-out efficiency
         let fan_out_efficiency = if planned_executions > 0 {
@@ -724,6 +753,7 @@ impl MetricsCollector {
             failure_breakdown: stats.failure_breakdown,
             task_breakdown: stats.task_breakdown,
             session_breakdown: stats.session_breakdown,
+            task_metadata,
             twitteractivity_counters,
             click_learning_counters,
             native_input_lock_metrics,
@@ -786,6 +816,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: None,
+            metadata: None,
         });
         let stats = collector.get_stats();
         assert_eq!(stats.succeeded, 1);
@@ -804,6 +835,7 @@ mod tests {
             attempt: 1,
             error_kind: Some(TaskErrorKind::Browser),
             last_error: Some("error".to_string()),
+            metadata: None,
         });
         let stats = collector.get_stats();
         assert_eq!(stats.failed, 1);
@@ -821,6 +853,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: None,
+            metadata: None,
         });
         let stats = collector.get_stats();
         assert_eq!(stats.timed_out, 1);
@@ -838,6 +871,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: Some("cancelled".to_string()),
+            metadata: None,
         });
         let stats = collector.get_stats();
         assert_eq!(stats.cancelled, 1);
@@ -855,6 +889,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: None,
+            metadata: None,
         });
         collector.task_started();
         collector.task_completed(TaskMetrics {
@@ -865,6 +900,7 @@ mod tests {
             attempt: 1,
             error_kind: Some(TaskErrorKind::Browser),
             last_error: Some("e".to_string()),
+            metadata: None,
         });
         let rate = collector.success_rate();
         assert!((rate - 50.0).abs() < 0.01);
@@ -898,6 +934,7 @@ mod tests {
             attempt: 1,
             error_kind: Some(TaskErrorKind::Timeout),
             last_error: Some("timeout".to_string()),
+            metadata: None,
         });
         collector.task_started();
         collector.task_completed(TaskMetrics {
@@ -908,6 +945,7 @@ mod tests {
             attempt: 1,
             error_kind: Some(TaskErrorKind::Timeout),
             last_error: Some("timeout".to_string()),
+            metadata: None,
         });
         let stats = collector.get_stats();
         assert_eq!(stats.failure_breakdown.get("Timeout"), Some(&2));
@@ -926,6 +964,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: None,
+            metadata: None,
         });
 
         collector.task_started();
@@ -937,6 +976,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: Some("timeout".to_string()),
+            metadata: None,
         });
 
         collector.task_started();
@@ -948,6 +988,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: Some("cancelled".to_string()),
+            metadata: None,
         });
 
         collector.task_started();
@@ -959,6 +1000,7 @@ mod tests {
             attempt: 1,
             error_kind: Some(TaskErrorKind::Browser),
             last_error: Some("browser".to_string()),
+            metadata: None,
         });
 
         let stats = collector.get_stats();
@@ -987,6 +1029,7 @@ mod tests {
             attempt: 1,
             error_kind: None,
             last_error: None,
+            metadata: None,
         });
 
         let unique = format!(
@@ -1035,6 +1078,55 @@ mod tests {
                 .unwrap()
                 >= 1
         );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_export_summary_includes_task_metadata() {
+        let collector = MetricsCollector::new(100);
+        collector.task_started();
+
+        let mut metadata = BTreeMap::new();
+        metadata.insert("source".to_string(), "manual".to_string());
+        metadata.insert("run_id".to_string(), "abc123".to_string());
+
+        collector.task_completed(TaskMetrics {
+            task_name: Arc::new("pageview".to_string()),
+            status: TaskStatus::Success,
+            duration_ms: 20,
+            session_id: Arc::new("brave-1".to_string()),
+            attempt: 2,
+            error_kind: None,
+            last_error: None,
+            metadata: Some(metadata),
+        });
+
+        let unique = format!(
+            "run-summary-metadata-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+
+        collector
+            .export_summary_to(&path, 3, 2, 5, 5, 10, 10)
+            .expect("export summary");
+
+        let json = std::fs::read_to_string(&path).expect("read summary");
+        let summary: serde_json::Value = serde_json::from_str(&json).expect("parse summary");
+        let task_metadata = summary["task_metadata"]
+            .as_array()
+            .expect("task metadata array");
+        assert_eq!(task_metadata.len(), 1);
+        assert_eq!(task_metadata[0]["task_name"], "pageview");
+        assert_eq!(task_metadata[0]["session_id"], "brave-1");
+        assert_eq!(task_metadata[0]["attempt"], 2);
+        assert_eq!(task_metadata[0]["metadata"]["source"], "manual");
+        assert_eq!(task_metadata[0]["metadata"]["run_id"], "abc123");
 
         let _ = std::fs::remove_file(&path);
     }
@@ -1208,6 +1300,7 @@ mod tests {
                             None
                         },
                         last_error: None,
+                        metadata: None,
                     });
 
                     collector.increment_run_counter("stress_test_counter", 1);

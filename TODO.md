@@ -227,9 +227,9 @@
   - **Effort:** 1 day
 
 - [ ] **Local performance tooling:** - (90% confidence)
-  - [ ] `cargo nextest list --verbose` for test inventory
-  - [ ] `cargo nextest run --profile ci --status-level slow` for slow-test review
-  - [ ] Custom script to generate slow-test report
+  - [x] `cargo nextest list --verbose` for test inventory
+  - [x] `cargo nextest run --profile ci --status-level slow` for slow-test review
+  - [x] Custom script to generate slow-test report (`performance.ps1`)
   - **Effort:** 0.5 day
 
 ### Target Outcomes

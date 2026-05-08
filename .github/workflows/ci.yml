@@ -82,5 +82,12 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install --locked cargo-llvm-cov
 
-      - name: Run coverage gate without report
-        run: cargo llvm-cov --workspace --all-features --no-report --fail-under-lines 40
+      - name: Run coverage gate and write summary
+        run: cargo llvm-cov --workspace --all-features --json --output-path target/reports/coverage/coverage.json --fail-under-lines 40
+
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: target/reports/coverage/coverage.json

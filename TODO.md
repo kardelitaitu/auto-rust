@@ -163,9 +163,9 @@
 - [x] **src/utils/accessibility_locator.rs** - 95%+ coverage ✅
 
 ### Coverage Measurement Improvements
-- [ ] Add coverage gate to CI (fail if < 40% on new code) **(Confidence: 90%)**
-- [ ] Consider `cargo-llvm-cov` for integration test coverage **(Confidence: 70%)**
-- [ ] Track coverage trends over time **(Confidence: 85%)**
+- [x] Add coverage gate to CI (fail if < 40% on new code) **(Confidence: 90%)** - DONE (2026-05-08) in `.github/workflows/ci.yml` via `cargo llvm-cov --workspace --all-features --no-report --fail-under-lines 40`
+- [x] Consider `cargo-llvm-cov` for integration test coverage **(Confidence: 70%)** - DONE (2026-05-08) in `.github/workflows/ci.yml`
+- [x] Track coverage trends over time **(Confidence: 85%)** - DONE (2026-05-08) by publishing `coverage.json` from CI
 
 ### Target Outcomes
 | Metric | Current | Target |
@@ -184,9 +184,9 @@
 > **Current state:** `.config/nextest.toml` only has `[profile.ci] fail-fast = true` (verified 2026-05-08)
 
 ### Profile Slow Tests **(Confidence: 85%)**
-- [ ] **Run cargo-nextest with --partition-time** - (95% confidence)
-  - Command: `cargo nextest run --all-features --partition-time=4`
-  - Identify the top 20 slowest tests
+- [ ] **Profile slow tests with a temporary low `slow-timeout`** - (95% confidence)
+  - Command: set a temporary `slow-timeout` override, then run `cargo nextest run --all-features --profile ci --status-level slow --final-status-level slow`
+  - Identify the top 20 slowest tests from `SLOW` output
   - Analyze why they're slow (sleep, retry, timeout)
   - Create optimization plan
   - **Effort:** 0.5 day
@@ -229,7 +229,7 @@
 
 - [ ] **Local performance tooling:** - (90% confidence)
   - [ ] `cargo nextest list --verbose` for test inventory
-  - [ ] `cargo nextest run --partition-time` for profiling
+  - [ ] `cargo nextest run --profile ci --status-level slow` for slow-test review
   - [ ] Custom script to generate slow-test report
   - **Effort:** 0.5 day
 

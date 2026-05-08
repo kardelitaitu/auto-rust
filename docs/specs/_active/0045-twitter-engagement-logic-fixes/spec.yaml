@@ -1,0 +1,27 @@
+version: 1
+id: 0045-twitter-engagement-logic-fixes
+title: Twitter Engagement Logic Fixes
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P1
+area:
+  - twitter-activity
+files:
+  code:
+    - src/utils/twitter/twitteractivity_engagement.rs
+  docs:
+    - docs/specs/_active/0045-twitter-engagement-logic-fixes/README.md
+    - docs/specs/_active/0045-twitter-engagement-logic-fixes/plan.md
+    - docs/specs/_active/0045-twitter-engagement-logic-fixes/validation.md
+    - docs/specs/_active/0045-twitter-engagement-logic-fixes/notes.md
+acceptance:
+  - `engage_replies` does not perform real clicks when `dry_run_actions` is true.
+  - `process_candidate` executes all selected actions (e.g., Like + Reply) instead of just one.
+  - The thread dive is performed only once per tweet, even if multiple actions require it.
+  - All existing unit tests pass.
+non_goals:
+  - Adding new action types.
+  - Altering the mathematical behavior of the persona probabilities.
+risks:
+  - Executing multiple actions on a single tweet may trigger Twitter rate limits faster if pauses between actions are insufficient.

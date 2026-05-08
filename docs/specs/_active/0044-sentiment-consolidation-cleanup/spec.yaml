@@ -1,0 +1,37 @@
+version: 1
+id: 0044-sentiment-consolidation-cleanup
+title: Sentiment Consolidation Cleanup
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - twitter-activity
+files:
+  code:
+    - src/utils/twitter/mod.rs
+    - src/utils/twitter/sentiment/analyzer.rs
+    - src/utils/twitter/sentiment/strategies/
+    - src/utils/twitter/twitteractivity_sentiment.rs
+    - src/utils/twitter/twitteractivity_sentiment_context.rs
+    - src/utils/twitter/twitteractivity_sentiment_domains.rs
+    - src/utils/twitter/twitteractivity_sentiment_emoji.rs
+    - src/utils/twitter/twitteractivity_sentiment_enhanced.rs
+    - src/utils/twitter/twitteractivity_sentiment_llm.rs
+  docs:
+    - docs/specs/_active/0044-sentiment-consolidation-cleanup/README.md
+    - docs/specs/_active/0044-sentiment-consolidation-cleanup/plan.md
+    - docs/specs/_active/0044-sentiment-consolidation-cleanup/validation.md
+    - docs/specs/_active/0044-sentiment-consolidation-cleanup/notes.md
+acceptance:
+  - All 6 old `twitteractivity_sentiment*.rs` files are deleted.
+  - The logic from the old files is safely housed in `src/utils/twitter/sentiment/strategies/`.
+  - `src/utils/twitter/mod.rs` no longer exports the legacy sentiment files.
+  - `SentimentAnalyzer` works exactly as before.
+  - All existing sentiment-related unit tests continue to pass.
+non_goals:
+  - Changing the actual text analysis rules or keywords.
+  - Changing the LLM API integration logic.
+risks:
+  - Accidentally dropping a test module during the file migrations.
+  - Breaking external modules that somehow still depended on the legacy exports (though engagement.rs appears to use the new analyzer).

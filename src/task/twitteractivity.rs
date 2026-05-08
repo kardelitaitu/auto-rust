@@ -8,7 +8,7 @@
 //! - `twitteractivity_state.rs` - TaskConfig, CandidateContext, CandidateResult
 
 use anyhow::Result;
-use log::info;
+use log::{error, info, warn};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
@@ -129,7 +129,7 @@ async fn run_inner(
     // Phase 2: Feed scanning and engagement
     info!("Phase 2: Scanning feed for {} ms", task_config.duration_ms);
     let mut actions_taken = 0u32;
-    let mut last_remaining;
+    let mut consecutive_scroll_failures = 0u32;
 
     let profile = api.behavior_runtime();
     let scroll_amount = if config.twitter_activity.scroll_amount_pixels > 0 {
@@ -160,9 +160,25 @@ async fn run_inner(
 
         // Scroll to load new content
         if now >= next_scroll {
-            let _ = api
+            match api
                 .scroll_read(1, scroll_amount, smooth, profile.scroll.back_scroll)
-                .await;
+                .await
+            {
+                Ok(()) => {
+                    consecutive_scroll_failures = 0;
+                }
+                Err(err) => {
+                    consecutive_scroll_failures += 1;
+                    warn!(
+                        "[twitter] Scroll failed (attempt {}): {}",
+                        consecutive_scroll_failures, err
+                    );
+                    if consecutive_scroll_failures >= 3 {
+                        error!("[twitter] Too many consecutive scroll failures, stopping task");
+                        break;
+                    }
+                }
+            }
             next_scroll = now + scroll_interval;
             api.pause(scroll_pause_ms).await;
         }

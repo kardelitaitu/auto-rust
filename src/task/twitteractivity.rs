@@ -251,10 +251,16 @@ async fn run_inner(
 
 /// Log final engagement summary.
 fn log_summary(session: &SessionState, task_config: &TaskConfig, _api: &TaskContext) {
+    let (summary_line, remaining_limits_line) = build_summary_lines(session, task_config);
+    info!("{}", summary_line);
+    info!("{}", remaining_limits_line);
+}
+
+fn build_summary_lines(session: &SessionState, task_config: &TaskConfig) -> (String, String) {
     let last_remaining = session.remaining_time();
     let duration_secs =
         (Duration::from_millis(task_config.duration_ms) - last_remaining).as_secs_f64();
-    info!(
+    let summary_line = format!(
         "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
         session.counters.likes,
         session.counters.retweets,
@@ -268,7 +274,7 @@ fn log_summary(session: &SessionState, task_config: &TaskConfig, _api: &TaskCont
     );
 
     let remaining_limits = session.limits.remaining(&session.counters);
-    info!(
+    let remaining_limits_line = format!(
         "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
         remaining_limits.get("likes").unwrap_or(&0),
         remaining_limits.get("retweets").unwrap_or(&0),
@@ -279,6 +285,8 @@ fn log_summary(session: &SessionState, task_config: &TaskConfig, _api: &TaskCont
         remaining_limits.get("quote_tweets").unwrap_or(&0),
         remaining_limits.get("total_actions").unwrap_or(&0)
     );
+
+    (summary_line, remaining_limits_line)
 }
 
 #[cfg(test)]
@@ -334,5 +342,54 @@ mod navigation_tests {
         let url = select_entry_point();
         let valid_urls: Vec<&str> = ENTRY_POINTS.iter().map(|ep| ep.url).collect();
         assert!(valid_urls.contains(&url));
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::{build_summary_lines, TaskConfig};
+    use crate::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use crate::utils::twitter::twitteractivity_state::SessionState;
+
+    #[test]
+    fn log_summary_contains_expected_keys() {
+        let limits = EngagementLimits::with_limits(3, 4, 5, 6, 7, 8, 9, 10);
+        let session = SessionState::new(limits, 60_000, 100);
+        let task_config = TaskConfig {
+            duration_ms: 60_000,
+            ..Default::default()
+        };
+
+        let (summary_line, remaining_limits_line) = build_summary_lines(&session, &task_config);
+
+        for key in [
+            "likes=",
+            "retweets=",
+            "follows=",
+            "replies=",
+            "thread_dives=",
+            "bookmarks=",
+            "quote_tweets=",
+            "total_actions=",
+            "duration=",
+        ] {
+            assert!(summary_line.contains(key), "summary line missing {key}");
+        }
+
+        for key in [
+            "likes=",
+            "retweets=",
+            "follows=",
+            "replies=",
+            "thread_dives=",
+            "bookmarks=",
+            "quote_tweets=",
+            "total_actions=",
+        ] {
+            assert!(
+                remaining_limits_line.contains(key),
+                "remaining limits line missing {key}"
+            );
+        }
     }
 }

@@ -10,3 +10,7 @@ Implement these loop changes in this order:
 3. `0033-twitteractivity-empty-scan-handling`
 
 `0032` and `0033` depend on the loop shape established by `0031`.
+
+## New Active Specs
+
+No regression specs are currently active.

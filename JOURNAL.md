@@ -1,3 +1,47 @@
+## 2026-05-08 - Regression spec cleanup and implementation pass
+
+### Accomplished This Session:
+
+#### Spec Review and Handoff
+- Tightened the active regression specs for:
+  - `docs/specs/_active/0034-orchestrator-hardening`
+  - `docs/specs/_active/0035-browser-regression-coverage`
+  - `docs/specs/_active/0036-predictive-scorer-edge-cases`
+  - `docs/specs/_active/0037-twitteractivity-regression-coverage`
+- Moved the completed packages to `_done` after implementation:
+  - `0036-predictive-scorer-edge-cases`
+  - `0035-browser-regression-coverage`
+  - `0037-twitteractivity-regression-coverage`
+  - `0034-orchestrator-hardening`
+
+#### Code Changes
+- `src/adaptive/predictive_scorer.rs`
+  - Added property coverage for finite, bounded predictions on generated inputs.
+  - Added generated-input coverage for feature extraction and combination.
+  - Added an explicit empty-string regression.
+- `src/session/pool.rs`
+  - Added deterministic `discover_with_filters` tests for empty discovery with and without filters.
+- `src/task/twitteractivity.rs`
+  - Added a pure summary-line helper and a unit test for the summary key contract.
+- `src/orchestrator.rs`
+  - Added deterministic tests for group timeout, shutdown cancellation, and pre-worker-acquisition cancellation.
+  - Kept the existing aggregation count invariant pinned.
+
+#### Verification
+- `cargo test` slices passed for scorer, pool, task, and orchestrator tests.
+- `./check-fast.ps1` passed after each package.
+- `./check.ps1` passed after each package and after the final orchestrator closeout.
+
+### Current Status:
+
+| Item | Status |
+|------|--------|
+| Regression specs completed | ✅ 4/4 |
+| Active regression specs | ✅ None |
+| Repo gate | ✅ Pass |
+
+---
+
 ## 2026-05-08 - Documentation Audit: TwitterActivity Archive Stamps
 
 ### Accomplished This Session:

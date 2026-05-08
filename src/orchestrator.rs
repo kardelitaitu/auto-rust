@@ -865,8 +865,10 @@ mod tests {
         OrchestratorConfig, TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig,
     };
     use crate::result::TaskStatus;
+    use chromiumoxide::Browser;
     use futures::stream::FuturesUnordered;
     use tokio::time::sleep;
+    use tokio_util::sync::CancellationToken;
 
     // ========================================================================
     // Helper Functions
@@ -888,6 +890,27 @@ mod tests {
             twitter_activity: TwitterActivityConfig::default(),
             task_discovery: TaskDiscoveryConfig::default(),
         }
+    }
+
+    async fn connect_test_session() -> anyhow::Result<Option<Session>> {
+        let ws_url = match std::env::var("TASK_API_TEST_WS") {
+            Ok(url) => url,
+            Err(_) => return Ok(None),
+        };
+
+        let (browser, handler) = Browser::connect(&ws_url).await?;
+        let session = Session::new(
+            "orchestrator-test-session".to_string(),
+            "Orchestrator Test Session".to_string(),
+            "brave".to_string(),
+            browser,
+            handler,
+            1,
+            0,
+            None,
+        );
+
+        Ok(Some(session))
     }
 
     // ========================================================================
@@ -1482,5 +1505,113 @@ mod tests {
             cancelled.load(Ordering::SeqCst),
             "Cancellation flag should be set"
         );
+    }
+
+    #[tokio::test]
+    async fn test_execute_group_with_cancel_times_out_on_stagger_delay() -> anyhow::Result<()> {
+        let Some(session) = connect_test_session().await? else {
+            return Ok(());
+        };
+
+        let mut config = create_test_config();
+        config.orchestrator.group_timeout_ms = 25;
+        config.orchestrator.task_stagger_delay_ms = 250;
+
+        let mut orchestrator = Orchestrator::new(config.clone());
+        let metrics = Arc::new(MetricsCollector::new(10));
+        let tasks = vec![TaskDefinition {
+            name: "pageview".to_string(),
+            payload: Default::default(),
+        }];
+        let sessions = vec![session];
+
+        let result = orchestrator
+            .execute_group_with_cancel(&tasks, &sessions, metrics, CancellationToken::new())
+            .await;
+
+        match result {
+            Err(OrchestratorError::Task(TaskError::Timeout {
+                task_name,
+                timeout_ms,
+            })) => {
+                assert_eq!(task_name, "task group");
+                assert_eq!(timeout_ms, 25);
+            }
+            other => panic!("expected group timeout, got {:?}", other),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_execute_group_with_cancel_returns_cancelled_on_shutdown() -> anyhow::Result<()> {
+        let Some(session) = connect_test_session().await? else {
+            return Ok(());
+        };
+
+        let mut config = create_test_config();
+        config.orchestrator.group_timeout_ms = 5_000;
+        config.orchestrator.task_stagger_delay_ms = 250;
+
+        let mut orchestrator = Orchestrator::new(config.clone());
+        let metrics = Arc::new(MetricsCollector::new(10));
+        let tasks = vec![TaskDefinition {
+            name: "pageview".to_string(),
+            payload: Default::default(),
+        }];
+        let sessions = vec![session];
+        let cancel_token = CancellationToken::new();
+        cancel_token.cancel();
+
+        let result = orchestrator
+            .execute_group_with_cancel(&tasks, &sessions, metrics, cancel_token)
+            .await;
+
+        match result {
+            Err(OrchestratorError::Task(TaskError::Cancelled(message))) => {
+                assert!(message.contains("shutdown request"));
+            }
+            other => panic!("expected shutdown cancellation, got {:?}", other),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_execute_task_with_retry_cancels_before_worker_acquisition() -> anyhow::Result<()>
+    {
+        let Some(session) = connect_test_session().await? else {
+            return Ok(());
+        };
+
+        let config = create_test_config();
+        let metrics = Arc::new(MetricsCollector::new(10));
+        let task_def = TaskDefinition {
+            name: "pageview".to_string(),
+            payload: Default::default(),
+        };
+
+        let _held_worker = session
+            .acquire_worker(10)
+            .await
+            .expect("worker should be available");
+        let cancel_token = CancellationToken::new();
+        cancel_token.cancel();
+
+        let result =
+            execute_task_with_retry(&task_def, &session, &config, metrics, cancel_token).await;
+
+        assert!(matches!(result.status, TaskStatus::Cancelled));
+        assert!(result
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("before worker acquisition"));
+        assert!(
+            session.is_idle(),
+            "session should return to idle after cancellation"
+        );
+
+        Ok(())
     }
 }

@@ -1,0 +1,31 @@
+version: 1
+id: 0036-predictive-scorer-edge-cases
+title: Predictive scorer edge cases
+status: done
+owner: spec-agent
+priority: P2
+area:
+  - adaptive
+  - tests
+files:
+  code:
+    - src/adaptive/predictive_scorer.rs
+    - src/adaptive/test_predictive_scorer.rs
+  docs:
+    - docs/specs/_done/0036-predictive-scorer-edge-cases/README.md
+    - docs/specs/_done/0036-predictive-scorer-edge-cases/plan.md
+    - docs/specs/_done/0036-predictive-scorer-edge-cases/validation.md
+    - docs/specs/_done/0036-predictive-scorer-edge-cases/notes.md
+acceptance:
+  - Property tests prove `predict_engagement` returns finite values and keeps `expected_engagement` within bounds for generated inputs.
+  - Feature extraction and feature combination handle empty or extreme inputs without panic.
+  - At least one explicit edge-case regression covers the empty-string or extreme-length path.
+  - No persistence or model-layout change is introduced.
+  - `./check-fast.ps1` and `./check.ps1` pass.
+non_goals:
+  - Add persistence to the scorer.
+  - Change the model architecture or weights format.
+  - Add new external math or ML dependencies.
+risks:
+  - Property tests can become slow if sample counts are too high.
+  - Finite/bounds assertions can become brittle if scoring ranges change later.

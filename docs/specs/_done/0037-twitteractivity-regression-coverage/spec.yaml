@@ -1,0 +1,34 @@
+version: 1
+id: 0037-twitteractivity-regression-coverage
+title: TwitterActivity regression coverage
+status: done
+owner: spec-agent
+priority: P2
+area:
+  - twitter-activity
+  - tests
+files:
+  code:
+    - src/task/twitteractivity.rs
+    - src/utils/twitter/twitteractivity_navigation.rs
+    - src/utils/twitter/twitteractivity_state.rs
+    - tests/twitteractivity_integration.rs
+  docs:
+    - docs/specs/_done/0037-twitteractivity-regression-coverage/README.md
+    - docs/specs/_done/0037-twitteractivity-regression-coverage/plan.md
+    - docs/specs/_done/0037-twitteractivity-regression-coverage/validation.md
+    - docs/specs/_done/0037-twitteractivity-regression-coverage/notes.md
+acceptance:
+  - `TaskConfig::from_payload()` keeps the current full payload contract, including duration clamping and feature flags.
+  - `select_entry_point()` returns one of `ENTRY_POINTS` through the deterministic `select_entry_point_returns_valid_url` task-level unit test.
+  - `log_summary()` keeps the current summary keys and remaining-limit keys.
+  - Existing task config and entry-point smoke tests remain green.
+  - `./check-fast.ps1` and `./check.ps1` pass.
+non_goals:
+  - Change engagement decision rules.
+  - Add new tweet actions or persona behavior.
+  - Move more logic back into `src/task/twitteractivity.rs`.
+risks:
+  - Summary assertions can become brittle if the log format changes later.
+  - Wiring tests can be noisy if they depend on randomness instead of fixed inputs.
+  - Payload parsing tests can become over-specific if config defaults change later.

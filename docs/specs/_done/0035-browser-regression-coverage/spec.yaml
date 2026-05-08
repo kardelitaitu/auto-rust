@@ -1,0 +1,34 @@
+version: 1
+id: 0035-browser-regression-coverage
+title: Browser regression coverage
+status: done
+owner: spec-agent
+priority: P2
+area:
+  - browser
+  - session
+  - tests
+files:
+  code:
+    - src/browser.rs
+    - src/session/pool.rs
+    - tests/browser_port_config_test.rs
+  docs:
+    - docs/specs/_done/0035-browser-regression-coverage/README.md
+    - docs/specs/_done/0035-browser-regression-coverage/plan.md
+    - docs/specs/_done/0035-browser-regression-coverage/validation.md
+    - docs/specs/_done/0035-browser-regression-coverage/notes.md
+acceptance:
+  - `SessionPoolManager::discover_with_filters` returns `Ok(vec![])` for empty discovery with no filters.
+  - `SessionPoolManager::discover_with_filters` returns the current connection error for non-empty filters that match nothing.
+  - Browser filter normalization remains covered at the pool boundary, including normalized input such as `Brave_Browser` matching `brave-browser` through `discover_with_filters`.
+  - Existing Brave and Chrome port range parsing behavior remains unchanged.
+  - `./check-fast.ps1` and `./check.ps1` pass.
+non_goals:
+  - Add new browser families or drivers.
+  - Change port range semantics.
+  - Refactor session pool internals.
+risks:
+  - Discovery tests can become flaky if they depend on live browsers.
+  - Filter edge cases may be overfit to current string normalization details.
+  - Pool-layer tests may need careful fixtures to avoid accidental real browser connections.

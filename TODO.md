@@ -1,5 +1,5 @@
 # TODO
-> **Priority Order:** P1 Critical → P2 Important → P3 Lower → Test Coverage (<50%) → Performance Work → V2 Twitter Roadmap
+> **Priority Order:** P1 Critical → P2 Important → P3 Lower → Spec-Ready Backlog → Coverage/Performance → Future Ideas
 > **Quality Gate:** No task may be marked complete until `./check.ps1` passes (test suite verification)
 > **Confidence Levels:** (95%) = Verified in codebase, clear scope | (80%) = Mostly verified, minor ambiguity | (60%) = Partially verified, need exploration
 
@@ -121,49 +121,38 @@
 - [x] **src/utils/mouse/trajectory.rs** - 25 tests added ✅
 - [x] **src/task/*.rs** - Coverage improved ✅
 
-### Current Focus: <50% Coverage Modules
+### Spec-Ready Backlog
 
-- [ ] **src/task/twitteractivity.rs** **(Confidence: 90%)**
-  - **Current state:** ~338 lines (thin orchestrator), delegates to `src/utils/twitter/` modules
-  - **Tests exist:** `config_tests`, `navigation_tests` in-file; more tests in `twitteractivity_engagement.rs`
-  - **Subtasks:**
-    - [ ] 1. Extract pure functions (`calc_rate`, `extract_tweet_text`, `select_candidate_action`) - (95% confidence)
-    - [ ] 2. Add tests for `process_candidate` decision paths (like/retweet/follow/reply/quote/bookmark) - (85% confidence)
-    - [ ] 3. Add tests for `modulate_persona_by_sentiment` with mock sentiment analyzer - (80% confidence)
-    - [ ] 4. Add tests for `engage_replies` with mock reply data - (75% confidence)
-    - [ ] 5. Target: Increase from ~45% to 60% coverage - (90% confidence)
-  - **Effort:** 1-2 days
+> Only keep items here if the code shape is already verified and the next step is implementation, not discovery.
 
-- [ ] **src/adaptive/predictive_scorer.rs** **(Confidence: 85%)**
-  - **Current state:** `src/adaptive/` has 12 files including `predictive_scorer.rs`, `learning_engine.rs`
-  - **Tests exist:** `test_predictive_scorer.rs` (in `src/adaptive/`)
-  - **Subtasks:**
-    - [ ] 1. Run `cargo tarpaulin -p auto-rust --src/adaptive/predictive_scorer.rs` to get baseline - (95% confidence)
-    - [ ] 2. Add tests for scoring algorithm edge cases (zero values, max values) - (90% confidence)
-    - [ ] 3. Add tests for learning persistence (save/load/clear) - (80% confidence)
-    - [ ] 4. Add property-based tests for score bounds - (70% confidence)
-    - [ ] 5. Target: 70% coverage - (85% confidence)
-  - **Effort:** 2-3 days
+| Item | Confidence | Why it is spec-ready |
+|---|---|---|
+| `src/task/twitteractivity.rs` | 95% | Thin orchestrator; helper logic already moved to `src/utils/twitter/*` and current tests exist. |
+| `src/adaptive/predictive_scorer.rs` | 95% | File structure and test surface are stable; remaining work is edge-case coverage and bounds checks. |
+| `src/browser.rs` | 95% | Helper behavior and port config coverage already exist; remaining work is regression coverage, not refactor. |
+| `src/orchestrator.rs` | 95% | Cancellation, guard, timeout, and aggregation paths are already implemented and testable. |
 
-- [ ] **src/browser.rs** **(Confidence: 80%)**
-  - **Current state:** 512 lines, refactored to use `SessionPoolManager`, has `normalize_browser_token`, `matches_browser_filters`
-  - **Tests needed:** Port scanning logic, browser type detection, filter matching
-  - **Subtasks:**
-    - [ ] 1. Extract `normalize_browser_token` and `matches_browser_filters` as pure functions for testing - (95% confidence)
-    - [ ] 2. Add tests for port scanning (Brave 9001-9050, Chrome 9222-9230) - (75% confidence, need to mock network)
-    - [ ] 3. Add tests for `BrowserCapabilities` creation and matching - (85% confidence)
-    - [ ] 4. Target: 60% coverage - (80% confidence)
-  - **Effort:** 1-2 days
+- [ ] **src/task/twitteractivity.rs**
+  - Add regression tests for `run()` / `run_inner()` payload normalization and error propagation.
+  - Add a wiring test for `select_entry_point()` and task config defaults.
+  - Add a summary/logging regression for `log_summary()`.
+  - Recheck coverage before keeping this in any <50% bucket.
 
-- [ ] **src/orchestrator.rs** **(Confidence: 75%)**
-  - **Current state:** Read ~30 lines (session management section), has `SessionExecutionGuard`, cancellation handling
-  - **Tests needed:** Task scheduling, group execution, shutdown coordination
-  - **Subtasks:**
-    - [ ] 1. Extract pure scheduling functions for unit testing - (70% confidence)
-    - [ ] 2. Add tests for `execute_group_with_cancel` paths - (80% confidence)
-    - [ ] 3. Add tests for task timeout and cancellation flows - (75% confidence)
-    - [ ] 4. Target: 50% coverage - (75% confidence)
-  - **Effort:** 2-3 days
+- [ ] **src/adaptive/predictive_scorer.rs**
+  - Rebaseline with `cargo tarpaulin` or `cargo llvm-cov`.
+  - Add edge-case tests for zero, max, and clamped scoring inputs.
+  - Add property tests for score bounds and monotonicity.
+  - If persistence is still required, move that work to `learning_engine.rs`.
+
+- [ ] **src/browser.rs**
+  - Add integration coverage for filtered discovery and profile/session fallback ordering.
+  - Add regression coverage for empty-config + filter inputs.
+  - Keep the pure helper tests as the baseline.
+
+- [ ] **src/orchestrator.rs**
+  - Add a backoff-cancellation regression for `execute_task_with_retry()`.
+  - Add one timeout/unhealthy-session regression only if the baseline still shows a gap.
+  - Rebaseline before adding more cases.
 
 ### Low Priority (Already Well Covered) ✅ COMPLETE
 - [x] **src/utils/scroll.rs** - 40+ tests ✅
@@ -254,91 +243,59 @@
 
 ---
 
-## V2 Twitter Roadmap (FUTURE - After Coverage + Performance)
+## Future Ideas (Parking Lot)
 
-> **Goal:** Implement deferred V2 features for Twitter activity task.
-> **Prerequisites:** Complete test coverage targets, optimize performance.
+> **Goal:** Track ideas that are not spec-ready yet.
+> **Rule:** Do not convert these into specs until they move out of discovery mode.
 > **Current state (verified 2026-05-08):** Partially implemented - `twitteractivity_engagement.rs` has `llm_enabled`, `smart_decision_enabled`, `enhanced_sentiment_enabled`, `dry_run_actions` fields AND implementation code. `src/utils/twitter/twitteractivity_llm.rs` and `twitteractivity_sentiment_llm.rs` EXIST.
 
-### V2 Features (Deferred) **(Confidence: 75%)**
+### Parking Lot
+
+> Keep these out of the spec seed until there is a concrete implementation plan or new evidence.
+
+- [x] **Bookmark action implementation** - already implemented in `src/utils/twitter/twitteractivity_interact.rs`; rollout remains config-gated by default limits/probabilities.
+- [x] **Reply action implementation** - already implemented in `src/utils/twitter/twitteractivity_interact.rs`; natural typing and LLM prompt polish can stay as follow-up work if needed.
 
 - [ ] **LLM-powered replies & quote tweets** (`twitteractivity_llm.rs`) - (80% confidence)
-  - **Current state:** `src/utils/twitter/twitteractivity_llm.rs` EXISTS (verified)
-  - **Subtasks:**
-    - [ ] 1. Verify `generate_reply()` and `generate_quote_commentary()` functions work - (70% confidence)
-    - [ ] 2. Add config validation for `llm_enabled` flag - (90% confidence)
-    - [ ] 3. Add integration tests with mock LLM responses - (75% confidence)
-    - [ ] 4. Document prompt engineering guidelines in `docs/TASKS/twitteractivity.md` - (95% confidence)
-  - **Effort:** 2-3 days
+  - Verify prompt contract, output sanitization, and failure behavior.
+  - Add mock-provider tests for fallback and timeout paths.
+  - Add config validation for `reply_with_ai` and `quote_with_ai`.
+  - Document prompt rules in `docs/TASKS/twitteractivity.md`.
 
-- [ ] **Sentiment analysis with NLP** (VADER-style or transformer) - (70% confidence)
-  - **Current state:** `twitteractivity_engagement.rs` has `enhanced_sentiment_enabled` flag + `analyze_enhanced()` function
-  - **Subtasks:**
-    - [ ] 1. Verify `src/utils/twitter/twitteractivity_sentiment_llm.rs` implementation - (80% confidence)
-    - [ ] 2. Compare keyword-only (V1) vs enhanced (V2) sentiment accuracy - (60% confidence)
-    - [ ] 3. Add tests for `EnhancedSentimentResult` with thread context - (85% confidence)
-    - [ ] 4. Consider VADER or lightweight transformer model integration - (50% confidence)
-  - **Effort:** 3-5 days
-
-- [ ] **Bookmark action implementation** - (85% confidence)
-  - **Current state:** `twitteractivity_engagement.rs` has `bookmark` action handling, currently disabled (limit=0, probability=0)
-  - **Subtasks:**
-    - [ ] 1. Implement `bookmark_tweet()` in `twitteractivity_interact.rs` - (90% confidence)
-    - [ ] 2. Add UI modal handling for bookmark confirmation - (75% confidence)
-    - [ ] 3. Update config: `max_bookmarks_per_session > 0`, `bookmark_probability > 0` - (95% confidence)
-    - [ ] 4. Add tests for bookmark action flow - (85% confidence)
-  - **Effort:** 1-2 days
-
-- [ ] **Reply action implementation** (keyboard typing simulation) - (80% confidence)
-  - **Current state:** `twitteractivity_engagement.rs` has `reply` action with `generate_reply_text()` + LLM integration
-  - **Subtasks:**
-    - [ ] 1. Implement `reply_to_tweet()` in `twitteractivity_interact.rs` - (85% confidence)
-    - [ ] 2. Integrate `natural_typing()` for realistic typing - (90% confidence)
-    - [ ] 3. Add LLM-generated reply text flow - (75% confidence, depends on LLM feature)
-    - [ ] 4. Add tests for reply action with mock tweet data - (85% confidence)
-  - **Effort:** 2-3 days
+- [ ] **Sentiment analysis with NLP** (`twitteractivity_sentiment_enhanced.rs` + `twitteractivity_sentiment_llm.rs`) - (70% confidence)
+  - Compare keyword-only, enhanced, and hybrid sentiment on a shared corpus.
+  - Add tests for thread context, reputation, and confidence gating.
+  - Decide whether a lightweight external model is worth the added complexity.
 
 - [ ] **Dynamic entry point weights** (per-session randomization ±10%) - (90% confidence)
-  - **Current state:** Static weights in V1 (Home=59%, Explore=32%, etc.) in `twitteractivity_navigation.rs`
-  - **Subtasks:**
-    - [ ] 1. Add jitter calculation: `weight * (1.0 + random(-0.1, 0.1))` - (95% confidence)
-    - [ ] 2. Ensure weights still sum to ~100 after jitter - (90% confidence)
-    - [ ] 3. Add config flag `entry_point_jitter: bool` - (95% confidence)
-    - [ ] 4. Add tests for weight distribution with jitter - (85% confidence)
-  - **Effort:** 1 day
+  - Add jitter around the existing category weights.
+  - Keep totals normalized after jitter.
+  - Add a config flag for enabling jitter.
+  - Add distribution tests for the randomized weights.
 
-- [ ] **Advanced persona behaviors:** - (65% confidence)
-  - **Current state:** `dive_probability` field exists in `BrowserProfile`, micro-move NOT yet used
-  - **Subtasks:**
-    - [ ] 1. Implement hesitation micro-movements in `twitteractivity_humanized.rs` - (70% confidence)
-    - [ ] 2. Add overscroll simulation after tweet engagement - (75% confidence)
-    - [ ] 3. Add tab-switch simulation (multiple browser tabs) - (60% confidence, complex)
-    - [ ] 4. Wire micro-movements into `TwitterPersona` multiplier - (80% confidence)
-  - **Effort:** 3-4 days
+- [ ] **Advanced persona behaviors** - (65% confidence)
+  - Implement hesitation micro-movements in `twitteractivity_humanized.rs`.
+  - Add overscroll simulation after engagement.
+  - Add tab-switch simulation only if the browser/session model can support it cleanly.
+  - Wire micro-movements into `TwitterPersona` multipliers.
 
 - [ ] **`run-summary.json` embedded per-task metadata** - (85% confidence)
-  - **Current state:** `run-summary.json` from `MetricsCollector` captures top-level success count only
-  - **Subtasks:**
-    - [ ] 1. Extend `TaskResult` with `metadata: Option<serde_json::Value>` - (90% confidence)
-    - [ ] 2. Populate metadata in `twitteractivity.rs` `log_summary()` - (85% confidence)
-    - [ ] 3. Update `MetricsCollector` to include per-task Twitter breakdown - (80% confidence)
-    - [ ] 4. Add tests for metadata serialization - (90% confidence)
-  - **Effort:** 1-2 days
+  - Extend the task result/metrics shape with an optional metadata payload.
+  - Populate the Twitter breakdown in `MetricsCollector::task_completed_from_result`.
+  - Update summary serialization and add JSON shape tests.
+  - Keep the metadata small and optional so non-Twitter tasks stay cheap.
 
 - [ ] **Thread engagement** (click "Show more replies") - (70% confidence)
-  - **Current state:** `twitteractivity_engagement.rs` has `engage_replies()` function, currently only surface-level tweets
-  - **Subtasks:**
-    - [ ] 1. Implement "Show more replies" click logic - (75% confidence)
-    - [ ] 2. Add DOM traversal for reply thread expansion - (70% confidence)
-    - [ ] 3. Add tests for thread engagement flow - (80% confidence)
-  - **Effort:** 2-3 days
+  - Implement "Show more replies" click logic.
+  - Add DOM traversal for reply-thread expansion.
+  - Add tests for the thread-engagement path.
 
-### Prerequisites Before V2 **(Confidence: 95%)**
-- [ ] Test coverage: twitteractivity.rs ≥60% (currently ~45%)
-- [ ] Performance: CI runs <10 min (currently ~5-7 min, acceptable)
-- [ ] Documentation: V2 spec packages in `docs/specs/_active/` (create 0034-0040)
-- [ ] Config: Validate V2 config schema extensions
-- [ ] Integration: Test with real LLM (if reply/quote enabled)
+### Prerequisites Before Spec Drafts **(Confidence: 95%)**
+- [ ] Rebaseline the spec-ready backlog before using file-specific targets.
+- [ ] Performance: CI runs <10 min (currently ~5-7 min, acceptable).
+- [ ] Documentation: V2 spec packages exist in `docs/specs/_active/` for any approved feature.
+- [ ] Config: Validate any new schema extensions before drafting spec text.
+- [ ] Integration: Test with real LLM only if reply/quote work is moved out of the parking lot.
 
 ---
 
@@ -437,6 +394,6 @@
 - **cargo-nextest** migration complete: 2-10x faster test runs ✅
 - **Documentation audit** complete: 48 files stamped, drift fixed ✅
 - **Spec system** operational: 7 specs in `_done/`, lint passing ✅
-- **Current focus:** Test coverage (<50% modules), Performance optimization
+- **Current focus:** Coverage watchlist re-baseline, Performance optimization
 - **Future:** V2 Twitter roadmap after coverage + performance targets met
 - **Confidence key:** (95%+) Verified | (80-94%) Mostly verified | (60-79%) Partially verified | (<60%) Need investigation

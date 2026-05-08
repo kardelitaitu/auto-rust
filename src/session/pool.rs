@@ -272,7 +272,8 @@ fn normalize_browser_token(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::connector::{BrowserCapabilities, BrowserSource};
+    use crate::session::connector::{BrowserCapabilities, BrowserSource, ConnectorRegistry};
+    use crate::session::factory::SessionFactory;
 
     #[test]
     fn test_session_pool_manager_default() {
@@ -421,5 +422,36 @@ mod tests {
 
         // Should match even with different separators
         assert!(manager.capability_matches_filters(&cap, &["bravebrowser".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn test_discover_with_filters_empty_discovery_no_filters() {
+        let manager =
+            SessionPoolManager::new(ConnectorRegistry::empty(), SessionFactory::default(), 1);
+        let config = crate::config::Config::default();
+
+        let result = manager.discover_with_filters(&config, &[]).await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_discover_with_filters_empty_discovery_with_filters() {
+        let manager =
+            SessionPoolManager::new(ConnectorRegistry::empty(), SessionFactory::default(), 1);
+        let config = crate::config::Config::default();
+        let filters = vec!["brave".to_string()];
+
+        let result = manager.discover_with_filters(&config, &filters).await;
+
+        match result {
+            Ok(_) => panic!("should return an error when filters match nothing"),
+            Err(err) => {
+                let err_msg = err.to_string();
+                assert!(err_msg.contains("No browsers matched the specified filters"));
+                assert!(err_msg.contains("brave"));
+            }
+        }
     }
 }

@@ -688,6 +688,161 @@ mod tests {
 }
 
 #[cfg(test)]
+mod property_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use std::collections::HashMap;
+
+    fn build_user_profile(like_count: u32) -> UserBehaviorProfile {
+        let mut successful_actions = HashMap::new();
+        successful_actions.insert("like".to_string(), like_count);
+
+        UserBehaviorProfile { successful_actions }
+    }
+
+    fn build_temporal_features(
+        hour: u8,
+        day_of_week: u8,
+        is_peak: bool,
+        time_since_last: f32,
+        posting_frequency: f32,
+    ) -> TemporalFeatures {
+        TemporalFeatures {
+            hour,
+            day_of_week,
+            is_peak,
+            time_since_last,
+            posting_frequency,
+        }
+    }
+
+    fn build_context_features(
+        thread_depth: u32,
+        reply_count: u32,
+        has_media: bool,
+        topic_category: String,
+        trending_score: f32,
+    ) -> ContextFeatures {
+        ContextFeatures {
+            thread_depth,
+            reply_count,
+            has_media,
+            topic_category,
+            trending_score,
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn predict_engagement_stays_finite_and_bounded(
+            tweet_text in any::<String>(),
+            like_count in any::<u32>(),
+            hour in 0u8..24,
+            day_of_week in 0u8..7,
+            is_peak in any::<bool>(),
+            time_since_last in any::<f32>(),
+            posting_frequency in any::<f32>(),
+            thread_depth in any::<u32>(),
+            reply_count in any::<u32>(),
+            has_media in any::<bool>(),
+            topic_category in any::<String>(),
+            trending_score in any::<f32>(),
+        ) {
+            let scorer = PredictiveEngagementScorer::new();
+            let user_profile = build_user_profile(like_count);
+            let temporal = build_temporal_features(
+                hour,
+                day_of_week,
+                is_peak,
+                time_since_last,
+                posting_frequency,
+            );
+            let context = build_context_features(
+                thread_depth,
+                reply_count,
+                has_media,
+                topic_category,
+                trending_score,
+            );
+
+            let prediction = scorer.predict_engagement(&tweet_text, &user_profile, &temporal, &context);
+
+            prop_assert!(prediction.success_probability.is_finite());
+            prop_assert!((0.0..=1.0).contains(&prediction.success_probability));
+            prop_assert!(prediction.confidence.is_finite());
+            prop_assert!((0.0..=1.0).contains(&prediction.confidence));
+            prop_assert!(prediction.expected_engagement.is_finite());
+            prop_assert!((0.0..=1.0).contains(&prediction.expected_engagement));
+        }
+
+        #[test]
+        fn feature_extraction_and_combination_handle_generated_inputs(
+            tweet_text in any::<String>(),
+            like_count in any::<u32>(),
+            hour in 0u8..24,
+            day_of_week in 0u8..7,
+            is_peak in any::<bool>(),
+            time_since_last in any::<f32>(),
+            posting_frequency in any::<f32>(),
+            thread_depth in any::<u32>(),
+            reply_count in any::<u32>(),
+            has_media in any::<bool>(),
+            topic_category in any::<String>(),
+            trending_score in any::<f32>(),
+        ) {
+            let scorer = PredictiveEngagementScorer::new();
+            let user_profile = build_user_profile(like_count);
+            let temporal = build_temporal_features(
+                hour,
+                day_of_week,
+                is_peak,
+                time_since_last,
+                posting_frequency,
+            );
+            let context = build_context_features(
+                thread_depth,
+                reply_count,
+                has_media,
+                topic_category,
+                trending_score,
+            );
+
+            let text_features = scorer.feature_extractor.extract_text_features(&tweet_text);
+            let user_features = scorer.feature_extractor.extract_user_features(&user_profile);
+            let temporal_features = scorer.feature_extractor.extract_temporal_features(&temporal);
+            let context_features = scorer
+                .feature_extractor
+                .extract_context_features(&context);
+            let combined = scorer.feature_extractor.combine_features(
+                text_features,
+                user_features,
+                temporal_features,
+                context_features,
+            );
+
+            prop_assert_eq!(combined.text.length, tweet_text.len());
+            prop_assert_eq!(combined.context.thread_depth, context.thread_depth);
+            prop_assert_eq!(combined.context.reply_count, context.reply_count);
+        }
+    }
+
+    #[test]
+    fn test_empty_string_regression() {
+        let scorer = PredictiveEngagementScorer::new();
+        let user_profile = UserBehaviorProfile::default();
+        let temporal = TemporalFeatures::default();
+        let context = ContextFeatures::default();
+
+        let prediction = scorer.predict_engagement("", &user_profile, &temporal, &context);
+        let features = scorer.feature_extractor.extract_text_features("");
+
+        assert_eq!(features.length, 0);
+        assert!(prediction.success_probability.is_finite());
+        assert!(prediction.expected_engagement.is_finite());
+    }
+}
+
+#[cfg(test)]
 mod integration_tests {
     use super::*;
 

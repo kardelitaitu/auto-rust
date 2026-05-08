@@ -1,0 +1,32 @@
+version: 1
+id: 0034-orchestrator-hardening
+title: Orchestrator hardening
+status: done
+owner: spec-agent
+priority: P2
+area:
+  - orchestrator
+  - tests
+files:
+  code:
+    - src/orchestrator.rs
+    - tests/orchestrator_integration.rs
+  docs:
+    - docs/specs/_done/0034-orchestrator-hardening/README.md
+    - docs/specs/_done/0034-orchestrator-hardening/plan.md
+    - docs/specs/_done/0034-orchestrator-hardening/validation.md
+    - docs/specs/_done/0034-orchestrator-hardening/notes.md
+acceptance:
+  - `execute_group_with_cancel` returns `TaskError::Timeout { task_name: "task group" }` when the group timeout elapses and outstanding work is still running.
+  - `execute_group_with_cancel` cancels outstanding work on shutdown and returns `TaskError::Cancelled` for that path.
+  - `execute_task_with_retry` returns a cancelled result when the task token is already cancelled before worker acquisition.
+  - Result aggregation keeps the current observable counts: `[Ok(()), Ok(()), Err(..)] -> success_count=2, fail_count=1`, `[Err(..), Err(..)] -> success_count=0`, and `[Ok(()), Ok(()), Ok(())] -> success_count=3`.
+  - `./check-fast.ps1` and `./check.ps1` pass.
+non_goals:
+  - Change scheduling policy or task ordering.
+  - Change retry/backoff math.
+  - Introduce new orchestrator APIs.
+risks:
+  - Timing-sensitive tests can become flaky if they depend on real delays.
+  - Guard-state checks can be brittle if the test harness changes.
+  - Browser-backed integration coverage may still stay ignored if the spec keeps to unit-level regressions.

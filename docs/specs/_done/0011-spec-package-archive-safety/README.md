@@ -12,7 +12,7 @@ Make spec archiving a single, low-friction workflow so packages land in `_done/`
 ## Scope
 
 - In scope:
-  - repo-root archive helper for moving an approved or implementing package to `_done/`
+  - repo-root archive helper for moving an approved package to `_done/`
   - synchronized status updates in `README.md` and `spec.yaml` during archive
   - clearer `spec-lint.ps1` failure messages for `_done` status drift
   - `docs/specs/README.md` and template guidance for the archive flow

@@ -28,8 +28,9 @@ Explain the problem, why it matters, and the target outcome in one paragraph.
 
 ## Rules
 
+- New spec packages start as `draft` in this template.
 - Keep the spec short.
-- Put only approved or implementing specs in `_active/`.
+- Put only approved specs in `_active/`.
 - Put only done specs in `_done/`.
 - Start `implementation-notes.md` empty.
 - Do not include `spec-lint.ps1` in a normal feature spec; it is read-only.

@@ -95,6 +95,52 @@ dry_run_actions = false            # Simulate actions without executing
 5. Executes engagements (like, retweet, follow, reply)
 6. Respects all engagement limits
 7. Optionally dives into threads for context
+8. Keeps X/Twitter selectors scoped to the active tweet or captured container, not page-wide button scans
+
+## Twitter Utility Modules
+
+The implementation lives in `src/utils/twitter/` and is split into focused modules with rustdoc coverage.
+
+**Core Engagement:**
+- `twitteractivity_engagement.rs`: Main `process_candidate()` logic and action orchestration
+- `twitteractivity_feed.rs`: Feed scrolling, candidate identification, and progress tracking
+- `twitteractivity_dive.rs`: Thread diving and reading
+- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark)
+
+**Decision & Strategy:**
+- `twitteractivity_decision.rs`: Legacy engagement decision logic
+- `twitteractivity_decision_unified.rs`: Unified smart decision engine
+- `twitteractivity_decision_hybrid.rs`: Hybrid persona/LLM decisions
+- `twitteractivity_decision_llm.rs`: LLM-only decision path
+- `twitteractivity_decision_persona.rs`: Persona-based decision weights
+
+**LLM Integration:**
+- `twitteractivity_llm.rs`: LLM-powered reply/quote generation
+- `twitteractivity_sentiment_llm.rs`: LLM sentiment analysis
+
+**Sentiment Analysis:**
+- `twitteractivity_sentiment.rs`: Core sentiment types and templates
+- `twitteractivity_sentiment_enhanced.rs`: Enhanced sentiment with context
+- `twitteractivity_sentiment_emoji.rs`: Emoji-based sentiment detection
+- `twitteractivity_sentiment_context.rs`: Context-aware sentiment modifiers
+- `twitteractivity_sentiment_domains.rs`: Domain-specific sentiment rules
+
+**State & Configuration:**
+- `twitteractivity_state.rs`: TaskConfig, CandidateContext, SessionState
+- `twitteractivity_constants.rs`: Timing constants
+- `twitteractivity_limits.rs`: EngagementCounters, EngagementLimits
+- `twitteractivity_persona.rs`: PersonaWeights, behavior profiles
+
+**Infrastructure:**
+- `twitteractivity_navigation.rs`: Page navigation and entry points
+- `twitteractivity_selectors.rs`: DOM selectors and CSS generators
+- `twitteractivity_humanized.rs`: Human-like timing and cursor movements
+- `twitteractivity_popup.rs`: Popup/modal handling
+- `twitteractivity_retry.rs`: Retry logic with exponential backoff, CircuitBreaker
+- `twitteractivity_errors.rs`: Error classification and recovery
+
+**Documentation:**
+All functions include detailed rustdoc with Arguments, Returns, Errors, Behavior, and Selectors sections. Generate with `cargo doc --all-features`.
 
 ## Related Tasks
 

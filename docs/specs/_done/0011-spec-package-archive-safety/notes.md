@@ -10,7 +10,7 @@ Successfully implemented the spec-package-archive-safety feature to provide a sa
 - **Location**: `docs/specs/_active/spec-package-archive-safety/spec-archive.ps1`
 - **Functionality**: 
   - Validates package structure (requires spec.yaml and README.md)
-  - Confirms archiveable state (approved or implementing status)
+  - Confirms archiveable state (approved status)
   - Rewrites both status fields to `done` in spec.yaml and README.md
   - Normalizes implementer field to `archived-*` convention
   - Moves folder from `_active/` to `_done/` atomically

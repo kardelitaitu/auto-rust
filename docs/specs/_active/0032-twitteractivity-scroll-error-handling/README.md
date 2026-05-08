@@ -1,11 +1,12 @@
 # TwitterActivity Scroll Error Handling
 
-Status: `approved`
+Status: `done`
+
 Owner: `spec-agent`
 
 ## Dependency:
 
-Implement after `0031-twitteractivity-content-load-delay`. This package assumes the initial-scan timing fix and post-scroll pause already exist.
+Implement after `0031-twitteractivity-content-load-delay`. This package assumes the post-scroll pause and revised loop order already exist.
 
 ## Summary:
 
@@ -13,7 +14,7 @@ Scroll errors in the main feed scanning loop are silently ignored via `let _ = a
 
 ## Problem:
 
-In `src/task/twitteractivity.rs` lines 162-167:
+In `src/task/twitteractivity.rs` lines 162-185:
 
 ```rust
 if now >= next_scroll {
@@ -38,7 +39,7 @@ Add consecutive failure tracking and break after threshold:
 // Near variable declarations (around line 132)
 let mut consecutive_scroll_failures = 0u32;
 
-// In the scroll block (lines 162-167)
+// In the scroll block (lines 162-185)
 if now >= next_scroll {
     match api.scroll_read(1, scroll_amount, smooth, profile.scroll.back_scroll).await {
         Ok(()) => {
@@ -57,6 +58,7 @@ if now >= next_scroll {
         }
     }
     next_scroll = now + scroll_interval;
+    api.pause(scroll_pause_ms).await;
 }
 ```
 
@@ -68,14 +70,14 @@ if now >= next_scroll {
 
 ## Acceptance Criteria:
 
-- [ ] `consecutive_scroll_failures` counter added (initialized to 0)
-- [ ] `match` expression replaces `let _ = ...`
-- [ ] On `Ok(())`: reset counter to 0
-- [ ] On `Err(e)`: increment counter, log warning with attempt number
-- [ ] After 3 consecutive failures: log error and `break`
-- [ ] `./check.ps1` passes
-- [ ] `cargo clippy` passes with no warnings
+- [x] `consecutive_scroll_failures` counter added (initialized to 0)
+- [x] `match` expression replaces `let _ = ...` 
+- [x] On `Ok(())`: reset counter to 0
+- [x] On `Err(e)`: increment counter, log warning with attempt number
+- [x] After 3 consecutive failures: log error and `break`
+- [x] `./check.ps1` passes
+- [x] `cargo clippy` passes with no warnings
 
 ## Status:
 
-**Approved** - Ready for implementation
+**Done** - Implemented by other agent

@@ -10,10 +10,10 @@ area:
 files:
   code: []
   docs:
-    - docs/specs/_active/0029-documentation-automation/README.md
-    - docs/specs/_active/0029-documentation-automation/plan.md
-    - docs/specs/_active/0029-documentation-automation/validation.md
-    - docs/specs/_active/0029-documentation-automation/notes.md
+    - docs/specs/_done/0029-documentation-automation/README.md
+    - docs/specs/_done/0029-documentation-automation/plan.md
+    - docs/specs/_done/0029-documentation-automation/validation.md
+    - docs/specs/_done/0029-documentation-automation/notes.md
 acceptance:
   - docs/ARCHITECTURE.md created
   - docs.ps1 created for automated doc generation

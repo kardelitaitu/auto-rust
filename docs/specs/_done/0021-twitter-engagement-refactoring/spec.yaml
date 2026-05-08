@@ -11,10 +11,10 @@ files:
   code:
     - src/utils/twitter/twitteractivity_engagement.rs
   docs:
-    - docs/specs/_active/0021-twitter-engagement-refactoring/README.md
-    - docs/specs/_active/0021-twitter-engagement-refactoring/plan.md
-    - docs/specs/_active/0021-twitter-engagement-refactoring/validation.md
-    - docs/specs/_active/0021-twitter-engagement-refactoring/notes.md
+    - docs/specs/_done/0021-twitter-engagement-refactoring/README.md
+    - docs/specs/_done/0021-twitter-engagement-refactoring/plan.md
+    - docs/specs/_done/0021-twitter-engagement-refactoring/validation.md
+    - docs/specs/_done/0021-twitter-engagement-refactoring/notes.md
 acceptance:
   - Helper functions extracted: modulate_persona_by_sentiment, engage_replies
   - process_candidate reduced from 762 to ~650 lines (moderate reduction)

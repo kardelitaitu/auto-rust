@@ -1,6 +1,6 @@
 # Active Specs
 
-Place only approved and implementing initiative folders here.
+Place only approved initiative folders here.
 
 ## TwitterActivity Order
 

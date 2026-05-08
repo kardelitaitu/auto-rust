@@ -34,7 +34,7 @@ $rust_log="auto::task::twitteractivity=info,auto::utils::twitter::twitteractivit
 
 Watch logs for:
 - [ ] `Candidate scan | candidates=N` shows N > 0 after scrolls
-- [ ] Candidate count increases after implementing the fix (compared to before)
+- [ ] Candidate count increases after the fix (compared to before)
 - [ ] No new warnings or errors in log output
 
 ### 4. Performance Check

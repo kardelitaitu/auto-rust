@@ -52,3 +52,11 @@ Parameters are passed as `serde_json::Value` to the task's `run()` function.
 ## Creating New Tasks
 
 See [Tutorial: Building First Task](../TUTORIAL_BUILDING_FIRST_TASK.md) for detailed instructions.
+
+## Shared Task Rules
+
+- TaskContext rules: [task-context.md](task-context.md)
+- DSL rules: [dsl.md](dsl.md)
+- Selector rules: [selectors.md](selectors.md)
+- Twitter task behavior: [twitteractivity.md](twitteractivity.md)
+- Browser browsing behavior: [pageview.md](pageview.md)

@@ -227,10 +227,19 @@ async fn run_inner(
                     break;
                 }
             }
+        } else {
+            consecutive_empty_scans += 1;
+            warn!(
+                "[twitter] No candidates found (attempt {})",
+                consecutive_empty_scans
+            );
+            if consecutive_empty_scans >= 3 {
+                error!("[twitter] Too many empty scans, stopping task");
+                break;
+            }
         }
 
-        last_remaining = session.remaining_time();
-        if last_remaining.as_millis() < 500 {
+        if session.remaining_time().as_millis() < 500 {
             break;
         }
     }

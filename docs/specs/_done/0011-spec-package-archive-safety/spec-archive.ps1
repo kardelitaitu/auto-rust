@@ -47,8 +47,8 @@ if (-not (Test-Path $readme)) {
 $specContent = Get-Content $specYaml -Raw
 $status = [regex]::Match($specContent, 'status:\s*(\w+)').Groups[1].Value.Trim()
 
-if ($status -notin @("approved", "implementing")) {
-    Write-Error "Package must be approved or implementing to archive: $PackagePath (current status: $status)"
+if ($status -ne "approved") {
+    Write-Error "Package must be approved to archive: $PackagePath (current status: $status)"
     exit 1
 }
 
@@ -80,7 +80,7 @@ if ($implementer -eq "pending") {
 
 # Update README.md
 $readmeContent = Get-Content $readme -Raw
-$updatedReadme = $readmeContent -replace "Status:.*", "Status: Done (Archived)"
+$updatedReadme = $readmeContent -replace "Status:.*", 'Status: `done`'
 Set-Content -Path $targetDir\$packageName\README.md -Value $updatedReadme -NoNewline
 
 Write-Host "✅ Package archived successfully!"

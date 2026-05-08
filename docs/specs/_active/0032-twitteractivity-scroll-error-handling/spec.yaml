@@ -1,7 +1,7 @@
 version: 1
 id: 0032-twitteractivity-scroll-error-handling
 title: TwitterActivity Scroll Error Handling
-status: approved
+status: done
 owner: spec-agent
 priority: P1
 area:

@@ -1,7 +1,7 @@
 version: 1
 id: 0033-twitteractivity-empty-scan-handling
 title: TwitterActivity Empty Scan Early Exit
-status: approved
+status: done
 owner: spec-agent
 priority: P2
 area:

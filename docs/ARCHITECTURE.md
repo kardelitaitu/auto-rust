@@ -112,7 +112,28 @@ DslExecutor::execute()
 - **Actions**: `api.click()`, `api.type()`, `api.pause()`, `api.hover()`, etc.
 - **Async**: All browser interactions are async via tokio
 
-### 5. LLM Integration
+### 5. Browser Support
+- **Supported**: Brave, Chrome, and Roxybrowser
+- **Future connectors**: Other Chromium browsers are planned later
+- **Scope**: Browser-specific behavior stays behind the unified `TaskContext` API
+
+### 6. TaskContext Contract
+- **Entry point**: `TaskContext` stays thin and composes shared capabilities.
+- **Pause behavior**: `api.pause(base_ms)` uses a uniform ±20% random delay; `api.pause_with_variance(base_ms, pct)` uses the same uniform model with a custom spread; `api.pause_human(base_ms, pct)` uses a Gaussian delay.
+- **Cancellation**: `TaskContext::new` and `new_with_metrics` take a final `Option<CancellationToken>` so pauses can wake early on group cancel.
+- **Settle timing**: High-level task-api verbs already add a post-action settle pause.
+- **Default interaction**: `api.click(selector)` runs the selector pipeline with scroll + move + click.
+- **Execution model**: Task groups broadcast to every active browser session; parallel fan-out is the default.
+- **Validation contract**: Validation and task execution share one payload resolver for alias handling and normalization.
+- **Parsing boundary**: Task-specific parsing stays out of orchestrator code when shared validation can own it.
+- **Run summaries**: Include active, healthy, and unhealthy session counts plus per-task/per-session breakdowns.
+- **Health warning**: Emit a warning when healthy sessions drop below the operational threshold.
+- **API surface**: Prefer task-api verbs that stay on the API surface, not ad hoc helpers.
+- **Text helpers**: Keep shared UTF-8-safe text helpers in the internal/text utility layer.
+- **Verification**: Prefer deterministic verification of the same target element that was clicked or inspected.
+- **Task names**: Keep task names canonical and consistent across `task/mod.rs`, `src/cli.rs`, validation, and README.
+
+### 7. LLM Integration
 - **Why**: Generate contextual replies, quotes, sentiment analysis
 - **Pattern**: Unified processor handles multiple LLM providers
 - **Usage**: `twitteractivity_llm.rs` for reply/quote generation

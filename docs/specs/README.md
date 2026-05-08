@@ -18,12 +18,11 @@ This is the contract between spec planning and implementation.
 |---|---|
 | `draft` | `_template/` working copy |
 | `approved` | `_active/<initiative>/` |
-| `implementing` | `_active/<initiative>/` |
 | `done` | `_done/<initiative>/` |
 
 ## Enforcement
 
-- `_active/` may contain only `approved` and `implementing` specs.
+- `_active/` may contain only `approved` specs.
 - `_done/` may contain only `done` specs.
 - `spec-lint.ps1` prints package-level fix hints and can target one package with `-Directory`.
 - Use `.\check-fast.ps1` during implementation.
@@ -38,7 +37,7 @@ When a spec package is complete and ready for archival:
 1. **Use the archive helper**: `.\spec-archive.ps1 <package-name>`
 2. **The archive helper will**:
    - Validate the package has required files (spec.yaml, README.md)
-   - Confirm the package is in an archiveable state (approved or implementing)
+   - Confirm the package is in an archiveable state (approved)
    - Rewrite both `README.md` and `spec.yaml` status fields to `done`
    - Normalize the implementer field to `archived-*` convention
    - Move the folder from `_active/` to `_done/`

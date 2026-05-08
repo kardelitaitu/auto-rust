@@ -250,8 +250,8 @@ foreach ($pkg in $packages) {
             }
         }
         "_active" {
-            if ($specStatus -and $specStatus -notin @("approved", "implementing")) {
-                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec must be approved or implementing: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to approved or implementing."))
+            if ($specStatus -and $specStatus -ne "approved") {
+                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec must be approved: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to approved."))
             }
 
             foreach ($expectedRef in (Get-ExpectedDocsRefs $pkg.Path $pkg.Bucket)) {

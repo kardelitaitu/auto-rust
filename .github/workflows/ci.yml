@@ -21,6 +21,14 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Enable sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Set sccache env
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+
       - name: Install cargo-nextest
         run: cargo install --locked cargo-nextest
 
@@ -41,6 +49,14 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Enable sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Set sccache env
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -58,6 +74,14 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Enable sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Set sccache env
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Build (debug)
         run: cargo check
@@ -78,6 +102,14 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Enable sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Set sccache env
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Install cargo-llvm-cov
         run: cargo install --locked cargo-llvm-cov

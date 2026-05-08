@@ -214,9 +214,9 @@
   - **Effort:** 0.5 day
 
 - [ ] **CI cache optimization:** - (75% confidence)
-  - [ ] Cache cargo registry + git deps
-  - [ ] Cache target/ directory between runs
-  - [ ] Use sccache for compilation caching
+  - [x] Cache cargo registry + git deps (`Swatinem/rust-cache@v2`)
+  - [x] Cache target/ directory between runs (`Swatinem/rust-cache@v2`)
+  - [x] Use sccache for compilation caching (`mozilla-actions/sccache-action@v0.0.9`)
   - **Effort:** 1 day (requires CI workflow changes)
 
 ### Benchmark and Track **(Confidence: 80%)**

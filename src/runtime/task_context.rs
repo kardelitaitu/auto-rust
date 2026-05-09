@@ -43,14 +43,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{debug, info, warn};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::adaptive::LearningEngine;
-use crate::capabilities::{keyboard, mouse, navigation, scroll, timing};
+use crate::capabilities::{dom, keyboard, mouse, navigation, scroll, timing};
 use crate::config::{BrowserConfig, NativeInteractionConfig};
 use crate::internal::page_size::{self, Viewport};
 use crate::logger::scoped_log_context;
@@ -105,6 +105,14 @@ mod tests {
     use super::*;
     use crate::runtime::task_context::click_learning::sanitize_path_component;
     use crate::utils::mouse::CursorMovementConfig;
+
+    #[test]
+    fn test_wrapper_timeout_context_format() {
+        assert_eq!(
+            wrapper_timeout_context("wait_for_load", "timeout_ms=3000"),
+            "wrapper_timeout | stage=wait_for_load timeout_ms=3000"
+        );
+    }
 
     #[test]
     fn test_focus_summary_format() {
@@ -1608,6 +1616,12 @@ pub struct TaskContext {
     cancel_token: Option<CancellationToken>,
 }
 
+const MIN_NAVIGATE_TIMEOUT_MS: u64 = 20_000;
+
+fn wrapper_timeout_context(stage: &str, details: impl Into<String>) -> String {
+    format!("wrapper_timeout | stage={} {}", stage, details.into())
+}
+
 impl TaskContext {
     /// Creates a new TaskContext for browser automation.
     ///
@@ -1772,7 +1786,15 @@ impl TaskContext {
     /// # }
     /// ```
     pub async fn navigate(&self, url: &str, timeout_ms: u64) -> Result<()> {
-        navigation::goto(self.page(), url, timeout_ms).await?;
+        let navigate_timeout_ms = timeout_ms.max(MIN_NAVIGATE_TIMEOUT_MS);
+        navigation::goto(self.page(), url, navigate_timeout_ms)
+            .await
+            .with_context(|| {
+                format!(
+                    "navigate_timeout | stage=goto url={} timeout_ms={}",
+                    url, navigate_timeout_ms
+                )
+            })?;
 
         let action_delay = &self.behavior_runtime.action_delay;
         timing::human_pause(
@@ -1783,13 +1805,18 @@ impl TaskContext {
 
         let settle_base = action_delay
             .min_ms
-            .saturating_add(timeout_ms.min(2_000) / 4)
+            .saturating_add(navigate_timeout_ms.min(2_000) / 4)
             .clamp(150, 4_000);
         let settle_variance = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
         timing::human_pause(settle_base, settle_variance).await;
 
-        let settle_ms = timeout_ms.min(3_000);
-        let _ = self.wait_for_load(settle_ms).await;
+        let settle_ms = navigate_timeout_ms.min(3_000);
+        self.wait_for_load(settle_ms).await.with_context(|| {
+            format!(
+                "navigate_timeout | stage=settle_load url={} timeout_ms={}",
+                url, settle_ms
+            )
+        })?;
         self.post_interaction_pause().await;
 
         Ok(())
@@ -4096,7 +4123,11 @@ impl TaskContext {
 
     /// Wait for 'load' event with timeout. Uses page load event.
     pub async fn wait_for_load(&self, timeout_ms: u64) -> Result<()> {
-        navigation::wait_for_load(self.page(), timeout_ms).await
+        navigation::wait_for_load(self.page(), timeout_ms)
+            .await
+            .with_context(|| {
+                wrapper_timeout_context("wait_for_load", format!("timeout_ms={timeout_ms}"))
+            })
     }
 
     /// Wait until any of the given selectors becomes visible. Returns first match or false.
@@ -4105,7 +4136,14 @@ impl TaskContext {
         selectors: &[&str],
         timeout_ms: u64,
     ) -> Result<bool> {
-        query::wait_for_any_visible(self.page(), selectors, timeout_ms).await
+        query::wait_for_any_visible(self.page(), selectors, timeout_ms)
+            .await
+            .with_context(|| {
+                wrapper_timeout_context(
+                    "wait_for_any_visible_selector",
+                    format!("selector_count={} timeout_ms={timeout_ms}", selectors.len()),
+                )
+            })
     }
 
     /// Scrolls an element into view, focuses it, and returns the focus outcome.
@@ -4138,9 +4176,9 @@ impl TaskContext {
     /// # }
     /// ```
     pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
-        if navigation::selector_uses_accessibility_locator(selector) {
-            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
-            navigation::focus_at_point(self.page(), x, y).await?;
+        if dom::selector_uses_accessibility_locator(selector) {
+            let (x, y) = dom::selector_action_point(self.page(), selector).await?;
+            dom::focus_at_point(self.page(), x, y).await?;
             self.post_interaction_pause().await;
             return Ok(FocusOutcome {
                 focus: FocusStatus::Success,
@@ -4160,7 +4198,7 @@ impl TaskContext {
         }
 
         let (x, y) = page_size::get_element_center(self.page(), selector).await?;
-        navigation::focus(self.page(), selector).await?;
+        dom::focus(self.page(), selector).await?;
         self.post_interaction_pause().await;
         Ok(FocusOutcome {
             focus: FocusStatus::Success,
@@ -4199,8 +4237,8 @@ impl TaskContext {
     /// # }
     /// ```
     pub async fn hover(&self, selector: &str) -> Result<HoverOutcome> {
-        if navigation::selector_uses_accessibility_locator(selector) {
-            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+        if dom::selector_uses_accessibility_locator(selector) {
+            let (x, y) = dom::selector_action_point(self.page(), selector).await?;
             mouse::cursor_move_to(self.page(), x, y).await?;
             self.post_interaction_pause().await;
             return Ok(HoverOutcome {
@@ -4311,8 +4349,8 @@ impl TaskContext {
         const CLICK_MAX_ATTEMPTS: u32 = 3;
         let click = &self.behavior_runtime.click;
         self.increment_run_counter(RUN_COUNTER_CLICK_ATTEMPTED, 1);
-        if navigation::selector_uses_accessibility_locator(selector) {
-            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+        if dom::selector_uses_accessibility_locator(selector) {
+            let (x, y) = dom::selector_action_point(self.page(), selector).await?;
             mouse::left_click_at(self.page(), x, y).await?;
             let outcome = ClickOutcome {
                 click: ClickStatus::Success,
@@ -4407,30 +4445,26 @@ impl TaskContext {
             }
         };
 
-        let outcome =
-            match tokio::time::timeout(Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS), click_future)
-                .await
-            {
-                Ok(Ok(outcome)) => outcome,
-                Ok(Err(err)) => {
-                    if let Err(persist_err) = self.record_click_learning(selector, false).await {
-                        warn!(
-                            "[task-api] click learning persistence failed: {}",
-                            persist_err
-                        );
-                    }
-                    return Err(err);
+        let outcome = tokio::time::timeout(Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS), click_future)
+            .await
+            .with_context(|| {
+                wrapper_timeout_context(
+                    "click_total",
+                    format!("selector={} timeout_secs={}", selector, CLICK_TOTAL_TIMEOUT_SECS),
+                )
+            })?;
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                if let Err(persist_err) = self.record_click_learning(selector, false).await {
+                    warn!(
+                        "[task-api] click learning persistence failed: {}",
+                        persist_err
+                    );
                 }
-                Err(_) => {
-                    if let Err(persist_err) = self.record_click_learning(selector, false).await {
-                        warn!(
-                            "[task-api] click learning persistence failed: {}",
-                            persist_err
-                        );
-                    }
-                    return Err(anyhow::anyhow!("click timed out for '{}'", selector));
-                }
-            };
+                return Err(err);
+            }
+        };
 
         if adaptation.require_strict_verification {
             let verified = self
@@ -4519,10 +4553,10 @@ impl TaskContext {
         {
             Ok(Ok(outcome)) => Ok(outcome),
             Ok(Err(err)) => Err(err),
-            Err(_) => Err(anyhow::anyhow!(
-                "[task-api] primary click attempt timed out for '{}'",
-                selector
-            )),
+            Err(_) => Err(anyhow::anyhow!(wrapper_timeout_context(
+                "click_primary",
+                format!("selector={} timeout_ms={}", selector, timeout_ms),
+            ))),
         }
     }
 
@@ -4554,10 +4588,13 @@ impl TaskContext {
                 ));
             }
             Err(_) => {
-                return Err(anyhow::anyhow!(
-                    "[task-api] fallback focus timed out for '{}'",
-                    selector
-                ));
+                return Err(anyhow::anyhow!(wrapper_timeout_context(
+                    "click_fallback_focus",
+                    format!(
+                        "selector={} timeout_secs={}",
+                        selector, FALLBACK_FOCUS_TIMEOUT_SECS
+                    ),
+                )));
             }
         };
         info!(
@@ -4600,10 +4637,13 @@ impl TaskContext {
                 selector,
                 err
             )),
-            Err(_) => Err(anyhow::anyhow!(
-                "[task-api] fallback click_at timed out for '{}'",
-                selector
-            )),
+            Err(_) => Err(anyhow::anyhow!(wrapper_timeout_context(
+                "click_fallback_click",
+                format!(
+                    "selector={} timeout_secs={}",
+                    selector, FALLBACK_CLICK_TIMEOUT_SECS
+                ),
+            ))),
         }
     }
 
@@ -4635,8 +4675,8 @@ impl TaskContext {
 
     /// Human-like double click on selector with delay and variance.
     pub async fn double_click(&self, selector: &str) -> Result<ClickOutcome> {
-        if navigation::selector_uses_accessibility_locator(selector) {
-            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+        if dom::selector_uses_accessibility_locator(selector) {
+            let (x, y) = dom::selector_action_point(self.page(), selector).await?;
             mouse::left_click_at(self.page(), x, y).await?;
             timing::human_pause(40, 20).await;
             mouse::left_click_at(self.page(), x, y).await?;
@@ -4666,8 +4706,8 @@ impl TaskContext {
 
     /// Middle-click (mouse wheel) on selector with human-like behavior.
     pub async fn middle_click(&self, selector: &str) -> Result<ClickOutcome> {
-        if navigation::selector_uses_accessibility_locator(selector) {
-            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+        if dom::selector_uses_accessibility_locator(selector) {
+            let (x, y) = dom::selector_action_point(self.page(), selector).await?;
             mouse::middle_click_at(self.page(), x, y).await?;
             let outcome = ClickOutcome {
                 click: ClickStatus::Success,
@@ -4703,7 +4743,7 @@ impl TaskContext {
     /// 2) native move + click via backend,
     /// 3) public task log with clicked selector and point.
     pub async fn nativeclick(&self, selector: &str) -> Result<ClickOutcome> {
-        if navigation::selector_uses_accessibility_locator(selector) {
+        if dom::selector_uses_accessibility_locator(selector) {
             return Err(anyhow::anyhow!(
                 "locator_unsupported: operation='nativeclick' requires css selector"
             ));
@@ -4796,8 +4836,8 @@ impl TaskContext {
 
     /// Human-like right-click (context menu) on selector.
     pub async fn right_click(&self, selector: &str) -> Result<ClickOutcome> {
-        if navigation::selector_uses_accessibility_locator(selector) {
-            let (x, y) = navigation::selector_action_point(self.page(), selector).await?;
+        if dom::selector_uses_accessibility_locator(selector) {
+            let (x, y) = dom::selector_action_point(self.page(), selector).await?;
             mouse::right_click_at(self.page(), x, y).await?;
             let outcome = ClickOutcome {
                 click: ClickStatus::Success,
@@ -4825,13 +4865,11 @@ impl TaskContext {
 
     /// Drag from one selector to another with human-like behavior.
     pub async fn drag(&self, from_selector: &str, to_selector: &str) -> Result<()> {
-        if navigation::selector_uses_accessibility_locator(from_selector)
-            || navigation::selector_uses_accessibility_locator(to_selector)
+        if dom::selector_uses_accessibility_locator(from_selector)
+            || dom::selector_uses_accessibility_locator(to_selector)
         {
-            let (start_x, start_y) =
-                navigation::selector_action_point(self.page(), from_selector).await?;
-            let (end_x, end_y) =
-                navigation::selector_action_point(self.page(), to_selector).await?;
+            let (start_x, start_y) = dom::selector_action_point(self.page(), from_selector).await?;
+            let (end_x, end_y) = dom::selector_action_point(self.page(), to_selector).await?;
             let click = &self.behavior_runtime.click;
             mouse::drag_between_points_human(
                 self.page(),
@@ -4912,7 +4950,7 @@ impl TaskContext {
         keyboard::type_text_profiled(self.page(), text, typing).await?;
 
         // Phase2: Verify text was entered (check value after typing)
-        let verification_js = if navigation::selector_uses_accessibility_locator(selector) {
+        let verification_js = if dom::selector_uses_accessibility_locator(selector) {
             r#"(() => {
                 const el = document.activeElement;
                 if (!el) return false;
@@ -5192,12 +5230,26 @@ impl TaskContext {
 
     /// Wait for selector to exist in DOM. Returns true if found within timeout.
     pub async fn wait_for(&self, selector: &str, timeout_ms: u64) -> Result<bool> {
-        query::wait_for(self.page(), selector, timeout_ms).await
+        query::wait_for(self.page(), selector, timeout_ms)
+            .await
+            .with_context(|| {
+                wrapper_timeout_context(
+                    "wait_for",
+                    format!("selector={selector} timeout_ms={timeout_ms}"),
+                )
+            })
     }
 
     /// Wait for selector to be visible. Returns true if visible within timeout.
     pub async fn wait_for_visible(&self, selector: &str, timeout_ms: u64) -> Result<bool> {
-        query::wait_for_visible(self.page(), selector, timeout_ms).await
+        query::wait_for_visible(self.page(), selector, timeout_ms)
+            .await
+            .with_context(|| {
+                wrapper_timeout_context(
+                    "wait_for_visible",
+                    format!("selector={selector} timeout_ms={timeout_ms}"),
+                )
+            })
     }
 
     /// Get current page URL.
@@ -5219,7 +5271,7 @@ impl TaskContext {
     pub async fn select_all(&self, selector: &str) -> Result<()> {
         let _ = self.focus(selector).await?;
 
-        if navigation::selector_uses_accessibility_locator(selector) {
+        if dom::selector_uses_accessibility_locator(selector) {
             let check_active_js = r#"(() => {
                 const el = document.activeElement;
                 if (!el) return 'not_found';
@@ -5383,7 +5435,12 @@ impl TaskContext {
             self.page.evaluate(js),
         )
         .await
-        .map_err(|_| anyhow::anyhow!("fallback click verification timeout"))??;
+        .map_err(|_| {
+            anyhow::anyhow!(wrapper_timeout_context(
+                "click_fallback_verify",
+                format!("selector={} timeout_ms=500", selector),
+            ))
+        })??;
         Ok(eval.value().and_then(|v| v.as_bool()).unwrap_or(false))
     }
 

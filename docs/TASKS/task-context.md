@@ -20,6 +20,9 @@ TaskContext is the public task-facing API.
 ## Behavior Rules
 
 - `api.click(selector)` should use the selector pipeline, not a one-off path.
+- `api.navigate(url, timeout_ms)` uses a 20s minimum navigation timeout before settle/load checks.
+- `api.navigate()` should label wrapper timeouts with `navigate_timeout` and stage info.
+- Timeout-backed wrapper APIs should use `wrapper_timeout | stage=...` labels.
 - High-level verbs should include the normal settle pause behavior.
 - `api.pause(base_ms)` uses uniform variance.
 - `api.pause_human(base_ms, pct)` uses Gaussian delay.
@@ -37,4 +40,3 @@ TaskContext is the public task-facing API.
 - [docs/TASKS/overview.md](overview.md)
 - [docs/TASKS/selectors.md](selectors.md)
 - [docs/ARCHITECTURE.md](../ARCHITECTURE.md)
-

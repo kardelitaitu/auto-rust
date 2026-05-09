@@ -25,7 +25,7 @@ cargo run pageview=url=https://example.com,scroll_read_amount=400,scroll_read_pa
 | `value` | string | legacy alias | Alternate target URL input |
 | `duration_ms` | u64 | 120000 | Task duration in milliseconds |
 | `initial_pause_ms` | u64 | 1000 | Initial delay before actions |
-| `selector_wait_ms` | u64 | 6000 | Wait for visible content |
+| `selector_wait_ms` | u64 | 10000 | Wait for visible content |
 | `cursor_interval_min_ms` | u64 | from profile | Min cursor move interval |
 | `cursor_interval_max_ms` | u64 | from profile | Max cursor move interval |
 | `scroll_interval_min_ms` | u64 | from profile | Min scroll interval |

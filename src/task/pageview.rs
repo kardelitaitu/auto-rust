@@ -15,7 +15,7 @@ use tokio::time::{sleep, timeout};
 // Keep this separate from the policy timeout so timeout enforcement can be tested.
 const PAGEVIEW_TASK_DURATION_MS: u64 = 300_000;
 const DEFAULT_INITIAL_PAUSE_MS: u64 = 1_000;
-const DEFAULT_SELECTOR_WAIT_MS: u64 = 6_000;
+const DEFAULT_SELECTOR_WAIT_MS: u64 = 10_000;
 const DEFAULT_CURSOR_INTERVAL_MIN_MS: u64 = 2_000;
 const DEFAULT_CURSOR_INTERVAL_MAX_MS: u64 = 3_000;
 const DEFAULT_SCROLL_INTERVAL_MIN_MS: u64 = 1_200;
@@ -187,15 +187,14 @@ async fn run_inner(
 
     api.pause(config.initial_pause_ms).await;
     api.navigate(&url, config.selector_wait_ms).await?;
-    let x_selectors = [
-        "[data-testid=\"primaryColumn\"]",
-        "main[role=\"main\"]",
+    let content_selectors = [
+        "main",
+        "[role=\"main\"]",
         "article",
-        "[data-testid=\"tweet\"]",
-        "form[action*=\"/i/flow/login\"]",
+        "section",
     ];
     match api
-        .wait_for_any_visible_selector(&x_selectors, config.selector_wait_ms)
+        .wait_for_any_visible_selector(&content_selectors, config.selector_wait_ms)
         .await
     {
         Ok(true) => info!("Visible content detected"),

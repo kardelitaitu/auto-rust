@@ -5,19 +5,28 @@ use std::time::{Duration, Instant};
 /// Recovery mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryMode {
-    Normal, Recovering, Degraded, Emergency,
+    Normal,
+    Recovering,
+    Degraded,
+    Emergency,
 }
 
 /// Type of recovery.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryType {
-    Automatic, Manual, Hybrid,
+    Automatic,
+    Manual,
+    Hybrid,
 }
 
 /// Recovery status.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryStatus {
-    Initiated, InProgress, Completed, Failed, Pending,
+    Initiated,
+    InProgress,
+    Completed,
+    Failed,
+    Pending,
 }
 
 /// Active recovery in progress.
@@ -69,5 +78,7 @@ impl RecoveryState {
 }
 
 impl Default for RecoveryState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

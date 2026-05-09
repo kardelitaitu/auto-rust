@@ -52,8 +52,7 @@ pub async fn wait_for_any_visible(
     selectors: &[&str],
     timeout_ms: u64,
 ) -> Result<bool> {
-    crate::capabilities::dom::wait_for_any_visible_selector(page, selectors, timeout_ms)
-        .await
+    crate::capabilities::dom::wait_for_any_visible_selector(page, selectors, timeout_ms).await
 }
 
 /// Get current page URL.

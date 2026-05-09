@@ -4445,14 +4445,18 @@ impl TaskContext {
             }
         };
 
-        let outcome = tokio::time::timeout(Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS), click_future)
-            .await
-            .with_context(|| {
-                wrapper_timeout_context(
-                    "click_total",
-                    format!("selector={} timeout_secs={}", selector, CLICK_TOTAL_TIMEOUT_SECS),
-                )
-            })?;
+        let outcome =
+            tokio::time::timeout(Duration::from_secs(CLICK_TOTAL_TIMEOUT_SECS), click_future)
+                .await
+                .with_context(|| {
+                    wrapper_timeout_context(
+                        "click_total",
+                        format!(
+                            "selector={} timeout_secs={}",
+                            selector, CLICK_TOTAL_TIMEOUT_SECS
+                        ),
+                    )
+                })?;
         let outcome = match outcome {
             Ok(outcome) => outcome,
             Err(err) => {

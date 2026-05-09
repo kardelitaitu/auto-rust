@@ -6,7 +6,12 @@ use std::time::{Duration, Instant};
 /// Type of failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FailureType {
-    Connection, Resource, Api, Timeout, Data, Unknown,
+    Connection,
+    Resource,
+    Api,
+    Timeout,
+    Data,
+    Unknown,
 }
 
 /// Individual failure record.
@@ -22,7 +27,10 @@ pub struct FailureRecord {
 /// Impact level of failure pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImpactLevel {
-    Low, Medium, High, Critical,
+    Low,
+    Medium,
+    High,
+    Critical,
 }
 
 /// Identified failure pattern.
@@ -54,5 +62,7 @@ impl FailureHistory {
 }
 
 impl Default for FailureHistory {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

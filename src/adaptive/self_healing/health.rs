@@ -1,24 +1,34 @@
 //! Health monitoring for self-healing.
 
-use std::time::Instant;
 use super::strategy::RecoveryActionType;
+use std::time::Instant;
 
 /// System health status.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SystemHealth {
-    Healthy, Degraded, Recovering, Critical, Offline,
+    Healthy,
+    Degraded,
+    Recovering,
+    Critical,
+    Offline,
 }
 
 /// Type of health check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HealthCheckType {
-    Connection, Resource, Performance, ErrorRate, Api,
+    Connection,
+    Resource,
+    Performance,
+    ErrorRate,
+    Api,
 }
 
 /// Health check status.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HealthCheckStatus {
-    Passed, Failed, Skipped,
+    Passed,
+    Failed,
+    Skipped,
 }
 
 /// Individual health check result.
@@ -52,5 +62,7 @@ impl HealthMonitor {
 }
 
 impl Default for HealthMonitor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

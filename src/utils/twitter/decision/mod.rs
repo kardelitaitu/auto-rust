@@ -12,8 +12,9 @@
 //! # Usage
 //!
 //! ```rust
-//! use crate::utils::twitter::decision::{DecisionEngineFactory, DecisionStrategy};
+//! use auto::utils::twitter::decision::{DecisionEngineFactory, DecisionStrategy};
 //!
+//! let api_key = "test_key".to_string();
 //! let engine = DecisionEngineFactory::create(
 //!     DecisionStrategy::Auto,
 //!     Some(api_key),

@@ -323,7 +323,7 @@ pub async fn process_candidate(
     }
 
     let status_url = tweet.get("status_url").and_then(|v| v.as_str());
-    
+
     let allow_dive = should_dive(&candidate_persona) && status_url.is_some();
     if !allow_dive {
         actions_to_do.retain(|&action| action == "like");

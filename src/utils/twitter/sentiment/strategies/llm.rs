@@ -4,7 +4,6 @@ use crate::llm::client::LlmClient;
 use crate::llm::models::ChatMessage;
 use crate::utils::twitter::sentiment::Sentiment;
 use anyhow::Result;
-use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -33,7 +32,10 @@ Respond with this exact JSON format:
 pub async fn analyze_sentiment_llm(llm: &LlmClient, text: &str) -> Result<LlmSentimentResult> {
     let truncated = if text.len() > 400 { &text[..400] } else { text };
     let prompt = SENTIMENT_PROMPT.replace("{tweet_text}", truncated);
-    let messages = vec![ChatMessage { role: "user".to_string(), content: prompt }];
+    let messages = vec![ChatMessage {
+        role: "user".to_string(),
+        content: prompt,
+    }];
     let response_text = llm.chat(messages).await?;
     let json_start = response_text.find('{').unwrap_or(0);
     let json_end = response_text.rfind('}').unwrap_or(response_text.len());
@@ -51,7 +53,8 @@ pub fn llm_sentiment_to_enum(llm_sentiment: &str) -> Sentiment {
 }
 
 type SentimentCache = Arc<RwLock<HashMap<String, Sentiment>>>;
-static SENTIMENT_CACHE: Lazy<SentimentCache> = Lazy::new(|| Arc::new(RwLock::new(HashMap::with_capacity(100))));
+static SENTIMENT_CACHE: Lazy<SentimentCache> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::with_capacity(100))));
 
 pub async fn analyze_sentiment_hybrid(
     llm: Option<&LlmClient>,
@@ -62,7 +65,9 @@ pub async fn analyze_sentiment_hybrid(
     let cache_key = if text.len() > 100 { &text[..100] } else { text }.to_string();
     {
         let cache = SENTIMENT_CACHE.read().await;
-        if let Some(&sentiment) = cache.get(&cache_key) { return sentiment; }
+        if let Some(&sentiment) = cache.get(&cache_key) {
+            return sentiment;
+        }
     }
 
     if llm.is_some() && rand::random::<f32>() < llm_probability {
@@ -84,6 +89,8 @@ pub async fn analyze_sentiment_hybrid(
 
 async fn cache_sentiment(key: String, sentiment: Sentiment) {
     let mut cache = SENTIMENT_CACHE.write().await;
-    if cache.len() >= 1000 { cache.retain(|_, _| rand::random::<bool>()); }
+    if cache.len() >= 1000 {
+        cache.retain(|_, _| rand::random::<bool>());
+    }
     cache.insert(key, sentiment);
 }

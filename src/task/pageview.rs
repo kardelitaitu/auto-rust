@@ -187,12 +187,7 @@ async fn run_inner(
 
     api.pause(config.initial_pause_ms).await;
     api.navigate(&url, config.selector_wait_ms).await?;
-    let content_selectors = [
-        "main",
-        "[role=\"main\"]",
-        "article",
-        "section",
-    ];
+    let content_selectors = ["main", "[role=\"main\"]", "article", "section"];
     match api
         .wait_for_any_visible_selector(&content_selectors, config.selector_wait_ms)
         .await

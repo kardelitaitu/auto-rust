@@ -79,7 +79,7 @@ mod tests {
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test timeout with non-existent selector
-        let result = auto::utils::navigation::wait_for_selector(&page, "#nonexistent", 100).await;
+        let result = auto::utils::dom::wait_for_selector(&page, "#nonexistent", 100).await;
         if let Err(ref e) = result {
             eprintln!("wait_for_selector error: {}", e);
         }
@@ -100,8 +100,7 @@ mod tests {
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test timeout with non-existent selector
-        let result =
-            auto::utils::navigation::wait_for_visible_selector(&page, "#nonexistent", 100).await;
+        let result = auto::utils::dom::wait_for_visible_selector(&page, "#nonexistent", 100).await;
         assert!(result.is_ok());
         assert!(!result.unwrap());
 
@@ -116,8 +115,7 @@ mod tests {
 
         // Test timeout with non-existent selectors
         let selectors = ["#a", "#b", "#c"];
-        let result =
-            auto::utils::navigation::wait_for_any_visible_selector(&page, &selectors, 100).await;
+        let result = auto::utils::dom::wait_for_any_visible_selector(&page, &selectors, 100).await;
         assert!(result.is_ok());
         assert!(!result.unwrap());
 
@@ -131,12 +129,12 @@ mod tests {
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test with body selector (always exists)
-        let result = auto::utils::navigation::selector_exists(&page, "body").await;
+        let result = auto::utils::dom::selector_exists(&page, "body").await;
         assert!(result.is_ok());
         assert!(result.unwrap());
 
         // Test with non-existent selector
-        let result = auto::utils::navigation::selector_exists(&page, "#nonexistent").await;
+        let result = auto::utils::dom::selector_exists(&page, "#nonexistent").await;
         assert!(result.is_ok());
         assert!(!result.unwrap());
 
@@ -150,12 +148,12 @@ mod tests {
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test with body selector (always visible)
-        let result = auto::utils::navigation::selector_is_visible(&page, "body").await;
+        let result = auto::utils::dom::selector_is_visible(&page, "body").await;
         assert!(result.is_ok());
         assert!(result.unwrap());
 
         // Test with non-existent selector
-        let result = auto::utils::navigation::selector_is_visible(&page, "#nonexistent").await;
+        let result = auto::utils::dom::selector_is_visible(&page, "#nonexistent").await;
         assert!(result.is_ok());
         assert!(!result.unwrap());
 
@@ -194,7 +192,7 @@ mod tests {
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test focus on body (should succeed)
-        let result = auto::utils::navigation::focus(&page, "body").await;
+        let result = auto::utils::dom::focus(&page, "body").await;
         assert!(result.is_ok());
 
         let _ = page.close().await;

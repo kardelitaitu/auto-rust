@@ -125,8 +125,6 @@ async fn wait_for_page_settle(page: &Page) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_referrers_array_has_values() {
         let referrers = [

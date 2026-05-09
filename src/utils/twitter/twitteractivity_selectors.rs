@@ -12,7 +12,8 @@ pub fn selector_feed_visible() -> &'static str {
 /// Returns JS to find the center coordinates of the first element matching a selector.
 /// Returns `{x, y}` or `null` if not found.
 pub fn selector_element_center(selector: &str) -> String {
-    include_str!("js/selector_element_center.js").replace("{SELECTOR}", &selector.replace('"', "\\\""))
+    include_str!("js/selector_element_center.js")
+        .replace("{SELECTOR}", &selector.replace('"', "\\\""))
 }
 
 /// Returns JS to query all tweet/article elements currently in the DOM.
@@ -164,7 +165,8 @@ pub fn js_find_reply_submit_button() -> &'static str {
 /// Takes a CSS selector string and searches within the first visible tweet article.
 /// Returns `{x, y}` or `null` if not found.
 pub fn js_root_tweet_button_center(selector: &str) -> String {
-    include_str!("js/js_root_tweet_button_center.js").replace("{SELECTOR}", &selector.replace('"', "\\\""))
+    include_str!("js/js_root_tweet_button_center.js")
+        .replace("{SELECTOR}", &selector.replace('"', "\\\""))
 }
 
 /// Returns JS to identify reply candidates within a thread dive.

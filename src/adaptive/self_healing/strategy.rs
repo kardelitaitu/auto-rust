@@ -1,7 +1,7 @@
 //! Recovery strategies and classification.
 
-use std::time::{Duration, Instant};
 use super::health::SystemHealth;
+use std::time::{Duration, Instant};
 
 /// Recovery action type.
 #[derive(Debug, Clone)]
@@ -33,15 +33,25 @@ pub struct HealthImpact {
 }
 
 /// Error category.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ErrorCategory {
-    Connection, Resource, Api, Data, Logic, Unknown,
+    Connection,
+    Resource,
+    Api,
+    Data,
+    Logic,
+    #[default]
+    Unknown,
 }
 
 /// Error severity level.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ErrorSeverity {
-    Low, Medium, High, Critical,
+    #[default]
+    Low,
+    Medium,
+    High,
+    Critical,
 }
 
 /// Error classification.
@@ -75,15 +85,10 @@ pub struct ErrorProcedure {
 }
 
 /// Error recovery strategy.
+#[derive(Default)]
 pub struct ErrorRecovery {
     pub classifications: Vec<ErrorClassification>,
     pub procedures: Vec<ErrorProcedure>,
-}
-
-impl Default for ErrorRecovery {
-    fn default() -> Self {
-        Self { classifications: vec![], procedures: vec![] }
-    }
 }
 
 impl ErrorRecovery {
@@ -146,18 +151,10 @@ impl Default for ResourceCleanup {
 }
 
 /// Resource recovery strategy.
+#[derive(Default)]
 pub struct ResourceRecovery {
     pub scaling: ResourceScaling,
     pub cleanup: ResourceCleanup,
-}
-
-impl Default for ResourceRecovery {
-    fn default() -> Self {
-        Self {
-            scaling: ResourceScaling::default(),
-            cleanup: ResourceCleanup::default(),
-        }
-    }
 }
 
 /// Performance tuning parameters.
@@ -168,14 +165,9 @@ pub struct PerformanceTuning {
 }
 
 /// Performance recovery strategy.
+#[derive(Default)]
 pub struct PerformanceRecovery {
     pub tuning: PerformanceTuning,
-}
-
-impl Default for PerformanceRecovery {
-    fn default() -> Self {
-        Self { tuning: PerformanceTuning::default() }
-    }
 }
 
 /// Recovery strategies available.
@@ -198,5 +190,7 @@ impl RecoveryStrategies {
 }
 
 impl Default for RecoveryStrategies {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

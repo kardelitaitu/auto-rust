@@ -119,12 +119,12 @@ fn remove_emojis(text: &str) -> String {
     text.chars()
         .filter(|c| {
             let cp = *c as u32;
-            !(0x1F600..=0x1F64F).contains(&cp) &&
-            !(0x1F300..=0x1F5FF).contains(&cp) &&
-            !(0x1F680..=0x1F6FF).contains(&cp) &&
-            !(0x1F1E0..=0x1F1FF).contains(&cp) &&
-            !(0x2600..=0x26FF).contains(&cp) &&
-            !(0x2700..=0x27BF).contains(&cp)
+            !(0x1F600..=0x1F64F).contains(&cp)
+                && !(0x1F300..=0x1F5FF).contains(&cp)
+                && !(0x1F680..=0x1F6FF).contains(&cp)
+                && !(0x1F1E0..=0x1F1FF).contains(&cp)
+                && !(0x2600..=0x26FF).contains(&cp)
+                && !(0x2700..=0x27BF).contains(&cp)
         })
         .collect()
 }

@@ -233,9 +233,12 @@ async fn extract_visible_tweet_ids(api: &TaskContext) -> Result<Vec<String>> {
 
     let result = page.evaluate(js).await?;
     let value = result.value().and_then(|v| v.as_array());
-    
+
     if let Some(arr) = value {
-        Ok(arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        Ok(arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect())
     } else {
         Ok(Vec::new())
     }

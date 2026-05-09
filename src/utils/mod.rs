@@ -2,6 +2,7 @@
 pub mod accessibility_locator;
 pub mod blockmedia;
 pub mod clipboard;
+pub mod dom;
 pub mod geometry;
 pub mod keyboard;
 pub mod math;
@@ -24,6 +25,8 @@ pub use accessibility_locator::*;
 pub use blockmedia::*;
 #[allow(unused_imports)]
 pub use clipboard::*;
+#[allow(unused_imports)]
+pub use dom::*;
 #[allow(unused_imports)]
 pub use geometry::*;
 #[allow(unused_imports)]

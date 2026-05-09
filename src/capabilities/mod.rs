@@ -8,6 +8,10 @@ pub mod keyboard {
     pub use crate::internal::keyboard::*;
 }
 
+pub mod dom {
+    pub use crate::internal::dom::*;
+}
+
 pub mod navigation {
     pub use crate::internal::navigation::*;
 }

@@ -7,5 +7,6 @@
 
 pub mod learning_engine;
 pub mod predictive_scorer;
+pub mod self_healing;
 
 pub use learning_engine::LearningEngine;

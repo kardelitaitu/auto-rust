@@ -1,14 +1,14 @@
 //! Twitter thread dive task.
 //! Reads a full tweet thread with human-like timing and scrolling.
 
-use crate::prelude::TaskContext;
+use crate::prelude::*;
 use crate::utils::math::random_in_range;
 use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
-use crate::utils::twitter::twitteractivity_humanized::human_pause;
 use crate::utils::twitter::twitteractivity_navigation::goto_home;
 use anyhow::Result;
 use log::info;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
 
@@ -52,7 +52,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     info!("[twitterdive] Navigating to tweet...");
     api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
         .await?;
-    api.pause(2000).await;
+    api.pause_human(2000, 20).await;
 
     // Extract initial tweet info
     let (author, text) = extract_tweet_info(api)
@@ -63,58 +63,75 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Read thread with human-like behavior
     let deadline = Instant::now() + Duration::from_millis(duration_ms);
     let mut scrolls_done = 0u32;
-    let mut tweets_read = 1u32; // Count initial tweet
+    let mut unique_tweets = HashSet::new();
 
     info!("[twitterdive] Starting thread read...");
 
     // Initial reading pause
-    human_pause(api, random_in_range(3000, 6000)).await;
+    api.pause_human(random_in_range(3000, 6000), 20).await;
 
     while scrolls_done < max_scrolls && Instant::now() < deadline {
+        // Track unique tweets visible before scroll
+        if let Ok(ids) = extract_visible_tweet_ids(api).await {
+            for id in ids {
+                unique_tweets.insert(id);
+            }
+        }
+
         // Scroll down to reveal more of thread
         info!("[twitterdive] Scroll {}/{}", scrolls_done + 1, max_scrolls);
 
-        let scroll_amount = random_in_range(400, 800);
-        let js = format!("window.scrollBy(0, {});", scroll_amount);
-        api.page().evaluate(js).await?;
+        let scroll_amount = random_in_range(400, 800) as i32;
+        let (_, start_y) = api.get_scroll_position().await.unwrap_or((0, 0));
+
+        // Use human-like scrolling capability
+        api.scroll_read(1, scroll_amount, true, true).await?;
 
         scrolls_done += 1;
 
         // Reading pause after scroll
         let read_pause = random_in_range(2000, 5000);
-        human_pause(api, read_pause).await;
+        api.pause_human(read_pause, 30).await;
 
-        // Check if we've reached end of thread
+        // Verify if scroll position changed (End-of-thread detection)
+        let (_, end_y) = api.get_scroll_position().await.unwrap_or((0, 0));
+        let at_bottom = end_y <= start_y; // Didn't move down
+
+        // Check for "Show more" or end indicators
         let at_end = check_end_of_thread(api).await?;
-        if at_end {
-            info!("[twitterdive] Reached end of thread");
+        if at_bottom && at_end {
+            info!("[twitterdive] Reached true end of thread (no further scroll possible)");
             break;
         }
 
-        tweets_read += 1;
-
         // Occasional micro-scroll back up (human behavior)
         if random_in_range(0, 100) < 20 {
-            let back_scroll = random_in_range(100, 300);
-            let js = format!("window.scrollBy(0, -{});", back_scroll);
-            api.page().evaluate(js).await?;
-            human_pause(api, 1000).await;
+            let back_scroll = random_in_range(100, 300) as i32;
+            api.scroll_read(1, -back_scroll, true, false).await?;
+            api.pause_human(1000, 20).await;
+        }
+    }
+
+    // Final capture of visible tweets
+    if let Ok(ids) = extract_visible_tweet_ids(api).await {
+        for id in ids {
+            unique_tweets.insert(id);
         }
     }
 
     // Final summary
     info!("[twitterdive] Thread reading complete");
     info!(
-        "[twitterdive] Scrolls: {}, Tweets read: {}, Duration: {:.1}s",
+        "[twitterdive] Scrolls: {}, Unique tweets read: {}, Duration: {:.1}s",
         scrolls_done,
-        tweets_read,
+        unique_tweets.len(),
         (Instant::now() - deadline).as_secs_f64() + (duration_ms as f64 / 1000.0)
     );
 
     // Navigate back to home
     info!("[twitterdive] Returning to home feed...");
     goto_home(api).await?;
-    api.pause(2000).await;
+    api.pause_human(2000, 20).await;
 
     info!("[twitterdive] Task completed");
     Ok(())
@@ -188,6 +205,42 @@ async fn extract_tweet_info(api: &TaskContext) -> Result<(String, String)> {
     Err(anyhow::anyhow!("Could not extract tweet info"))
 }
 
+async fn extract_visible_tweet_ids(api: &TaskContext) -> Result<Vec<String>> {
+    let page = api.page();
+    let js = r#"
+        (function() {
+            var articles = document.querySelectorAll('article[data-testid="tweet"]');
+            var ids = [];
+            for (var i = 0; i < articles.length; i++) {
+                var el = articles[i];
+                var id = el.dataset.tweetId || 
+                         el.getAttribute('data-item-id') || 
+                         el.getAttribute('data-tweet-id');
+                
+                if (!id) {
+                    var statusLink = el.querySelector('a[href*="/status/"]');
+                    if (statusLink) {
+                        var parts = statusLink.getAttribute('href').split('/');
+                        id = parts[parts.length - 1].split('?')[0];
+                    }
+                }
+                
+                if (id) ids.push(id);
+            }
+            return ids;
+        })()
+    "#;
+
+    let result = page.evaluate(js).await?;
+    let value = result.value().and_then(|v| v.as_array());
+    
+    if let Some(arr) = value {
+        Ok(arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+    } else {
+        Ok(Vec::new())
+    }
+}
+
 async fn check_end_of_thread(api: &TaskContext) -> Result<bool> {
     let page = api.page();
 
@@ -195,17 +248,12 @@ async fn check_end_of_thread(api: &TaskContext) -> Result<bool> {
         .evaluate(
             r#"
         (function() {
-            // Check if we're at bottom of page
-            var atBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 100;
-            
             // Check for "Show more" or end indicators
             var showMore = document.querySelector('[data-testid="showMoreThread"]');
             
-            // Check for no more replies
-            var articles = document.querySelectorAll('article[data-testid="tweet"]');
-            var hasMoreTweets = articles.length > 1;
-            
-            return atBottom && !showMore && !hasMoreTweets;
+            // On Twitter, if we reach the end, there is often a specific marker or 
+            // simply the absence of further articles being lazily loaded.
+            return !showMore;
         })()
     "#,
         )

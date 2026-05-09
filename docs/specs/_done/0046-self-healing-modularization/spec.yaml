@@ -1,0 +1,28 @@
+version: 1
+id: 0046-self-healing-modularization
+title: Self-Healing Modularization
+status: done
+owner: spec-agent
+implementer: archived-pending
+priority: P2
+area:
+  - adaptive
+files:
+  code:
+    - src/adaptive/self_healing/
+    - src/adaptive/mod.rs
+  docs:
+    - docs/specs/_done/0046-self-healing-modularization/README.md
+    - docs/specs/_done/0046-self-healing-modularization/plan.md
+    - docs/specs/_done/0046-self-healing-modularization/validation.md
+    - docs/specs/_done/0046-self-healing-modularization/notes.md
+acceptance:
+  - `src/adaptive/self_healing.rs` is deleted.
+  - The self-healing subsystem is modularized into `health.rs`, `strategy.rs`, `history.rs`, `state.rs`, and `system.rs` inside a `self_healing/` directory.
+  - The public interface provided by the `self_healing` module remains compatible with the rest of the codebase.
+  - All existing unit tests pass.
+non_goals:
+  - Altering the mathematical logic or algorithms of the self-healing strategies.
+  - Adding new tests for previously untested logic (this is a pure refactor).
+risks:
+  - Import path hell: Moving 34 structs might require widespread `use` statement updates if not re-exported properly in `mod.rs`.

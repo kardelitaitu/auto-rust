@@ -16,6 +16,7 @@ pub trait SentimentStrategy: std::fmt::Debug {
 }
 
 pub mod analyzer;
+pub mod strategies;
 pub mod utils;
 
 pub use analyzer::*;

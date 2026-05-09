@@ -164,6 +164,10 @@ async fn engage_replies(
             let mut replies_engaged = 0;
             let max_replies = rand::random::<u32>() % 2 + 1;
             for reply in replies {
+                if task_config.dry_run_actions {
+                    info!("Dry-run: would like reply...");
+                    continue;
+                }
                 if replies_engaged >= max_replies {
                     break;
                 }
@@ -319,22 +323,23 @@ pub async fn process_candidate(
     }
 
     let status_url = tweet.get("status_url").and_then(|v| v.as_str());
-    let selected_action = select_candidate_action(
-        &actions_to_do,
-        should_dive(&candidate_persona),
-        status_url.is_some(),
-    );
-    let Some(selected_action) = selected_action else {
+    
+    let allow_dive = should_dive(&candidate_persona) && status_url.is_some();
+    if !allow_dive {
+        actions_to_do.retain(|&action| action == "like");
+    }
+
+    if actions_to_do.is_empty() {
         return Ok(CandidateResult {
             should_break: false,
             next_scroll,
             actions_this_scan,
             actions_taken: _actions_taken,
         });
-    };
+    }
 
     // Retweet, quote, reply, follow, and bookmark require a detail view; like does not.
-    let need_dive = selected_action != "like";
+    let need_dive = actions_to_do.iter().any(|&action| action != "like");
     let mut did_dive = false;
 
     if need_dive {
@@ -411,7 +416,7 @@ pub async fn process_candidate(
 
     // Perform the selected action.
     let mut root_action_success = false;
-    for action in [selected_action] {
+    for action in actions_to_do {
         if task_config.dry_run_actions {
             if action != "like" && !did_dive {
                 info!(
@@ -971,28 +976,6 @@ pub fn calc_rate(success: usize, total: usize) -> f64 {
     }
 }
 
-/// Select candidate action (helper for process_candidate).
-pub fn select_candidate_action(
-    actions_to_do: &[&'static str],
-    allow_dive: bool,
-    can_open_detail: bool,
-) -> Option<&'static str> {
-    if allow_dive && can_open_detail {
-        if let Some(action) = actions_to_do
-            .iter()
-            .copied()
-            .find(|action| *action != "like")
-        {
-            return Some(action);
-        }
-    }
-
-    actions_to_do
-        .iter()
-        .copied()
-        .find(|action| *action == "like")
-}
-
 /// Check if action is allowed by limits (helper for process_candidate).
 pub fn action_allowed_by_limits(
     action: &str,
@@ -1019,39 +1002,6 @@ mod integration_tests {
     use super::*;
     use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
     use serde_json::json;
-
-    /// Test that select_candidate_action prefers non-like actions when dive is allowed
-    #[test]
-    fn select_candidate_action_prefers_non_like_when_dive_allowed() {
-        let actions = vec!["like", "retweet", "reply"];
-        let result = select_candidate_action(&actions, true, true);
-        assert_eq!(result, Some("retweet"));
-    }
-
-    /// Test that select_candidate_action falls back to like when no other actions available
-    #[test]
-    fn select_candidate_action_falls_back_to_like() {
-        let actions = vec!["like"];
-        let result = select_candidate_action(&actions, true, true);
-        assert_eq!(result, Some("like"));
-    }
-
-    /// Test that select_candidate_action returns None for empty actions
-    #[test]
-    fn select_candidate_action_returns_none_for_empty() {
-        let actions: Vec<&str> = vec![];
-        let result = select_candidate_action(&actions, true, true);
-        assert_eq!(result, None);
-    }
-
-    /// Test that select_candidate_action only selects like when dive not allowed
-    #[test]
-    fn select_candidate_action_only_like_when_no_dive() {
-        let actions = vec!["like", "retweet", "reply"];
-        // When allow_dive is false, only like is selected (even if others available)
-        let result = select_candidate_action(&actions, false, true);
-        assert_eq!(result, Some("like"));
-    }
 
     /// Test action_allowed_by_limits for each action type
     #[test]
@@ -1311,57 +1261,6 @@ mod statistical_tests {
 #[cfg(test)]
 mod property_tests {
     use super::*;
-
-    /// Property: select_candidate_action never panics on valid inputs
-    #[test]
-    fn select_candidate_action_no_panic_on_valid_inputs() {
-        let actions_list: Vec<Vec<&str>> = vec![
-            vec![],
-            vec!["like"],
-            vec!["retweet"],
-            vec!["reply"],
-            vec!["like", "retweet", "reply", "follow", "quote", "bookmark"],
-            vec!["like"; 100], // Large list
-        ];
-
-        for actions in &actions_list {
-            for allow_dive in [true, false] {
-                for can_open_detail in [true, false] {
-                    let _result = select_candidate_action(actions, allow_dive, can_open_detail);
-                }
-            }
-        }
-    }
-
-    /// Property: select_candidate_action returns None only when actions empty
-    #[test]
-    fn select_candidate_action_returns_none_only_when_empty() {
-        // Empty actions should return None
-        assert_eq!(select_candidate_action(&[], true, true), None);
-        assert_eq!(select_candidate_action(&[], true, false), None);
-        assert_eq!(select_candidate_action(&[], false, true), None);
-        assert_eq!(select_candidate_action(&[], false, false), None);
-
-        // Non-empty should return Some
-        assert!(select_candidate_action(&["like"], true, true).is_some());
-        assert!(select_candidate_action(&["retweet"], true, true).is_some());
-        assert!(select_candidate_action(&["like", "retweet"], true, true).is_some());
-    }
-
-    /// Property: select_candidate_action returns only valid actions from input
-    #[test]
-    fn select_candidate_action_returns_only_valid_actions() {
-        let actions = vec!["like", "retweet", "reply"];
-
-        for _ in 0..100 {
-            if let Some(selected) = select_candidate_action(&actions, true, true) {
-                assert!(
-                    actions.contains(&selected),
-                    "Selected action must be from input list"
-                );
-            }
-        }
-    }
 
     /// Property: action_allowed_by_limits never panics on valid/invalid action names
     #[test]

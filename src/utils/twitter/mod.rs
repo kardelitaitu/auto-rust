@@ -15,17 +15,13 @@ pub mod twitteractivity_humanized;
 pub mod twitteractivity_interact;
 pub mod twitteractivity_limits;
 pub mod twitteractivity_llm;
+pub mod twitteractivity_llm_execute;
+pub mod twitteractivity_llm_validation;
 pub mod twitteractivity_navigation;
 pub mod twitteractivity_persona;
 pub mod twitteractivity_popup;
 pub mod twitteractivity_retry;
 pub mod twitteractivity_selectors;
-pub mod twitteractivity_sentiment;
-pub mod twitteractivity_sentiment_context;
-pub mod twitteractivity_sentiment_domains;
-pub mod twitteractivity_sentiment_emoji;
-pub mod twitteractivity_sentiment_enhanced;
-pub mod twitteractivity_sentiment_llm;
 pub mod twitteractivity_state;
 
 #[allow(unused_imports)]

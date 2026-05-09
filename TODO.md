@@ -132,24 +132,24 @@
 | `src/browser.rs` | 95% | Helper behavior and port config coverage already exist; remaining work is regression coverage, not refactor. |
 | `src/orchestrator.rs` | 95% | Cancellation, guard, timeout, and aggregation paths are already implemented and testable. |
 
-- [ ] **src/task/twitteractivity.rs**
+- [x] **src/task/twitteractivity.rs**
   - Add regression tests for `run()` / `run_inner()` payload normalization and error propagation.
   - Add a wiring test for `select_entry_point()` and task config defaults.
   - Add a summary/logging regression for `log_summary()`.
   - Recheck coverage before keeping this in any <50% bucket.
 
-- [ ] **src/adaptive/predictive_scorer.rs**
+- [x] **src/adaptive/predictive_scorer.rs**
   - Rebaseline with `cargo tarpaulin` or `cargo llvm-cov`.
   - Add edge-case tests for zero, max, and clamped scoring inputs.
   - Add property tests for score bounds and monotonicity.
   - If persistence is still required, move that work to `learning_engine.rs`.
 
-- [ ] **src/browser.rs**
+- [x] **src/browser.rs**
   - Add integration coverage for filtered discovery and profile/session fallback ordering.
   - Add regression coverage for empty-config + filter inputs.
   - Keep the pure helper tests as the baseline.
 
-- [ ] **src/orchestrator.rs**
+- [x] **src/orchestrator.rs**
   - Add a backoff-cancellation regression for `execute_task_with_retry()`.
   - Add one timeout/unhealthy-session regression only if the baseline still shows a gap.
   - Rebaseline before adding more cases.

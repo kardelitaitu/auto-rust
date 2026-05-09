@@ -1,0 +1,46 @@
+version: 1
+id: 0048-twitteractivity-orchestrator-stability
+title: TwitterActivity orchestrator stability
+status: approved
+owner: spec-agent
+priority: P2
+area:
+  - twitter-activity
+  - tests
+files:
+  code:
+    - src/task/twitteractivity.rs
+    - src/utils/twitter/twitteractivity_navigation.rs
+    - src/utils/twitter/twitteractivity_state.rs
+    - src/utils/twitter/twitteractivity_feed.rs
+    - src/utils/twitter/twitteractivity_engagement.rs
+    - src/utils/twitter/twitteractivity_limits.rs
+    - src/utils/twitter/twitteractivity_persona.rs
+    - tests/twitteractivity_integration.rs
+  docs:
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/README.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/baseline.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/internal-api-outline.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/plan.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/validation-checklist.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/validation.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/notes.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/ci-commands.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/decisions.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/quality-rules.md
+    - docs/specs/_active/0048-twitteractivity-orchestrator-stability/implementation-notes.md
+acceptance:
+  - `run()` keeps a hard timeout boundary and returns a clear timeout error when the session exceeds the configured duration.
+  - `TaskConfig::from_payload()` keeps the current payload contract and rejects invalid inputs with a readable validation error.
+  - `run_inner()` keeps the current phase wiring: persona setup, navigation, scanning, candidate processing, and summary logging.
+  - `build_summary_lines()` keeps summary keys and remaining-limit keys stable for downstream parsing.
+  - The task-level regression tests and integration tests stay green.
+  - `./check-fast.ps1`, `./check.ps1`, and `spec-lint.ps1` pass for this package.
+non_goals:
+  - Replace the helper-module architecture.
+  - Add new Twitter/X actions.
+  - Change engagement heuristics or persona math unless a bug blocks correctness.
+risks:
+  - Summary format changes can break log assertions.
+  - Randomized entry-point behavior can make tests flaky if coverage is too narrow.
+  - Timeout and loop thresholds can drift if config defaults change without matching test updates.

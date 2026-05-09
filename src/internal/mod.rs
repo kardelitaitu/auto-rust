@@ -34,6 +34,10 @@ pub mod clipboard {
     pub use crate::utils::clipboard::*;
 }
 
+pub mod dom {
+    pub use crate::utils::dom::*;
+}
+
 pub mod text {
     pub use crate::utils::text::*;
 }

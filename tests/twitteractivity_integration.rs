@@ -6,8 +6,8 @@
 use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
 use auto::task::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
 use auto::utils::twitter::{
+    sentiment::{analyze_tweet_sentiment_sync, sentiment_score, Sentiment, SentimentAnalyzer},
     twitteractivity_persona::select_persona_weights,
-    twitteractivity_sentiment::{analyze_tweet_sentiment, sentiment_score, Sentiment},
 };
 use serde_json::json;
 use std::time::Duration;
@@ -54,20 +54,21 @@ fn twitteractivity_persona_weights_in_range() {
 /// Confirms that sentiment classification returns expected categories for tweet objects.
 #[test]
 fn twitteractivity_sentiment_classification_works() {
+    let analyzer = SentimentAnalyzer::new();
     let positive_tweet = json!({ "text": "This is amazing! I love it!" });
     let negative_tweet = json!({ "text": "Terrible, worst, hate it." });
     let neutral_tweet = json!({ "text": "The meeting starts at 3pm." });
 
     assert!(matches!(
-        analyze_tweet_sentiment(&positive_tweet),
+        analyze_tweet_sentiment_sync(&analyzer, &positive_tweet),
         Sentiment::Positive
     ));
     assert!(matches!(
-        analyze_tweet_sentiment(&negative_tweet),
+        analyze_tweet_sentiment_sync(&analyzer, &negative_tweet),
         Sentiment::Negative
     ));
     assert!(matches!(
-        analyze_tweet_sentiment(&neutral_tweet),
+        analyze_tweet_sentiment_sync(&analyzer, &neutral_tweet),
         Sentiment::Neutral
     ));
 }
@@ -467,8 +468,9 @@ fn twitteractivity_entry_point_selection_distribution() {
 /// Tests that sentiment analysis handles empty text.
 #[test]
 fn twitteractivity_sentiment_empty_text() {
+    let analyzer = SentimentAnalyzer::new();
     let empty_tweet = json!({ "text": "" });
-    let result = analyze_tweet_sentiment(&empty_tweet);
+    let result = analyze_tweet_sentiment_sync(&analyzer, &empty_tweet);
 
     // Empty text should be classified as neutral
     assert!(
@@ -480,9 +482,10 @@ fn twitteractivity_sentiment_empty_text() {
 /// Tests that sentiment analysis handles very long text.
 #[test]
 fn twitteractivity_sentiment_long_text() {
+    let analyzer = SentimentAnalyzer::new();
     let long_text = "This is absolutely amazing and wonderful! I love it so much, it's the best thing ever. Truly fantastic and incredible! ";
     let long_tweet = json!({ "text": long_text });
-    let result = analyze_tweet_sentiment(&long_tweet);
+    let result = analyze_tweet_sentiment_sync(&analyzer, &long_tweet);
 
     // Long positive text should still be classified as positive
     assert!(
@@ -498,8 +501,9 @@ fn twitteractivity_sentiment_long_text() {
 /// Test sentiment analysis with only emojis
 #[test]
 fn twitteractivity_sentiment_only_emojis() {
+    let analyzer = SentimentAnalyzer::new();
     let emoji_tweet = json!({ "text": "🎉🎊🎈🎁" });
-    let result = analyze_tweet_sentiment(&emoji_tweet);
+    let result = analyze_tweet_sentiment_sync(&analyzer, &emoji_tweet);
 
     // Emojis alone - should be neutral or positive
     assert!(
@@ -566,9 +570,10 @@ fn twitteractivity_engagement_limits_zero_max() {
 /// Test sentiment analysis with mixed positive/negative
 #[test]
 fn twitteractivity_sentiment_mixed_signals() {
+    let analyzer = SentimentAnalyzer::new();
     let mixed_tweet =
         json!({ "text": "I love it but hate the service, it's amazing yet terrible." });
-    let result = analyze_tweet_sentiment(&mixed_tweet);
+    let result = analyze_tweet_sentiment_sync(&analyzer, &mixed_tweet);
 
     // Mixed signals - could be neutral or based on dominant sentiment
     assert!(matches!(

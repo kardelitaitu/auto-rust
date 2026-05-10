@@ -1,6 +1,6 @@
 # TwitterActivity Orchestrator Stability
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

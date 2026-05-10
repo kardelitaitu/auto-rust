@@ -10,7 +10,10 @@
 use anyhow::Result;
 use log::{error, info, warn};
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use std::{
+    future::Future,
+    time::{Duration, Instant},
+};
 use tokio::time::timeout;
 
 use crate::config::Config;
@@ -21,6 +24,7 @@ use crate::utils::twitter::{
     twitteractivity_limits::EngagementLimits,
     twitteractivity_navigation::phase1_navigation,
     twitteractivity_persona::{apply_behavior_profile, select_persona_weights},
+    twitteractivity_simulation::run_simulation,
     twitteractivity_state::{CandidateContext, SessionState, TaskConfig},
 };
 
@@ -42,18 +46,11 @@ use crate::utils::twitter::{
 pub async fn run(api: &TaskContext, payload: Value, config: &Config) -> Result<()> {
     let task_config = TaskConfig::from_payload(&payload, &config.twitter_activity)
         .map_err(|e| anyhow::anyhow!("Payload validation failed: {}", e))?;
+    if task_config.simulate_only {
+        return run_simulation(&task_config, config);
+    }
     let duration_ms = task_config.duration_ms;
-    timeout(
-        Duration::from_millis(duration_ms),
-        run_inner(api, payload, config, task_config),
-    )
-    .await
-    .map_err(|_| {
-        anyhow::anyhow!(
-            "twitteractivity exceeded task duration of {}ms",
-            duration_ms
-        )
-    })?
+    run_with_timeout(duration_ms, run_inner(api, payload, config, task_config)).await
 }
 
 /// Main task logic - thin orchestrator that delegates to utility modules.
@@ -249,6 +246,20 @@ async fn run_inner(
     Ok(())
 }
 
+async fn run_with_timeout<F>(duration_ms: u64, future: F) -> Result<()>
+where
+    F: Future<Output = Result<()>>,
+{
+    timeout(Duration::from_millis(duration_ms), future)
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "twitteractivity exceeded task duration of {}ms",
+                duration_ms
+            )
+        })?
+}
+
 /// Log final engagement summary.
 fn log_summary(session: &SessionState, task_config: &TaskConfig, _api: &TaskContext) {
     let (summary_line, remaining_limits_line) = build_summary_lines(session, task_config);
@@ -330,6 +341,7 @@ mod config_tests {
         assert!(config.smart_decision_enabled);
         assert!(!config.enhanced_sentiment_enabled);
         assert!(config.dry_run_actions);
+        assert!(!config.simulate_only);
     }
 }
 
@@ -391,5 +403,31 @@ mod summary_tests {
                 "remaining limits line missing {key}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::run_with_timeout;
+    use std::future::pending;
+
+    #[tokio::test]
+    async fn run_with_timeout_returns_inner_result() {
+        let result = run_with_timeout(50, async { Ok::<_, anyhow::Error>(()) }).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn run_with_timeout_reports_timeout() {
+        let result = run_with_timeout(1, async {
+            pending::<()>().await;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await;
+
+        let err = result.expect_err("expected timeout");
+        assert!(err
+            .to_string()
+            .contains("twitteractivity exceeded task duration"));
     }
 }

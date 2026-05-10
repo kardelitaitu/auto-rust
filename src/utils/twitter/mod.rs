@@ -22,6 +22,7 @@ pub mod twitteractivity_persona;
 pub mod twitteractivity_popup;
 pub mod twitteractivity_retry;
 pub mod twitteractivity_selectors;
+pub mod twitteractivity_simulation;
 pub mod twitteractivity_state;
 
 #[allow(unused_imports)]
@@ -56,6 +57,8 @@ pub use twitteractivity_popup::*;
 pub use twitteractivity_retry::*;
 #[allow(unused_imports)]
 pub use twitteractivity_selectors::*;
+#[allow(unused_imports)]
+pub use twitteractivity_simulation::*;
 
 #[allow(unused_imports)]
 pub use twitteractivity_state::*;

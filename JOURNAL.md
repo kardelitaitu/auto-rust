@@ -1230,3 +1230,25 @@ Completed comprehensive test coverage for the accessibility locator feature acro
 | spec-lint | ✅ Pass |
 | Build | ✅ Pass |
 | Tests | ✅ Pass |
+
+## 2026-05-10 - TwitterActivity simulation archive+
+
+### Accomplished This Session+
+
+#### TwitterActivity+
+- **src/task/twitteractivity.rs**: added a hard `simulate_only=true` branch that skips live browser flow and routes to a pure simulation path+
+- **src/utils/twitter/twitteractivity_simulation.rs**: added a seeded log-only simulation planner with stable schema output and no browser calls+
+- **src/utils/twitter/twitteractivity_state.rs**: extended payload parsing for simulation mode and kept live validation strict+
+
+#### Spec Workflow+
+- **docs/specs/_done/0048-twitteractivity-orchestrator-stability/**: archived the orchestrator stability package after validation+
+- **docs/specs/_done/0049-twitteractivity-simulation-tester/**: archived the simulation tester package after validation+
+
+### Current Status+
+
+| Item | Status |
+|------|--------|
+| spec-lint | ✅ Pass |
+| Build | ✅ Pass |
+| Tests | ✅ Pass |
+| check.ps1 | ✅ Pass |

@@ -9,6 +9,7 @@ use crate::utils::twitter::{
     twitteractivity_persona::PersonaWeights,
 };
 use log::info;
+use rand::Rng;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -16,11 +17,31 @@ use std::time::{Duration, Instant};
 /// Validation errors for task payload.
 #[derive(Debug)]
 pub enum TaskValidationError {
-    InvalidDuration { field: String, value: i64 },
-    InvalidCandidateCount { field: String, value: i64 },
-    InvalidThreadDepth { field: String, value: i64 },
-    InvalidMaxActionsPerScan { field: String, value: i64 },
-    InvalidPositiveNumber { field: String, value: i64 },
+    InvalidDuration {
+        field: String,
+        value: i64,
+    },
+    InvalidCandidateCount {
+        field: String,
+        value: i64,
+    },
+    InvalidThreadDepth {
+        field: String,
+        value: i64,
+    },
+    InvalidMaxActionsPerScan {
+        field: String,
+        value: i64,
+    },
+    InvalidPositiveNumber {
+        field: String,
+        value: i64,
+    },
+    InvalidFieldType {
+        field: String,
+        expected: &'static str,
+        actual: &'static str,
+    },
 }
 
 impl std::fmt::Display for TaskValidationError {
@@ -46,6 +67,15 @@ impl std::fmt::Display for TaskValidationError {
                 f,
                 "Invalid value for '{}': {} (must be positive)",
                 field, value
+            ),
+            TaskValidationError::InvalidFieldType {
+                field,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "Invalid value for '{}': {} (must be {})",
+                field, actual, expected
             ),
         }
     }
@@ -126,6 +156,8 @@ pub struct TaskConfig {
     pub sentiment_templates: SentimentTemplates,
     pub enhanced_sentiment_enabled: bool,
     pub dry_run_actions: bool,
+    pub simulate_only: bool,
+    pub seed: u64,
 }
 
 impl TaskConfig {
@@ -134,12 +166,9 @@ impl TaskConfig {
         payload: &Value,
         config: &TwitterActivityConfig,
     ) -> Result<Self, TaskValidationError> {
-        let duration_ms = match read_u64(payload, "duration_ms", 300_000) {
-            Ok(value) => duration_with_variance(value, 20),
-            Err(_) => {
-                // If duration_ms is not provided, use config default (120 seconds)
-                config.feed_scan_duration_ms
-            }
+        let duration_ms = match read_u64(payload, "duration_ms", config.feed_scan_duration_ms)? {
+            value if payload.get("duration_ms").is_some() => duration_with_variance(value, 20),
+            value => value,
         };
         let candidate_count = read_u32(
             payload,
@@ -182,6 +211,13 @@ impl TaskConfig {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
+        let simulate_only = payload
+            .get("simulate_only")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let seed = rand::thread_rng().gen::<u64>();
+
         Ok(Self {
             duration_ms,
             candidate_count,
@@ -194,6 +230,8 @@ impl TaskConfig {
             sentiment_templates,
             enhanced_sentiment_enabled,
             dry_run_actions,
+            simulate_only,
+            seed,
         })
     }
 }
@@ -352,43 +390,99 @@ impl SessionState {
     }
 }
 
+fn value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 /// Helper: read numeric fields from payload with validation (u64)
 #[allow(dead_code, unused_variables)]
 pub fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64, TaskValidationError> {
-    payload
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| {
-            if v > 0 {
-                Ok(v)
+    match payload.get(key) {
+        None => Ok(default),
+        Some(value) => {
+            if let Some(raw) = value.as_u64() {
+                if raw == 0 {
+                    Err(TaskValidationError::InvalidPositiveNumber {
+                        field: key.to_string(),
+                        value: 0,
+                    })
+                } else {
+                    Ok(raw)
+                }
+            } else if let Some(raw) = value.as_i64() {
+                if raw > 0 {
+                    Ok(raw as u64)
+                } else {
+                    Err(TaskValidationError::InvalidPositiveNumber {
+                        field: key.to_string(),
+                        value: raw,
+                    })
+                }
             } else {
-                Err(TaskValidationError::InvalidPositiveNumber {
+                Err(TaskValidationError::InvalidFieldType {
                     field: key.to_string(),
-                    value: v as i64,
+                    expected: "positive integer",
+                    actual: value_kind(value),
                 })
             }
-        })
-        .unwrap_or(Ok(default))
+        }
+    }
 }
 
 /// Helper: read numeric fields from payload with validation (u32)
 #[allow(dead_code, unused_variables)]
 pub fn read_u32(payload: &Value, key: &str, default: u32) -> Result<u32, TaskValidationError> {
-    payload
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .and_then(|v| u32::try_from(v).ok())
-        .map(|v| {
-            if v > 0 {
-                Ok(v)
+    match payload.get(key) {
+        None => Ok(default),
+        Some(value) => {
+            if let Some(raw) = value.as_u64() {
+                if raw == 0 {
+                    Err(TaskValidationError::InvalidPositiveNumber {
+                        field: key.to_string(),
+                        value: 0,
+                    })
+                } else if let Ok(v) = u32::try_from(raw) {
+                    Ok(v)
+                } else {
+                    Err(TaskValidationError::InvalidFieldType {
+                        field: key.to_string(),
+                        expected: "positive u32",
+                        actual: value_kind(value),
+                    })
+                }
+            } else if let Some(raw) = value.as_i64() {
+                if raw > 0 {
+                    if let Ok(v) = u32::try_from(raw) {
+                        Ok(v)
+                    } else {
+                        Err(TaskValidationError::InvalidFieldType {
+                            field: key.to_string(),
+                            expected: "positive u32",
+                            actual: value_kind(value),
+                        })
+                    }
+                } else {
+                    Err(TaskValidationError::InvalidPositiveNumber {
+                        field: key.to_string(),
+                        value: raw,
+                    })
+                }
             } else {
-                Err(TaskValidationError::InvalidPositiveNumber {
+                Err(TaskValidationError::InvalidFieldType {
                     field: key.to_string(),
-                    value: v as i64,
+                    expected: "positive u32",
+                    actual: value_kind(value),
                 })
             }
-        })
-        .unwrap_or(Ok(default))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -449,10 +543,10 @@ mod read_u64_tests {
     }
 
     #[test]
-    fn read_u64_defaults_on_invalid() {
+    fn read_u64_rejects_invalid() {
         let result = read_u64(&duration_payload(-100), "duration_ms", 300000);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 300000);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("duration_ms"));
     }
 
     #[test]
@@ -475,16 +569,17 @@ mod read_u32_tests {
     }
 
     #[test]
-    fn read_u32_defaults_on_invalid() {
+    fn read_u32_rejects_invalid() {
         let result = read_u32(&candidate_count_payload(-5), "candidate_count", 5);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("candidate_count"));
     }
 }
 
 #[cfg(test)]
 mod payload_tests {
     use super::{test_support::*, TaskConfig};
+    use serde_json::json;
 
     #[test]
     fn from_payload_parses_core_fields() {
@@ -495,13 +590,41 @@ mod payload_tests {
         assert_eq!(task_config.candidate_count, 10);
         assert_eq!(task_config.thread_depth, 15);
         assert_eq!(task_config.max_actions_per_scan, 5);
+        assert!(!task_config.simulate_only);
     }
 
     #[test]
-    fn from_payload_defaults_invalid_duration() {
+    fn from_payload_rejects_invalid_duration() {
         let result = TaskConfig::from_payload(&duration_payload(-100), &twitter_config());
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert_eq!(
+            err,
+            "Invalid value for 'duration_ms': -100 (must be positive)"
+        );
+    }
+
+    #[test]
+    fn from_payload_rejects_invalid_candidate_count_type() {
+        let payload = json!({"candidate_count": "ten"});
+        let result = TaskConfig::from_payload(&payload, &twitter_config());
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(err.contains("candidate_count"));
+        assert_eq!(
+            err,
+            "Invalid value for 'candidate_count': string (must be positive u32)"
+        );
+    }
+
+    #[test]
+    fn from_payload_parses_simulation_fields() {
+        let payload = json!({
+            "simulate_only": true
+        });
+        let result = TaskConfig::from_payload(&payload, &twitter_config());
         assert!(result.is_ok());
         let task_config = result.unwrap();
-        assert!((240_000..=360_000).contains(&task_config.duration_ms));
+        assert!(task_config.simulate_only);
     }
 }

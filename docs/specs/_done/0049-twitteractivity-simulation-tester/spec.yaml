@@ -1,0 +1,47 @@
+version: 1
+id: 0049-twitteractivity-simulation-tester
+title: TwitterActivity simulation tester
+status: done
+owner: spec-agent
+priority: P2
+area:
+  - twitter-activity
+  - tests
+files:
+  code:
+    - src/task/twitteractivity.rs
+    - src/utils/twitter/twitteractivity_state.rs
+    - src/utils/twitter/twitteractivity_engagement.rs
+    - src/utils/twitter/twitteractivity_limits.rs
+    - src/utils/twitter/twitteractivity_persona.rs
+    - tests/twitteractivity_integration.rs
+  docs:
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/README.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/baseline.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/internal-api-outline.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/plan.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/validation-checklist.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/validation.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/notes.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/log-schema.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/ci-commands.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/decisions.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/quality-rules.md
+    - docs/specs/_done/0049-twitteractivity-simulation-tester/implementation-notes.md
+acceptance:
+  - `simulate_only=true` enables simulation mode without opening a browser or requiring a live page.
+  - Simulation logs a fresh random seed for each run and preserves it in the output.
+  - Simulation reports persona labels, scan cadence, candidate budget, action probabilities, and stop reason.
+  - Simulation models limit exhaustion and per-scan budgeting without performing side effects.
+  - The live `twitteractivity` path remains unchanged unless simulation mode is selected.
+  - New regression tests cover output shape and repeatability.
+  - `spec-lint.ps1`, `./check-fast.ps1`, and `./check.ps1` pass for the package.
+non_goals:
+  - Real-time browser execution.
+  - Actual tweet scanning or DOM inspection.
+  - Click, scroll, follow, reply, like, retweet, quote, bookmark, or dive side effects.
+  - Rewriting the engagement engine.
+risks:
+  - Simulation can diverge from live behavior if the planning model is too abstract.
+  - Seeded randomness may hide edge cases unless test vectors are varied.
+  - Overloading the existing task config could make the live path harder to reason about.

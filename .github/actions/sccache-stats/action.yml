@@ -1,0 +1,9 @@
+name: Sccache Stats
+description: Shared sccache stats reporter for CI jobs
+
+runs:
+  using: composite
+  steps:
+    - name: Show sccache stats
+      shell: bash
+      run: sccache --show-stats

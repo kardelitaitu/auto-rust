@@ -10,25 +10,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/rust-setup
-
-      - name: Install cargo-nextest
-        run: cargo install --locked cargo-nextest
-
-      - name: Run tests with nextest
-        run: cargo nextest run --all-features --profile ci
-
-      - uses: ./.github/actions/sccache-stats
-        if: always()
-
-  lint:
-    name: Lint & Format
+  rust:
+    name: Rust CI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,25 +20,20 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Install cargo-nextest
+        run: cargo install --locked cargo-nextest
+
+      - name: Build check
+        run: cargo check
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - uses: ./.github/actions/sccache-stats
-        if: always()
-
-  build:
-    name: Build Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/rust-setup
-
-      - name: Build (debug)
-        run: cargo check
+      - name: Run tests with nextest
+        run: cargo nextest run --all-features --profile ci
 
       - uses: ./.github/actions/sccache-stats
         if: always()

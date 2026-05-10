@@ -14,6 +14,8 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: ./.github/actions/rust-setup
 
       - name: Install cargo-nextest
@@ -29,6 +31,8 @@ jobs:
     name: Lint & Format
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: ./.github/actions/rust-setup
         with:
           components: clippy, rustfmt
@@ -46,6 +50,8 @@ jobs:
     name: Build Check
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: ./.github/actions/rust-setup
 
       - name: Build (debug)

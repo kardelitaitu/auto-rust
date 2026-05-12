@@ -329,25 +329,22 @@ pub async fn phase1_navigation(api: &TaskContext) -> Result<()> {
     let entry_url = select_entry_point();
     navigate_and_read(api, entry_url).await?;
 
-    if verify_login(api).await? {
-        info!("User is logged in - proceeding");
-    } else {
-        warn!("User appears not logged in; task may fail");
-    }
-
-    // Dismiss initial popups
+    // Dismiss initial popups before checking login state
+    // Popups (cookie banners, overlays) can obscure the feed and cause
+    // false-negative login detection
     match dismiss_cookie_banner(api).await {
         Ok(true) => info!("Cookie banner dismissed"),
         Ok(false) => {}
         Err(e) => warn!("Cookie banner dismissal failed: {}", e),
     }
-    match dismiss_signup_nag(api).await {
-        Ok(true) => info!("Signup nag dismissed"),
-        Ok(false) => {}
-        Err(e) => warn!("Signup nag dismissal failed: {}", e),
-    }
     if let Err(e) = close_active_popup(api).await {
         warn!("Popup close failed: {}", e);
+    }
+
+    if verify_login(api).await? {
+        info!("User is logged in - proceeding");
+    } else {
+        warn!("User appears not logged in; task may fail");
     }
 
     Ok(())

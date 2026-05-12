@@ -152,6 +152,7 @@ pub struct TaskConfig {
     pub scroll_count: u32,
     pub weights: Option<Value>,
     pub llm_enabled: bool,
+    pub llm_api_key: Option<String>,
     pub smart_decision_enabled: bool,
     pub sentiment_templates: SentimentTemplates,
     pub enhanced_sentiment_enabled: bool,
@@ -216,6 +217,8 @@ impl TaskConfig {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
+        let llm_api_key = std::env::var("OPENROUTER_API_KEY").ok();
+
         let seed = rand::thread_rng().gen::<u64>();
 
         Ok(Self {
@@ -226,6 +229,7 @@ impl TaskConfig {
             scroll_count,
             weights,
             llm_enabled,
+            llm_api_key,
             smart_decision_enabled,
             sentiment_templates,
             enhanced_sentiment_enabled,

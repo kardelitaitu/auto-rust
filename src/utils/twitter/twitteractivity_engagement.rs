@@ -27,6 +27,7 @@ pub async fn handle_engagement_decision(
     tweet: &Value,
     task_config: &TaskConfig,
     persona: &PersonaWeights,
+    llm_api_key: Option<String>,
 ) -> Option<EngagementDecision> {
     if !task_config.smart_decision_enabled {
         return None;
@@ -84,8 +85,7 @@ pub async fn handle_engagement_decision(
         DecisionStrategy::Legacy
     };
 
-    // In a real scenario, we'd get the API key from environment or config
-    let engine = DecisionEngineFactory::create(strategy, None);
+    let engine = DecisionEngineFactory::create(strategy, llm_api_key);
 
     Some(engine.decide(&ctx).await)
 }
@@ -178,8 +178,13 @@ async fn engage_replies(
                     break;
                 }
                 // Run smart decision for this reply
-                if let Some(decision) =
-                    handle_engagement_decision(&reply, task_config, persona).await
+                if let Some(decision) = handle_engagement_decision(
+                    &reply,
+                    task_config,
+                    persona,
+                    task_config.llm_api_key.clone(),
+                )
+                .await
                 {
                     if decision.score > 30 {
                         if let Some(pos) = reply.get("like_pos").and_then(|v| v.as_object()) {
@@ -258,8 +263,13 @@ pub async fn process_candidate(
     let (sentiment, candidate_persona) = modulate_persona_by_sentiment(tweet, task_config, persona);
 
     // Smart decision check (V3 feature - rule-based)
-    let engagement_decision =
-        handle_engagement_decision(tweet, task_config, &candidate_persona).await;
+    let engagement_decision = handle_engagement_decision(
+        tweet,
+        task_config,
+        &candidate_persona,
+        task_config.llm_api_key.clone(),
+    )
+    .await;
 
     // Skip if smart decision says None
     if let Some(ref decision) = engagement_decision {
@@ -1110,7 +1120,7 @@ mod decision_integration_tests {
             ..Default::default()
         };
         let persona = PersonaWeights::default();
-        let result = handle_engagement_decision(&tweet, &config, &persona).await;
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
         assert!(result.is_none());
     }
 
@@ -1128,7 +1138,7 @@ mod decision_integration_tests {
             ..Default::default()
         };
         let persona = PersonaWeights::default();
-        let result = handle_engagement_decision(&tweet, &config, &persona).await;
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
         // Should return a decision (not None) when enabled
         assert!(result.is_some());
     }
@@ -1150,7 +1160,7 @@ mod decision_integration_tests {
             ..Default::default()
         };
         let persona = PersonaWeights::default();
-        let result = handle_engagement_decision(&tweet, &config, &persona).await;
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
         assert!(result.is_some());
     }
 }

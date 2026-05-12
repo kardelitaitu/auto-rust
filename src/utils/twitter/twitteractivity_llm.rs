@@ -115,29 +115,32 @@ pub async fn extract_tweet_context(
 ) -> Result<(String, String, Vec<(String, String)>)> {
     let js = r#"
         (function() {
-            // Extract tweet author
-            var authorEl = document.querySelector('[data-testid="tweet"] [dir="auto"]');
+            // Extract tweet author from the first visible tweet article
+            var authorEl = document.querySelector('article[data-testid="tweet"] [dir="auto"]');
             var author = authorEl ? authorEl.textContent.trim() : 'unknown';
             
             // Extract tweet text
             var tweetEl = document.querySelector('[data-testid="tweetText"]');
             var text = tweetEl ? tweetEl.textContent.trim() : '';
             
-            // Extract up to 20 replies (will be filtered to 10 longest in Rust)
+            // Extract up to 20 replies with their own author per reply
             var replies = [];
-            var replyEls = document.querySelectorAll('article [data-testid="tweet"] [dir="auto"]');
+            var replyEls = document.querySelectorAll('article[data-testid="tweet"]');
             for (var i = 1; i < Math.min(replyEls.length, 21); i++) {
-                var replyEl = replyEls[i];
-                var replyText = replyEl.textContent.trim();
+                var reply = replyEls[i];
+                var replyAuthorEl = reply.querySelector('[dir="auto"]');
+                var replyTextEl = reply.querySelector('[data-testid="tweetText"]');
+                var replyAuthor = replyAuthorEl ? replyAuthorEl.textContent.trim() : 'unknown';
+                var replyText = replyTextEl ? replyTextEl.textContent.trim() : '';
                 if (replyText && replyText.length > 0) {
-                    replies.push({ author: author, text: replyText });
+                    replies.push({ author: replyAuthor, text: replyText });
                 }
             }
             
             return {
                 author: author,
                 text: text,
-                replies: replies.map(r => [r.author, r.text])
+                replies: replies.map(function(r) { return [r.author, r.text]; })
             };
         })()
     "#;

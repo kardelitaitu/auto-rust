@@ -1,6 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::info;
 use serde::Deserialize;
+use std::path::PathBuf;
 
 use crate::llm::Llm;
 
@@ -125,7 +126,17 @@ impl Pipeline {
         let mut ctx = if should_run(&resume_stage, Stage::Observer) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Observer);
             info!("=== Stage 1: Observer (agent: {}) ===", agent);
-            super::observer::run(&self.llm, &self.args).await?
+            if agent == "pi" {
+                super::observer::run(&self.llm, &self.args).await?
+            } else {
+                let prompt = self
+                    .args
+                    .prompt
+                    .as_deref()
+                    .unwrap_or("scan for improvements");
+                run_external_agent(agent, "observer", prompt)?;
+                PipelineCtx::new(format!("Delegated to {}", agent))
+            }
         } else {
             PipelineCtx::new(String::new())
         };
@@ -134,26 +145,66 @@ impl Pipeline {
         if should_run(&resume_stage, Stage::Strategist) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Strategist);
             info!("=== Stage 2: Strategist (agent: {}) ===", agent);
-            ctx = super::strategist::run(&self.llm, &self.args, &ctx).await?;
+            ctx = if agent == "pi" {
+                super::strategist::run(&self.llm, &self.args, &ctx).await?
+            } else {
+                run_external_agent(agent, "strategist", &ctx.description)?;
+                PipelineCtx::new(format!("Delegated to {}", agent))
+            };
         }
 
         // Coder
         if should_run(&resume_stage, Stage::Coder) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Coder);
             info!("=== Stage 3: Coder (agent: {}) ===", agent);
-            ctx = super::coder::run(&self.llm, &self.args, &ctx).await?;
+            ctx = if agent == "pi" {
+                super::coder::run(&self.llm, &self.args, &ctx).await?
+            } else {
+                run_external_agent(agent, "coder", &ctx.description)?;
+                PipelineCtx::new(format!("Delegated to {}", agent))
+            };
         }
 
         // Auditor
         if should_run(&resume_stage, Stage::Auditor) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Auditor);
             info!("=== Stage 4: Auditor (agent: {}) ===", agent);
-            super::auditor::run(&self.llm, &self.args, &ctx).await?;
+            if agent == "pi" {
+                super::auditor::run(&self.llm, &self.args, &ctx).await?;
+            } else {
+                run_external_agent(agent, "auditor", &ctx.description)?;
+            }
         }
 
         info!("Pipeline complete");
         Ok(())
     }
+}
+
+fn run_external_agent(agent: &str, role: &str, prompt: &str) -> Result<()> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    info!("Delegating to external agent: {} --role {}", agent, role);
+
+    // kilo uses subcommand: kilo run <text> --role <role>
+    // Others use: {agent} -p <prompt> --role <role>
+    let args: &[&str] = if agent == "kilocode" || agent == "kilo" {
+        &["run", prompt, "--role", role]
+    } else {
+        &["-p", prompt, "--role", role]
+    };
+
+    let status = std::process::Command::new(agent)
+        .args(args)
+        .current_dir(&root)
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to execute agent '{}'", agent))?;
+
+    if !status.success() {
+        anyhow::bail!("agent '{}' exited with code {}", agent, status);
+    }
+    Ok(())
 }
 
 fn should_run(resume: &Option<Stage>, current: Stage) -> bool {

@@ -1,3 +1,80 @@
+## 2026-05-12 - TwitterActivity architecture review, 3 spec packages implemented, v0.2.0
+
+### Accomplished This Session:
+
+#### Code Review & Analysis
+- **Architecture review**: Traced full end-to-end flow of `twitteractivity.rs` across 19 modules (~8200 SLOC)
+- **Found 33 issues**: 3 critical, 8 high, 10 medium, 12 low — plus 17 dead-code items
+- **2 review documents created**: `docs/review/twitteractivity-architecture-review.md` and `docs/review/twitteractivity-end-to-end-flow-analysis.md`
+
+#### Spec Packages Created
+- **0051-twitteractivity-critical-bugs** (P1): LLM API key threading, extract_tweet_context JS, popup/login reorder — ✅ implemented
+- **0052-twitteractivity-flow-logic-fixes** (P1): Post-dive scan reset, bounded sleep, should_dive decouple, multiplier fix, dead code removal, cookie selectors, lazy regex — ✅ implemented
+- **0053-twitteractivity-cleanup** (P2): 13 dead functions removed, EngagementCheck removed, simulation dedup, OnceLock LLM, selector quoting fix — ✅ implemented
+
+#### Key Code Changes
+| Fix | Files | Impact |
+|---|---|---|
+| LLM API key threaded to decision engine | state.rs, engagement.rs | LLM decisions now actually use LLM |
+| extract_tweet_context() JS fixed | llm.rs | Correct reply author + selector fixing |
+| Popups dismissed before login check | navigation.rs | No false "not logged in" warnings |
+| Post-dive candidate scan reset | engagement.rs, state.rs | No duplicate re-scan after dive |
+| Bounded main loop sleep | twitteractivity.rs | Deadline respected during idle |
+| should_dive decoupled from non-like actions | engagement.rs | Each action independently decided |
+| PersonaStrategy multiplier consistent | persona.rs | interest_multiplier applied uniformly |
+| Cookie banner :contains() replaced | popup.rs | Standard CSS + JS text fallback |
+| Regex compiled once via OnceLock | llm_validation.rs | Per-call overhead eliminated |
+| LLM client initialized once | llm.rs | OnceLock<Llm> shared across calls |
+| Simulation deduplicated | simulation.rs | Reuses select_persona_weights() |
+| 13 dead functions removed | 6 files | ~789 lines deleted |
+| EngagementCheck enum removed | limits.rs | Unused type eliminated |
+| REPLY_BUTTON_SELECTOR quoting fixed | selectors.rs | Consistent with other constants |
+
+#### Verification
+- All 5 checks pass: spec-lint, build, format, clippy, 2099 tests
+- `.\check.ps1` verified after each package
+- `.\spec-lint.ps1` passes (46 packages)
+
+### Current Status:
+
+| Item | Status |
+|------|--------|
+| Spec 0051 (critical bugs) | ✅ Implemented |
+| Spec 0052 (flow logic) | ✅ Implemented |
+| Spec 0053 (cleanup) | ✅ Implemented |
+| Review docs | ✅ 2 documents |
+| Repo gate | ✅ Pass |
+| Version | v0.2.0 |
+
+### Commits
+```
+commit 86bd782
+Author: opencode
+Date: Tue May 12 2026
+
+    cleanup: remove dead code, deduplicate persona builder, lazy LLM, fix selector quoting (0053)
+
+commit 3b76cf4
+Author: opencode
+Date: Tue May 12 2026
+
+    fix: post-dive scan reset, bounded sleep, decouple should_dive, persona multiplier, dead code removal, cookie selectors, lazy regex (0052)
+
+commit c7f2f23
+Author: opencode
+Date: Tue May 12 2026
+
+    fix: thread LLM API key to decision engine, fix extract_tweet_context JS, reorder popup dismissal (0051)
+
+commit a493b20
+Author: opencode
+Date: Tue May 12 2026
+
+    docs: add twitteractivity review docs and 3 improvement spec packages
+```
+
+---
+
 ## 2026-05-08 - Regression spec cleanup and implementation pass
 
 ### Accomplished This Session:

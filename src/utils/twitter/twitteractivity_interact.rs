@@ -145,20 +145,6 @@ async fn click_root_tweet_button(
     Ok(false)
 }
 
-/// Navigates to tweet by moving mouse to it and clicking.
-/// Simplified to avoid scroll-related hanging issues.
-#[instrument(skip(api))]
-pub async fn navigate_to_tweet(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
-    // Just move mouse and click - no scrolling
-    // The tweet should already be in viewport from the scan
-    api.move_mouse_to(x, y).await?;
-    human_pause(api, 200).await;
-    api.click_at(x, y).await?;
-    human_pause(api, 400).await;
-
-    Ok(true)
-}
-
 /// Clicks the "like" (heart) button on the current tweet.
 ///
 /// This function scrolls the like button into view and clicks it to like a tweet.

@@ -288,57 +288,10 @@ pub fn simulate(task_config: &TaskConfig, config: &Config) -> SimulationReport {
 }
 
 fn build_persona_weights(task_config: &TaskConfig, config: &Config) -> PersonaWeights {
-    let mut persona = PersonaWeights {
-        like_prob: config.twitter_activity.probabilities.like_probability,
-        retweet_prob: config.twitter_activity.probabilities.retweet_probability,
-        quote_prob: config.twitter_activity.probabilities.quote_probability,
-        follow_prob: config.twitter_activity.probabilities.follow_probability,
-        reply_prob: config.twitter_activity.probabilities.reply_probability,
-        bookmark_prob: config.twitter_activity.probabilities.bookmark_probability,
-        thread_dive_prob: config
-            .twitter_activity
-            .probabilities
-            .thread_dive_probability,
-        interest_multiplier: 1.0,
-    };
-
-    if let Some(weights) = task_config.weights.as_ref() {
-        if let Some(value) = weights.get("like_prob").and_then(|value| value.as_f64()) {
-            persona.like_prob = value;
-        }
-        if let Some(value) = weights.get("retweet_prob").and_then(|value| value.as_f64()) {
-            persona.retweet_prob = value;
-        }
-        if let Some(value) = weights.get("quote_prob").and_then(|value| value.as_f64()) {
-            persona.quote_prob = value;
-        }
-        if let Some(value) = weights.get("follow_prob").and_then(|value| value.as_f64()) {
-            persona.follow_prob = value;
-        }
-        if let Some(value) = weights.get("reply_prob").and_then(|value| value.as_f64()) {
-            persona.reply_prob = value;
-        }
-        if let Some(value) = weights
-            .get("bookmark_prob")
-            .and_then(|value| value.as_f64())
-        {
-            persona.bookmark_prob = value;
-        }
-        if let Some(value) = weights
-            .get("thread_dive_prob")
-            .and_then(|value| value.as_f64())
-        {
-            persona.thread_dive_prob = value;
-        }
-        if let Some(value) = weights
-            .get("interest_multiplier")
-            .and_then(|value| value.as_f64())
-        {
-            persona.interest_multiplier = value;
-        }
-    }
-
-    persona.normalized()
+    crate::utils::twitter::twitteractivity_persona::select_persona_weights(
+        task_config.weights.as_ref(),
+        &config.twitter_activity.probabilities,
+    )
 }
 
 #[cfg(test)]

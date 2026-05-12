@@ -7,7 +7,7 @@ use crate::utils::math::gaussian;
 use crate::utils::timing::clustered_pause;
 use rand::Rng;
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::instrument;
 
 use super::twitteractivity_selectors::*;
@@ -60,47 +60,6 @@ pub fn random_duration(min_ms: u64, max_ms: u64) -> Duration {
     let stddev = (max - min) / 4.0; // 95% within range
     let duration_ms = gaussian(mean, stddev, min, max);
     Duration::from_millis(duration_ms as u64)
-}
-
-/// Simulates a human checking that an element is actually visible and interactable.
-/// Hovers over the element briefly to activate hover states.
-#[instrument(skip(api))]
-pub async fn verify_element_hover(api: &TaskContext, x: f64, y: f64) -> Result<(), anyhow::Error> {
-    // Move to position with slower, more deliberate motion
-    api.move_mouse_to(x, y).await?;
-    human_pause(api, 300).await;
-    Ok(())
-}
-
-/// Simulates a human reading content by pausing and occasionally scrolling a small amount.
-/// Returns after approximately `duration_ms`.
-#[instrument(skip(api))]
-pub async fn read_content_for(api: &TaskContext, duration_ms: u64) -> Result<(), anyhow::Error> {
-    let deadline = std::time::Instant::now() + Duration::from_millis(duration_ms);
-    let mut rng = rand::thread_rng();
-
-    while std::time::Instant::now() < deadline {
-        // Random short pause (reading)
-        let read_pause = rng.gen_range(500..2000);
-        api.pause(read_pause).await;
-
-        // Random tiny scroll (like shifting eyes or slight page adjustment)
-        if rng.gen_bool(0.3) {
-            let tiny_scroll = rng.gen_range(20..100);
-            let mut js = String::new();
-            js.push_str(&format!("window.scrollBy(0, {});", tiny_scroll));
-            api.page().evaluate(js).await?;
-            api.pause(200).await;
-        }
-
-        // Skip if near deadline
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.as_millis() < 500 {
-            break;
-        }
-    }
-
-    Ok(())
 }
 
 /// Action-specific pause for scroll operations.

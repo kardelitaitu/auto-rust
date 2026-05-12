@@ -9,11 +9,17 @@ pub use super::twitteractivity_llm_validation::validate_reply;
 
 use anyhow::{Context, Result};
 use log::info;
+use std::sync::OnceLock;
 use tracing::instrument;
 
 use crate::llm::{build_quote_messages, build_reply_messages, Llm};
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_LONG_SECS;
+
+fn llm_instance() -> &'static Llm {
+    static LLM: OnceLock<Llm> = OnceLock::new();
+    LLM.get_or_init(|| Llm::new().expect("Failed to initialize LLM client"))
+}
 
 /// Generates a contextual reply to a tweet using LLM.
 #[instrument(skip(_api, top_replies))]
@@ -40,7 +46,7 @@ pub async fn generate_reply(
     );
 
     // Generate with timeout
-    let llm = Llm::new().context("Failed to initialize LLM client")?;
+    let llm = llm_instance();
     let reply = tokio::time::timeout(
         std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
         llm.chat_with_fallback(messages),
@@ -84,7 +90,7 @@ pub async fn generate_quote_commentary(
             .collect::<Vec<_>>(),
     );
 
-    let llm = Llm::new().context("Failed to initialize LLM client")?;
+    let llm = llm_instance();
     let commentary = tokio::time::timeout(
         std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
         llm.chat_with_fallback(messages),

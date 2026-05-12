@@ -259,41 +259,6 @@ where
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Retry exhausted")))
 }
 
-/// Retry wrapper that returns Result with graceful degradation.
-///
-/// On failure, returns `Ok(false)` instead of error, allowing the caller
-/// to continue execution without killing the session.
-///
-/// # Arguments
-///
-/// * `operation` - The async operation to retry
-/// * `config` - Retry configuration
-/// * `api` - Task context for humanized pauses
-/// * `operation_name` - Name for logging
-/// * `metric_counter_name` - Counter to increment on failure (optional)
-///
-/// # Returns
-///
-/// Returns `Ok(true)` on success, `Ok(false)` on failure (after retries).
-pub async fn retry_with_fallback<T, F, Fut>(
-    operation: F,
-    config: &RetryConfig,
-    api: &TaskContext,
-    operation_name: &str,
-) -> Result<bool>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T>>,
-{
-    match retry_with_backoff(operation, config, api, operation_name).await {
-        Ok(_) => Ok(true),
-        Err(e) => {
-            warn!("{} failed after retries, continuing: {}", operation_name, e);
-            Ok(false)
-        }
-    }
-}
-
 #[cfg(test)]
 mod config_tests {
     use super::RetryConfig;

@@ -50,80 +50,7 @@ use anyhow::Result;
 use serde_json::Value;
 use tracing::instrument;
 
-use super::{twitteractivity_humanized::*, twitteractivity_selectors::*};
-
-/// Performs a series of scroll actions through the feed with human-like behavior.
-///
-/// This function scrolls through the Twitter feed using either native scroll
-/// or JavaScript-based scrolling. It adds occasional back-scrolls and pauses to
-/// simulate human reading behavior.
-///
-/// # Arguments
-///
-/// * `api` - Task context with page and browser automation capabilities
-/// * `scroll_count` - Number of scroll actions to perform
-/// * `use_native_scroll` - If true, uses native scroll; otherwise uses JS scroll
-///
-/// # Returns
-///
-/// Returns `Ok(())` on completion.
-///
-/// # Errors
-///
-/// Returns error if scroll operations fail.
-///
-/// # Behavior
-///
-/// - Uses profile-derived scroll amount and pause duration
-/// - Optionally uses smooth scrolling with back-scrolls
-/// - Occasionally scrolls back up slightly (25% of scroll amount) on later iterations
-/// - Adds human-like pauses between scrolls
-///
-/// # Profile Parameters
-///
-/// - `scroll.amount`: Pixels to scroll per action
-/// - `scroll.pause_ms`: Milliseconds to pause between scrolls
-/// - `scroll.smooth`: Whether to use smooth scrolling
-/// - `scroll.back_scroll`: Whether to include back-scrolls
-#[instrument(skip(api))]
-pub async fn scroll_feed(
-    api: &TaskContext,
-    scroll_count: u32,
-    use_native_scroll: bool,
-) -> Result<()> {
-    let profile = api.behavior_runtime();
-    let scroll_amount = profile.scroll.amount;
-    let scroll_pause_ms = profile.scroll.pause_ms;
-    let smooth = profile.scroll.smooth;
-
-    for i in 0..scroll_count {
-        if use_native_scroll {
-            // Let TaskContext handle the scroll with profile-derived parameters
-            api.scroll_read(
-                1, // single pause per scroll burst
-                scroll_amount,
-                smooth,
-                profile.scroll.back_scroll,
-            )
-            .await?;
-        } else {
-            // JS-based scroll
-            let js = format!("window.scrollBy(0, {});", scroll_amount);
-            api.page().evaluate(js).await?;
-            human_pause(api, scroll_pause_ms).await;
-        }
-
-        // Occasionally scroll back up a little on later iterations
-        if smooth && i > 2 && rand::random::<bool>() {
-            let back_amount = scroll_amount / 4;
-            let js = format!("window.scrollBy(0, -{});", back_amount);
-            api.page().evaluate(js).await?;
-            human_pause(api, 200).await;
-        }
-    }
-
-    Ok(())
-}
+use super::twitteractivity_selectors::*;
 
 /// Scans the current viewport for tweet articles that are good engagement candidates.
 ///
@@ -237,15 +164,6 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
     Ok(candidates)
 }
 
-/// Identifies engagement buttons (like, retweet, reply) for a specific tweet element.
-/// Returns a structured object with positions or nulls.
-pub async fn get_tweet_engagement_buttons(api: &TaskContext) -> Result<Value> {
-    let js = selector_engagement_buttons();
-    let result = api.page().evaluate(js.to_string()).await?;
-    let value = result.value().cloned().unwrap_or_default();
-    Ok(value)
-}
-
 /// Checks if a given tweet (by center coordinates) currently shows "Following" state
 /// for the author (used to decide whether a follow action is needed).
 pub async fn is_following_user_at_position(api: &TaskContext, _x: f64, _y: f64) -> Result<bool> {
@@ -257,93 +175,6 @@ pub async fn is_following_user_at_position(api: &TaskContext, _x: f64, _y: f64) 
     Ok(value.as_bool().unwrap_or(false))
 }
 
-/// Gets the current scroll position as percentage of total page height.
-///
-/// Calculates how far through the feed the user has scrolled, returning a
-/// value between 0.0 (top) and 1.0 (bottom). Useful for detecting when the
-/// feed end has been reached.
-///
-/// # Arguments
-///
-/// * `api` - Task context with page and browser automation capabilities
-///
-/// # Returns
-///
-/// Returns scroll progress as a float between 0.0 and 1.0:
-/// - 0.0: At the top of the page
-/// - 1.0: At the bottom of the page (or scrolled past)
-///
-/// # Errors
-///
-/// Returns error if DOM evaluation fails (defaults to 0.0 in that case).
-///
-/// # Behavior
-///
-/// - Calculates scroll position as: scrollY / (scrollHeight - innerHeight)
-/// - Returns 1.0 if scrolled past the bottom
-/// - Clamps result to 0.0-1.0 range
-/// - Returns 0.0 if evaluation fails
-#[instrument(skip(api))]
-pub async fn get_scroll_progress(api: &TaskContext) -> Result<f64> {
-    let result = api
-        .page()
-        .evaluate("window.scrollY + window.innerHeight >= document.body.scrollHeight ? 1.0 : (window.scrollY / (document.body.scrollHeight - window.innerHeight))".to_string())
-        .await?;
-    let value = result.value();
-    if let Some(v) = value.and_then(|v: &Value| v.as_f64()) {
-        Ok(v.clamp(0.0, 1.0))
-    } else {
-        Ok(0.0)
-    }
-}
-
-/// Ensures the feed has at least one tweet/article visible.
-///
-/// This function checks if the feed is populated with at least one tweet.
-/// It can be used to verify that content has loaded before attempting engagement.
-///
-/// # Arguments
-///
-/// * `api` - Task context with page and browser automation capabilities
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if at least one tweet is visible.
-/// Returns `Ok(false)` if no tweets are visible.
-///
-/// # Errors
-///
-/// Returns error if DOM evaluation fails.
-///
-/// # Behavior
-///
-/// - Queries for `article[data-testid="tweet"]` elements
-/// - Checks if any elements are found
-/// - Returns true if at least one tweet exists
-///
-/// # Selector Used
-///
-/// - Tweets: `article[data-testid="tweet"]`
-#[instrument(skip(api))]
-pub async fn ensure_feed_populated(api: &TaskContext) -> Result<bool> {
-    let js = selector_all_tweets();
-    let result = api.page().evaluate(js.to_string()).await?;
-    let value = result.value();
-    if let Some(arr) = value.and_then(|v: &serde_json::Value| v.as_array()) {
-        return Ok(!arr.is_empty());
-    }
-    Ok(false)
-}
-
-/// Performs a "deep scroll" — scrolls to the bottom of the feed.
-/// Used to load more content before engaging.
-pub async fn scroll_to_bottom_feed(api: &TaskContext) -> Result<()> {
-    api.scroll_to_bottom().await?;
-    // Wait for potential lazy-loaded content
-    human_pause(api, 2000).await;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,28 +182,17 @@ mod tests {
     #[test]
     fn test_function_signatures_exist() {
         // Compile-time check that public functions exist
-        let _ = scroll_feed;
         let _ = identify_engagement_candidates;
-        let _ = get_tweet_engagement_buttons;
         let _ = is_following_user_at_position;
-        let _ = get_scroll_progress;
-        let _ = ensure_feed_populated;
-        let _ = scroll_to_bottom_feed;
     }
 
     #[test]
     fn test_function_count() {
-        // Verify we have the expected number of public functions
         let function_names = [
-            "scroll_feed",
             "identify_engagement_candidates",
-            "get_tweet_engagement_buttons",
             "is_following_user_at_position",
-            "get_scroll_progress",
-            "ensure_feed_populated",
-            "scroll_to_bottom_feed",
         ];
-        assert_eq!(function_names.len(), 7);
+        assert_eq!(function_names.len(), 2);
     }
 
     #[test]

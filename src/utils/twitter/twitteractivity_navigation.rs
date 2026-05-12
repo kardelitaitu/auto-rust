@@ -217,45 +217,6 @@ pub async fn wait_for_page_ready(
     Ok(ready)
 }
 
-/// Performs a quick health check on critical Twitter selectors.
-/// Logs warnings if selectors are failing (indicates DOM changes).
-pub async fn check_selector_health(api: &TaskContext) -> Result<()> {
-    let js = selector_health_check();
-    let result = api.page().evaluate(js.to_string()).await?;
-    let value = result.value();
-
-    if let Some(obj) = value.and_then(|v| v.as_object()) {
-        let feed_ok = obj
-            .get("feed_visible")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let tweets_ok = obj
-            .get("tweets_found")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let buttons_ok = obj
-            .get("engagement_buttons")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        if !feed_ok {
-            log::warn!("Selector health check: feed selector failing");
-        }
-        if !tweets_ok {
-            log::warn!("Selector health check: tweet selector failing");
-        }
-        if !buttons_ok {
-            log::warn!("Selector health check: engagement button selector failing");
-        }
-
-        if feed_ok && tweets_ok && buttons_ok {
-            log::info!("Selector health check: all critical selectors OK");
-        }
-    }
-
-    Ok(())
-}
-
 // Navigation functions moved from twitteractivity.rs
 
 /// Select a weighted entry point randomly using a seeded RNG.

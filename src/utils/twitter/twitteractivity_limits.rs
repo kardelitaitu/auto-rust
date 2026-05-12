@@ -346,35 +346,6 @@ impl EngagementLimits {
     }
 }
 
-/// Result of checking whether an engagement action is allowed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EngagementCheck {
-    /// Action is allowed
-    Allowed,
-    /// Action blocked due to per-action limit
-    LimitReached { action: &'static str },
-    /// Action blocked due to total session limit
-    SessionLimitReached,
-}
-
-impl EngagementCheck {
-    /// Returns true if the action is allowed.
-    pub fn is_allowed(&self) -> bool {
-        matches!(self, EngagementCheck::Allowed)
-    }
-
-    /// Returns the reason if blocked.
-    pub fn reason(&self) -> Option<String> {
-        match self {
-            EngagementCheck::Allowed => None,
-            EngagementCheck::LimitReached { action } => Some(format!("{} limit reached", action)),
-            EngagementCheck::SessionLimitReached => {
-                Some("Session engagement limit reached".to_string())
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -475,17 +446,6 @@ mod tests {
     }
 
     #[test]
-    fn test_engagement_check() {
-        let check = EngagementCheck::Allowed;
-        assert!(check.is_allowed());
-        assert_eq!(check.reason(), None);
-
-        let check = EngagementCheck::LimitReached { action: "like" };
-        assert!(!check.is_allowed());
-        assert_eq!(check.reason(), Some("like limit reached".to_string()));
-    }
-
-    #[test]
     fn test_engagement_limits_with_custom_values() {
         let limits = EngagementLimits::with_limits(10, 5, 3, 2, 5, 1, 2, 20);
         let counters = EngagementCounters::new();
@@ -575,26 +535,6 @@ mod tests {
         let counters = EngagementCounters::new();
         let available = limits.available_actions(&counters);
         assert!(available.is_empty());
-    }
-
-    #[test]
-    fn test_session_limit_reached_check() {
-        let check = EngagementCheck::SessionLimitReached;
-        assert!(!check.is_allowed());
-        assert_eq!(
-            check.reason(),
-            Some("Session engagement limit reached".to_string())
-        );
-    }
-
-    #[test]
-    fn test_engagement_check_limit_reached_variants() {
-        let actions = ["like", "retweet", "follow", "reply"];
-        for action in actions {
-            let check = EngagementCheck::LimitReached { action };
-            assert!(!check.is_allowed());
-            assert!(check.reason().unwrap().contains(action));
-        }
     }
 
     #[test]

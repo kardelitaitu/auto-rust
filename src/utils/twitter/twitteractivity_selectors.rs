@@ -115,7 +115,7 @@ pub const ARTICLE_TWEET_SELECTOR: &str = r#"article[data-testid=\"tweet\"]"#;
 pub const TWEET_TEXT_SELECTOR: &str = r#"[data-testid=\"tweetText\"]"#;
 
 /// Reply button selector
-pub const REPLY_BUTTON_SELECTOR: &str = r#"button[data-testid="reply"]"#;
+pub const REPLY_BUTTON_SELECTOR: &str = r#"button[data-testid=\"reply\"]"#;
 
 /// Tweet reply selector (for extracting replies)
 pub const TWEET_REPLY_SELECTOR: &str = r#"[data-testid=\"tweetReply\"]"#;

@@ -66,6 +66,11 @@ data/screenshot/
 # Ignore all improvement proposals (they are generated and should not be committed)
 IMPROVEMENT*
 
+# coverage-improvement generated data
+coverage-improvement/scripts/coverage.json
+coverage-improvement/scripts/coverage_improvement.json
+coverage-improvement/scripts/target/
+
 # dev files
 fix_*
 check_errors.txt

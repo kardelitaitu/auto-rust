@@ -165,6 +165,16 @@ pub async fn run(args: &TestArgs) -> Result<()> {
     let mut passed = 0u32;
     let mut failed = 0u32;
 
+    // Build pi binary once before running fixtures
+    info!("Building pi binary for test harness...");
+    let build = std::process::Command::new("cargo")
+        .args(["build", "--bin", "pi", "-q"])
+        .current_dir(project_root())
+        .status()?;
+    if !build.success() {
+        anyhow::bail!("failed to build pi binary");
+    }
+
     for fixture in &fixtures_to_run {
         info!(
             "Running fixture: {} ({})",
@@ -189,16 +199,38 @@ pub async fn run(args: &TestArgs) -> Result<()> {
     Ok(())
 }
 
+fn project_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn pi_binary() -> PathBuf {
+    let target = project_root().join("target");
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let mut p = target.join(profile);
+    if cfg!(windows) {
+        p.push("pi.exe");
+    } else {
+        p.push("pi");
+    }
+    p
+}
+
 async fn run_single(fixture: &Fixture) -> Result<()> {
     let repo = (fixture.setup)()?;
     let repo_root = repo.repo_path.to_string_lossy().to_string();
+    let pi_bin = pi_binary();
 
-    // Find the pi binary
-    let pi_bin = std::env::var("CARGO_BIN_EXE_PI")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("pi"));
+    if !pi_bin.exists() {
+        anyhow::bail!(
+            "pi binary not found at {}. Run 'cargo build --bin pi' first.",
+            pi_bin.display()
+        );
+    }
 
-    // Run pi in dry-run mode against the fixture
     let output = std::process::Command::new(&pi_bin)
         .args(["run", "--dry-run", "--auto"])
         .current_dir(&repo_root)
@@ -215,7 +247,6 @@ async fn run_single(fixture: &Fixture) -> Result<()> {
         ));
     }
 
-    // Check expected outcomes
     let active_specs: Vec<_> = std::fs::read_dir(repo.active_dir())?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
@@ -231,7 +262,7 @@ async fn run_single(fixture: &Fixture) -> Result<()> {
     for expected in fixture.expected_stages {
         match expected {
             ExpectedOutcome::ObserverFindsIssue => {
-                if active_specs.is_empty() && done_specs == 0_usize {
+                if active_specs.is_empty() && done_specs == 0 {
                     anyhow::bail!("Observer should have found an issue");
                 }
             }
@@ -240,9 +271,7 @@ async fn run_single(fixture: &Fixture) -> Result<()> {
                     anyhow::bail!("Strategist should have written a spec");
                 }
             }
-            ExpectedOutcome::PipelineEmpty => {
-                // No specs created, no issues found, clean exit
-            }
+            ExpectedOutcome::PipelineEmpty => {}
             _ => {}
         }
     }

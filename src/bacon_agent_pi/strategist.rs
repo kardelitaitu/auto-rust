@@ -54,7 +54,7 @@ pub async fn run(llm: &Llm, _args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipeli
 
         // Gate: run spec-lint on the new package
         info!("Running spec-lint validation...");
-        let passed = pipeline::run_powershell("spec-lint.ps1")?;
+        let (passed, _output) = pipeline::run_powershell("spec-lint.ps1")?;
         if !passed {
             warn!("spec-lint failed — spec package may have issues");
         } else {

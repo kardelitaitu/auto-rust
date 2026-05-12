@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use log::{info, warn};
 use serde::Deserialize;
+use std::io::Write;
 use std::path::PathBuf;
 
 use crate::llm::Llm;
@@ -27,6 +28,14 @@ impl Stage {
             _ => None,
         }
     }
+}
+
+/// Per-agent LLM configuration from bacon.toml [agents.<name>]
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentLlmConfig {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub temperature: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -89,6 +98,63 @@ impl PipelineConfig {
             Stage::Auditor => &self.auditor,
         }
     }
+
+    /// Read LLM config for a specific agent from bacon.toml [agents.<name>]
+    pub fn agent_llm_config(agent: &str) -> AgentLlmConfig {
+        let config_path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".bacon/bacon.toml");
+        let content = match std::fs::read_to_string(&config_path) {
+            Ok(c) => c,
+            Err(_) => {
+                return AgentLlmConfig {
+                    provider: None,
+                    model: None,
+                    temperature: None,
+                }
+            }
+        };
+        let table: toml::Value = match toml::from_str(&content) {
+            Ok(t) => t,
+            Err(_) => {
+                return AgentLlmConfig {
+                    provider: None,
+                    model: None,
+                    temperature: None,
+                }
+            }
+        };
+        let agents = match table.get("agents") {
+            Some(v) => v,
+            None => {
+                return AgentLlmConfig {
+                    provider: None,
+                    model: None,
+                    temperature: None,
+                }
+            }
+        };
+        let agent_cfg = match agents.get(agent) {
+            Some(v) => v,
+            None => {
+                return AgentLlmConfig {
+                    provider: None,
+                    model: None,
+                    temperature: None,
+                }
+            }
+        };
+        AgentLlmConfig {
+            provider: agent_cfg
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            model: agent_cfg
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            temperature: agent_cfg.get("temperature").and_then(|v| v.as_float()),
+        }
+    }
 }
 
 pub struct Pipeline {
@@ -135,6 +201,7 @@ impl Pipeline {
         let mut ctx = if should_run(&resume_stage, Stage::Observer) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Observer);
             info!("=== Stage 1: Observer (agent: {}) ===", agent);
+            log_agent_config(agent);
             if agent == "pi" {
                 super::observer::run(&self.llm, &self.args, &base_ctx).await?
             } else {
@@ -155,30 +222,45 @@ impl Pipeline {
         if !fast_path && should_run(&resume_stage, Stage::Strategist) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Strategist);
             info!("=== Stage 2: Strategist (agent: {}) ===", agent);
+            log_agent_config(agent);
             ctx = if agent == "pi" {
                 super::strategist::run(&self.llm, &self.args, &ctx).await?
             } else {
                 run_external_agent(agent, "strategist", &ctx.description)?;
                 PipelineCtx::new(format!("Delegated to {}", agent)).with_dry_run(self.dry_run)
             };
+
+            // User confirmation gate
+            if !self.auto && !confirm("Implement this plan? [Y/n]: ", true)? {
+                info!("User declined — aborting pipeline");
+                return Ok(());
+            }
         }
 
         // Coder
         if should_run(&resume_stage, Stage::Coder) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Coder);
             info!("=== Stage 3: Coder (agent: {}) ===", agent);
+            log_agent_config(agent);
             ctx = if agent == "pi" {
                 super::coder::run(&self.llm, &self.args, &ctx).await?
             } else {
                 run_external_agent(agent, "coder", &ctx.description)?;
                 PipelineCtx::new(format!("Delegated to {}", agent)).with_dry_run(self.dry_run)
             };
+
+            // User confirmation gate
+            if !self.auto && !confirm("Apply this diff? [y/N]: ", false)? {
+                info!("User declined diff — aborting pipeline");
+                return Ok(());
+            }
         }
 
         // Auditor (skip in fast path)
         if !fast_path && should_run(&resume_stage, Stage::Auditor) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Auditor);
             info!("=== Stage 4: Auditor (agent: {}) ===", agent);
+            log_agent_config(agent);
             if agent == "pi" {
                 super::auditor::run(&self.llm, &self.args, &ctx).await?;
             } else {
@@ -188,6 +270,30 @@ impl Pipeline {
 
         info!("Pipeline complete");
         Ok(())
+    }
+}
+
+/// Prompt user for yes/no confirmation. Default if empty input.
+fn confirm(prompt: &str, default: bool) -> Result<bool> {
+    let hint = if default { "Y/n" } else { "y/N" };
+    print!("{} ", prompt.replace("[Y/n]", hint));
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+    if input.is_empty() {
+        return Ok(default);
+    }
+    Ok(input == "y" || input == "yes")
+}
+
+fn log_agent_config(agent: &str) {
+    let cfg = PipelineConfig::agent_llm_config(agent);
+    if let Some(provider) = &cfg.provider {
+        info!("  Agent config: provider={}", provider);
+    }
+    if let Some(model) = &cfg.model {
+        info!("  Agent config: model={}", model);
     }
 }
 
@@ -212,8 +318,6 @@ fn check_stale_in_progress() -> Result<()> {
 
 pub fn run_external_agent(agent: &str, role: &str, prompt: &str) -> Result<()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    info!("Delegating to external agent: {} --role {}", agent, role);
-
     let args: &[&str] = if agent == "kilocode" || agent == "kilo" {
         &["run", prompt, "--role", role]
     } else {
@@ -234,14 +338,21 @@ pub fn run_external_agent(agent: &str, role: &str, prompt: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn run_powershell(script: &str) -> Result<bool> {
+pub fn run_powershell(script: &str) -> Result<(bool, String)> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let shell = if cfg!(windows) { "powershell" } else { "pwsh" };
-    let status = std::process::Command::new(shell)
+    let output = std::process::Command::new(shell)
         .args(["-NoProfile", "-File", script])
         .current_dir(&root)
-        .status()?;
-    Ok(status.success())
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = if stderr.is_empty() {
+        stdout
+    } else {
+        format!("{}\n{}", stdout, stderr)
+    };
+    Ok((output.status.success(), combined))
 }
 
 fn should_run(resume: &Option<Stage>, current: Stage) -> bool {

@@ -29,20 +29,29 @@ export BACON_JQ_CMD=${BACON_JQ_CMD:-jq}
 load_toml_config() {
     local config_file="${SCRIPT_DIR}/../bacon.toml"
     local parser_script="${SCRIPT_DIR}/bacon-config-parser"
+    local simple_parser="${SCRIPT_DIR}/bacon-config-parser-simple"
     
     if [[ -f "$config_file" ]]; then
-        # Check if Rust parser is available and compiled
+        # Try simple parser first (more reliable)
+        if [[ -f "$simple_parser" ]]; then
+            if eval "$("$simple_parser" "$config_file")" 2>/dev/null; then
+                return 0
+            else
+                echo "WARNING: Simple TOML parser failed, trying fallback parsing" >&2
+            fi
+        fi
+        
+        # Try complex parser if available
         if [[ -f "$parser_script" ]]; then
-            # Use Rust parser for proper TOML handling
             if eval "$("$parser_script" "$config_file")" 2>/dev/null; then
                 return 0
             else
-                echo "WARNING: Rust TOML parser failed, falling back to simple parsing" >&2
+                echo "WARNING: Complex TOML parser failed, using simple parsing" >&2
             fi
         fi
         
         # Fallback to simple grep-based parsing
-        echo "WARNING: Using simple TOML parsing - consider compiling bacon-config-parser.rs" >&2
+        echo "INFO: Using simple TOML parsing as final fallback" >&2
         
         # Extract configuration values with simple parsing
         local config_values=(

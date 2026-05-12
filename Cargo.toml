@@ -22,6 +22,10 @@ path = "src/lib.rs"
 name = "auto"
 path = "src/main.rs"
 
+[[bin]]
+name = "bacon-test"
+path = "src/bin/bacon-test.rs"
+
 [dependencies]
 # CDP Browser Automation
 chromiumoxide = { version = "0.6", features = ["tokio-runtime"] }

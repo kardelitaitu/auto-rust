@@ -31,9 +31,11 @@
               "recommended_action": {"type": "string"},
               "estimated_effort": {"type": "string", "enum": ["low", "medium", "high"]},
               "risk_level": {"type": "string", "enum": ["low", "medium", "high"]}
-            }
+            },
+            "required": ["priority", "category", "approach", "recommended_action", "estimated_effort", "risk_level"]
           }
-        }
+        },
+        "required": ["problem", "strategy"]
       }
     },
     "implementation_plan": {
@@ -54,5 +56,5 @@
       }
     }
   },
-  "required": ["strategies", "summary"]
+  "required": ["strategies", "implementation_plan", "summary"]
 }

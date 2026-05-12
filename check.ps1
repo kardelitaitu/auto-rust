@@ -178,6 +178,52 @@ foreach ($name in $runOrder) {
 Write-Status ("Passed: $p  |  Failed: $f  |  Total Time: {0:N2}s" -f $total) $(if ($f -eq 0) { "Green" } else { "Red" })
 Write-Status "----------------------------------------------" "Cyan"
 
+# ---- FAILURE HELP --------------------------------------------------
+if ($f -gt 0) {
+    Write-Status "FAILURE TUTORIALS:" "Yellow"
+    Write-Output ""
+
+    if (-not $results.SpecLint.Passed -and $results.SpecLint.Duration -gt 0) {
+        Write-Status "Spec Lint Failed:" "Red"
+        Write-Output "  Run '.\spec-lint.ps1' to see detailed validation errors."
+        Write-Output "  Common fixes: Check spec.yaml format, ensure required files exist, fix status mismatches."
+        Write-Output ""
+    }
+
+    if (-not $results.Build.Passed -and $results.Build.Duration -gt 0) {
+        Write-Status "Build Failed:" "Red"
+        Write-Output "  Run 'cargo check' to see compilation errors."
+        Write-Output "  Common fixes: Fix syntax errors, resolve type mismatches, add missing dependencies."
+        Write-Output ""
+    }
+
+    if (-not $results.Format.Passed -and $results.Format.Duration -gt 0) {
+        Write-Status "Format Failed:" "Red"
+        Write-Output "  Run 'cargo fmt --all' to auto-fix formatting issues."
+        Write-Output "  This will automatically format your code according to Rust standards."
+        Write-Output ""
+    }
+
+    if (-not $results.Clippy.Passed -and $results.Clippy.Duration -gt 0) {
+        Write-Status "Clippy Failed:" "Red"
+        Write-Output "  Run 'cargo clippy --all-targets --all-features' to see all warnings."
+        Write-Output "  Common fixes: Address performance suggestions, fix unsafe code warnings, improve code quality."
+        Write-Output "  Use 'cargo clippy --fix' to auto-fix some issues."
+        Write-Output ""
+    }
+
+    if (-not $results.Tests.Passed -and $results.Tests.Duration -gt 0) {
+        Write-Status "Tests Failed:" "Red"
+        Write-Output "  Run 'cargo nextest run --all-features --lib' to see detailed test output."
+        Write-Output "  Common fixes: Check test assertions, fix panics, ensure test setup is correct."
+        Write-Output "  For integration tests: 'cargo nextest run --all-features'"
+        Write-Output ""
+    }
+
+    Write-Status "Need help? Check docs/ or ask in the project channel." "Cyan"
+    Write-Output ""
+}
+
 # ---- EXIT -----------------------------------------------------------
 if ($f -eq 0) {
     Write-Status "All checks passed! Ready for commit." "Green"

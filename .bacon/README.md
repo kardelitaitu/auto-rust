@@ -1,14 +1,14 @@
 # Bacon Autonomous Coding System v2.0
 
-An enhanced autonomous coding system for the Auto-Rust browser automation framework. Bacon continuously monitors, analyzes, and improves the codebase without human intervention.
+An enhanced autonomous coding system for the Auto-Rust browser automation framework. Bacon monitors, analyzes, and prepares verified patch candidates for review.
 
 ## 🚀 Overview
 
 Bacon implements a 4-agent pipeline that automatically:
 - **Observes**: Extracts compiler warnings and errors
-- **Strategizes**: Analyzes problems and creates technical specifications  
-- **Codes**: Generates minimal, audit-ready patches
-- **Audits**: Validates changes for safety and compliance
+- **Strategizes**: Analyzes problems and creates technical specifications
+- **Codes**: Generates minimal, audit-ready patch files
+- **Audits**: Validates changes for safety and compliance, then queues verified patches
 
 ## 📁 Enhanced Architecture
 
@@ -43,7 +43,7 @@ Bacon implements a 4-agent pipeline that automatically:
 
 ### Shadow Workspace Testing
 - **Isolated Environment**: Changes tested in temporary git clones
-- **Rollback Capability**: Automatic rollback points for every change
+- **Review Queue**: Verified patches are stored under `.bacon/sessions/approved_patches/`
 - **Comprehensive Verification**: Compilation, testing, and integration checks
 
 ### Production Safeguards
@@ -79,6 +79,9 @@ Bacon implements a 4-agent pipeline that automatically:
 
 # Run system tests
 .\.bacon\scripts\bacon-manager.ps1 -Action test
+
+# Apply newest approved patch candidate
+.\.bacon\scripts\bacon-manager.ps1 -Action apply-approved -RunCheck
 ```
 
 ### Environment Variables
@@ -89,6 +92,8 @@ export BACON_MAX_CYCLES=100           # Maximum cycles (0 = infinite)
 export BACON_LOG_LEVEL=debug          # Logging verbosity
 export BACON_ENABLE_METRICS=true      # Metrics collection
 export BACON_SHADOW_CLEANUP=true     # Automatic cleanup
+export BACON_AUTO_APPLY=false         # Auto-apply is disabled by default
+export BACON_REQUIRE_FULL_CHECK=true  # Auto-apply must pass .\check.ps1
 ```
 
 ## 🔧 Configuration
@@ -113,6 +118,8 @@ shadow_workspace_dir = "/tmp/norino_shadow_"
 max_shadow_age_hours = 24
 enable_rollback = true
 rollback_depth = 10
+enable_auto_apply = false
+require_full_check_for_auto_apply = true
 
 [ai_providers]
 gemini_model = "gemini-pro"
@@ -137,7 +144,20 @@ max_tokens_per_request = 4000
 
 # Cleanup old files
 ./.bacon/scripts/bacon-manager.ps1 -Action cleanup
+
+# Validate and apply the newest approved patch
+./.bacon/scripts/bacon-apply-approved.sh --latest --run-check
 ```
+
+### Auto-Apply Policy
+
+Auto-apply is allowed only when all of these are true:
+- `BACON_AUTO_APPLY=true`
+- `BACON_REQUIRE_FULL_CHECK=true`
+- `.\\check.ps1` exists and passes after applying the patch
+- the working tree is clean before applying
+
+If any condition fails, Bacon keeps the patch in `.bacon/sessions/approved_patches/` for manual review.
 
 ### Advanced Configuration
 ```bash
@@ -158,7 +178,7 @@ BACON_MAX_CYCLES=100 ./bacon/scripts/bacon-orchestrate.sh
 - **Processing**: Extract structured problems with context
 - **Output**: JSON problem brief with locations and categories
 
-### 2. Strategy Agent  
+### 2. Strategy Agent
 - **Input**: Structured problem analysis
 - **Processing**: Analyze root causes, design solutions
 - **Output**: Technical specifications with priorities
@@ -237,8 +257,8 @@ export BACON_LOG_LEVEL=debug
 # Clean up corrupted state
 ./.bacon/scripts/bacon-manager.ps1 -Action cleanup
 
-# Reset system
-rm -rf .bacon/sessions/* && ./bacon/scripts/bacon-manager.ps1 -Action test
+# Reset runtime state
+rm -rf .bacon/sessions/* .bacon/test_runs/* && ./.bacon/scripts/bacon-manager.ps1 -Action test
 ```
 
 ### Health Monitoring

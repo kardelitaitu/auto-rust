@@ -14,6 +14,7 @@
 
 pub mod adaptive;
 pub mod api;
+pub mod bacon_agent_pi;
 pub mod browser;
 pub mod capabilities;
 pub mod cli;

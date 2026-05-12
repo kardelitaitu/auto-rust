@@ -6,8 +6,8 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -W 2>/dev/null || pwd))"
+readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && (pwd -W 2>/dev/null || pwd))"
 readonly SCHEMAS_DIR="${SCRIPT_DIR}/schemas"
 
 # Logging utilities
@@ -33,7 +33,7 @@ ensure_schemas_dir() {
 # Generate JSON schemas for different agent outputs
 generate_schemas() {
     ensure_schemas_dir
-    
+
     # Observer output schema
     cat > "$SCHEMAS_DIR/observer-output.json" << 'EOF'
 {
@@ -205,28 +205,28 @@ EOF
 validate_with_jq() {
     local json_file="$1"
     local schema_file="$2"
-    
+
     if [[ ! -f "$json_file" ]]; then
         log_error "JSON file not found: $json_file"
         return 1
     fi
-    
+
     if [[ ! -f "$schema_file" ]]; then
         log_error "Schema file not found: $schema_file"
         return 1
     fi
-    
+
     # Basic JSON syntax validation
     if ! jq empty "$json_file" 2>/dev/null; then
         log_error "Invalid JSON syntax in: $json_file"
         return 1
     fi
-    
+
     # Schema validation (basic - jq doesn't have full JSON schema support)
     # This is a simplified validation that checks for required fields
     local schema_name
     schema_name=$(basename "$schema_file" .json)
-    
+
     case "$schema_name" in
         "observer-output")
             validate_observer_output "$json_file"
@@ -250,32 +250,32 @@ validate_with_jq() {
 # Validate observer output
 validate_observer_output() {
     local json_file="$1"
-    
+
     # Check required top-level fields
     local problems_count
     problems_count=$(jq '.problems | length // 0' "$json_file" 2>/dev/null || echo "0")
-    
+
     if [[ "$problems_count" -eq 0 ]]; then
         log_warn "No problems found in observer output"
     fi
-    
+
     # Check each problem has required fields
     local invalid_problems
     invalid_problems=$(jq -r '.problems[] | select(.message == null or .level == null or .code == null) | "Problem missing required fields"' "$json_file" 2>/dev/null || echo "")
-    
+
     if [[ -n "$invalid_problems" ]]; then
         log_error "Invalid problems found: $invalid_problems"
         return 1
     fi
-    
+
     # Check summary exists
     local total_problems
     total_problems=$(jq '.summary.total // 0' "$json_file" 2>/dev/null || echo "0")
-    
+
     if [[ "$total_problems" -ne "$problems_count" ]]; then
         log_warn "Summary total ($total_problems) doesn't match problems count ($problems_count)"
     fi
-    
+
     log_debug "Observer output validation passed"
     return 0
 }
@@ -283,32 +283,32 @@ validate_observer_output() {
 # Validate strategy output
 validate_strategy_output() {
     local json_file="$1"
-    
+
     # Check required top-level fields
     local strategies_count
     strategies_count=$(jq '.strategies | length // 0' "$json_file" 2>/dev/null || echo "0")
-    
+
     if [[ "$strategies_count" -eq 0 ]]; then
         log_warn "No strategies found in strategy output"
     fi
-    
+
     # Check each strategy has required fields
     local invalid_strategies
     invalid_strategies=$(jq -r '.strategies[] | select(.problem == null or .strategy == null) | "Strategy missing required fields"' "$json_file" 2>/dev/null || echo "")
-    
+
     if [[ -n "$invalid_strategies" ]]; then
         log_error "Invalid strategies found: $invalid_strategies"
         return 1
     fi
-    
+
     # Check summary exists
     local total_problems
     total_problems=$(jq '.summary.total_problems // 0' "$json_file" 2>/dev/null || echo "0")
-    
+
     if [[ "$total_problems" -ne "$strategies_count" ]]; then
         log_warn "Summary total ($total_problems) doesn't match strategies count ($strategies_count)"
     fi
-    
+
     log_debug "Strategy output validation passed"
     return 0
 }
@@ -316,25 +316,25 @@ validate_strategy_output() {
 # Validate hotspot input
 validate_hotspot_input() {
     local json_file="$1"
-    
+
     # Check if it's an array
     local is_array
     is_array=$(jq 'if type == "array" then "true" else "false" end' "$json_file" 2>/dev/null || echo "false")
-    
+
     if [[ "$is_array" != "true" ]]; then
         log_error "Hotspot input should be an array"
         return 1
     fi
-    
+
     # Check each item has required fields
     local invalid_items
     invalid_items=$(jq -r '.[] | select(.message == null or .level == null) | "Hotspot item missing required fields"' "$json_file" 2>/dev/null || echo "")
-    
+
     if [[ -n "$invalid_items" ]]; then
         log_error "Invalid hotspot items found: $invalid_items"
         return 1
     fi
-    
+
     log_debug "Hotspot input validation passed"
     return 0
 }
@@ -342,34 +342,34 @@ validate_hotspot_input() {
 # Validate metrics
 validate_metrics() {
     local json_file="$1"
-    
+
     # Check if it's an array
     local is_array
     is_array=$(jq 'if type == "array" then "true" else "false" end' "$json_file" 2>/dev/null || echo "false")
-    
+
     if [[ "$is_array" != "true" ]]; then
         log_error "Metrics should be an array"
         return 1
     fi
-    
+
     # Check each item has required fields
     local invalid_items
     invalid_items=$(jq -r '.[] | select(.timestamp == null or .event == null or .status == null) | "Metric item missing required fields"' "$json_file" 2>/dev/null || echo "")
-    
+
     if [[ -n "$invalid_items" ]]; then
         log_error "Invalid metric items found: $invalid_items"
         return 1
     fi
-    
+
     # Check timestamp format
     local invalid_timestamps
     invalid_timestamps=$(jq -r '.[] | select(.timestamp | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") | not) | "Invalid timestamp format"' "$json_file" 2>/dev/null || echo "")
-    
+
     if [[ -n "$invalid_timestamps" ]]; then
         log_error "Invalid timestamp formats found: $invalid_timestamps"
         return 1
     fi
-    
+
     log_debug "Metrics validation passed"
     return 0
 }
@@ -379,7 +379,7 @@ main() {
     local action="${1:-validate}"
     local json_file="$2"
     local schema_type="$3"
-    
+
     case "$action" in
         "generate-schemas")
             generate_schemas
@@ -390,12 +390,12 @@ main() {
                 log_error "Schema types: observer-output, strategy-output, hotspot-input, metrics"
                 exit 1
             fi
-            
+
             # Generate schemas if they don't exist
             if [[ ! -d "$SCHEMAS_DIR" ]]; then
                 generate_schemas
             fi
-            
+
             local schema_file="$SCHEMAS_DIR/${schema_type}.json"
             if validate_with_jq "$json_file" "$schema_file"; then
                 log_info "Validation passed: $json_file against $schema_type schema"

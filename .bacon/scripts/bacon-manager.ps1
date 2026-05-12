@@ -3,12 +3,24 @@
 
 param(
     [Parameter(Mandatory=$false)]
-    [ValidateSet("start", "stop", "status", "logs", "metrics", "cleanup", "test")]
+    [ValidateSet("start", "stop", "status", "logs", "metrics", "cleanup", "test", "apply-approved")]
     [string]$Action = "status",
-    
+
     [Parameter(Mandatory=$false)]
     [string]$Config = ".bacon/bacon.toml",
-    
+
+    [Parameter(Mandatory=$false)]
+    [string]$Patch = "",
+
+    [Parameter(Mandatory=$false)]
+    [switch]$DryRun,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$RunCheck,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$Force,
+
     [Parameter(Mandatory=$false)]
     [switch]$ScriptVerbose
 )
@@ -21,27 +33,49 @@ $SessionsDir = Join-Path $BaconDir "sessions"
 $ScriptsDir = Join-Path $BaconDir "scripts"
 $LogFile = Join-Path $SessionsDir "bacon_manager.log"
 
+function Get-BaconBashPath {
+    $candidates = @(
+        $env:BACON_BASH,
+        (Join-Path $env:ProgramFiles "Git\bin\bash.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe"),
+        "C:\Program Files\Git\bin\bash.exe"
+    ) | Where-Object { $_ }
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    $cmd = Get-Command "bash" -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
+    }
+
+    return $null
+}
+
 # Enhanced logging function with structured output
 function Write-BaconLog {
     param(
         [Parameter(Mandatory=$true)]
         [ValidateSet("DEBUG", "INFO", "WARN", "ERROR", "CRITICAL")]
         [string]$Level,
-        
+
         [Parameter(Mandatory=$true)]
         [string]$Message,
-        
+
         [Parameter(Mandatory=$false)]
         [string]$Component = "Manager",
-        
+
         [Parameter(Mandatory=$false)]
         [hashtable]$Context = @{}
     )
-    
+
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $contextStr = if ($Context.Count -gt 0) { " [$($Context.Keys -join ':')]" } else { "" }
     $logEntry = "[$timestamp] [$Level] [$Component] $Message$contextStr"
-    
+
     # Console output with colors
     $color = switch ($Level) {
         "DEBUG" { "Cyan" }
@@ -51,11 +85,11 @@ function Write-BaconLog {
         "CRITICAL" { "Magenta" }
         default { "White" }
     }
-    
+
     if ($ScriptVerbose -or $Level -in @("WARN", "ERROR", "CRITICAL")) {
         Write-Host $logEntry -ForegroundColor $color
     }
-    
+
     # File logging with rotation
     try {
         if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -gt 50MB) {
@@ -71,11 +105,11 @@ function Write-BaconLog {
 # Enhanced prerequisites check with detailed reporting
 function Test-BaconPrerequisites {
     Write-BaconLog "INFO" "Checking Bacon system prerequisites..." -Component "Prerequisites"
-    
+
     $issues = @()
     $warnings = @()
     $details = @{}
-    
+
     # Check required directories
     $requiredDirs = @($BaconDir, $SessionsDir, $ScriptsDir)
     $details.Directories = @()
@@ -84,7 +118,7 @@ function Test-BaconPrerequisites {
         $details.Directories += @{
             Path = $dir
             Exists = $dirExists
-            Writable = if ($dirExists) { 
+            Writable = if ($dirExists) {
                 try {
                     $testFile = Join-Path $dir "test_write_$(Get-Random)"
                     "test" | Out-File -FilePath $testFile -Encoding UTF8 -ErrorAction Stop
@@ -97,7 +131,7 @@ function Test-BaconPrerequisites {
             $issues += "Required directory missing: $dir"
         }
     }
-    
+
     # Check required files
     $requiredFiles = @(
         (Join-Path $BaconDir "bacon.toml"),
@@ -107,7 +141,8 @@ function Test-BaconPrerequisites {
         (Join-Path $ScriptsDir "bacon-observer.sh"),
         (Join-Path $ScriptsDir "bacon-strategist.sh"),
         (Join-Path $ScriptsDir "bacon-coder.sh"),
-        (Join-Path $ScriptsDir "bacon-auditor.sh")
+        (Join-Path $ScriptsDir "bacon-auditor.sh"),
+        (Join-Path $ScriptsDir "bacon-apply-approved.sh")
     )
     $details.Files = @()
     foreach ($file in $requiredFiles) {
@@ -115,8 +150,8 @@ function Test-BaconPrerequisites {
         $details.Files += @{
             Path = $file
             Exists = $fileExists
-            Executable = if ($fileExists -and $file.EndsWith(".sh")) { 
-                try { 
+            Executable = if ($fileExists -and $file.EndsWith(".sh")) {
+                try {
                     $null = bash -c "test -x '$file'" 2>&1
                     $LASTEXITCODE -eq 0
                 } catch { $false }
@@ -126,9 +161,9 @@ function Test-BaconPrerequisites {
             $issues += "Required file missing: $file"
         }
     }
-    
+
     # Check required commands
-    $requiredCommands = @("git", "cargo", "bash")
+    $requiredCommands = @("git", "cargo")
     $details.Commands = @()
     foreach ($cmd in $requiredCommands) {
         try {
@@ -137,9 +172,9 @@ function Test-BaconPrerequisites {
                 Name = $cmd
                 Found = $true
                 Path = $cmdInfo.Source
-                Version = if ($cmd -eq "git") { 
+                Version = if ($cmd -eq "git") {
                     try { git --version 2>&1 | Select-Object -First 1 } catch { "Unknown" }
-                } elseif ($cmd -eq "cargo") { 
+                } elseif ($cmd -eq "cargo") {
                     try { cargo --version 2>&1 | Select-Object -First 1 } catch { "Unknown" }
                 } else { "Unknown" }
             }
@@ -153,7 +188,14 @@ function Test-BaconPrerequisites {
             $issues += "Required command not found: $cmd"
         }
     }
-    
+
+    $bashPath = Get-BaconBashPath
+    if ($bashPath) {
+        Write-BaconLog "INFO" "Using bash: $bashPath" -Component "Prerequisites"
+    } else {
+        $issues += "Required command not found: Git Bash"
+    }
+
     # Check optional but recommended commands
     $optionalCommands = @("bacon", "jq")
     foreach ($cmd in $optionalCommands) {
@@ -164,41 +206,41 @@ function Test-BaconPrerequisites {
             $warnings += "Optional command not found: $cmd"
         }
     }
-    
+
     # Check system resources
     $details.System = @{
-        Memory = (Get-CimInstance -ClassName Win32_OperatingSystem | Select-Object TotalVisibleMemorySize, FreePhysicalMemory | ForEach-Object { 
+        Memory = (Get-CimInstance -ClassName Win32_OperatingSystem | Select-Object TotalVisibleMemorySize, FreePhysicalMemory | ForEach-Object {
             "$([math]::Round($_.FreePhysicalMemory / 1MB, 2))GB free of $([math]::Round($_.TotalVisibleMemorySize / 1MB, 2))GB total"
         })
         Disk = Get-Volume -DriveLetter (Get-Location).Drive.Name | Select-Object @{Name="FreeSpace";Expression={"$([math]::Round($_.SizeRemaining / 1GB, 2))GB"}}, @{Name="TotalSpace";Expression={"$([math]::Round($_.Size / 1GB, 2))GB"}}
     }
-    
+
     # Log detailed results
     if ($ScriptVerbose) {
         Write-BaconLog "DEBUG" "Prerequisites check completed" -Component "Prerequisites" -Context $details
     }
-    
+
     if ($issues.Count -gt 0) {
         Write-BaconLog "ERROR" "Prerequisites check failed:" -Component "Prerequisites"
         foreach ($issue in $issues) {
             Write-BaconLog "ERROR" "  - $issue" -Component "Prerequisites"
         }
     }
-    
+
     if ($warnings.Count -gt 0) {
         Write-BaconLog "WARN" "Optional components missing:" -Component "Prerequisites"
         foreach ($warning in $warnings) {
             Write-BaconLog "WARN" "  - $warning" -Component "Prerequisites"
         }
     }
-    
+
     return $issues.Count -eq 0
 }
 
 # Start Bacon orchestration
 function Start-BaconOrchestration {
     Write-BaconLog "INFO" "Starting Bacon orchestration..."
-    
+
     # Check if already running
     $pidFile = Join-Path $SessionsDir "orchestrate.pid"
     if (Test-Path $pidFile) {
@@ -214,24 +256,22 @@ function Start-BaconOrchestration {
             Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
         }
     }
-    
+
     # Start orchestration in background
     $orchestrateScript = Join-Path $ScriptsDir "bacon-orchestrate.sh"
-    
+
     try {
-        # Use bash if available (WSL), otherwise use PowerShell equivalent
-        if (Get-Command "bash" -ErrorAction SilentlyContinue) {
-            $process = Start-Process -FilePath "bash" -ArgumentList $orchestrateScript -PassThru -WindowStyle Hidden
+        $bashPath = Get-BaconBashPath
+        if ($bashPath) {
+            $process = Start-Process -FilePath $bashPath -ArgumentList $orchestrateScript -PassThru -WindowStyle Hidden
         } else {
-            Write-BaconLog "WARN" "bash not found, using PowerShell fallback (limited functionality)"
-            # PowerShell fallback implementation would go here
-            Write-BaconLog "ERROR" "PowerShell fallback not implemented yet"
+            Write-BaconLog "ERROR" "Git Bash not found"
             return $false
         }
-        
+
         # Store PID
         $process.Id | Out-File -FilePath $pidFile -Encoding UTF8
-        
+
         Write-BaconLog "INFO" "Bacon orchestration started (PID: $($process.Id))"
         return $true
     } catch {
@@ -243,25 +283,25 @@ function Start-BaconOrchestration {
 # Stop Bacon orchestration
 function Stop-BaconOrchestration {
     Write-BaconLog "INFO" "Stopping Bacon orchestration..."
-    
+
     $pidFile = Join-Path $SessionsDir "orchestrate.pid"
-    
+
     if (-not (Test-Path $pidFile)) {
         Write-BaconLog "WARN" "No Bacon orchestration PID file found"
         return $false
     }
-    
+
     try {
         $processId = Get-Content $pidFile -ErrorAction Stop
         $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
-        
+
         if ($process) {
             $process.Kill()
             Write-BaconLog "INFO" "Bacon orchestration stopped (PID: $processId)"
         } else {
             Write-BaconLog "WARN" "Process not found for PID: $processId"
         }
-        
+
         Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
         return $true
     } catch {
@@ -270,10 +310,36 @@ function Stop-BaconOrchestration {
     }
 }
 
+# Apply an approved Bacon patch candidate
+function Invoke-BaconApplyApproved {
+    Write-BaconLog "INFO" "Applying approved Bacon patch..."
+
+    $applyScript = Join-Path $ScriptsDir "bacon-apply-approved.sh"
+    if (-not (Test-Path $applyScript)) {
+        Write-BaconLog "ERROR" "Apply script not found: $applyScript"
+        return $false
+    }
+
+    $bashPath = Get-BaconBashPath
+    if (-not $bashPath) {
+        Write-BaconLog "ERROR" "Git Bash is required to apply approved patches"
+        return $false
+    }
+
+    $args = @($applyScript)
+    if ($Patch) { $args += $Patch }
+    if ($DryRun) { $args += "--dry-run" }
+    if ($RunCheck) { $args += "--run-check" }
+    if ($Force) { $args += "--force" }
+
+    & $bashPath @args
+    return $LASTEXITCODE -eq 0
+}
+
 # Enhanced status with detailed health metrics
 function Get-BaconStatus {
     Write-BaconLog "INFO" "Getting Bacon system status..." -Component "Status"
-    
+
     $status = @{
         Orchestration = @{
             Status = "Stopped"
@@ -306,7 +372,7 @@ function Get-BaconStatus {
         }
         Timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
     }
-    
+
     # Check orchestration status with enhanced details
     $pidFile = Join-Path $SessionsDir "orchestrate.pid"
     if (Test-Path $pidFile) {
@@ -327,7 +393,7 @@ function Get-BaconStatus {
             $status.Health.Issues += "Failed to read orchestration PID"
         }
     }
-    
+
     # Enhanced session analysis
     if (Test-Path $SessionsDir) {
         $sessionFiles = Get-ChildItem -Path $SessionsDir -Filter "*.json" -ErrorAction SilentlyContinue
@@ -337,11 +403,11 @@ function Get-BaconStatus {
         $status.Sessions.Failed = ($sessionFiles | Where-Object { $_.Name -like "*failed*" }).Count
         $status.Sessions.InProgress = ($sessionFiles | Where-Object { $_.Name -like "*cycle_*" }).Count
         $status.Sessions.Rollbacks = ($sessionFiles | Where-Object { $_.Name -like "*rollback*" }).Count
-        
+
         if ($sessionFiles.Count -gt 0) {
             $status.Sessions.LastUpdated = ($sessionFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
         }
-        
+
         # Health warnings for sessions
         if ($status.Sessions.Hotspots -gt 5) {
             $status.Health.Warnings += "High number of unresolved hotspots ($($status.Sessions.Hotspots))"
@@ -350,18 +416,18 @@ function Get-BaconStatus {
             $status.Health.Issues += "Multiple failed sessions detected ($($status.Sessions.Failed))"
         }
     }
-    
+
     # Enhanced metrics analysis
     $metricsFile = Join-Path $SessionsDir "metrics.json"
     if (Test-Path $metricsFile) {
         try {
             $status.Metrics = Get-Content $metricsFile -Raw | ConvertFrom-Json -ErrorAction Stop
-            
+
             # Analyze recent activity
-            $recentMetrics = $status.Metrics | Where-Object { 
-                [DateTime]$_.timestamp -gt (Get-Date).AddHours(-1) 
+            $recentMetrics = $status.Metrics | Where-Object {
+                [DateTime]$_.timestamp -gt (Get-Date).AddHours(-1)
             } | Sort-Object timestamp -Descending
-            
+
             if ($recentMetrics.Count -gt 0) {
                 $successRate = ($recentMetrics | Where-Object { $_.status -eq "success" }).Count / $recentMetrics.Count * 100
                 if ($successRate -lt 80) {
@@ -375,37 +441,37 @@ function Get-BaconStatus {
     } else {
         $status.Health.Warnings += "No metrics file available"
     }
-    
+
     # System resource monitoring
     try {
         $status.System.MemoryUsage = Get-Process | Where-Object { $_.ProcessName -like "*bacon*" } | Measure-Object WorkingSet -Sum | Select-Object @{Name="TotalMB";Expression={[math]::Round($_.Sum / 1MB, 2)}}
         $status.System.ProcessCount = (Get-Process | Where-Object { $_.ProcessName -like "*bacon*" }).Count
-        
+
         $drive = Get-Volume -DriveLetter (Get-Location).Drive.Name
         $status.System.DiskUsage = @{
             FreeGB = [math]::Round($drive.SizeRemaining / 1GB, 2)
             TotalGB = [math]::Round($drive.Size / 1GB, 2)
             UsagePercent = [math]::Round((1 - $drive.SizeRemaining / $drive.Size) * 100, 1)
         }
-        
+
         if ($status.System.DiskUsage.UsagePercent -gt 90) {
             $status.Health.Issues += "High disk usage: $($status.System.DiskUsage.UsagePercent)%"
         }
     } catch {
         $status.Health.Warnings += "Failed to gather system metrics"
     }
-    
+
     # Calculate overall health score
     $score = 100
     $issues = $status.Health.Issues.Count
     $warnings = $status.Health.Warnings.Count
-    
+
     $score -= ($issues * 20)  # Each issue reduces score by 20 points
     $score -= ($warnings * 5) # Each warning reduces score by 5 points
     $score = [math]::Max(0, $score)
-    
+
     $status.Health.Score = $score
-    
+
     # Determine overall health status
     if ($score -ge 90) {
         $status.Health.Overall = "Excellent"
@@ -418,7 +484,7 @@ function Get-BaconStatus {
     } else {
         $status.Health.Overall = "Critical"
     }
-    
+
     # Generate recommendations
     if ($status.Orchestration.Status -ne "Running") {
         $status.Health.Recommendations += "Consider starting Bacon orchestration"
@@ -429,7 +495,7 @@ function Get-BaconStatus {
     if ($status.System.DiskUsage.UsagePercent -gt 80) {
         $status.Health.Recommendations += "Run cleanup to free disk space"
     }
-    
+
     return $status
 }
 
@@ -439,7 +505,7 @@ function Show-BaconLogs {
         [Parameter(Mandatory=$false)]
         [int]$Tail = 50
     )
-    
+
     $logFiles = @(
         (Join-Path $SessionsDir "bacon_orchestrate.log"),
         (Join-Path $SessionsDir "bacon_apply.log"),
@@ -449,7 +515,7 @@ function Show-BaconLogs {
         (Join-Path $SessionsDir "auditor.log"),
         $LogFile
     )
-    
+
     foreach ($logFile in $logFiles) {
         if (Test-Path $logFile) {
             Write-Host "`n=== $(Split-Path $logFile -Leaf) ===" -ForegroundColor Cyan
@@ -461,17 +527,17 @@ function Show-BaconLogs {
 # Show metrics
 function Show-BaconMetrics {
     $metricsFile = Join-Path $SessionsDir "metrics.json"
-    
+
     if (-not (Test-Path $metricsFile)) {
         Write-Host "No metrics file found" -ForegroundColor Yellow
         return
     }
-    
+
     try {
         $metrics = Get-Content $metricsFile -Raw | ConvertFrom-Json -ErrorAction Stop
-        
+
         Write-Host "`n=== Bacon Metrics ===" -ForegroundColor Green
-        
+
         # Event summary
         $eventCounts = $metrics | Group-Object event | ForEach-Object {
             @{
@@ -481,18 +547,18 @@ function Show-BaconMetrics {
                 Failed = ($_.Group | Where-Object { $_.status -eq "failed" }).Count
             }
         }
-        
+
         foreach ($count in $eventCounts) {
             Write-Host "$($count.Event): $($count.Count) total ($($count.Success) success, $($count.Failed) failed)"
         }
-        
+
         # Recent activity
         Write-Host "`nRecent Activity:" -ForegroundColor Cyan
         $metrics | Sort-Object timestamp -Descending | Select-Object -First 10 | ForEach-Object {
             $statusColor = if ($_.status -eq "success") { "Green" } elseif ($_.status -eq "failed") { "Red" } else { "Yellow" }
             Write-Host "[$($_.timestamp)] $($_.event) - $($_.status)" -ForegroundColor $statusColor
         }
-        
+
     } catch {
         Write-BaconLog "ERROR" "Failed to parse metrics: $($_.Exception.Message)"
     }
@@ -501,9 +567,9 @@ function Show-BaconMetrics {
 # Cleanup old files
 function Invoke-BaconCleanup {
     Write-BaconLog "INFO" "Starting Bacon cleanup..."
-    
+
     $cleanupCount = 0
-    
+
     # Clean old shadow workspaces
     $tempDirs = Get-ChildItem -Path "/tmp" -Filter "norino_shadow_*" -ErrorAction SilentlyContinue
     foreach ($dir in $tempDirs) {
@@ -517,7 +583,7 @@ function Invoke-BaconCleanup {
             }
         }
     }
-    
+
     # Clean old session files
     $sessionFiles = Get-ChildItem -Path $SessionsDir -Filter "*.json" -ErrorAction SilentlyContinue
     foreach ($file in $sessionFiles) {
@@ -531,7 +597,7 @@ function Invoke-BaconCleanup {
             }
         }
     }
-    
+
     # Clean old logs
     $logFiles = Get-ChildItem -Path $SessionsDir -Filter "*.log" -ErrorAction SilentlyContinue
     foreach ($file in $logFiles) {
@@ -545,17 +611,17 @@ function Invoke-BaconCleanup {
             }
         }
     }
-    
+
     Write-BaconLog "INFO" "Cleanup completed. Removed $cleanupCount files."
 }
 
 # Test Bacon system
 function Test-BaconSystem {
     Write-BaconLog "INFO" "Testing Bacon system..."
-    
+
     $testsPassed = 0
     $testsTotal = 0
-    
+
     # Test prerequisites
     $testsTotal++
     if (Test-BaconPrerequisites) {
@@ -564,7 +630,7 @@ function Test-BaconSystem {
     } else {
         Write-Host "✗ Prerequisites test failed" -ForegroundColor Red
     }
-    
+
     # Test configuration parsing
     $testsTotal++
     try {
@@ -574,10 +640,10 @@ function Test-BaconSystem {
     } catch {
         Write-Host "✗ Configuration file error: $($_.Exception.Message)" -ForegroundColor Red
     }
-    
+
     # Test script availability
     $testsTotal++
-    $requiredScripts = @("bacon-orchestrate.sh", "bacon-apply-shadow.sh", "bacon-sentinel.sh")
+    $requiredScripts = @("bacon-orchestrate.sh", "bacon-apply-shadow.sh", "bacon-apply-approved.sh", "bacon-sentinel.sh")
     $scriptsFound = 0
     foreach ($script in $requiredScripts) {
         if (Test-Path (Join-Path $ScriptsDir $script)) {
@@ -590,7 +656,7 @@ function Test-BaconSystem {
     } else {
         Write-Host "✗ Missing scripts: $scriptsFound/$($requiredScripts.Count) found" -ForegroundColor Red
     }
-    
+
     # Test directory permissions
     $testsTotal++
     try {
@@ -602,9 +668,9 @@ function Test-BaconSystem {
     } catch {
         Write-Host "✗ Directory permission error: $($_.Exception.Message)" -ForegroundColor Red
     }
-    
+
     Write-Host "`nTest Results: $testsPassed/$testsTotal tests passed" -ForegroundColor $(if ($testsPassed -eq $testsTotal) { "Green" } else { "Yellow" })
-    
+
     return $testsPassed -eq $testsTotal
 }
 
@@ -614,9 +680,9 @@ function Main {
     if (-not (Test-Path $SessionsDir)) {
         New-Item -ItemType Directory -Path $SessionsDir -Force | Out-Null
     }
-    
+
     Write-BaconLog "INFO" "Bacon Manager action: $Action"
-    
+
     switch ($Action) {
         "start" {
             if (Test-BaconPrerequisites) {
@@ -625,15 +691,15 @@ function Main {
                 Write-BaconLog "ERROR" "Prerequisites check failed, cannot start"
             }
         }
-        
+
         "stop" {
             Stop-BaconOrchestration
         }
-        
+
         "status" {
             $status = Get-BaconStatus
             Write-Host "`n=== Bacon System Status ===" -ForegroundColor Cyan
-            
+
             # Health status with color
             $healthColor = switch ($status.Health.Overall) {
                 "Excellent" { "Green" }
@@ -644,7 +710,7 @@ function Main {
                 default { "White" }
             }
             Write-Host "Health: $($status.Health.Overall) (Score: $($status.Health.Score)/100)" -ForegroundColor $healthColor
-            
+
             # Orchestration details
             $orchColor = if ($status.Orchestration.Status -eq "Running") { "Green" } else { "Yellow" }
             Write-Host "Orchestration: $($status.Orchestration.Status)" -ForegroundColor $orchColor
@@ -654,7 +720,7 @@ function Main {
                     Write-Host "  Uptime: $($status.Orchestration.Uptime) minutes"
                 }
             }
-            
+
             # Session details
             Write-Host "Sessions: $($status.Sessions.Total) total"
             Write-Host "  Hotspots: $($status.Sessions.Hotspots)"
@@ -664,7 +730,7 @@ function Main {
             if ($status.Sessions.LastUpdated) {
                 Write-Host "  Last Updated: $($status.Sessions.LastUpdated)"
             }
-            
+
             # System resources
             if ($status.System.MemoryUsage) {
                 Write-Host "System Resources:"
@@ -676,7 +742,7 @@ function Main {
                 $diskUsageText = "$diskUsagePercent percent used"
                 Write-Host "  Disk Usage: $($status.System.DiskUsage.FreeGB) GB free of $($status.System.DiskUsage.TotalGB) GB ($diskUsageText)"
             }
-            
+
             # Issues and warnings
             if ($status.Health.Issues.Count -gt 0) {
                 Write-Host "`nIssues:" -ForegroundColor Red
@@ -684,14 +750,14 @@ function Main {
                     Write-Host "  - $issue" -ForegroundColor Red
                 }
             }
-            
+
             if ($status.Health.Warnings.Count -gt 0) {
                 Write-Host "`nWarnings:" -ForegroundColor Yellow
                 foreach ($warning in $status.Health.Warnings) {
                     Write-Host "  - $warning" -ForegroundColor Yellow
                 }
             }
-            
+
             # Recommendations
             if ($status.Health.Recommendations.Count -gt 0) {
                 Write-Host "`nRecommendations:" -ForegroundColor Cyan
@@ -699,7 +765,7 @@ function Main {
                     Write-Host "  - $rec" -ForegroundColor Cyan
                 }
             }
-            
+
             # Metrics availability
             if ($status.Metrics) {
                 Write-Host "`nMetrics: Available"
@@ -707,26 +773,30 @@ function Main {
                 Write-Host "`nMetrics: Not available" -ForegroundColor Yellow
             }
         }
-        
+
         "logs" {
             Show-BaconLogs
         }
-        
+
         "metrics" {
             Show-BaconMetrics
         }
-        
+
         "cleanup" {
             Invoke-BaconCleanup
         }
-        
+
         "test" {
             Test-BaconSystem
         }
-        
+
+        "apply-approved" {
+            Invoke-BaconApplyApproved
+        }
+
         default {
             Write-Host "Unknown action: $Action" -ForegroundColor Red
-            Write-Host "Available actions: start, stop, status, logs, metrics, cleanup, test" -ForegroundColor Yellow
+            Write-Host "Available actions: start, stop, status, logs, metrics, cleanup, test, apply-approved" -ForegroundColor Yellow
         }
     }
 }

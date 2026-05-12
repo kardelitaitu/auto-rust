@@ -6,7 +6,7 @@
     "properties": {
       "timestamp": {"type": "string", "format": "date-time"},
       "event": {"type": "string"},
-      "status": {"type": "string", "enum": ["success", "failed", "rejected"]}
+      "status": {"type": "string", "enum": ["success", "failed", "rejected", "approved"]}
     },
     "required": ["timestamp", "event", "status"]
   }

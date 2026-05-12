@@ -17,6 +17,7 @@ pub mod api;
 pub mod bacon_agent_codex;
 pub mod bacon_agent_gemini;
 pub mod bacon_agent_kilocode;
+pub mod bacon_agent_ollama;
 pub mod bacon_agent_opencode;
 pub mod bacon_agent_pi;
 pub mod browser;

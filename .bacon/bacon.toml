@@ -85,10 +85,15 @@ provider = "openrouter"
 model = "google/gemini-2.5-flash"
 temperature = 0.3
 
-[agents.kilocode]
+[agents.kilo]
 provider = "ollama"
 model = "llama3.2:3b"
 temperature = 0.0
+
+[agents.bacon-ollama]
+provider = "ollama"
+model = "llama3.2:3b"
+temperature = 0.2
 
 [agents.gemini]
 provider = "openrouter"

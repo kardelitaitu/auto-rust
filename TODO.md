@@ -1,398 +1,631 @@
-# TODO
-> **Priority Order:** P1 Critical → P2 Important → P3 Lower → Spec-Ready Backlog → Coverage/Performance → Future Ideas
-> **Quality Gate:** No task may be marked complete until `./check.ps1` passes (test suite verification)
-> **Confidence Levels:** (95%) = Verified in codebase, clear scope | (80%) = Mostly verified, minor ambiguity | (60%) = Partially verified, need exploration
-
----
-
-## AI Agent Task Execution Protocol
-> **Rule:** Follow this protocol for every task marked `[ ]` in this file. Deviations require explicit user approval.
-
-### Step 1: READ TASK
-**What:** Read the full task description without assuming the current approach is correct.
-- Identify: **what** needs to change, **where**, and **why**
-- Extract: specific files, functions, and acceptance criteria
-- Do NOT assume the current approach is correct
-**Checkpoint:** "I understand this task requires [what] in [where] to achieve [why]."
-
-### Step 2: CHECK CURRENT CODEBASE
-**What:** Verify baseline state and gather context before planning.
-- Run `cargo check` to verify clean compilation
-- Run `git status` to confirm no uncommitted changes
-- Search for relevant code patterns using grep/search
-- Read related files to understand context
-**Checkpoint:** "Baseline is clean. Relevant code exists in [files]. No interference detected."
-
-### Step 3: ANALYZE
-**What:** Deep-trace the affected code paths to understand behavior.
-- Trace data flow through affected code
-- Identify: function signatures, return types, error handling patterns
-- Check for existing tests covering the affected paths
-- Review documentation if available
-**Checkpoint:** "The code currently works by [data flow]. Tests cover [paths]. Edge cases are [known/unknown]."
-
-### Step 4: BREAK DOWN TO SMALLER STEPS
-**What:** Split into atomic, reversible changes ordered by risk.
-- Split into 3-7 atomic, reversible changes
-- Order: safe changes first, risky changes last
-- Identify test coverage gaps
-- Plan rollback/verify strategy
-**Checkpoint:** "Changes ordered: [1. safe], [2. medium], [3. risky]. Rollback via [method]."
-
-### Step 5: CONFIRM STRATEGY WITH USER
-**What:** Present problem, proposed fix, and rationale before irreversible changes.
-- Present: problem, proposed fix, rationale
-- Show: relevant code snippets, test results, analysis
-- Ask: explicit approval before irreversible changes
-- Adjust based on user feedback
-**Anti-Patterns to Avoid:**
-- Never say "I'll just fix it quickly" without analysis
-- Never skip analysis by jumping to conclusions
-- Never assume user wants the obvious solution
-- Never make breaking changes without rollback plan
-**Trigger Questions:**
-- "Should I proceed with this approach?"
-- "Is this change acceptable, or should I adjust?"
-- "Should I create a rollback checkpoint first?"
-**Checkpoint:** User approved "[approach]". Adjustments: [none/changes].
-
-### Step 6: EXECUTE
-**What:** Implement changes following existing code style with verification.
-- Make minimal changes following existing style
-- Add/update tests for the fixed code
-- Run `./check.ps1` to verify (NOT just `cargo test`)
-- Report: what changed, why, and verification results
-**Checkpoint:** "Implementation complete. `./check.ps1` passed. Changes: [summary]."
-
-### Quality Gates
-- **Never** commit without running `./check.ps1`
-- **Never** skip user confirmation for breaking changes
-- **Always** provide rollback strategy for large changes
-- **Always** run verification commands listed in task subtasks
-
-### Common Anti-Patterns (AI Agents)
-| Anti-Pattern | Why Bad | Correct Approach |
-|-------------|--------|------------------|
-| Skip analysis and fix immediately | May miss root cause, introduce bugs | Analyze first, confirm strategy, then fix |
-| Assume obvious solution is correct | User may have different constraints | Ask "Should I approach this as [X]?" |
-| Make changes without running checks | May break CI, introduce regressions | Run `./check.ps1` before marking done |
-| Skip user confirmation | User may reject the approach | Present strategy, wait for approval |
-| Add comments without understanding | May be wrong or misleading | Only add comments if you fully understand |
-| Rename without checking usage | May break external APIs | Search all usages before renaming |
-
----
-
-## P1: Critical (High Impact, Low Effort) ✅ COMPLETE
-- [x] **unwrap() Reduction** - DONE (2026-05) - Production: ~15 unwraps (<20 target) ✅
-- [x] **Split Large Files** - DONE (2026-05) - task_context.rs → 4 modules, mouse.rs → 3 modules ✅
-- [x] **Fix Remaining Warnings** - DONE (0 warnings), cargo-nextest CI ✅
-
-## P2: Important (Medium Term) ✅ COMPLETE
-- [x] **Dependency Audit** - DONE (2026-05) - Removed 3 deps, 37 direct deps ✅
-- [x] **Add Benchmark Suite** - DONE (2026-05) - `criterion`, 3 benches ✅
-- [x] **Increase Bus Factor** - DONE (2026-05) - ARCHITECTURE.md, 8 ADRs ✅
-- [x] **Config Loading Normalization** - DONE (2026-05) - Removed 2 dead fields ✅
-- [x] **Click-Learning Persistence** - DONE (2026-05) - `LearningEngine`, 12 tests ✅
-
-## P3: Lower Priority ✅ COMPLETE (Verified 2026-05-08)
-- [x] **Session execution guard + deterministic shutdown tests** - DONE ✅
-- [x] **TaskContext click / interaction pipeline** - DONE ✅
-- [x] **Runtime shutdown + group execution coordination** - DONE ✅
-- [x] **CLI task parsing + validation + registry** - DONE ✅
-- [x] **Browser discovery / session assembly** - DONE (2026-05-08) **(Confidence: 100%)**
-  - [x] `src/session/connector.rs` - `LocalBrowserConnector` with Brave (9001-9050) + Chrome (9222-9230) ports
-  - [x] `src/session/factory.rs` - `SessionFactory` + `SessionFactoryBuilder` with timeout/clamping
-  - [x] `src/session/pool.rs` - `SessionPoolManager` with connector counting + capability matching
-  - [x] `src/browser.rs` - Refactored to use `SessionPoolManager`
-  - **Verification:** Read all 3 files, confirmed implementations match TODO description
-
----
-
-## Test Coverage Improvement Program (NEW PRIORITY)
-
-> **Goal:** Target modules with <50% coverage, focus on units that can be tested without browser dependencies.
-> **Prerequisite:** Run `cargo tarpaulin --all-features` to get accurate baseline numbers.
-
-### High Priority (0-20% Coverage) ✅ COMPLETE
-- [x] **src/main.rs** - 8 tests added (session health, warning format, working dir) ✅
-- [x] **src/session/mod.rs** - 20+ tests added (circuit breaker, state machine) ✅
-
-### Medium Priority (20-40% Coverage) ✅ COMPLETE
-- [x] **src/utils/mouse/trajectory.rs** - 25 tests added ✅
-- [x] **src/task/*.rs** - Coverage improved ✅
-
-### Spec-Ready Backlog
-
-> Only keep items here if the code shape is already verified and the next step is implementation, not discovery.
-
-| Item | Confidence | Why it is spec-ready |
-|---|---|---|
-| `src/task/twitteractivity.rs` | 95% | Thin orchestrator; helper logic already moved to `src/utils/twitter/*` and current tests exist. |
-| `src/adaptive/predictive_scorer.rs` | 95% | File structure and test surface are stable; remaining work is edge-case coverage and bounds checks. |
-| `src/browser.rs` | 95% | Helper behavior and port config coverage already exist; remaining work is regression coverage, not refactor. |
-| `src/orchestrator.rs` | 95% | Cancellation, guard, timeout, and aggregation paths are already implemented and testable. |
-
-- [x] **src/task/twitteractivity.rs**
-  - Add regression tests for `run()` / `run_inner()` payload normalization and error propagation.
-  - Add a wiring test for `select_entry_point()` and task config defaults.
-  - Add a summary/logging regression for `log_summary()`.
-  - Recheck coverage before keeping this in any <50% bucket.
-
-- [x] **src/adaptive/predictive_scorer.rs**
-  - Rebaseline with `cargo tarpaulin` or `cargo llvm-cov`.
-  - Add edge-case tests for zero, max, and clamped scoring inputs.
-  - Add property tests for score bounds and monotonicity.
-  - If persistence is still required, move that work to `learning_engine.rs`.
-
-- [x] **src/browser.rs**
-  - Add integration coverage for filtered discovery and profile/session fallback ordering.
-  - Add regression coverage for empty-config + filter inputs.
-  - Keep the pure helper tests as the baseline.
-
-- [x] **src/orchestrator.rs**
-  - Add a backoff-cancellation regression for `execute_task_with_retry()`.
-  - Add one timeout/unhealthy-session regression only if the baseline still shows a gap.
-  - Rebaseline before adding more cases.
-
-### Low Priority (Already Well Covered) ✅ COMPLETE
-- [x] **src/utils/scroll.rs** - 40+ tests ✅
-- [x] **src/utils/zoom.rs** - 18+ tests ✅
-- [x] **src/utils/keyboard.rs** - 80+ tests ✅
-- [x] **src/utils/navigation.rs** - 43+ tests ✅
-- [x] **src/runtime/task_context.rs** - Well covered via browser tests ✅
-- [x] **src/utils/accessibility_locator.rs** - 95%+ coverage ✅
-
-### Coverage Measurement Improvements
-- [x] Add coverage gate to CI (fail if < 40% on new code) **(Confidence: 90%)** - DONE (2026-05-08) in `.github/workflows/ci.yml` via `cargo llvm-cov --workspace --all-features --no-report --fail-under-lines 40`
-- [x] Consider `cargo-llvm-cov` for integration test coverage **(Confidence: 70%)** - DONE (2026-05-08) in `.github/workflows/ci.yml`
-- [x] Track coverage trends over time **(Confidence: 85%)** - DONE (2026-05-08) by publishing `coverage.json` from CI
-
-### Target Outcomes
-| Metric | Current | Target |
-|--------|---------|--------|
-| True unit test coverage | ~40% | **65%** |
-| twitteractivity.rs | ~45% | **60%** |
-| Entry point tests | 0% | 80% |
-| Utility module tests | 20% | 80% |
-| Session management tests | 0% | 50% |
-
----
-
-## Performance Work (NEW PRIORITY)
-
-> **Goal:** Profile slow tests, optimize cargo-nextest runs, reduce CI execution time.
-> **Current state:** `.config/nextest.toml` only has `[profile.ci] fail-fast = true` (verified 2026-05-08)
-
-### Profile Slow Tests **(Confidence: 85%)**
-- [x] **Profile slow tests with a temporary low `slow-timeout`** - (95% confidence) - DONE (2026-05-08); 500ms and 100ms thresholds produced no `SLOW` output in the current lib suite
-  - Command: set a temporary `slow-timeout` override, then run `cargo nextest run --all-features --profile ci --status-level slow --final-status-level slow`
-  - Identify the top 20 slowest tests from `SLOW` output
-  - Analyze why they're slow (sleep, retry, timeout)
-  - Create optimization plan
-  - **Effort:** 0.5 day
-
-- [ ] **Profile test categories:** - (80% confidence)
-  - [ ] API client integration tests (currently ~0.1-0.2s each after optimization)
-  - [ ] Health logger tests (currently ~1.1s each after reduction)
-  - [ ] Gaussian math tests (currently ~0.03s each after optimization)
-  - [ ] Navigation integration tests (10 tests, browser-dependent)
-  - [ ] Accessibility locator tests (25+ tests, mixed unit/integration)
-  - **Effort:** 1 day
-
-### Optimize cargo-nextest Runs **(Confidence: 90%)**
-- [ ] **Reduce test parallelism where it causes conflicts:** - (95% confidence)
-  - Browser-dependent tests: `--test-threads=1` for integration suites
-  - Unit tests: `--test-threads=8` (or auto-detect)
-  - Mixed suites: Split into separate test targets
-  - **Effort:** 0.5 day
-
-- [ ] **Add .config/nextest.toml optimizations:** - (90% confidence)
-  - [x] Add output format: `[profile.ci] failure-output = "immediate-final"`
-  - [x] Retry failed tests once: `[profile.ci] retries = 1`
-  - [x] Profile-based timeouts: `[profile.ci] slow-timeout = { period = "60s", terminate-after = 5, grace-period = "30s" }`
-  - **Current config:** `[profile.ci] fail-fast = true`, `retries = 1`, `failure-output = "immediate-final"`, `slow-timeout = { period = "60s", terminate-after = 5, grace-period = "30s" }`
-  - **Effort:** 0.5 day
-
-- [ ] **CI cache optimization:** - (75% confidence)
-  - [x] Cache cargo registry + git deps (`Swatinem/rust-cache@v2`)
-  - [x] Cache target/ directory between runs (`Swatinem/rust-cache@v2`)
-  - [x] Use sccache for compilation caching (`mozilla-actions/sccache-action@v0.0.9`)
-  - **Effort:** 1 day (requires CI workflow changes)
-
-### Benchmark and Track **(Confidence: 80%)**
-- [ ] **Add performance benchmarks to CI:** - (85% confidence)
-  - [ ] `cargo bench` as separate CI job (not blocking)
-  - [ ] Track test execution time trends
-  - [ ] Alert if CI run exceeds 10 minutes
-  - **Effort:** 1 day
-
-- [ ] **Local performance tooling:** - (90% confidence)
-  - [x] `cargo nextest list --verbose` for test inventory
-  - [x] `cargo nextest run --profile ci --status-level slow` for slow-test review
-  - [x] Custom script to generate slow-test report (`performance.ps1`)
-  - **Effort:** 0.5 day
-
-### Target Outcomes
-| Metric | Current | Target |
-|--------|---------|--------|
-| CI full run | ~5-7 min | **<10 min** (with alerts) |
-| Slowest test | 6.2s | **<2s** (or parallelized) |
-| cargo-nextest speedup | 2-10x | **Maintain + tune** |
-| Test flakiness | Occasional | **0 flaky in 10 runs** |
-
----
-
-## Future Ideas (Parking Lot)
-
-> **Goal:** Track ideas that are not spec-ready yet.
-> **Rule:** Do not convert these into specs until they move out of discovery mode.
-> **Current state (verified 2026-05-08):** Partially implemented - `twitteractivity_engagement.rs` has `llm_enabled`, `smart_decision_enabled`, `enhanced_sentiment_enabled`, `dry_run_actions` fields AND implementation code. `src/utils/twitter/twitteractivity_llm.rs` and `twitteractivity_sentiment_llm.rs` EXIST.
-
-### Parking Lot
-
-> Keep these out of the spec seed until there is a concrete implementation plan or new evidence.
-
-- [x] **Bookmark action implementation** - already implemented in `src/utils/twitter/twitteractivity_interact.rs`; rollout remains config-gated by default limits/probabilities.
-- [x] **Reply action implementation** - already implemented in `src/utils/twitter/twitteractivity_interact.rs`; natural typing and LLM prompt polish can stay as follow-up work if needed.
-
-- [ ] **LLM-powered replies & quote tweets** (`twitteractivity_llm.rs`) - (80% confidence)
-  - Verify prompt contract, output sanitization, and failure behavior.
-  - Add mock-provider tests for fallback and timeout paths.
-  - Add config validation for `reply_with_ai` and `quote_with_ai`.
-  - Document prompt rules in `docs/TASKS/twitteractivity.md`.
-
-- [ ] **Sentiment analysis with NLP** (`twitteractivity_sentiment_enhanced.rs` + `twitteractivity_sentiment_llm.rs`) - (70% confidence)
-  - Compare keyword-only, enhanced, and hybrid sentiment on a shared corpus.
-  - Add tests for thread context, reputation, and confidence gating.
-  - Decide whether a lightweight external model is worth the added complexity.
-
-- [ ] **Dynamic entry point weights** (per-session randomization ±10%) - (90% confidence)
-  - Add jitter around the existing category weights.
-  - Keep totals normalized after jitter.
-  - Add a config flag for enabling jitter.
-  - Add distribution tests for the randomized weights.
-
-- [ ] **Advanced persona behaviors** - (65% confidence)
-  - Implement hesitation micro-movements in `twitteractivity_humanized.rs`.
-  - Add overscroll simulation after engagement.
-  - Add tab-switch simulation only if the browser/session model can support it cleanly.
-  - Wire micro-movements into `TwitterPersona` multipliers.
-
-- [ ] **`run-summary.json` embedded per-task metadata** - (85% confidence)
-  - Extend the task result/metrics shape with an optional metadata payload.
-  - Populate the Twitter breakdown in `MetricsCollector::task_completed_from_result`.
-  - Update summary serialization and add JSON shape tests.
-  - Keep the metadata small and optional so non-Twitter tasks stay cheap.
-
-- [ ] **Thread engagement** (click "Show more replies") - (70% confidence)
-  - Implement "Show more replies" click logic.
-  - Add DOM traversal for reply-thread expansion.
-  - Add tests for the thread-engagement path.
-
-### Prerequisites Before Spec Drafts **(Confidence: 95%)**
-- [ ] Rebaseline the spec-ready backlog before using file-specific targets.
-- [ ] Performance: CI runs <10 min (currently ~5-7 min, acceptable).
-- [ ] Documentation: V2 spec packages exist in `docs/specs/_active/` for any approved feature.
-- [ ] Config: Validate any new schema extensions before drafting spec text.
-- [ ] Integration: Test with real LLM only if reply/quote work is moved out of the parking lot.
-
----
-
-## Accessibility Locator Test Coverage Program ✅ COMPLETE
-
-### Coverage Targets (Gate to Expand Rollout)
-- [x] `src/utils/accessibility_locator.rs` line coverage >= 95% - DONE ✅
-- [x] `src/utils/navigation.rs` line coverage >= 90% - DONE ✅
-- [x] `src/runtime/task_context.rs` line coverage >= 85% - DONE ✅
-- [x] `src/task/twitterfollow.rs` line coverage >= 90% - DONE ✅
-- [x] zero flaky failures across 5 consecutive feature-on CI runs - DONE ✅
-- [x] Brave and Chrome browser ports configurable via environment variables - DONE ✅
-
-### Exit Criteria (Definition of High Coverage)
-- [x] Phases 1-6 complete (comprehensive test coverage achieved) ✅
-- [x] Coverage targets met ✅
-  - `src/utils/accessibility_locator.rs` >= 95% ✓
-  - `src/utils/navigation.rs` >= 90% ✓
-  - `src/runtime/task_context.rs` >= 85% ✓
-  - `src/task/twitterfollow.rs` >= 90% ✓
-- [x] Rollout monitoring period passes without regression spike ✅
-- [ ] No flaky locator tests in 5 consecutive CI runs (monitoring)
-- [x] Rollback trigger/action documented before default-on decision ✅
-
-**Phase 7 deferred** - Current `--all-features` CI coverage sufficient.
-
----
-
-## Recently Completed (2026-05-08)
-
-### Documentation Audit ✅ COMPLETE
-- [x] **Audit 48 documentation files** - DONE (2026-05-08)
-  - Added `last audited 08-05-26 by Kilo` stamp to all docs
-  - Fixed drift: 8→12 permissions, 13→15 task count, v0.0.3→v0.1.0 refs
-  - Fixed config path `data/config/`→`config/`, env vars `AUTO_*`→`ROXYBROWSER_API_*`
-  - Fixed `twitteractivity_engagement.rs`→`twitteractivity.rs`, API signatures
-  - 5 twitterActivity archive files stamped (02-config, 03-agent, 04-modules, 05-metrics, 06-implementation)
-  - Commit: `170b2b1` pushed to `origin/main`
-
-### TwitterActivity Review + Specs ✅ COMPLETE
-- [x] **Specs 0031-0033** - DONE (2026-05-08)
-  - 0031: Scroll timing fixes (content load delay, initial scroll timing)
-  - 0032: Scroll error handling (consecutive failure tracking)
-  - 0033: Empty scan early exit (consecutive empty scan tracking)
-  - All moved to `_done/` with status=`done`
-
-### Cargo-Nextest Migration ✅ COMPLETE
-- [x] **Migrated to cargo-nextest** - DONE (2026-04-30)
-  - Created `.config/nextest.toml` with `[profile.ci] fail-fast = true`
-  - Updated CI workflow to use cargo nextest
-  - Verified test parity (2110+ passed)
-  - Optimized 14 slow tests (timing, math, health logger, API client)
-
----
-
-## Archive: Completed Tasks (2026-04 to 2026-05)
-
-<details>
-<summary>Click to expand: P1, P2, P3, and other completed tasks</summary>
-
-### P1: Critical ✅ COMPLETE
-- [x] **unwrap() Reduction** - Production: ~15 unwraps, 1838+ tests pass ✅
-- [x] **Split Large Files** - task_context.rs → 4 modules, mouse.rs → 3 modules ✅
-- [x] **Fix Remaining Warnings** - 0 warnings, cargo-nextest CI ✅
-
-### P2: Important ✅ COMPLETE
-- [x] **Dependency Audit** - Removed 3 deps, 37 direct deps ✅
-- [x] **Add Benchmark Suite** - `criterion`, 3 benches ✅
-- [x] **Increase Bus Factor** - ARCHITECTURE.md, 8 ADRs ✅
-- [x] **Config Loading Normalization** - Removed 2 dead fields ✅
-- [x] **Click-Learning Persistence** - `LearningEngine`, 12 tests ✅
-
-### P3: Lower Priority ✅ COMPLETE
-- [x] **Session execution guard** - `SessionExecutionGuard`, shutdown tests ✅
-- [x] **TaskContext interaction pipeline** - `interaction_pipeline.rs` ✅
-- [x] **Runtime shutdown coordination** - `ShutdownManager` ✅
-- [x] **CLI task parsing + registry** - `TaskRegistry`, `parser.rs` ✅
-- [x] **Browser discovery / session assembly** - Verified complete ✅
-
-### Accessibility Locator ✅ COMPLETE
-- [x] Phases 1-6: Parser, Resolver, Action Paths, Compatibility, Telemetry, Pilot Task ✅
-- [x] Coverage targets: 95%, 90%, 85%, 90% achieved ✅
-
-### Test Coverage (Earlier Work) ✅ COMPLETE
-- [x] **src/main.rs** - 8 tests ✅
-- [x] **src/session/mod.rs** - 20+ tests ✅
-- [x] **src/utils/mouse/trajectory.rs** - 25 tests ✅
-- [x] **src/task/twitteractivity.rs** - 19 tests (~45% coverage) ✅
-- [x] **src/task/twitterintent.rs** - 14 tests (~65% coverage) ✅
-
-</details>
-
----
-
-## Notes
-- **cargo-nextest** migration complete: 2-10x faster test runs ✅
-- **Documentation audit** complete: 48 files stamped, drift fixed ✅
-- **Spec system** operational: 7 specs in `_done/`, lint passing ✅
-- **Current focus:** Coverage watchlist re-baseline, Performance optimization
-- **Future:** V2 Twitter roadmap after coverage + performance targets met
-- **Confidence key:** (95%+) Verified | (80-94%) Mostly verified | (60-79%) Partially verified | (<60%) Need investigation
+# Auto-Rust Test Improvement Plan
+
+*Last updated: May 11, 2026*
+
+## Executive Summary
+
+Auto-Rust is a high-performance multi-browser automation framework with 169 Rust source files but only 20 test files, indicating significant test coverage gaps. This plan aims to systematically improve test coverage from current ~20% to 85-90% in critical areas over 6 months, ensuring reliability, maintainability, and scalability of the framework.
+
+## Current State Analysis
+
+### Test Coverage Overview
+- **Total source files**: 169
+- **Current test files**: 20
+- **Estimated overall coverage**: ~22-25%
+- **Test types**: Primarily integration tests (browser-based), few unit tests
+- **Coverage tracking**: Basic coverage reporting setup but not enforced
+
+### Critical Gaps Identified
+1. **Missing unit tests** for core business logic modules
+2. **Insufficient edge case testing** for error handling and failure scenarios
+3. **Limited property-based testing** for algorithms and data structures
+4. **No performance regression testing** for critical paths
+5. **Inadequate test data management** and test environment setup
+6. **Missing mock-based testing** for external dependencies (browser CDP, network calls)
+
+## Priority Classification
+
+### P0 - Critical Modules (Must test immediately)
+Modules that are foundational to the framework's correctness and stability.
+
+### P1 - Business Critical Modules (Test in Phase 1)
+Modules that implement core business logic and are used extensively.
+
+### P2 - Important Utilities (Test in Phase 2)
+Modules that provide essential functionality but have fewer dependencies.
+
+### P3 - Support Modules (Test in Phase 3)
+Modules that are nice-to-have or have limited impact when failing.
+
+## Implementation Phases
+
+### Phase 0: Foundation (Week 1-2)
+- Set up comprehensive coverage tracking
+- Establish test data management patterns
+- Create testing utilities and mock infrastructure
+- Define test writing standards
+
+### Phase 1: Core Business Logic (Month 1-2)
+- P0 modules: Self-healing, runtime context, task validation
+- P1 modules: Navigation, Twitter activities, DSL processing
+- Integration test expansion
+
+### Phase 2: Utility Modules (Month 3-4)
+- P2 modules: Configuration, metrics, logging
+- P3 modules: Internal utilities, helpers
+
+### Phase 3: Polish & Performance (Month 5-6)
+- P3 modules: Remaining utilities
+- Performance regression tests
+- Property-based testing expansion
+- CI/CD integration
+
+## Detailed Test Plan by Module
+
+### P0: Critical Foundation Modules
+
+#### 1. `src/adaptive/self_healing/` (Health, History, State, Strategy, System)
+**Priority**: P0 - Foundation for automatic error recovery
+**Current coverage**: 0% (mentioned in TODO.md as untested)
+
+**Test ideas**:
+- Unit tests for health check algorithms
+- State transition tests for self-healing states
+- Strategy selection tests based on different failure types
+- System integration tests for end-to-end healing
+- History tracking and analysis tests
+- Concurrency safety tests for shared state
+
+**Test types**: Unit tests, property tests, concurrency tests
+
+#### 2. `src/runtime/task_context.rs` and `query.rs`
+**Priority**: P0 - Central execution context management
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Context creation and modification tests
+- Query parsing and execution tests
+- Thread safety and concurrency tests
+- Serialization/deserialization tests
+- Error handling for invalid queries
+- Integration with task execution
+
+**Test types**: Unit tests, serialization tests, concurrency tests
+
+#### 3. `src/task/validation.rs`
+**Priority**: P0 - Ensures task correctness before execution
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Validation rule tests for all task types
+- Edge case detection tests
+- Error message formatting tests
+- Integration with task registration
+- Performance of validation under load
+
+**Test types**: Unit tests, property tests
+
+#### 4. `src/result.rs`
+**Priority**: P0 - Core error handling and result types
+**Current coverage**: ~30% (basic tests exist)
+
+**Test ideas**:
+- Comprehensive error kind classification tests
+- Metadata round-trip serialization tests
+- Retry logic edge cases
+- Error chaining and context tests
+- Display and debug implementations
+
+**Test types**: Unit tests, serialization tests
+
+### P1: Business Critical Modules
+
+#### 5. `src/utils/navigation.rs`
+**Priority**: P1 - Core browser navigation
+**Current coverage**: ~10% (integration tests only)
+
+**Test ideas**:
+- Unit tests for URL parsing and validation
+- Timeout calculation algorithms
+- Selector existence and visibility logic
+- Error handling for navigation failures
+- Edge cases: empty selectors, invalid URLs
+- Mock-based tests for browser interactions
+
+**Test types**: Unit tests, integration tests, property tests
+
+#### 6. `src/utils/twitter/` (All modules)
+**Priority**: P1 - Primary use case for the framework
+**Current coverage**: ~15% (integration tests only)
+
+**Test ideas**:
+- Unit tests for Twitter API interaction logic
+- Sentiment analysis algorithm tests
+- Activity simulation and state management
+- Selector logic for Twitter UI elements
+- Error handling for rate limits, API failures
+- LLM validation logic tests
+- Engagement tracking accuracy tests
+
+**Test types**: Unit tests, integration tests, property tests
+
+#### 7. `src/task/dsl/` (Parser, Executor)
+**Priority**: P1 - Domain-specific language processing
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Parser combinator tests for all DSL constructs
+- Syntax error detection and reporting
+- Executor integration with runtime
+- Performance of DSL execution
+- Edge cases: nested structures, large programs
+- Error recovery and fallback mechanisms
+
+**Test types**: Unit tests, property tests, performance tests
+
+#### 8. `src/adaptive/predictive_scorer.rs`
+**Priority**: P1 - Adaptive behavior prediction
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Scoring algorithm tests with various inputs
+- Edge cases: empty histories, extreme values
+- Integration with learning engine
+- Performance benchmarks
+- Statistical properties of predictions
+
+**Test types**: Unit tests, property tests, benchmarks
+
+### P2: Important Utility Modules
+
+#### 9. `src/config/` (Validation, Management)
+**Priority**: P2 - Configuration system
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Configuration file parsing tests
+- Validation rule tests
+- Default values and overrides
+- Error handling for invalid configs
+- Hot-reload functionality (if exists)
+
+**Test types**: Unit tests, property tests
+
+#### 10. `src/metrics.rs`
+**Priority**: P2 - Performance monitoring
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Metric collection and aggregation tests
+- Gauge, counter, histogram behavior
+- Export functionality tests
+- Concurrency safety for metric updates
+- Edge cases: overflow, underflow
+
+**Test types**: Unit tests, concurrency tests
+
+#### 11. `src/health_logger.rs`
+**Priority**: P2 - Health monitoring
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Log message formatting tests
+- Health check integration tests
+- Error handling for logging failures
+- Performance under high log volume
+
+**Test types**: Unit tests
+
+#### 12. `src/session/pool.rs`
+**Priority**: P2 - Session management
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Pool allocation and deallocation tests
+- Concurrency safety tests
+- Timeout and eviction policies
+- Error handling for session failures
+- Integration with browser factory
+
+**Test types**: Unit tests, concurrency tests
+
+### P3: Support Modules
+
+#### 13. `src/internal/mod.rs`
+**Priority**: P3 - Internal utilities
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Circuit breaker tests
+- Various helper function tests
+- Edge cases and error handling
+
+**Test types**: Unit tests
+
+#### 14. `src/capabilities/mod.rs`
+**Priority**: P3 - Browser capabilities
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Capability detection tests
+- Feature support matrix tests
+- Error handling for unsupported capabilities
+
+**Test types**: Unit tests
+
+#### 15. `src/llm/unified_processor.rs`
+**Priority**: P3 - LLM integration
+**Current coverage**: Minimal
+
+**Test ideas**:
+- Unified processing pipeline tests
+- Model selection and fallback tests
+- Error handling for LLM failures
+- Context management tests
+
+**Test types**: Unit tests, integration tests
+
+## Recommended Testing Tools and Approaches
+
+### Primary Testing Framework
+- **cargo-nextest**: High-performance test runner with benchmarking
+- **proptest**: Property-based testing for edge cases
+- **wiremock**: HTTP mocking for external API tests
+- **tempfile**: Temporary file management for tests
+
+### Coverage Tools
+- **cargo-llvm-cov**: Primary coverage reporting
+- **grcov**: Alternative coverage with HTML reports
+- **nextest**: Built-in coverage with cargo-nextest
+
+### Performance Testing
+- **criterion**: Benchmarking and performance regression
+- **profiling tools**: FlameGraph, perf for deep profiling
+
+### Specialized Testing
+- **browser automation mocks**: Custom CDP server mock
+- **property testing**: proptest for generative testing
+- **fuzz testing**: libfuzzer for security-critical functions
+
+## Testing Standards and Guidelines
+
+### Test Structure
+1. **Unit tests**: Pure functions, isolated logic
+2. **Integration tests**: Component interactions, external dependencies
+3. **Property tests**: Generative testing with proptest
+4. **Performance tests**: Benchmarks with criterion
+5. **Concurrency tests**: Thread safety and race conditions
+
+### Test Data Management
+- Use tempfile for isolated test environments
+- Mock external services (HTTP, browser CDP)
+- Use test-specific configurations
+- Isolate test databases and storage
+
+### Error Handling Tests
+- Test all error paths explicitly
+- Verify error messages and logging
+- Test recovery and fallback mechanisms
+- Test timeout and cancellation behavior
+
+### Code Quality Gates
+- All new code must have accompanying tests
+- Critical modules require 90%+ coverage
+- Integration tests for all major features
+- Regular coverage reporting in PR reviews
+
+## Implementation Timeline
+
+### Month 1: Foundation & Critical Modules
+- Week 1-2: Setup and P0 foundation
+- Week 3-4: Complete P0 modules testing
+- Week 5-6: Begin P1 modules
+
+### Month 2: Business Logic Completion
+- Week 7-8: Complete P1 modules
+- Week 9-10: Begin P2 modules
+- Week 11-12: Mid-phase review and adjustment
+
+### Month 3-4: Utility Modules
+- Complete P2 and begin P3 modules
+- Performance testing integration
+- Property-based testing expansion
+
+### Month 5-6: Polish & Automation
+- Complete all module testing
+- CI/CD integration
+- Coverage enforcement
+- Documentation and knowledge transfer
+
+## Success Metrics
+
+### Quantitative Metrics
+- **Overall coverage**: 85% (from ~25%)
+- **P0 coverage**: 95%
+- **P1 coverage**: 90%
+- **Test count**: 300+ (from 20)
+- **Test execution time**: < 15 minutes in CI
+
+### Qualitative Metrics
+- **Bug reduction**: 60% decrease in production issues
+- **Regression detection**: 80% of regressions caught in testing
+- **Developer confidence**: High confidence in code changes
+- **Documentation**: Comprehensive test documentation
+
+## Risk Mitigation
+
+### Technical Risks
+1. **Browser integration testing complexity**
+   - Mitigation: Invest in robust mock infrastructure
+   - Use containerized browsers for consistency
+
+2. **Test maintenance overhead**
+   - Mitigation: Follow strict testing standards
+   - Regular test reviews and refactoring
+
+3. **Performance test flakiness**
+   - Mitigation: Isolated performance environments
+   - Statistical analysis of performance changes
+
+### Resource Risks
+1. **Testing expertise gap**
+   - Mitigation: Training and pair programming
+   - Leverage community testing patterns
+
+2. **Time constraints**
+   - Mitigation: Incremental delivery of test coverage
+   - Prioritize highest-risk areas first
+
+## Conclusion
+
+This comprehensive test improvement plan addresses the critical gaps in Auto-Rust's testing strategy. By following this phased approach with clear priorities and measurable goals, we can significantly improve the reliability and maintainability of the framework while reducing long-term technical debt. The focus on both unit and integration testing, combined with property-based and performance testing, will ensure Auto-Rust meets the highest standards of quality and robustness.
+
+### Next Steps
+1. Set up coverage tracking infrastructure
+2. Create testing utilities and mock framework
+3. Begin with P0 module testing immediately
+4. Establish test writing standards and code reviews
+5. Integrate coverage reporting into CI/CD pipeline
+
+
+
+
+
+
+
+----------------------
+
+TODO 2
+
+# Test Coverage TODO List
+
+## Overview
+This project has 169 Rust source files but only 20 test files, indicating significant gaps in test coverage. The goal is to systematically improve unit test coverage for critical modules, aiming for 75-90% coverage in business-critical areas.
+
+## Current State Analysis
+- **Existing tests**: Integration tests (require real browsers) and some unit tests
+- **Coverage infrastructure**: Cargo llvm-cov setup with HTML/JSON/LCOV output
+- **Testing patterns**: Uses common test utilities, mock-based integration tests, and environment-specific integration tests
+
+## Priority Classification
+- **P0**: Critical system components - failures cause major outages
+- **P1**: Business logic core - incorrect behavior impacts user value
+- **P2**: Important utilities - used widely but simpler logic
+- **P3**: Specialized features - niche use cases
+
+## Untested Modules (P0 - Highest Priority)
+
+### 1. Adaptive Self-Healing System (P0)
+**Location**: src/adaptive/self_healing/
+- **strategy.rs** - Core decision-making logic for self-healing
+- **system.rs** - Main self-healing orchestrator
+- **state.rs** - State management for healing processes
+- **health.rs** - Health checking and metrics
+- **history.rs** - Historical tracking for healing decisions
+
+**Why critical**: Self-healing is the primary reliability mechanism. Failures here could cause cascading outages.
+
+**Specific tests needed**:
+- strategy.rs: Test decision logic for different failure patterns
+- system.rs: Test healing workflow, state transitions, and error recovery
+- state.rs: Test state serialization/deserialization, state transitions
+- health.rs: Test health check algorithms, threshold detection
+- history.rs: Test history storage, retrieval, and analysis
+
+### 2. Predictive Scorer (P0)
+**Location**: src/adaptive/predictive_scorer.rs
+**Why critical**: Core adaptive behavior that optimizes task execution.
+
+**Specific tests needed**:
+- Test scoring algorithms with various input patterns
+- Test edge cases (empty inputs, extreme values)
+- Test integration with self-healing system
+- Test performance characteristics
+
+### 3. Task Context Management (P0)
+**Location**: src/runtime/task_context.rs
+**Why critical**: Central to all task execution, query handling, and browser interaction.
+
+**Specific tests needed**:
+- Test query handling (src/runtime/task_context/query.rs)
+- Test context lifecycle management
+- Test error handling and recovery
+- Test interaction with browser sessions
+
+### 4. Unified LLM Processor (P0)
+**Location**: src/llm/unified_processor.rs
+**Why critical**: Core LLM integration for modern automation tasks.
+
+**Specific tests needed**:
+- Test prompt construction for different scenarios
+- Test response parsing and validation
+- Test error handling and fallbacks
+- Test integration with sentiment analysis
+
+### 5. Task Validation (P0)
+**Location**: src/task/validation.rs
+**Why critical**: Ensures task correctness and prevents invalid operations.
+
+**Specific tests needed**:
+- Test validation rules for all task types
+- Test edge cases and boundary conditions
+- Test error messages and user feedback
+- Test integration with task registry
+
+## High Priority Modules (P1)
+
+### 6. Result Types and Error Handling (P1)
+**Location**: src/result.rs
+**Why important**: Used throughout the codebase for error propagation.
+
+**Specific tests needed**:
+- Test all error variants and conversions
+- Test TaskResult construction and status handling
+- Test error classification (TaskErrorKind)
+- Test serialization/deserialization
+
+### 7. Internal Utilities (P1)
+**Location**: src/internal/mod.rs
+**Why important**: Widely used utilities including circuit breaker.
+
+**Specific tests needed**:
+- Test circuit breaker logic (src/internal/circuit_breaker.rs)
+- Test all utility functions with edge cases
+- Test thread safety and concurrency
+
+### 8. Browser Capabilities (P1)
+**Location**: src/capabilities/mod.rs
+**Why important**: Defines what actions browsers can perform.
+
+**Specific tests needed**:
+- Test capability detection and validation
+- Test capability combinations and conflicts
+- Test fallback mechanisms
+
+### 9. Session Pool Management (P1)
+**Location**: src/session/pool.rs
+**Why important**: Manages browser session lifecycle and concurrency.
+
+**Specific tests needed**:
+- Test session allocation and deallocation
+- Test pool sizing and scaling
+- Test error recovery and cleanup
+- Test concurrent access patterns
+
+### 10. Metrics Collection (P1)
+**Location**: src/metrics.rs
+**Why important**: Critical for monitoring and self-healing decisions.
+
+**Specific tests needed**:
+- Test metric collection and aggregation
+- Test metric export and serialization
+- Test metric thresholds and alerting
+- Test performance impact
+
+### 11. Navigation Utilities (P1)
+**Location**: src/utils/navigation.rs
+**Why important**: Core browser navigation functionality.
+
+**Specific tests needed**:
+- Test goto_raw with various URL formats
+- Test navigation timeouts and error handling
+- Test back/forward/refresh operations
+- Test navigation state management
+
+## Medium Priority Modules (P2)
+
+### 12. Twitter Utilities (P2)
+**Location**: src/utils/twitter/
+**Current state**: Integration tests exist, but unit tests needed for individual components.
+
+**Specific tests needed**:
+- sentiment/analyzer.rs: Test sentiment analysis algorithms
+- twitteractivity_state.rs: Test state management
+- twitteractivity_selectors.rs: Test selector logic
+- twitteractivity_llm_validation.rs: Test LLM validation
+
+### 13. DSL Parser and Executor (P2)
+**Location**: src/task/dsl/
+**Current state**: Integration tests exist, but unit tests for parser/executor needed.
+
+**Specific tests needed**:
+- parser.rs: Test DSL grammar parsing
+- executor.rs: Test action execution and variable handling
+- Test error recovery and user feedback
+
+### 14. Health Logger (P2)
+**Location**: src/health_logger.rs
+**Why important**: Logs health metrics for analysis.
+
+**Specific tests needed**:
+- Test log formatting and output
+- Test health check integration
+- Test log rotation and cleanup
+
+## Testing Strategy and Timeline
+
+### Phase 1: Foundation (2-3 weeks)
+**Goal**: Establish test patterns and cover P0 modules
+- Set up coverage tracking and reporting
+- Create test utilities and fixtures
+- Write unit tests for result.rs, validation.rs, and internal utilities
+- Establish mocking patterns for browser dependencies
+
+### Phase 2: Critical Systems (3-4 weeks)
+**Goal**: Cover all P0 modules
+- Self-healing modules (strategy, system, state, health, history)
+- Predictive scorer
+- Task context management
+- Unified LLM processor
+
+### Phase 3: Core Infrastructure (2-3 weeks)
+**Goal**: Cover P1 modules
+- Browser capabilities
+- Session pool management
+- Metrics collection
+- Navigation utilities
+
+### Phase 4: Specialized Features (2-3 weeks)
+**Goal**: Cover P2 modules and improve integration tests
+- Twitter utilities unit tests
+- DSL parser/executor unit tests
+- Health logger
+- Additional integration test coverage
+
+## Recommended Tools and Approaches
+
+### Coverage Tracking
+1. **cargo-llvm-cov** - Primary coverage tool (already installed)
+2. **grcov** - Alternative coverage tool for detailed reports
+3. **Coverage.py** - For Python integration tests if needed
+4. **CI Integration**: Add coverage checks to GitHub Actions
+
+### Testing Approaches
+1. **Unit Testing**: Pure Rust unit tests with mock objects
+2. **Integration Testing**: Browser-based tests with real/ mocked browsers
+3. **Property Testing**: QuickCheck for algorithmic modules
+4. **Fuzz Testing**: For input validation and error handling
+
+### Mocking Strategies
+1. **Browser mocking**: Use chromiumoxide mock or custom mocks
+2. **Network mocking**: Wiremock or similar for API calls
+3. **Time mocking**: Use mockall or similar for time-dependent code
+
+### CI/CD Integration
+1. **GitHub Actions**: Set up automated test runs and coverage reporting
+2. **Coverage thresholds**: Enforce minimum coverage for new code
+3. **Test splitting**: Parallelize test execution for faster feedback
+
+## Success Metrics
+- **Target coverage**: 85% overall, 90% for P0 modules
+- **Test execution time**: < 15 minutes for full suite
+- **CI pass rate**: > 95%
+- **Bug reduction**: Measure through issue tracking
+
+## Maintenance Plan
+- **Test coverage in code reviews**: Require new code to be tested
+- **Regular coverage reports**: Weekly reports to track progress
+- **Refactoring budget**: Allocate time for test infrastructure improvements
+- **Documentation**: Maintain test strategy and patterns documentation
+
+*Last updated: Monday, May 11, 2026*

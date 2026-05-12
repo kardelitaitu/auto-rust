@@ -1,0 +1,42 @@
+version: 1
+id: 0050-twitteractivity-candidate-planner-split
+title: TwitterActivity candidate planner split
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - twitter-activity
+  - tests
+files:
+  code:
+    - src/task/twitteractivity.rs
+    - src/utils/twitter/twitteractivity_engagement.rs
+    - src/utils/twitter/twitteractivity_simulation.rs
+    - src/utils/twitter/twitteractivity_state.rs
+    - src/utils/twitter/twitteractivity_limits.rs
+    - src/utils/twitter/twitteractivity_persona.rs
+    - src/utils/twitter/twitteractivity_planner.rs
+    - src/utils/twitter/mod.rs
+    - tests/twitteractivity_integration.rs
+  docs:
+    - docs/specs/_active/0050-twitteractivity-candidate-planner-split/README.md
+    - docs/specs/_active/0050-twitteractivity-candidate-planner-split/internal-api-outline.md
+    - docs/specs/_active/0050-twitteractivity-candidate-planner-split/plan.md
+    - docs/specs/_active/0050-twitteractivity-candidate-planner-split/validation.md
+    - docs/specs/_active/0050-twitteractivity-candidate-planner-split/notes.md
+acceptance:
+  - Candidate planning is extracted into a pure shared planner with no browser dependency.
+  - Live candidate execution uses the planner output and keeps current action ordering and limits intact.
+  - Simulation reuses the same planner contract so live and simulated decisions stay aligned.
+  - Plan output is deterministic for the same seed, payload snapshot, and runtime state inputs.
+  - Regression tests cover planner output shape, live execution wiring, and simulation reuse.
+  - `spec-lint.ps1`, `./check-fast.ps1`, and `./check.ps1` pass for the package.
+non_goals:
+  - Rewriting Twitter navigation or feed scanning.
+  - Changing the engagement probability model.
+  - Adding new actions or new UI behavior.
+risks:
+  - Planner/executor drift if the boundary is too loose.
+  - Over-abstracting the plan may make live behavior harder to debug.
+  - Seeded simulation can still miss browser-specific edge cases.

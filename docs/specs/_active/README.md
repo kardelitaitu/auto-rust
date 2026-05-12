@@ -13,4 +13,4 @@ Implement these loop changes in this order:
 
 ## New Active Specs
 
-No active specs are currently open.
+- `0050-twitteractivity-candidate-planner-split`

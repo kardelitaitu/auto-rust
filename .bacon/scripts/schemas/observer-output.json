@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "message": {"type": "string"},
+          "level": {"type": "string", "enum": ["error", "warning", "note"]},
+          "code": {"type": "string"},
+          "spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file_name": {"type": "string"},
+                "line_start": {"type": "integer"},
+                "line_end": {"type": "integer"},
+                "column_start": {"type": "integer"},
+                "column_end": {"type": "integer"},
+                "text": {"type": "string"}
+              },
+              "required": ["file_name", "line_start", "line_end", "column_start", "column_end"]
+            }
+          },
+          "rendered": {"type": "string"}
+        },
+        "required": ["message", "level", "code"]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total": {"type": "integer"},
+        "by_level": {"type": "object"},
+        "by_category": {"type": "object"}
+      },
+      "required": ["total"]
+    }
+  },
+  "required": ["problems", "summary"]
+}

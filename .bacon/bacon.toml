@@ -1,0 +1,67 @@
+# .bacon/bacon.toml - Enhanced configuration for autonomous coding
+# Supports environment variable overrides and expanded job definitions
+
+[global]
+# Global settings for all jobs
+log_level = "info"
+max_concurrent_jobs = 3
+timeout_seconds = 300
+retry_attempts = 2
+
+[jobs.ai_obs]
+command = ["cargo", "clippy", "--message-format=json", "--", "-D", "warnings"]
+need_stdout = true
+description = "Observer: Extract compiler warnings and errors"
+
+[jobs.ai_deadlock_check]
+command = ["cargo", "check", "--features", "deadlock_detection"]
+need_stdout = true
+description = "Deadlock detection in concurrent code"
+timeout_seconds = 120
+
+[jobs.ai_audit]
+command = ["cargo", "test", "--all-features", "--", "--nocapture"]
+need_stdout = true
+description = "Auditor: Run comprehensive test suite"
+timeout_seconds = 600
+
+[jobs.ai_performance]
+command = ["cargo", "bench", "--", "--nocapture"]
+need_stdout = false
+description = "Performance regression detection"
+timeout_seconds = 900
+
+[jobs.ai_security]
+command = ["cargo", "audit", "--json"]
+need_stdout = true
+description = "Security vulnerability scanning"
+timeout_seconds = 180
+
+[jobs.ai_format]
+command = ["cargo", "fmt", "--", "--check"]
+need_stdout = true
+description = "Code formatting verification"
+timeout_seconds = 60
+
+[monitoring]
+# Metrics and monitoring configuration
+enable_metrics = true
+metrics_file = ".bacon/sessions/metrics.json"
+log_file = ".bacon/sessions/bacon.log"
+max_log_size_mb = 100
+
+[safety]
+# Safety and rollback configuration
+enable_shadow_testing = true
+shadow_workspace_dir = "/tmp/norino_shadow_"
+max_shadow_age_hours = 24
+enable_rollback = true
+rollback_depth = 10
+
+[ai_providers]
+# External AI service configuration
+gemini_model = "gemini-pro"
+codex_model = "codex-5.5"
+audit_model = "codex-5.4mini"
+request_timeout_seconds = 30
+max_tokens_per_request = 4000

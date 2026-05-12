@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "message": {"type": "string"},
+      "level": {"type": "string"},
+      "code": {
+        "type": "object",
+        "properties": {
+          "code": {"type": "string"}
+        }
+      },
+      "spans": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "file_name": {"type": "string"},
+            "line_start": {"type": "integer"},
+            "line_end": {"type": "integer"},
+            "column_start": {"type": "integer"},
+            "column_end": {"type": "integer"},
+            "text": {"type": "string"}
+          }
+        }
+      },
+      "rendered": {"type": "string"}
+    },
+    "required": ["message", "level"]
+  }
+}

@@ -1,9 +1,9 @@
 version: 1
 id: 0052-twitteractivity-flow-logic-fixes
 title: Fix Twitter Activity flow logic and timing bugs
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P1
 area:
   - twitter-activity
@@ -20,15 +20,16 @@ files:
     - src/utils/twitter/twitteractivity_llm_validation.rs
     - src/utils/twitter/twitteractivity_state.rs
   docs:
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/README.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/plan.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/baseline.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/validation-checklist.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/validation.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/notes.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/ci-commands.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/decisions.md
-    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/quality-rules.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/README.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/plan.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/baseline.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/validation-checklist.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/validation.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/notes.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/ci-commands.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/decisions.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/quality-rules.md
+    - docs/specs/_done/0052-twitteractivity-flow-logic-fixes/implementation-notes.md
 acceptance:
   - Post-dive next_candidate_scan is reset to prevent duplicate re-scan
   - Main loop sleep respects session deadline

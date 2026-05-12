@@ -2,18 +2,6 @@
 
 Place only approved initiative folders here.
 
-## TwitterActivity Order
+## Currently Active
 
-Implement these loop changes in this order:
-1. `0031-twitteractivity-content-load-delay`
-2. `0032-twitteractivity-scroll-error-handling`
-3. `0033-twitteractivity-empty-scan-handling`
-
-`0032` and `0033` depend on the loop shape established by `0031`.
-
-## New Active Specs
-
-- `0050-twitteractivity-candidate-planner-split`
-- `0051-twitteractivity-critical-bugs`
-- `0052-twitteractivity-flow-logic-fixes`
-- `0053-twitteractivity-cleanup`
+- `0050-twitteractivity-candidate-planner-split` — approved, not yet implemented

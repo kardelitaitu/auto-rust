@@ -78,7 +78,7 @@ check_prerequisites() {
     log_debug "Checking sentinel prerequisites..."
     
     # Check required commands
-    local required_commands=("bacon" "cargo")
+    local required_commands=("cargo" "jq")
     for cmd in "${required_commands[@]}"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             log_error "Required command not found: $cmd"
@@ -101,65 +101,74 @@ check_prerequisites() {
     return 0
 }
 
-# Run bacon with enhanced error handling
+# Run one-shot clippy scan with enhanced error handling
 run_bacon_scan() {
-    log_info "Starting bacon scan for hotspots"
+    log_info "Starting clippy scan for hotspots"
     
     # Create temporary output file
     local temp_output="${OUTPUT_FILE}.tmp"
+    local raw_output="${OUTPUT_FILE}.raw"
+    local stderr_output="${OUTPUT_FILE}.stderr"
     
-    # Run bacon with proper error handling
-    local bacon_args=()
-    bacon_args+=("--config" "$CONFIG_FILE")
-    bacon_args+=("--job" "ai_obs")
-    bacon_args+=("--summary-only")
+    local cargo_args=("clippy" "--message-format=json" "--" "-D" "warnings")
+    local timeout_seconds="${BACON_SENTINEL_TIMEOUT:-300}"
+    local exit_code=0
     
-    # Add timeout if specified
-    if [[ -n "${BACON_SENTINEL_TIMEOUT:-}" ]]; then
-        bacon_args+=("--timeout" "$BACON_SENTINEL_TIMEOUT")
+    log_debug "Running: cargo ${cargo_args[*]}"
+    
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$timeout_seconds" cargo "${cargo_args[@]}" > "$raw_output" 2> "$stderr_output" || exit_code=$?
+    else
+        cargo "${cargo_args[@]}" > "$raw_output" 2> "$stderr_output" || exit_code=$?
     fi
     
-    log_debug "Running: bacon ${bacon_args[*]}"
+    if [[ "$exit_code" -eq 124 ]]; then
+        log_error "Clippy scan timed out after ${timeout_seconds} seconds"
+        rm -f "$temp_output" "$raw_output" "$stderr_output"
+        return 1
+    fi
     
-    # Execute bacon with error capture
-    if ! timeout "${BACON_SENTINEL_TIMEOUT:-300}" bacon "${bacon_args[@]}" > "$temp_output" 2>&1; then
-        local exit_code=$?
-        log_error "Bacon scan failed with exit code: $exit_code"
-        
-        # Check if it was a timeout
-        if [[ $exit_code -eq 124 ]]; then
-            log_error "Bacon scan timed out after ${BACON_SENTINEL_TIMEOUT:-300} seconds"
-        fi
-        
-        # Show last few lines of output for debugging
-        if [[ -f "$temp_output" ]]; then
-            log_error "Last 10 lines of bacon output:"
-            tail -10 "$temp_output" | while read -r line; do
+    # Normalize Cargo JSON lines into an array of compiler diagnostics.
+    if ! jq -s '[.[] | select(.reason == "compiler-message") | .message | select(.level == "error" or .level == "warning" or .level == "note")]' \
+        "$raw_output" > "$temp_output" 2>/dev/null; then
+        log_error "Failed to normalize clippy JSON output"
+        if [[ -s "$stderr_output" ]]; then
+            tail -10 "$stderr_output" | while read -r line; do
                 log_error "  $line"
             done
         fi
-        
-        rm -f "$temp_output"
+        rm -f "$temp_output" "$raw_output" "$stderr_output"
         return 1
     fi
     
     # Validate output
     if ! validate_json "$temp_output"; then
-        log_error "Bacon output validation failed"
-        rm -f "$temp_output"
+        log_error "Clippy output validation failed"
+        rm -f "$temp_output" "$raw_output" "$stderr_output"
         return 1
+    fi
+    
+    local entry_count
+    entry_count=$(jq 'length' "$temp_output" 2>/dev/null || echo "0")
+    if [[ "$entry_count" -eq 0 ]]; then
+        log_info "Clippy scan completed with no hotspots"
+        rm -f "$OUTPUT_FILE" "$temp_output" "$raw_output" "$stderr_output"
+        return 0
+    fi
+    
+    if [[ "$exit_code" -ne 0 ]]; then
+        log_info "Clippy reported hotspots with exit code: $exit_code"
     fi
     
     # Move temp file to final location
     mv "$temp_output" "$OUTPUT_FILE"
+    rm -f "$raw_output" "$stderr_output"
     
     # Log summary
     if command -v jq >/dev/null 2>&1 && [[ -f "$OUTPUT_FILE" ]]; then
-        local entry_count
-        entry_count=$(jq 'length // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
-        log_info "Bacon scan completed successfully ($entry_count entries)"
+        log_info "Clippy scan completed successfully ($entry_count entries)"
     else
-        log_info "Bacon scan completed successfully"
+        log_info "Clippy scan completed successfully"
     fi
     
     return 0

@@ -1,9 +1,9 @@
 version: 1
 id: 0054-taskcontext-vertical-split
 title: Split task_context.rs into domain-focused submodule files
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P1
 area:
   - runtime
@@ -19,11 +19,16 @@ files:
     - src/runtime/task_context/session_io.rs
     - src/runtime/mod.rs
   docs:
-    - docs/specs/_active/0054-taskcontext-vertical-split/README.md
-    - docs/specs/_active/0054-taskcontext-vertical-split/plan.md
-    - docs/specs/_active/0054-taskcontext-vertical-split/baseline.md
-    - docs/specs/_active/0054-taskcontext-vertical-split/validation.md
-    - docs/specs/_active/0054-taskcontext-vertical-split/notes.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/README.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/plan.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/baseline.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/validation.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/notes.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/ci-commands.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/decisions.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/implementation-notes.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/quality-rules.md
+    - docs/specs/_done/0054-taskcontext-vertical-split/validation-checklist.md
 acceptance:
   - task_context.rs is reduced from ~5,600 to ~3,500 lines (remaining: struct, constructors, click/hover/wait/scroll/pause/queries)
   - Each new submodule compiles and all existing tests pass

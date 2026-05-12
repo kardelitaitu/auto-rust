@@ -1,6 +1,6 @@
 # Fix Twitter Activity flow logic and timing bugs
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

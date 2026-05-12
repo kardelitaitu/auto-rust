@@ -3,7 +3,7 @@
 # Improved with safety checks, rollback, and better error handling
 
 set -euo pipefail
-IFS=\n\t'
+IFS=$'\n\t'
 
 # Configuration
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +49,7 @@ validate_patch() {
     fi
     
     # Check for dangerous patterns
-    local dangerous_patterns=("rm -rf" "/" "~" "sudo" "chmod 777" "chown")
+    local dangerous_patterns=("rm -rf" "sudo" "chmod 777" "chown")
     for pattern in "${dangerous_patterns[@]}"; do
         if grep -q "$pattern" "$patch_file" 2>/dev/null; then
             log_error "Dangerous pattern detected in patch: $pattern"
@@ -63,8 +63,9 @@ validate_patch() {
 
 # Create shadow workspace with safety checks
 create_shadow_workspace() {
-    local shadow_id="$(date +%s)_$"
-    local shadow_dir="/tmp/norino_shadow_${shadow_id}"
+    local shadow_id="$(date +%s)_${BASHPID}"
+    local shadow_base="${TMPDIR:-/tmp}"
+    local shadow_dir="${shadow_base}/norino_shadow_${shadow_id}"
     
     log_info "Creating shadow workspace: $shadow_dir"
     
@@ -145,9 +146,9 @@ verify_shadow_workspace() {
     local total_checks=0
     
     # 1. Cargo check
-    ((total_checks++))
+    total_checks=$((total_checks + 1))
     if cargo check 2>/dev/null; then
-        ((checks_passed++))
+        checks_passed=$((checks_passed + 1))
         log_info "Cargo check passed"
     else
         log_error "Cargo check failed"
@@ -155,9 +156,9 @@ verify_shadow_workspace() {
     
     # 2. Cargo clippy (if available)
     if command -v cargo-clippy >/dev/null 2>&1; then
-        ((total_checks++))
+        total_checks=$((total_checks + 1))
         if cargo clippy --all-targets --all-features -- -D warnings 2>/dev/null; then
-            ((checks_passed++))
+            checks_passed=$((checks_passed + 1))
             log_info "Cargo clippy passed"
         else
             log_error "Cargo clippy failed"
@@ -165,18 +166,18 @@ verify_shadow_workspace() {
     fi
     
     # 3. Cargo test (quick)
-    ((total_checks++))
+    total_checks=$((total_checks + 1))
     if cargo test --lib --bins 2>/dev/null; then
-        ((checks_passed++))
+        checks_passed=$((checks_passed + 1))
         log_info "Cargo test (lib/bins) passed"
     else
         log_error "Cargo test (lib/bins) failed"
     fi
     
     # 4. Build check
-    ((total_checks++))
+    total_checks=$((total_checks + 1))
     if cargo build --release 2>/dev/null; then
-        ((checks_passed++))
+        checks_passed=$((checks_passed + 1))
         log_info "Cargo build passed"
     else
         log_error "Cargo build failed"
@@ -223,37 +224,23 @@ EOF
     echo "$rollback_id"
 }
 
-# Apply changes to main repository
-apply_to_main() {
+# Queue verified changes for manual application
+queue_verified_patch() {
     local shadow_dir="$1"
     local rollback_id="$2"
     
-    log_info "Applying verified changes to main repository"
+    log_info "Queueing verified patch for manual application"
     
-    cd "$PROJECT_ROOT"
+    local approved_dir="${SESSIONS_DIR}/approved_patches"
+    local approved_patch="${approved_dir}/verified_${rollback_id}.diff"
+    mkdir -p "$approved_dir"
     
-    # Pull changes from shadow workspace
-    if git remote add shadow "$shadow_dir" 2>/dev/null; then
-        if git fetch shadow 2>/dev/null; then
-            if git merge "shadow/$(git -C "$shadow_dir" rev-parse --abbrev-ref HEAD)" 2>/dev/null; then
-                log_info "Changes merged into main repository"
-                
-                # Cleanup remote
-                git remote remove shadow 2>/dev/null || true
-                
-                return 0
-            else
-                log_error "Failed to merge changes"
-                git remote remove shadow 2>/dev/null || true
-                return 1
-            fi
-        else
-            log_error "Failed to fetch from shadow workspace"
-            git remote remove shadow 2>/dev/null || true
-            return 1
-        fi
+    cd "$shadow_dir"
+    if git show --format= --binary HEAD > "$approved_patch" 2>/dev/null; then
+        log_info "Verified patch queued: $approved_patch"
+        return 0
     else
-        log_error "Failed to add shadow remote"
+        log_error "Failed to queue verified patch"
         return 1
     fi
 }
@@ -308,9 +295,9 @@ main() {
     local rollback_id
     rollback_id=$(create_rollback_point "$shadow_dir" "$patch_file")
     
-    # Apply to main repository
-    if apply_to_main "$shadow_dir" "$rollback_id"; then
-        log_info "SUCCESS: Patch applied and verified"
+    # Queue patch instead of mutating the main repository automatically
+    if queue_verified_patch "$shadow_dir" "$rollback_id"; then
+        log_info "SUCCESS: Patch verified and queued"
         return 0
     else
         log_error "FAILED: Could not apply patch to main repository"

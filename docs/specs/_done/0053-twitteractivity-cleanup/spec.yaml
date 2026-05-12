@@ -1,9 +1,9 @@
 version: 1
 id: 0053-twitteractivity-cleanup
 title: Clean up dead code and fix quality issues in Twitter Activity
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P2
 area:
   - twitter-activity
@@ -27,15 +27,16 @@ files:
     - src/config/mod.rs
     - src/task/twitteractivity.rs
   docs:
-    - docs/specs/_active/0053-twitteractivity-cleanup/README.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/plan.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/baseline.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/validation-checklist.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/validation.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/notes.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/ci-commands.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/decisions.md
-    - docs/specs/_active/0053-twitteractivity-cleanup/quality-rules.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/README.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/plan.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/baseline.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/validation-checklist.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/validation.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/notes.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/ci-commands.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/decisions.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/quality-rules.md
+    - docs/specs/_done/0053-twitteractivity-cleanup/implementation-notes.md
 acceptance:
   - All 17 dead code items removed or annotated with explicit reason
   - HOME_LOGO_SELECTOR uses correct unescaped quotes or removed

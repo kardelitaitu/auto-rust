@@ -1,9 +1,9 @@
 version: 1
 id: 0051-twitteractivity-critical-bugs
 title: Fix critical runtime bugs in Twitter Activity
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P1
 area:
   - twitter-activity
@@ -18,15 +18,16 @@ files:
     - src/config/mod.rs
     - src/task/twitteractivity.rs
   docs:
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/README.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/plan.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/baseline.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/validation-checklist.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/validation.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/notes.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/ci-commands.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/decisions.md
-    - docs/specs/_active/0051-twitteractivity-critical-bugs/quality-rules.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/README.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/plan.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/baseline.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/validation-checklist.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/validation.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/notes.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/ci-commands.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/decisions.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/quality-rules.md
+    - docs/specs/_done/0051-twitteractivity-critical-bugs/implementation-notes.md
 acceptance:
   - LLM API key is threaded from config through to DecisionEngineFactory::create() so LLM-powered decisions actually use LLM
   - extract_tweet_context() JS correctly extracts each replys own author

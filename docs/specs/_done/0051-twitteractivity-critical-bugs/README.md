@@ -1,6 +1,6 @@
 # Fix critical runtime bugs in Twitter Activity
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

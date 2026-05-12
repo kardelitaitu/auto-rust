@@ -3,10 +3,7 @@
 # Improved with error handling, logging, and safety mechanisms
 
 set -euo pipefail  # Strict error handling
-IFS=
-
-
-\n\t'      # Safer IFS
+IFS=$'\n\t'      # Safer IFS
 
 # Configuration and Environment
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,7 +35,7 @@ check_prerequisites() {
     log_info "Checking prerequisites..."
     
     # Check required commands
-    local required_commands=("cargo" "git" "bacon")
+    local required_commands=("cargo" "git" "jq")
     for cmd in "${required_commands[@]}"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             log_error "Required command not found: $cmd"
@@ -175,11 +172,11 @@ process_hotspot() {
     audit_result=$(jq -r '.result // "FAIL"' "$work_dir/audit_result.json" 2>/dev/null || echo "FAIL")
     
     if [[ "$audit_result" == "PASS" ]]; then
-        log_info "Audit passed, applying patch"
+        log_info "Audit passed, verifying patch in shadow workspace"
         if "${SCRIPT_DIR}/bacon-apply-shadow.sh" "$work_dir/patch.diff"; then
-            log_info "SUCCESS: System improved and verified"
-            update_metrics "apply" "success"
-            mv "$hotspot_file" "${SESSIONS_DIR}/resolved_$(date +%s).json"
+            log_info "Patch verified and queued for manual application"
+            update_metrics "apply" "approved"
+            mv "$hotspot_file" "${SESSIONS_DIR}/approved_$(date +%s).json"
         else
             log_error "Failed to apply patch"
             update_metrics "apply" "failed"
@@ -202,7 +199,7 @@ main_loop() {
     log_info "Starting bacon orchestration loop (interval: ${cycle_interval}s)"
     
     while [[ "$shutdown_requested" == "false" ]]; do
-        ((cycle_count++))
+        cycle_count=$((cycle_count + 1))
         log_info "=== Cycle $cycle_count ==="
         
         # Check max cycles
@@ -265,5 +262,3 @@ else
     log_error "Prerequisites check failed, exiting"
     exit 1
 fi
-
-

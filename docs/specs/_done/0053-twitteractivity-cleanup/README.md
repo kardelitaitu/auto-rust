@@ -1,6 +1,6 @@
 # Clean up dead code and fix quality issues in Twitter Activity
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

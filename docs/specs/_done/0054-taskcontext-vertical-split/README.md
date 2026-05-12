@@ -1,6 +1,6 @@
 # Split task_context.rs into domain-focused submodule files
 
-Status: `approved`
+Status: `done`
 
 Owner: `spec-agent`
 Implementer: `pending`

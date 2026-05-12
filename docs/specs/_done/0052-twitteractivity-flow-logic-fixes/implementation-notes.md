@@ -30,8 +30,10 @@
 - Removed `:contains()` pseudo-selectors (unsupported by `querySelector`)
 - Added JS fallback that searches all buttons by text content for terms: "accept", "allow", "got it"
 
-### H7: Fix select_entry_point (not applied)
-- `select_entry_point()` doc updated but signature unchanged — requires threading TaskConfig through phase1_navigation which adds scope. Left for future work.
+### H7: Fix select_entry_point (closed — won't implement)
+- `select_entry_point` seed determinism adds plumbing for negligible benefit.
+- Entry point randomness at session start is a minor factor; remaining non-determinism (tweet order, scroll timing, LLM, coin flips) would still make replay non-bit-identical.
+- Closed by maintainer decision May 12, 2026.
 
 ### H8: Fix dive pause
 - Changed from 300s constant to `Duration::from_secs(60)` — 1 minute max pause during dive

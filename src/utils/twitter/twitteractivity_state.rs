@@ -299,8 +299,8 @@ pub struct CandidateContext<'a> {
 pub struct CandidateResult {
     pub should_break: bool,
     pub next_scroll: Instant,
+    pub next_candidate_scan: Instant,
     pub actions_this_scan: u32,
-    pub actions_taken: u32,
 }
 
 /// Consolidated session state for Twitter activity task.

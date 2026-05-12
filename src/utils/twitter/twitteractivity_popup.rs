@@ -95,8 +95,6 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
     let cookie_selectors = [
         "button[aria-label*='Accept']",
         "button[data-testid*='accept']",
-        "button:contains('Accept all')",
-        "div[role='button']:contains('Accept')",
     ];
 
     for selector in &cookie_selectors {
@@ -126,6 +124,40 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
                     human_pause(api, 800).await;
                     return Ok(true);
                 }
+            }
+        }
+    }
+
+    // Fallback: search all buttons by text content
+    let fallback_js = r#"
+        (function() {
+            var terms = ["accept", "accept all", "allow", "got it"];
+            var buttons = document.querySelectorAll('button, div[role="button"]');
+            for (var i = 0; i < buttons.length; i++) {
+                var text = (buttons[i].textContent || '').trim().toLowerCase();
+                if (terms.some(function(t) { return text.indexOf(t) !== -1; })) {
+                    var r = buttons[i].getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) {
+                        return { x: r.x + r.width/2, y: r.y + r.height/2 };
+                    }
+                }
+            }
+            return null;
+        })()
+    "#;
+
+    let result = api.page().evaluate(fallback_js.to_string()).await;
+    if let Ok(res) = result {
+        if let Some(obj) = res.value().and_then(|v: &Value| v.as_object()) {
+            if let (Some(x), Some(y)) = (
+                obj.get("x").and_then(|v: &Value| v.as_f64()),
+                obj.get("y").and_then(|v: &Value| v.as_f64()),
+            ) {
+                api.move_mouse_to(x, y).await?;
+                human_pause(api, 200).await;
+                api.click_at(x, y).await?;
+                human_pause(api, 800).await;
+                return Ok(true);
             }
         }
     }

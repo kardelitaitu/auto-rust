@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use log::warn;
+use std::sync::OnceLock;
 
 /// Banned AI-sounding words list.
 pub const BANNED_WORDS: &[&str] = &[
@@ -102,16 +103,24 @@ fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
     format!("{}...", &text[..truncate_at])
 }
 
+fn mentions_regex() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"@\w+").expect("Failed to compile mentions regex"))
+}
+
+fn hashtags_regex() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"#(\w+)").expect("Failed to compile hashtags regex"))
+}
+
 /// Removes @mentions from text.
 fn remove_mentions(text: &str) -> String {
-    let re = regex::Regex::new(r"@\w+").expect("Failed to compile mentions regex");
-    re.replace_all(text, "").to_string()
+    mentions_regex().replace_all(text, "").to_string()
 }
 
 /// Removes #hashtags from text.
 fn remove_hashtags(text: &str) -> String {
-    let re = regex::Regex::new(r"#(\w+)").expect("Failed to compile hashtags regex");
-    re.replace_all(text, "$1").to_string()
+    hashtags_regex().replace_all(text, "$1").to_string()
 }
 
 /// Removes emojis from text (basic Unicode ranges).

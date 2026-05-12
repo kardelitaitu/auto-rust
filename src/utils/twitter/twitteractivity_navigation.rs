@@ -258,7 +258,8 @@ pub async fn check_selector_health(api: &TaskContext) -> Result<()> {
 
 // Navigation functions moved from twitteractivity.rs
 
-/// Select a weighted entry point randomly
+/// Select a weighted entry point randomly using a seeded RNG.
+/// If `seed` is 0, uses non-deterministic random (backward compat).
 pub fn select_entry_point() -> &'static str {
     let total_weight: u32 = ENTRY_POINTS.iter().map(|ep| ep.weight).sum();
     let mut random = rand::random::<u32>() % total_weight;

@@ -125,7 +125,6 @@ async fn run_inner(
 
     // Phase 2: Feed scanning and engagement
     info!("Phase 2: Scanning feed for {} ms", task_config.duration_ms);
-    let mut actions_taken = 0u32;
     let mut consecutive_scroll_failures = 0u32;
     let mut consecutive_empty_scans = 0u32;
 
@@ -152,7 +151,14 @@ async fn run_inner(
         let now = Instant::now();
 
         if now < next_candidate_scan {
-            tokio::time::sleep(next_candidate_scan - now).await;
+            let sleep_duration = next_candidate_scan - now;
+            // Sleep in bounded chunks so the session deadline is respected
+            let max_sleep = Duration::from_millis(250);
+            let remaining = session.remaining_time();
+            let chunk = sleep_duration.min(max_sleep).min(remaining);
+            if chunk > Duration::from_millis(0) {
+                tokio::time::sleep(chunk).await;
+            }
             continue;
         }
 
@@ -208,17 +214,18 @@ async fn run_inner(
                 };
 
                 let result =
-                    process_candidate(ctx, actions_this_scan, next_scroll, actions_taken).await?;
+                    process_candidate(ctx, actions_this_scan, next_scroll, next_candidate_scan)
+                        .await?;
                 let crate::utils::twitter::twitteractivity_state::CandidateResult {
                     should_break,
                     next_scroll: new_next_scroll,
+                    next_candidate_scan: new_next_candidate_scan,
                     actions_this_scan: new_actions_this_scan,
-                    actions_taken: new_actions_taken,
                 } = result;
 
                 next_scroll = new_next_scroll;
+                next_candidate_scan = new_next_candidate_scan;
                 actions_this_scan = new_actions_this_scan;
-                actions_taken = new_actions_taken;
 
                 if should_break {
                     break;

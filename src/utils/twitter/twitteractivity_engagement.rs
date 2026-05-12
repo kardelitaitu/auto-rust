@@ -157,7 +157,6 @@ async fn engage_replies(
     limits: &EngagementLimits,
     counters: &mut EngagementCounters,
     actions_this_scan: &mut u32,
-    _actions_taken: &mut u32,
 ) -> Result<()> {
     match identify_thread_replies(api).await {
         Ok(replies) => {
@@ -201,7 +200,6 @@ async fn engage_replies(
                                 Ok(true) => {
                                     info!("Successfully liked reply");
                                     counters.increment_like();
-                                    *_actions_taken += 1;
                                     *actions_this_scan += 1;
                                     replies_engaged += 1;
                                     api.increment_run_counter(RUN_COUNTER_LIKE_SUCCESS, 1);
@@ -230,11 +228,11 @@ pub async fn process_candidate(
     mut ctx: CandidateContext<'_>,
     actions_this_scan: u32,
     next_scroll: Instant,
-    _actions_taken: u32,
+    next_candidate_scan: Instant,
 ) -> Result<CandidateResult> {
     let mut actions_this_scan = actions_this_scan;
     let mut next_scroll = next_scroll;
-    let mut _actions_taken = _actions_taken;
+    let mut next_candidate_scan = next_candidate_scan;
 
     // Destructure ctx for easier access (preserve original variable names)
     let tweet = ctx.tweet;
@@ -254,8 +252,8 @@ pub async fn process_candidate(
         return Ok(CandidateResult {
             should_break: true,
             next_scroll,
+            next_candidate_scan,
             actions_this_scan,
-            actions_taken: _actions_taken,
         });
     }
 
@@ -281,8 +279,8 @@ pub async fn process_candidate(
             return Ok(CandidateResult {
                 should_break: false,
                 next_scroll,
+                next_candidate_scan,
                 actions_this_scan,
-                actions_taken: _actions_taken,
             });
         }
     }
@@ -334,17 +332,12 @@ pub async fn process_candidate(
 
     let status_url = tweet.get("status_url").and_then(|v| v.as_str());
 
-    let allow_dive = should_dive(&candidate_persona) && status_url.is_some();
-    if !allow_dive {
-        actions_to_do.retain(|&action| action == "like");
-    }
-
     if actions_to_do.is_empty() {
         return Ok(CandidateResult {
             should_break: false,
             next_scroll,
+            next_candidate_scan,
             actions_this_scan,
-            actions_taken: _actions_taken,
         });
     }
 
@@ -358,8 +351,8 @@ pub async fn process_candidate(
             return Ok(CandidateResult {
                 should_break: true,
                 next_scroll,
+                next_candidate_scan,
                 actions_this_scan,
-                actions_taken: _actions_taken,
             });
         }
         if !limits.can_dive(counters) {
@@ -370,8 +363,12 @@ pub async fn process_candidate(
         } else if let Some(status_url) = status_url {
             // Pause continuous scrolling before diving to avoid interference
             let original_next_scroll = next_scroll;
-            next_scroll = Instant::now() + Duration::from_secs(300); // Pause for 5 minutes during dive
-            info!("Paused continuous scrolling for thread dive");
+            let dive_max_pause = Duration::from_secs(60);
+            next_scroll = Instant::now() + dive_max_pause;
+            info!(
+                "Paused continuous scrolling for thread dive (max {}s)",
+                dive_max_pause.as_secs()
+            );
 
             let dive_result = retry_with_backoff(
                 || dive_into_thread(api, status_url),
@@ -392,8 +389,8 @@ pub async fn process_candidate(
                     return Ok(CandidateResult {
                         should_break: false,
                         next_scroll,
+                        next_candidate_scan,
                         actions_this_scan,
-                        actions_taken: _actions_taken,
                     });
                 }
             };
@@ -415,7 +412,6 @@ pub async fn process_candidate(
                 human_pause(api, 800).await;
                 scroll_pause(api).await;
                 counters.increment_thread_dive();
-                _actions_taken += 1;
                 actions_this_scan += 1;
                 // Record dive action
                 action_tracker.record_action(tweet_id.to_string(), "dive");
@@ -799,7 +795,6 @@ pub async fn process_candidate(
                 }
                 _ => {}
             }
-            _actions_taken += 1;
             actions_this_scan += 1;
             action_tracker.record_action(tweet_id.to_string(), action);
 
@@ -834,7 +829,6 @@ pub async fn process_candidate(
             limits,
             counters,
             &mut actions_this_scan,
-            &mut _actions_taken,
         )
         .await?;
     }
@@ -853,16 +847,17 @@ pub async fn process_candidate(
             // Continue anyway - not fatal
         }
         scroll_pause(api).await;
-        // Resume continuous scrolling now that we're back on home feed
+        // Resume continuous scrolling and candidate scanning
         next_scroll = Instant::now() + scroll_interval;
+        next_candidate_scan = Instant::now() + scroll_interval;
         info!("Resumed continuous scrolling after thread dive");
     }
 
     Ok(CandidateResult {
         should_break: false,
         next_scroll,
+        next_candidate_scan,
         actions_this_scan,
-        actions_taken: _actions_taken,
     })
 }
 

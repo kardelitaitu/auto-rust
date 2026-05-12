@@ -230,22 +230,23 @@ impl DecisionStrategyImpl for PersonaStrategy {
         let final_score = (base_score * 0.4 + reply_score * 0.6).min(100.0);
 
         // 5. Determine level and multiplier
+        let im = ctx.persona.interest_multiplier;
         let (level, multiplier, reason) = if final_score >= 75.0 {
             (
                 EngagementLevel::Full,
-                1.5f64.min(ctx.persona.interest_multiplier),
+                (1.5 * im).clamp(0.0, 2.0),
                 "High quality content with positive reception".to_string(),
             )
         } else if final_score >= 50.0 {
             (
                 EngagementLevel::Medium,
-                1.2f64.min(ctx.persona.interest_multiplier),
+                (1.2 * im).clamp(0.0, 2.0),
                 "Good content worth engaging".to_string(),
             )
         } else if final_score >= 30.0 {
             (
                 EngagementLevel::Minimal,
-                0.8,
+                (0.8 * im).clamp(0.0, 2.0),
                 "Average content, limited engagement value".to_string(),
             )
         } else {

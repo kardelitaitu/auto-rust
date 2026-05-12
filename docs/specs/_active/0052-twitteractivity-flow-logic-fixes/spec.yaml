@@ -1,0 +1,49 @@
+version: 1
+id: 0052-twitteractivity-flow-logic-fixes
+title: Fix Twitter Activity flow logic and timing bugs
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P1
+area:
+  - twitter-activity
+files:
+  code:
+    - src/task/twitteractivity.rs
+    - src/utils/twitter/twitteractivity_engagement.rs
+    - src/utils/twitter/decision/strategies/persona.rs
+    - src/utils/twitter/twitteractivity_interact.rs
+    - src/utils/twitter/twitteractivity_popup.rs
+    - src/utils/twitter/twitteractivity_navigation.rs
+    - src/utils/twitter/twitteractivity_limits.rs
+    - src/utils/twitter/twitteractivity_llm.rs
+    - src/utils/twitter/twitteractivity_llm_validation.rs
+    - src/utils/twitter/twitteractivity_state.rs
+  docs:
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/README.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/plan.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/baseline.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/validation-checklist.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/validation.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/notes.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/ci-commands.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/decisions.md
+    - docs/specs/_active/0052-twitteractivity-flow-logic-fixes/quality-rules.md
+acceptance:
+  - Post-dive next_candidate_scan is reset to prevent duplicate re-scan
+  - Main loop sleep respects session deadline
+  - Non-like actions not gated behind should_dive()
+  - PersonaStrategy multiplier consistent across all engagement levels
+  - actions_taken removed from call chain and CandidateResult
+  - Cookie banner uses only standard CSS selectors
+  - select_entry_point seeded from TaskConfig.seed
+  - 300s dive pause replaced with actual dive duration
+  - Regex in llm_validation compiled via Lazy static
+  - All existing tests pass
+non_goals:
+  - Rewriting the decision engine or strategy pattern
+  - Adding new engagement action types
+  - Changing engagement probability model
+risks:
+  - should_dive change may alter engagement distribution -- verify with simulation
+  - next_candidate_scan reset may slow post-dive scanning

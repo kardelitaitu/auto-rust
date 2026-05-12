@@ -14,3 +14,6 @@ Implement these loop changes in this order:
 ## New Active Specs
 
 - `0050-twitteractivity-candidate-planner-split`
+- `0051-twitteractivity-critical-bugs`
+- `0052-twitteractivity-flow-logic-fixes`
+- `0053-twitteractivity-cleanup`

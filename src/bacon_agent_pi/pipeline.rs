@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
-use log::info;
+use log::{info, warn};
 use serde::Deserialize;
 use std::path::PathBuf;
 
 use crate::llm::Llm;
 
 use super::cli::RunArgs;
+use super::spec_io;
 use super::types::PipelineCtx;
 
 #[derive(Debug)]
@@ -122,12 +123,20 @@ impl Pipeline {
             info!("DRY RUN — no files will be modified");
         }
 
+        // Crash recovery: check for stale in-progress specs
+        check_stale_in_progress()?;
+
+        // Fast path: skip strategist + auditor if --fast
+        let fast_path = self.args.fast;
+
+        let base_ctx = PipelineCtx::new(String::new()).with_dry_run(self.dry_run);
+
         // Observer
         let mut ctx = if should_run(&resume_stage, Stage::Observer) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Observer);
             info!("=== Stage 1: Observer (agent: {}) ===", agent);
             if agent == "pi" {
-                super::observer::run(&self.llm, &self.args).await?
+                super::observer::run(&self.llm, &self.args, &base_ctx).await?
             } else {
                 let prompt = self
                     .args
@@ -135,21 +144,22 @@ impl Pipeline {
                     .as_deref()
                     .unwrap_or("scan for improvements");
                 run_external_agent(agent, "observer", prompt)?;
-                PipelineCtx::new(format!("Delegated to {}", agent))
+                PipelineCtx::new(format!("Delegated to {}", agent)).with_dry_run(self.dry_run)
             }
         } else {
-            PipelineCtx::new(String::new())
+            base_ctx
         };
+        ctx.dry_run = self.dry_run;
 
-        // Strategist
-        if should_run(&resume_stage, Stage::Strategist) {
+        // Strategist (skip in fast path)
+        if !fast_path && should_run(&resume_stage, Stage::Strategist) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Strategist);
             info!("=== Stage 2: Strategist (agent: {}) ===", agent);
             ctx = if agent == "pi" {
                 super::strategist::run(&self.llm, &self.args, &ctx).await?
             } else {
                 run_external_agent(agent, "strategist", &ctx.description)?;
-                PipelineCtx::new(format!("Delegated to {}", agent))
+                PipelineCtx::new(format!("Delegated to {}", agent)).with_dry_run(self.dry_run)
             };
         }
 
@@ -161,12 +171,12 @@ impl Pipeline {
                 super::coder::run(&self.llm, &self.args, &ctx).await?
             } else {
                 run_external_agent(agent, "coder", &ctx.description)?;
-                PipelineCtx::new(format!("Delegated to {}", agent))
+                PipelineCtx::new(format!("Delegated to {}", agent)).with_dry_run(self.dry_run)
             };
         }
 
-        // Auditor
-        if should_run(&resume_stage, Stage::Auditor) {
+        // Auditor (skip in fast path)
+        if !fast_path && should_run(&resume_stage, Stage::Auditor) {
             let agent = self.pipeline_cfg.agent_for(&Stage::Auditor);
             info!("=== Stage 4: Auditor (agent: {}) ===", agent);
             if agent == "pi" {
@@ -181,12 +191,29 @@ impl Pipeline {
     }
 }
 
-fn run_external_agent(agent: &str, role: &str, prompt: &str) -> Result<()> {
+fn check_stale_in_progress() -> Result<()> {
+    let active = spec_io::list_active_specs()?;
+    for spec_path in &active {
+        let meta = match spec_io::read_spec_meta(spec_path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.status == "in-progress" {
+            let name = spec_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            warn!("Stale in-progress spec found: {} ({})", meta.title, name);
+            warn!("Manual review recommended before continuing");
+        }
+    }
+    Ok(())
+}
+
+pub fn run_external_agent(agent: &str, role: &str, prompt: &str) -> Result<()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     info!("Delegating to external agent: {} --role {}", agent, role);
 
-    // kilo uses subcommand: kilo run <text> --role <role>
-    // Others use: {agent} -p <prompt> --role <role>
     let args: &[&str] = if agent == "kilocode" || agent == "kilo" {
         &["run", prompt, "--role", role]
     } else {
@@ -205,6 +232,16 @@ fn run_external_agent(agent: &str, role: &str, prompt: &str) -> Result<()> {
         anyhow::bail!("agent '{}' exited with code {}", agent, status);
     }
     Ok(())
+}
+
+pub fn run_powershell(script: &str) -> Result<bool> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let shell = if cfg!(windows) { "powershell" } else { "pwsh" };
+    let status = std::process::Command::new(shell)
+        .args(["-NoProfile", "-File", script])
+        .current_dir(&root)
+        .status()?;
+    Ok(status.success())
 }
 
 fn should_run(resume: &Option<Stage>, current: Stage) -> bool {

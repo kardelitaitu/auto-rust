@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub struct PipelineCtx {
     pub description: String,
     pub spec_path: Option<PathBuf>,
+    pub dry_run: bool,
 }
 
 impl PipelineCtx {
@@ -11,6 +12,12 @@ impl PipelineCtx {
         Self {
             description,
             spec_path: None,
+            dry_run: false,
         }
+    }
+
+    pub fn with_dry_run(mut self, dry_run: bool) -> Self {
+        self.dry_run = dry_run;
+        self
     }
 }

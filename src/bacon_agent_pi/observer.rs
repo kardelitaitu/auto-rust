@@ -3,11 +3,11 @@ use log::info;
 
 use crate::llm::{ChatMessage, Llm};
 
-use super::cli::Args;
+use super::cli::RunArgs;
 use super::spec_io;
 use super::types::PipelineCtx;
 
-pub async fn run(llm: &Llm, args: &Args) -> Result<PipelineCtx> {
+pub async fn run(llm: &Llm, args: &RunArgs, base: &PipelineCtx) -> Result<PipelineCtx> {
     // First check _active/ for pending specs
     let active = spec_io::list_active_specs()?;
 
@@ -19,10 +19,10 @@ pub async fn run(llm: &Llm, args: &Args) -> Result<PipelineCtx> {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             info!("Found pending spec: {} ({})", meta.title, name);
-            return Ok(PipelineCtx::new(format!(
-                "Implement spec: {} ({})",
-                meta.title, name
-            )));
+            let mut ctx = PipelineCtx::new(format!("Implement spec: {} ({})", meta.title, name));
+            ctx.spec_path = Some(spec_path.clone());
+            ctx.dry_run = base.dry_run;
+            return Ok(ctx);
         }
     }
 
@@ -30,7 +30,6 @@ pub async fn run(llm: &Llm, args: &Args) -> Result<PipelineCtx> {
     info!("No pending specs found, scanning codebase for improvements");
 
     let system_prompt = include_str!("../../.bacon/roles/01_bacon-observer.md");
-
     let codebase = scan_project_structure();
 
     let user_prompt = if let Some(prompt) = &args.prompt {
@@ -65,14 +64,15 @@ pub async fn run(llm: &Llm, args: &Args) -> Result<PipelineCtx> {
     println!("{}", response);
     println!("=======================");
 
-    Ok(PipelineCtx::new(response))
+    let mut ctx = PipelineCtx::new(response);
+    ctx.dry_run = base.dry_run;
+    Ok(ctx)
 }
 
 fn scan_project_structure() -> String {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut parts = Vec::new();
 
-    // List src/ modules
     let src = root.join("src");
     if src.is_dir() {
         if let Ok(entries) = std::fs::read_dir(&src) {
@@ -95,7 +95,6 @@ fn scan_project_structure() -> String {
         }
     }
 
-    // List binary targets
     let bin = src.join("bin");
     if bin.is_dir() {
         if let Ok(entries) = std::fs::read_dir(&bin) {
@@ -111,7 +110,6 @@ fn scan_project_structure() -> String {
         }
     }
 
-    // List active specs
     if let Ok(specs) = spec_io::list_active_specs() {
         if !specs.is_empty() {
             let names: Vec<_> = specs

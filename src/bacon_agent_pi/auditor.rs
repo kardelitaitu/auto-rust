@@ -3,11 +3,11 @@ use log::info;
 
 use crate::llm::{ChatMessage, Llm};
 
-use super::cli::Args;
+use super::cli::RunArgs;
 use super::spec_io;
 use super::types::PipelineCtx;
 
-pub async fn run(llm: &Llm, _args: &Args, ctx: &PipelineCtx) -> Result<PipelineCtx> {
+pub async fn run(llm: &Llm, _args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     let spec_path = match &ctx.spec_path {
         Some(p) => p.clone(),
         None => anyhow::bail!("No spec path provided to Auditor"),
@@ -48,14 +48,21 @@ pub async fn run(llm: &Llm, _args: &Args, ctx: &PipelineCtx) -> Result<PipelineC
     println!("{}", response);
     println!("======================");
 
-    // Process audit result
     let decision = response.trim().to_lowercase();
     if decision.starts_with("pass") {
-        info!("Auditor PASS — moving spec to _done/");
-        promote_to_done(&spec_path)?;
+        info!("Auditor PASS");
+        if ctx.dry_run {
+            info!("DRY RUN: would move spec to _done/");
+        } else {
+            promote_to_done(&spec_path)?;
+        }
     } else {
         info!("Auditor FAIL — marking needs-human-approval");
-        mark_needs_approval(&spec_path, &response)?;
+        if ctx.dry_run {
+            info!("DRY RUN: would mark needs-human-approval");
+        } else {
+            mark_needs_approval(&spec_path, &response)?;
+        }
     }
 
     Ok(PipelineCtx::new(response))
@@ -81,13 +88,10 @@ fn mark_needs_approval(path: &std::path::Path, report: &str) -> Result<()> {
     spec_io::write_spec_meta(path, &meta)?;
 
     let validation_path = path.join("validation.md");
+    let existing = std::fs::read_to_string(&validation_path).unwrap_or_default();
     std::fs::write(
         &validation_path,
-        format!(
-            "# Audit Report\n\n{}\n\n{}",
-            report,
-            std::fs::read_to_string(&validation_path).unwrap_or_default()
-        ),
+        format!("# Audit Report\n\n{}\n\n{}", report, existing),
     )?;
 
     info!("Marked spec as needs-human-approval");

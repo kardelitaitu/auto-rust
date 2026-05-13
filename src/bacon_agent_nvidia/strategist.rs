@@ -145,7 +145,7 @@ fn write_spec_package_in(
     )?;
 
     // ...then write spec.yaml LAST so the package is only discovered once fully written.
-    write_generated_spec_yaml(spec_dir, dir_name, title)?;
+    write_generated_spec_yaml(spec_dir, dir_name, title, plan)?;
 
     Ok(spec_dir.to_path_buf())
 }
@@ -172,7 +172,12 @@ struct GeneratedSpecFiles {
     docs: Vec<String>,
 }
 
-fn write_generated_spec_yaml(spec_dir: &Path, dir_name: &str, title: &str) -> Result<()> {
+fn write_generated_spec_yaml(
+    spec_dir: &Path,
+    dir_name: &str,
+    title: &str,
+    plan: &str,
+) -> Result<()> {
     let active_prefix = format!("docs/specs/_active/{}/", dir_name);
     let spec = GeneratedSpecYaml {
         version: 1,
@@ -191,16 +196,33 @@ fn write_generated_spec_yaml(spec_dir: &Path, dir_name: &str, title: &str) -> Re
                 "validation.md",
                 "notes.md",
                 "baseline.md",
-                "internal-api-outline.md",
             ]
             .into_iter()
             .map(|file| format!("{}{}", active_prefix, file))
             .collect(),
         },
-        acceptance: vec![
-            "Generated spec package is complete and validated.".to_string(),
-            "Implementation validates with check.ps1 before completion.".to_string(),
-        ],
+        acceptance: {
+            let criteria = crate::bacon_core::extract_section(plan, &["Acceptance Criteria"], "");
+            if criteria.is_empty() {
+                vec![
+                    "Generated spec package is complete and validated.".to_string(),
+                    "Implementation validates with check.ps1 before completion.".to_string(),
+                ]
+            } else {
+                criteria
+                    .lines()
+                    .filter(|l| {
+                        let t = l.trim();
+                        !t.is_empty() && !t.starts_with('#')
+                    })
+                    .map(|l| {
+                        l.trim_matches(|c: char| c == '-' || c == '*' || c == ' ')
+                            .to_string()
+                    })
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            }
+        },
         non_goals: vec!["No unchecked auto-apply of generated patches.".to_string()],
         risks: vec!["LLM-generated plans may still need human review for scope.".to_string()],
     };

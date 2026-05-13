@@ -151,6 +151,20 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
 }
 
 fn promote_to_done(path: &std::path::Path) -> Result<()> {
+    // Gate: run spec-lint before archiving — catches structural errors
+    let spec_path_arg = path.to_string_lossy().to_string();
+    let (passed, output) = crate::bacon_core::run_powershell_with_args(
+        "spec-lint.ps1",
+        &["-Directory", spec_path_arg.as_str()],
+    )?;
+    if !passed {
+        anyhow::bail!(
+            "spec-lint failed for {} — not moving to _done/:\n{}",
+            path.display(),
+            output
+        );
+    }
+
     let mut meta = spec_io::read_spec_meta(path)?;
     meta.status = "done".to_string();
     spec_io::write_spec_meta(path, &meta)?;

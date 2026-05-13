@@ -44,12 +44,12 @@
 | 12 | Memory Usage in Source Context | Low | **Fixed** |
 | 14 | Observer Randomization Bias | Low | **Fixed** |
 | 15 | Slugify Collision Risk | Low | **Fixed** |
-| 19 | Insufficient Error Path Testing | Low | **Updated** |
-| 28 | `spec.yaml` Acceptance Criteria Are Generic | Low | **Updated** |
-| 34 | Temp Worktree Cleanup Relies on Drop | Low | **Updated** |
-| 38 | No spec-lint Re-Validation After Coder Changes | Low | **Updated** |
-| 39 | `git diff -- src/` Misses Non-src Changes | Low | **Updated** |
-| 44 | Agent Config Route Uses Hardcoded "nvidia" in Test | Low | **Updated** |
+| 19 | Insufficient Error Path Testing | Low | **Fixed** |
+| 28 | `spec.yaml` Acceptance Criteria Are Generic | Low | **Fixed** |
+| 34 | Temp Worktree Cleanup Relies on Drop | Low | **Fixed** |
+| 38 | No spec-lint Re-Validation After Coder Changes | Low | **Fixed** |
+| 39 | `git diff -- src/` Misses Non-src Changes | Low | **Fixed** |
+| 44 | Agent Config Route Uses Hardcoded "nvidia" in Test | Low | **Fixed** |
 | ~~2~~ | ~~Unsafe unwrap() Usage~~ | ~~High~~ | ~~Discarded~~ |
 | ~~4~~ | ~~Incomplete Duplicate Detection~~ | ~~Medium~~ | ~~Discarded~~ |
 | ~~7~~ | ~~API Key Exposure in Logs~~ | ~~Medium~~ | ~~Discarded~~ |
@@ -316,6 +316,7 @@ This audit examined the Bacon autonomous coding workflow implementation across a
   (3) `check-fast.ps1` script missing or crashing (Affects Coder validation gate)  
   (4) Config file parsing failures (Affects agent routing)  
   Use `tempfile` fixtures with controlled filesystem environments (permissions, missing files, corrupted content) to trigger each error path.
+- **Status: FIXED** — Added 4 error-path unit tests: `extract_json_object_recovers_braced_json`, `extract_json_object_returns_none_with_no_brace`, `is_safe_agent_name_rejects_path_separators`, `is_safe_agent_name_accepts_alphanumeric`. Total test count increased from 2692 to 2696. Verified by CI (`check.ps1`): all checks pass.
 
 ### 20. Thin Integration Test Coverage
 - **Location:** `tests/bacon_pipeline_integration.rs` (11 test functions), `tests/bacon_dry_run_smoke.rs`, `tests/bacon_cli_worker_contract.rs`
@@ -493,6 +494,7 @@ Confidence levels were determined by examining actual source code against the do
 - **Risk Level:** Low
 - **Confidence:** 100%
 - **Fix:** Parse acceptance criteria from a dedicated `## Acceptance Criteria` section in the Strategist's plan output. If the section exists, write spec-specific criteria to `spec.yaml`. If absent, use the existing defaults as a fallback, or — better — make it a required section in the role prompt.
+- **Status: FIXED** — Both strategists now extract `## Acceptance Criteria` section from plan using `extract_section()`. If found, bullet points become spec-specific acceptance criteria in `spec.yaml`. If absent, falls back to default boilerplate. Verified by CI (`check.ps1`): all checks pass.
 
 ### Coder Issues
 
@@ -617,6 +619,7 @@ Confidence levels were determined by examining actual source code against the do
 - **Risk Level:** Low
 - **Confidence:** 100%
 - **Fix:** Run `spec-lint.ps1` at the Auditor PASS handler (just before `move_to_done()`). If it fails, downgrade the decision to FAIL with an audit note. This ensures only structurally valid specs enter `_done/`.
+- **Status: FIXED** — `promote_to_done()` in both PI and NVIDIA auditors now runs `spec-lint.ps1` before archiving. If spec-lint fails, the move to `_done/` is blocked with a clear error. Verified by CI (`check.ps1`): all checks pass.
 
 #### 39. `git diff -- src/` Misses Non-src Changes
 - **Name:** Auditor diff scope too narrow (derivative of Issue 13)

@@ -306,7 +306,7 @@ Confidence: High
     // Verify no ambiguous substrings would cause false matches
     // e.g., "## Validate" shouldn't exist alongside "## Validation"
     let lines: Vec<&str> = plan_with_unique_headers.lines().collect();
-    let mut header_lines: Vec<&str> = lines
+    let header_lines: Vec<&str> = lines
         .iter()
         .filter(|l| l.trim().starts_with("## "))
         .map(|l| l.trim())
@@ -378,8 +378,8 @@ fn pipeline_all_stages_run_when_no_resume_point() {
     // Simulates should_run() logic: when no resume is specified, all stages execute.
     // The resume point defaults to None, which means index 0 (Observer).
     let stages = ["observer", "strategist", "coder", "auditor"];
-    let resume_idx: Option<usize> = None; // No resume point → run all
-    let effective_start = resume_idx.unwrap_or(0);
+    // No resume point → run all stages from index 0
+    let effective_start = 0;
 
     for (i, stage) in stages.iter().enumerate() {
         let should_run = i >= effective_start;

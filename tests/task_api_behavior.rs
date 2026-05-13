@@ -13,13 +13,17 @@ use auto::utils::mouse::{
 use chromiumoxide::Browser;
 use std::env;
 use std::fs;
+use std::io;
+use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+use tracing::instrument::WithSubscriber;
+use tracing::Level;
 
 struct TestServer {
     url: String,

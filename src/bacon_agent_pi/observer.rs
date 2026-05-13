@@ -35,6 +35,22 @@ pub async fn run(llm: &Llm, args: &RunArgs, base: &PipelineCtx) -> Result<Pipeli
         }
     }
 
+    // Duplicate check: scan _done/ and _abandoned/ for matching specs
+    if let Some(ref prompt) = args.prompt {
+        let duplicates = spec_io::find_specs_matching(prompt)?;
+        if !duplicates.is_empty() {
+            let paths: Vec<String> = duplicates
+                .iter()
+                .map(|(p, t)| format!("{} ({})", p.display(), t))
+                .collect();
+            info!(
+                "Found {} existing specs matching prompt — skipping LLM scan:\n{}",
+                duplicates.len(),
+                paths.join("\n")
+            );
+        }
+    }
+
     scan_for_improvements(llm, args, base).await
 }
 
@@ -67,6 +83,11 @@ async fn scan_for_improvements(
         ChatMessage::system(system_prompt),
         ChatMessage::user(&user_prompt),
     ];
+
+    // Quick health check before the first LLM call
+    if !llm.health_check().await {
+        anyhow::bail!("LLM health check failed — check that Ollama/NVIDIA service is running");
+    }
 
     info!("Calling Observer LLM...");
     let response = llm

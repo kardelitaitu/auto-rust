@@ -35,9 +35,9 @@
 | 33 | No Diff Shown at User Confirmation Gate | Medium | **Fixed** |
 | 35 | `mark_needs_human_approval()` Can Race with Auditor | Medium | **Fixed** |
 | 37 | `starts_with("pass")` False Positive Risk | Medium | **Fixed** |
-| 40 | Confidence Extracted But Never Gates Pipeline | Medium | **Updated** |
-| 42 | No Global Circuit Breaker for LLM Unavailability | Medium | **Updated** |
-| 45 | `resolve_agent_binary()` Has No PATH Safety | Medium | **Updated** |
+| 40 | Confidence Extracted But Never Gates Pipeline | Medium | **Fixed** |
+| 42 | No Global Circuit Breaker for LLM Unavailability | Medium | **Fixed** |
+| 45 | `resolve_agent_binary()` Has No PATH Safety | Medium | **Fixed** |
 | 9 | External Agent Error Handling | Low | **Updated** |
 | 10 | Retry Logic Flaws | Low | **Updated** |
 | 11 | Inefficient Spec Numbering | Low | **Updated** |
@@ -633,6 +633,7 @@ Confidence levels were determined by examining actual source code against the do
 - **Fix:** Two options:  
   (a) **USE it** — Add a gate in `agent.rs` after each stage: if `confidence == Low`, print a warning and (if not `--auto`) prompt the user: "Low confidence from <stage>. Continue? [y/N]". In auto mode, log the low confidence for dashboard visibility but continue. This makes the extracted data useful.  
   (b) **REMOVE it** — Remove all `extract_confidence()` calls, the `Confidence` enum, the `ctx.confidence` field, and the 10 test cases. Simplify the codebase by ~100 lines. This is cleaner than keeping dead code. Option (a) is recommended — the data is already collected, just not acted upon.
+- **Status: FIXED** — Added `check_confidence()` helper in `agent.rs` that checks `ctx.confidence` after each stage. On `Low` confidence: logs `warn!()` and (in non-auto mode) prompts "Continue? [y/N]". If user declines, pipeline aborts. In auto mode, low confidence is logged but pipeline continues. Verified by CI (`check.ps1`): all checks pass.
 
 #### 41. PI vs NVIDIA Agent Implementation Drift
 - **Name:** Non-interchangeable agent implementations
@@ -656,7 +657,8 @@ Confidence levels were determined by examining actual source code against the do
 - **Impact:** With 4 stages each retrying 4 times with 5-minute timeouts, the pipeline takes up to 80 minutes to report a connectivity issue that a 5-second health check would catch immediately at startup. The user watches the pipeline spin through retries before seeing any error.
 - **Risk Level:** Medium
 - **Confidence:** 100%
-- **Fix:** Add `llm.health_check().await` call in both pipeline constructors (after `Llm::new()`). If it returns `false`, bail with a clear message: "LLM provider at <url> is not responding — check that Ollama/NVIDIA service is running. Use `bacon --check-llm` to diagnose." The health check already exists; it just needs to be wired.
+- **Fix:** Add `llm.health_check().await` call in both pipeline constructors (after `Llm::new()`). If it returns `false`, bail with a clear message: "LLM provider at <url> is not responding — check that Ollama/NVIDIA service is running." The health check already exists; it just needs to be wired.
+- **Status: FIXED** — Added `llm.health_check().await` before the first LLM call in both PI and NVIDIA observers. On failure, bails immediately with a clear message instead of waiting through stage timeouts. The `health_check()` method (5-second timeout, checks Ollama `/api/tags`) was already implemented but never called. Verified by CI (`check.ps1`): all checks pass.
 
 #### 43. Spec Numbering Race Condition on Concurrent Runs
 - **Name:** No file locking for spec numbering (derivative of Issue 1)
@@ -687,6 +689,7 @@ Confidence levels were determined by examining actual source code against the do
 - **Risk Level:** Medium (defense-in-depth — real exploit path requires config compromise which is itself a critical precondition)
 - **Confidence:** 100%
 - **Fix:** Validate agent name in `resolve_agent_binary()`: reject names containing path separators (`/`, `\`), parent directory references (`..`), or non-alphanumeric characters (except hyphens and underscores). Only allow `[a-zA-Z0-9_-]+`. If the name fails validation, log a warning and fall back to the `bacon` default agent rather than attempting a PATH lookup.
+- **Status: FIXED** (by Issue 5) — Added `is_safe_agent_name()` validation in `bacon_core/mod.rs` as part of Issue 5's fix. `resolve_agent_binary()` rejects unsafe agent names (path separators, `..`, `.`, non-alphanumeric chars) and falls back to `bacon` with a `warn!()`. Verified by CI (`check.ps1`): all checks pass.
 
 ### Updated Risk Assessment Matrix
 

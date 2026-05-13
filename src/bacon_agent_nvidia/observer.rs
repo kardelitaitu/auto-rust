@@ -10,7 +10,7 @@ fn system_prompt() -> String {
     crate::bacon_core::read_role_prompt("observer")
 }
 
-pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
+pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     // If a user prompt was provided, skip spec scan and go straight to LLM
     if args.prompt.is_none() {
         // Check for an approved spec — fast-path if one exists
@@ -32,11 +32,33 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
         info!("No approved specs pending; scanning for new improvements");
     }
 
+    // Duplicate check: scan _done/ and _abandoned/ for matching specs
+    if let Some(ref prompt) = args.prompt {
+        if let Ok(duplicates) = spec_io::find_specs_matching(prompt) {
+            if !duplicates.is_empty() {
+                let paths: Vec<String> = duplicates
+                    .iter()
+                    .map(|(p, t)| format!("{} ({})", p.display(), t))
+                    .collect();
+                info!(
+                    "Found {} existing specs matching prompt — skipping LLM scan:\n{}",
+                    duplicates.len(),
+                    paths.join("\n")
+                );
+            }
+        }
+    }
+
     let config = args.nvidia_config();
     let prompt = args
         .prompt
         .as_deref()
         .unwrap_or("Scan codebase for improvements");
+
+    // Quick health check before the first LLM call
+    if !llm.health_check().await {
+        anyhow::bail!("LLM health check failed — check that Ollama/NVIDIA service is running");
+    }
 
     info!("NVIDIA Observer calling API with model: {}", config.model);
     let response = nvidia_api::chat(&config, &system_prompt(), prompt).await?;

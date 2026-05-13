@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use log::{info, warn};
 
 use super::{
-    check_stale_in_progress, confirm, log_agent_config, should_run, PipelineConfig, PipelineCtx,
-    Stage,
+    check_stale_in_progress, confirm, log_agent_config, should_run, Confidence, PipelineConfig,
+    PipelineCtx, Stage,
 };
 
 /// A pipeline agent that can run all stages of the bacon pipeline.
@@ -73,6 +73,27 @@ pub trait PipelineAgent: Send + Sync {
     // Default pipeline orchestration
     // ------------------------------------------------------------------
 
+    /// Check confidence after a stage completes. If Low, warn and prompt in non-auto mode.
+    fn check_confidence(stage: &str, ctx: &PipelineCtx, auto: bool) -> Result<bool> {
+        if let Some(Confidence::Low) = ctx.confidence {
+            warn!(
+                "Low confidence from {} stage — response may be unreliable",
+                stage
+            );
+            if !auto {
+                println!(
+                    "\n⚠ Low confidence from {}. Review the output above.",
+                    stage
+                );
+                if !confirm("Continue pipeline? [y/N]: ", false)? {
+                    info!("User aborted due to low confidence from {}", stage);
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
     /// Run the full pipeline with all stages, resume support, scope-reduction
     /// fallback loop, confirmation gates, and crash recovery.
     async fn run(&self) -> Result<()> {
@@ -104,6 +125,9 @@ pub trait PipelineAgent: Send + Sync {
             base_ctx
         };
         ctx.dry_run = self.dry_run();
+        if !Self::check_confidence("Observer", &ctx, self.auto())? {
+            return Ok(());
+        }
 
         // Strategist (skip in fast path)
         if !fast_path && should_run(&resume_stage, Stage::Strategist) {
@@ -111,6 +135,10 @@ pub trait PipelineAgent: Send + Sync {
             info!("=== Stage 2: Strategist (agent: {}) ===", agent);
             log_agent_config(agent);
             ctx = self.run_strategist(&ctx).await?;
+
+            if !Self::check_confidence("Strategist", &ctx, self.auto())? {
+                return Ok(());
+            }
 
             // User confirmation gate
             if !self.auto() && !confirm("Implement this plan? [Y/n]: ", true)? {
@@ -182,6 +210,10 @@ pub trait PipelineAgent: Send + Sync {
                         Err(e) => warn!("Failed to read spec.yaml for status update: {}", e),
                     }
                 }
+                return Ok(());
+            }
+
+            if !Self::check_confidence("Coder", &ctx, self.auto())? {
                 return Ok(());
             }
 

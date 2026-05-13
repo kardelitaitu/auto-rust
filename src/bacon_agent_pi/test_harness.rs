@@ -261,15 +261,15 @@ async fn run_single(fixture: &Fixture) -> Result<()> {
 
     for expected in fixture.expected_stages {
         match expected {
-            ExpectedOutcome::ObserverFindsIssue => {
-                if active_specs.is_empty() && done_specs == 0 {
-                    anyhow::bail!("Observer should have found an issue");
-                }
+            ExpectedOutcome::ObserverFindsIssue
+                if active_specs.is_empty() && done_specs == 0 =>
+            {
+                anyhow::bail!("Observer should have found an issue");
             }
-            ExpectedOutcome::StrategistWritesSpec => {
-                if active_specs.is_empty() {
-                    anyhow::bail!("Strategist should have written a spec");
-                }
+            ExpectedOutcome::StrategistWritesSpec
+                if active_specs.is_empty() =>
+            {
+                anyhow::bail!("Strategist should have written a spec");
             }
             ExpectedOutcome::PipelineEmpty => {}
             _ => {}

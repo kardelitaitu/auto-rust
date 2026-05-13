@@ -140,6 +140,15 @@ pub trait PipelineAgent: Send + Sync {
                 return Ok(());
             }
 
+            // Auto-apply failed — skip Auditor, abort pipeline
+            if ctx.needs_human_approval {
+                warn!(
+                    "Auto-apply gate rejected the patch — \
+                     pipeline aborted, spec waiting for human approval"
+                );
+                return Ok(());
+            }
+
             // Scope reduction needed: inner Coder retries exhausted.
             // Write failure report and mark needs-human-approval directly —
             // do NOT call Strategist for a reduced-scope plan.
@@ -177,12 +186,26 @@ pub trait PipelineAgent: Send + Sync {
             }
 
             // User confirmation gate (only if Coder succeeded)
-            if !self.auto()
-                && !ctx.scope_reduction_needed
-                && !confirm("Apply this diff? [y/N]: ", false)?
-            {
-                info!("User declined diff — aborting pipeline");
-                return Ok(());
+            if !self.auto() && !ctx.scope_reduction_needed {
+                // Print the diff so the user can see it before approving
+                if let Some(ref patch_path) = ctx.patch_path {
+                    info!("Approved patch saved to: {}", patch_path.display());
+                    if let Ok(diff) = std::fs::read_to_string(patch_path) {
+                        println!("=== Proposed Changes ===");
+                        // Print first 80 lines of diff
+                        for line in diff.lines().take(80) {
+                            println!("{}", line);
+                        }
+                        if diff.lines().count() > 80 {
+                            println!("... (truncated at 80 lines)");
+                        }
+                        println!("========================\n");
+                    }
+                }
+                if !confirm("Apply this diff? [y/N]: ", false)? {
+                    info!("User declined diff — aborting pipeline");
+                    return Ok(());
+                }
             }
         }
 

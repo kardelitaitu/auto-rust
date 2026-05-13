@@ -333,6 +333,9 @@ pub struct PipelineCtx {
     /// Set true by Coder when the LLM refuses to implement (2+ consecutive refusals).
     /// Tells the orchestrator to abort without scope reduction or audit.
     pub coder_refused: bool,
+    /// Set true by Coder when auto-apply fails — tells orchestrator to skip
+    /// the Auditor and abort with needs-human-approval status.
+    pub needs_human_approval: bool,
 }
 
 impl PipelineCtx {
@@ -347,6 +350,7 @@ impl PipelineCtx {
             confidence: None,
             patch_path: None,
             coder_refused: false,
+            needs_human_approval: false,
         }
     }
 

@@ -29,6 +29,10 @@ pub struct RunArgs {
     #[arg(long)]
     pub auto: bool,
 
+    /// Automatically apply approved patches to the working tree
+    #[arg(long)]
+    pub auto_apply: bool,
+
     /// Sandbox mode (no writes)
     #[arg(long)]
     pub dry_run: bool,

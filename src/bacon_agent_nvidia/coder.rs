@@ -529,36 +529,51 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                     std::fs::write(&patch_path, &patch)?;
                     let saved_patch_path = patch_path.clone();
 
-                    let queued = QueuedPatch {
-                        patch_path,
-                        changed_paths,
-                    };
-
-                    // Auto-apply using GitSnapshot
-                    match auto_apply_queued_patch(root, &queued) {
-                        Ok(report) => {
-                            info!("Auto-apply succeeded: {}", report.output);
-                            let mut result =
-                                PipelineCtx::new(report.output).with_dry_run(ctx.dry_run);
-                            result.spec_path = ctx.spec_path.clone();
-                            result.confidence = extracted_confidence;
-                            result.patch_path = Some(saved_patch_path);
-                            return Ok(result);
-                        }
-                        Err(e) => {
-                            warn!("Auto-apply failed on attempt {}: {}", attempt, e);
-                            errors.push(format!("Attempt {} auto-apply failed: {}", attempt, e));
-                            if attempt >= MAX_ATTEMPTS {
-                                return Ok(signal_scope_reduction(ctx, errors));
+                    // Gate: auto-apply only if --auto-apply flag is set
+                    if args.auto_apply {
+                        let queued = QueuedPatch {
+                            patch_path: saved_patch_path.clone(),
+                            changed_paths,
+                        };
+                        match auto_apply_queued_patch(root, &queued) {
+                            Ok(report) => {
+                                info!("Auto-apply succeeded: {}", report.output);
+                                let mut result =
+                                    PipelineCtx::new(report.output).with_dry_run(ctx.dry_run);
+                                result.spec_path = ctx.spec_path.clone();
+                                result.confidence = extracted_confidence;
+                                result.patch_path = Some(saved_patch_path);
+                                return Ok(result);
                             }
-                            last_error = format!(
-                                "Auto-apply failed: {}\nCheck output: {}\n\n\
+                            Err(e) => {
+                                warn!("Auto-apply failed on attempt {}: {}", attempt, e);
+                                errors
+                                    .push(format!("Attempt {} auto-apply failed: {}", attempt, e));
+                                if attempt >= MAX_ATTEMPTS {
+                                    return Ok(signal_scope_reduction(ctx, errors));
+                                }
+                                last_error = format!(
+                                    "Auto-apply failed: {}\nCheck output: {}\n\n\
 ---\n\nFix the patch and ensure check-fast.ps1 passes.",
-                                e, check_output
-                            );
-                            attempt += 1;
-                            continue;
+                                    e, check_output
+                                );
+                                attempt += 1;
+                                continue;
+                            }
                         }
+                    } else {
+                        // Auto-apply disabled — return success with the queued patch path
+                        info!(
+                            "Patch queued (auto-apply disabled): {}",
+                            saved_patch_path.display()
+                        );
+                        let mut result =
+                            PipelineCtx::new("Patch queued; manual apply required".to_string())
+                                .with_dry_run(ctx.dry_run);
+                        result.spec_path = ctx.spec_path.clone();
+                        result.confidence = extracted_confidence;
+                        result.patch_path = Some(saved_patch_path);
+                        return Ok(result);
                     }
                 }
                 Err(e) => {

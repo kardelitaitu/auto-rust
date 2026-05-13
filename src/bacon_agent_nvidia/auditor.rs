@@ -130,8 +130,8 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     println!("{}", response);
     println!("=============================");
 
-    let decision = response.trim().to_lowercase();
-    if decision.starts_with("pass") {
+    let decision_first = response.split_whitespace().next().unwrap_or("");
+    if decision_first.eq_ignore_ascii_case("PASS") {
         info!("NVIDIA Auditor PASS");
         if ctx.dry_run {
             info!("DRY RUN: would move spec to _done/");

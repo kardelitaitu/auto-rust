@@ -55,6 +55,7 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
     let mut last_error = String::new();
     let mut approved_patch_path: Option<PathBuf> = None;
     let mut consecutive_refusals = 0u32;
+    let mut needs_human_approval = false;
 
     let system_message = ChatMessage::system(system_prompt);
 
@@ -214,8 +215,8 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
                         }
                         Err(err) => {
                             let report = format!("{}", err);
-                            warn!("Auto-apply gate rejected the patch");
-                            mark_needs_human_approval(&spec_path, &report)?;
+                            warn!("Auto-apply gate rejected the patch: {}", report);
+                            needs_human_approval = true;
                             break;
                         }
                     }
@@ -245,6 +246,7 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
     output.dry_run = ctx.dry_run;
     output.confidence = extracted_confidence;
     output.patch_path = approved_patch_path;
+    output.needs_human_approval = needs_human_approval;
     Ok(output)
 }
 

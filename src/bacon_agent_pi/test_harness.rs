@@ -165,14 +165,14 @@ pub async fn run(args: &TestArgs) -> Result<()> {
     let mut passed = 0u32;
     let mut failed = 0u32;
 
-    // Build pi binary once before running fixtures
-    info!("Building pi binary for test harness...");
+    // Build bacon binary once before running fixtures
+    info!("Building bacon binary for test harness...");
     let build = std::process::Command::new("cargo")
-        .args(["build", "--bin", "pi", "-q"])
+        .args(["build", "--bin", "bacon", "-q"])
         .current_dir(project_root())
         .status()?;
     if !build.success() {
-        anyhow::bail!("failed to build pi binary");
+        anyhow::bail!("failed to build bacon binary");
     }
 
     for fixture in &fixtures_to_run {
@@ -212,9 +212,9 @@ fn pi_binary() -> PathBuf {
     };
     let mut p = target.join(profile);
     if cfg!(windows) {
-        p.push("pi.exe");
+        p.push("bacon.exe");
     } else {
-        p.push("pi");
+        p.push("bacon");
     }
     p
 }
@@ -226,7 +226,7 @@ async fn run_single(fixture: &Fixture) -> Result<()> {
 
     if !pi_bin.exists() {
         anyhow::bail!(
-            "pi binary not found at {}. Run 'cargo build --bin pi' first.",
+            "bacon binary not found at {}. Run 'cargo build --bin bacon' first.",
             pi_bin.display()
         );
     }
@@ -235,13 +235,13 @@ async fn run_single(fixture: &Fixture) -> Result<()> {
         .args(["run", "--dry-run", "--auto"])
         .current_dir(&repo_root)
         .output()
-        .map_err(|e| anyhow::anyhow!("failed to run pi: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("failed to run bacon: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
         return Err(anyhow::anyhow!(
-            "pi exited with error:\nstdout: {}\nstderr: {}",
+            "bacon exited with error:\nstdout: {}\nstderr: {}",
             stdout,
             stderr
         ));

@@ -404,7 +404,7 @@ pub fn build_reply_prompt(
         prompt.push_str("\n\n(no other replies visible)\n");
     }
 
-    prompt.push_str("\n\nYour reply:");
+    prompt.push_str("\n\nGenerate one reply for each reply above. Respond with a JSON array of objects, each with a 'content' field containing the reply.");
     prompt
 }
 
@@ -462,7 +462,7 @@ mod tests {
         assert!(prompt.contains("Test tweet"));
         assert!(prompt.contains("Replies:"));
         assert!(prompt.contains("@user1: Great point!"));
-        assert!(prompt.contains("Your reply:"));
+        assert!(prompt.contains("Generate one reply for each reply above"));
     }
 
     #[test]

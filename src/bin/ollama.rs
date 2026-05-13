@@ -1,4 +1,5 @@
-use auto_rust::bacon_agent_ollama::cli::Args;
+use auto::bacon_agent_ollama::cli::Args;
+use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -7,6 +8,8 @@ async fn main() -> anyhow::Result<()> {
     }
     env_logger::init();
 
-    let args = <Args as clap::Parser>::parse();
-    auto_rust::bacon_agent_ollama::run(&args.prompt, args.role.as_deref()).await
+    let args = Args::parse();
+    // Pure CLI tool - no LLM required
+    auto::bacon_agent_ollama::run(&args.prompt, args.role.as_deref(), args.dry_run).await?;
+    Ok(())
 }

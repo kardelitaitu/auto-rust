@@ -472,4 +472,79 @@ mod tests {
         assert!(result.loaded.is_empty());
         assert!(result.failed.is_empty());
     }
+
+    #[test]
+    fn test_should_load_plugin_empty_filters() {
+        // Empty allowlist means no restriction — plugins should be loaded
+        let config_empty_allowlist = PluginLoaderConfig {
+            allowlist: vec![],
+            ..Default::default()
+        };
+        let loader_empty = PluginLoader::new(config_empty_allowlist);
+        assert!(loader_empty.should_load_plugin("any-plugin"));
+    }
+
+    #[test]
+    fn test_should_load_plugin_case_sensitive() {
+        let config = PluginLoaderConfig {
+            allowlist: vec!["TestPlugin".to_string()],
+            ..Default::default()
+        };
+        let loader = PluginLoader::new(config);
+
+        // Matching is case-sensitive
+        assert!(loader.should_load_plugin("TestPlugin"));
+        assert!(!loader.should_load_plugin("testplugin"));
+        assert!(!loader.should_load_plugin("TESTPLUGIN"));
+        assert!(!loader.should_load_plugin("other"));
+    }
+
+    #[test]
+    fn test_should_load_plugin_multiple_filters() {
+        let config = PluginLoaderConfig {
+            denylist: vec!["blocked1".to_string(), "blocked2".to_string()],
+            ..Default::default()
+        };
+        let loader = PluginLoader::new(config);
+
+        assert!(loader.should_load_plugin("allowed"));
+        assert!(!loader.should_load_plugin("blocked1"));
+        assert!(!loader.should_load_plugin("blocked2"));
+    }
+
+    #[test]
+    fn test_load_result_total() {
+        let mut result = LoadResult::new();
+        result.loaded.push("plugin1".to_string());
+        result.loaded.push("plugin2".to_string());
+        result
+            .failed
+            .push(("plugin3".to_string(), "error".to_string()));
+
+        assert_eq!(result.total(), 3);
+    }
+
+    #[test]
+    fn test_load_result_all_succeeded() {
+        let mut result = LoadResult::new();
+        result.loaded.push("plugin1".to_string());
+        result.loaded.push("plugin2".to_string());
+
+        assert!(result.all_succeeded());
+        assert!(result.any_succeeded());
+
+        result
+            .failed
+            .push(("plugin3".to_string(), "error".to_string()));
+        assert!(!result.all_succeeded());
+        assert!(result.any_succeeded());
+    }
+
+    #[test]
+    fn test_load_result_no_plugins() {
+        let result = LoadResult::new();
+        assert_eq!(result.total(), 0);
+        assert!(result.all_succeeded());
+        assert!(!result.any_succeeded());
+    }
 }

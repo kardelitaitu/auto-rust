@@ -1,6 +1,6 @@
 # Onboarding Guide
 
-last audited 08-05-26 by Kilo
+last audited 13-05-26 by Buffy
 
 > **Welcome to auto-rust!**  
 > This guide will help you get started with development in ~30 minutes.
@@ -79,46 +79,74 @@ CI CHECKER REPORT: All checks passed!
 ### Directory Layout
 
 ```
-rust-orchestrator/
+auto-rust/
 ├── src/
 │   ├── main.rs              # CLI entry point
 │   ├── lib.rs               # Library exports
-│   ├── cli.rs               # Argument parsing with clap
-│   ├── config.rs            # Configuration management
+│   ├── browser.rs           # Browser automation interface
+│   ├── error.rs             # Error types
+│   ├── logger.rs            # Logging
+│   ├── metrics.rs           # Metrics
 │   ├── orchestrator.rs      # Core orchestration logic
+│   ├── result.rs            # Task result types
+│   ├── tracing.rs           # Tracing
 │   │
-│   ├── internal/            # Internal utilities
-│   │   └── metrics.rs
+│   ├── bin/                 # CLI binaries
+│   ├── cli/                 # CLI argument parsing (mod.rs, parser.rs)
+│   ├── config/              # Configuration (mod.rs, validation.rs)
+│   ├── internal/            # Internal utilities (mod.rs, circuit_breaker.rs)
 │   │
 │   ├── session/             # Browser session management
-│   │   ├── mod.rs           # Session lifecycle, circuit breaker
-│   │   └── worker.rs
+│   │   ├── mod.rs
+│   │   ├── cleanup.rs
+│   │   ├── connector.rs
+│   │   ├── factory.rs
+│   │   └── pool.rs
 │   │
 │   ├── task/                # Task implementations
-│   │   ├── mod.rs           # Task trait, TaskContext
-│   │   ├── twitter*.rs      # Twitter automation
-│   │   └── demo*.rs         # Demo tasks
+│   │   ├── mod.rs           # Task registry & execution
+│   │   ├── dsl/             # DSL task infrastructure (10 modules)
+│   │   ├── cookiebot.rs
+│   │   ├── pageview.rs
+│   │   ├── demo*.rs         # Demo tasks
+│   │   ├── twitter*.rs      # Twitter/X automation
+│   │   ├── security.rs      # Path validation
+│   │   └── validation.rs    # Pre-flight task validation
 │   │
-│   ├── runtime/             # Runtime utilities
-│   │   └── task_context.rs  # Browser automation API
+│   ├── runtime/             # Runtime execution
+│   │   ├── mod.rs
+│   │   ├── execution.rs
+│   │   ├── shutdown.rs
+│   │   └── task_context/    # Browser API (13 modules)
 │   │
-│   └── utils/               # Shared utilities
-│       ├── browser.rs
-│       ├── mouse.rs
-│       ├── mouse/           # Mouse trajectory algorithms
-│       ├── keyboard.rs
-│       └── twitter/         # 27 modularized Twitter automation files
+│   ├── llm/                 # LLM integration
+│   ├── bacon_core/          # Shared pipeline types
+│   ├── bacon_agent_*/       # Pipeline agents
+│   ├── plugin/              # Plugin infrastructure
+│   ├── state/               # State management
+│   │
+│   ├── utils/               # Shared utilities
+│   │   ├── dom.rs, mouse.rs, keyboard.rs, ...
+│   │   ├── mouse/           # Trajectory algorithms
+│   │   └── twitter/         # Twitter automation helpers
+│   │
+│   ├── capabilities/
+│   └── validation/
 │
 ├── tests/                   # Integration tests
-├── examples/                # Usage examples
+├── examples/                # Usage examples (plugins/, tasks/)
 ├── docs/                    # Documentation
 │   ├── ARCHITECTURE.md
 │   ├── API_REFERENCE.md
 │   └── ONBOARDING.md        # This file
 │
+├── config/                  # Runtime configuration files
+├── data/                    # Runtime data files
 ├── Cargo.toml              # Dependencies
 ├── Cargo.lock              # Locked versions
-├── check.ps1               # CI script (Windows)
+├── build.rs                # Build script
+├── check.ps1               # Full CI check (Windows)
+├── check-fast.ps1          # Fast CI check (Windows)
 └── .config/
     └── nextest.toml        # Test configuration
 ```
@@ -127,7 +155,7 @@ rust-orchestrator/
 
 | File | Purpose |
 |------|---------|
-| `src/task/mod.rs` | Task trait definition, TaskContext API |
+| `src/task/mod.rs` | Task trait, registration, and execution dispatch |
 | `src/session/mod.rs` | Session lifecycle, health tracking |
 | `src/orchestrator.rs` | Multi-session coordination |
 | `src/utils/mouse.rs` | Human-like mouse movement |

@@ -63,12 +63,13 @@ impl LlmClient {
     async fn ollama_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
         let url = format!("{}/api/chat", self.config.ollama.base_url);
 
-        let request = ChatRequest {
-            model: self.config.ollama.model.clone(),
-            messages,
-            temperature: Some(0.7),
-            max_tokens: Some(2048),
-        };
+        let request = serde_json::json!({
+            "model": self.config.ollama.model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 2048,
+            "stream": false,
+        });
 
         info!("Calling Ollama: {}...", self.config.ollama.model);
 

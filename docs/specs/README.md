@@ -1,6 +1,6 @@
 # Spec Workspace
 
-last audited 08-05-26 by Kilo
+last audited 14-05-26 by Buffy
 
 This is the contract between spec planning and implementation.
 
@@ -12,7 +12,8 @@ This is the contract between spec planning and implementation.
 - `spec-lint.ps1` is system-owned, read-only, and regular feature specs must not target it.
 - Before a risky handoff, checkpoint the worktree with `.\spec-stash.ps1` and keep the ref.
 - If a handoff breaks the tree, restore with `.\spec-restore.ps1`.
-- Keep `implementation-notes.md` append-only.
+- Spec packages are streamlined to 6 files: `spec.yaml`, `plan.md`, `baseline.md`, `validation.md`, `notes.md`, `README.md`. The strategist generates these automatically.
+- Old boilerplate files (`implementation-notes.md`, `internal-api-outline.md`, `ci-commands.md`, `quality-rules.md`, etc.) are no longer generated.
 
 ## Lifecycle
 

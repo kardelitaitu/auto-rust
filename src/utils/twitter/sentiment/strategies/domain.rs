@@ -255,3 +255,274 @@ pub fn analyze_domain_sentiment(text: &str, domain: SentimentDomain) -> f32 {
     }
     score
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // detect_domain Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_domain_general() {
+        assert_eq!(detect_domain("I like pizza"), SentimentDomain::General);
+    }
+
+    #[test]
+    fn test_detect_domain_general_empty() {
+        assert_eq!(detect_domain(""), SentimentDomain::General);
+    }
+
+    #[test]
+    fn test_detect_domain_crypto() {
+        assert_eq!(detect_domain("Bitcoin is mooning"), SentimentDomain::Crypto);
+        assert_eq!(detect_domain("I love ETH"), SentimentDomain::Crypto);
+        assert_eq!(detect_domain("NFT market is hot"), SentimentDomain::Crypto);
+    }
+
+    #[test]
+    fn test_detect_domain_tech() {
+        assert_eq!(detect_domain("writing clean code"), SentimentDomain::Tech);
+        assert_eq!(detect_domain("deploy to production"), SentimentDomain::Tech);
+        assert_eq!(detect_domain("software engineering"), SentimentDomain::Tech);
+    }
+
+    #[test]
+    fn test_detect_domain_gaming() {
+        assert_eq!(
+            detect_domain("streaming on twitch"),
+            SentimentDomain::Gaming
+        );
+        assert_eq!(detect_domain("new game release"), SentimentDomain::Gaming);
+        assert_eq!(detect_domain("esports tournament"), SentimentDomain::Gaming);
+    }
+
+    #[test]
+    fn test_detect_domain_sports() {
+        assert_eq!(detect_domain("NFL season is here"), SentimentDomain::Sports);
+        assert_eq!(detect_domain("NBA finals"), SentimentDomain::Sports);
+        assert_eq!(detect_domain("soccer match"), SentimentDomain::Sports);
+    }
+
+    #[test]
+    fn test_detect_domain_entertainment() {
+        assert_eq!(
+            detect_domain("watching netflix"),
+            SentimentDomain::Entertainment
+        );
+        assert_eq!(
+            detect_domain("new movie review"),
+            SentimentDomain::Entertainment
+        );
+        assert_eq!(
+            detect_domain("tv show binge"),
+            SentimentDomain::Entertainment
+        );
+    }
+
+    #[test]
+    fn test_detect_domain_case_insensitive() {
+        assert_eq!(detect_domain("BITCOIN"), SentimentDomain::Crypto);
+        assert_eq!(detect_domain("Code Review"), SentimentDomain::Tech);
+        assert_eq!(detect_domain("GAME"), SentimentDomain::Gaming);
+    }
+
+    #[test]
+    fn test_detect_domain_crypto_preferred_over_tech() {
+        // "defi" appears in crypto and tech might also match "code", but crypto should win
+        // since crypto indicators are checked first via scores sorting
+        assert_eq!(
+            detect_domain("defi protocol launch"),
+            SentimentDomain::Crypto
+        );
+    }
+
+    #[test]
+    fn test_detect_domain_multiple_indicators() {
+        // Sports has more matches
+        assert_eq!(
+            detect_domain("NBA basketball game tonight"),
+            SentimentDomain::Sports
+        );
+    }
+
+    // ========================================================================
+    // analyze_domain_sentiment Tests
+    // ========================================================================
+
+    #[test]
+    fn test_analyze_general_domain_no_sentiment() {
+        let score = analyze_domain_sentiment("Any text at all", SentimentDomain::General);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_analyze_tech_positive() {
+        // "tests passing" appears in TECH_POSITIVE
+        let score = analyze_domain_sentiment("All tests passing finally", SentimentDomain::Tech);
+        assert_eq!(score, 1.5);
+    }
+
+    #[test]
+    fn test_analyze_tech_negative() {
+        // "bug" and "critical bug" both match in lowercase
+        let score = analyze_domain_sentiment("Critical bug in production", SentimentDomain::Tech);
+        assert_eq!(score, -3.0);
+    }
+
+    #[test]
+    fn test_analyze_tech_multiple_matches() {
+        let score = analyze_domain_sentiment(
+            "just shipped clean code, pr approved",
+            SentimentDomain::Tech,
+        );
+        // shipped(1.5) + clean code(1.5) + pr approved(1.5) = 4.5
+        assert_eq!(score, 4.5);
+    }
+
+    #[test]
+    fn test_analyze_crypto_positive() {
+        let score = analyze_domain_sentiment("Bitcoin is bullish", SentimentDomain::Crypto);
+        assert_eq!(score, 1.5);
+    }
+
+    #[test]
+    fn test_analyze_crypto_negative() {
+        let score = analyze_domain_sentiment("That project is a scam", SentimentDomain::Crypto);
+        assert_eq!(score, -1.5);
+    }
+
+    #[test]
+    fn test_analyze_gaming_positive() {
+        let score = analyze_domain_sentiment("What a clutch victory", SentimentDomain::Gaming);
+        // victory(1.5) + clutch(1.5) = 3.0
+        assert_eq!(score, 3.0);
+    }
+
+    #[test]
+    fn test_analyze_sports_negative() {
+        // "lost" and "eliminated" each match once
+        let score = analyze_domain_sentiment("Team lost and eliminated", SentimentDomain::Sports);
+        assert_eq!(score, -3.0);
+    }
+
+    #[test]
+    fn test_analyze_sports_negative_single() {
+        let score = analyze_domain_sentiment("that team always chokes", SentimentDomain::Sports);
+        assert_eq!(score, -1.5);
+    }
+
+    #[test]
+    fn test_analyze_sports_positive() {
+        let score = analyze_domain_sentiment(
+            "What a victory! Championship bound!",
+            SentimentDomain::Sports,
+        );
+        // "victory"(1.5) + "champion"(1.5, within "championship") + "championship"(1.5) = 4.5
+        assert_eq!(score, 4.5);
+    }
+
+    #[test]
+    fn test_analyze_sports_positive_single() {
+        let score = analyze_domain_sentiment("victory royale", SentimentDomain::Sports);
+        assert_eq!(score, 1.5);
+    }
+
+    #[test]
+    fn test_analyze_entertainment_positive() {
+        let score = analyze_domain_sentiment(
+            "That movie was a masterpiece",
+            SentimentDomain::Entertainment,
+        );
+        assert_eq!(score, 1.5);
+    }
+
+    #[test]
+    fn test_analyze_entertainment_negative() {
+        let score = analyze_domain_sentiment("What a boring flop", SentimentDomain::Entertainment);
+        // boring(1.5) + flop(1.5) = -3.0
+        assert_eq!(score, -3.0);
+    }
+
+    #[test]
+    fn test_analyze_mixed_sentiment() {
+        let score = analyze_domain_sentiment("Clean code but still a bug", SentimentDomain::Tech);
+        // clean code(1.5) + bug(-1.5) = 0.0
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_analyze_no_match() {
+        let score = analyze_domain_sentiment("The weather is nice today", SentimentDomain::Tech);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_analyze_empty_text() {
+        let score = analyze_domain_sentiment("", SentimentDomain::Crypto);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_analyze_domain_sentiment_case_insensitive() {
+        let score = analyze_domain_sentiment("ALL TESTS PASSING", SentimentDomain::Tech);
+        assert_eq!(score, 1.5);
+    }
+
+    // ========================================================================
+    // SentimentDomain Enum Tests
+    // ========================================================================
+
+    #[test]
+    fn test_sentiment_domain_default() {
+        let domain = SentimentDomain::default();
+        assert_eq!(domain, SentimentDomain::General);
+    }
+
+    #[test]
+    fn test_sentiment_domain_variants() {
+        assert_eq!(SentimentDomain::General as u8, 0);
+        assert_eq!(SentimentDomain::Tech as u8, 1);
+        assert_eq!(SentimentDomain::Crypto as u8, 2);
+        assert_eq!(SentimentDomain::Gaming as u8, 3);
+        assert_eq!(SentimentDomain::Sports as u8, 4);
+        assert_eq!(SentimentDomain::Entertainment as u8, 5);
+    }
+
+    #[test]
+    fn test_sentiment_domain_debug() {
+        assert_eq!(format!("{:?}", SentimentDomain::Tech), "Tech");
+        assert_eq!(format!("{:?}", SentimentDomain::Crypto), "Crypto");
+    }
+
+    #[test]
+    fn test_sentiment_domain_serialize_roundtrip() {
+        let domain = SentimentDomain::Gaming;
+        let json = serde_json::to_string(&domain).expect("serialize");
+        let restored: SentimentDomain = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored, domain);
+    }
+
+    // ========================================================================
+    // count_matches Tests
+    // ========================================================================
+
+    #[test]
+    fn test_count_matches_basic() {
+        assert_eq!(
+            count_matches("bitcoin and crypto", &["bitcoin", "crypto", "eth"]),
+            2
+        );
+    }
+
+    #[test]
+    fn test_count_matches_no_matches() {
+        assert_eq!(count_matches("hello world", &["foo", "bar"]), 0);
+    }
+
+    #[test]
+    fn test_count_matches_all_match() {
+        assert_eq!(count_matches("foo bar baz", &["foo", "bar", "baz"]), 3);
+    }
+}

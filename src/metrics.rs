@@ -1,3 +1,9 @@
+/*
+last audited 08-05-25 by RSA-Agent
+crate: auto-rust | status: SAFE | lint: CLEAN
+findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
+*/
+
 //! Performance metrics collection and reporting module.
 //!
 //! Provides real-time monitoring of:
@@ -67,6 +73,11 @@ pub const RUN_COUNTER_PERMANENT_ERROR: &str = "permanent_error";
 pub const RUN_COUNTER_FATAL_ERROR: &str = "fatal_error";
 pub const RUN_COUNTER_CIRCUIT_BREAKER_OPEN: &str = "circuit_breaker_open";
 pub const RUN_COUNTER_GRACEFUL_DEGRADATION: &str = "graceful_degradation";
+
+/// Pipeline confidence level counters (from Confidence: High/Medium/Low in LLM responses).
+pub const RUN_COUNTER_CONFIDENCE_HIGH: &str = "confidence_high";
+pub const RUN_COUNTER_CONFIDENCE_MEDIUM: &str = "confidence_medium";
+pub const RUN_COUNTER_CONFIDENCE_LOW: &str = "confidence_low";
 
 /// Records detailed metrics for a single task execution.
 /// Captures timing, outcome, and execution context for performance analysis
@@ -224,6 +235,17 @@ impl MetricsCollector {
             run_counters: Arc::new(RwLock::new(FxHashMap::default())),
             max_history,
         }
+    }
+
+    /// Record a confidence level observed in pipeline output.
+    /// Increments the appropriate run counter (high/medium/low).
+    pub fn record_confidence(&self, confidence: &crate::bacon_core::Confidence) {
+        let name = match confidence {
+            crate::bacon_core::Confidence::High => RUN_COUNTER_CONFIDENCE_HIGH,
+            crate::bacon_core::Confidence::Medium => RUN_COUNTER_CONFIDENCE_MEDIUM,
+            crate::bacon_core::Confidence::Low => RUN_COUNTER_CONFIDENCE_LOW,
+        };
+        self.increment_run_counter(name, 1);
     }
 
     pub fn increment_run_counter(&self, name: &str, amount: usize) {

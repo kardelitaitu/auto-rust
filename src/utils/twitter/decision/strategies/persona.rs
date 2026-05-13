@@ -285,3 +285,300 @@ impl Default for PersonaStrategy {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
+    use crate::utils::twitter::twitteractivity_state::TaskConfig;
+
+    fn persona_with_probs(
+        like: f64,
+        retweet: f64,
+        quote: f64,
+        follow: f64,
+        reply: f64,
+        bookmark: f64,
+        multiplier: f64,
+    ) -> PersonaWeights {
+        PersonaWeights {
+            like_prob: like,
+            retweet_prob: retweet,
+            quote_prob: quote,
+            follow_prob: follow,
+            reply_prob: reply,
+            bookmark_prob: bookmark,
+            thread_dive_prob: 0.0,
+            interest_multiplier: multiplier,
+        }
+    }
+
+    fn ctx(text: &str, replies: Vec<&str>, persona: PersonaWeights) -> TweetContext {
+        TweetContext {
+            tweet_id: "1".to_string(),
+            text: text.to_string(),
+            author: "user".to_string(),
+            replies: replies.into_iter().map(String::from).collect(),
+            persona,
+            task_config: TaskConfig::default(),
+            tweet_age: "recent".to_string(),
+            topic_alignment: "neutral".to_string(),
+        }
+    }
+
+    // ========================================================================
+    // PersonaStrategy Construction Tests
+    // ========================================================================
+
+    #[test]
+    fn test_persona_strategy_new() {
+        let strategy = PersonaStrategy::new();
+        assert!(!strategy.controversial_keywords.is_empty());
+        assert!(!strategy.spam_patterns.is_empty());
+        assert!(!strategy.tragedy_keywords.is_empty());
+        assert!(!strategy.crypto_keywords.is_empty());
+    }
+
+    #[test]
+    fn test_persona_strategy_default() {
+        let strategy = PersonaStrategy::default();
+        let new = PersonaStrategy::new();
+        assert_eq!(
+            strategy.controversial_keywords.len(),
+            new.controversial_keywords.len()
+        );
+    }
+
+    // ========================================================================
+    // contains_any Tests
+    // ========================================================================
+
+    #[test]
+    fn test_contains_any_match() {
+        let strategy = PersonaStrategy::new();
+        assert!(strategy.contains_any("this is a scam", &["scam", "spam"]));
+    }
+
+    #[test]
+    fn test_contains_any_no_match() {
+        let strategy = PersonaStrategy::new();
+        assert!(!strategy.contains_any("hello world", &["scam", "spam"]));
+    }
+
+    #[test]
+    fn test_contains_any_empty_text() {
+        let strategy = PersonaStrategy::new();
+        assert!(!strategy.contains_any("", &["test"]));
+    }
+
+    #[test]
+    fn test_contains_any_empty_keywords() {
+        let strategy = PersonaStrategy::new();
+        assert!(!strategy.contains_any("test", &[]));
+    }
+
+    #[test]
+    fn test_contains_any_case_insensitive() {
+        let strategy = PersonaStrategy::new();
+        assert!(strategy.contains_any("ELECTION", &["election"]));
+        assert!(strategy.contains_any("Election", &["election"]));
+    }
+
+    // ========================================================================
+    // calculate_base_score Tests
+    // ========================================================================
+
+    #[test]
+    fn test_calculate_base_score_default() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx("text", vec![], PersonaWeights::default());
+        let score = strategy.calculate_base_score(&context);
+        // Default weights: like=0.3, retweet=0.1, quote=0.05, follow=0.05, reply=0.02, bookmark=0.0
+        // sum = 0.52, avg = 0.0867, *100 = 8.67
+        assert!((score - 8.67).abs() < 0.1, "expected ~8.67, got {}", score);
+    }
+
+    #[test]
+    fn test_calculate_base_score_high_engagement() {
+        let strategy = PersonaStrategy::new();
+        let weights = persona_with_probs(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+        let context = ctx("text", vec![], weights);
+        let score = strategy.calculate_base_score(&context);
+        assert!((score - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_base_score_zero_engagement() {
+        let strategy = PersonaStrategy::new();
+        let weights = persona_with_probs(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+        let context = ctx("text", vec![], weights);
+        let score = strategy.calculate_base_score(&context);
+        assert!((score - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_base_score_capped_at_100() {
+        let strategy = PersonaStrategy::new();
+        // All probabilities at 2.0 (over 1.0) → avg = 2.0 → *100 = 200 → capped at 100
+        let weights = persona_with_probs(2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 1.0);
+        let context = ctx("text", vec![], weights);
+        let score = strategy.calculate_base_score(&context);
+        assert!((score - 100.0).abs() < 0.01);
+    }
+
+    // ========================================================================
+    // analyze_replies Tests
+    // ========================================================================
+
+    #[test]
+    fn test_analyze_replies_empty_returns_neutral() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx("text", vec![], PersonaWeights::default());
+        let score = strategy.analyze_replies(&context);
+        assert!((score - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_analyze_replies_positive() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx(
+            "text",
+            vec!["Great post!", "I agree with this", "exciting stuff"],
+            PersonaWeights::default(),
+        );
+        let score = strategy.analyze_replies(&context);
+        // 3 replies, 3 positive → (3/3 * 100) - (0/3 * 50) + 30 = 130
+        assert!((score - 130.0).abs() < 0.1, "expected ~130, got {}", score);
+    }
+
+    #[test]
+    fn test_analyze_replies_negative() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx(
+            "text",
+            vec!["this is scam", "fake news", "reported"],
+            PersonaWeights::default(),
+        );
+        let score = strategy.analyze_replies(&context);
+        // 3 replies, 3 negative → (0/3 * 100) - (3/3 * 50) + 30 = -20
+        assert!((score - (-20.0)).abs() < 0.1, "expected -20, got {}", score);
+    }
+
+    #[test]
+    fn test_analyze_replies_mixed() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx(
+            "text",
+            vec!["Great post!", "this is spam", "I agree"],
+            PersonaWeights::default(),
+        );
+        let score = strategy.analyze_replies(&context);
+        // 3 replies, 2 positive → (2/3 * 100) - (1/3 * 50) + 30
+        // 66.67 - 16.67 + 30 = 80.0
+        assert!((score - 80.0).abs() < 0.5, "expected ~80, got {}", score);
+    }
+
+    #[test]
+    fn test_analyze_replies_no_signals() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx(
+            "text",
+            vec!["just a normal reply", "nothing special"],
+            PersonaWeights::default(),
+        );
+        let score = strategy.analyze_replies(&context);
+        // 2 replies, 0 positive, 0 negative → (0/2 * 100) - (0/2 * 50) + 30 = 30
+        assert!((score - 30.0).abs() < 0.1);
+    }
+
+    // ========================================================================
+    // decide Tests (sync helpers, not async)
+    // ========================================================================
+
+    #[test]
+    fn test_persona_name() {
+        let strategy = PersonaStrategy::new();
+        assert_eq!(strategy.name(), "persona");
+    }
+
+    #[test]
+    fn test_persona_strategy_type() {
+        let strategy = PersonaStrategy::new();
+        assert_eq!(strategy.strategy_type(), DecisionStrategy::Persona);
+    }
+
+    #[tokio::test]
+    async fn test_decide_tragedy_skips() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx(
+            "He passed away yesterday",
+            vec![],
+            PersonaWeights::default(),
+        );
+        let decision = strategy.decide(&context).await;
+        assert_eq!(decision.level, EngagementLevel::None);
+        assert!(decision.reason.contains("tragedy"));
+    }
+
+    #[tokio::test]
+    async fn test_decide_spam_skips() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx(
+            "check my bio for more info",
+            vec![],
+            PersonaWeights::default(),
+        );
+        let decision = strategy.decide(&context).await;
+        assert_eq!(decision.level, EngagementLevel::None);
+        assert!(decision.reason.contains("Spam"));
+    }
+
+    #[tokio::test]
+    async fn test_decide_crypto_skips() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx("Buy my NFT now!", vec![], PersonaWeights::default());
+        let decision = strategy.decide(&context).await;
+        assert_eq!(decision.level, EngagementLevel::None);
+    }
+
+    #[tokio::test]
+    async fn test_decide_controversial_minimal() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx(
+            "The election results are in",
+            vec![],
+            PersonaWeights::default(),
+        );
+        let decision = strategy.decide(&context).await;
+        assert_eq!(decision.level, EngagementLevel::Minimal);
+    }
+
+    #[tokio::test]
+    async fn test_decide_neutral_content() {
+        let strategy = PersonaStrategy::new();
+        let context = ctx("I like pizza", vec![], PersonaWeights::default());
+        let decision = strategy.decide(&context).await;
+        // Default weights give base_score ~8.67, reply_score 50, final = 8.67*0.4 + 50*0.6 = 33.47
+        assert_eq!(decision.level, EngagementLevel::Minimal);
+        assert!(decision.score > 0);
+    }
+
+    #[tokio::test]
+    async fn test_decide_positive_with_good_replies() {
+        let strategy = PersonaStrategy::new();
+        let weights = persona_with_probs(1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 1.5);
+        let context = ctx(
+            "A great and amazing post",
+            vec!["congrats!", "awesome work!", "totally agree"],
+            weights,
+        );
+        let decision = strategy.decide(&context).await;
+        // High persona weights + positive replies should yield Medium or Full
+        assert!(
+            decision.level == EngagementLevel::Medium || decision.level == EngagementLevel::Full,
+            "expected Medium or Full, got {:?}",
+            decision.level
+        );
+        assert!(decision.score > 50);
+    }
+}

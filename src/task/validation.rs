@@ -433,7 +433,7 @@ impl TaskValidator {
                 // Extract variables from parameter values
                 if let Some(params) = parameters {
                     for value in params.values() {
-                        // Convert serde_yaml::Value to string for variable extraction
+                        // Convert serde_yml::Value to string for variable extraction
                         if let Some(s) = value.as_str() {
                             self.extract_variables(s, report);
                         }
@@ -720,7 +720,7 @@ impl TaskValidator {
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
-                // Convert serde_yaml::Value to string for variable extraction
+                // Convert serde_yml::Value to string for variable extraction
                 if let Some(s) = value.as_str() {
                     self.extract_variables(s, report);
                 }

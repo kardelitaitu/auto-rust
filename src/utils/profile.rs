@@ -1604,4 +1604,70 @@ mod tests {
         let profile = BrowserProfile::from_preset(&preset);
         assert_eq!(profile.name, "Leisure");
     }
+
+    #[test]
+    fn test_randomize_profile_produces_variation() {
+        // ProfileParam::random() should produce varied values within deviation range
+        let param1 = ProfileParam::new(100.0, 10.0);
+        let mut found_variation = false;
+        let first = param1.random();
+        for _ in 0..20 {
+            let val = param1.random();
+            if val != first {
+                found_variation = true;
+                break;
+            }
+        }
+        assert!(
+            found_variation,
+            "ProfileParam::random() should produce variation across calls"
+        );
+    }
+
+    #[test]
+    fn test_randomize_profile_preserves_preset_name() {
+        let preset = ProfilePreset::Teen;
+        let profile = randomize_profile(&preset);
+        assert_eq!(profile.name, "Teen");
+    }
+
+    #[test]
+    fn test_random_preset_returns_valid_preset() {
+        let preset = random_preset();
+        // Should be one of the valid presets
+        match preset {
+            ProfilePreset::Average
+            | ProfilePreset::Teen
+            | ProfilePreset::Senior
+            | ProfilePreset::Enthusiast
+            | ProfilePreset::PowerUser
+            | ProfilePreset::Cautious
+            | ProfilePreset::Impatient
+            | ProfilePreset::Erratic
+            | ProfilePreset::Researcher
+            | ProfilePreset::Casual
+            | ProfilePreset::Professional
+            | ProfilePreset::Novice
+            | ProfilePreset::Expert
+            | ProfilePreset::Distracted
+            | ProfilePreset::Focused
+            | ProfilePreset::Analytical
+            | ProfilePreset::QuickScanner
+            | ProfilePreset::Thorough
+            | ProfilePreset::Adaptive
+            | ProfilePreset::Stressed
+            | ProfilePreset::Leisure => {}
+        }
+    }
+
+    #[test]
+    fn test_random_preset_distribution() {
+        // Test that random_preset produces different results over multiple calls
+        let mut presets = std::collections::HashSet::new();
+        for _ in 0..100 {
+            presets.insert(random_preset());
+        }
+        // Should get at least a few different presets
+        assert!(presets.len() >= 5);
+    }
 }

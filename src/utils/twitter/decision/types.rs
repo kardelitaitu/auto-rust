@@ -115,3 +115,227 @@ pub trait DecisionEngine: Send + Sync {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // EngagementLevel Tests
+    // ========================================================================
+
+    #[test]
+    fn test_engagement_level_variants() {
+        assert_eq!(EngagementLevel::Full as u8, 0);
+        assert_eq!(EngagementLevel::Medium as u8, 1);
+        assert_eq!(EngagementLevel::Minimal as u8, 2);
+        assert_eq!(EngagementLevel::None as u8, 3);
+    }
+
+    #[test]
+    fn test_engagement_level_partial_eq() {
+        assert_eq!(EngagementLevel::Full, EngagementLevel::Full);
+        assert_ne!(EngagementLevel::Full, EngagementLevel::None);
+    }
+
+    #[test]
+    fn test_engagement_level_debug() {
+        assert_eq!(format!("{:?}", EngagementLevel::Full), "Full");
+        assert_eq!(format!("{:?}", EngagementLevel::None), "None");
+    }
+
+    #[test]
+    fn test_engagement_level_serialize() {
+        let json = serde_json::to_string(&EngagementLevel::Medium).unwrap();
+        assert_eq!(json, "\"Medium\"");
+    }
+
+    #[test]
+    fn test_engagement_level_deserialize() {
+        let level: EngagementLevel = serde_json::from_str("\"Full\"").unwrap();
+        assert_eq!(level, EngagementLevel::Full);
+    }
+
+    #[test]
+    fn test_engagement_level_deserialize_snake_case() {
+        // Deserialization uses serde rename_all = "snake_case"
+        let level: EngagementLevel = serde_json::from_str("\"Full\"").unwrap();
+        assert_eq!(level, EngagementLevel::Full);
+    }
+
+    // ========================================================================
+    // EngagementDecision Tests
+    // ========================================================================
+
+    #[test]
+    fn test_engagement_decision_creation() {
+        let decision = EngagementDecision {
+            level: EngagementLevel::Full,
+            score: 85,
+            reason: "high quality".to_string(),
+            multiplier: 1.5,
+            confidence: 0.9,
+        };
+        assert_eq!(decision.level, EngagementLevel::Full);
+        assert_eq!(decision.score, 85);
+        assert_eq!(decision.reason, "high quality");
+        assert_eq!(decision.multiplier, 1.5);
+        assert_eq!(decision.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_engagement_decision_low_score() {
+        let decision = EngagementDecision {
+            level: EngagementLevel::None,
+            score: 0,
+            reason: "skip".to_string(),
+            multiplier: 0.0,
+            confidence: 0.95,
+        };
+        assert!(decision.score == 0);
+        assert!(decision.confidence > 0.9);
+        assert!(decision.multiplier == 0.0);
+    }
+
+    #[test]
+    fn test_engagement_decision_clone() {
+        let decision = EngagementDecision {
+            level: EngagementLevel::Medium,
+            score: 50,
+            reason: "test".to_string(),
+            multiplier: 1.0,
+            confidence: 0.7,
+        };
+        let cloned = decision.clone();
+        assert_eq!(cloned.level, decision.level);
+        assert_eq!(cloned.score, decision.score);
+        assert_eq!(cloned.reason, decision.reason);
+    }
+
+    // ========================================================================
+    // DecisionStrategy Tests
+    // ========================================================================
+
+    #[test]
+    fn test_decision_strategy_default() {
+        let strategy = DecisionStrategy::default();
+        assert_eq!(strategy, DecisionStrategy::Legacy);
+    }
+
+    #[test]
+    fn test_decision_strategy_all() {
+        let all = DecisionStrategy::all();
+        assert_eq!(all.len(), 6);
+        assert!(all.contains(&DecisionStrategy::Legacy));
+        assert!(all.contains(&DecisionStrategy::Persona));
+        assert!(all.contains(&DecisionStrategy::Llm));
+        assert!(all.contains(&DecisionStrategy::Hybrid));
+        assert!(all.contains(&DecisionStrategy::Unified));
+        assert!(all.contains(&DecisionStrategy::Auto));
+    }
+
+    #[test]
+    fn test_decision_strategy_name() {
+        assert_eq!(DecisionStrategy::Legacy.name(), "legacy");
+        assert_eq!(DecisionStrategy::Persona.name(), "persona");
+        assert_eq!(DecisionStrategy::Llm.name(), "llm");
+        assert_eq!(DecisionStrategy::Hybrid.name(), "hybrid");
+        assert_eq!(DecisionStrategy::Unified.name(), "unified");
+        assert_eq!(DecisionStrategy::Auto.name(), "auto");
+    }
+
+    #[test]
+    fn test_decision_strategy_deserialize() {
+        let strategy: DecisionStrategy = serde_json::from_str("\"legacy\"").unwrap();
+        assert_eq!(strategy, DecisionStrategy::Legacy);
+
+        let strategy: DecisionStrategy = serde_json::from_str("\"persona\"").unwrap();
+        assert_eq!(strategy, DecisionStrategy::Persona);
+    }
+
+    #[test]
+    fn test_decision_strategy_partial_eq() {
+        assert_eq!(DecisionStrategy::Legacy, DecisionStrategy::Legacy);
+        assert_ne!(DecisionStrategy::Legacy, DecisionStrategy::Persona);
+    }
+
+    #[test]
+    fn test_decision_strategy_debug() {
+        assert_eq!(format!("{:?}", DecisionStrategy::Hybrid), "Hybrid");
+    }
+
+    // ========================================================================
+    // DecisionEngine Trait Tests
+    // ========================================================================
+
+    struct TestEngine;
+
+    #[async_trait]
+    impl DecisionEngine for TestEngine {
+        fn name(&self) -> &'static str {
+            "test"
+        }
+
+        async fn decide(&self, _ctx: &TweetContext) -> EngagementDecision {
+            EngagementDecision {
+                level: EngagementLevel::Full,
+                score: 100,
+                reason: "test".to_string(),
+                multiplier: 1.0,
+                confidence: 1.0,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_decision_engine_default_available() {
+        let engine = TestEngine;
+        assert!(engine.is_available());
+    }
+
+    #[tokio::test]
+    async fn test_decision_engine_name() {
+        let engine = TestEngine;
+        assert_eq!(engine.name(), "test");
+    }
+
+    #[tokio::test]
+    async fn test_decision_engine_decide_returns_decision() {
+        let engine = TestEngine;
+        // Construct a minimal TweetContext for testing
+        let ctx = TweetContext {
+            tweet_id: "1".to_string(),
+            text: "test".to_string(),
+            author: "user".to_string(),
+            replies: vec![],
+            persona: crate::utils::twitter::twitteractivity_persona::PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "".to_string(),
+            topic_alignment: "".to_string(),
+        };
+        let decision = engine.decide(&ctx).await;
+        assert_eq!(decision.level, EngagementLevel::Full);
+        assert_eq!(decision.score, 100);
+    }
+
+    // ========================================================================
+    // TweetContext Creation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tweet_context_creation() {
+        let ctx = TweetContext {
+            tweet_id: "123".to_string(),
+            text: "Hello world".to_string(),
+            author: "testuser".to_string(),
+            replies: vec!["Great post!".to_string()],
+            persona: crate::utils::twitter::twitteractivity_persona::PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "recent".to_string(),
+            topic_alignment: "tech".to_string(),
+        };
+        assert_eq!(ctx.tweet_id, "123");
+        assert_eq!(ctx.author, "testuser");
+        assert_eq!(ctx.replies.len(), 1);
+    }
+}

@@ -1,5 +1,5 @@
-use auto_rust::bacon_agent_kilocode::cli::{Cli, Command};
-use auto_rust::llm::Llm;
+use auto::bacon_agent_kilocode::cli::{Cli, Command};
+use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -9,16 +9,13 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let cli = Cli::parse();
+
     match cli.command {
         Command::Run(args) => {
-            let llm = Llm::new()?;
-            auto_rust::bacon_agent_kilocode::run(
-                &llm,
-                &args.text,
-                args.role.as_deref(),
-                args.path.as_deref(),
-            )
-            .await
+            // Pure CLI tool - no LLM required
+            auto::bacon_agent_kilocode::run(None, &args.text, args.role.as_deref(), args.dry_run)
+                .await?;
+            Ok(())
         }
     }
 }

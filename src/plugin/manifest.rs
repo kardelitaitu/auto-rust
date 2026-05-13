@@ -72,7 +72,7 @@ impl PluginManifest {
 
     /// Parse manifest from YAML string
     pub fn from_yaml(yaml_str: &str) -> anyhow::Result<Self> {
-        let manifest: Self = serde_yaml::from_str(yaml_str)?;
+        let manifest: Self = serde_yml::from_str(yaml_str)?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -131,7 +131,7 @@ impl PluginManifest {
 
     /// Get manifest as YAML string
     pub fn to_yaml(&self) -> anyhow::Result<String> {
-        Ok(serde_yaml::to_string(self)?)
+        Ok(serde_yml::to_string(self)?)
     }
 
     /// Get manifest as JSON string

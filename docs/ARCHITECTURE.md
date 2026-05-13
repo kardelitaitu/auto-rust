@@ -1,4 +1,4 @@
-last audited 08-05-26 by Kilo
+last audited 13-05-26 by Buffy
 # Auto-Rust Architecture
 
 ## Overview
@@ -26,18 +26,21 @@ src/
 │   │   ├── control_flow.rs # If/Loop/Foreach/While/Retry/Parallel
 │   │   ├── executor.rs     # DslExecutor main struct and execute()
 │   │   ├── parser.rs        # DSL parsing (YAML/TOML), validation
-│   │   └── dsl_executor.rs # Backward-compat shim for old path
-│   ├── validation.rs       # Pre-flight task validation
-│   └── demo_mouse.rs       # Demo mouse task implementation
+│   │   └── dsl_executor.rs # Backward-compat shim for old path    │   ├── validation.rs       # Pre-flight task validation
+    │   ├── demo_keyboard.rs    # Demo keyboard task
+    │   ├── demo_mouse.rs       # Demo mouse task
+    │   ├── demo-interaction-keyboard.rs  # Keyboard interaction demo
+    │   └── demo-interaction-mouse.rs     # Mouse interaction demo
 ├── utils/
 │   ├── mouse.rs            # Mouse simulation (2,877 lines, has submodules)
 │   │   ├── native.rs      # Native input, calibration (680 lines)
 │   │   ├── trajectory.rs  # Bezier/Arc/Zigzag curves (500 lines)
-│   │   └── types.rs       # Point, PathStyle, etc. (74 lines)
-│   ├── twitter/            # Twitter automation (27 files)
-│   │   ├── twitteractivity.rs          # Core engagement logic
-│   │   ├── twitteractivity_*.rs     # Other twitter modules
-│   │   └── sentiment/                   # Sentiment analysis sub-modules
+│   │   └── types.rs       # Point, PathStyle, etc. (74 lines)    │   ├── twitter/            # Twitter automation
+    │   │   ├── twitteractivity_engagement.rs  # Core engagement logic
+    │   │   ├── twitteractivity_*.rs       # Navigation, LLM, retry, selectors, etc.
+    │   │   ├── sentiment/               # Sentiment analysis sub-modules
+    │   │   ├── decision/                # Decision-making strategies
+    │   │   └── js/                      # JavaScript injection utilities
 │   ├── math.rs             # Gaussian, random_in_range utilities
 │   ├── scroll.rs           # Page scrolling utilities
 │   ├── timing.rs           # Human-pause, delay utilities
@@ -93,7 +96,7 @@ DslExecutor::execute()
 - **Why**: Non-technical users need to define automation workflows
 - **Format**: YAML (primary) with TOML fallback
 - **Structure**: Actions, conditions, parameters, includes
-- **Implementation**: `dsl/` modular structure (9 files after spec 0017)
+- **Implementation**: `dsl/` modular structure (10 files after spec 0017)
 
 ### 2. Twitter Module Organization
 - **Why**: Twitter automation has 27+ specialized modules
@@ -110,7 +113,7 @@ DslExecutor::execute()
 ### 4. Browser Abstraction
 - **Why**: Support multiple Chromium browsers (Chrome, Brave, Roxybrowser)
 - **Implementation**: `TaskContext` provides unified API
-- **Actions**: `api.click()`, `api.type()`, `api.pause()`, `api.hover()`, etc.
+- **Actions**: `api.click()`, `api.type_text()`, `api.pause()`, `api.hover()`, etc.
 - **Async**: All browser interactions are async via tokio
 
 ### 5. Browser Support

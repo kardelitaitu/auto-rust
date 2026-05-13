@@ -392,6 +392,17 @@ mod tests {
         assert_eq!(normalize_browser_token("Chrome_123"), "chrome123");
         assert_eq!(normalize_browser_token("Test@#$Browser"), "testbrowser");
         assert_eq!(normalize_browser_token(""), "");
+        assert_eq!(
+            normalize_browser_token("MixedCase_Example"),
+            "mixedcaseexample"
+        );
+        assert_eq!(normalize_browser_token("123Numbers456"), "123numbers456");
+        assert_eq!(
+            normalize_browser_token("Only-Special!@#$%^&*()"),
+            "onlyspecial"
+        );
+        assert_eq!(normalize_browser_token("a"), "a");
+        assert_eq!(normalize_browser_token("A_B-C"), "abc");
     }
 
     #[test]

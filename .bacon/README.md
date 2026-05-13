@@ -5,10 +5,10 @@ An enhanced autonomous coding system for the Auto-Rust browser automation framew
 ## 🚀 Overview
 
 Bacon implements a 4-agent pipeline that automatically:
-- **Observes**: Extracts compiler warnings and errors
-- **Strategizes**: Analyzes problems and creates technical specifications
-- **Codes**: Generates minimal, audit-ready patch files
-- **Audits**: Validates changes for safety and compliance, then queues verified patches
+- **Observes**: Extracts compiler warnings and errors, or reads pending specs.
+- **Strategizes**: Analyzes problems and creates technical specifications in Markdown.
+- **Codes**: Generates minimal, audit-ready SEARCH/REPLACE blocks.
+- **Audits**: Validates changes for safety and semantic compliance, then archives verified patches.
 
 ## 📁 Enhanced Architecture
 
@@ -18,17 +18,9 @@ Bacon implements a 4-agent pipeline that automatically:
 ├── roles/                         # Enhanced agent definitions
 │   ├── 01_bacon-observer.md      # Structured problem analysis
 │   ├── 02_bacon-strategy.md      # Technical specifications
-│   ├── 03_bacon-coder.md         # Minimal code generation
-│   └── 04_bacon-auditor.md       # Comprehensive validation
-├── scripts/                       # Enhanced orchestration scripts
-│   ├── bacon-config.sh          # Configuration management
-│   ├── bacon-orchestrate.sh     # Main agentic loop with error handling
-│   ├── bacon-apply-shadow.sh    # Safe shadow workspace management
-│   ├── bacon-sentinel.sh        # Hotspot detection
-│   ├── bacon-observer.sh        # Enhanced problem analysis
-│   ├── bacon-strategist.sh      # Strategy generation
-│   ├── bacon-coder.sh           # Code generation
-│   ├── bacon-auditor.sh         # Comprehensive auditing
+│   ├── 03_bacon-coder.md         # SEARCH/REPLACE block generation
+│   └── 04_bacon-auditor.md       # Comprehensive semantic validation
+├── scripts/                       # Orchestration utilities
 │   └── bacon-manager.ps1        # PowerShell management dashboard
 └── sessions/                      # Working directory and logs
 ```
@@ -36,265 +28,221 @@ Bacon implements a 4-agent pipeline that automatically:
 ## 🛡️ Safety & Security Features
 
 ### Multi-Layer Validation
-- **Security Audit**: Detects dangerous patterns, hardcoded secrets, unsafe blocks
-- **Browser Compatibility**: Ensures no fingerprinting or User-Agent modifications
-- **Performance Validation**: Checks for regressions and memory leaks
-- **Code Quality**: Validates style, documentation, and error handling
+- **Sandboxed Compilation**: The pipeline validates code compilation (`cargo check`) and formatting in an isolated shadow worktree before applying.
+- **Retry with Feedback**: If tests or compilation fail, compiler errors are fed back to the Coder LLM to self-correct up to 3 times.
+- **Semantic Auditing**: An Auditor LLM checks the generated code against the original spec to prevent hallucinated logic.
+- **Code Quality**: Validates style, documentation, and error handling (`cargo clippy`, `cargo fmt`).
 
 ### Shadow Workspace Testing
-- **Isolated Environment**: Changes tested in temporary git clones
-- **Review Queue**: Verified patches are stored under `.bacon/sessions/approved_patches/`
-- **Comprehensive Verification**: Compilation, testing, and integration checks
+- **Isolated Environment**: Changes are generated as patches and tested in temporary git clones.
+- **Review Queue**: Verified patches are stored under `.bacon/sessions/approved_patches/`.
+- **Comprehensive Verification**: Full integration checks are passed before the human confirmation gate.
 
 ### Production Safeguards
-- **Context Isolation**: Maintains browser profile separation
-- **Memory Safety**: Prevents leaks in long-running sessions
-- **Fingerprinting Protection**: Never modifies detection mechanisms
+- **Context Isolation**: Maintains browser profile separation.
+- **Memory Safety**: Prevents leaks in long-running sessions.
+- **Fingerprinting Protection**: Never modifies browser detection mechanisms.
 
-## 📊 Monitoring & Metrics
+## 📊 Enhanced Monitoring & Metrics
 
 ### Real-time Metrics
-- **Event Tracking**: All agent actions logged with timestamps
-- **Success Rates**: Track effectiveness of each agent
-- **Performance Metrics**: Compilation times, test results
-- **Health Monitoring**: System status and degradation warnings
+- **Event Tracking**: All agent actions are tracked within the pipeline.
+- **Health Monitoring**: System status with health scoring (0-100).
+- **Performance Metrics**: Stage duration, retry counts, success rates.
+- **Resource Usage**: Memory, disk, and process monitoring.
+- **Code Impact**: Lines changed, files modified, coverage impact.
+
+### Alert System
+- **Configurable Thresholds**: Set alerts for success rates, error rates, queue depth.
+- **Health Scoring**: Automatic health assessment with recommendations.
+- **Proactive Monitoring**: Early warning for system issues.
 
 ### Logging System
-- **Structured Logs**: JSON-formatted logs for easy analysis
-- **Multiple Levels**: DEBUG, INFO, WARN, ERROR with rotation
-- **Agent-Specific Logs**: Separate logs for each agent component
+- **Structured Logs**: Native rust `log` and `env_logger` integration.
+- **Multiple Levels**: DEBUG, INFO, WARN, ERROR, CRITICAL outputs.
+- **Security Audit Trail**: Separate logging for security-relevant actions.
+- **JSON Metrics**: Structured metrics in JSON Lines format.
+
+### Reporting & Dashboards
+- **HTML Reports**: Professional system reports with health metrics.
+- **Web Dashboard**: Real-time monitoring via HTTP dashboard.
+- **Historical Archives**: Daily metric archives for trend analysis.
 
 ## 🎛️ Management Interface
+
+### Bacon Supervisor (`bacon`)
+The primary engine for the autonomous workflow is the native Rust `bacon` binary.
+
+```bash
+# Start the autonomous system (default)
+cargo run --bin bacon
+
+# Start with a specific guided prompt
+cargo run --bin bacon -- -p "Fix the deprecated unused variables in mod.rs"
+
+# Skip strategist and auditor for fast, trivial fixes
+cargo run --bin bacon -- --fast
+
+# Automatic mode (skip confirmation gates)
+cargo run --bin bacon -- --auto
+
+# Dry run (no changes applied)
+cargo run --bin bacon -- --dry-run
+
+# Run the test harness
+cargo run --bin bacon -- test
+```
 
 ### PowerShell Dashboard
 ```powershell
 # Check system status
-.\.bacon\scripts\bacon-manager.ps1 -Action status
+.\.bacon\scripts\bacon-manager.ps1 status
 
 # Start autonomous coding
-.\.bacon\scripts\bacon-manager.ps1 -Action start
+.\.bacon\scripts\bacon-manager.ps1 start
 
 # View metrics
-.\.bacon\scripts\bacon-manager.ps1 -Action metrics
+.\.bacon\scripts\bacon-manager.ps1 metrics
 
 # Run system tests
-.\.bacon\scripts\bacon-manager.ps1 -Action test
+.\.bacon\scripts\bacon-manager.ps1 test
 
-# Apply newest approved patch candidate
-.\.bacon\scripts\bacon-manager.ps1 -Action apply-approved -RunCheck
+# Generate HTML report
+.\.bacon\scripts\bacon-manager.ps1 report
+
+# Rotate API keys securely
+.\.bacon\scripts\bacon-manager.ps1 rotate-keys
+
+# Start web dashboard
+.\.bacon\scripts\bacon-manager.ps1 dashboard
+
+# Clean up old files
+.\.bacon\scripts\bacon-manager.ps1 cleanup
+
+# Apply approved patches
+.\.bacon\scripts\bacon-manager.ps1 apply-approved
 ```
 
-### Environment Variables
-```bash
-# Configuration overrides
-export BACON_CYCLE_INTERVAL=15        # Check interval (seconds)
-export BACON_MAX_CYCLES=100           # Maximum cycles (0 = infinite)
-export BACON_LOG_LEVEL=debug          # Logging verbosity
-export BACON_ENABLE_METRICS=true      # Metrics collection
-export BACON_SHADOW_CLEANUP=true     # Automatic cleanup
-export BACON_AUTO_APPLY=false         # Auto-apply is disabled by default
-export BACON_REQUIRE_FULL_CHECK=true  # Auto-apply must pass .\check.ps1
-```
+## 📖 Enhanced Workflow Documentation
+
+For complete workflow details, see `.bacon/.bacon-workflow.md` which includes:
+
+- **Getting Started Guide**: Installation, prerequisites, basic usage
+- **Error Recovery**: Crash recovery, network failure handling, timeout management
+- **Security Guidelines**: API key management, sensitive code review, audit trails
+- **Monitoring & Metrics**: Real-time tracking, alert configuration, dashboards
+- **Testing Integration**: Coverage requirements, continuous validation
+- **Troubleshooting**: Common issues, debug mode, recovery commands
+- **Practical Examples**: Real-world usage scenarios with command examples
 
 ## 🔧 Configuration
 
-### Enhanced bacon.toml
+### `bacon.toml`
+Bacon reads `.bacon/bacon.toml` to configure the supervisor and agent routing.
+
 ```toml
+[workflow]
+stages = ["observer", "strategist", "coder", "auditor"]
+auto_approve = false
+fast_mode = false
+dry_run = false
+max_retries = 3
+timeout_seconds = 300
+
 [global]
 log_level = "info"
 max_concurrent_jobs = 3
-timeout_seconds = 300
 retry_attempts = 2
 
-[monitoring]
-enable_metrics = true
-metrics_file = ".bacon/sessions/metrics.json"
-log_file = ".bacon/sessions/bacon.log"
-max_log_size_mb = 100
+[monitoring.alerts]
+success_rate_below = 80
+avg_duration_above = 300
+error_rate_above = 20
+queue_depth_above = 10
+memory_usage_above = 2048
 
-[safety]
-enable_shadow_testing = true
-shadow_workspace_dir = "/tmp/norino_shadow_"
-max_shadow_age_hours = 24
-enable_rollback = true
-rollback_depth = 10
-enable_auto_apply = false
-require_full_check_for_auto_apply = true
-
-[ai_providers]
-gemini_model = "gemini-pro"
-codex_model = "codex-5.5"
-audit_model = "codex-5.4mini"
-request_timeout_seconds = 30
-max_tokens_per_request = 4000
-```
-
-## 🚦 Usage Examples
-
-### Basic Operations
-```bash
-# Start the autonomous system
-./.bacon/scripts/bacon-orchestrate.sh
-
-# Monitor status
-./.bacon/scripts/bacon-manager.ps1 -Action status
-
-# View recent activity
-./.bacon/scripts/bacon-manager.ps1 -Action logs
-
-# Cleanup old files
-./.bacon/scripts/bacon-manager.ps1 -Action cleanup
-
-# Validate and apply the newest approved patch
-./.bacon/scripts/bacon-apply-approved.sh --latest --run-check
-```
-
-### Auto-Apply Policy
-
-Auto-apply is allowed only when all of these are true:
-- `BACON_AUTO_APPLY=true`
-- `BACON_REQUIRE_FULL_CHECK=true`
-- `.\\check.ps1` exists and passes after applying the patch
-- the working tree is clean before applying
-
-If any condition fails, Bacon keeps the patch in `.bacon/sessions/approved_patches/` for manual review.
-
-### Advanced Configuration
-```bash
-# Custom cycle interval
-BACON_CYCLE_INTERVAL=30 ./bacon/scripts/bacon-orchestrate.sh
-
-# Debug mode
-BACON_LOG_LEVEL=debug ./bacon/scripts/bacon-orchestrate.sh
-
-# Limited run (100 cycles)
-BACON_MAX_CYCLES=100 ./bacon/scripts/bacon-orchestrate.sh
+[agents.observer]
+type = "local"
+provider = "ollama"
+model = "llama3.2:3b"
+temperature = 0.2
 ```
 
 ## 🔄 Agent Pipeline Flow
 
 ### 1. Observer Agent
-- **Input**: Raw compiler output (cargo clippy JSON)
-- **Processing**: Extract structured problems with context
-- **Output**: JSON problem brief with locations and categories
+- **Input**: Project directory tree and active specs.
+- **Processing**: Identifies the next actionable improvement or active spec.
+- **Output**: Plain-text description of the targeted improvement.
 
 ### 2. Strategy Agent
-- **Input**: Structured problem analysis
-- **Processing**: Analyze root causes, design solutions
-- **Output**: Technical specifications with priorities
+- **Input**: Problem description from the Observer.
+- **Processing**: Analyzes root causes and designs a step-by-step solution.
+- **Output**: Structured Markdown spec package stored in `docs/specs/_active/`.
 
 ### 3. Coder Agent
-- **Input**: Technical specifications
-- **Processing**: Generate minimal, audit-ready patches
-- **Output**: Git diff files with safety checks
+- **Input**: Markdown spec files (`plan.md`, `baseline.md`, etc.) and compiler errors (if retrying).
+- **Processing**: Modifies code via SEARCH/REPLACE blocks. Changes are automatically validated in a cloned temp worktree.
+- **Output**: Verified patches applied to the codebase.
 
 ### 4. Auditor Agent
-- **Input**: Code patches
-- **Processing**: Security, performance, and compatibility validation
-- **Output**: PASS/FAIL decision with detailed reasoning
+- **Input**: The implemented codebase diff and the original Spec.
+- **Processing**: Validates that all acceptance criteria are met and no out-of-scope logic was added.
+- **Output**: PASS (moves spec to `_done/`) or FAIL (leaves in `_active/` for human review).
 
 ## 🛠️ Development & Testing
 
 ### System Tests
 ```bash
-# Run comprehensive system tests
-./.bacon/scripts/bacon-manager.ps1 -Action test
+# Run comprehensive system tests via the PowerShell dashboard
+.\.bacon\scripts\bacon-manager.ps1 -Action test
 
-# Test individual components
-./.bacon/scripts/bacon-observer.sh test_input.json test_output.json
-./.bacon/scripts/bacon-strategist.sh test_problems.json strategy.json
-./.bacon/scripts/bacon-coder.sh strategy.json patch.diff
-./.bacon/scripts/bacon-auditor.sh patch.diff audit_result.json
+# Run the Rust-native supervisor test harness
+cargo run --bin bacon -- test
 ```
 
 ### Debug Mode
 ```bash
-# Enable verbose logging
-export BACON_LOG_LEVEL=debug
-
-# Run with detailed output
-./.bacon/scripts/bacon-orchestrate.sh 2>&1 | tee debug.log
+# Enable verbose logging through standard Rust RUST_LOG
+RUST_LOG=debug cargo run --bin bacon
 ```
-
-## 📈 Performance & Scalability
-
-### Optimized for Ryzen 9 7950X
-- **Async Execution**: Tokio-based concurrency
-- **Parallel Processing**: Multiple agent instances
-- **Resource Management**: Efficient memory and CPU usage
-- **Browser Scaling**: Support for 20+ concurrent sessions
-
-### Performance Metrics
-- **Startup Time**: <2 seconds including browser discovery
-- **Memory Footprint**: ~50-200 MB for full system
-- **Throughput**: ~50 tasks/sec with 20 sessions
-- **Latency**: <100ms for hotspot detection
 
 ## 🔒 Security Considerations
 
 ### Threat Model
-- **Code Injection**: Shadow workspace isolation prevents malicious code execution
-- **Data Leakage**: Strict browser context separation
-- **Supply Chain**: Minimal external dependencies, vetted AI providers
-- **Persistence**: No credential storage, environment-based configuration
+- **Code Injection**: Shadow workspace isolation prevents untested, hallucinated code execution on the main branch.
+- **Supply Chain**: Bacon utilizes local LLMs (like Ollama) preventing source code leakage to external third-party cloud APIs.
 
 ### Security Controls
-- **Input Validation**: All patches scanned for dangerous patterns
-- **Sandboxing**: Changes tested in isolated environments
-- **Audit Trail**: Complete logging of all autonomous actions
-- **Rollback**: Instant revert capability for any change
-
-## 🚨 Troubleshooting
-
-### Common Issues
-```bash
-# Check prerequisites
-./.bacon/scripts/bacon-manager.ps1 -Action test
-
-# View detailed logs
-./.bacon/scripts/bacon-manager.ps1 -Action logs
-
-# Clean up corrupted state
-./.bacon/scripts/bacon-manager.ps1 -Action cleanup
-
-# Reset runtime state
-rm -rf .bacon/sessions/* .bacon/test_runs/* && ./.bacon/scripts/bacon-manager.ps1 -Action test
-```
-
-### Health Monitoring
-```bash
-# System health check
-./.bacon/scripts/bacon-manager.ps1 -Action status
-
-# Performance metrics
-./.bacon/scripts/bacon-manager.ps1 -Action metrics
-
-# Active processes
-ps aux | grep bacon
-```
+- **Input Validation**: Code changes must match exact SEARCH/REPLACE blocks to apply.
+- **Sandboxing**: Changes are fundamentally tested in isolated temporary Git worktrees.
+- **Rollback**: Instant revert capability if validation tests (`check-fast.ps1`) fail during auto-apply.
+- **API Key Management**: Secure environment variable storage with rotation support.
+- **Sensitive Code Review**: Additional validation for security-critical paths.
+- **Rate Limiting**: Protection against API abuse for external LLM providers.
+- **Security Scanning**: Automatic security checks for sensitive code changes.
+- **Audit Trail**: Comprehensive logging of security-relevant actions.
 
 ## 📚 Version History
 
 ### v2.0 (Current)
-- Enhanced error handling and logging
-- Comprehensive security auditing
-- Shadow workspace safety mechanisms
-- PowerShell management dashboard
-- Metrics and monitoring system
-- Rollback and recovery capabilities
+- Complete rewrite moving orchestration to the native Rust `bacon` binary.
+- Removal of fragile bash scripts and unified diff requirements.
+- Implemented shadow workspace validation loop with LLM compilation error feedback.
+- Migrated code patching to robust SEARCH/REPLACE blocks.
+- PowerShell management dashboard available.
 
 ### v1.0 (Original)
-- Basic 4-agent pipeline
-- Simple shell script orchestration
-- Minimal configuration
+- Basic 4-agent pipeline.
+- Bash/script-based orchestration.
+- Required exact unified git diffs.
 
 ## 🤝 Contributing
 
 When modifying Bacon:
-1. **Test Thoroughly**: Run `bacon-manager.ps1 -Action test`
-2. **Security Review**: Ensure no fingerprinting or safety regressions
-3. **Documentation**: Update this README and role definitions
-4. **Backward Compatibility**: Maintain existing configuration format
+1. **Test Thoroughly**: Run `cargo run --bin bacon -- test`.
+2. **Security Review**: Ensure no safety regressions or bypassing of the Shadow Worktree gate.
+3. **Documentation**: Update this README and the Markdown role prompts in `.bacon/roles/`.
 
 ## 📄 License
 

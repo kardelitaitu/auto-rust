@@ -1,12 +1,25 @@
-# .bacon/bacon.toml - Enhanced configuration for autonomous coding
-# Supports environment variable overrides and expanded job definitions
+# .bacon/bacon.toml — Autonomous coding pipeline configuration
+#
+# Used sections:
+#   [pipeline]   — Agent routing for each pipeline stage
+#   [agents.*]   — LLM configuration per agent (local or external)
+#
+# The [jobs.*] sections below serve the `bacon` CI watcher tool (third-party),
+# not the autonomous pipeline. Preserved for CI usage.
 
-[global]
-# Global settings for all jobs
-log_level = "info"
-max_concurrent_jobs = 3
-timeout_seconds = 300
-retry_attempts = 2
+[pipeline]
+# Agent routing for each pipeline stage.
+# Values: "bacon" (NVIDIA, in-process) or another agent name
+# read from [agents.<name>].command_args.
+observer = "nvidia"
+strategist = "nvidia"
+coder = "nvidia"
+auditor = "nvidia"
+
+# ── CI watcher jobs (bacon CLI) ──────────────────────────────────
+# These job definitions are consumed by the external `bacon` CI
+# watcher tool, not by the autonomous pipeline. Preserved here
+# for workspace-aware CI workflows.
 
 [jobs.ai_obs]
 command = ["cargo", "clippy", "--message-format=json", "--", "-D", "warnings"]
@@ -43,59 +56,79 @@ need_stdout = true
 description = "Code formatting verification"
 timeout_seconds = 60
 
-[monitoring]
-# Metrics and monitoring configuration
-enable_metrics = true
-metrics_file = ".bacon/sessions/metrics.json"
-log_file = ".bacon/sessions/bacon.log"
-max_log_size_mb = 100
+# ── Agent LLM configuration ─────────────────────────────────────
+# Each [agents.<name>] section is read by PipelineConfig::agent_llm_config()
+# and run_external_agent() at runtime. Supports:
+#
+#   type         — "local" (in-process) or "external" (CLI worker)
+#   provider     — "ollama", "openai", "anthropic", "cli", or "nvidia"
+#   model        — Model name/ID
+#   temperature  — LLM temperature (0.0–1.0)
+#   command_args — CLI arguments with {prompt} and {role} placeholders
+#   api_key      — API key (supports {env:VAR_NAME} references)
+#   base_url     — API base URL
+#   top_p        — Nucleus sampling parameter
+#   max_tokens   — Maximum output tokens
 
-[safety]
-# Safety and rollback configuration
-enable_shadow_testing = true
-shadow_workspace_dir = "/tmp/norino_shadow_"
-max_shadow_age_hours = 24
-enable_rollback = true
-rollback_depth = 10
-enable_auto_apply = false
-require_full_check_for_auto_apply = true
-
-[pipeline]
-# Which agent tool handles each pipeline role.
-# Available: pi, codex, opencode, kilocode, gemini
-observer = "pi"
-strategist = "pi"
-coder = "pi"
-auditor = "pi"
-
-[agents]
-# Per-agent LLM configuration (provider + model)
-[agents.pi]
-provider = "openrouter"
-model = "anthropic/claude-sonnet-4"
+[agents.observer]
+type = "local"
+provider = "ollama"
+model = "llama3.2:3b"
 temperature = 0.2
 
+[agents.strategist]
+type = "local"
+provider = "ollama"
+model = "llama3.2:3b"
+temperature = 0.1  # Lower temperature for planning
+
+[agents.coder]
+type = "local"
+provider = "ollama"
+model = "llama3.2:3b"
+temperature = 0.3  # Higher temperature for creative coding
+
+[agents.auditor]
+type = "local"
+provider = "ollama"
+model = "llama3.2:3b"
+temperature = 0.1  # Lower temperature for review consistency
+
+# External agent workers (configured via command_args — the binary
+# is resolved from cargo build output or PATH).
 [agents.codex]
-provider = "openrouter"
-model = "anthropic/claude-sonnet-4"
-temperature = 0.1
+type = "external"
+provider = "cli"
+command_args = ["-p", "{prompt}", "--role", "{role}"]
 
-[agents.opencode]
-provider = "openrouter"
-model = "google/gemini-2.5-flash"
-temperature = 0.3
-
-[agents.kilo]
-provider = "ollama"
-model = "llama3.2:3b"
-temperature = 0.0
-
-[agents.bacon-ollama]
-provider = "ollama"
-model = "llama3.2:3b"
-temperature = 0.2
+[agents.kilocode]
+type = "external"
+provider = "cli"
+command_args = ["run", "{prompt}", "--role", "{role}"]
 
 [agents.gemini]
-provider = "openrouter"
-model = "google/gemini-2.5-flash"
-temperature = 0.2
+type = "external"
+provider = "cli"
+command_args = ["-p", "{prompt}", "--role", "{role}"]
+
+[agents.opencode]
+type = "external"
+provider = "cli"
+command_args = ["-p", "{prompt}", "--role", "{role}"]
+
+[agents.ollama_external]
+type = "external"
+provider = "cli"
+command_args = ["-p", "{prompt}", "--role", "{role}"]
+
+# NVIDIA agent — requires NVIDIA_API_KEY env var.
+[agents.nvidia]
+type = "external"
+provider = "nvidia"
+command_args = ["-p", "{prompt}", "--role", "{role}"]
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+model = "meta/llama-3.3-70b-instruct"
+temperature = 1.0
+top_p = 0.95
+max_tokens = 16384

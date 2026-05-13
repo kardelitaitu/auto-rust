@@ -61,11 +61,11 @@ fn test_variable_inheritance_via_parameters() {
                     let mut params = HashMap::new();
                     params.insert(
                         "parent_var".to_string(),
-                        serde_yaml::Value::String("from_parent".to_string()),
+                        serde_yml::Value::String("from_parent".to_string()),
                     );
                     params.insert(
                         "explicit_param".to_string(),
-                        serde_yaml::Value::String("explicit_value".to_string()),
+                        serde_yml::Value::String("explicit_value".to_string()),
                     );
                     params
                 }),
@@ -186,13 +186,10 @@ fn test_complex_parameter_passing() {
                     let mut params = HashMap::new();
                     params.insert(
                         "url".to_string(),
-                        serde_yaml::Value::String("https://api.example.com".to_string()),
+                        serde_yml::Value::String("https://api.example.com".to_string()),
                     );
-                    params.insert(
-                        "timeout".to_string(),
-                        serde_yaml::Value::Number(5000.into()),
-                    );
-                    params.insert("retry".to_string(), serde_yaml::Value::Bool(true));
+                    params.insert("timeout".to_string(), serde_yml::Value::Number(5000.into()));
+                    params.insert("retry".to_string(), serde_yml::Value::Bool(true));
                     params
                 }),
             },
@@ -208,13 +205,13 @@ fn test_complex_parameter_passing() {
 
             // Check URL parameter
             match &params.get("url").unwrap() {
-                serde_yaml::Value::String(s) => assert_eq!(s, "https://api.example.com"),
+                serde_yml::Value::String(s) => assert_eq!(s, "https://api.example.com"),
                 _ => panic!("Expected string URL"),
             }
 
             // Check timeout parameter
             match &params.get("timeout").unwrap() {
-                serde_yaml::Value::Number(n) => {
+                serde_yml::Value::Number(n) => {
                     assert_eq!(n.as_u64(), Some(5000));
                 }
                 _ => panic!("Expected number timeout"),
@@ -222,7 +219,7 @@ fn test_complex_parameter_passing() {
 
             // Check retry parameter
             match &params.get("retry").unwrap() {
-                serde_yaml::Value::Bool(b) => assert!(b),
+                serde_yml::Value::Bool(b) => assert!(b),
                 _ => panic!("Expected boolean retry"),
             }
         }
@@ -247,7 +244,7 @@ fn test_conditional_task_composition() {
                         let mut params = HashMap::new();
                         params.insert(
                             "flow".to_string(),
-                            serde_yaml::Value::String("oauth".to_string()),
+                            serde_yml::Value::String("oauth".to_string()),
                         );
                         params
                     }),
@@ -379,7 +376,7 @@ fn test_task_composition_error_handling_structure() {
                 task: "risky_task".to_string(),
                 parameters: Some({
                     let mut params = HashMap::new();
-                    params.insert("aggressive".to_string(), serde_yaml::Value::Bool(true));
+                    params.insert("aggressive".to_string(), serde_yml::Value::Bool(true));
                     params
                 }),
             }],
@@ -447,9 +444,9 @@ fn test_foreach_with_task_calls() {
             variable: "item".to_string(),
             collection: ForeachCollection::Array {
                 values: vec![
-                    serde_yaml::Value::String("a".to_string()),
-                    serde_yaml::Value::String("b".to_string()),
-                    serde_yaml::Value::String("c".to_string()),
+                    serde_yml::Value::String("a".to_string()),
+                    serde_yml::Value::String("b".to_string()),
+                    serde_yml::Value::String("c".to_string()),
                 ],
             },
             actions: vec![
@@ -463,7 +460,7 @@ fn test_foreach_with_task_calls() {
                         let mut params = HashMap::new();
                         params.insert(
                             "item_id".to_string(),
-                            serde_yaml::Value::String("{{item}}".to_string()),
+                            serde_yml::Value::String("{{item}}".to_string()),
                         );
                         params
                     }),
@@ -538,10 +535,7 @@ fn test_retry_with_task_calls() {
                 task: "flaky_task".to_string(),
                 parameters: Some({
                     let mut params = HashMap::new();
-                    params.insert(
-                        "timeout".to_string(),
-                        serde_yaml::Value::Number(5000.into()),
-                    );
+                    params.insert("timeout".to_string(), serde_yml::Value::Number(5000.into()));
                     params
                 }),
             }],

@@ -1,7 +1,21 @@
 # rust-orchestrator operating notes
-*Last updated: May 8, 2026*
+*Last updated: May 14, 2026*
 
 AGENTS.md is the router. Keep it short, stable, and direct readers to the right doc when a topic needs more depth.
+
+## Project state
+
+All **15 roadmap items (Phases 0–3)** are complete. The Bacon gated-LLM pipeline is production-ready:
+
+- **Shared core** (`src/bacon_core/`) — canonical types (`Stage`, `PipelineConfig`, `PipelineCtx`, `WorkerOutput`), `PipelineAgent` trait, `GitSnapshot` rollback, `spec_io` module
+- **Dual agent pipelines** (`pi`, `nvidia`) — thin wrappers around the shared core, each implementing `PipelineAgent`
+- **Spec-lint** ensures spec quality; `check-fast.ps1`/`check.ps1` verify code changes
+- **All 4 roles** (Observer, Strategist, Coder, Auditor) tested in contract tests
+- **Spec packages streamlined** to 6 files matching the template plus `baseline.md`
+- **Coder→Strategist fallback** loop — 3 scope reduction attempts, then writes failure report to `validation.md` and marks `needs-human-approval`
+- **Confidence scoring** standardized across all agents with metrics tracking
+
+See [docs/BACON_IMPROVEMENT_ROADMAP.md](docs/BACON_IMPROVEMENT_ROADMAP.md) for the full itemized completion status.
 
 ## Read first
 
@@ -52,7 +66,8 @@ Use for commands that produce output, or when indexing docs.
 ### Spec agent
 
 - Write the spec package from `docs/specs/_template/` before code changes.
-- Own planning docs only: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`.
+- Own planning docs only: `spec.yaml`, `plan.md`, `baseline.md`, `validation.md`, `notes.md`, `README.md`.
+- The strategist generates these 6 files automatically; handwritten specs should match.
 - Keep specs short, measurable, and easy to review.
 - `spec-lint.ps1` is system-owned. Only touch it for spec-system or tooling work.
 - Before handing a package to another agent, checkpoint the worktree with `.\\spec-stash.ps1`.

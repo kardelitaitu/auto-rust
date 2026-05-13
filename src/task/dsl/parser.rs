@@ -5,7 +5,7 @@
 //! - `validate_task_definition` - Validate a TaskDefinition for correctness
 
 use crate::task::dsl::{Action, TaskDefinition};
-use serde_yaml;
+use serde_yml;
 use std::path::Path;
 use toml;
 
@@ -24,7 +24,7 @@ pub fn parse_task_file<P: AsRef<Path>>(path: P) -> Result<TaskDefinition, String
         std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     // Try YAML first
-    match serde_yaml::from_str::<TaskDefinition>(&content) {
+    match serde_yml::from_str::<TaskDefinition>(&content) {
         Ok(task) => Ok(task),
         Err(yaml_err) => {
             // YAML failed, try TOML
@@ -198,7 +198,7 @@ pub fn validate_task_definition(task_def: &TaskDefinition) -> Result<(), Vec<Str
 /// * `Ok(TaskDefinition)` if parsing succeeds
 /// * `Err(String)` with error message if parsing fails
 pub fn parse_task_yaml(yaml: &str) -> Result<TaskDefinition, String> {
-    serde_yaml::from_str(yaml).map_err(|e| format!("Failed to parse YAML: {}", e))
+    serde_yml::from_str(yaml).map_err(|e| format!("Failed to parse YAML: {}", e))
 }
 
 /// Parse a TOML string into a TaskDefinition.

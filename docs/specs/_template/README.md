@@ -16,15 +16,13 @@ Explain the problem, why it matters, and the target outcome in one paragraph.
 
 ## Files
 
-- `spec.yaml`
-- `baseline.md`
-- `internal-api-outline.md`
-- `plan.md`
-- `validation-checklist.md`
-- `ci-commands.md`
-- `decisions.md`
-- `quality-rules.md`
-- `implementation-notes.md`
+This template contains 5 files. The strategist adds `baseline.md` during generation, for a total of 6 files in the final package:
+
+- `spec.yaml` — initiative metadata, acceptance criteria, risks
+- `plan.md` — step-by-step implementation plan
+- `validation.md` — how to verify the implementation
+- `notes.md` — design decisions, risks, context
+- `README.md` — this file, overview and rules
 
 ## Rules
 
@@ -32,7 +30,6 @@ Explain the problem, why it matters, and the target outcome in one paragraph.
 - Keep the spec short.
 - Put only approved specs in `_active/`.
 - Put only done specs in `_done/`.
-- Start `implementation-notes.md` empty.
 - Do not include `spec-lint.ps1` in a normal feature spec; it is read-only.
 - Before handing off to another agent, checkpoint the worktree with `.\spec-stash.ps1`.
 - Restore with `.\spec-restore.ps1` if the handoff breaks the tree.

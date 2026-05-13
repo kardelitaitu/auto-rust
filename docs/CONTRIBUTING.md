@@ -1,6 +1,6 @@
 # Contributing Guide
 
-last audited 08-05-26 by Kilo
+last audited 13-05-26 by Buffy
 
 Thank you for contributing to the Rust Orchestrator!
 
@@ -107,21 +107,28 @@ test: add integration test for graceful shutdown
 
 ```
 src/
-├── adaptive/     # Adaptive learning module
-├── api/          # API client
-├── benchmarks/   # Performance benchmarks
-├── capabilities/ # Task-facing actions (mouse, keyboard, scroll)
-├── cli/          # Command line interface
-├── config/       # Configuration loader
-├── internal/     # Framework helpers
-├── llm/          # LLM integration
-├── plugin/       # Plugin system
-├── runtime/      # Browser/session/page lifecycle
-├── session/      # Session management
-├── state/        # Session-scoped handles
-├── task/         # Automation tasks
-├── utils/        # Low-level utilities
-├── validation/   # Validation utilities
+├── adaptive/        # Adaptive learning module
+├── api/             # API client
+├── bacon_agent_*/   # LLM agent implementations (codex, gemini, kilocode, nvidia, ollama, opencode, pi)
+├── bacon_core/      # Shared pipeline types (Stage, Confidence, extract_confidence)
+├── benchmarks/      # Performance benchmarks
+├── bin/             # CLI binary entry points
+├── capabilities/    # Task-facing actions (mouse, keyboard, scroll)
+├── cli/             # Command line interface
+├── config/          # Configuration loader
+├── internal/        # Framework helpers
+├── llm/             # LLM integration
+├── metrics.rs       # Metrics collection and logging
+├── orchestrator.rs  # Main runtime orchestrator
+├── plugin/          # Plugin system
+├── runtime/         # Browser/session/page lifecycle
+├── session/         # Session management
+├── state/           # Session-scoped handles
+├── task/            # Automation tasks
+├── tests/           # Built-in test helpers
+├── tracing.rs       # Tracing/logging setup
+├── utils/           # Low-level utilities
+├── validation/      # Validation utilities
 └── ...
 ```
 

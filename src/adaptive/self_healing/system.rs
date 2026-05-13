@@ -110,3 +110,179 @@ impl Default for SelfHealingSystem {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // Construction Tests
+    // ========================================================================
+
+    #[test]
+    fn test_new_creates_healthy_system() {
+        let system = SelfHealingSystem::new();
+        assert_eq!(system.health_monitor.status, SystemHealth::Healthy);
+        assert!(system.failure_history.recent_failures.is_empty());
+        assert_eq!(system.recovery_state.mode, RecoveryMode::Normal);
+    }
+
+    #[test]
+    fn test_default_same_as_new() {
+        let system = SelfHealingSystem::default();
+        assert_eq!(system.health_monitor.status, SystemHealth::Healthy);
+    }
+
+    // ========================================================================
+    // check_health Tests
+    // ========================================================================
+
+    #[test]
+    fn test_check_health_healthy_when_few_failures() {
+        let mut system = SelfHealingSystem::new();
+        // Add 3 failures (under threshold of 5)
+        for i in 0..3 {
+            system
+                .failure_history
+                .recent_failures
+                .push_back(FailureRecord {
+                    id: format!("f{}", i),
+                    failure_type: FailureType::Unknown,
+                    timestamp: Instant::now(),
+                    error: "err".to_string(),
+                    recovery_time: Duration::from_secs(0),
+                });
+        }
+        let result = system.check_health();
+        assert_eq!(result.status, HealthCheckStatus::Passed);
+        assert_eq!(system.health_monitor.status, SystemHealth::Healthy);
+    }
+
+    #[test]
+    fn test_check_health_critical_when_many_failures() {
+        let mut system = SelfHealingSystem::new();
+        for i in 0..6 {
+            system
+                .failure_history
+                .recent_failures
+                .push_back(FailureRecord {
+                    id: format!("f{}", i),
+                    failure_type: FailureType::Unknown,
+                    timestamp: Instant::now(),
+                    error: "err".to_string(),
+                    recovery_time: Duration::from_secs(0),
+                });
+        }
+        let result = system.check_health();
+        assert_eq!(result.status, HealthCheckStatus::Failed);
+        assert_eq!(system.health_monitor.status, SystemHealth::Critical);
+    }
+
+    // ========================================================================
+    // detect_failure Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_failure_true_when_many_missing_buttons() {
+        let system = SelfHealingSystem::new();
+        let metrics = TwitterActivityRunCounters {
+            button_missing: 15,
+            ..Default::default()
+        };
+        assert!(system.detect_failure(&metrics));
+    }
+
+    #[test]
+    fn test_detect_failure_false_when_few_missing_buttons() {
+        let system = SelfHealingSystem::new();
+        let metrics = TwitterActivityRunCounters {
+            button_missing: 5,
+            ..Default::default()
+        };
+        assert!(!system.detect_failure(&metrics));
+    }
+
+    #[test]
+    fn test_detect_failure_threshold_boundary() {
+        let system = SelfHealingSystem::new();
+        // Exactly at threshold (10 is NOT > 10)
+        let metrics = TwitterActivityRunCounters {
+            button_missing: 10,
+            ..Default::default()
+        };
+        assert!(!system.detect_failure(&metrics));
+        // Just over threshold
+        let metrics = TwitterActivityRunCounters {
+            button_missing: 11,
+            ..Default::default()
+        };
+        assert!(system.detect_failure(&metrics));
+    }
+
+    // ========================================================================
+    // detect_and_recover Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_and_recover_triggers_recovery() {
+        let mut system = SelfHealingSystem::new();
+        let metrics = TwitterActivityRunCounters {
+            button_missing: 15,
+            ..Default::default()
+        };
+        let result = system.detect_and_recover(&metrics);
+        assert!(result.is_some());
+        let recovery = result.unwrap();
+        assert!(recovery.success);
+        assert_eq!(recovery.details, "Recovery executed successfully");
+    }
+
+    #[test]
+    fn test_detect_and_recover_returns_none_when_healthy() {
+        let mut system = SelfHealingSystem::new();
+        let metrics = TwitterActivityRunCounters::default();
+        assert!(system.detect_and_recover(&metrics).is_none());
+    }
+
+    // ========================================================================
+    // execute_recovery Tests
+    // ========================================================================
+
+    #[test]
+    fn test_execute_recovery_returns_success() {
+        let system = SelfHealingSystem::new();
+        let action = RecoveryActionType::RestartService;
+        let result = system.execute_recovery(&action);
+        assert!(result.success);
+        assert!(matches!(result.action, RecoveryActionType::RestartService));
+    }
+
+    // ========================================================================
+    // update_recovery_state Tests
+    // ========================================================================
+
+    #[test]
+    fn test_update_recovery_state_resets_failures() {
+        let mut system = SelfHealingSystem::new();
+        system.health_monitor.consecutive_failures = 10;
+        system.health_monitor.status = SystemHealth::Critical;
+
+        let result = RecoveryResult {
+            action: RecoveryActionType::RestartService,
+            success: true,
+            timestamp: Instant::now(),
+            details: "ok".to_string(),
+            health_impact: HealthImpact::default(),
+        };
+        system.update_recovery_state(&result);
+        assert_eq!(system.health_monitor.consecutive_failures, 0);
+        assert_eq!(system.health_monitor.status, SystemHealth::Healthy);
+        assert_eq!(system.failure_history.recent_failures.len(), 1);
+    }
+
+    #[test]
+    fn test_record_adaptation_does_not_panic() {
+        let mut system = SelfHealingSystem::new();
+        system.record_adaptation();
+    }
+}

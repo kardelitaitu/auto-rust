@@ -9,6 +9,221 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_task_definition_serialization() {
+        let task = TaskDefinition {
+            name: "test-task".to_string(),
+            description: "A test task".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 1000 }],
+        };
+
+        let json = serde_json::to_string(&task).unwrap();
+        let deserialized: TaskDefinition = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(task, deserialized);
+    }
+
+    #[test]
+    fn test_task_definition_defaults() {
+        let task = TaskDefinition {
+            name: "minimal".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![],
+        };
+
+        // Test that defaults work
+        assert_eq!(task.policy, "default");
+        assert!(task.parameters.is_empty());
+        assert!(task.include.is_empty());
+        assert!(task.actions.is_empty());
+    }
+
+    #[test]
+    fn test_include_spec_serialization() {
+        let include = IncludeSpec {
+            path: "other.task".to_string(),
+            condition: Some("env == 'test'".to_string()),
+        };
+
+        let json = serde_json::to_string(&include).unwrap();
+        let deserialized: IncludeSpec = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(include, deserialized);
+    }
+
+    #[test]
+    fn test_parameter_def_serialization() {
+        let param = ParameterDef {
+            r#type: ParameterType::String,
+            description: "A string parameter".to_string(),
+            default: Some(serde_yml::Value::String("default".to_string())),
+            required: false,
+        };
+
+        let json = serde_json::to_string(&param).unwrap();
+        let deserialized: ParameterDef = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(param, deserialized);
+    }
+
+    #[test]
+    fn test_action_variants() {
+        // Test that all action variants can be created and are distinct
+        let actions = vec![
+            Action::Navigate {
+                url: "https://example.com".to_string(),
+            },
+            Action::Click {
+                selector: "#btn".to_string(),
+            },
+            Action::Type {
+                selector: "#input".to_string(),
+                text: "hello".to_string(),
+            },
+            Action::Wait { duration_ms: 1000 },
+            Action::WaitFor {
+                selector: "#element".to_string(),
+                timeout_ms: Some(5000),
+            },
+            Action::ScrollTo {
+                selector: "#target".to_string(),
+            },
+            Action::Extract {
+                selector: "#text".to_string(),
+                variable: Some("content".to_string()),
+            },
+            Action::Execute {
+                script: "console.log('test')".to_string(),
+            },
+            Action::If {
+                condition: Condition::ElementVisible {
+                    selector: "#btn".to_string(),
+                },
+                then: vec![],
+                r#else: None,
+            },
+            Action::Loop {
+                count: Some(3),
+                condition: None,
+                actions: vec![],
+            },
+            Action::Call {
+                task: "other-task".to_string(),
+                parameters: None,
+            },
+            Action::Log {
+                message: "test".to_string(),
+                level: Some(LogLevel::Info),
+            },
+            Action::Screenshot {
+                path: Some("screenshot.png".to_string()),
+                selector: None,
+            },
+        ];
+
+        // Verify we have multiple distinct actions
+        assert!(actions.len() > 10);
+
+        // Test serialization of each
+        for action in actions {
+            let json = serde_json::to_string(&action).unwrap();
+            let deserialized: Action = serde_json::from_str(&json).unwrap();
+            assert_eq!(action, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_condition_serialization() {
+        let conditions = vec![
+            Condition::ElementExists {
+                selector: "#btn".to_string(),
+            },
+            Condition::ElementVisible {
+                selector: "#visible".to_string(),
+            },
+            Condition::TextEquals {
+                selector: "#status".to_string(),
+                value: "ready".to_string(),
+            },
+            Condition::TextMatches {
+                selector: "#msg".to_string(),
+                pattern: "success.*".to_string(),
+            },
+            Condition::VariableEquals {
+                name: "status".to_string(),
+                value: serde_yml::Value::String("ok".to_string()),
+            },
+            Condition::NumericGreaterThan {
+                name: "count".to_string(),
+                value: 5.0,
+            },
+            Condition::ArrayContains {
+                name: "items".to_string(),
+                value: serde_yml::Value::String("item1".to_string()),
+            },
+            Condition::ArrayLength {
+                name: "list".to_string(),
+                min: Some(1),
+                max: Some(10),
+                exact: None,
+            },
+            Condition::And {
+                conditions: vec![
+                    Condition::ElementVisible {
+                        selector: "#a".to_string(),
+                    },
+                    Condition::ElementVisible {
+                        selector: "#b".to_string(),
+                    },
+                ],
+            },
+            Condition::Or {
+                conditions: vec![
+                    Condition::ElementVisible {
+                        selector: "#a".to_string(),
+                    },
+                    Condition::ElementExists {
+                        selector: "#b".to_string(),
+                    },
+                ],
+            },
+        ];
+
+        for condition in conditions {
+            let json = serde_json::to_string(&condition).unwrap();
+            let deserialized: Condition = serde_json::from_str(&json).unwrap();
+            assert_eq!(condition, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_parameter_types() {
+        assert_eq!(ParameterType::String as u8, 0);
+        assert_eq!(ParameterType::Integer as u8, 1);
+        assert_eq!(ParameterType::Boolean as u8, 2);
+        assert_eq!(ParameterType::Url as u8, 3);
+        assert_eq!(ParameterType::Selector as u8, 4);
+    }
+
+    #[test]
+    fn test_log_level_variants() {
+        assert_eq!(LogLevel::Info as u8, 0);
+        assert_eq!(LogLevel::Debug as u8, 1);
+        assert_eq!(LogLevel::Warn as u8, 2);
+        assert_eq!(LogLevel::Error as u8, 3);
+    }
+}
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TaskDefinition {
     /// Task name (must be unique)
@@ -54,7 +269,7 @@ pub struct ParameterDef {
     #[serde(default)]
     pub description: String,
     /// Default value (optional)
-    pub default: Option<serde_yaml::Value>,
+    pub default: Option<serde_yml::Value>,
     /// Whether parameter is required
     #[serde(default)]
     pub required: bool,
@@ -113,7 +328,7 @@ pub enum Action {
     /// Call another task
     Call {
         task: String,
-        parameters: Option<HashMap<String, serde_yaml::Value>>,
+        parameters: Option<HashMap<String, serde_yml::Value>>,
     },
     /// Log a message
     Log {
@@ -205,7 +420,7 @@ pub enum Action {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ForeachCollection {
     /// Array of values to iterate over
-    Array { values: Vec<serde_yaml::Value> },
+    Array { values: Vec<serde_yml::Value> },
     /// Range of integers (inclusive start, exclusive end)
     Range { start: i64, end: i64 },
     /// DOM elements matching a selector
@@ -240,7 +455,7 @@ pub enum Condition {
     /// Check if variable equals value
     VariableEquals {
         name: String,
-        value: serde_yaml::Value,
+        value: serde_yml::Value,
     },
     /// Check if variable matches regex pattern
     VariableMatches { name: String, pattern: String },
@@ -265,7 +480,7 @@ pub enum Condition {
     /// Check if array variable contains a value
     ArrayContains {
         name: String,
-        value: serde_yaml::Value,
+        value: serde_yml::Value,
     },
     /// Check if array variable length matches
     ArrayLength {

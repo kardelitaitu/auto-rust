@@ -539,4 +539,40 @@ mod tests {
         let pruned = engine.prune_expired().unwrap();
         assert_eq!(pruned, 0); // Not pruned because no timestamp
     }
+
+    #[test]
+    fn test_learning_engine_empty_stats() {
+        let profile = create_test_profile();
+        let engine = LearningEngine::new("empty-test", &profile, true, 30);
+
+        // Should return default stats for unknown selectors
+        let stats = engine.selector_stats("unknown");
+        assert_eq!(stats.attempts, 0);
+        assert_eq!(stats.successes, 0);
+        assert_eq!(stats.consecutive_failures, 0);
+        assert!(stats.last_updated.is_none());
+    }
+
+    #[test]
+    fn test_learning_engine_zero_ttl_no_pruning() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("zero-ttl-test", &profile, true, 0); // 0 = never prune
+
+        // Add old stats
+        let old_date = Utc::now() - Duration::days(365 * 10); // Very old
+        engine.state.selectors.insert(
+            "ancient".to_string(),
+            SelectorLearningStats {
+                attempts: 100,
+                successes: 50,
+                consecutive_failures: 0,
+                last_updated: Some(old_date),
+            },
+        );
+
+        // Should not prune even very old data
+        let pruned = engine.prune_expired().unwrap();
+        assert_eq!(pruned, 0);
+        assert!(engine.state.selectors.contains_key("ancient"));
+    }
 }

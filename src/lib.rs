@@ -1,3 +1,9 @@
+/*
+last audited 08-05-25 by RSA-Agent
+crate: auto-rust | status: SAFE | lint: CLEAN
+findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
+*/
+
 //! Public browser automation framework surface.
 //!
 //! Task-api verbs live on `TaskContext` and follow the short `api.*`
@@ -17,9 +23,11 @@ pub mod api;
 pub mod bacon_agent_codex;
 pub mod bacon_agent_gemini;
 pub mod bacon_agent_kilocode;
+pub mod bacon_agent_nvidia;
 pub mod bacon_agent_ollama;
 pub mod bacon_agent_opencode;
 pub mod bacon_agent_pi;
+pub mod bacon_core;
 pub mod browser;
 pub mod capabilities;
 pub mod cli;

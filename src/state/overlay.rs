@@ -809,4 +809,67 @@ mod tests {
         // First claim should succeed (100 - 0 = 100 >= 50)
         assert!(state.claim_sync_slot(now_ms, false, min_interval_ms));
     }
+
+    #[test]
+    fn test_overlay_bind_unbind_cycle() {
+        let state = Arc::new(SessionOverlayState::new(true));
+        let page_id = "test-page-cycle";
+
+        // Initially no overlay
+        assert!(overlay_for_page(page_id).is_none());
+
+        // Bind overlay
+        bind_page_overlay(page_id.to_string(), state.clone());
+        assert!(overlay_for_page(page_id).is_some());
+
+        // Unbind overlay
+        unbind_page_overlay(page_id);
+        assert!(overlay_for_page(page_id).is_none());
+    }
+
+    #[test]
+    fn test_overlay_enable_disable_all() {
+        let state1 = Arc::new(SessionOverlayState::new(true));
+        let state2 = Arc::new(SessionOverlayState::new(false));
+
+        bind_page_overlay("page1-enable".to_string(), state1.clone());
+        bind_page_overlay("page2-enable".to_string(), state2.clone());
+
+        // Initially mixed
+        assert!(!are_all_overlays_enabled());
+
+        // Enable all
+        set_overlay_enabled_for_all(true);
+        assert!(are_all_overlays_enabled());
+
+        // Cleanup
+        unbind_page_overlay("page1-enable");
+        unbind_page_overlay("page2-enable");
+    }
+
+    #[test]
+    fn test_cursor_position_update() {
+        let state = SessionOverlayState::new(true);
+
+        // Initially no position
+        assert!(state.cursor_position_snapshot().is_none());
+
+        // Set position
+        state.set_cursor_position(100.0, 200.0);
+        assert_eq!(state.cursor_position_snapshot(), Some((100.0, 200.0)));
+    }
+
+    #[test]
+    fn test_cursor_start_position_center() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 1920.0,
+            height: 1080.0,
+        };
+
+        // Without stored position, should return center
+        let (x, y) = state.cursor_start_position(&viewport);
+        assert_eq!(x, 960.0);
+        assert_eq!(y, 540.0);
+    }
 }

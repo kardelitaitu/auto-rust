@@ -1,5 +1,5 @@
-use auto_rust::bacon_agent_opencode::cli::Args;
-use auto_rust::llm::Llm;
+use auto::bacon_agent_opencode::cli::Args;
+use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -8,7 +8,8 @@ async fn main() -> anyhow::Result<()> {
     }
     env_logger::init();
 
-    let args = <Args as clap::Parser>::parse();
-    let llm = Llm::new()?;
-    auto_rust::bacon_agent_opencode::run(&llm, &args.prompt, args.role.as_deref()).await
+    let args = Args::parse();
+    // Pure CLI tool - no LLM required
+    auto::bacon_agent_opencode::run(None, &args.prompt, args.role.as_deref(), args.dry_run).await?;
+    Ok(())
 }

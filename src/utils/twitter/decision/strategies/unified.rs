@@ -329,3 +329,316 @@ impl DecisionStrategyImpl for UnifiedStrategy {
         "unified"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
+
+    fn make_strategy() -> UnifiedStrategy {
+        UnifiedStrategy::new("test-key".to_string())
+    }
+
+    // ========================================================================
+    // UnifiedAnalysis Tests
+    // ========================================================================
+
+    #[test]
+    fn test_skip_creates_safe_decision() {
+        let analysis = UnifiedAnalysis::skip("tragedy detected");
+        assert!(!analysis.engage);
+        assert_eq!(analysis.score, 0);
+        assert_eq!(analysis.level, "Skip");
+        assert_eq!(analysis.reason, "tragedy detected");
+        assert!((analysis.confidence - 0.95).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_to_engagement_decision_full() {
+        let analysis = UnifiedAnalysis {
+            score: 85,
+            level: "Full".to_string(),
+            reason: "great".to_string(),
+            confidence: 0.9,
+            actions: "like".to_string(),
+            engage: true,
+            reply: None,
+        };
+        let decision = analysis.to_engagement_decision();
+        assert_eq!(decision.level, EngagementLevel::Full);
+        assert_eq!(decision.score, 85);
+        assert!((decision.multiplier - 1.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_to_engagement_decision_medium() {
+        let analysis = UnifiedAnalysis {
+            score: 55,
+            level: "Medium".to_string(),
+            reason: "ok".to_string(),
+            confidence: 0.7,
+            actions: "like".to_string(),
+            engage: true,
+            reply: None,
+        };
+        let decision = analysis.to_engagement_decision();
+        assert_eq!(decision.level, EngagementLevel::Medium);
+        assert!((decision.multiplier - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_to_engagement_decision_minimal() {
+        let analysis = UnifiedAnalysis {
+            score: 35,
+            level: "Minimal".to_string(),
+            reason: "low".to_string(),
+            confidence: 0.5,
+            actions: "none".to_string(),
+            engage: true,
+            reply: None,
+        };
+        let decision = analysis.to_engagement_decision();
+        assert_eq!(decision.level, EngagementLevel::Minimal);
+        assert!((decision.multiplier - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_to_engagement_decision_unknown_level_falls_to_none() {
+        let analysis = UnifiedAnalysis {
+            score: 0,
+            level: "Skip".to_string(),
+            reason: "skip".to_string(),
+            confidence: 0.95,
+            actions: "none".to_string(),
+            engage: false,
+            reply: None,
+        };
+        let decision = analysis.to_engagement_decision();
+        assert_eq!(decision.level, EngagementLevel::None);
+        assert!((decision.multiplier - 0.0).abs() < 0.01);
+    }
+
+    // ========================================================================
+    // is_topic_aligned Tests
+    // ========================================================================
+
+    #[test]
+    fn test_topic_aligned_ai() {
+        let s = make_strategy();
+        assert!(s.is_topic_aligned("AI is the future"));
+    }
+
+    #[test]
+    fn test_topic_aligned_code() {
+        let s = make_strategy();
+        assert!(s.is_topic_aligned("writing clean code"));
+    }
+
+    #[test]
+    fn test_topic_aligned_tech() {
+        let s = make_strategy();
+        assert!(s.is_topic_aligned("tech startup news"));
+    }
+
+    #[test]
+    fn test_topic_not_aligned() {
+        let s = make_strategy();
+        assert!(!s.is_topic_aligned("I like pizza"));
+    }
+
+    #[test]
+    fn test_topic_aligned_case_insensitive() {
+        let s = make_strategy();
+        assert!(s.is_topic_aligned("AI"));
+        assert!(s.is_topic_aligned("ai"));
+        assert!(s.is_topic_aligned("Dev tools"));
+    }
+
+    // ========================================================================
+    // infer_persona_tone Tests
+    // ========================================================================
+
+    #[test]
+    fn test_infer_tone_high_reply() {
+        let s = make_strategy();
+        let persona = PersonaWeights {
+            reply_prob: 0.8,
+            like_prob: 0.0,
+            ..Default::default()
+        };
+        let tone = s.infer_persona_tone(&persona);
+        assert!(tone.contains("Casual"));
+    }
+
+    #[test]
+    fn test_infer_tone_high_like_low_reply() {
+        let s = make_strategy();
+        let persona = PersonaWeights {
+            reply_prob: 0.0,
+            like_prob: 0.9,
+            ..Default::default()
+        };
+        let tone = s.infer_persona_tone(&persona);
+        assert!(tone.contains("Professional"));
+    }
+
+    #[test]
+    fn test_infer_tone_balanced() {
+        let s = make_strategy();
+        let persona = PersonaWeights {
+            reply_prob: 0.3,
+            like_prob: 0.5,
+            ..Default::default()
+        };
+        let tone = s.infer_persona_tone(&persona);
+        assert!(tone.contains("Balanced"));
+    }
+
+    #[test]
+    fn test_infer_tone_default() {
+        let s = make_strategy();
+        let persona = PersonaWeights::default();
+        let tone = s.infer_persona_tone(&persona);
+        assert!(tone.contains("Balanced"));
+    }
+
+    // ========================================================================
+    // check_safety Tests
+    // ========================================================================
+
+    #[test]
+    fn test_check_safety_tragedy() {
+        let s = make_strategy();
+        let ctx = TweetContext {
+            tweet_id: "1".to_string(),
+            text: "He died yesterday".to_string(),
+            author: "user".to_string(),
+            replies: vec![],
+            persona: PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "".to_string(),
+            topic_alignment: "".to_string(),
+        };
+        assert!(s.check_safety(&ctx).is_some());
+        assert!(s.check_safety(&ctx).unwrap().contains("tragedy"));
+    }
+
+    #[test]
+    fn test_check_safety_crypto_scam() {
+        let s = make_strategy();
+        let ctx = TweetContext {
+            tweet_id: "1".to_string(),
+            text: "guaranteed profit dm me".to_string(),
+            author: "user".to_string(),
+            replies: vec![],
+            persona: PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "".to_string(),
+            topic_alignment: "".to_string(),
+        };
+        assert!(s.check_safety(&ctx).is_some());
+        assert!(s.check_safety(&ctx).unwrap().contains("crypto scam"));
+    }
+
+    #[test]
+    fn test_check_safety_excessive_hashtags() {
+        let s = make_strategy();
+        let ctx = TweetContext {
+            tweet_id: "1".to_string(),
+            text: "#a #b #c #d #e #f #g".to_string(),
+            author: "user".to_string(),
+            replies: vec![],
+            persona: PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "".to_string(),
+            topic_alignment: "".to_string(),
+        };
+        assert!(s.check_safety(&ctx).is_some());
+        assert!(s.check_safety(&ctx).unwrap().contains("hashtags"));
+    }
+
+    #[test]
+    fn test_check_safety_safe_content() {
+        let s = make_strategy();
+        let ctx = TweetContext {
+            tweet_id: "1".to_string(),
+            text: "I like programming in Rust".to_string(),
+            author: "user".to_string(),
+            replies: vec![],
+            persona: PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "".to_string(),
+            topic_alignment: "".to_string(),
+        };
+        assert!(s.check_safety(&ctx).is_none());
+    }
+
+    #[test]
+    fn test_check_safety_checks_replies_too() {
+        let s = make_strategy();
+        let ctx = TweetContext {
+            tweet_id: "1".to_string(),
+            text: "some innocent text".to_string(),
+            author: "user".to_string(),
+            replies: vec!["he passed away".to_string()],
+            persona: PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "".to_string(),
+            topic_alignment: "".to_string(),
+        };
+        assert!(s.check_safety(&ctx).is_some());
+    }
+
+    #[test]
+    fn test_check_safety_few_hashtags_ok() {
+        let s = make_strategy();
+        let ctx = TweetContext {
+            tweet_id: "1".to_string(),
+            text: "#rust #programming".to_string(),
+            author: "user".to_string(),
+            replies: vec![],
+            persona: PersonaWeights::default(),
+            task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
+            tweet_age: "".to_string(),
+            topic_alignment: "".to_string(),
+        };
+        assert!(s.check_safety(&ctx).is_none());
+    }
+
+    // ========================================================================
+    // UnifiedStrategy Tests
+    // ========================================================================
+
+    #[test]
+    fn test_strategy_type() {
+        let s = make_strategy();
+        assert_eq!(s.strategy_type(), DecisionStrategy::Unified);
+    }
+
+    #[test]
+    fn test_name() {
+        let s = make_strategy();
+        assert_eq!(s.name(), "unified");
+    }
+
+    #[test]
+    fn test_is_available_with_key() {
+        let s = make_strategy();
+        assert!(s.is_available());
+    }
+
+    #[test]
+    fn test_is_available_without_key() {
+        let s = UnifiedStrategy::new(String::new());
+        assert!(!s.is_available());
+    }
+
+    #[test]
+    fn test_new_sets_defaults() {
+        let s = UnifiedStrategy::new("key".to_string());
+        assert_eq!(s.model, "qwen-turbo");
+        assert_eq!(s.timeout_ms, 5000);
+        assert!(s.api_url.contains("dashscope-intl"));
+        assert_eq!(s.api_key, "key");
+    }
+}

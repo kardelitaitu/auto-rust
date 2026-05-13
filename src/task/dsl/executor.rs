@@ -131,14 +131,14 @@ impl<'a> DslExecutor<'a> {
     }
 
     /// Set initial parameters from CLI payload.
-    pub fn with_parameters(mut self, payload: &serde_yaml::Value) -> Self {
+    pub fn with_parameters(mut self, payload: &serde_yml::Value) -> Self {
         if let Some(obj) = payload.as_mapping() {
             for (key, value) in obj {
                 let key_str = key.as_str().unwrap_or_default().to_string();
                 let value_str = match value {
-                    serde_yaml::Value::String(s) => s.clone(),
-                    serde_yaml::Value::Number(n) => n.to_string(),
-                    serde_yaml::Value::Bool(b) => b.to_string(),
+                    serde_yml::Value::String(s) => s.clone(),
+                    serde_yml::Value::Number(n) => n.to_string(),
+                    serde_yml::Value::Bool(b) => b.to_string(),
                     _ => format!("{:?}", value),
                 };
                 log::debug!("Set parameter '{}': {}", key_str, value_str);
@@ -713,7 +713,7 @@ impl<'a> DslExecutor<'a> {
     pub(super) async fn execute_call(
         &mut self,
         task_name: &str,
-        parameters: Option<&HashMap<String, serde_yaml::Value>>,
+        parameters: Option<&HashMap<String, serde_yml::Value>>,
     ) -> Result<()> {
         // Check recursion depth
         if self.call_depth >= MAX_CALL_DEPTH {
@@ -740,10 +740,10 @@ impl<'a> DslExecutor<'a> {
 
         // Apply parameter overrides if provided
         if let Some(params) = parameters {
-            called_executor = called_executor.with_parameters(&serde_yaml::Value::Mapping(
+            called_executor = called_executor.with_parameters(&serde_yml::Value::Mapping(
                 params
                     .iter()
-                    .map(|(k, v)| (serde_yaml::Value::String(k.clone()), v.clone()))
+                    .map(|(k, v)| (serde_yml::Value::String(k.clone()), v.clone()))
                     .collect(),
             ));
         }

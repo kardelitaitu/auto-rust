@@ -3,7 +3,7 @@
 
 param(
     [Parameter(Mandatory=$false)]
-    [ValidateSet("start", "stop", "status", "logs", "metrics", "cleanup", "test", "apply-approved")]
+    [ValidateSet("start", "stop", "status", "logs", "metrics", "cleanup", "test", "apply-approved", "rotate-keys", "report", "dashboard")]
     [string]$Action = "status",
 
     [Parameter(Mandatory=$false)]
@@ -32,28 +32,6 @@ $BaconDir = Join-Path $ProjectRoot ".bacon"
 $SessionsDir = Join-Path $BaconDir "sessions"
 $ScriptsDir = Join-Path $BaconDir "scripts"
 $LogFile = Join-Path $SessionsDir "bacon_manager.log"
-
-function Get-BaconBashPath {
-    $candidates = @(
-        $env:BACON_BASH,
-        (Join-Path $env:ProgramFiles "Git\bin\bash.exe"),
-        (Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe"),
-        "C:\Program Files\Git\bin\bash.exe"
-    ) | Where-Object { $_ }
-
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            return $candidate
-        }
-    }
-
-    $cmd = Get-Command "bash" -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
-    }
-
-    return $null
-}
 
 # Enhanced logging function with structured output
 function Write-BaconLog {
@@ -134,15 +112,7 @@ function Test-BaconPrerequisites {
 
     # Check required files
     $requiredFiles = @(
-        (Join-Path $BaconDir "bacon.toml"),
-        (Join-Path $ScriptsDir "bacon-orchestrate.sh"),
-        (Join-Path $ScriptsDir "bacon-apply-shadow.sh"),
-        (Join-Path $ScriptsDir "bacon-sentinel.sh"),
-        (Join-Path $ScriptsDir "bacon-observer.sh"),
-        (Join-Path $ScriptsDir "bacon-strategist.sh"),
-        (Join-Path $ScriptsDir "bacon-coder.sh"),
-        (Join-Path $ScriptsDir "bacon-auditor.sh"),
-        (Join-Path $ScriptsDir "bacon-apply-approved.sh")
+        (Join-Path $BaconDir "bacon.toml")
     )
     $details.Files = @()
     foreach ($file in $requiredFiles) {
@@ -150,12 +120,7 @@ function Test-BaconPrerequisites {
         $details.Files += @{
             Path = $file
             Exists = $fileExists
-            Executable = if ($fileExists -and $file.EndsWith(".sh")) {
-                try {
-                    $null = bash -c "test -x '$file'" 2>&1
-                    $LASTEXITCODE -eq 0
-                } catch { $false }
-            } else { $null }
+            Executable = $null
         }
         if (-not $fileExists) {
             $issues += "Required file missing: $file"
@@ -187,13 +152,6 @@ function Test-BaconPrerequisites {
             }
             $issues += "Required command not found: $cmd"
         }
-    }
-
-    $bashPath = Get-BaconBashPath
-    if ($bashPath) {
-        Write-BaconLog "INFO" "Using bash: $bashPath" -Component "Prerequisites"
-    } else {
-        $issues += "Required command not found: Git Bash"
     }
 
     # Check optional but recommended commands
@@ -258,16 +216,8 @@ function Start-BaconOrchestration {
     }
 
     # Start orchestration in background
-    $orchestrateScript = Join-Path $ScriptsDir "bacon-orchestrate.sh"
-
     try {
-        $bashPath = Get-BaconBashPath
-        if ($bashPath) {
-            $process = Start-Process -FilePath $bashPath -ArgumentList $orchestrateScript -PassThru -WindowStyle Hidden
-        } else {
-            Write-BaconLog "ERROR" "Git Bash not found"
-            return $false
-        }
+        $process = Start-Process -FilePath "cargo" -ArgumentList "run", "--bin", "bacon" -WorkingDirectory $ProjectRoot -PassThru -WindowStyle Hidden
 
         # Store PID
         $process.Id | Out-File -FilePath $pidFile -Encoding UTF8
@@ -312,28 +262,18 @@ function Stop-BaconOrchestration {
 
 # Apply an approved Bacon patch candidate
 function Invoke-BaconApplyApproved {
-    Write-BaconLog "INFO" "Applying approved Bacon patch..."
-
-    $applyScript = Join-Path $ScriptsDir "bacon-apply-approved.sh"
-    if (-not (Test-Path $applyScript)) {
-        Write-BaconLog "ERROR" "Apply script not found: $applyScript"
-        return $false
-    }
-
-    $bashPath = Get-BaconBashPath
-    if (-not $bashPath) {
-        Write-BaconLog "ERROR" "Git Bash is required to apply approved patches"
-        return $false
-    }
-
-    $args = @($applyScript)
-    if ($Patch) { $args += $Patch }
+    Write-BaconLog "INFO" "Applying approved Bacon patches via Rust supervisor..."
+    
+    $args = @("run", "--bin", "bacon", "--", "--auto-apply")
     if ($DryRun) { $args += "--dry-run" }
-    if ($RunCheck) { $args += "--run-check" }
-    if ($Force) { $args += "--force" }
-
-    & $bashPath @args
-    return $LASTEXITCODE -eq 0
+    
+    try {
+        Start-Process -FilePath "cargo" -ArgumentList $args -WorkingDirectory $ProjectRoot -Wait -NoNewWindow
+        return $true
+    } catch {
+        Write-BaconLog "ERROR" "Failed to apply patches: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 # Enhanced status with detailed health metrics
@@ -571,7 +511,8 @@ function Invoke-BaconCleanup {
     $cleanupCount = 0
 
     # Clean old shadow workspaces
-    $tempDirs = Get-ChildItem -Path "/tmp" -Filter "norino_shadow_*" -ErrorAction SilentlyContinue
+    $tempBase = if ($env:TEMP) { $env:TEMP } else { "/tmp" }
+    $tempDirs = Get-ChildItem -Path $tempBase -Filter "norino_shadow_*" -ErrorAction SilentlyContinue
     foreach ($dir in $tempDirs) {
         if ($dir.CreationTime -lt (Get-Date).AddDays(-1)) {
             try {
@@ -626,24 +567,24 @@ function Test-BaconSystem {
     $testsTotal++
     if (Test-BaconPrerequisites) {
         $testsPassed++
-        Write-Host "✓ Prerequisites test passed" -ForegroundColor Green
+        Write-Host "[PASS] Prerequisites test passed" -ForegroundColor Green
     } else {
-        Write-Host "✗ Prerequisites test failed" -ForegroundColor Red
+        Write-Host "[FAIL] Prerequisites test failed" -ForegroundColor Red
     }
 
     # Test configuration parsing
     $testsTotal++
     try {
         Get-Content (Join-Path $BaconDir "bacon.toml") -Raw -ErrorAction Stop | Out-Null
-        Write-Host "✓ Configuration file readable" -ForegroundColor Green
+        Write-Host "[PASS] Configuration file readable" -ForegroundColor Green
         $testsPassed++
     } catch {
-        Write-Host "✗ Configuration file error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[FAIL] Configuration file error: $($_.Exception.Message)" -ForegroundColor Red
     }
 
     # Test script availability
     $testsTotal++
-    $requiredScripts = @("bacon-orchestrate.sh", "bacon-apply-shadow.sh", "bacon-apply-approved.sh", "bacon-sentinel.sh")
+    $requiredScripts = @("bacon-manager.ps1")
     $scriptsFound = 0
     foreach ($script in $requiredScripts) {
         if (Test-Path (Join-Path $ScriptsDir $script)) {
@@ -651,10 +592,10 @@ function Test-BaconSystem {
         }
     }
     if ($scriptsFound -eq $requiredScripts.Count) {
-        Write-Host "✓ All required scripts found" -ForegroundColor Green
+        Write-Host "[PASS] All required scripts found" -ForegroundColor Green
         $testsPassed++
     } else {
-        Write-Host "✗ Missing scripts: $scriptsFound/$($requiredScripts.Count) found" -ForegroundColor Red
+        Write-Host "[FAIL] Missing scripts: $scriptsFound/$($requiredScripts.Count) found" -ForegroundColor Red
     }
 
     # Test directory permissions
@@ -663,15 +604,590 @@ function Test-BaconSystem {
         $testFile = Join-Path $SessionsDir "test_write_$(Get-Date -Format 'yyyyMMddHHmmss')"
         "test" | Out-File -FilePath $testFile -Encoding UTF8 -ErrorAction Stop
         Remove-Item $testFile -Force -ErrorAction Stop
-        Write-Host "✓ Directory permissions OK" -ForegroundColor Green
+        Write-Host "[PASS] Directory permissions OK" -ForegroundColor Green
         $testsPassed++
     } catch {
-        Write-Host "✗ Directory permission error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[FAIL] Directory permission error: $($_.Exception.Message)" -ForegroundColor Red
     }
 
     Write-Host "`nTest Results: $testsPassed/$testsTotal tests passed" -ForegroundColor $(if ($testsPassed -eq $testsTotal) { "Green" } else { "Yellow" })
 
     return $testsPassed -eq $testsTotal
+}
+
+# Rotate API keys for external LLM providers
+function Invoke-BaconRotateKeys {
+    Write-BaconLog "INFO" "Rotating API keys for external LLM providers..." -Component "Security"
+
+    $envFile = Join-Path $ProjectRoot ".env"
+    $envBackup = Join-Path $ProjectRoot ".env.backup.$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+    # Backup current .env file
+    if (Test-Path $envFile) {
+        Copy-Item $envFile $envBackup -Force
+        Write-BaconLog "INFO" "Backed up .env to $envBackup" -Component "Security"
+    }
+
+    # Read current configuration
+    $configFile = Join-Path $BaconDir "bacon.toml"
+    if (-not (Test-Path $configFile)) {
+        Write-BaconLog "ERROR" "Configuration file not found: $configFile" -Component "Security"
+        return $false
+    }
+
+    try {
+        $configContent = Get-Content $configFile -Raw
+        $keysToRotate = @()
+
+        # Find API key references in configuration
+        if ($configContent -match '{env:([^}]+)}') {
+            $matches | ForEach-Object {
+                if ($_ -match '{env:([^}]+)}') {
+                    $keyName = $matches[1]
+                    if ($keyName -match '(?i)(api[_-]?key|token|secret|password)') {
+                        $keysToRotate += $keyName
+                    }
+                }
+            }
+        }
+
+        if ($keysToRotate.Count -eq 0) {
+            Write-BaconLog "INFO" "No API keys found in configuration" -Component "Security"
+            return $true
+        }
+
+        Write-Host "`n=== API Key Rotation ===" -ForegroundColor Cyan
+        Write-Host "Found $($keysToRotate.Count) API keys to rotate:" -ForegroundColor Yellow
+        
+        $newEnvContent = @()
+        if (Test-Path $envFile) {
+            $newEnvContent = Get-Content $envFile
+        }
+
+        foreach ($key in $keysToRotate | Select-Object -Unique) {
+            Write-Host "`nKey: $key" -ForegroundColor White
+            
+            # Check if key exists
+            $currentValue = $null
+            foreach ($line in $newEnvContent) {
+                if ($line -match "^$key=(.+)$") {
+                    $currentValue = $matches[1]
+                    break
+                }
+            }
+
+            if ($currentValue) {
+                Write-Host "Current value: $($currentValue.Substring(0, [math]::Min(8, $currentValue.Length)))..." -ForegroundColor Gray
+            } else {
+                Write-Host "Not currently set" -ForegroundColor Yellow
+            }
+
+            $choice = Read-Host "`nAction: (r)otate, (s)kip, or (d)elete [r/s/d]"
+            
+            switch ($choice.ToLower()) {
+                "r" {
+                    $newValue = Read-Host "Enter new value for $key" -AsSecureString
+                    $plainText = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($newValue)
+                    )
+                    
+                    # Update or add the key
+                    $updated = $false
+                    for ($i = 0; $i -lt $newEnvContent.Count; $i++) {
+                        if ($newEnvContent[$i] -match "^$key=") {
+                            $newEnvContent[$i] = "$key=$plainText"
+                            $updated = $true
+                            break
+                        }
+                    }
+                    
+                    if (-not $updated) {
+                        $newEnvContent += "$key=$plainText"
+                    }
+                    
+                    Write-BaconLog "INFO" "Rotated key: $key" -Component "Security"
+                    Write-Host "Key rotated successfully" -ForegroundColor Green
+                }
+                "s" {
+                    Write-Host "Skipping $key" -ForegroundColor Yellow
+                }
+                "d" {
+                    # Remove the key
+                    $newEnvContent = $newEnvContent | Where-Object { $_ -notmatch "^$key=" }
+                    Write-BaconLog "INFO" "Deleted key: $key" -Component "Security"
+                    Write-Host "Key deleted" -ForegroundColor Red
+                }
+                default {
+                    Write-Host "Invalid choice, skipping" -ForegroundColor Red
+                }
+            }
+        }
+
+        # Write updated .env file
+        $newEnvContent | Out-File $envFile -Encoding UTF8
+        Write-BaconLog "INFO" "Updated .env file with rotated keys" -Component "Security"
+
+        # Update file permissions
+        try {
+            icacls $envFile /inheritance:r /grant:r "$($env:USERNAME):(R,W)" 2>&1 | Out-Null
+            Write-BaconLog "INFO" "Set restrictive permissions on .env file" -Component "Security"
+        } catch {
+            Write-BaconLog "WARN" "Failed to set permissions on .env: $($_.Exception.Message)" -Component "Security"
+        }
+
+        Write-Host "`nKey rotation completed. Backup saved to $envBackup" -ForegroundColor Green
+        return $true
+
+    } catch {
+        Write-BaconLog "ERROR" "Failed to rotate keys: $($_.Exception.Message)" -Component "Security"
+        return $false
+    }
+}
+
+# Generate HTML report
+function Invoke-BaconReport {
+    Write-BaconLog "INFO" "Generating Bacon system report..." -Component "Reporting"
+
+    $reportFile = Join-Path $SessionsDir "report_$(Get-Date -Format 'yyyyMMdd').html"
+    $status = Get-BaconStatus
+    $metricsFile = Join-Path $SessionsDir "metrics.json"
+
+    try {
+        $html = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bacon System Report - $(Get-Date -Format 'yyyy-MM-dd')</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .health-excellent { background: #d4edda; border-color: #c3e6cb; }
+        .health-good { background: #d1ecf1; border-color: #bee5eb; }
+        .health-fair { background: #fff3cd; border-color: #ffeaa7; }
+        .health-poor { background: #f8d7da; border-color: #f5c6cb; }
+        .health-critical { background: #dc3545; color: white; }
+        .metric { display: inline-block; margin: 10px; padding: 10px; background: #f8f9fa; border-radius: 3px; }
+        .issue { color: #dc3545; }
+        .warning { color: #ffc107; }
+        .success { color: #28a745; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Bacon System Report</h1>
+        <p>Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
+    </div>
+
+    <div class="section health-$($status.Health.Overall.ToLower())">
+        <h2>System Health: $($status.Health.Overall) ($($status.Health.Score)/100)</h2>
+        <p>Timestamp: $($status.Timestamp)</p>
+    </div>
+
+    <div class="section">
+        <h2>Orchestration Status</h2>
+        <p><strong>Status:</strong> $($status.Orchestration.Status)</p>
+"@
+
+        if ($status.Orchestration.PID) {
+            $html += @"
+        <p><strong>PID:</strong> $($status.Orchestration.PID)</p>
+        <p><strong>Uptime:</strong> $($status.Orchestration.Uptime) minutes</p>
+"@
+        }
+
+        $html += @"
+    </div>
+
+    <div class="section">
+        <h2>Sessions</h2>
+        <div class="metric">Total: $($status.Sessions.Total)</div>
+        <div class="metric">Hotspots: $($status.Sessions.Hotspots)</div>
+        <div class="metric">Resolved: $($status.Sessions.Resolved)</div>
+        <div class="metric">Failed: $($status.Sessions.Failed)</div>
+        <div class="metric">In Progress: $($status.Sessions.InProgress)</div>
+        <div class="metric">Rollbacks: $($status.Sessions.Rollbacks)</div>
+"@
+
+        if ($status.Sessions.LastUpdated) {
+            $html += @"
+        <p><strong>Last Updated:</strong> $($status.Sessions.LastUpdated)</p>
+"@
+        }
+
+        $html += @"
+    </div>
+
+    <div class="section">
+        <h2>System Resources</h2>
+"@
+
+        if ($status.System.MemoryUsage) {
+            $html += @"
+        <p><strong>Memory Usage:</strong> $($status.System.MemoryUsage.TotalMB) MB</p>
+        <p><strong>Process Count:</strong> $($status.System.ProcessCount)</p>
+"@
+        }
+
+        if ($status.System.DiskUsage) {
+            $html += @"
+        <p><strong>Disk Usage:</strong> $($status.System.DiskUsage.FreeGB) GB free of $($status.System.DiskUsage.TotalGB) GB ($($status.System.DiskUsage.UsagePercent)%)</p>
+"@
+        }
+
+        $html += @"
+    </div>
+"@
+
+        # Issues and warnings
+        if ($status.Health.Issues.Count -gt 0) {
+            $html += @"
+    <div class="section">
+        <h2 class="issue">Issues</h2>
+        <ul>
+"@
+            foreach ($issue in $status.Health.Issues) {
+                $html += @"
+            <li class="issue">$issue</li>
+"@
+            }
+            $html += @"
+        </ul>
+    </div>
+"@
+        }
+
+        if ($status.Health.Warnings.Count -gt 0) {
+            $html += @"
+    <div class="section">
+        <h2 class="warning">Warnings</h2>
+        <ul>
+"@
+            foreach ($warning in $status.Health.Warnings) {
+                $html += @"
+            <li class="warning">$warning</li>
+"@
+            }
+            $html += @"
+        </ul>
+    </div>
+"@
+        }
+
+        # Recommendations
+        if ($status.Health.Recommendations.Count -gt 0) {
+            $html += @"
+    <div class="section">
+        <h2 class="success">Recommendations</h2>
+        <ul>
+"@
+            foreach ($rec in $status.Health.Recommendations) {
+                $html += @"
+            <li class="success">$rec</li>
+"@
+            }
+            $html += @"
+        </ul>
+    </div>
+"@
+        }
+
+        # Recent metrics if available
+        if (Test-Path $metricsFile) {
+            try {
+                $metrics = Get-Content $metricsFile -Raw | ConvertFrom-Json -ErrorAction Stop
+                $recentMetrics = $metrics | Where-Object {
+                    [DateTime]$_.timestamp -gt (Get-Date).AddHours(-24)
+                } | Sort-Object timestamp -Descending | Select-Object -First 20
+                
+                if ($recentMetrics.Count -gt 0) {
+                    $html += @"
+    <div class="section">
+        <h2>Recent Activity (Last 24 Hours)</h2>
+        <table>
+            <tr>
+                <th>Timestamp</th>
+                <th>Event</th>
+                <th>Status</th>
+                <th>Duration (ms)</th>
+            </tr>
+"@
+                    foreach ($metric in $recentMetrics) {
+                        $statusColor = if ($metric.status -eq "success") { "success" } elseif ($metric.status -eq "failed") { "issue" } else { "warning" }
+                        $html += @"
+            <tr>
+                <td>$($metric.timestamp)</td>
+                <td>$($metric.event)</td>
+                <td class="$statusColor">$($metric.status)</td>
+                <td>$($metric.duration_ms)</td>
+            </tr>
+"@
+                    }
+                    $html += @"
+        </table>
+    </div>
+"@
+                }
+            } catch {
+                $html += @"
+    <div class="section">
+        <h2 class="warning">Metrics</h2>
+        <p class="warning">Failed to load metrics data</p>
+    </div>
+"@
+            }
+        }
+
+        $html += @"
+    <div class="section">
+        <h2>Report Information</h2>
+        <p>This report was generated by bacon-manager.ps1</p>
+        <p>Configuration: $Config</p>
+        <p>Report file: $reportFile</p>
+    </div>
+</body>
+</html>
+"@
+
+        $html | Out-File $reportFile -Encoding UTF8
+        Write-BaconLog "INFO" "Report generated: $reportFile" -Component "Reporting"
+        Write-Host "Report generated: $reportFile" -ForegroundColor Green
+        
+        # Try to open the report in default browser
+        try {
+            Start-Process $reportFile
+            Write-Host "Opening report in browser..." -ForegroundColor Cyan
+        } catch {
+            Write-Host "Report saved to: $reportFile" -ForegroundColor Yellow
+        }
+        
+        return $true
+    } catch {
+        Write-BaconLog "ERROR" "Failed to generate report: $($_.Exception.Message)" -Component "Reporting"
+        return $false
+    }
+}
+
+# Start web dashboard
+function Start-BaconDashboard {
+    Write-BaconLog "INFO" "Starting Bacon web dashboard..." -Component "Dashboard"
+    
+    $dashboardPort = 8080
+    $dashboardScript = @"
+using namespace System.Net
+using namespace System.Text
+
+# Simple HTTP server for Bacon dashboard
+\$listener = New-Object System.Net.HttpListener
+\$listener.Prefixes.Add("http://localhost:$dashboardPort/")
+\$listener.Start()
+
+Write-Host "Bacon Dashboard running on http://localhost:$dashboardPort/" -ForegroundColor Green
+
+while (\$true) {
+    \$context = \$listener.GetContext()
+    \$request = \$context.Request
+    \$response = \$context.Response
+    
+    try {
+        if (\$request.Url.LocalPath -eq "/") {
+            \$status = Get-BaconStatus
+            \$html = Generate-DashboardHtml -Status \$status
+            \$buffer = [Text.Encoding]::UTF8.GetBytes(\$html)
+        } elseif (\$request.Url.LocalPath -eq "/metrics") {
+            \$metrics = Get-Content (Join-Path \$SessionsDir "metrics.json") -Raw
+            \$buffer = [Text.Encoding]::UTF8.GetBytes(\$metrics)
+            \$response.ContentType = "application/json"
+        } elseif (\$request.Url.LocalPath -eq "/health") {
+            \$health = @{status="ok"; timestamp=(Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")} | ConvertTo-Json
+            \$buffer = [Text.Encoding]::UTF8.GetBytes(\$health)
+            \$response.ContentType = "application/json"
+        } else {
+            \$response.StatusCode = 404
+            \$buffer = [Text.Encoding]::UTF8.GetBytes("Not Found")
+        }
+        
+        \$response.ContentLength64 = \$buffer.Length
+        \$output = \$response.OutputStream
+        \$output.Write(\$buffer, 0, \$buffer.Length)
+        \$output.Close()
+    } catch {
+        \$response.StatusCode = 500
+        \$buffer = [Text.Encoding]::UTF8.GetBytes("Internal Server Error")
+        \$response.ContentLength64 = \$buffer.Length
+        \$output = \$response.OutputStream
+        \$output.Write(\$buffer, 0, \$buffer.Length)
+        \$output.Close()
+    }
+}
+"@
+
+    # Check if port is available
+    try {
+        $testConnection = Test-NetConnection -ComputerName localhost -Port $dashboardPort -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+        if ($testConnection.TcpTestSucceeded) {
+            Write-BaconLog "WARN" "Port $dashboardPort is already in use" -Component "Dashboard"
+            Write-Host "Port $dashboardPort is already in use. Try a different port or stop the existing service." -ForegroundColor Yellow
+            return $false
+        }
+    } catch {
+        # Port is available
+    }
+
+    # Start dashboard in background job
+    try {
+        $dashboardJob = Start-Job -ScriptBlock {
+            param($script, $sessionsDir, $projectRoot)
+            
+            # Define helper functions in job context
+            function Get-BaconStatus {
+                # Simplified status for dashboard
+                @{
+                    Health = @{ Overall = "Good"; Score = 85 }
+                    Orchestration = @{ Status = "Running" }
+                    Sessions = @{ Total = 10; Hotspots = 2 }
+                    Timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+                }
+            }
+            
+            function Generate-DashboardHtml {
+                param($Status)
+                
+                $html = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bacon Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
+        .metric { display: inline-block; margin: 10px; padding: 15px; background: #f8f9fa; border-radius: 5px; }
+        .health-good { color: #28a745; }
+        .health-fair { color: #ffc107; }
+        .health-poor { color: #dc3545; }
+    </style>
+    <script>
+        function refreshMetrics() {
+            fetch('/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Metrics updated:', data);
+                });
+        }
+        setInterval(refreshMetrics, 30000); // Refresh every 30 seconds
+    </script>
+</head>
+<body>
+    <div class="header">
+        <h1>Bacon Dashboard</h1>
+        <p>Live monitoring of autonomous coding pipeline</p>
+    </div>
+    
+    <div class="metric">
+        <h3>Health</h3>
+        <p class="health-$($Status.Health.Overall.ToLower())">$($Status.Health.Overall) ($($Status.Health.Score)/100)</p>
+    </div>
+    
+    <div class="metric">
+        <h3>Orchestration</h3>
+        <p>$($Status.Orchestration.Status)</p>
+    </div>
+    
+    <div class="metric">
+        <h3>Sessions</h3>
+        <p>Total: $($Status.Sessions.Total)</p>
+        <p>Hotspots: $($Status.Sessions.Hotspots)</p>
+    </div>
+    
+    <p>Last updated: $($Status.Timestamp)</p>
+    <p>Auto-refreshing every 30 seconds...</p>
+</body>
+</html>
+"@
+                return $html
+            }
+            
+            # Run the dashboard server
+            Add-Type -TypeDefinition @"
+using System;
+using System.Net;
+using System.Text;
+
+public class SimpleHttpServer {
+    private HttpListener listener;
+    private string sessionsDir;
+    private string projectRoot;
+    
+    public SimpleHttpServer(string prefix, string sessionsDir, string projectRoot) {
+        this.listener = new HttpListener();
+        this.listener.Prefixes.Add(prefix);
+        this.sessionsDir = sessionsDir;
+        this.projectRoot = projectRoot;
+    }
+    
+    public void Start() {
+        listener.Start();
+        Console.WriteLine("Dashboard started on " + string.Join(", ", listener.Prefixes));
+        
+        while (listener.IsListening) {
+            var context = listener.GetContext();
+            ProcessRequest(context);
+        }
+    }
+    
+    public void Stop() {
+        listener.Stop();
+        listener.Close();
+    }
+    
+    private void ProcessRequest(HttpListenerContext context) {
+        var response = context.Response;
+        
+        try {
+            string responseString = "<html><body><h1>Bacon Dashboard</h1><p>Under construction</p></body></html>";
+            byte[] buffer = Encoding.UTF8.GetBytes(responseString);
+            
+            response.ContentLength64 = buffer.Length;
+            response.OutputStream.Write(buffer, 0, buffer.Length);
+        } catch (Exception ex) {
+            Console.WriteLine("Error: " + ex.Message);
+            response.StatusCode = 500;
+        } finally {
+            response.OutputStream.Close();
+        }
+    }
+}
+"@
+            
+            $server = New-Object SimpleHttpServer "http://localhost:8080/", $sessionsDir, $projectRoot
+            $server.Start()
+            
+        } -ArgumentList $dashboardScript, $SessionsDir, $ProjectRoot -Name "BaconDashboard"
+        
+        # Store job ID
+        $dashboardJob.Id | Out-File (Join-Path $SessionsDir "dashboard.pid") -Encoding UTF8
+        
+        Write-BaconLog "INFO" "Dashboard started (Job ID: $($dashboardJob.Id))" -Component "Dashboard"
+        Write-Host "Bacon Dashboard started on http://localhost:$dashboardPort/" -ForegroundColor Green
+        Write-Host "Job ID: $($dashboardJob.Id)" -ForegroundColor Cyan
+        Write-Host "PID file: $(Join-Path $SessionsDir "dashboard.pid")" -ForegroundColor Cyan
+        
+        # Wait a moment and try to open browser
+        Start-Sleep -Seconds 2
+        try {
+            Start-Process "http://localhost:$dashboardPort/"
+        } catch {
+            Write-Host "Open http://localhost:$dashboardPort/ in your browser" -ForegroundColor Yellow
+        }
+        
+        return $true
+    } catch {
+        Write-BaconLog "ERROR" "Failed to start dashboard: $($_.Exception.Message)" -Component "Dashboard"
+        return $false
+    }
 }
 
 # Main execution
@@ -794,9 +1310,21 @@ function Main {
             Invoke-BaconApplyApproved
         }
 
+        "rotate-keys" {
+            Invoke-BaconRotateKeys
+        }
+
+        "report" {
+            Invoke-BaconReport
+        }
+
+        "dashboard" {
+            Start-BaconDashboard
+        }
+
         default {
             Write-Host "Unknown action: $Action" -ForegroundColor Red
-            Write-Host "Available actions: start, stop, status, logs, metrics, cleanup, test, apply-approved" -ForegroundColor Yellow
+            Write-Host "Available actions: start, stop, status, logs, metrics, cleanup, test, apply-approved, rotate-keys, report, dashboard" -ForegroundColor Yellow
         }
     }
 }

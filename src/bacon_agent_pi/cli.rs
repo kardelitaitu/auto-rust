@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
-#[command(name = "pi", about = "Bacon autonomous pipeline")]
+#[command(name = "bacon", about = "Bacon autonomous pipeline")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -29,6 +29,9 @@ pub struct Cli {
 
     #[arg(long, short = 'y', help = "Skip all interactive gates")]
     pub auto: bool,
+
+    #[arg(long, help = "Apply verified Coder patches after full gating")]
+    pub auto_apply: bool,
 
     #[arg(long, help = "Process independent specs in parallel")]
     pub parallel: bool,
@@ -68,6 +71,9 @@ pub struct RunArgs {
     #[arg(long, short = 'y', help = "Skip all interactive gates")]
     pub auto: bool,
 
+    #[arg(long, help = "Apply verified Coder patches after full gating")]
+    pub auto_apply: bool,
+
     #[arg(long, help = "Process independent specs in parallel")]
     pub parallel: bool,
 }
@@ -79,4 +85,24 @@ pub struct TestArgs {
 
     #[arg(long, help = "List available fixtures")]
     pub list: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_top_level_auto_apply_flag() {
+        let cli = Cli::try_parse_from(["bacon", "--auto-apply"]).expect("valid cli");
+        assert!(cli.auto_apply);
+    }
+
+    #[test]
+    fn parses_run_auto_apply_flag() {
+        let cli = Cli::try_parse_from(["bacon", "run", "--auto-apply"]).expect("valid cli");
+        let Some(Command::Run(args)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert!(args.auto_apply);
+    }
 }

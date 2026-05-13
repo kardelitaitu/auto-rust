@@ -254,3 +254,277 @@ impl Default for HybridStrategy {
         Self::persona_only()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn persona_decision(score: i32, level: EngagementLevel, confidence: f64) -> EngagementDecision {
+        EngagementDecision {
+            level,
+            score,
+            reason: "persona test".to_string(),
+            multiplier: 1.0,
+            confidence,
+        }
+    }
+
+    fn llm_decision(score: i32, level: EngagementLevel, confidence: f64) -> EngagementDecision {
+        EngagementDecision {
+            level,
+            score,
+            reason: "llm test".to_string(),
+            multiplier: 1.2,
+            confidence,
+        }
+    }
+
+    // ========================================================================
+    // HybridStrategy Construction Tests
+    // ========================================================================
+
+    #[test]
+    fn test_hybrid_default_is_persona_only() {
+        let strategy = HybridStrategy::default();
+        assert!(strategy.llm.is_none());
+        assert_eq!(strategy.persona_weight, 1.0);
+        assert_eq!(strategy.llm_weight, 0.0);
+        assert_eq!(strategy.combination, CombinationStrategy::WeightedAverage);
+    }
+
+    #[test]
+    fn test_hybrid_persona_only() {
+        let strategy = HybridStrategy::persona_only();
+        assert!(strategy.llm.is_none());
+        assert_eq!(strategy.persona_weight, 1.0);
+    }
+
+    #[test]
+    fn test_hybrid_with_llm_empty_key() {
+        let strategy = HybridStrategy::with_llm(String::new(), 0.6, 0.4);
+        assert!(strategy.llm.is_none());
+    }
+
+    #[test]
+    fn test_hybrid_with_llm() {
+        let strategy = HybridStrategy::with_llm("test-key".to_string(), 0.7, 0.3);
+        assert!(strategy.llm.is_some());
+        assert!((strategy.persona_weight - 0.7).abs() < 0.01);
+        assert!((strategy.llm_weight - 0.3).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_hybrid_weights_clamped() {
+        let strategy = HybridStrategy::with_llm("key".to_string(), 5.0, -1.0);
+        assert!((strategy.persona_weight - 1.0).abs() < 0.01);
+        assert!((strategy.llm_weight - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_hybrid_name() {
+        let strategy = HybridStrategy::persona_only();
+        assert_eq!(strategy.name(), "hybrid");
+    }
+
+    #[test]
+    fn test_hybrid_strategy_type() {
+        let strategy = HybridStrategy::persona_only();
+        assert_eq!(strategy.strategy_type(), DecisionStrategy::Hybrid);
+    }
+
+    // ========================================================================
+    // combine_weighted Tests
+    // ========================================================================
+
+    #[test]
+    fn test_combine_weighted_equal_weights() {
+        let strategy = HybridStrategy::with_llm("key".to_string(), 0.5, 0.5);
+        let p = persona_decision(90, EngagementLevel::Full, 0.8);
+        let l = llm_decision(80, EngagementLevel::Full, 0.6);
+        let result = strategy.combine_weighted(&p, &l);
+        assert_eq!(result.score, 85);
+        assert!((result.confidence - 0.7).abs() < 0.01);
+        assert_eq!(result.level, EngagementLevel::Full);
+    }
+
+    #[test]
+    fn test_combine_weighted_persona_heavier() {
+        let strategy = HybridStrategy::with_llm("key".to_string(), 0.8, 0.2);
+        let p = persona_decision(100, EngagementLevel::Full, 1.0);
+        let l = llm_decision(0, EngagementLevel::None, 0.5);
+        let result = strategy.combine_weighted(&p, &l);
+        assert_eq!(result.score, 80);
+        assert!((result.confidence - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_combine_weighted_zero_total() {
+        let strategy = HybridStrategy::with_llm("key".to_string(), 0.0, 0.0);
+        let p = persona_decision(50, EngagementLevel::Medium, 0.7);
+        let l = llm_decision(50, EngagementLevel::Medium, 0.7);
+        let result = strategy.combine_weighted(&p, &l);
+        // Should fall back to persona decision when total_weight == 0
+        assert_eq!(result.score, p.score);
+        assert_eq!(result.level, p.level);
+    }
+
+    #[test]
+    fn test_combine_weighted_level_thresholds() {
+        let strategy = HybridStrategy::with_llm("key".to_string(), 0.5, 0.5);
+
+        let p = persona_decision(90, EngagementLevel::Full, 1.0);
+        let l = llm_decision(90, EngagementLevel::Full, 1.0);
+        assert_eq!(
+            strategy.combine_weighted(&p, &l).level,
+            EngagementLevel::Full
+        );
+
+        let p = persona_decision(50, EngagementLevel::Medium, 1.0);
+        let l = llm_decision(50, EngagementLevel::Medium, 1.0);
+        assert_eq!(
+            strategy.combine_weighted(&p, &l).level,
+            EngagementLevel::Medium
+        );
+
+        let p = persona_decision(30, EngagementLevel::Minimal, 1.0);
+        let l = llm_decision(30, EngagementLevel::Minimal, 1.0);
+        assert_eq!(
+            strategy.combine_weighted(&p, &l).level,
+            EngagementLevel::Minimal
+        );
+
+        let p = persona_decision(0, EngagementLevel::None, 1.0);
+        let l = llm_decision(0, EngagementLevel::None, 1.0);
+        assert_eq!(
+            strategy.combine_weighted(&p, &l).level,
+            EngagementLevel::None
+        );
+    }
+
+    // ========================================================================
+    // combine_best_confidence Tests
+    // ========================================================================
+
+    #[test]
+    fn test_combine_best_confidence_llm_wins() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(50, EngagementLevel::Medium, 0.6);
+        let l = llm_decision(80, EngagementLevel::Full, 0.9);
+        let result = strategy.combine_best_confidence(&p, &l);
+        assert_eq!(result.score, 80);
+        assert!(result.reason.contains("LLM selected"));
+    }
+
+    #[test]
+    fn test_combine_best_confidence_persona_wins() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(80, EngagementLevel::Full, 0.9);
+        let l = llm_decision(50, EngagementLevel::Medium, 0.6);
+        let result = strategy.combine_best_confidence(&p, &l);
+        assert_eq!(result.score, 80);
+        assert!(result.reason.contains("Persona selected"));
+    }
+
+    #[test]
+    fn test_combine_best_confidence_equal_confidence() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(70, EngagementLevel::Full, 0.8);
+        let l = llm_decision(60, EngagementLevel::Medium, 0.8);
+        let result = strategy.combine_best_confidence(&p, &l);
+        // Persona wins tie (llm.confidence > persona.confidence is false)
+        assert!(result.reason.contains("Persona selected"));
+    }
+
+    // ========================================================================
+    // combine_llm_primary Tests
+    // ========================================================================
+
+    #[test]
+    fn test_combine_llm_primary_high_confidence_uses_llm() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(30, EngagementLevel::Minimal, 0.5);
+        let l = llm_decision(80, EngagementLevel::Full, 0.8);
+        let result = strategy.combine_llm_primary(&p, &l);
+        assert_eq!(result.score, 80);
+        assert!(result.reason.contains("LLM primary"));
+    }
+
+    #[test]
+    fn test_combine_llm_primary_low_confidence_falls_back() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(70, EngagementLevel::Full, 0.7);
+        let l = llm_decision(80, EngagementLevel::Full, 0.5);
+        let result = strategy.combine_llm_primary(&p, &l);
+        assert_eq!(result.score, 70);
+        assert!(result.reason.contains("Persona fallback"));
+    }
+
+    #[test]
+    fn test_combine_llm_primary_low_score_falls_back() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(70, EngagementLevel::Full, 0.7);
+        let l = llm_decision(10, EngagementLevel::None, 0.9);
+        let result = strategy.combine_llm_primary(&p, &l);
+        assert_eq!(result.score, 70);
+        assert!(result.reason.contains("Persona fallback"));
+    }
+
+    // ========================================================================
+    // combine_consensus Tests
+    // ========================================================================
+
+    #[test]
+    fn test_combine_consensus_persona_skip() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(0, EngagementLevel::None, 0.9);
+        let l = llm_decision(80, EngagementLevel::Full, 0.8);
+        let result = strategy.combine_consensus(&p, &l);
+        assert_eq!(result.level, EngagementLevel::None);
+        assert!(result.reason.contains("Consensus skip"));
+    }
+
+    #[test]
+    fn test_combine_consensus_llm_skip() {
+        let strategy = HybridStrategy::persona_only();
+        let p = persona_decision(80, EngagementLevel::Full, 0.8);
+        let l = llm_decision(0, EngagementLevel::None, 0.9);
+        let result = strategy.combine_consensus(&p, &l);
+        assert_eq!(result.level, EngagementLevel::None);
+        assert!(result.reason.contains("Consensus skip"));
+    }
+
+    #[test]
+    fn test_combine_consensus_both_agree() {
+        let strategy = HybridStrategy::with_llm("key".to_string(), 0.5, 0.5);
+        let p = persona_decision(90, EngagementLevel::Full, 0.8);
+        let l = llm_decision(80, EngagementLevel::Full, 0.7);
+        let result = strategy.combine_consensus(&p, &l);
+        // Both agree to engage, uses weighted
+        assert_eq!(result.level, EngagementLevel::Full);
+        assert_eq!(result.score, 85);
+    }
+
+    // ========================================================================
+    // CombinationStrategy Enum Tests
+    // ========================================================================
+
+    #[test]
+    fn test_combination_strategy_variants() {
+        assert_eq!(CombinationStrategy::WeightedAverage as u8, 0);
+        assert_eq!(CombinationStrategy::BestConfidence as u8, 1);
+        assert_eq!(CombinationStrategy::LLMPrimary as u8, 2);
+        assert_eq!(CombinationStrategy::Consensus as u8, 3);
+    }
+
+    #[test]
+    fn test_combination_strategy_partial_eq() {
+        assert_eq!(
+            CombinationStrategy::WeightedAverage,
+            CombinationStrategy::WeightedAverage
+        );
+        assert_ne!(
+            CombinationStrategy::WeightedAverage,
+            CombinationStrategy::Consensus
+        );
+    }
+}

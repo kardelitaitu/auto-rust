@@ -87,7 +87,7 @@ function Read-Text([string]$path) {
 function Parse-Field([string]$text, [string]$pattern) {
     if (-not $text) { return $null }
     $match = [regex]::Match($text, $pattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
-    if ($match.Success) { return $match.Groups[1].Value.Trim() }
+    if ($match.Success) { return $match.Groups[1].Value.Trim().Trim('"', "'") }
     return $null
 }
 

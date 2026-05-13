@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 
+use auto::bacon_core;
+
 fn bin_path(name: &str) -> PathBuf {
     let var_name = format!("CARGO_BIN_EXE_{}", name);
     if let Some(path) = std::env::var_os(&var_name) {
@@ -371,6 +373,39 @@ fn pipeline_should_skip_stages_correctly() {
             _ => {}
         }
     }
+}
+
+#[test]
+fn count_spec_file_refs_counts_unique_src_files() {
+    let plan = "Modify src/api/handler.rs and src/utils/helper.rs and src/api/handler.rs";
+    let count = bacon_core::count_spec_file_refs(plan);
+    assert_eq!(count, 2, "should count 2 unique files, got {}", count);
+}
+
+#[test]
+fn count_spec_file_refs_returns_zero_for_no_file_refs() {
+    let plan = "Refactor error handling to use thiserror";
+    let count = bacon_core::count_spec_file_refs(plan);
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn count_spec_file_refs_ignores_non_src_paths() {
+    let plan = "Update docs/readme.md and tests/test.rs and src/main.rs";
+    let count = bacon_core::count_spec_file_refs(plan);
+    assert_eq!(count, 1, "should only count src/main.rs");
+}
+
+#[test]
+fn validate_pipeline_config_warns_on_missing_agent_config() {
+    let config = bacon_core::PipelineConfig {
+        observer: "nonexistent_agent".to_string(),
+        strategist: "nonexistent_agent".to_string(),
+        coder: "nonexistent_agent".to_string(),
+        auditor: "nonexistent_agent".to_string(),
+    };
+    // Should not panic — just logs warnings
+    bacon_core::validate_pipeline_config(&config);
 }
 
 #[test]

@@ -9,44 +9,30 @@ use super::spec_io;
 use super::types::PipelineCtx;
 
 pub async fn run(llm: &Llm, args: &RunArgs, base: &PipelineCtx) -> Result<PipelineCtx> {
-    // If user provided a prompt, always use it — no randomness
-    if args.prompt.is_some() {
-        return scan_for_improvements(llm, args, base).await;
-    }
-
-    // No user prompt: 70% implement existing specs, 30% create new ones
-    let approved: Vec<_> = spec_io::list_active_specs()?
-        .into_iter()
-        .filter(|p| {
-            spec_io::read_spec_meta(p)
-                .ok()
-                .is_some_and(|m| m.status == "approved")
-        })
-        .collect();
-
-    if !approved.is_empty() && rand::random::<f64>() < 0.7 {
-        let idx = rand::random::<usize>() % approved.len();
-        let spec_path = &approved[idx];
-        let meta = spec_io::read_spec_meta(spec_path)?;
-        let name = spec_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("(unknown)")
-            .to_string();
-        info!(
-            "70% roll: implementing existing spec — {} ({})",
-            meta.title, name
-        );
-        let mut ctx = PipelineCtx::new(format!("Implement spec: {} ({})", meta.title, name));
-        ctx.spec_path = Some(spec_path.clone());
-        ctx.dry_run = base.dry_run;
-        return Ok(ctx);
-    }
-
-    if approved.is_empty() {
-        info!("No approved specs pending; scanning for new improvements");
-    } else {
-        info!("30% roll: scanning for a new improvement instead of implementing an existing spec");
+    // If user provided a prompt, always use it — skip spec fast-path
+    if args.prompt.is_none() {
+        // Check for an approved spec — 70% fast-path if one exists
+        if let Some((spec_path, meta)) = spec_io::find_approved_spec()? {
+            if rand::random::<f64>() < 0.7 {
+                let name = spec_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("(unknown)")
+                    .to_string();
+                info!(
+                    "70% roll: implementing existing spec — {} ({})",
+                    meta.title, name
+                );
+                let mut ctx =
+                    PipelineCtx::new(format!("Implement spec: {} ({})", meta.title, name));
+                ctx.spec_path = Some(spec_path);
+                ctx.dry_run = base.dry_run;
+                return Ok(ctx);
+            }
+            info!("30% roll: scanning for a new improvement instead of implementing existing spec");
+        } else {
+            info!("No approved specs pending; scanning for new improvements");
+        }
     }
 
     scan_for_improvements(llm, args, base).await

@@ -12,19 +12,6 @@ use super::types::PipelineCtx;
 
 const MAX_ATTEMPTS: u32 = 4;
 
-const REFUSAL_PHRASES: &[&str] = &[
-    "cannot implement",
-    "cannot complete",
-    "unable to implement",
-    "unable to complete",
-    "i cannot",
-    "i won't implement",
-    "outside my",
-    "not possible to implement",
-    "can't implement",
-    "i don't know how",
-];
-
 /// Result of auto-applying a queued patch.
 struct AutoApplyReport {
     _applied_path: Option<PathBuf>,
@@ -300,21 +287,25 @@ fn role_prompt() -> String {
     read_role_prompt("coder")
 }
 
+fn read_spec_file(spec_path: &Path, name: &str) -> String {
+    let path = spec_path.join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        warn!("Failed to read spec file {}: {}", path.display(), e);
+        String::new()
+    })
+}
+
 fn is_refusal(response: &str) -> bool {
-    let lower = response.to_lowercase();
-    REFUSAL_PHRASES.iter().any(|p| lower.contains(p))
+    crate::bacon_core::is_refusal(response)
 }
 
 fn build_spec_context(ctx: &PipelineCtx) -> String {
     match &ctx.spec_path {
         Some(spec_path) => {
-            let plan = std::fs::read_to_string(spec_path.join("plan.md")).unwrap_or_default();
-            let baseline =
-                std::fs::read_to_string(spec_path.join("baseline.md")).unwrap_or_default();
-            let api_outline = std::fs::read_to_string(spec_path.join("internal-api-outline.md"))
-                .unwrap_or_default();
-            let validation_spec =
-                std::fs::read_to_string(spec_path.join("validation.md")).unwrap_or_default();
+            let plan = read_spec_file(spec_path, "plan.md");
+            let baseline = read_spec_file(spec_path, "baseline.md");
+            let api_outline = read_spec_file(spec_path, "internal-api-outline.md");
+            let validation_spec = read_spec_file(spec_path, "validation.md");
             // Collect actual source file contents referenced throughout spec text
             let all_spec_text = format!(
                 "{}\n{}\n{}\n{}",
@@ -349,6 +340,7 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     let mut last_error = String::new();
     let mut errors: Vec<String> = Vec::new();
     let mut extracted_confidence: Option<crate::bacon_core::Confidence> = None;
+    let mut consecutive_refusals: u32 = 0;
 
     loop {
         let spec_context = build_spec_context(ctx);
@@ -403,12 +395,44 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
 
         // Refusal detection
         if is_refusal(&response) {
-            warn!("NVIDIA Coder refused on attempt {}", attempt);
-            errors.push(format!(
-                "Attempt {} refused with: {}",
-                attempt,
-                response.chars().take(200).collect::<String>()
-            ));
+            let refusal_log = response.chars().take(200).collect::<String>();
+            consecutive_refusals += 1;
+            warn!(
+                "NVIDIA Coder refused on attempt {} (consecutive refusal #{})",
+                attempt, consecutive_refusals
+            );
+            errors.push(format!("Attempt {} refused with: {}", attempt, refusal_log));
+
+            // 2 consecutive refusals → abort pipeline, no scope reduction
+            if consecutive_refusals >= 2 {
+                let report = format!(
+                    "NVIDIA Coder refused to implement after {} consecutive refusals.\n\n\
+                     Attempt {}:\n{}\n\n\
+                     Refusal chain ({} consecutive refusals).",
+                    consecutive_refusals, attempt, refusal_log, consecutive_refusals
+                );
+                warn!("NVIDIA Coder: 2 consecutive refusals — aborting pipeline, needs human approval");
+                if !ctx.dry_run {
+                    if let Some(ref spec_path) = ctx.spec_path {
+                        let validation_path = spec_path.join("validation.md");
+                        let _ = std::fs::write(
+                            &validation_path,
+                            format!("# Coder Refusal Report\n\n{}", report),
+                        );
+                        let meta_path = spec_path.join("spec.yaml");
+                        if let Ok(content) = std::fs::read_to_string(&meta_path) {
+                            let updated = content.replace("in-progress", "needs-human-approval");
+                            let _ = std::fs::write(&meta_path, updated);
+                        }
+                    }
+                }
+                let mut output = PipelineCtx::new(report).with_dry_run(ctx.dry_run);
+                output.spec_path = ctx.spec_path.clone();
+                output.confidence = extracted_confidence;
+                output.coder_refused = true;
+                return Ok(output);
+            }
+
             if attempt >= MAX_ATTEMPTS {
                 warn!("Max retries exhausted due to refusals — signalling scope reduction needed");
                 let report = format!(
@@ -422,11 +446,12 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
             }
             last_error = format!(
                 "The previous attempt produced a refusal instead of a patch. Provide a concrete diff. Refusal was: {}",
-                response.chars().take(100).collect::<String>()
+                refusal_log
             );
             attempt += 1;
             continue;
         }
+        consecutive_refusals = 0;
 
         // Check for empty or non-diff response
         if response.trim().is_empty() || !response.contains("diff --git") {
@@ -483,7 +508,7 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
 
         // Verify with check-fast.ps1 (unless dry run)
         if !ctx.dry_run {
-            let root = std::path::Path::new(".");
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
             match verify_patch_with_check_fast(root, temp_patch.path()) {
                 Ok(check_output) => {
                     info!("Patch verification passed on attempt {}", attempt);
@@ -502,6 +527,7 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                         format!("{}_attempt_{}.diff", safe_file_stem(&spec_id), attempt);
                     let patch_path = approved_dir.join(patch_name);
                     std::fs::write(&patch_path, &patch)?;
+                    let saved_patch_path = patch_path.clone();
 
                     let queued = QueuedPatch {
                         patch_path,
@@ -516,6 +542,7 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                                 PipelineCtx::new(report.output).with_dry_run(ctx.dry_run);
                             result.spec_path = ctx.spec_path.clone();
                             result.confidence = extracted_confidence;
+                            result.patch_path = Some(saved_patch_path);
                             return Ok(result);
                         }
                         Err(e) => {
@@ -637,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_refusal_all_phrases_detected() {
-        for phrase in REFUSAL_PHRASES {
+        for phrase in crate::bacon_core::REFUSAL_PHRASES {
             assert!(
                 is_refusal(phrase),
                 "Should detect refusal phrase: '{}'",

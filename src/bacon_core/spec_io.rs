@@ -6,6 +6,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_yml::{Mapping, Value};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Metadata stored in spec.yaml.
@@ -55,6 +56,19 @@ pub fn list_active_specs() -> Result<Vec<PathBuf>> {
     Ok(entries)
 }
 
+/// Find the first approved spec in `_active/` (sorted by name, FIFO).
+/// Returns `(spec_path, metadata)` if one exists.
+pub fn find_approved_spec() -> Result<Option<(PathBuf, SpecMeta)>> {
+    for spec_path in list_active_specs()? {
+        if let Ok(meta) = read_spec_meta(&spec_path) {
+            if meta.status == "approved" {
+                return Ok(Some((spec_path, meta)));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Read and parse `spec.yaml` from a spec directory.
 pub fn read_spec_meta(path: &Path) -> Result<SpecMeta> {
     let yaml_path = path.join("spec.yaml");
@@ -65,8 +79,10 @@ pub fn read_spec_meta(path: &Path) -> Result<SpecMeta> {
 }
 
 /// Write updated metadata into `spec.yaml`, preserving unknown fields.
+/// Uses atomic temp-file + rename to prevent partial writes.
 pub fn write_spec_meta(path: &Path, meta: &SpecMeta) -> Result<()> {
     let yaml_path = path.join("spec.yaml");
+    let tmp_path = path.join("spec.yaml.tmp");
     let mut value = std::fs::read_to_string(&yaml_path)
         .ok()
         .and_then(|content| serde_yml::from_str::<Value>(&content).ok())
@@ -91,8 +107,11 @@ pub fn write_spec_meta(path: &Path, meta: &SpecMeta) -> Result<()> {
     set_yaml_string(mapping, "priority", &meta.priority);
 
     let content = serde_yml::to_string(&value)?;
-    std::fs::write(&yaml_path, content)
-        .with_context(|| format!("writing {}", yaml_path.display()))?;
+    // Write to temp file first, then atomically rename — prevents partial writes
+    std::fs::write(&tmp_path, &content)
+        .with_context(|| format!("writing {}", tmp_path.display()))?;
+    std::fs::rename(&tmp_path, &yaml_path)
+        .with_context(|| format!("renaming {} to {}", tmp_path.display(), yaml_path.display()))?;
     Ok(())
 }
 
@@ -104,6 +123,7 @@ fn set_yaml_string(mapping: &mut Mapping, key: &str, value: &str) {
 }
 
 /// Compute the next available spec number by scanning both `_active/` and `_done/`.
+/// Used only as a hint for `allocate_spec_dir` — not race-safe on its own.
 pub fn next_spec_number() -> Result<u32> {
     let mut max_n = 0u32;
     for dir in [active_dir(), done_dir()] {
@@ -123,7 +143,6 @@ pub fn next_spec_number() -> Result<u32> {
                     }
                 }
             }
-            // Also try parsing just the leading number
             if let Some(n) = name.split('-').next() {
                 if let Ok(n) = n.parse::<u32>() {
                     max_n = max_n.max(n);
@@ -132,6 +151,61 @@ pub fn next_spec_number() -> Result<u32> {
         }
     }
     Ok(max_n + 1)
+}
+
+/// Path to the counter hint file used by `allocate_spec_dir`.
+fn counter_path() -> PathBuf {
+    specs_root().join(".counter")
+}
+
+/// Read the current counter hint. Returns 0 if file is missing or corrupt.
+fn load_counter() -> u32 {
+    let path = counter_path();
+    let mut buf = String::new();
+    std::fs::File::open(&path)
+        .and_then(|mut f| f.read_to_string(&mut buf))
+        .ok()
+        .and_then(|_| buf.trim().parse::<u32>().ok())
+        .unwrap_or(0)
+}
+
+/// Write a counter hint (best-effort, non-atomic — used only as a starting hint).
+fn save_counter(value: u32) {
+    let path = counter_path();
+    if let Ok(mut f) = std::fs::File::create(&path) {
+        let _ = write!(f, "{}", value);
+    }
+}
+
+/// Atomically allocate a numbered spec directory under `active` with the given `slug`.
+///
+/// Uses `std::fs::create_dir` which fails atomically if the directory already
+/// exists. If a collision occurs, increments the number and retries. The
+/// counter file at `docs/specs/.counter` provides a starting hint to keep
+/// retries O(1) amortized but is NOT used for atomicity — concurrent callers
+/// that read the same hint simply retry until they find a free slot.
+///
+/// Returns `(spec_directory_path, allocated_number)`.
+pub fn allocate_spec_dir(active: &Path, slug: &str) -> Result<(PathBuf, u32)> {
+    let hint = load_counter().max(1);
+    let mut number = hint;
+    loop {
+        let dir_name = format!("{:04}-{}", number, slug);
+        let spec_dir = active.join(&dir_name);
+        match std::fs::create_dir(&spec_dir) {
+            Ok(()) => {
+                if number > hint {
+                    save_counter(number);
+                }
+                return Ok((spec_dir, number));
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                number += 1;
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
 }
 
 /// Move a spec directory from `_active/` to `_done/`.

@@ -1,13 +1,13 @@
 use anyhow::Result;
-use log::info;
-use regex::Regex;
+use log::{info, warn};
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::cli::RunArgs;
 use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
+use crate::bacon_core::run_powershell_with_args;
 
 fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("strategist")
@@ -53,6 +53,15 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
         anyhow::bail!("Strategist rejected: {}", response);
     }
 
+    // Scope gate: count unique file paths referenced in the plan
+    let file_count = crate::bacon_core::count_spec_file_refs(&response);
+    if file_count > 3 {
+        warn!(
+            "Strategist plan references {} files (> 3 recommended). Consider reducing scope.",
+            file_count
+        );
+    }
+
     // Extract and log confidence
     let confidence = crate::bacon_core::extract_confidence(&response);
     if let Some(ref conf) = confidence {
@@ -63,13 +72,26 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     println!("{}", response);
     println!("================================");
 
-    // Write spec package (streamlined: 8 files, no redundant boilerplate)
+    // Write spec package and validate with spec-lint
     let spec_path = if ctx.dry_run {
         info!("DRY RUN: would write spec package");
         None
     } else {
         let spec_path = write_spec_package(&response)?;
         info!("Spec package created at: {}", spec_path.display());
+
+        // Gate: run spec-lint on the new package
+        info!("Running spec-lint validation...");
+        let spec_path_arg = spec_path.to_string_lossy().to_string();
+        let (passed, output) =
+            run_powershell_with_args("spec-lint.ps1", &["-Directory", spec_path_arg.as_str()])?;
+        if !passed {
+            warn!("spec-lint failed — stopping before Coder");
+            anyhow::bail!("generated spec failed spec-lint:\n{}", output);
+        } else {
+            info!("spec-lint passed");
+        }
+
         Some(spec_path)
     };
 
@@ -79,18 +101,22 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     Ok(result)
 }
 
-pub fn write_spec_package(plan: &str) -> Result<std::path::PathBuf> {
-    let number = spec_io::next_spec_number()?;
-    write_spec_package_in(&spec_io::active_dir(), number, plan)
+pub fn write_spec_package(plan: &str) -> Result<PathBuf> {
+    let title = extract_title(plan);
+    let slug = slugify(&title);
+    let active = spec_io::active_dir();
+    let (spec_dir, number) = spec_io::allocate_spec_dir(&active, &slug)?;
+    let dir_name = format!("{:04}-{}", number, &slug);
+    write_spec_package_in(&spec_dir, &dir_name, &title, plan)
 }
 
-fn write_spec_package_in(active: &Path, number: u32, plan: &str) -> Result<std::path::PathBuf> {
-    let title = extract_title(plan);
-    let dir_name = format!("{:04}-{}", number, slugify(&title));
-    let spec_dir = active.join(&dir_name);
-    std::fs::create_dir_all(&spec_dir)?;
-
-    write_generated_spec_yaml(&spec_dir, &dir_name, &title)?;
+fn write_spec_package_in(
+    spec_dir: &Path,
+    dir_name: &str,
+    title: &str,
+    plan: &str,
+) -> Result<PathBuf> {
+    // Write all content files first...
     std::fs::write(spec_dir.join("plan.md"), plan)?;
 
     let baseline = extract_section(plan, &["Baseline"], "Current state description.");
@@ -118,7 +144,10 @@ fn write_spec_package_in(active: &Path, number: u32, plan: &str) -> Result<std::
         ),
     )?;
 
-    Ok(spec_dir)
+    // ...then write spec.yaml LAST so the package is only discovered once fully written.
+    write_generated_spec_yaml(spec_dir, dir_name, title)?;
+
+    Ok(spec_dir.to_path_buf())
 }
 
 #[derive(Serialize)]
@@ -182,68 +211,15 @@ fn write_generated_spec_yaml(spec_dir: &Path, dir_name: &str, title: &str) -> Re
 }
 
 fn extract_title(text: &str) -> String {
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if let Some(stripped) = trimmed.strip_prefix("# ") {
-            return stripped.to_string();
-        }
-        if let Some(stripped) = trimmed.strip_prefix("## ") {
-            return stripped.to_string();
-        }
-    }
-    text.lines()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim().to_string())
-        .unwrap_or_else(|| "Untitled".to_string())
+    crate::bacon_core::extract_title(text)
 }
 
 fn slugify(text: &str) -> String {
-    text.to_lowercase()
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_string()
-        .chars()
-        .take(40)
-        .collect()
+    crate::bacon_core::slugify(text)
 }
 
 fn extract_section(plan: &str, headers: &[&str], fallback: &str) -> String {
-    // Build regex for exact ## HeaderName matching (case-insensitive)
-    let pattern = headers
-        .iter()
-        .map(|h| regex::escape(h))
-        .collect::<Vec<_>>()
-        .join("|");
-    let re = match Regex::new(&format!(r"(?m)^##\s+({pattern})\s*$")) {
-        Ok(r) => r,
-        Err(_) => return fallback.to_string(),
-    };
-
-    if let Some(m) = re.find(plan) {
-        let start = m.start();
-        let rest = &plan[m.end()..];
-        let end = if let Some(next) = rest.find("\n## ") {
-            m.end() + next
-        } else {
-            plan.len()
-        };
-        let result = plan[start..end].to_string();
-        if result.trim().is_empty() {
-            fallback.to_string()
-        } else {
-            result
-        }
-    } else {
-        fallback.to_string()
-    }
+    crate::bacon_core::extract_section(plan, headers, fallback)
 }
 
 #[cfg(test)]
@@ -322,9 +298,11 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let active = temp.path().join("_active");
         std::fs::create_dir_all(&active)?;
+        let spec_dir = active.join("0001-test-spec");
+        std::fs::create_dir(&spec_dir)?;
 
         let plan = "# Test Spec\n\n## Baseline\nCurrent state.\n\n## Validation\nRun check.ps1.\n\n## Design Decisions and Risks\nKeep scope small.";
-        let spec_path = write_spec_package_in(&active, 1, plan)?;
+        let spec_path = write_spec_package_in(&spec_dir, "0001-test-spec", "Test Spec", plan)?;
 
         // Verify streamlined file set (6 files matching _template)
         assert!(spec_path.join("spec.yaml").exists(), "spec.yaml missing");

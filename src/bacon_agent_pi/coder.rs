@@ -17,21 +17,16 @@ fn role_prompt() -> String {
 
 const MAX_ATTEMPTS: u32 = 4;
 
-const REFUSAL_PHRASES: &[&str] = &[
-    "cannot implement",
-    "cannot complete",
-    "unable to implement",
-    "unable to complete",
-    "i cannot",
-    "i won't implement",
-    "outside my",
-    "not possible to implement",
-    "can't implement",
-    "i don't know how",
-];
+fn read_spec_file(spec_path: &Path, name: &str) -> String {
+    let path = spec_path.join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        warn!("Failed to read spec file {}: {}", path.display(), e);
+        String::new()
+    })
+}
 
 pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let root = PathBuf::from(".");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let spec_path = match &ctx.spec_path {
         Some(p) => p.clone(),
         None if ctx.dry_run => {
@@ -58,15 +53,15 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
 
     let mut attempt = 1u32;
     let mut last_error = String::new();
+    let mut approved_patch_path: Option<PathBuf> = None;
+    let mut consecutive_refusals = 0u32;
 
     let system_message = ChatMessage::system(system_prompt);
 
     // Read supplementary spec files for context
-    let baseline = std::fs::read_to_string(spec_path.join("baseline.md")).unwrap_or_default();
-    let api_outline =
-        std::fs::read_to_string(spec_path.join("internal-api-outline.md")).unwrap_or_default();
-    let validation_spec =
-        std::fs::read_to_string(spec_path.join("validation.md")).unwrap_or_default();
+    let baseline = read_spec_file(&spec_path, "baseline.md");
+    let api_outline = read_spec_file(&spec_path, "internal-api-outline.md");
+    let validation_spec = read_spec_file(&spec_path, "validation.md");
 
     // Collect actual source file contents referenced in spec text
     let all_spec_text = format!(
@@ -141,10 +136,29 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
         let is_refusal = is_refusal(&response);
 
         if is_refusal {
+            consecutive_refusals += 1;
             warn!(
-                "Coder refused to implement (attempt {}): refusal detected",
-                attempt
+                "Coder refused to implement (attempt {}, consecutive refusal #{}): refusal detected",
+                attempt, consecutive_refusals
             );
+        } else {
+            consecutive_refusals = 0;
+        }
+
+        if is_refusal && consecutive_refusals >= 2 {
+            let report = format!(
+                "Coder refused to implement after {} consecutive refusals.\n\n\
+                 Attempt {}:\n{}\n\n\
+                 Refusal chain ({} consecutive refusals).",
+                consecutive_refusals, attempt, response, consecutive_refusals
+            );
+            warn!("Coder: 2 consecutive refusals — aborting pipeline, needs human approval");
+            mark_needs_human_approval(&spec_path, &report)?;
+            let mut output = PipelineCtx::new(ctx.description.clone()).with_dry_run(ctx.dry_run);
+            output.spec_path = Some(spec_path);
+            output.coder_refused = true;
+            output.confidence = extracted_confidence;
+            return Ok(output);
         }
 
         if ctx.dry_run {
@@ -159,7 +173,7 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
         if is_refusal {
             if attempt >= MAX_ATTEMPTS {
                 let report = format!(
-                    "Coder refused to implement after {} attempts.\nRefusal: {}",
+                    "Coder refused to implement after {} attempts.\nRefusal:\n{}",
                     attempt, response
                 );
                 info!("Coder exhausted retries — signalling scope reduction needed");
@@ -167,8 +181,11 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
                 return Ok(output);
             }
             // Feed refusal back as the error for retry — the LLM might change its mind
-            // with more context from the error feedback
-            last_error = "The previous attempt produced a refusal instead of a patch. Provide a concrete diff.".to_string();
+            last_error = format!(
+                "The previous attempt produced a refusal instead of a patch. \
+                 Provide a concrete diff. The refusal was: {}",
+                response.chars().take(200).collect::<String>()
+            );
             attempt += 1;
             continue;
         }
@@ -183,6 +200,8 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
                     "Coder patch queued for approval: {}",
                     queued.patch_path.display()
                 );
+
+                approved_patch_path = Some(queued.patch_path.clone());
 
                 if args.auto_apply {
                     info!("Auto-apply requested; checking main worktree gates...");
@@ -225,6 +244,7 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
     output.spec_path = Some(spec_path);
     output.dry_run = ctx.dry_run;
     output.confidence = extracted_confidence;
+    output.patch_path = approved_patch_path;
     Ok(output)
 }
 
@@ -724,8 +744,7 @@ fn mark_approved(path: &Path) -> Result<()> {
 }
 
 fn is_refusal(response: &str) -> bool {
-    let lower = response.to_lowercase();
-    REFUSAL_PHRASES.iter().any(|p| lower.contains(p))
+    crate::bacon_core::is_refusal(response)
 }
 
 fn signal_scope_reduction(ctx: &PipelineCtx, errors: Vec<String>) -> PipelineCtx {
@@ -999,7 +1018,7 @@ mod tests {
 
     #[test]
     fn test_refusal_all_phrases_detected() {
-        for phrase in REFUSAL_PHRASES {
+        for phrase in crate::bacon_core::REFUSAL_PHRASES {
             assert!(
                 is_refusal(phrase),
                 "Should detect refusal phrase: '{}'",

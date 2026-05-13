@@ -119,72 +119,61 @@ pub trait PipelineAgent: Send + Sync {
             }
         }
 
-        // Coder with Coder→Strategist scope reduction fallback loop
-        const MAX_SCOPE_REDUCTIONS: u32 = 3;
+        // Coder — single pass with internal retry loop (MAX_ATTEMPTS = 4)
+        // No outer scope-reduction loop: if the Coder fails after all retries,
+        // the spec goes directly to needs-human-approval instead of calling
+        // the Strategist again. This caps worst-case LLM calls at 6
+        // (1 Observer + 1 Strategist + 4 Coder) instead of 21.
         if should_run(&resume_stage, Stage::Coder) {
-            let mut coder_attempts = 0u32;
-            loop {
-                let agent = self.pipeline_cfg().agent_for(&Stage::Coder);
-                // Pass the current scope_reduction_count into the coder context
-                ctx.scope_reduction_count = coder_attempts;
-                info!(
-                    "=== Stage 3: Coder (agent: {}), pass {}-A ===",
-                    agent,
-                    coder_attempts + 1
+            let agent = self.pipeline_cfg().agent_for(&Stage::Coder);
+            info!("=== Stage 3: Coder (agent: {}) ===", agent);
+            log_agent_config(agent);
+
+            ctx = self.run_coder(&ctx).await?;
+
+            // Check if Coder aborted due to 2 consecutive refusals
+            if ctx.coder_refused {
+                warn!(
+                    "Coder refused to implement after consecutive refusals — \
+                     pipeline aborted, spec marked needs-human-approval"
                 );
-                log_agent_config(agent);
+                return Ok(());
+            }
 
-                ctx = self.run_coder(&ctx).await?;
-
-                // Check if Coder signalled scope reduction needed
-                if ctx.scope_reduction_needed {
-                    coder_attempts += 1;
-                    if coder_attempts >= MAX_SCOPE_REDUCTIONS {
-                        warn!(
-                            "Max scope reductions ({}) exhausted — aborting pipeline",
-                            MAX_SCOPE_REDUCTIONS
-                        );
-                        // Hard-fail: mark needs-human-approval with accumulated errors
-                        if let Some(ref spec_path) = ctx.spec_path {
-                            let error_report = ctx.coder_errors.join("\n---\n");
-                            let report = format!(
-                                "Scope reduction exhausted after {} attempts.\n\nAccumulated errors:\n{}",
-                                MAX_SCOPE_REDUCTIONS,
-                                error_report
-                            );
-                            let validation_path = spec_path.join("validation.md");
-                            let _ = std::fs::write(
-                                &validation_path,
-                                format!("# Coder Failure Report\n\n{}", report),
-                            );
-                            // Update spec.yaml status
-                            let meta_path = spec_path.join("spec.yaml");
-                            if let Ok(content) = std::fs::read_to_string(&meta_path) {
-                                let updated = content.replace("approved", "needs-human-approval");
-                                let _ = std::fs::write(&meta_path, updated);
+            // Scope reduction needed: inner Coder retries exhausted.
+            // Write failure report and mark needs-human-approval directly —
+            // do NOT call Strategist for a reduced-scope plan.
+            if ctx.scope_reduction_needed {
+                warn!(
+                    "Coder retries exhausted — marking needs-human-approval with accumulated errors"
+                );
+                if let Some(ref spec_path) = ctx.spec_path {
+                    let error_report = ctx.coder_errors.join("\n---\n");
+                    let report = format!(
+                        "Coder retries exhausted.\n\nAccumulated errors:\n{}",
+                        error_report
+                    );
+                    let validation_path = spec_path.join("validation.md");
+                    if let Err(e) = std::fs::write(
+                        &validation_path,
+                        format!("# Coder Failure Report\n\n{}", report),
+                    ) {
+                        warn!("Failed to write failure report: {}", e);
+                    }
+                    let meta_path = spec_path.join("spec.yaml");
+                    match std::fs::read_to_string(&meta_path) {
+                        Ok(content) => {
+                            let updated = content
+                                .replace("in-progress", "needs-human-approval")
+                                .replace("approved", "needs-human-approval");
+                            if let Err(e) = std::fs::write(&meta_path, updated) {
+                                warn!("Failed to update spec status: {}", e);
                             }
                         }
-                        break;
+                        Err(e) => warn!("Failed to read spec.yaml for status update: {}", e),
                     }
-
-                    // Reset reduction flag for next iteration
-                    ctx.scope_reduction_needed = false;
-
-                    // Call Strategist for scope reduction
-                    let strat_agent = self.pipeline_cfg().agent_for(&Stage::Strategist);
-                    info!(
-                        "=== Scope reduction pass {}/{}: calling Strategist (agent: {}) ===",
-                        coder_attempts, MAX_SCOPE_REDUCTIONS, strat_agent
-                    );
-                    log_agent_config(strat_agent);
-                    ctx = self.run_reduce_scope(&ctx).await?;
-
-                    // Continue the loop to retry Coder with reduced scope
-                    continue;
                 }
-
-                // No scope reduction needed — Coder succeeded
-                break;
+                return Ok(());
             }
 
             // User confirmation gate (only if Coder succeeded)

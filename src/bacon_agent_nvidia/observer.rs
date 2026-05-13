@@ -3,6 +3,7 @@ use log::info;
 
 use super::cli::RunArgs;
 use super::nvidia_api;
+use super::spec_io;
 use super::types::PipelineCtx;
 
 fn system_prompt() -> String {
@@ -10,6 +11,27 @@ fn system_prompt() -> String {
 }
 
 pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
+    // If a user prompt was provided, skip spec scan and go straight to LLM
+    if args.prompt.is_none() {
+        // Check for an approved spec — fast-path if one exists
+        if let Some((spec_path, meta)) = spec_io::find_approved_spec()? {
+            let name = spec_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("(unknown)")
+                .to_string();
+            info!(
+                "Found approved spec — fast-tracking: {} ({})",
+                meta.title, name
+            );
+            let mut result = PipelineCtx::new(format!("Implement spec: {} ({})", meta.title, name));
+            result.spec_path = Some(spec_path);
+            result.dry_run = ctx.dry_run;
+            return Ok(result);
+        }
+        info!("No approved specs pending; scanning for new improvements");
+    }
+
     let config = args.nvidia_config();
     let prompt = args
         .prompt

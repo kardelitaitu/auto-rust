@@ -180,19 +180,36 @@ impl PipelineConfig {
     pub fn from_bacon_toml() -> Self {
         let config_path = manifest_dir().join(".bacon/bacon.toml");
         if !config_path.exists() {
+            warn!(
+                "bacon.toml not found at {} — using default agent routing",
+                config_path.display()
+            );
             return Self::default();
         }
         let content = match std::fs::read_to_string(&config_path) {
             Ok(c) => c,
-            Err(_) => return Self::default(),
+            Err(e) => {
+                warn!(
+                    "failed to read bacon.toml ({}): {} — using defaults",
+                    config_path.display(),
+                    e
+                );
+                return Self::default();
+            }
         };
         let table: toml::Value = match toml::from_str(&content) {
             Ok(t) => t,
-            Err(_) => return Self::default(),
+            Err(e) => {
+                warn!("failed to parse bacon.toml: {} — using defaults", e);
+                return Self::default();
+            }
         };
         let pipeline = match table.get("pipeline") {
             Some(v) => v,
-            None => return Self::default(),
+            None => {
+                warn!("bacon.toml missing [pipeline] section — using default agent routing");
+                return Self::default();
+            }
         };
         fn get(v: &toml::Value, key: &str) -> String {
             v.get(key)
@@ -222,19 +239,43 @@ impl PipelineConfig {
         let config_path = manifest_dir().join(".bacon/bacon.toml");
         let content = match std::fs::read_to_string(&config_path) {
             Ok(c) => c,
-            Err(_) => return AgentLlmConfig::empty(),
+            Err(_) => {
+                debug!(
+                    "bacon.toml not readable for agent '{}' config — returning empty",
+                    agent
+                );
+                return AgentLlmConfig::empty();
+            }
         };
         let table: toml::Value = match toml::from_str(&content) {
             Ok(t) => t,
-            Err(_) => return AgentLlmConfig::empty(),
+            Err(_) => {
+                debug!(
+                    "bacon.toml parse error for agent '{}' config — returning empty",
+                    agent
+                );
+                return AgentLlmConfig::empty();
+            }
         };
         let agents = match table.get("agents") {
             Some(v) => v,
-            None => return AgentLlmConfig::empty(),
+            None => {
+                debug!(
+                    "no [agents] section in bacon.toml for '{}' — returning empty",
+                    agent
+                );
+                return AgentLlmConfig::empty();
+            }
         };
         let agent_cfg = match agents.get(agent) {
             Some(v) => v,
-            None => return AgentLlmConfig::empty(),
+            None => {
+                debug!(
+                    "no [agents.{}] config in bacon.toml — returning empty",
+                    agent
+                );
+                return AgentLlmConfig::empty();
+            }
         };
         AgentLlmConfig {
             provider: agent_cfg
@@ -287,6 +328,11 @@ pub struct PipelineCtx {
     pub scope_reduction_count: u32,
     /// Confidence level extracted from the most recent pipeline stage response.
     pub confidence: Option<Confidence>,
+    /// Path to the approved patch file saved by the Coder, for Auditor review.
+    pub patch_path: Option<PathBuf>,
+    /// Set true by Coder when the LLM refuses to implement (2+ consecutive refusals).
+    /// Tells the orchestrator to abort without scope reduction or audit.
+    pub coder_refused: bool,
 }
 
 impl PipelineCtx {
@@ -299,6 +345,8 @@ impl PipelineCtx {
             coder_errors: Vec::new(),
             scope_reduction_count: 0,
             confidence: None,
+            patch_path: None,
+            coder_refused: false,
         }
     }
 
@@ -348,6 +396,26 @@ pub fn log_agent_config(agent: &str) {
     }
     if let Some(max_tokens) = cfg.max_tokens {
         info!("  Agent config: max_tokens={}", max_tokens);
+    }
+}
+
+/// Validate that the agent names in `[pipeline]` have corresponding `[agents.<name>]` sections.
+/// Logs warnings for any missing agent configs.
+pub fn validate_pipeline_config(pipeline: &PipelineConfig) {
+    for stage in [
+        Stage::Observer,
+        Stage::Strategist,
+        Stage::Coder,
+        Stage::Auditor,
+    ] {
+        let agent = pipeline.agent_for(&stage);
+        let cfg = PipelineConfig::agent_llm_config(agent);
+        if cfg.provider.is_none() && cfg.command_args.is_none() {
+            warn!(
+                "Pipeline stage {:?} uses agent '{}' which has no [agents.{}] config in bacon.toml",
+                stage, agent, agent
+            );
+        }
     }
 }
 
@@ -418,7 +486,10 @@ pub fn check_stale_in_progress() -> Result<()> {
 
     let mut entries: Vec<_> = match std::fs::read_dir(&active_dir) {
         Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
-        Err(_) => return Ok(()),
+        Err(e) => {
+            debug!("check_stale_in_progress: failed to read _active dir: {}", e);
+            return Ok(());
+        }
     };
     entries.sort_by_key(|e| e.file_name());
 
@@ -430,11 +501,25 @@ pub fn check_stale_in_progress() -> Result<()> {
         let meta_path = spec_path.join("spec.yaml");
         let meta_content = match std::fs::read_to_string(&meta_path) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(e) => {
+                debug!(
+                    "check_stale_in_progress: cannot read {}: {}",
+                    meta_path.display(),
+                    e
+                );
+                continue;
+            }
         };
         let meta: serde_yml::Value = match serde_yml::from_str(&meta_content) {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(e) => {
+                debug!(
+                    "check_stale_in_progress: cannot parse {}: {}",
+                    meta_path.display(),
+                    e
+                );
+                continue;
+            }
         };
         let status = meta.get("status").and_then(|v| v.as_str()).unwrap_or("");
         if status == "in-progress" {
@@ -447,7 +532,60 @@ pub fn check_stale_in_progress() -> Result<()> {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             warn!("Stale in-progress spec found: {} ({})", title, name);
-            warn!("Manual review recommended before continuing");
+
+            // Auto-recovery: if the spec directory is older than 30 minutes,
+            // reset status to "approved" so the pipeline can retry.
+            let metadata = match std::fs::metadata(&spec_path) {
+                Ok(m) => m,
+                Err(_) => {
+                    warn!(
+                        "  Cannot read metadata for {} — skipping auto-recovery",
+                        name
+                    );
+                    continue;
+                }
+            };
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(elapsed) = modified.elapsed() {
+                    const STALE_TIMEOUT: std::time::Duration =
+                        std::time::Duration::from_secs(30 * 60); // 30 minutes
+                    if elapsed > STALE_TIMEOUT {
+                        info!(
+                            "  Auto-recovering stale spec {} — resetting status to approved ({:.0}s old)",
+                            name,
+                            elapsed.as_secs()
+                        );
+                        // Re-read spec.yaml, update status, write back atomically
+                        if let Some(mut meta_value) = std::fs::read_to_string(&meta_path)
+                            .ok()
+                            .and_then(|c| serde_yml::from_str::<serde_yml::Value>(&c).ok())
+                        {
+                            if let Some(map) = meta_value.as_mapping_mut() {
+                                map.insert(
+                                    serde_yml::Value::String("status".to_string()),
+                                    serde_yml::Value::String("approved".to_string()),
+                                );
+                                let tmp = spec_path.join("spec.yaml.tmp");
+                                if let Ok(content) = serde_yml::to_string(&meta_value) {
+                                    let _ = std::fs::write(&tmp, &content);
+                                    let _ = std::fs::rename(&tmp, &meta_path);
+                                }
+                            }
+                        }
+                    } else {
+                        info!(
+                            "  Spec {} is only {:.0}s old — not auto-recovering yet (threshold: 30m)",
+                            name,
+                            elapsed.as_secs()
+                        );
+                    }
+                } else {
+                    warn!(
+                        "  Cannot determine age for {} — skipping auto-recovery",
+                        name
+                    );
+                }
+            }
         }
     }
     Ok(())
@@ -472,8 +610,32 @@ pub fn read_role_prompt(role: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_default()
 }
 
+/// Validate that an agent name is safe to use in path resolution.
+/// Rejects names containing path separators or parent directory references.
+fn is_safe_agent_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        && name != "."
+        && name != ".."
+}
+
 /// Resolve an agent binary path. Checks cargo build output first, then PATH.
+/// Validates agent name safety before resolving.
 pub fn resolve_agent_binary(agent: &str, root: &Path) -> PathBuf {
+    if !is_safe_agent_name(agent) {
+        warn!(
+            "Unsafe agent name '{}' — only alphanumeric, hyphens, and underscores allowed. \
+             Falling back to 'bacon'.",
+            agent
+        );
+        return root.join("target").join("debug").join(if cfg!(windows) {
+            "bacon.exe"
+        } else {
+            "bacon"
+        });
+    }
     let candidates = [
         root.join("target").join("debug").join(agent),
         root.join("target").join("release").join(agent),
@@ -874,6 +1036,120 @@ pub fn extract_confidence(response: &str) -> Option<Confidence> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Shared helper functions — extracted from agent modules to prevent drift
+// ---------------------------------------------------------------------------
+
+/// Phrases that indicate an LLM is refusing to implement a request.
+pub const REFUSAL_PHRASES: &[&str] = &[
+    "cannot implement",
+    "cannot complete",
+    "unable to implement",
+    "unable to complete",
+    "i cannot",
+    "i won't implement",
+    "outside my",
+    "not possible to implement",
+    "can't implement",
+    "i don't know how",
+];
+
+/// Count unique file paths referenced in a spec plan text (e.g., `src/main.rs`).
+/// Used to enforce the "max 3 files" scope constraint at the Strategist gate.
+pub fn count_spec_file_refs(text: &str) -> usize {
+    let path_re = Regex::new(r"\bsrc/[\w./-]+\.rs\b").unwrap();
+    let mut seen = std::collections::HashSet::new();
+    for m in path_re.find_iter(text) {
+        seen.insert(m.as_str());
+    }
+    seen.len()
+}
+
+/// Check if an LLM response contains a refusal phrase (case-insensitive).
+pub fn is_refusal(response: &str) -> bool {
+    let lower = response.to_lowercase();
+    REFUSAL_PHRASES.iter().any(|p| lower.contains(p))
+}
+
+/// Extract the title from the first `# Title` or `## Title` line.
+pub fn extract_title(text: &str) -> String {
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(stripped) = trimmed.strip_prefix("# ") {
+            return stripped.to_string();
+        }
+        if let Some(stripped) = trimmed.strip_prefix("## ") {
+            return stripped.to_string();
+        }
+    }
+    text.lines()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .unwrap_or_else(|| "Untitled".to_string())
+}
+
+/// Slugify a title string for use in directory names (lowercase, 40 char max).
+pub fn slugify(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+        .chars()
+        .take(40)
+        .collect()
+}
+
+/// Extract a section from a markdown plan by `## Header` keyword matching.
+///
+/// Looks for a line starting with `##` that contains one of the given headers
+/// (case-insensitive), then captures everything until the next `##` section.
+/// If no match is found, returns `fallback`.
+pub fn extract_section(plan: &str, headers: &[&str], fallback: &str) -> String {
+    let pattern = headers
+        .iter()
+        .map(|h| regex::escape(h))
+        .collect::<Vec<_>>()
+        .join("|");
+    let re = match Regex::new(&format!(r"(?im)^##\s+.*({pattern}).*$")) {
+        Ok(r) => r,
+        Err(_) => return fallback.to_string(),
+    };
+
+    if let Some(m) = re.find(plan) {
+        let start = m.start();
+        let rest = &plan[m.end()..];
+        let end = if let Some(next) = rest.find("\n## ") {
+            m.end() + next
+        } else {
+            plan.len()
+        };
+        let result = plan[start..end].to_string();
+        if result.trim().is_empty() {
+            warn!(
+                "extract_section: empty section for headers {:?} — using fallback",
+                headers
+            );
+            fallback.to_string()
+        } else {
+            result
+        }
+    } else {
+        warn!(
+            "extract_section: no match for headers {:?} in plan — using fallback",
+            headers
+        );
+        fallback.to_string()
+    }
 }
 
 #[cfg(test)]

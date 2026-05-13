@@ -2,8 +2,8 @@ use anyhow::Result;
 use log::{info, warn};
 
 use crate::bacon_core::{
-    run_external_agent, scan_project_structure, validate_bacon_local_only, PipelineAgent,
-    PipelineConfig, PipelineCtx, Stage,
+    run_external_agent, scan_project_structure, validate_bacon_local_only,
+    validate_pipeline_config, PipelineAgent, PipelineConfig, PipelineCtx, Stage,
 };
 use crate::llm::Llm;
 
@@ -22,6 +22,7 @@ impl Pipeline {
         validate_bacon_local_only()?;
         let llm = Llm::new().map_err(|e| anyhow::anyhow!("failed to initialize LLM: {}", e))?;
         let pipeline_cfg = PipelineConfig::from_bacon_toml();
+        validate_pipeline_config(&pipeline_cfg);
         Ok(Self {
             args,
             dry_run,

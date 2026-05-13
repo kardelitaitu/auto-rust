@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
 
 use super::cli::RunArgs;
 use super::nvidia_api;
@@ -8,6 +8,14 @@ use super::types::PipelineCtx;
 
 fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("auditor")
+}
+
+fn read_spec_file(spec_path: &std::path::Path, name: &str) -> String {
+    let path = spec_path.join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        warn!("Failed to read spec file {}: {}", path.display(), e);
+        String::new()
+    })
 }
 
 pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
@@ -31,36 +39,56 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
         .unwrap_or_default();
 
     // Read spec content files for full context
-    let plan = std::fs::read_to_string(spec_path.join("plan.md")).unwrap_or_default();
-    let baseline = std::fs::read_to_string(spec_path.join("baseline.md")).unwrap_or_default();
-    let validation_spec =
-        std::fs::read_to_string(spec_path.join("validation.md")).unwrap_or_default();
-    let impl_notes =
-        std::fs::read_to_string(spec_path.join("implementation-notes.md")).unwrap_or_default();
+    let plan = read_spec_file(&spec_path, "plan.md");
+    let baseline = read_spec_file(&spec_path, "baseline.md");
+    let validation_spec = read_spec_file(&spec_path, "validation.md");
+    let impl_notes = read_spec_file(&spec_path, "implementation-notes.md");
 
-    // Capture the git diff if available
-    let diff = std::process::Command::new("git")
-        .args(["diff", "--", "src/"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let out = String::from_utf8_lossy(&o.stdout).to_string();
-                if out.len() > 10000 {
-                    Some(format!("{}...\n[truncated at 10000 chars]", &out[..10000]))
-                } else if !out.is_empty() {
-                    Some(out)
+    // Read the approved patch file if available; fall back to git diff
+    let diff = if let Some(patch_path) = &ctx.patch_path {
+        match std::fs::read_to_string(patch_path) {
+            Ok(content) => {
+                info!("Reading approved patch from: {}", patch_path.display());
+                if content.len() > 10000 {
+                    format!("{}...\n[truncated at 10000 chars]", &content[..10000])
+                } else {
+                    content
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Could not read patch file at {}: {}",
+                    patch_path.display(),
+                    e
+                );
+                "(no patch file available)".to_string()
+            }
+        }
+    } else {
+        warn!("No patch_path in context — falling back to working tree diff (may be empty)");
+        std::process::Command::new("git")
+            .args(["diff", "--", "src/"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let out = String::from_utf8_lossy(&o.stdout).to_string();
+                    if out.len() > 10000 {
+                        Some(format!("{}...\n[truncated at 10000 chars]", &out[..10000]))
+                    } else if !out.is_empty() {
+                        Some(out)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| {
-            "(no diff available — check implementation-notes.md for patch details)".to_string()
-        });
+            })
+            .unwrap_or_else(|| {
+                "(no diff available — check implementation-notes.md for patch details)".to_string()
+            })
+    };
 
     let system_prompt = role_prompt();
 
@@ -142,7 +170,10 @@ fn mark_needs_approval(path: &std::path::Path, report: &str) -> Result<()> {
     spec_io::write_spec_meta(path, &meta)?;
 
     let validation_path = path.join("validation.md");
-    let existing = std::fs::read_to_string(&validation_path).unwrap_or_default();
+    let existing = std::fs::read_to_string(&validation_path).unwrap_or_else(|e| {
+        warn!("Failed to read existing validation.md: {}", e);
+        String::new()
+    });
     std::fs::write(
         &validation_path,
         format!("# Audit Report\n\n{}\n\n{}", report, existing),

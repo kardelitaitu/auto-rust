@@ -626,8 +626,13 @@ fn is_safe_agent_name(name: &str) -> bool {
 }
 
 /// Resolve an agent binary path. Checks cargo build output first, then PATH.
-/// Validates agent name safety before resolving.
+/// Validates agent name safety before resolving unless the name is an explicit path.
 pub fn resolve_agent_binary(agent: &str, root: &Path) -> PathBuf {
+    // If the agent name contains a path separator, treat it as an explicit path
+    // and skip validation (e.g., "./fake-worker.sh", "/tmp/worker", "agent.exe").
+    if agent.contains('/') || agent.contains('\\') {
+        return PathBuf::from(agent);
+    }
     if !is_safe_agent_name(agent) {
         warn!(
             "Unsafe agent name '{}' — only alphanumeric, hyphens, and underscores allowed. \

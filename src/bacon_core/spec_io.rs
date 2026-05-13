@@ -69,6 +69,41 @@ pub fn find_approved_spec() -> Result<Option<(PathBuf, SpecMeta)>> {
     Ok(None)
 }
 
+/// Scan `_done/` and `_abandoned/` for specs whose title overlaps with `description`.
+/// Returns a list of matching spec paths with their titles for human-readable reporting.
+pub fn find_specs_matching(description: &str) -> Result<Vec<(PathBuf, String)>> {
+    let mut results = Vec::new();
+    let keywords: Vec<&str> = description
+        .split_whitespace()
+        .filter(|w| w.len() > 3)
+        .collect();
+
+    for dir in [specs_root().join("_done"), specs_root().join("_abandoned")] {
+        if !dir.is_dir() {
+            continue;
+        }
+        for entry in std::fs::read_dir(&dir)
+            .map_err(|e| anyhow::anyhow!("failed to read {:?}: {}", dir, e))?
+        {
+            let entry = entry?;
+            let spec_path = entry.path();
+            if !spec_path.is_dir() {
+                continue;
+            }
+            if let Ok(meta) = read_spec_meta(&spec_path) {
+                let title_lower = meta.title.to_lowercase();
+                let matches = keywords
+                    .iter()
+                    .any(|kw| title_lower.contains(&kw.to_lowercase()));
+                if matches {
+                    results.push((spec_path, meta.title));
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
 /// Read and parse `spec.yaml` from a spec directory.
 pub fn read_spec_meta(path: &Path) -> Result<SpecMeta> {
     let yaml_path = path.join("spec.yaml");

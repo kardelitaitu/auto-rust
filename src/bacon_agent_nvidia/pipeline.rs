@@ -1,9 +1,8 @@
 use anyhow::Result;
-use log::{info, warn};
 
 use crate::bacon_core::{
-    run_external_agent, scan_project_structure, validate_bacon_local_only, PipelineAgent,
-    PipelineConfig, PipelineCtx, Stage,
+    run_external_agent, validate_bacon_local_only, PipelineAgent, PipelineConfig, PipelineCtx,
+    Stage,
 };
 use crate::llm::Llm;
 
@@ -44,7 +43,7 @@ impl Pipeline {
 #[async_trait::async_trait]
 impl PipelineAgent for Pipeline {
     fn name(&self) -> &str {
-        "pi"
+        "nvidia"
     }
 
     fn dry_run(&self) -> bool {
@@ -72,17 +71,12 @@ impl PipelineAgent for Pipeline {
         if agent == "bacon" {
             super::observer::run(&self.llm, &self.args, ctx).await
         } else {
-            let base_prompt = self
+            let prompt = self
                 .args
                 .prompt
                 .as_deref()
                 .unwrap_or("scan for improvements");
-            let prompt = format!(
-                "{}\n\nProject structure:\n{}",
-                base_prompt,
-                scan_project_structure()
-            );
-            run_external_agent(agent, "observer", &prompt, self.dry_run)
+            run_external_agent(agent, "observer", prompt, self.dry_run)
         }
     }
 
@@ -92,26 +86,6 @@ impl PipelineAgent for Pipeline {
             super::strategist::run(&self.llm, &self.args, ctx).await
         } else {
             let mut next = run_external_agent(agent, "strategist", &ctx.description, self.dry_run)?;
-            // Try to parse strategist output into a spec package
-            if next.spec_path.is_none() && !next.description.contains("REJECTED:") && !self.dry_run
-            {
-                match super::strategist::write_spec_package(&next.description) {
-                    Ok(spec_path) => {
-                        info!(
-                            "External strategist spec package created at: {}",
-                            spec_path.display()
-                        );
-                        next.spec_path = Some(spec_path);
-                    }
-                    Err(e) => {
-                        next.spec_path = ctx.spec_path.clone();
-                        warn!(
-                            "External strategist output did not produce a valid spec package: {}",
-                            e
-                        );
-                    }
-                }
-            }
             if next.spec_path.is_none() {
                 next.spec_path = ctx.spec_path.clone();
             }

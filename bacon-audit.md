@@ -38,12 +38,12 @@
 | 40 | Confidence Extracted But Never Gates Pipeline | Medium | **Fixed** |
 | 42 | No Global Circuit Breaker for LLM Unavailability | Medium | **Fixed** |
 | 45 | `resolve_agent_binary()` Has No PATH Safety | Medium | **Fixed** |
-| 9 | External Agent Error Handling | Low | **Updated** |
-| 10 | Retry Logic Flaws | Low | **Updated** |
-| 11 | Inefficient Spec Numbering | Low | **Updated** |
-| 12 | Memory Usage in Source Context | Low | **Updated** |
-| 14 | Observer Randomization Bias | Low | **Updated** |
-| 15 | Slugify Collision Risk | Low | **Updated** |
+| 9 | External Agent Error Handling | Low | **Fixed** |
+| 10 | Retry Logic Flaws | Low | **Fixed** |
+| 11 | Inefficient Spec Numbering | Low | **Fixed** |
+| 12 | Memory Usage in Source Context | Low | **Fixed** |
+| 14 | Observer Randomization Bias | Low | **Fixed** |
+| 15 | Slugify Collision Risk | Low | **Fixed** |
 | 19 | Insufficient Error Path Testing | Low | **Updated** |
 | 28 | `spec.yaml` Acceptance Criteria Are Generic | Low | **Updated** |
 | 34 | Temp Worktree Cleanup Relies on Drop | Low | **Updated** |
@@ -164,6 +164,7 @@ This audit examined the Bacon autonomous coding workflow implementation across a
   (1) Before `serde_json::from_str`, scan stdout for the outermost `{...}` JSON object using brace counting — this recovers from log-prefixed output.  
   (2) Consider capturing stderr via `std::process::Stdio::piped()` and including it in the error context when the agent fails.  
   (3) Lower exit code sensitivity: if stdout parses as valid `WorkerOutput`, accept it even on non-zero exit.
+- **Status: FIXED** — Added `extract_json_object()` helper in `run_external_agent` that scans stdout for the outermost `{...}` before JSON parsing. Agents that mix log lines with JSON output now recover correctly. Verified by CI (`check.ps1`): all checks pass.
 
 ### 10. Retry Logic Flaws
 - **Location:** `src/bacon_agent_pi/coder.rs:79-222` (inner retry loop), `src/bacon_core/agent.rs:122-198` (outer scope-reduction loop)
@@ -178,6 +179,7 @@ This audit examined the Bacon autonomous coding workflow implementation across a
   (1) Add "error hashing" — compare stderr output against previous attempt's stderr. If >80% identical and attempt > 1, skip remaining retries and trigger scope reduction immediately.  
   (2) Print retry history (n/m attempts, error summary) at the confirmation gate so the user sees the struggle before approving.  
   (3) Consider a `--max-attempts` CLI flag to let users override the retry budget per run.
+- **Status: FIXED** — Added `repeated_error_count` tracking in both coders. When the same validation error occurs on consecutive attempts, skips remaining retries and triggers scope reduction immediately (no wasted LLM calls on impossible-to-fix errors). Verified by CI (`check.ps1`): all checks pass.
 
 ## Performance Issues
 
@@ -188,6 +190,7 @@ This audit examined the Bacon autonomous coding workflow implementation across a
 - **Risk Level:** Low
 - **Confidence:** 100%
 - **Fix:** Two options: (a) Replace with a simple counter file at `docs/specs/.counter` (also fixes Issue 1's race) — read current value, write +1 atomically. (b) Maintain a cached `AtomicU32` with a filesystem-write-through on mutation. Option (a) is preferred as it also addresses the race condition.
+- **Status: FIXED** (by Issue 1) — `next_spec_number()` is no longer called in production. Both strategists use `allocate_spec_dir()` with O(1) amortized `.counter` hint file. Verified by CI (`check.ps1`): all checks pass.
 
 ### 12. Memory Usage in Source Context
 - **Location:** `src/bacon_core/mod.rs:774-852` (`collect_source_context()`)
@@ -196,6 +199,7 @@ This audit examined the Bacon autonomous coding workflow implementation across a
 - **Risk Level:** Low
 - **Confidence:** 100%
 - **Fix:** Minor optimization: read file size first (`metadata().len()`) and skip files above `max_lines_per_file × 80` characters before reading. But this is purely a nice-to-have — the existing implementation has no measurable memory pressure.
+- **Status: FIXED** — Added file size check in `collect_source_context()`: files exceeding `max_lines_per_file × 80` bytes are skipped with a note in the context output. Prevents loading very large files into memory unnecessarily. Verified by CI (`check.ps1`): all checks pass.
 
 ## Logic Errors
 
@@ -222,6 +226,7 @@ This audit examined the Bacon autonomous coding workflow implementation across a
 - **Risk Level:** Low
 - **Confidence:** 100%
 - **Fix:** Sort approved specs by spec number (ascending — oldest first) before selecting, rather than random selection. This ensures FIFO processing of approved specs. Alternatively, make the 70/30 ratio configurable via `bacon.toml` (e.g., `[pipeline].backlog_bias = 0.7`).
+- **Status: FIXED** (by Issue 21) — `find_approved_spec()` in `spec_io.rs` returns specs sorted by directory name (FIFO by spec number), ensuring the oldest approved spec is always picked first. Verified by CI (`check.ps1`): all checks pass.
 
 ### 15. Slugify Collision Risk
 - **Location:** `src/bacon_agent_pi/strategist.rs:220-236` and `src/bacon_agent_nvidia/strategist.rs` (duplicated in both agents)
@@ -232,6 +237,7 @@ This audit examined the Bacon autonomous coding workflow implementation across a
 - **Fix:** Two options:  
   (1) Increase truncation from 40 to 80 characters for better distinguishability.  
   (2) Instead of truncation, append a 4-character hash of the full title (e.g., `{slug}-{hash[..4]}`) — this prevents collision without limiting readability. Either way, the primary fix depends on Issue 1 (atomic numbering).
+- **Status: FIXED** (by Issue 1) — `allocate_spec_dir()` uses atomic `std::fs::create_dir()`, so even if two specs have the same slug+number, collision is handled atomically with automatic retry. The 40-char truncation is cosmetic only. Verified by CI (`check.ps1`): all checks pass.
 
 ## Operational Issues
 

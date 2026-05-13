@@ -56,6 +56,7 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
     let mut approved_patch_path: Option<PathBuf> = None;
     let mut consecutive_refusals = 0u32;
     let mut needs_human_approval = false;
+    let mut repeated_error_count = 0u32;
 
     let system_message = ChatMessage::system(system_prompt);
 
@@ -235,6 +236,20 @@ pub async fn run(llm: &Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<Pipelin
             Err(err) => {
                 let report = format!("{}", err);
                 warn!("Coder patch validation failed on attempt {}", attempt);
+                // Repeated error detection: if same error occurs twice, short-circuit
+                if attempt > 1 && report == last_error {
+                    repeated_error_count += 1;
+                    if repeated_error_count >= 1 {
+                        warn!(
+                            "Same error repeated on attempt {} — skipping remaining retries",
+                            attempt
+                        );
+                        let output = signal_scope_reduction(ctx, vec![report]);
+                        return Ok(output);
+                    }
+                } else {
+                    repeated_error_count = 0;
+                }
                 last_error = report;
                 attempt += 1;
             }

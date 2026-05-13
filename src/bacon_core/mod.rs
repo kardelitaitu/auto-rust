@@ -665,6 +665,27 @@ pub fn resolve_agent_binary(agent: &str, root: &Path) -> PathBuf {
     PathBuf::from(agent)
 }
 
+/// Extract the outermost JSON object `{...}` from text that may have log prefixes.
+/// Returns `None` if no JSON object is found.
+fn extract_json_object(text: &str) -> Option<&str> {
+    let start = text.find('{')?;
+    let rest = &text[start..];
+    let mut depth = 0u32;
+    for (i, c) in rest.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(&rest[..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Spawn an external agent binary and parse its JSON output.
 ///
 /// Wraps the agent in its role prompt, resolves the binary, appends model
@@ -801,7 +822,9 @@ pub fn run_external_agent(
         );
     }
 
-    let worker: WorkerOutput = serde_json::from_str(&stdout).with_context(|| {
+    // Attempt to extract JSON from stdout — handles log-prefixed output
+    let json_str = extract_json_object(&stdout).unwrap_or(&stdout);
+    let worker: WorkerOutput = serde_json::from_str(json_str).with_context(|| {
         format!(
             "agent '{}' must print WorkerOutput JSON on stdout; got: {}",
             agent, stdout
@@ -954,6 +977,22 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
         let path_str = m.as_str();
         let full_path = root.join(path_str);
         if full_path.is_file() && seen.insert(path_str.to_string()) {
+            // Skip files larger than max_lines_per_file × 80 bytes (avg line length)
+            if let Ok(meta) = std::fs::metadata(&full_path) {
+                let max_bytes = (max_lines_per_file * 80) as u64;
+                if meta.len() > max_bytes {
+                    let kb = meta.len() as f64 / 1024.0;
+                    let estimated = meta.len() / 80;
+                    contents.push(format!(
+                        "### `{}` (~{} lines, {:.1}KB — skipped at threshold)\n```\n_(file skipped at limit)_\n```",
+                        path_str, estimated, kb
+                    ));
+                    if contents.len() >= max_files {
+                        break;
+                    }
+                    continue;
+                }
+            }
             if let Ok(content) = std::fs::read_to_string(&full_path) {
                 let line_count = content.lines().count();
                 let truncated = if line_count > max_lines_per_file {

@@ -341,6 +341,7 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     let mut errors: Vec<String> = Vec::new();
     let mut extracted_confidence: Option<crate::bacon_core::Confidence> = None;
     let mut consecutive_refusals: u32 = 0;
+    let mut repeated_error_count: u32 = 0;
 
     loop {
         let spec_context = build_spec_context(ctx);
@@ -582,12 +583,22 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                     if attempt >= MAX_ATTEMPTS {
                         return Ok(signal_scope_reduction(ctx, errors));
                     }
-                    last_error = format!(
+                    let new_error = format!(
                         "Patch verification failed:\n{}\n\n\
                          ---\n\n\
                          Fix the patch and ensure check-fast.ps1 passes.",
                         e
                     );
+                    if attempt > 1 && new_error == last_error {
+                        repeated_error_count += 1;
+                        if repeated_error_count >= 1 {
+                            warn!("Same verification error repeated — skipping remaining retries");
+                            return Ok(signal_scope_reduction(ctx, errors));
+                        }
+                    } else {
+                        repeated_error_count = 0;
+                    }
+                    last_error = new_error;
                     attempt += 1;
                     continue;
                 }

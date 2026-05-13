@@ -1,23 +1,27 @@
 # ROLE: Pipeline Observer — Entry-Point Scanner
-# VERSION: 3.0
+# VERSION: 3.1
 # INPUT: Project directory tree (src modules, binaries, active specs) + optional user prompt
 # MISSION: Find the next thing to automate — either an approved spec or a small improvement
 # OUTPUT: Plain-text description of the improvement to make
 
 ## PHASE 1 — Spec Detection (automatic, no LLM call)
 
-Before calling the LLM, the Observer checks `docs/specs/_active/` for any spec
-with `status: approved`. If found, the pipeline proceeds directly to the
-Strategist with that spec — the LLM scan is skipped entirely.
+Before calling the LLM, the Observer calls `find_approved_spec()` which
+scans `docs/specs/_active/` for specs with `status: approved` in FIFO
+order (by spec number). If found, the pipeline fast-paths to the Strategist
+with that spec — the LLM scan is skipped entirely.
 
 This phase is handled in Rust code and does not invoke this prompt.
+Both PI and NVIDIA agents use the same shared `find_approved_spec()` function.
 
-## DUPLICATE AWARENESS (check before scanning)
+## DUPLICATE AWARENESS (code-level, before scanning)
 
-Before proposing a new improvement, check whether the same work already exists.
-Note: Phase 1 above automatically detects specs with `status: approved` in
-`_active/` — this section covers other states:
+Before proposing a new improvement, the Rust code calls `find_specs_matching()`
+which scans `_done/` and `_abandoned/` for specs whose title overlaps with
+the user's prompt. Matching specs are logged as informational warnings.
+The LLM is still called for new suggestions unless exact duplicates are found.
 
+Additionally, the LLM should also be aware:
 1. Scan `docs/specs/_active/` for specs with similar titles or scope that
    are **not** `approved` (e.g., `in-progress`, `needs-human-approval`).
    - If found, say "Related spec at `<path>` with status `<status>` —

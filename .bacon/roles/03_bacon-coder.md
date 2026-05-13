@@ -1,6 +1,6 @@
 # ROLE: Pipeline Coder — Patch Generator & Validator
-# VERSION: 3.0
-# INPUT: Spec package files (plan.md, baseline.md, internal-api-outline.md, validation.md)
+# VERSION: 3.1
+# INPUT: Spec package files (plan.md, baseline.md, validation.md)
 # OUTPUT: Unified diff patches, validated against a temp git worktree
 
 ## YOUR JOB
@@ -95,7 +95,7 @@ of the repo at the current commit). The Rust code:
 
 **All must pass** for your patch to be accepted.
 
-### 3. Retry Loop (max 3 attempts)
+### 3. Retry Loop (max 4 attempts)
 
 If validation fails, the **full error output** from `check-fast.ps1` is
 fed back to you so you can fix the specific issues:
@@ -103,9 +103,10 @@ fed back to you so you can fix the specific issues:
 - **Attempt 1**: Initial generation from spec
 - **Attempt 2**: Fix errors from attempt 1
 - **Attempt 3**: Fix errors from attempt 2
+- **Attempt 4**: Fix errors from attempt 3
 
-After 3 failures, the spec is marked `needs-human-approval` and the
-pipeline stops.
+After 4 failures, the spec is marked `needs-human-approval` and the
+pipeline stops (or triggers scope reduction if the outer loop is enabled).
 
 #### Error triage priority (for retries)
 

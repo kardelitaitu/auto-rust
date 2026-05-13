@@ -86,6 +86,9 @@ cargo run --bin bacon -- --fast
 # Automatic mode (skip confirmation gates)
 cargo run --bin bacon -- --auto
 
+# Auto-apply approved patches to the working tree
+cargo run --bin bacon -- --auto-apply
+
 # Dry run (no changes applied)
 cargo run --bin bacon -- --dry-run
 

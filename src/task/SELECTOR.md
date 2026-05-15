@@ -100,6 +100,6 @@ Why this can fail:
 - Use this standard when adding new task selectors.
 - If a selector is repeated across tasks, move it into a shared utility.
 - Follow implementation gates and semantics in:
-  - `PROPOSAL_ACCESSIBILITY_LOCATOR.md`
-  - `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
-  - `docs/TASK_ACCESSIBILITY_LOCATOR_MIGRATION.md`
+  - `docs/_archive/PROPOSAL_ACCESSIBILITY_LOCATOR.md`
+  - `docs/_archive/ACCESSIBILITY_LOCATOR_SPEC.md`
+  - `docs/_archive/TASK_ACCESSIBILITY_LOCATOR_MIGRATION.md`

@@ -6,9 +6,10 @@ use std::process::Command;
 
 use crate::bacon_core::{collect_source_context, read_role_prompt, GitSnapshot};
 
-use super::cli::RunArgs;
 use super::nvidia_api;
+use super::spec_io;
 use super::types::PipelineCtx;
+use crate::bacon_core::cli_types::RunArgs;
 
 const MAX_ATTEMPTS: u32 = 4;
 
@@ -287,14 +288,6 @@ fn role_prompt() -> String {
     read_role_prompt("coder")
 }
 
-fn read_spec_file(spec_path: &Path, name: &str) -> String {
-    let path = spec_path.join(name);
-    std::fs::read_to_string(&path).unwrap_or_else(|e| {
-        warn!("Failed to read spec file {}: {}", path.display(), e);
-        String::new()
-    })
-}
-
 fn is_refusal(response: &str) -> bool {
     crate::bacon_core::is_refusal(response)
 }
@@ -302,19 +295,15 @@ fn is_refusal(response: &str) -> bool {
 fn build_spec_context(ctx: &PipelineCtx) -> String {
     match &ctx.spec_path {
         Some(spec_path) => {
-            let plan = read_spec_file(spec_path, "plan.md");
-            let baseline = read_spec_file(spec_path, "baseline.md");
-            let api_outline = read_spec_file(spec_path, "internal-api-outline.md");
-            let validation_spec = read_spec_file(spec_path, "validation.md");
+            let plan = spec_io::read_spec_file(spec_path, "plan.md");
+            let api_outline = spec_io::read_spec_file(spec_path, "internal-api-outline.md");
+            let validation_spec = spec_io::read_spec_file(spec_path, "validation.md");
             // Collect actual source file contents referenced throughout spec text
-            let all_spec_text = format!(
-                "{}\n{}\n{}\n{}",
-                plan, baseline, api_outline, validation_spec
-            );
+            let all_spec_text = format!("{}\n{}\n{}", plan, api_outline, validation_spec);
             let source_context = collect_source_context(&all_spec_text, 8, 100);
             format!(
-                "## Plan\n{}\n\n## Baseline\n{}\n\n## API Changes\n{}\n\n## Validation Criteria\n{}{}",
-                plan, baseline, api_outline, validation_spec, source_context
+                "## Plan\n{}\n\n## API Changes\n{}\n\n## Validation Criteria\n{}{}",
+                plan, api_outline, validation_spec, source_context
             )
         }
         None => ctx.description.clone(),
@@ -333,7 +322,7 @@ fn signal_scope_reduction(ctx: &PipelineCtx, errors: Vec<String>) -> PipelineCtx
 }
 
 pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let config = args.nvidia_config();
+    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
     let system_prompt = role_prompt();
 
     let mut attempt: u32 = 1;

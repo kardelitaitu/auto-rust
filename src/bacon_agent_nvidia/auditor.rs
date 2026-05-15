@@ -1,25 +1,17 @@
 use anyhow::Result;
 use log::{info, warn};
 
-use super::cli::RunArgs;
 use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
+use crate::bacon_core::cli_types::RunArgs;
 
 fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("auditor")
 }
 
-fn read_spec_file(spec_path: &std::path::Path, name: &str) -> String {
-    let path = spec_path.join(name);
-    std::fs::read_to_string(&path).unwrap_or_else(|e| {
-        warn!("Failed to read spec file {}: {}", path.display(), e);
-        String::new()
-    })
-}
-
 pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let config = args.nvidia_config();
+    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
 
     let spec_path = match &ctx.spec_path {
         Some(p) => p.clone(),
@@ -39,10 +31,9 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
         .unwrap_or_default();
 
     // Read spec content files for full context
-    let plan = read_spec_file(&spec_path, "plan.md");
-    let baseline = read_spec_file(&spec_path, "baseline.md");
-    let validation_spec = read_spec_file(&spec_path, "validation.md");
-    let impl_notes = read_spec_file(&spec_path, "implementation-notes.md");
+    let plan = spec_io::read_spec_file(&spec_path, "plan.md");
+    let validation_spec = spec_io::read_spec_file(&spec_path, "validation.md");
+    let impl_notes = spec_io::read_spec_file(&spec_path, "implementation-notes.md");
 
     // Read the approved patch file if available; fall back to git diff
     let diff = if let Some(patch_path) = &ctx.patch_path {
@@ -96,7 +87,6 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
         "Audit this implemented spec: {} ({})\n\n\
          Title: {}\nStatus: {}\n\n\
          ## Plan (from plan.md)\n{}\n\n\
-         ## Baseline\n{}\n\n\
          ## Validation Criteria\n{}\n\n\
          ## Implementation Notes\n{}\n\n\
          ## Git Diff (working tree)\n```diff\n{}\n```\n\n\
@@ -106,15 +96,7 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
          Respond with PASS or FAIL as the first word, then explain your reasoning.\n\
          PASS → the spec should be marked done and moved to _done/.\n\
          FAIL → mark needs-human-approval and explain what's missing.",
-        meta.title,
-        spec_name,
-        meta.title,
-        meta.status,
-        plan,
-        baseline,
-        validation_spec,
-        impl_notes,
-        diff
+        meta.title, spec_name, meta.title, meta.status, plan, validation_spec, impl_notes, diff
     );
 
     info!("NVIDIA Auditor calling API with model: {}", config.model);

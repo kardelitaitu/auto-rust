@@ -9,8 +9,8 @@ This directory contains the documentation for the Rust Orchestrator project.
 - [README.md](../README.md) - Main project documentation with features, installation, and usage
 - [docs/specs/README.md](./specs/README.md) - Two-agent spec workflow and handoff contract
 - [TUTORIAL_BUILDING_FIRST_TASK.md](./TUTORIAL_BUILDING_FIRST_TASK.md) - Guide for authoring browser automation tasks
-- [TASK_RUNNER_PREPARATION.md](./TASK_RUNNER_PREPARATION.md) - Registry foundation and task-system preparation plan
-- [TASK_RUNNER_DSL_BUILD.md](./TASK_RUNNER_DSL_BUILD.md) - Future DSL build plan that depends on the registry foundation
+- [TASK_RUNNER_PREPARATION.md](./_archive/TASK_RUNNER_PREPARATION.md) - Registry foundation and task-system preparation plan (archived)
+- [TASK_RUNNER_DSL_BUILD.md](./_archive/TASK_RUNNER_DSL_BUILD.md) - Future DSL build plan that depends on the registry foundation (archived)
 
 ## API Documentation
 

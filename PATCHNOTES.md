@@ -123,7 +123,7 @@ Added accessibility-locator support behind `--features accessibility-locator` wi
 ### Documentation Updates
 - Updated proposal and spec documents:
   - `PROPOSAL_ACCESSIBILITY_LOCATOR.md`
-  - `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
+  - `docs/_archive/ACCESSIBILITY_LOCATOR_SPEC.md`
 - Updated selector documentation:
   - `src/task/SELECTOR.md`
 

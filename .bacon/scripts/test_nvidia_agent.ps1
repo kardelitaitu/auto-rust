@@ -55,10 +55,10 @@ if (Test-Path $baconToml) {
 
 # Test 4: Check workflow documentation
 Write-Host "`n[4/4] Checking workflow documentation..." -ForegroundColor Yellow
-$workflowDoc = ".bacon/.bacon-workflow.md"
+$workflowDoc = ".bacon/workflow.md"
 if (Test-Path $workflowDoc) {
     $content = Get-Content $workflowDoc -Raw
-    if ($content -match '`nvidia`') {
+    if ($content -match 'nvidia') {
         Write-Host "✓ NVIDIA agent documented in workflow" -ForegroundColor Green
     } else {
         Write-Host "✗ NVIDIA agent not in workflow documentation" -ForegroundColor Yellow

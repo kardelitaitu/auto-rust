@@ -4,6 +4,7 @@
 //! `bacon_agent_nvidia/spec_io.rs` into a single location.
 
 use anyhow::{Context, Result};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use serde_yml::{Mapping, Value};
 use std::io::{Read, Write};
@@ -241,6 +242,16 @@ pub fn allocate_spec_dir(active: &Path, slug: &str) -> Result<(PathBuf, u32)> {
             Err(e) => return Err(e.into()),
         }
     }
+}
+
+/// Read a spec file (plan.md, validation.md, etc.) from a spec directory.
+/// Returns empty string on failure with a warning.
+pub fn read_spec_file(spec_path: &Path, name: &str) -> String {
+    let path = spec_path.join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        warn!("Failed to read spec file {}: {}", path.display(), e);
+        String::new()
+    })
 }
 
 /// Move a spec directory from `_active/` to `_done/`.

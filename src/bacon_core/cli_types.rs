@@ -1,3 +1,8 @@
+//! Shared command-line interface types for the Bacon autonomous pipeline.
+//!
+//! These types define the CLI entry point for the `bacon` binary.
+//! They are shared across all pipeline agents to avoid duplication.
+
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -41,8 +46,6 @@ pub struct Cli {
 pub enum Command {
     /// Run the pipeline
     Run(RunArgs),
-    /// Run test harness against throwaway fixtures
-    Test(TestArgs),
 }
 
 #[derive(Debug, Default, Parser)]
@@ -76,15 +79,6 @@ pub struct RunArgs {
 
     #[arg(long, help = "Process independent specs in parallel")]
     pub parallel: bool,
-}
-
-#[derive(Debug, Parser)]
-pub struct TestArgs {
-    #[arg(long, help = "Run a specific fixture by name")]
-    pub fixture: Option<String>,
-
-    #[arg(long, help = "List available fixtures")]
-    pub list: bool,
 }
 
 #[cfg(test)]

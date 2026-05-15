@@ -9,12 +9,15 @@
 
 [pipeline]
 # Agent routing for each pipeline stage.
-# Values: "bacon" (NVIDIA, in-process) or another agent name
-# read from [agents.<name>].command_args.
+# Values: an agent name from [agents.<name>].command_args (e.g., "nvidia").
+# Each agent is an external CLI worker; the `bacon` binary dispatches via command_args.
 observer = "nvidia"
 strategist = "nvidia"
 coder = "nvidia"
 auditor = "nvidia"
+# Delay (ms) between pipeline stages to avoid LLM API rate limiting.
+# Default: 0 (no delay). Set to 1000 for 1s between consecutive stages.
+stage_delay_ms = 500
 
 # ── CI watcher jobs (bacon CLI) ──────────────────────────────────
 # These job definitions are consumed by the external `bacon` CI
@@ -70,58 +73,8 @@ timeout_seconds = 60
 #   top_p        — Nucleus sampling parameter
 #   max_tokens   — Maximum output tokens
 
-[agents.observer]
-type = "local"
-provider = "ollama"
-model = "llama3.2:3b"
-temperature = 0.2
-
-[agents.strategist]
-type = "local"
-provider = "ollama"
-model = "llama3.2:3b"
-temperature = 0.1  # Lower temperature for planning
-
-[agents.coder]
-type = "local"
-provider = "ollama"
-model = "llama3.2:3b"
-temperature = 0.3  # Higher temperature for creative coding
-
-[agents.auditor]
-type = "local"
-provider = "ollama"
-model = "llama3.2:3b"
-temperature = 0.1  # Lower temperature for review consistency
-
-# External agent workers (configured via command_args — the binary
-# is resolved from cargo build output or PATH).
-[agents.codex]
-type = "external"
-provider = "cli"
-command_args = ["-p", "{prompt}", "--role", "{role}"]
-
-[agents.kilocode]
-type = "external"
-provider = "cli"
-command_args = ["run", "{prompt}", "--role", "{role}"]
-
-[agents.gemini]
-type = "external"
-provider = "cli"
-command_args = ["-p", "{prompt}", "--role", "{role}"]
-
-[agents.opencode]
-type = "external"
-provider = "cli"
-command_args = ["-p", "{prompt}", "--role", "{role}"]
-
-[agents.ollama_external]
-type = "external"
-provider = "cli"
-command_args = ["-p", "{prompt}", "--role", "{role}"]
-
 # NVIDIA agent — requires NVIDIA_API_KEY env var.
+# Used by all 4 pipeline stages (observer, strategist, coder, auditor).
 [agents.nvidia]
 type = "external"
 provider = "nvidia"
@@ -129,6 +82,6 @@ command_args = ["-p", "{prompt}", "--role", "{role}"]
 api_key = "{env:NVIDIA_API_KEY}"
 base_url = "https://integrate.api.nvidia.com/v1"
 model = "meta/llama-3.3-70b-instruct"
-temperature = 1.0
+temperature = 0.3
 top_p = 0.95
 max_tokens = 16384

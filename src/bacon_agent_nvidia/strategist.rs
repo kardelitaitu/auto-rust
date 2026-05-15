@@ -3,10 +3,10 @@ use log::{info, warn};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-use super::cli::RunArgs;
 use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
+use crate::bacon_core::cli_types::RunArgs;
 use crate::bacon_core::run_powershell_with_args;
 
 fn role_prompt() -> String {
@@ -14,7 +14,7 @@ fn role_prompt() -> String {
 }
 
 pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let config = args.nvidia_config();
+    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
     let system_prompt = role_prompt();
 
     let prompt = if ctx.scope_reduction_needed {
@@ -119,8 +119,7 @@ fn write_spec_package_in(
     // Write all content files first...
     std::fs::write(spec_dir.join("plan.md"), plan)?;
 
-    let baseline = extract_section(plan, &["Baseline"], "Current state description.");
-    std::fs::write(spec_dir.join("baseline.md"), baseline)?;
+    // Baseline content is embedded within plan.md — no separate file needed.
 
     let validation = extract_section(
         plan,
@@ -129,20 +128,8 @@ fn write_spec_package_in(
     );
     std::fs::write(spec_dir.join("validation.md"), validation)?;
 
-    let notes = extract_section(
-        plan,
-        &["Design Decisions and Risks", "Risks", "Design Decisions"],
-        "See plan.md.",
-    );
-    std::fs::write(spec_dir.join("notes.md"), notes)?;
-
-    std::fs::write(
-        spec_dir.join("README.md"),
-        format!(
-            "# {}\n\nStatus: `approved`\n\nOwner: `pipeline`\nImplementer: `pipeline`\n",
-            title
-        ),
-    )?;
+    // Design decisions and risks are embedded within plan.md — no separate notes.md needed.
+    // Status, owner, implementer metadata lives in spec.yaml — no README.md needed.
 
     // ...then write spec.yaml LAST so the package is only discovered once fully written.
     write_generated_spec_yaml(spec_dir, dir_name, title, plan)?;
@@ -190,16 +177,10 @@ fn write_generated_spec_yaml(
         area: vec!["bacon".to_string()],
         files: GeneratedSpecFiles {
             code: vec!["src/".to_string()],
-            docs: [
-                "README.md",
-                "plan.md",
-                "validation.md",
-                "notes.md",
-                "baseline.md",
-            ]
-            .into_iter()
-            .map(|file| format!("{}{}", active_prefix, file))
-            .collect(),
+            docs: ["plan.md", "validation.md"]
+                .into_iter()
+                .map(|file| format!("{}{}", active_prefix, file))
+                .collect(),
         },
         acceptance: {
             let criteria = crate::bacon_core::extract_section(plan, &["Acceptance Criteria"], "");
@@ -326,19 +307,13 @@ mod tests {
         let plan = "# Test Spec\n\n## Baseline\nCurrent state.\n\n## Validation\nRun check.ps1.\n\n## Design Decisions and Risks\nKeep scope small.";
         let spec_path = write_spec_package_in(&spec_dir, "0001-test-spec", "Test Spec", plan)?;
 
-        // Verify streamlined file set (6 files matching _template)
+        // Verify streamlined file set (3 files)
         assert!(spec_path.join("spec.yaml").exists(), "spec.yaml missing");
         assert!(spec_path.join("plan.md").exists(), "plan.md missing");
-        assert!(
-            spec_path.join("baseline.md").exists(),
-            "baseline.md missing"
-        );
         assert!(
             spec_path.join("validation.md").exists(),
             "validation.md missing"
         );
-        assert!(spec_path.join("notes.md").exists(), "notes.md missing");
-        assert!(spec_path.join("README.md").exists(), "README.md missing");
 
         // Verify redundant boilerplate files are NOT created
         assert!(

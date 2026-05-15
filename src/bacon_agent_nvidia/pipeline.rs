@@ -6,7 +6,7 @@ use crate::bacon_core::{
 };
 use crate::llm::Llm;
 
-use super::cli::RunArgs;
+use crate::bacon_core::cli_types::RunArgs;
 
 pub struct Pipeline {
     pub args: RunArgs,

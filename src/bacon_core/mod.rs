@@ -10,6 +10,7 @@ pub use agent::PipelineAgent;
 pub mod git_snapshot;
 pub use git_snapshot::GitSnapshot;
 
+pub mod cli_types;
 pub mod spec_io;
 
 use anyhow::{Context, Result};
@@ -162,6 +163,11 @@ pub struct PipelineConfig {
     pub strategist: String,
     pub coder: String,
     pub auditor: String,
+    /// Delay in milliseconds between consecutive pipeline stages.
+    /// Used to avoid rate-limiting when calling external LLM APIs.
+    /// Default: 0 (no delay).
+    #[serde(default)]
+    pub stage_delay_ms: u64,
 }
 
 impl Default for PipelineConfig {
@@ -171,6 +177,7 @@ impl Default for PipelineConfig {
             strategist: "bacon".into(),
             coder: "bacon".into(),
             auditor: "bacon".into(),
+            stage_delay_ms: 0,
         }
     }
 }
@@ -178,7 +185,12 @@ impl Default for PipelineConfig {
 impl PipelineConfig {
     /// Read pipeline agent routing from `.bacon/bacon.toml`.
     pub fn from_bacon_toml() -> Self {
-        let config_path = manifest_dir().join(".bacon/bacon.toml");
+        Self::from_bacon_toml_path(&manifest_dir().join(".bacon/bacon.toml"))
+    }
+
+    /// Read pipeline agent routing from a custom config path.
+    /// Used by the default [`from_bacon_toml()`] and by integration tests.
+    pub fn from_bacon_toml_path(config_path: &Path) -> Self {
         if !config_path.exists() {
             warn!(
                 "bacon.toml not found at {} — using default agent routing",
@@ -186,7 +198,7 @@ impl PipelineConfig {
             );
             return Self::default();
         }
-        let content = match std::fs::read_to_string(&config_path) {
+        let content = match std::fs::read_to_string(config_path) {
             Ok(c) => c,
             Err(e) => {
                 warn!(
@@ -222,6 +234,11 @@ impl PipelineConfig {
             strategist: get(pipeline, "strategist"),
             coder: get(pipeline, "coder"),
             auditor: get(pipeline, "auditor"),
+            stage_delay_ms: pipeline
+                .get("stage_delay_ms")
+                .and_then(|v| v.as_integer())
+                .map(|v| v.max(0) as u64)
+                .unwrap_or(0),
         }
     }
 
@@ -1422,6 +1439,54 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_config_parses_stage_delay_ms() {
+        let toml_str = r#"
+            observer = "nvidia"
+            strategist = "nvidia"
+            coder = "nvidia"
+            auditor = "nvidia"
+            stage_delay_ms = 1000
+        "#;
+        let cfg: PipelineConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.stage_delay_ms, 1000);
+    }
+
+    #[test]
+    fn pipeline_config_defaults_stage_delay_ms_to_zero() {
+        let toml_str = r#"
+            observer = "bacon"
+            strategist = "bacon"
+            coder = "bacon"
+            auditor = "bacon"
+        "#;
+        let cfg: PipelineConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.stage_delay_ms, 0, "should default to 0 when absent");
+    }
+
+    #[test]
+    fn from_bacon_toml_path_parses_stage_delay_ms() {
+        let dir = tempfile::tempdir().unwrap();
+        let bacon_dir = dir.path().join(".bacon");
+        std::fs::create_dir_all(&bacon_dir).unwrap();
+        let config_path = bacon_dir.join("bacon.toml");
+
+        let toml_content = r#"
+            [pipeline]
+            observer = "nvidia"
+            strategist = "nvidia"
+            coder = "nvidia"
+            auditor = "nvidia"
+            stage_delay_ms = 200
+        "#;
+        std::fs::write(&config_path, toml_content).unwrap();
+
+        let cfg = PipelineConfig::from_bacon_toml_path(&config_path);
+        assert_eq!(cfg.stage_delay_ms, 200);
+
+        // dir is dropped here, cleaning up the temp files
+    }
+
+    #[test]
     fn agent_llm_config_reads_nvidia_settings() {
         let nvidia = PipelineConfig::agent_llm_config("nvidia");
         assert_eq!(nvidia.provider.as_deref(), Some("nvidia"));
@@ -1438,13 +1503,6 @@ mod tests {
         let unknown = PipelineConfig::agent_llm_config("does_not_exist");
         assert!(unknown.provider.is_none());
         assert!(unknown.model.is_none());
-    }
-
-    #[test]
-    fn agent_llm_config_reads_local_agent_model() {
-        let coder = PipelineConfig::agent_llm_config("coder");
-        assert_eq!(coder.provider.as_deref(), Some("ollama"));
-        assert!(coder.model.as_deref().unwrap_or("").contains("llama"));
     }
 
     #[test]

@@ -15,6 +15,7 @@ use super::{
     check_stale_in_progress, confirm, log_agent_config, should_run, Confidence, PipelineConfig,
     PipelineCtx, Stage,
 };
+use tokio::time::{sleep, Duration};
 
 /// A pipeline agent that can run all stages of the bacon pipeline.
 ///
@@ -67,6 +68,16 @@ pub trait PipelineAgent: Send + Sync {
     async fn run_reduce_scope(&self, ctx: &PipelineCtx) -> Result<PipelineCtx> {
         info!("=== Scope reduction: calling Strategist ===");
         self.run_strategist(ctx).await
+    }
+
+    /// Wait for the configured stage delay, if any.
+    /// Used to avoid rate-limiting when calling external LLM APIs back-to-back.
+    async fn stage_delay(&self) {
+        let delay_ms = self.pipeline_cfg().stage_delay_ms;
+        if delay_ms > 0 {
+            info!("Stage delay: waiting {}ms before next stage", delay_ms);
+            sleep(Duration::from_millis(delay_ms)).await;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -131,6 +142,7 @@ pub trait PipelineAgent: Send + Sync {
 
         // Strategist (skip in fast path)
         if !fast_path && should_run(&resume_stage, Stage::Strategist) {
+            self.stage_delay().await;
             let agent = self.pipeline_cfg().agent_for(&Stage::Strategist);
             info!("=== Stage 2: Strategist (agent: {}) ===", agent);
             log_agent_config(agent);
@@ -153,6 +165,7 @@ pub trait PipelineAgent: Send + Sync {
         // the Strategist again. This caps worst-case LLM calls at 6
         // (1 Observer + 1 Strategist + 4 Coder) instead of 21.
         if should_run(&resume_stage, Stage::Coder) {
+            self.stage_delay().await;
             let agent = self.pipeline_cfg().agent_for(&Stage::Coder);
             info!("=== Stage 3: Coder (agent: {}) ===", agent);
             log_agent_config(agent);
@@ -243,6 +256,7 @@ pub trait PipelineAgent: Send + Sync {
 
         // Auditor (skip in fast path)
         if !fast_path && should_run(&resume_stage, Stage::Auditor) {
+            self.stage_delay().await;
             let agent = self.pipeline_cfg().agent_for(&Stage::Auditor);
             info!("=== Stage 4: Auditor (agent: {}) ===", agent);
             log_agent_config(agent);

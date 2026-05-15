@@ -22,11 +22,9 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RequiredFiles = @(
-    "README.md",
     "spec.yaml",
     "plan.md",
-    "validation.md",
-    "notes.md"
+    "validation.md"
 )
 
 function Throw-SpecLintError([string]$message) {
@@ -184,9 +182,7 @@ if ($packages.Count -eq 0) {
 $issues = New-Object System.Collections.Generic.List[object]
 
 foreach ($pkg in $packages) {
-    $readmePath = Join-Path $pkg.Path "README.md"
     $specPath = Join-Path $pkg.Path "spec.yaml"
-    $notesPath = Join-Path $pkg.Path "notes.md"
     $folderName = Split-Path $pkg.Path -Leaf
 
     $missing = New-Object System.Collections.Generic.List[string]
@@ -203,35 +199,20 @@ foreach ($pkg in $packages) {
         continue
     }
 
-    $readme = Read-Text $readmePath
     $spec = Read-Text $specPath
-    if (-not $readme -or -not $spec) {
+    if (-not $spec) {
         $issues.Add((New-Issue $pkg.Path "UNREADABLE_PACKAGE" "Unreadable spec package: $($pkg.Path)" "Fix the missing or unreadable file, then re-run spec-lint."))
         continue
     }
 
-    $readmeStatus = Parse-Field $readme '^Status:\s*`([^`]+)`\s*$'
     $specStatus = Parse-Field $spec '^status:\s*([A-Za-z]+)\s*$'
     $specId = Parse-Field $spec '^id:\s*([^\s]+)\s*$'
     $specImplementer = Parse-Field $spec '^implementer:\s*([^\s]+)\s*$'
-    $notes = Read-Text $notesPath
-
-    if (-not $readmeStatus) {
-        $issues.Add((New-Issue $pkg.Path "README_STATUS_MISSING" "Missing README status in $($pkg.Path)" "Add a line like `Status: `draft`` or `Status: `done`` near the top of README.md."))
-    }
-
-    if (-not $specStatus) {
-        $issues.Add((New-Issue $pkg.Path "SPEC_STATUS_MISSING" "Missing spec.yaml status in $($pkg.Path)" "Add a top-level `status:` field in spec.yaml."))
-    }
-
-    if ($readmeStatus -and $specStatus -and $readmeStatus -ne $specStatus) {
-        $issues.Add((New-Issue $pkg.Path "STATUS_MISMATCH" "Status mismatch in $($pkg.Path): README=$readmeStatus spec.yaml=$specStatus" "Make both status values match before re-running spec-lint."))
-    }
 
     switch ($pkg.Bucket) {
         "_template" {
             if ($specStatus -and $specStatus -ne "draft") {
-                $issues.Add((New-Issue $pkg.Path "TEMPLATE_STATUS_INVALID" "Template must stay draft: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to draft."))
+                $issues.Add((New-Issue $pkg.Path "TEMPLATE_STATUS_INVALID" "Template must stay draft: $($pkg.Path) has status=$specStatus" "Set spec.yaml status to draft."))
             }
 
             if ($specImplementer -and $specImplementer -ne "pending") {
@@ -251,7 +232,7 @@ foreach ($pkg in $packages) {
         }
         "_active" {
             if ($specStatus -and $specStatus -ne "approved") {
-                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec must be approved: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to approved."))
+                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec must be approved: $($pkg.Path) has status=$specStatus" "Set spec.yaml status to approved."))
             }
 
             foreach ($expectedRef in (Get-ExpectedDocsRefs $pkg.Path $pkg.Bucket)) {
@@ -267,11 +248,7 @@ foreach ($pkg in $packages) {
         }
         "_done" {
             if ($specStatus -and $specStatus -ne "done") {
-                $issues.Add((New-Issue $pkg.Path "DONE_STATUS_INVALID" "Done spec must be done: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to done before archiving."))
-            }
-
-            if (-not $notes -or $notes.Trim().Length -eq 0) {
-                $issues.Add((New-Issue $pkg.Path "DONE_NOTES_EMPTY" "Done spec must have implementation notes: $($pkg.Path)" "Add a short implementation summary to implementation-notes.md before archiving."))
+                $issues.Add((New-Issue $pkg.Path "DONE_STATUS_INVALID" "Done spec must be done: $($pkg.Path) has status=$specStatus" "Set spec.yaml status to done before archiving."))
             }
 
             if ($specImplementer -eq "pending") {

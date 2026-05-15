@@ -1,10 +1,10 @@
 use anyhow::Result;
 use log::info;
 
-use super::cli::RunArgs;
 use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
+use crate::bacon_core::cli_types::RunArgs;
 
 fn system_prompt() -> String {
     crate::bacon_core::read_role_prompt("observer")
@@ -49,7 +49,7 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         }
     }
 
-    let config = args.nvidia_config();
+    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
     let prompt = args
         .prompt
         .as_deref()

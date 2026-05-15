@@ -1,6 +1,5 @@
-use auto::bacon_agent_pi::cli::RunArgs;
-use auto::bacon_agent_pi::cli::{Cli, Command};
-use auto::bacon_agent_pi::pipeline::Pipeline;
+use auto::bacon_agent_nvidia::pipeline::Pipeline;
+use auto::bacon_core::cli_types::{Cli, Command, RunArgs};
 use clap::Parser;
 
 #[tokio::main]
@@ -22,41 +21,32 @@ async fn main() -> anyhow::Result<()> {
         parallel,
     } = Cli::parse();
 
-    match command {
-        Some(Command::Test(args)) => auto::bacon_agent_pi::test_harness::run(&args).await,
-        Some(Command::Run(run_args)) => {
-            let args = RunArgs {
-                prompt: prompt.or(run_args.prompt),
-                stage: stage.or(run_args.stage),
-                spec: spec.or(run_args.spec),
-                fast: fast || run_args.fast,
-                dry_run: dry_run || run_args.dry_run,
-                auto: auto || run_args.auto,
-                auto_apply: auto_apply || run_args.auto_apply,
-                parallel: parallel || run_args.parallel,
-            };
-            let pipeline_dry_run = args.dry_run;
-            let pipeline_auto = args.auto;
+    let run_args = match command {
+        Some(Command::Run(run_args)) => RunArgs {
+            prompt: prompt.or(run_args.prompt),
+            stage: stage.or(run_args.stage),
+            spec: spec.or(run_args.spec),
+            fast: fast || run_args.fast,
+            dry_run: dry_run || run_args.dry_run,
+            auto: auto || run_args.auto,
+            auto_apply: auto_apply || run_args.auto_apply,
+            parallel: parallel || run_args.parallel,
+        },
+        _ => RunArgs {
+            prompt,
+            stage,
+            spec,
+            fast,
+            dry_run,
+            auto,
+            auto_apply,
+            parallel,
+        },
+    };
 
-            let pipeline = Pipeline::new(args, pipeline_dry_run, pipeline_auto)?;
-            pipeline.run().await
-        }
-        _ => {
-            let args = RunArgs {
-                prompt,
-                stage,
-                spec,
-                fast,
-                dry_run,
-                auto,
-                auto_apply,
-                parallel,
-            };
-            let pipeline_dry_run = args.dry_run;
-            let pipeline_auto = args.auto;
+    let pipeline_dry_run = run_args.dry_run;
+    let pipeline_auto = run_args.auto;
 
-            let pipeline = Pipeline::new(args, pipeline_dry_run, pipeline_auto)?;
-            pipeline.run().await
-        }
-    }
+    let pipeline = Pipeline::new(run_args, pipeline_dry_run, pipeline_auto)?;
+    pipeline.run().await
 }

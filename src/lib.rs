@@ -20,13 +20,8 @@ findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependen
 
 pub mod adaptive;
 pub mod api;
-pub mod bacon_agent_codex;
-pub mod bacon_agent_gemini;
-pub mod bacon_agent_kilocode;
 pub mod bacon_agent_nvidia;
 pub mod bacon_agent_ollama;
-pub mod bacon_agent_opencode;
-pub mod bacon_agent_pi;
 pub mod bacon_core;
 pub mod browser;
 pub mod capabilities;

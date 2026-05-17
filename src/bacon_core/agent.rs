@@ -59,17 +59,6 @@ pub trait PipelineAgent: Send + Sync {
 
     /// Run the Auditor stage. Returns the updated pipeline context.
     async fn run_auditor(&self, ctx: &PipelineCtx) -> Result<PipelineCtx>;
-
-    /// Run scope reduction (default: delegate to strategist).
-    ///
-    /// Called when the Coder signals that scope reduction is needed.
-    /// Some agents may override this to post-process external strategist
-    /// output into a spec package.
-    async fn run_reduce_scope(&self, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-        info!("=== Scope reduction: calling Strategist ===");
-        self.run_strategist(ctx).await
-    }
-
     /// Wait for the configured stage delay, if any.
     /// Used to avoid rate-limiting when calling external LLM APIs back-to-back.
     async fn stage_delay(&self) {
@@ -159,6 +148,21 @@ pub trait PipelineAgent: Send + Sync {
             }
         }
 
+        // Validate that files referenced in the spec plan exist on disk
+        if let Some(ref spec_path) = ctx.spec_path {
+            let missing = crate::bacon_core::validate_spec_file_refs(spec_path);
+            if !missing.is_empty() {
+                warn!(
+                    "Spec references {} files that don't exist on disk:\n  {}",
+                    missing.len(),
+                    missing.join("\n  ")
+                );
+                ctx.set_needs_approval();
+                info!("Pipeline aborted — spec marked needs-human-approval");
+                return Ok(());
+            }
+        }
+
         // Coder — single pass with internal retry loop (MAX_ATTEMPTS = 4)
         // No outer scope-reduction loop: if the Coder fails after all retries,
         // the spec goes directly to needs-human-approval instead of calling
@@ -210,17 +214,13 @@ pub trait PipelineAgent: Send + Sync {
                     ) {
                         warn!("Failed to write failure report: {}", e);
                     }
-                    let meta_path = spec_path.join("spec.yaml");
-                    match std::fs::read_to_string(&meta_path) {
-                        Ok(content) => {
-                            let updated = content
-                                .replace("in-progress", "needs-human-approval")
-                                .replace("approved", "needs-human-approval");
-                            if let Err(e) = std::fs::write(&meta_path, updated) {
-                                warn!("Failed to update spec status: {}", e);
-                            }
+                    if let Ok(mut meta) = crate::bacon_core::spec_io::read_spec_meta(spec_path) {
+                        meta.status = "needs-human-approval".to_string();
+                        if let Err(e) =
+                            crate::bacon_core::spec_io::write_spec_meta(spec_path, &meta)
+                        {
+                            warn!("Failed to persist needs-human-approval to spec.yaml: {}", e);
                         }
-                        Err(e) => warn!("Failed to read spec.yaml for status update: {}", e),
                     }
                 }
                 return Ok(());

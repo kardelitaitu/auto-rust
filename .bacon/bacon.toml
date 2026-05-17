@@ -9,12 +9,13 @@
 
 [pipeline]
 # Agent routing for each pipeline stage.
-# Values: an agent name from [agents.<name>].command_args (e.g., "nvidia").
-# Each agent is an external CLI worker; the `bacon` binary dispatches via command_args.
+# Values: "bacon" (built-in) or an agent name from [agents.<name>].command_args (e.g., "nvidia").
+# The built-in "bacon" agents implement SEARCH/REPLACE parsing, file patching,
+# check-fast.ps1 gating, and retry loops. External agents are text-only wrappers.
 observer = "nvidia"
 strategist = "nvidia"
-coder = "nvidia"
-auditor = "nvidia"
+coder = "bacon"
+auditor = "bacon"
 # Delay (ms) between pipeline stages to avoid LLM API rate limiting.
 # Default: 0 (no delay). Set to 1000 for 1s between consecutive stages.
 stage_delay_ms = 500

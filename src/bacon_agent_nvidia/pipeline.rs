@@ -77,7 +77,9 @@ impl PipelineAgent for Pipeline {
                 .prompt
                 .as_deref()
                 .unwrap_or("scan for improvements");
-            run_external_agent(agent, "observer", prompt, self.dry_run)
+            let context = crate::bacon_core::gather_project_context();
+            let enriched_prompt = format!("{}\n\n## Task\n\n{}", context, prompt);
+            run_external_agent(agent, "observer", &enriched_prompt, self.dry_run)
         }
     }
 

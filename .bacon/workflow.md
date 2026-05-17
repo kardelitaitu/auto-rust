@@ -1,5 +1,7 @@
 # Bacon Pipeline — Technical Reference
 
+*last audited 14-05-26 by Buffy*
+
 ## Pipeline Overview
 
 Bacon runs a 4-stage gated LLM pipeline that turns prompts into verified code changes. Each stage validates the previous stage before proceeding. The spec filesystem is the source of truth — no global pipeline state.
@@ -80,6 +82,7 @@ observer = "nvidia"
 strategist = "nvidia"
 coder = "nvidia"
 auditor = "nvidia"
+stage_delay_ms = 500        # Pause in ms between stages
 
 [agents.nvidia]
 type = "external"
@@ -108,6 +111,8 @@ bacon --fast -p "remove unused import"
 # Other flags
 bacon                          # auto-detect target
 bacon --dry-run                # sandbox mode (no writes)
+bacon --auto-apply             # apply verified patches without confirmation
+bacon --parallel               # process independent specs in parallel
 bacon --stage coder --spec 55  # resume from a stage
 
 # Testing
@@ -144,12 +149,6 @@ On startup, `check_stale_in_progress()` scans `_active/` for specs with `status:
 bacon --stage <role> --spec <NN>
 ```
 
-### Error Logging
-
-- `sessions/errors.json` — Structured error log (gitignored)
-- `sessions/<role>_stderr.log` — Role-specific stderr
-- `sessions/crash_dump_<timestamp>.json` — Crash state dump
-
 ## CLI Worker Contract
 
 External workers must print one JSON object to stdout; logs go to stderr.
@@ -173,11 +172,10 @@ External workers must print one JSON object to stdout; logs go to stderr.
 - Use environment variable references: `{env:NVIDIA_API_KEY}`
 - Never commit `.env` files to version control
 - Security-sensitive paths (`src/crypto/`, `src/auth/`) require manual Auditor approval
-- All security-relevant actions logged to `sessions/security_audit.log`
 
 ## Metrics
 
-Tracked metrics are exposed through `sessions/metrics.json` and the `bacon --metrics` command:
+Aggregate pipeline metrics are logged through the `log` crate (info level) during execution and are visible in the terminal output:
 
 - Pipeline success rate
 - Stage duration
@@ -186,13 +184,15 @@ Tracked metrics are exposed through `sessions/metrics.json` and the `bacon --met
 - Code impact (lines changed, files modified)
 - Error rate per stage
 
+*Note: Detailed per-run metric persistence is tracked via the broader framework's metrics system in `src/metrics.rs`.*
+
 ## Development
 
 ### Validation Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `check-fast.ps1` | Quick validation: cargo check, clippy, fmt, nextest, spec-lint |
+| `check-fast.ps1` | Quick validation: cargo check, clippy, fmt |
 | `check.ps1` | Full validation: slow tests, integration tests |
 | `spec-lint.ps1` | Spec package quality check |
 | `spec-stash.ps1` | Checkpoint worktree before spec handoffs |

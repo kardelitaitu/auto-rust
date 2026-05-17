@@ -33,6 +33,69 @@ Each stage validates the previous. The spec filesystem (`docs/specs/_active/`, `
 - **Coder**: Implements changes, validated by `check-fast.ps1` (up to 4 retries)
 - **Auditor**: Validates patch against spec criteria
 
+### Detailed Stage Flow
+
+```
+run()
+├── 1. Parse CLI args → RunArgs
+├── 2. Load bacon.toml → PipelineConfig
+├── 3. Create Llm client
+├── 4. Validate bacon_local_only()
+├── 5. Create initial PipelineCtx { prompt, .. }
+│
+├── 6. Observer
+│     ├── Check for approved specs (fast-path)
+│     ├── If found → use existing spec, skip LLM
+│     ├── If not → call LLM with role prompt
+│     ├── Extract confidence
+│     └── Return updated ctx { prompt, confidence, .. }
+│
+├── 7. Strategist
+│     ├── Call LLM with role prompt + observer output
+│     ├── Extract sections (plan, scope, acceptance criteria)
+│     ├── Write spec package (spec.yaml, plan.md, validation.md)
+│     ├── Run spec-lint.ps1 gate
+│     └── Return ctx { plan, spec_path, .. }
+│
+├── 8. Coder (the most complex stage)
+│     ├── Read spec package files
+│     ├── Collect source context (up to 8 files, 100 lines each)
+│     ├── GitSnapshot (save pre-apply state)
+│     │
+│     ├── RETRY LOOP (up to 4 attempts)
+│     │   ├── Call LLM with spec + error feedback from previous attempt
+│     │   ├── Parse response for SEARCH/REPLACE blocks
+│     │   ├── Apply patches to shadow workspace
+│     │   ├── Run check-fast.ps1 gate
+│     │   ├── On refusal (≥2 consecutive) → abort pipeline
+│     │   ├── On repeated error → skip remaining retries
+│     │   ├── On success → save patch file, break
+│     │   └── On failure → feedback to next attempt
+│     │
+│     ├── If all retries exhausted → write failure report
+│     ├──   → mark needs-human-approval
+│     │
+│     ├── If success:
+│     │   ├── Show diff to user (confirmation gate)
+│     │   ├── auto-apply or queue patch
+│     │   └── GitSnapshot.mark_applied()
+│     │
+│     └── Return ctx { patch_path, coder_refused, .. }
+│
+├── 9. If coder_refused → skip Auditor, abort
+│
+├── 10. Auditor
+│      ├── Read spec.yaml + patch file (NOT git diff)
+│      ├── Call LLM with spec criteria + actual diff
+│      ├── Parse decision: PASS / FAIL
+│      │   (uses regex `^(?i:PASS)\b` to avoid false positives)
+│      ├── If PASS: run spec-lint, archive to _done/
+│      ├── If FAIL: prepend audit report to validation.md
+│      └──   → mark needs-human-approval
+│
+└── 11. Shutdown / cleanup
+```
+
 ## Key Commands
 
 | Command | Purpose |
@@ -87,7 +150,7 @@ src/
 
 | Check | Command |
 |-------|---------|
-| Quick | `check-fast.ps1` (cargo check, clippy, fmt, nextest, spec-lint) |
+| Quick | `check-fast.ps1` (cargo check, clippy, fmt) |
 | Full | `check.ps1` (slow + integration tests) |
 | Specs | `spec-lint.ps1` |
 | Tests | `cargo nextest run` (2,949+ tests) |

@@ -12,7 +12,7 @@ All **15 roadmap items (Phases 0–3)** are complete. The Bacon gated-LLM pipeli
 - **Spec-lint** ensures spec quality; `check-fast.ps1`/`check.ps1` verify code changes
 - **All 4 roles** (Observer, Strategist, Coder, Auditor) tested in contract tests
 - **Spec packages streamlined** to 3 files (`spec.yaml`, `plan.md`, `validation.md`)
-- **Coder→Strategist fallback** loop — 3 scope reduction attempts, then writes failure report to `validation.md` and marks `needs-human-approval`
+- **Coder retry loop** — internal MAX_ATTEMPTS=4 with error feedback, then writes failure report to `validation.md` and marks `needs-human-approval` (no scope-reduction fallback to Strategist)
 - **Confidence scoring** standardized across all agents with metrics tracking
 
 See [docs/_archive/BACON_IMPROVEMENT_ROADMAP.md](docs/_archive/BACON_IMPROVEMENT_ROADMAP.md) for the full itemized completion status.
@@ -71,13 +71,13 @@ Use for commands that produce output, or when indexing docs.
 - The strategist generates these 3 files automatically; handwritten specs should match.
 - Keep specs short, measurable, and easy to review.
 - `spec-lint.ps1` is system-owned. Only touch it for spec-system or tooling work.
-- Before handing a package to another agent, checkpoint the worktree with `.\spec-stash.ps1`.
+- For manual handoffs between agents, use `.\spec-stash.ps1` to checkpoint the worktree and `.\spec-restore.ps1` to restore.
 
 ### Implementer agent
 
 - Edit code, tests, docs updates, and `implementation-notes.md` after spec approval.
 - Use `.\check-fast.ps1` for scoped iteration.
-- Move the spec folder to `_done/` only after `.\check.ps1` passes.
+- After the Coder stage completes and the Auditor returns PASS, the pipeline moves the spec folder to `_done/`. For manual workflows, run `spec-lint.ps1` and `.\check-fast.ps1` before archiving.
 - Update the spec first if scope changes.
 - Do not edit `spec-lint.ps1` unless the task explicitly targets the spec system.
 - If a handoff breaks the worktree, restore from a named checkpoint with `.\spec-restore.ps1`.

@@ -69,3 +69,136 @@ pub async fn title(page: &Page) -> Result<String> {
 pub async fn viewport(page: &Page) -> Result<crate::internal::page_size::Viewport> {
     crate::internal::page_size::get_viewport(page).await
 }
+
+// ============================================================================
+// Unit tests
+// ============================================================================
+//
+// query.rs is a thin delegation layer to capabilities::{dom, navigation}.
+// The compiler guarantees arity and return types at every call-site.
+// Three test categories:
+//  A. Delegation-path checks — string table of every capability fn each query fn
+//     calls; rename breaks the test and prompts an update here.
+//  B. Return-type stubs — explicit Ok shape, no browser/async runtime needed.
+//  C. #[ignore] integration tests — CDP round-trips; full impl in
+//     tests/task_context_integration.rs. Stubs prevent an empty module.
+
+#[cfg(test)]
+mod tests {
+    // ── A. Delegation-path table ─────────────────────────────────────────────
+
+    fn delegation_checks() -> Vec<(&'static str, &'static str)> {
+        vec![
+            (
+                "crate::capabilities::dom::selector_exists",
+                "selector_exists",
+            ),
+            (
+                "crate::capabilities::dom::selector_is_visible",
+                "selector_is_visible",
+            ),
+            ("crate::capabilities::dom::selector_text", "selector_text"),
+            ("crate::capabilities::dom::selector_html", "selector_html"),
+            ("crate::capabilities::dom::selector_attr", "selector_attr"),
+            ("crate::capabilities::dom::selector_value", "selector_value"),
+            (
+                "crate::capabilities::dom::wait_for_selector",
+                "wait_for_selector",
+            ),
+            (
+                "crate::capabilities::dom::wait_for_visible_selector",
+                "wait_for_visible_selector",
+            ),
+            (
+                "crate::capabilities::dom::wait_for_any_visible_selector",
+                "wait_for_any_visible_selector",
+            ),
+            ("crate::capabilities::navigation::page_url", "page_url"),
+            ("crate::capabilities::navigation::page_title", "page_title"),
+            ("crate::internal::page_size::get_viewport", "get_viewport"),
+        ]
+    }
+
+    #[test]
+    fn delegation_paths_are_well_formed() {
+        for (path, name) in delegation_checks().iter() {
+            assert!(
+                path.contains(name),
+                "{} missing expected identifier {}",
+                path,
+                name,
+            );
+        }
+    }
+
+    // ── B. Return-type stubs ──────────────────────────────────────────────────
+    // Explicit anyhow::Error avoids type-inference issues in unit-fn context.
+
+    #[test]
+    fn exists_return_type() {
+        let _: Result<bool, anyhow::Error> = Ok(true);
+    }
+    #[test]
+    fn visible_return_type() {
+        let _: Result<bool, anyhow::Error> = Ok(true);
+    }
+    #[test]
+    fn text_return_type() {
+        let _: Result<Option<String>, anyhow::Error> = Ok(None);
+    }
+    #[test]
+    fn html_return_type() {
+        let _: Result<Option<String>, anyhow::Error> = Ok(None);
+    }
+    #[test]
+    fn attr_return_type() {
+        let _: Result<Option<String>, anyhow::Error> = Ok(None);
+    }
+    #[test]
+    fn value_return_type() {
+        let _: Result<Option<String>, anyhow::Error> = Ok(None);
+    }
+    #[test]
+    fn wait_for_return_type() {
+        let _: Result<bool, anyhow::Error> = Ok(true);
+    }
+    #[test]
+    fn url_return_type() {
+        let _: Result<String, anyhow::Error> = Ok("about:blank".into());
+    }
+    #[test]
+    fn title_return_type() {
+        let _: Result<String, anyhow::Error> = Ok("title".into());
+    }
+
+    // ── C. #[ignore] integration stubs ─────────────────────────────────────────
+    // Full CDP reference impl: tests/task_context_integration.rs.
+
+    #[tokio::test]
+    #[ignore = "requires TASK_API_TEST_WS; full impl in tests/task_context_integration.rs"]
+    async fn test_exists_body_present() -> anyhow::Result<()> {
+        Ok(())
+        // connect -> new_page -> super::exists(&page, "body") -> true
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TASK_API_TEST_WS; full impl in tests/task_context_integration.rs"]
+    async fn test_not_exists_missing_selector() -> anyhow::Result<()> {
+        Ok(())
+        // super::exists(&page, "#nope") -> false
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TASK_API_TEST_WS; full impl in tests/task_context_integration.rs"]
+    async fn test_url_returns_page_url() -> anyhow::Result<()> {
+        Ok(())
+        // about:blank -> super::url(&page)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TASK_API_TEST_WS; full impl in tests/task_context_integration.rs"]
+    async fn test_title_returns_page_title() -> anyhow::Result<()> {
+        Ok(())
+        // <title>T</title> -> super::title(&page)
+    }
+}

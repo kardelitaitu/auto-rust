@@ -24,6 +24,11 @@ function Fail([string]$message) {
     exit 1
 }
 
+# Pre-flight: ensure pwsh is available
+if ($null -eq (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+    Fail "PowerShell (pwsh) is required but not found in PATH. Install PowerShell Core from https://github.com/PowerShell/PowerShell"
+}
+
 function Get-ChangedPaths {
     if ($Paths -and $Paths.Count -gt 0) {
         return $Paths

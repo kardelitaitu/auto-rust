@@ -33,7 +33,6 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     // Read spec content files for full context
     let plan = spec_io::read_spec_file(&spec_path, "plan.md");
     let validation_spec = spec_io::read_spec_file(&spec_path, "validation.md");
-    let impl_notes = spec_io::read_spec_file(&spec_path, "implementation-notes.md");
 
     // Read the approved patch file if available; fall back to git diff
     let diff = if let Some(patch_path) = &ctx.patch_path {
@@ -76,27 +75,23 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                     None
                 }
             })
-            .unwrap_or_else(|| {
-                "(no diff available — check implementation-notes.md for patch details)".to_string()
-            })
+            .unwrap_or_else(|| "(no diff available — no patch file present)".to_string())
     };
 
     let system_prompt = role_prompt();
-
     let user_prompt = format!(
         "Audit this implemented spec: {} ({})\n\n\
-         Title: {}\nStatus: {}\n\n\
-         ## Plan (from plan.md)\n{}\n\n\
-         ## Validation Criteria\n{}\n\n\
-         ## Implementation Notes\n{}\n\n\
-         ## Git Diff (working tree)\n```diff\n{}\n```\n\n\
-         Does the implementation match the spec? \
-         Are all acceptance criteria met? \
-         Any missed edge cases, scope violations, or regressions?\n\n\
-         Respond with PASS or FAIL as the first word, then explain your reasoning.\n\
-         PASS → the spec should be marked done and moved to _done/.\n\
-         FAIL → mark needs-human-approval and explain what's missing.",
-        meta.title, spec_name, meta.title, meta.status, plan, validation_spec, impl_notes, diff
+	         Title: {}\nStatus: {}\n\n\
+	         ## Plan (from plan.md)\n{}\n\n\
+	         ## Validation Criteria\n{}\n\n\
+	         ## Git Diff (working tree)\n```diff\n{}\n```\n\n\
+	         Does the implementation match the spec? \
+	         Are all acceptance criteria met? \
+	         Any missed edge cases, scope violations, or regressions?\n\n\
+	         Respond with PASS or FAIL as the first word, then explain your reasoning.\n\
+	         PASS → the spec should be marked done and moved to _done/.\n\
+	         FAIL → mark needs-human-approval and explain what's missing.",
+        meta.title, spec_name, meta.title, meta.status, plan, validation_spec, diff
     );
 
     info!("NVIDIA Auditor calling API with model: {}", config.model);

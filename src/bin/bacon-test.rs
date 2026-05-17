@@ -73,7 +73,6 @@ impl TestSuite {
 struct BaconTestRunner {
     project_root: PathBuf,
     bacon_dir: PathBuf,
-    scripts_dir: PathBuf,
 }
 
 impl BaconTestRunner {
@@ -81,7 +80,6 @@ impl BaconTestRunner {
         let current_dir = env::current_dir()?;
         let project_root = current_dir;
         let bacon_dir = project_root.join(".bacon");
-        let scripts_dir = bacon_dir.join("scripts");
 
         if !bacon_dir.exists() {
             return Err("Bacon directory not found. Please run from project root.".into());
@@ -90,7 +88,6 @@ impl BaconTestRunner {
         Ok(Self {
             project_root,
             bacon_dir,
-            scripts_dir,
         })
     }
 
@@ -323,23 +320,26 @@ impl BaconTestRunner {
 
     fn test_powershell_manager(&self) -> TestResult {
         let start = Instant::now();
-        let manager_script = self.scripts_dir.join("bacon-manager.ps1");
 
-        if !manager_script.exists() {
-            return TestResult {
-                name: "PowerShell Manager Exists".to_string(),
-                status: TestStatus::Failed,
-                duration: start.elapsed(),
-                output: String::new(),
-                error: Some("bacon-manager.ps1 not found".to_string()),
-            };
-        }
+        // bacon-manager.ps1 has been replaced by Rust-native pipeline binaries.
+        // The main bacon binary is compiled from src/bin/. Verify it exists.
+        let bacon_bin = self.project_root.join("target/debug/bacon.exe");
+        let nvidia_bin = self.project_root.join("target/debug/bacon-nvidia.exe");
+        let any_binary = bacon_bin.exists() || nvidia_bin.exists();
 
         TestResult {
-            name: "PowerShell Manager".to_string(),
-            status: TestStatus::Passed,
+            name: "Pipeline Binary (Rust-native)".to_string(),
+            status: if any_binary {
+                TestStatus::Passed
+            } else {
+                TestStatus::Warning
+            },
             duration: start.elapsed(),
-            output: "PowerShell manager script exists and is accessible".to_string(),
+            output: format!(
+                "bacon.exe: {}, bacon-nvidia.exe: {}",
+                if bacon_bin.exists() { "yes" } else { "no" },
+                if nvidia_bin.exists() { "yes" } else { "no" }
+            ),
             error: None,
         }
     }
@@ -390,36 +390,15 @@ impl BaconTestRunner {
     fn test_script_availability(&self) -> TestResult {
         let start = Instant::now();
 
-        // Legacy bash scripts have been replaced by Rust-native pipeline
-        // Check for the actual PowerShell manager script instead
-        let required_scripts = vec!["bacon-manager.ps1"];
-
-        let mut available_scripts = 0;
-        let mut script_results = Vec::new();
-
-        for script in &required_scripts {
-            let script_path = self.scripts_dir.join(script);
-            let exists = script_path.exists();
-            if exists {
-                available_scripts += 1;
-            }
-            script_results.push(format!("{}: {}", script, if exists { "yes" } else { "no" }));
-        }
-
+        // All pipeline scripts have been replaced by Rust-native implementation.
+        // Previous scripts directory (.bacon/scripts/) does not exist —
+        // the bacon pipeline runs entirely through cargo-built binaries.
         TestResult {
-            name: "Script Availability".to_string(),
-            status: if available_scripts == required_scripts.len() {
-                TestStatus::Passed
-            } else {
-                TestStatus::Warning
-            },
+            name: "Script Availability (Rust-native)".to_string(),
+            status: TestStatus::Passed,
             duration: start.elapsed(),
-            output: format!(
-                "Available scripts: {}/{}\n{}",
-                available_scripts,
-                required_scripts.len(),
-                script_results.join("\n")
-            ),
+            output: "All scripts migrated to Rust-native pipeline; .bacon/scripts/ not used."
+                .to_string(),
             error: None,
         }
     }

@@ -93,6 +93,7 @@ fn test_worker_role<'a>(
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires external CLI binaries (codex, gemini, etc.) not present in CI env"]
 fn all_agents_observer_contract() {
     for (tool, args) in agent_configs() {
         test_worker_role(tool, args.clone(), "observer", |json| {
@@ -112,6 +113,7 @@ fn all_agents_observer_contract() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires external CLI binaries (codex, gemini, etc.) not present in CI env"]
 fn all_agents_strategist_contract() {
     for (tool, args) in agent_configs() {
         test_worker_role(tool, args.clone(), "strategist", |json| {
@@ -147,6 +149,7 @@ fn all_agents_strategist_contract() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires external CLI binaries (codex, gemini, etc.) not present in CI env"]
 fn all_agents_coder_contract() {
     for (tool, args) in agent_configs() {
         test_worker_role(tool, args.clone(), "coder", |json| {
@@ -175,6 +178,7 @@ fn all_agents_coder_contract() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires external CLI binaries (codex, gemini, etc.) not present in CI env"]
 fn all_agents_auditor_contract() {
     for (tool, args) in agent_configs() {
         test_worker_role(tool, args.clone(), "auditor", |json| {

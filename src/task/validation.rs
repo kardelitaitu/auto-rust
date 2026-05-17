@@ -1467,3 +1467,78 @@ mod tests {
         assert_eq!(report.tasks_called.len(), 3);
     }
 }
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test] fn issue_error_message() { let e=ValidationIssue::Error("x".into()); assert_eq!(e.message(),"x"); assert!(e.is_error()); }
+    #[test] fn issue_warning_message() { let w=ValidationIssue::Warning("y".into()); assert_eq!(w.message(),"y"); assert!(!w.is_error()); }
+    #[test] fn report_new_empty() { let r=ValidationReport::new("t".into()); assert!(r.is_valid()); assert_eq!(r.error_count(),0); assert_eq!(r.warning_count(),0); }
+    #[test] fn report_add_error() { let mut r=ValidationReport::new("t".into()); r.error("e"); assert!(!r.is_valid()); assert!(r.has_errors()); assert_eq!(r.error_count(),1); }
+    #[test] fn report_add_warning() { let mut r=ValidationReport::new("t".into()); r.warning("w"); assert!(r.is_valid()); assert_eq!(r.warning_count(),1); }
+    #[test] fn report_mixed_counts() { let mut r=ValidationReport::new("t".into()); r.error("e1"); r.error("e2"); r.warning("w"); assert_eq!(r.error_count(),2); assert_eq!(r.warning_count(),1); }
+    #[test] fn report_summary_valid() { let r=ValidationReport::new("t".into()); assert!(r.summary().contains("is valid")); }
+    #[test] fn report_summary_warnings() { let mut r=ValidationReport::new("t".into()); r.warning("w"); assert!(r.summary().contains("warning(s)")); }
+    #[test] fn report_summary_errors() { let mut r=ValidationReport::new("t".into()); r.error("e"); assert!(r.summary().contains("error(s)")); }
+    #[test] fn report_summary_mixed() { let mut r=ValidationReport::new("t".into()); r.error("e"); r.warning("w"); assert!(r.summary().contains("error(s)")); assert!(r.summary().contains("warning(s)")); }
+    #[test] fn report_action_count_default() { let r=ValidationReport::new("t".into()); assert_eq!(r.action_count,0); }
+    #[test] fn report_variables_empty() { let r=ValidationReport::new("t".into()); assert!(r.variables_referenced.is_empty()); }
+    #[test] fn report_tasks_called_empty() { let r=ValidationReport::new("t".into()); assert!(r.tasks_called.is_empty()); }
+    #[test] fn issue_partial_eq_error() { let a=ValidationIssue::Error("z".into()); let b=ValidationIssue::Error("z".into()); assert_eq!(a,b); }
+    #[test] fn issue_partial_eq_warning() { let a=ValidationIssue::Warning("z".into()); let b=ValidationIssue::Warning("z".into()); assert_eq!(a,b); }
+    #[test] fn report_clone() { let mut r=ValidationReport::new("t".into()); r.error("e"); let c=r.clone(); assert_eq!(c.error_count(),1); }
+    #[test] fn report_debug() { let r=ValidationReport::new("t".into()); let _=format!("{:?}",r); }
+    #[test] fn issue_debug() { let e=ValidationIssue::Error("d".into()); let _=format!("{:?}",e); }
+    #[test] fn report_multiple_warnings() { let mut r=ValidationReport::new("t".into()); for i in 0..3 { r.warning(i.to_string()); } assert_eq!(r.warning_count(),3); }
+    #[test] fn report_set_action_count_direct() { let mut r=ValidationReport::new("t".into()); r.action_count=42; assert_eq!(r.action_count,42); }
+    #[test] fn report_insert_variable() { let mut r=ValidationReport::new("t".into()); r.variables_referenced.insert("v1".into()); assert_eq!(r.variables_referenced.len(),1); }
+    #[test] fn report_insert_task_call() { let mut r=ValidationReport::new("t".into()); r.tasks_called.insert("sub".into()); assert!(r.tasks_called.contains("sub")); }
+    #[test] fn issue_error_vs_warning_ne() { let e=ValidationIssue::Error("x".into()); let w=ValidationIssue::Warning("x".into()); assert_ne!(e,w); }
+    #[test] fn report_name_preserved() { let r=ValidationReport::new("my_task".into()); assert_eq!(r.task_name,"my_task"); }
+    #[test] fn report_error_twice() { let mut r=ValidationReport::new("t".into()); r.error("e"); r.error("e2"); assert_eq!(r.error_count(),2); }
+    #[test] fn report_warning_twice() { let mut r=ValidationReport::new("t".into()); r.warning("w1"); r.warning("w2"); assert_eq!(r.warning_count(),2); }
+    #[test] fn report_zero_actions_summary() { let r=ValidationReport::new("t".into()); assert!(r.summary().contains("0 actions")); }
+    #[test] fn report_one_action_summary() { let mut r=ValidationReport::new("t".into()); r.action_count=1; assert!(r.summary().contains("1 actions")); }
+    #[test] fn report_large_error_count() { let mut r=ValidationReport::new("t".into()); for _ in 0..10 { r.error("e"); } assert_eq!(r.error_count(),10); }
+    #[test] fn report_large_warning_count() { let mut r=ValidationReport::new("t".into()); for _ in 0..10 { r.warning("w"); } assert_eq!(r.warning_count(),10); }
+    #[test] fn issue_message_long() { let e=ValidationIssue::Error("a".repeat(100)); assert_eq!(e.message().len(),100); }
+    #[test] fn report_clone_independent() { let mut r=ValidationReport::new("t".into()); r.error("e"); let mut c=r.clone(); c.warning("w"); assert_eq!(r.warning_count(),0); assert_eq!(c.warning_count(),1); }
+    #[test] fn report_debug_contains_name() { let r=ValidationReport::new("debug_t".into()); assert!(format!("{:?}",r).contains("debug_t")); }
+    #[test] fn issue_partial_eq_diff_msg() { let a=ValidationIssue::Error("1".into()); let b=ValidationIssue::Error("2".into()); assert_ne!(a,b); }
+    #[test] fn report_empty_issues_vec() { let r=ValidationReport::new("t".into()); assert!(r.issues.is_empty()); }
+    #[test] fn report_issues_len_after_add() { let mut r=ValidationReport::new("t".into()); r.error("e"); r.warning("w"); assert_eq!(r.issues.len(),2); }
+    #[test] fn report_is_valid_after_only_warnings() { let mut r=ValidationReport::new("t".into()); r.warning("w"); assert!(r.is_valid()); }
+    #[test] fn report_has_errors_false_initial() { let r=ValidationReport::new("t".into()); assert!(!r.has_errors()); }
+    #[test] fn report_has_errors_true() { let mut r=ValidationReport::new("t".into()); r.error("e"); assert!(r.has_errors()); }
+    #[test] fn report_variables_len() { let mut r=ValidationReport::new("t".into()); r.variables_referenced.insert("x".into()); r.variables_referenced.insert("y".into()); assert_eq!(r.variables_referenced.len(),2); }
+    #[test] fn report_tasks_len() { let mut r=ValidationReport::new("t".into()); r.tasks_called.insert("a".into()); r.tasks_called.insert("b".into()); assert_eq!(r.tasks_called.len(),2); }
+    #[test] fn issue_message_empty() { let e=ValidationIssue::Error("".into()); assert_eq!(e.message(),""); }
+    #[test] fn report_name_change() { let mut r=ValidationReport::new("old".into()); r.task_name="new".into(); assert_eq!(r.task_name,"new"); }
+    #[test] fn report_summary_contains_task_name() { let r=ValidationReport::new("special".into()); assert!(r.summary().contains("special")); }
+    #[test] fn report_multiple_errors_summary() { let mut r=ValidationReport::new("t".into()); r.error("e1"); r.error("e2"); assert!(r.summary().contains("2 error(s)")); }
+    #[test] fn report_action_and_error_mix() { let mut r=ValidationReport::new("t".into()); r.action_count=5; r.error("e"); assert!(r.summary().contains("5 actions")); }
+    #[test] fn issue_clone() { let e=ValidationIssue::Error("c".into()); let c=e.clone(); assert_eq!(e,c); }
+    #[test] fn report_default_action_zero() { let r=ValidationReport::new("t".into()); assert_eq!(r.action_count,0); }
+    #[test] fn report_issues_push_direct() { let mut r=ValidationReport::new("t".into()); r.issues.push(ValidationIssue::Error("p".into())); assert_eq!(r.issues.len(),1); }
+    #[test] fn report_variables_clear() { let mut r=ValidationReport::new("t".into()); r.variables_referenced.insert("v".into()); r.variables_referenced.clear(); assert!(r.variables_referenced.is_empty()); }
+    #[test] fn report_tasks_clear() { let mut r=ValidationReport::new("t".into()); r.tasks_called.insert("t".into()); r.tasks_called.clear(); assert!(r.tasks_called.is_empty()); }
+    #[test] fn issue_eq_self() { let e=ValidationIssue::Error("s".into()); assert_eq!(e,e); }
+    #[test] fn report_eq_name_only() { let r1=ValidationReport::new("same".into()); let r2=ValidationReport::new("same".into()); assert_eq!(r1.task_name,r2.task_name); }
+    #[test] fn report_summary_no_warnings_errors() { let r=ValidationReport::new("t".into()); let s=r.summary(); assert!(!s.contains("error")); assert!(!s.contains("warning")); }
+    #[test] fn report_error_count_zero() { let r=ValidationReport::new("t".into()); assert_eq!(r.error_count(),0); }
+    #[test] fn report_warning_count_zero() { let r=ValidationReport::new("t".into()); assert_eq!(r.warning_count(),0); }
+    #[test] fn report_issues_retain_errors() { let mut r=ValidationReport::new("t".into()); r.error("e"); r.warning("w"); r.issues.retain(|i| i.is_error()); assert_eq!(r.issues.len(),1); }
+    #[test] fn issue_message_unicode() { let e=ValidationIssue::Error(" café ".into()); assert!(e.message().contains("café")); }
+    #[test] fn report_tasks_contains_after_insert() { let mut r=ValidationReport::new("t".into()); r.tasks_called.insert("subtask".into()); assert!(r.tasks_called.contains("subtask")); }
+    #[test] fn report_variables_contains() { let mut r=ValidationReport::new("t".into()); r.variables_referenced.insert("varX".into()); assert!(r.variables_referenced.contains("varX")); }
+    #[test] fn report_summary_format_check() { let mut r=ValidationReport::new("fmt".into()); r.error("e"); let s=r.summary(); assert!(s.starts_with("Task 'fmt'")); }
+    #[test] fn report_new_with_special_chars() { let r=ValidationReport::new("t@#$".into()); assert_eq!(r.task_name,"t@#$"); }
+    #[test] fn issue_warning_eq() { let w1=ValidationIssue::Warning("w".into()); let w2=ValidationIssue::Warning("w".into()); assert_eq!(w1,w2); }
+    #[test] fn report_issues_iter_errors() { let mut r=ValidationReport::new("t".into()); r.error("e1"); r.error("e2"); let errs:Vec<_>=r.issues.iter().filter(|i|i.is_error()).collect(); assert_eq!(errs.len(),2); }
+    #[test] fn report_action_increment() { let mut r=ValidationReport::new("t".into()); r.action_count+=1; assert_eq!(r.action_count,1); }
+    #[test] fn report_variables_insert_many() { let mut r=ValidationReport::new("t".into()); ["a","b","c"].iter().for_each(|v|{r.variables_referenced.insert(v.to_string());}); assert_eq!(r.variables_referenced.len(),3); }
+    #[test] fn report_debug_not_empty() { let r=ValidationReport::new("d".into()); assert!(!format!("{:?}",r).is_empty()); }
+    #[test] fn issue_debug_not_empty() { let e=ValidationIssue::Error("d".into()); assert!(!format!("{:?}",e).is_empty()); }
+    #[test] fn report_has_no_warnings_initial() { let r=ValidationReport::new("t".into()); assert_eq!(r.warning_count(),0); }
+}

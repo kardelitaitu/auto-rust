@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use log::{info, warn};
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -43,126 +42,267 @@ fn safe_file_stem(name: &str) -> String {
         .collect()
 }
 
-fn changed_paths_from_patch(patch: &str) -> Vec<PathBuf> {
-    let mut paths = BTreeSet::new();
-    for line in patch.lines() {
-        if let Some(path) = line.strip_prefix("diff --git a/") {
-            if let Some(b_path) = path.find(" b/") {
-                paths.insert(PathBuf::from(&path[..b_path]));
-            }
+/// Minimum length (in bytes) for SEARCH text to be considered valid.
+/// Blocks with shorter SEARCH text are almost certainly hallucinations
+/// or refusal noise that happened to match the regex pattern.
+const MIN_SEARCH_LENGTH: usize = 10;
+
+/// Minimum length (in bytes) for REPLACE text to be considered valid.
+const MIN_REPLACE_LENGTH: usize = 1;
+
+/// Minimum total response length to even attempt parsing.
+/// Responses shorter than this are guaranteed not to contain real
+/// SEARCH/REPLACE blocks (noise, refusals, or empty output).
+const MIN_RESPONSE_LENGTH: usize = 60;
+
+/// Parse SEARCH/REPLACE blocks from LLM output (Aider-style format).
+///
+/// Format:
+/// ```
+/// path/to/file.ext
+/// <<<<<<< SEARCH
+/// existing content
+/// =======
+/// new content
+/// >>>>>>> REPLACE
+/// ```
+///
+/// Returns a list of (file_path, search_text, replace_text) tuples.
+fn parse_search_replace_blocks(response: &str) -> Vec<(String, String, String)> {
+    // Match blocks where the file path is on a line before <<<<<<< SEARCH
+    let re = regex::Regex::new(
+        r"(?ms)(?:^|\n)\s*([^\n]+?\.(?:rs|toml|md|json|ps1|sh|js|ts|css|html))\s*\n\s*<<<<<<< SEARCH\s*\n(.*?)\n\s*=======\s*\n(.*?)\n\s*>>>>>>> REPLACE"
+    ).expect("invalid SEARCH/REPLACE regex");
+
+    let mut blocks = Vec::new();
+    for cap in re.captures_iter(response) {
+        let file_path = cap[1].trim().to_string();
+        let search = cap[2].to_string();
+        let replace = cap[3].to_string();
+        if !file_path.is_empty() {
+            blocks.push((file_path, search, replace));
         }
     }
-    paths.into_iter().collect()
+    blocks
 }
 
-fn extract_unified_diff(response: &str) -> Result<String> {
-    // Try fenced block first
-    if let Some(diff) = extract_fenced_diff(response) {
-        return Ok(diff);
-    }
-    // Fall back to raw diff --git extraction
-    if response.contains("diff --git") {
-        return Ok(response.to_string());
-    }
-    anyhow::bail!("No unified diff found in Coder output");
-}
-
-fn extract_fenced_diff(response: &str) -> Option<String> {
-    let mut lines = response.lines();
-    let mut in_diff = false;
-    let mut diff_lines = Vec::new();
-    for line in &mut lines {
-        if line.trim_start().starts_with("```diff") || line.trim_start().starts_with("````diff") {
-            in_diff = true;
-            continue;
-        }
-        if in_diff
-            && (line.trim_start().starts_with("```") || line.trim_start().starts_with("````"))
-        {
-            break;
-        }
-        if in_diff {
-            diff_lines.push(line);
-        }
-    }
-    if diff_lines.is_empty() {
-        return None;
-    }
-    Some(diff_lines.join("\n"))
-}
-
-/// Verify a patch by applying to a temporary clone and running check-fast.ps1.
-fn verify_patch_with_check_fast(root: &Path, patch_path: &Path) -> Result<String> {
-    let check_output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args([
-            "apply",
-            "--check",
-            "--recount",
-            "--allow-overlap",
-            "--ignore-whitespace",
-            "--ignore-space-change",
-        ])
-        .arg(patch_path)
-        .output()
-        .context("failed to run git apply --check")?;
-    if !check_output.status.success() {
-        let stderr = String::from_utf8_lossy(&check_output.stderr);
-        anyhow::bail!("git apply --check failed:\n{}", stderr);
-    }
-
-    // Apply to temp worktree, run check-fast
-    let worktree_dir = tempfile::tempdir().context("failed to create temp worktree")?;
-    let worktree = worktree_dir.path();
-
-    let clone_output = Command::new("git")
-        .arg("clone")
-        .arg("--shared")
-        .arg(root)
-        .arg(worktree)
-        .output()
-        .context("failed to clone to temp worktree")?;
-    if !clone_output.status.success() {
-        anyhow::bail!("failed to clone to temp worktree");
-    }
-
-    let apply_output = Command::new("git")
-        .arg("-C")
-        .arg(worktree)
-        .args([
-            "apply",
-            "--recount",
-            "--allow-overlap",
-            "--ignore-whitespace",
-            "--ignore-space-change",
-        ])
-        .arg(patch_path)
-        .output()
-        .context("failed to apply patch in worktree")?;
-    if !apply_output.status.success() {
-        let stderr = String::from_utf8_lossy(&apply_output.stderr);
-        anyhow::bail!("patch apply failed in worktree:\n{}", stderr);
-    }
-
-    // Run check-fast.ps1 in worktree
-    let check_output = Command::new("powershell")
-        .arg("-NoProfile")
-        .arg("-File")
-        .arg(worktree.join("check-fast.ps1"))
-        .output()
-        .context("failed to run check-fast.ps1 in worktree")?;
-    if !check_output.status.success() {
-        let stderr = String::from_utf8_lossy(&check_output.stderr);
-        let stdout = String::from_utf8_lossy(&check_output.stdout);
+/// Validate parsed SEARCH/REPLACE blocks for quality and correctness.
+///
+/// Checks performed:
+/// - **Response too short**: Raw response is below MIN_RESPONSE_LENGTH
+/// - **Trivial SEARCH text**: SEARCH content is below MIN_SEARCH_LENGTH bytes
+/// - **Trivial REPLACE text**: REPLACE content is below MIN_REPLACE_LENGTH bytes
+/// - **Duplicate blocks**: Same file+search appears more than once (hallucination signal)
+///
+/// Returns `Ok(())` if all blocks pass validation, or `Err` with a description
+/// of the first failing check.
+fn validate_search_replace_blocks(
+    response: &str,
+    blocks: &[(String, String, String)],
+) -> Result<()> {
+    // 1. Response-level: reject trivially short responses
+    if response.trim().len() < MIN_RESPONSE_LENGTH {
         anyhow::bail!(
-            "check-fast.ps1 failed:\nstdout:\n{}\nstderr:\n{}",
-            stdout,
-            stderr
+            "Response too short ({} bytes, minimum {}) — likely not a real SEARCH/REPLACE output",
+            response.trim().len(),
+            MIN_RESPONSE_LENGTH
         );
     }
 
-    Ok(String::from_utf8_lossy(&check_output.stdout).to_string())
+    // 2. Block-level: reject blocks with trivial content
+    for (i, (file_path, search, replace)) in blocks.iter().enumerate() {
+        let search_trimmed = search.trim();
+        let replace_trimmed = replace.trim();
+
+        if search_trimmed.len() < MIN_SEARCH_LENGTH {
+            anyhow::bail!(
+                "Block #{} ({}): SEARCH text too short ({} bytes, minimum {}) — likely hallucinated",
+                i + 1,
+                file_path,
+                search_trimmed.len(),
+                MIN_SEARCH_LENGTH
+            );
+        }
+
+        if replace_trimmed.len() < MIN_REPLACE_LENGTH {
+            anyhow::bail!(
+                "Block #{} ({}): REPLACE text is empty — no change to apply",
+                i + 1,
+                file_path,
+            );
+        }
+    }
+
+    // 3. Deduplication: reject repeated identical blocks (hallucination signal)
+    let mut seen = std::collections::HashSet::new();
+    for (file_path, search, _) in blocks.iter() {
+        let key = format!("{}::{}", file_path, search);
+        if !seen.insert(key.clone()) {
+            anyhow::bail!(
+                "Duplicate SEARCH block found for {} — LLM likely hallucinated or repeated output",
+                file_path
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Apply SEARCH/REPLACE blocks directly to working tree files with GitSnapshot rollback.
+///
+/// 1. Creates a GitSnapshot for safe rollback.
+/// 2. For each block: reads the file, performs SEARCH→REPLACE, writes back.
+/// 3. Runs `check-fast.ps1` to verify compilation.
+/// 4. On success: generates unified diff via `git diff HEAD -- files...`.
+/// 5. On failure: rolls back via snapshot.
+///
+/// Returns the unified diff patch and list of changed file paths (relative).
+fn apply_search_replace_blocks(
+    root: &Path,
+    blocks: &[(String, String, String)],
+) -> Result<(String, Vec<PathBuf>)> {
+    // Collect relative file paths for snapshot and diff
+    let mut rel_paths: Vec<PathBuf> = Vec::new();
+    for (file_path, _, _) in blocks {
+        let clean = file_path.trim_start_matches(&['/', '\\'][..]);
+        let rel = PathBuf::from(clean);
+        let abs = root.join(&rel);
+        if !abs.exists() {
+            anyhow::bail!(
+                "SEARCH/REPLACE target file not found: {} (resolved to {})",
+                file_path,
+                abs.display()
+            );
+        }
+        rel_paths.push(rel);
+    }
+
+    // Create snapshot for safe rollback (needs relative paths)
+    let snapshot = GitSnapshot::create(root, &rel_paths)?;
+
+    // Apply each SEARCH→REPLACE
+    for (file_path, search, replace) in blocks {
+        let clean = file_path.trim_start_matches(&['/', '\\'][..]);
+        let abs_path = root.join(clean);
+        let content = std::fs::read_to_string(&abs_path)
+            .with_context(|| format!("failed to read {}", abs_path.display()))?;
+
+        // Try exact match first
+        if let Some(pos) = content.find(search.as_str()) {
+            let new_content = format!(
+                "{}{}{}",
+                &content[..pos],
+                replace,
+                &content[pos + search.len()..]
+            );
+            std::fs::write(&abs_path, &new_content)
+                .with_context(|| format!("failed to write {}", abs_path.display()))?;
+            info!("SEARCH/REPLACE applied to {} (exact match)", clean);
+            continue;
+        }
+
+        // Fallback: whitespace-insensitive matching
+        // Normalize both search and content by stripping all whitespace
+        let search_flat: String = search.chars().filter(|c| !c.is_whitespace()).collect();
+        if search_flat.is_empty() {
+            anyhow::bail!(
+                "SEARCH text for {} is empty after whitespace normalization",
+                clean
+            );
+        }
+        let content_flat: String = content.chars().filter(|c| !c.is_whitespace()).collect();
+        if let Some(flat_pos) = content_flat.find(&search_flat) {
+            // Map flat position back to original content position by counting chars
+            let mut orig_pos = 0;
+            let mut flat_idx = 0;
+            for (i, ch) in content.char_indices() {
+                if flat_idx >= flat_pos {
+                    orig_pos = i;
+                    break;
+                }
+                if !ch.is_whitespace() {
+                    flat_idx += ch.len_utf8();
+                }
+            }
+            // Find end byte offset in original content by walking forward
+            // consuming search_flat.len() bytes of non-whitespace characters
+            let mut end_pos = content.len();
+            let mut consumed = 0usize;
+            for (i, ch) in content[orig_pos..].char_indices() {
+                if consumed >= search_flat.len() {
+                    end_pos = orig_pos + i;
+                    break;
+                }
+                if !ch.is_whitespace() {
+                    consumed += ch.len_utf8();
+                }
+            }
+            let new_content = format!("{}{}{}", &content[..orig_pos], replace, &content[end_pos..]);
+            std::fs::write(&abs_path, &new_content)
+                .with_context(|| format!("failed to write {}", abs_path.display()))?;
+            info!(
+                "SEARCH/REPLACE applied to {} (whitespace-insensitive match)",
+                clean
+            );
+        } else {
+            // Rollback before returning error (warn if restore fails)
+            if let Err(e) = snapshot.restore() {
+                warn!(
+                    "Failed to restore snapshot during SEARCH/REPLACE error recovery: {}",
+                    e
+                );
+            }
+            anyhow::bail!(
+                "SEARCH text not found in {} — even after whitespace-insensitive matching",
+                clean
+            );
+        }
+    }
+
+    // Run check-fast.ps1 to verify
+    match run_check_fast(root) {
+        Ok(output) => info!(
+            "check-fast.ps1 passed after SEARCH/REPLACE: {}",
+            output.trim()
+        ),
+        Err(e) => {
+            warn!("check-fast.ps1 failed after SEARCH/REPLACE: {}", e);
+            snapshot.restore()?;
+            anyhow::bail!(
+                "SEARCH/REPLACE changes failed check-fast.ps1; rolled back: {}",
+                e
+            );
+        }
+    }
+
+    // Generate unified diff
+    let diff_output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("diff")
+        .arg("HEAD")
+        .arg("--")
+        .args(&rel_paths)
+        .output()
+        .context("failed to run git diff HEAD")?;
+    if !diff_output.status.success() {
+        snapshot.restore()?;
+        anyhow::bail!("git diff HEAD failed; rolled back");
+    }
+    let diff = String::from_utf8_lossy(&diff_output.stdout).to_string();
+    if diff.trim().is_empty() {
+        snapshot.restore()?;
+        anyhow::bail!("SEARCH/REPLACE produced no changes; rolled back");
+    }
+
+    // Mark snapshot as applied
+    snapshot.mark_applied()?;
+
+    info!(
+        "SEARCH/REPLACE applied successfully: {} files changed",
+        rel_paths.len()
+    );
+    Ok((diff, rel_paths))
 }
 
 /// Apply a queued patch to the main repository using GitSnapshot for rollback.
@@ -296,17 +436,27 @@ fn build_spec_context(ctx: &PipelineCtx) -> String {
     match &ctx.spec_path {
         Some(spec_path) => {
             let plan = spec_io::read_spec_file(spec_path, "plan.md");
-            let api_outline = spec_io::read_spec_file(spec_path, "internal-api-outline.md");
             let validation_spec = spec_io::read_spec_file(spec_path, "validation.md");
             // Collect actual source file contents referenced throughout spec text
-            let all_spec_text = format!("{}\n{}\n{}", plan, api_outline, validation_spec);
-            let source_context = collect_source_context(&all_spec_text, 8, 100);
+            let all_spec_text = format!("{}\n{}", plan, validation_spec);
+            let source_context = collect_source_context(&all_spec_text, 8, 300);
             format!(
-                "## Plan\n{}\n\n## API Changes\n{}\n\n## Validation Criteria\n{}{}",
-                plan, api_outline, validation_spec, source_context
+                "## Plan\n{}\n\n## Validation Criteria\n{}{}",
+                plan, validation_spec, source_context
             )
         }
-        None => ctx.description.clone(),
+        None => {
+            // When the external Strategist didn't write spec files to disk,
+            // fall back to ctx.description but still extract file paths from
+            // the plan text and include their source content. This ensures the
+            // LLM has the actual code to match against in SEARCH/REPLACE blocks.
+            let source_context = collect_source_context(&ctx.description, 8, 300);
+            if source_context.is_empty() {
+                ctx.description.clone()
+            } else {
+                format!("{}\n\n{}", ctx.description, source_context)
+            }
+        }
     }
 }
 
@@ -325,6 +475,22 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
     let system_prompt = role_prompt();
 
+    // Mark spec as in-progress at the start of implementation
+    if !ctx.dry_run {
+        if let Some(ref spec_path) = ctx.spec_path {
+            if let Ok(mut meta) = spec_io::read_spec_meta(spec_path) {
+                if meta.status == "approved" {
+                    meta.status = "in-progress".to_string();
+                    if let Err(e) = spec_io::write_spec_meta(spec_path, &meta) {
+                        warn!("Failed to set spec status to in-progress: {}", e);
+                    } else {
+                        info!("Set spec status to in-progress");
+                    }
+                }
+            }
+        }
+    }
+
     let mut attempt: u32 = 1;
     let mut last_error = String::new();
     let mut errors: Vec<String> = Vec::new();
@@ -337,17 +503,31 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
 
         let prompt = if attempt == 1 {
             format!(
-                "Implement the following spec as a unified diff patch:\n\n{}\n\nProduce one unified diff patch starting with diff --git. Do not include SEARCH/REPLACE blocks.",
+                "Implement the following spec using SEARCH/REPLACE blocks.\n\n{}\n\n\
+                 For each file you need to change, output the file path, then:\n\
+                 <<<<<<< SEARCH\n\
+                 [exact lines to replace]\n\
+                 =======\n\
+                 [new lines]\n\
+                 >>>>>>> REPLACE\n\
+                 CRITICAL: Copy SEARCH lines EXACTLY from the source files — character for character.\n\
+                 Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks.",
                 spec_context
             )
         } else {
             format!(
-                "Implement the following spec as a unified diff patch.\n\n\
+                "Implement the following spec using SEARCH/REPLACE blocks.\n\n\
                  The previous attempt had these issues:\n{}\n\n\
                  Spec context:\n{}\n\n\
-                 Produce one unified diff patch starting with diff --git. \
-                 Do not include SEARCH/REPLACE blocks. \
-                 Do not refuse or explain why you can't do it — just produce the patch.",
+                 For each file you need to change, output the file path, then:\n\
+                 <<<<<<< SEARCH\n\
+                 [exact lines to replace]\n\
+                 =======\n\
+                 [new lines]\n\
+                 >>>>>>> REPLACE\n\
+                 CRITICAL: Copy SEARCH lines EXACTLY from the source files — character for character.\n\
+                 Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks. \
+                 Do not refuse or explain why you can't do it — just produce the blocks.",
                 last_error, spec_context
             )
         };
@@ -409,10 +589,11 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                             &validation_path,
                             format!("# Coder Refusal Report\n\n{}", report),
                         );
-                        let meta_path = spec_path.join("spec.yaml");
-                        if let Ok(content) = std::fs::read_to_string(&meta_path) {
-                            let updated = content.replace("in-progress", "needs-human-approval");
-                            let _ = std::fs::write(&meta_path, updated);
+                        if let Ok(mut meta) = spec_io::read_spec_meta(spec_path) {
+                            meta.status = "needs-human-approval".to_string();
+                            if let Err(e) = spec_io::write_spec_meta(spec_path, &meta) {
+                                warn!("Failed to persist needs-human-approval to spec.yaml: {}", e);
+                            }
                         }
                     }
                 }
@@ -443,64 +624,90 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
         }
         consecutive_refusals = 0;
 
-        // Check for empty or non-diff response
-        if response.trim().is_empty() || !response.contains("diff --git") {
+        // Parse SEARCH/REPLACE blocks from LLM response
+        let search_replace_blocks = parse_search_replace_blocks(&response);
+
+        if search_replace_blocks.is_empty() {
             warn!(
-                "NVIDIA Coder returned empty or non-diff response on attempt {}",
+                "NVIDIA Coder returned response with no SEARCH/REPLACE blocks on attempt {}",
                 attempt
             );
-            errors.push(format!("Attempt {} produced no valid diff patch", attempt));
+            errors.push(format!(
+                "Attempt {} produced no valid SEARCH/REPLACE blocks (response length: {})",
+                attempt,
+                response.len()
+            ));
             if attempt >= MAX_ATTEMPTS {
                 warn!("Max retries exhausted — signalling scope reduction needed");
                 return Ok(signal_scope_reduction(ctx, errors));
             }
-            last_error = "The previous attempt did not produce a valid unified diff patch. Make sure to output a proper `diff --git` patch.".to_string();
+            last_error = "The previous attempt did not produce valid SEARCH/REPLACE blocks. Output SEARCH/REPLACE blocks with the file path, <<<<<<< SEARCH, =======, >>>>>>> REPLACE format. Do NOT output unified diff patches.".to_string();
             attempt += 1;
             continue;
         }
 
-        info!("NVIDIA Coder produced valid patch on attempt {}", attempt);
+        // Validate block quality before attempting to apply
+        if let Err(e) = validate_search_replace_blocks(&response, &search_replace_blocks) {
+            warn!(
+                "NVIDIA Coder SEARCH/REPLACE validation failed on attempt {}: {}",
+                attempt, e
+            );
+            errors.push(format!("Attempt {} validation failed: {}", attempt, e));
+            if attempt >= MAX_ATTEMPTS {
+                warn!("Max retries exhausted — signalling scope reduction needed");
+                return Ok(signal_scope_reduction(ctx, errors));
+            }
+            last_error = format!(
+                "The previous attempt produced invalid SEARCH/REPLACE blocks: {}\n\n\
+                 Make sure each block has meaningful SEARCH content (at least {} characters) \
+                 and non-empty REPLACE content.",
+                e, MIN_SEARCH_LENGTH
+            );
+            attempt += 1;
+            continue;
+        }
 
-        // Extract and queue the patch
-        let patch = match extract_unified_diff(&response) {
-            Ok(p) => p,
+        info!(
+            "NVIDIA Coder produced {} SEARCH/REPLACE blocks on attempt {}",
+            search_replace_blocks.len(),
+            attempt
+        );
+
+        // Apply directly via SEARCH/REPLACE with GitSnapshot rollback
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (patch, changed_paths) = match apply_search_replace_blocks(root, &search_replace_blocks)
+        {
+            Ok(result) => result,
             Err(e) => {
-                warn!("Failed to extract unified diff: {}", e);
-                errors.push(format!(
-                    "Attempt {} produced diff content but extraction failed: {}",
-                    attempt, e
-                ));
+                warn!("SEARCH/REPLACE failed on attempt {}: {}", attempt, e);
+                errors.push(format!("Attempt {} SEARCH/REPLACE failed: {}", attempt, e));
                 if attempt >= MAX_ATTEMPTS {
                     return Ok(signal_scope_reduction(ctx, errors));
                 }
-                last_error = format!("Failed to extract unified diff: {}", e);
+                last_error = format!(
+                    "SEARCH/REPLACE failed: {}\n\n\
+                     ---\n\n\
+                     Make sure SEARCH lines match the source files EXACTLY.",
+                    e
+                );
                 attempt += 1;
                 continue;
             }
         };
 
-        // Save patch to temp file and verify
+        // Write patch to temp file for verification/queueing
         let temp_patch =
             tempfile::NamedTempFile::new().context("failed to create temp patch file")?;
-        std::fs::write(temp_patch.path(), &patch)?;
+        std::fs::write(temp_patch.path(), &patch)
+            .context("failed to write patch from SEARCH/REPLACE")?;
 
-        let changed_paths = changed_paths_from_patch(&patch);
-        if changed_paths.is_empty() {
-            warn!("Patch had no changed paths on attempt {}", attempt);
-            errors.push(format!("Attempt {} patch had no changed paths", attempt));
-            if attempt >= MAX_ATTEMPTS {
-                return Ok(signal_scope_reduction(ctx, errors));
-            }
-            last_error = "The patch did not specify any changed file paths".to_string();
-            attempt += 1;
-            continue;
-        }
+        info!("SEARCH/REPLACE applied successfully, continuing to verification");
 
         // Verify with check-fast.ps1 (unless dry run)
         if !ctx.dry_run {
             let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-            match verify_patch_with_check_fast(root, temp_patch.path()) {
-                Ok(check_output) => {
+            match run_check_fast(root) {
+                Ok(ref check_output) => {
                     info!("Patch verification passed on attempt {}", attempt);
 
                     // Queue the patch
@@ -725,5 +932,136 @@ mod tests {
         let ctx = PipelineCtx::new("original".to_string());
         let result = signal_scope_reduction(&ctx, vec![]);
         assert_eq!(result.description, "original");
+    }
+
+    // ========================================================================
+    // validate_search_replace_blocks Tests
+    // ========================================================================
+
+    fn make_block(file: &str, search: &str, replace: &str) -> (String, String, String) {
+        (file.to_string(), search.to_string(), replace.to_string())
+    }
+
+    #[test]
+    fn test_validation_passes_valid_blocks() {
+        let response = "a".repeat(100);
+        let blocks = vec![make_block(
+            "src/main.rs",
+            "fn old_function() {\n    return 1;\n}",
+            "fn new_function() {\n    return 2;\n}",
+        )];
+        assert!(validate_search_replace_blocks(&response, &blocks).is_ok());
+    }
+
+    #[test]
+    fn test_validation_passes_valid_blocks_multiple_files() {
+        let response = "b".repeat(100);
+        let blocks = vec![
+            make_block(
+                "src/main.rs",
+                "fn old_function() {\n    return 1;\n}",
+                "fn new_function() {\n    return 2;\n}",
+            ),
+            make_block(
+                "src/lib.rs",
+                "pub fn helper() {}\n",
+                "pub fn helper_v2() {}\n",
+            ),
+        ];
+        assert!(validate_search_replace_blocks(&response, &blocks).is_ok());
+    }
+
+    #[test]
+    fn test_validation_rejects_short_response() {
+        let response = "short";
+        let blocks = vec![make_block(
+            "src/main.rs",
+            "fn old_function() {\n    return 1;\n}",
+            "fn new_function() {\n    return 2;\n}",
+        )];
+        let err = validate_search_replace_blocks(response, &blocks).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("Response too short"),
+            "Expected 'Response too short', got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validation_rejects_trivial_search() {
+        let response = "x".repeat(100);
+        let blocks = vec![make_block(
+            "src/main.rs",
+            "short",
+            "fn new_function() {\n    return 2;\n}",
+        )];
+        let err = validate_search_replace_blocks(&response, &blocks).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("SEARCH text too short"),
+            "Expected 'SEARCH text too short', got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validation_rejects_empty_replace() {
+        let response = "x".repeat(100);
+        let blocks = vec![make_block(
+            "src/main.rs",
+            "fn old_function() {\n    return 1;\n}",
+            "",
+        )];
+        let err = validate_search_replace_blocks(&response, &blocks).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("REPLACE text is empty"),
+            "Expected 'REPLACE text is empty', got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validation_rejects_duplicate_blocks() {
+        let response = "x".repeat(100);
+        let blocks = vec![
+            make_block(
+                "src/main.rs",
+                "fn old_function() {\n    return 1;\n}",
+                "fn new_function() {\n    return 2;\n}",
+            ),
+            make_block(
+                "src/main.rs",
+                "fn old_function() {\n    return 1;\n}",
+                "fn new_function() {\n    return 2;\n}",
+            ),
+        ];
+        let err = validate_search_replace_blocks(&response, &blocks).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("Duplicate SEARCH block"),
+            "Expected 'Duplicate SEARCH block', got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validation_different_files_same_search_ok() {
+        let response = "x".repeat(100);
+        let blocks = vec![
+            make_block(
+                "src/main.rs",
+                "fn old_function() {\n    return 1;\n}",
+                "fn new_function() {\n    return 2;\n}",
+            ),
+            make_block(
+                "src/lib.rs",
+                "fn old_function() {\n    return 1;\n}",
+                "fn new_function() {\n    return 2;\n}",
+            ),
+        ];
+        // Same search text in different files is valid (e.g., similar code in multiple locations)
+        assert!(validate_search_replace_blocks(&response, &blocks).is_ok());
     }
 }

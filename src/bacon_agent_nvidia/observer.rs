@@ -61,7 +61,9 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
     }
 
     info!("NVIDIA Observer calling API with model: {}", config.model);
-    let response = nvidia_api::chat(&config, &system_prompt(), prompt).await?;
+    let context = crate::bacon_core::gather_project_context();
+    let enriched_prompt = format!("{}\n\n## Task\n\n{}", context, prompt);
+    let response = nvidia_api::chat(&config, &system_prompt(), &enriched_prompt).await?;
 
     // Extract and log confidence
     let confidence = crate::bacon_core::extract_confidence(&response);

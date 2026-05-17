@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
 
 /// Captures pre-apply state to enable safe rollback after failed patch application.
 ///
@@ -22,8 +21,6 @@ pub struct GitSnapshot {
     had_stash: bool,
     /// Relative file paths backed up before patch application
     backed_up_files: Vec<PathBuf>,
-    /// When the snapshot was created
-    _created_at: Instant,
 }
 
 impl GitSnapshot {
@@ -76,14 +73,12 @@ impl GitSnapshot {
                 backed_up_files.push(rel_path.clone());
             }
         }
-
         Ok(Self {
             root,
             snapshot_dir,
             base_commit,
             had_stash,
             backed_up_files,
-            _created_at: Instant::now(),
         })
     }
 

@@ -403,6 +403,7 @@ fn validate_pipeline_config_warns_on_missing_agent_config() {
         strategist: "nonexistent_agent".to_string(),
         coder: "nonexistent_agent".to_string(),
         auditor: "nonexistent_agent".to_string(),
+        stage_delay_ms: 0,
     };
     // Should not panic — just logs warnings
     bacon_core::validate_pipeline_config(&config);

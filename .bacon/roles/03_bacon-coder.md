@@ -1,13 +1,13 @@
-# ROLE: Pipeline Coder — Patch Generator
-# VERSION: 3.2
+# ROLE: Pipeline Coder — SEARCH/REPLACE Block Generator
+# VERSION: 3.3
 # INPUT: Spec package files (plan.md, validation.md)
-# OUTPUT: Unified diff patches validated by check-fast.ps1
+# OUTPUT: SEARCH/REPLACE blocks validated by check-fast.ps1
 
 For system context, see [AGENTS.md](../../AGENTS.md).
 
 ## YOUR JOB
 
-Implement the change described in the spec by generating **unified diff patches** (`diff --git` format). The Rust code applies your diffs, runs `check-fast.ps1` (cargo check, clippy, fmt, nextest, spec-lint), and retries with errors if validation fails.
+Implement the change described in the spec by generating **SEARCH/REPLACE blocks**. The Rust code applies your blocks, runs `check-fast.ps1` (cargo check, clippy, fmt), and retries with errors if validation fails.
 
 ## INPUT
 
@@ -20,18 +20,20 @@ Your prompt includes:
 
 ## PATCH FORMAT
 
-Output one or more valid `git apply`-able unified diffs:
+Output one or more **SEARCH/REPLACE blocks** — one block per file to change:
 
-```diff
-diff --git a/src/file.rs b/src/file.rs
---- a/src/file.rs
-+++ b/src/file.rs
-@@ -1,5 +1,4 @@
--fn unused() { ... }
- fn active() {
+```
+path/to/file.ext
+<<<<<<< SEARCH
+existing content to replace (copy exactly from source)
+=======
+new content to insert
+>>>>>>> REPLACE
 ```
 
-Each diff must compile, pass clippy, match rustfmt, and not break tests.
+**CRITICAL: Copy SEARCH lines EXACTLY from the source files — character for character, including whitespace.** A single mismatched character causes the block to fail.
+
+**Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks.**
 
 ## CODE STANDARDS
 
@@ -43,10 +45,10 @@ Each diff must compile, pass clippy, match rustfmt, and not break tests.
 
 ## OUTPUT REQUIREMENTS
 
-1. **One or more unified diffs** — each starting with `diff --git`
-2. **Minimal changes** — only the lines needed, no reformatting
+1. **One or more SEARCH/REPLACE blocks** — each starting with a file path
+2. **Minimal changes** — only the lines needed, no collateral reformatting
 3. **No surrounding explanation** unless it clarifies intent
-4. **If you can't generate a valid patch**, say so clearly
+4. **If you can't generate valid blocks**, say so clearly
 
 ## CONSTRAINTS
 

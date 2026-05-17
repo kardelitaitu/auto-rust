@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use log::{debug, info};
+use log::{debug, info, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -134,11 +134,39 @@ pub async fn chat(config: &NvidiaConfig, system_prompt: &str, user_prompt: &str)
         let text = response.text().await.unwrap_or_default();
         anyhow::bail!("NVIDIA API error: {} - {}", status, text);
     }
-
-    let chat_response: ChatResponse = response
-        .json()
-        .await
-        .context("Failed to parse NVIDIA API response")?;
+    // Capture raw body first for debugging parse failures
+    let body_text = response.text().await.unwrap_or_default();
+    let parse_result: Result<ChatResponse> = serde_json::from_str(&body_text).with_context(|| {
+        let snippet = if body_text.len() > 500 {
+            format!("{}... (truncated at 500)", &body_text[..500])
+        } else {
+            body_text.clone()
+        };
+        format!("Failed to parse NVIDIA API response. Raw body: {}", snippet)
+    });
+    if let Err(ref _e) = parse_result {
+        // Persist raw body to disk for offline debugging
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let error_dir = PathBuf::from("sessions/api_errors");
+        let _ = std::fs::create_dir_all(&error_dir);
+        let error_path = error_dir.join(format!("nvidia_api_{}.json", ts));
+        if let Err(write_err) = std::fs::write(&error_path, &body_text) {
+            warn!(
+                "Failed to save raw API response to {}: {}",
+                error_path.display(),
+                write_err
+            );
+        } else {
+            info!(
+                "Saved raw API response to {} for debugging",
+                error_path.display()
+            );
+        }
+    }
+    let chat_response = parse_result?;
 
     let content = chat_response
         .choices

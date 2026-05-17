@@ -380,23 +380,6 @@ impl PipelineCtx {
         self.confidence = confidence;
         self
     }
-    /// Mark this context as needing human approval and return a reference to self.
-    ///
-    /// Use when the pipeline cannot proceed automatically (coder retries exhausted,
-    /// auditor FAIL, refusal escalation). Automatically persists the
-    /// `"needs-human-approval"` status to `spec.yaml` when a spec_path is available.
-    pub fn set_needs_approval(&mut self) -> &mut Self {
-        self.needs_human_approval = true;
-        if let Some(ref spec_path) = self.spec_path {
-            if let Ok(mut meta) = spec_io::read_spec_meta(spec_path) {
-                meta.status = "needs-human-approval".to_string();
-                if let Err(e) = spec_io::write_spec_meta(spec_path, &meta) {
-                    warn!("Failed to persist needs-human-approval to spec.yaml: {}", e);
-                }
-            }
-        }
-        self
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -985,99 +968,6 @@ pub fn scan_project_structure() -> String {
     parts.join("\n")
 }
 
-/// Gather project context for LLM prompts: file tree + source file samples.
-/// This helps the Observer make grounded observations instead of hallucinating
-/// non-existent files or code structures.
-pub fn gather_project_context() -> String {
-    let root = manifest_dir();
-    let src = root.join("src");
-    let mut parts = Vec::new();
-
-    // 1. File tree listing (only .rs files, shallow)
-    let mut tree = String::from("```");
-    build_file_tree(&src, &mut tree, 0, 3);
-    tree.push_str("\n```");
-    parts.push(tree);
-
-    // 2. Source file samples (up to 8 files, 40 lines each)
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_rs_files(&src, &mut files, 3);
-    files.sort();
-
-    let mut samples = Vec::new();
-    for file_path in files.iter().take(8) {
-        if let Ok(content) = std::fs::read_to_string(file_path) {
-            let relative = file_path.strip_prefix(&root).unwrap_or(file_path);
-            let line_count = content.lines().count();
-            let truncated = if line_count > 40 {
-                let excerpt: String = content.lines().take(40).collect::<Vec<&str>>().join("\n");
-                format!(
-                    "{}\n\n_(... truncated after 40 of {} lines)_",
-                    excerpt, line_count
-                )
-            } else {
-                content
-            };
-            samples.push(format!(
-                "### `{}` ({} lines)\n```rust\n{}\n```",
-                relative.display().to_string().replace('\\', "/"),
-                line_count,
-                truncated
-            ));
-        }
-    }
-
-    if !samples.is_empty() {
-        parts.push(format!(
-            "## Source File Contents\n\n{}",
-            samples.join("\n\n")
-        ));
-    }
-
-    parts.join("\n\n")
-}
-
-/// Recursively build a file tree of Rust source files.
-fn build_file_tree(dir: &Path, output: &mut String, depth: usize, max_depth: usize) {
-    if depth > max_depth {
-        return;
-    }
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by_key(|e| e.file_name());
-        for entry in entries {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
-                continue;
-            }
-            if path.is_dir() {
-                output.push_str(&format!("\n{}{}/", "  ".repeat(depth), name));
-                build_file_tree(&path, output, depth + 1, max_depth);
-            } else if name.ends_with(".rs") {
-                output.push_str(&format!("\n{}  {}", "  ".repeat(depth), name));
-            }
-        }
-    }
-}
-
-/// Collect all `.rs` files recursively up to `max_depth`.
-fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>, depth: usize) {
-    if depth == 0 {
-        return;
-    }
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_rs_files(&path, files, depth - 1);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                files.push(path);
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Internal
 // ---------------------------------------------------------------------------
@@ -1098,8 +988,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     let mut contents: Vec<String> = Vec::new();
 
     // Match paths starting from project root directories (src/, tests/, docs/, config/, .bacon/)
-    let path_re = Regex::new(r#"\b(?:src|tests|docs|config|scripts|\.bacon)/[\w./-]+\.(?:rs|toml|md|json|ps1|sh|yaml|yml)\b"#)
-        .expect("static path regex for collect_source_context");
+    let path_re = Regex::new(r#"\b(?:src|tests|docs|config|scripts|\.bacon)/[\w./-]+\.(?:rs|toml|md|json|ps1|sh|yaml|yml)\b"#).unwrap();
 
     for m in path_re.find_iter(text) {
         let path_str = m.as_str();
@@ -1148,8 +1037,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     }
 
     // Also match root-level files like Cargo.toml, build.rs, bacon.toml
-    let root_re = Regex::new(r#"\b(?:Cargo\.toml|build\.rs|bacon\.toml|rust-toolchain\.toml|spec-lint\.ps1|check-fast\.ps1|check\.ps1)\b"#)
-        .expect("static root-file regex for collect_source_context");
+    let root_re = Regex::new(r#"\b(?:Cargo\.toml|build\.rs|bacon\.toml|rust-toolchain\.toml|spec-lint\.ps1|check-fast\.ps1|check\.ps1)\b"#).unwrap();
     for m in root_re.find_iter(text) {
         if contents.len() >= max_files {
             break;
@@ -1204,12 +1092,9 @@ pub fn extract_confidence(response: &str) -> Option<Confidence> {
         if let Some(idx) = lower.find("confidence:") {
             let after = cleaned[idx + "confidence:".len()..].trim();
             // Strip trailing punctuation or markdown artifacts
-            let val = after
-                .trim_start_matches(|c: char| ['*', '_'].contains(&c))
-                .trim_end_matches(|c: char| {
-                    c == '.' || c == ',' || c == '!' || c == '*' || c == '_'
-                })
-                .trim();
+            let val = after.trim_end_matches(|c: char| {
+                c == '.' || c == ',' || c == '!' || c == '*' || c == '_'
+            });
             if let Some(conf) = Confidence::from_string(val) {
                 return Some(conf);
             }
@@ -1239,45 +1124,12 @@ pub const REFUSAL_PHRASES: &[&str] = &[
 /// Count unique file paths referenced in a spec plan text (e.g., `src/main.rs`).
 /// Used to enforce the "max 3 files" scope constraint at the Strategist gate.
 pub fn count_spec_file_refs(text: &str) -> usize {
-    let path_re = Regex::new(r"\bsrc/[\w./-]+\.rs\b")
-        .expect("static src-path regex for count_spec_file_refs");
+    let path_re = Regex::new(r"\bsrc/[\w./-]+\.rs\b").unwrap();
     let mut seen = std::collections::HashSet::new();
     for m in path_re.find_iter(text) {
         seen.insert(m.as_str());
     }
     seen.len()
-}
-
-/// Read a spec package's `plan.md`, extract file path references, and verify
-/// they exist on disk. Returns a list of missing file paths (empty = all valid).
-///
-/// This is called before the Coder stage to catch hallucinations where the
-/// Strategist references files that don't exist.
-pub fn validate_spec_file_refs(spec_dir: &Path) -> Vec<String> {
-    let root = manifest_dir();
-    let plan_path = spec_dir.join("plan.md");
-    let plan = match std::fs::read_to_string(&plan_path) {
-        Ok(p) => p,
-        Err(_) => return Vec::new(), // No plan.md = nothing to validate
-    };
-
-    let path_re = Regex::new(r"\bsrc/[\w./-]+\.rs\b")
-        .expect("static src-path regex for validate_spec_file_refs");
-    let mut missing = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-
-    for m in path_re.find_iter(&plan) {
-        let path_str = m.as_str();
-        if seen.contains(path_str) {
-            continue;
-        }
-        seen.insert(path_str.to_string());
-        let full_path = root.join(path_str);
-        if !full_path.exists() {
-            missing.push(path_str.to_string());
-        }
-    }
-    missing
 }
 
 /// Check if an LLM response contains a refusal phrase (case-insensitive).
@@ -1426,45 +1278,6 @@ mod confidence_tests {
     fn extract_confidence_first_match_wins() {
         let response = "Confidence: Low\nBut then later\nConfidence: High";
         assert_eq!(extract_confidence(response), Some(Confidence::Low));
-    }
-
-    #[test]
-    fn extract_confidence_realistic_llm_output() {
-        // Simulates a realistic LLM response with structured analysis
-        let response = "I have analyzed the code changes requested.\n\
-            \n\
-            The implementation requires updating the config parsing module to handle the new field.\n\
-            The change is relatively straightforward and well-scoped.\n\
-            \n\
-            **Confidence:** High\n\
-            \n\
-            ## Summary\n\
-            This change adds the `stage_delay_ms` configuration field.";
-        assert_eq!(extract_confidence(response), Some(Confidence::High));
-    }
-
-    #[test]
-    fn extract_confidence_no_confidence_section() {
-        // LLM response without any confidence declaration
-        let response = "Here is the implementation:\n\
-            ```rust\n\
-            fn foo() {}\n\
-            ```\n\
-            Let me know if you need changes.";
-        assert_eq!(extract_confidence(response), None);
-    }
-
-    #[test]
-    fn extract_confidence_with_inline_reasoning_not_matched() {
-        // When confidence is followed by inline reasoning, the function
-        // currently stops parsing because Confidence::from_string receives
-        // the full inline text (e.g. "Medium (I've verified...)") which
-        // does not match the exact "medium" case. This is a known limitation.
-        let response = "I'll implement this change.\n\
-            Confidence: Medium (I've verified the approach works but haven't tested edge cases)\n\
-            ## Plan\n\
-            1. Modify the parser\n            2. Update tests";
-        assert_eq!(extract_confidence(response), None);
     }
 }
 
@@ -1780,56 +1593,5 @@ mod tests {
         assert!(is_safe_agent_name("nvidia"));
         assert!(is_safe_agent_name("bacon"));
         assert!(is_safe_agent_name("my-agent_1"));
-    }
-
-    #[test]
-    fn gather_project_context_returns_file_tree_and_source_samples() {
-        let context = gather_project_context();
-
-        // Must not be empty
-        assert!(!context.is_empty(), "context should not be empty");
-
-        // Must contain a fenced code block (the file tree)
-        assert!(
-            context.contains("```"),
-            "expected file tree in code fence, got: {:.200}",
-            context
-        );
-
-        // Must contain at least one Rust file in the tree (e.g., mod.rs, lib.rs, main.rs)
-        assert!(
-            context.contains(".rs"),
-            "expected at least one .rs file reference in tree, got: {:.200}",
-            context
-        );
-
-        // Must contain the source file samples section header
-        assert!(
-            context.contains("## Source File Contents"),
-            "expected source file samples section, got: {:.200}",
-            context
-        );
-
-        // Must contain at least one source file sample with Rust code fence
-        assert!(
-            context.contains("```rust"),
-            "expected at least one Rust code-fenced sample, got: {:.200}",
-            context
-        );
-
-        // Must contain a file path reference like `src/` in a file sample header
-        assert!(
-            context.contains("src/"),
-            "expected at least one src/ file path in samples, got: {:.200}",
-            context
-        );
-
-        // Verify the tree section comes before the samples section
-        let tree_pos = context.find("```").unwrap();
-        let samples_pos = context.find("## Source File Contents").unwrap();
-        assert!(
-            tree_pos < samples_pos,
-            "file tree should appear BEFORE source file samples"
-        );
     }
 }

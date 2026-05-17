@@ -5,6 +5,16 @@
 .DESCRIPTION
     Validates spec structure, status consistency, and required files.
     Never modifies spec files.
+
+    Lint rules:
+    - REQUIRED_FILES: Every spec package must have spec.yaml, plan.md, validation.md
+    - BUCKET_RULES:
+      * _template/ — status must be "draft", implementer "pending", id "<initiative-id>"
+      * _active/  — status must be "approved", must reference _active/ paths
+      * _done/    — status must be "done", implementer must not be "pending", must reference _done/ paths
+    - ID_MATCH: Folder name must match spec.yaml id (non-template only)
+    - PATH_SANITY: No stale path references (e.g. _done/ paths in _active/ specs)
+    - READONLY_ASSERT: Script verifies its own readonly state (self-audit)
 .PARAMETER Directory
     A spec root, bucket, or package directory to lint. Defaults to docs/specs.
 .EXAMPLE

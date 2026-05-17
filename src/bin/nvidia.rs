@@ -134,14 +134,23 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Get API key from args or environment
+    const PLACEHOLDER_KEY: &str = "nvapi-placeholder-key";
+
     let api_key = if let Some(key) = args.api_key {
         key
     } else {
         std::env::var("NVIDIA_API_KEY").unwrap_or_else(|_| {
             eprintln!("Warning: No NVIDIA API key provided. Using placeholder.");
-            "nvapi-placeholder-key".to_string()
+            PLACEHOLDER_KEY.to_string()
         })
     };
+
+    // Fail fast if no real API key is available in live mode
+    if !args.dry_run && api_key == PLACEHOLDER_KEY {
+        anyhow::bail!(
+            "NVIDIA_API_KEY is not set. Set the NVIDIA_API_KEY environment variable or pass --api-key. "
+        );
+    }
 
     // Dry-run mode: produce mock output without calling API
     if args.dry_run {

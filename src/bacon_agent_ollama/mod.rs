@@ -1,3 +1,8 @@
+// DEPRECATED: This agent module does not implement the current PipelineAgent trait
+// and is not compatible with the bacon pipeline. It remains as a reference for
+// local-first Ollama integration. To re-enable, implement PipelineAgent and wire
+// it into the agent routing in PipelineConfig.
+
 pub mod cli;
 
 use anyhow::Result;

@@ -126,6 +126,7 @@ fn write_spec_package_in(
         &["Validation", "Validation Criteria"],
         "Run check.ps1.",
     );
+    let validation = validation.replace("check.ps1", "check-fast.ps1");
     std::fs::write(spec_dir.join("validation.md"), validation)?;
 
     // Design decisions and risks are embedded within plan.md — no separate notes.md needed.
@@ -159,6 +160,14 @@ struct GeneratedSpecFiles {
     docs: Vec<String>,
 }
 
+/// Write the generated spec.yaml from a GeneratedSpecYaml struct.
+///
+/// # Metadata defaults
+///
+/// - `owner` and `implementer` are hardcoded to `"pipeline"` because the
+///   pipeline is the sole generator of automated specs. This is intentional.
+/// - `priority` is extracted dynamically from the plan text.
+/// - `area` is extracted dynamically from the plan text.
 fn write_generated_spec_yaml(
     spec_dir: &Path,
     dir_name: &str,
@@ -173,8 +182,8 @@ fn write_generated_spec_yaml(
         status: "approved".to_string(),
         owner: "pipeline".to_string(),
         implementer: "pipeline".to_string(),
-        priority: "P2".to_string(),
-        area: vec!["bacon".to_string()],
+        priority: extract_priority(plan),
+        area: extract_area(plan),
         files: GeneratedSpecFiles {
             code: vec!["src/".to_string()],
             docs: ["plan.md", "validation.md"]
@@ -187,7 +196,7 @@ fn write_generated_spec_yaml(
             if criteria.is_empty() {
                 vec![
                     "Generated spec package is complete and validated.".to_string(),
-                    "Implementation validates with check.ps1 before completion.".to_string(),
+                    "Implementation validates with check-fast.ps1 before completion.".to_string(),
                 ]
             } else {
                 criteria
@@ -220,9 +229,57 @@ fn extract_title(text: &str) -> String {
 fn slugify(text: &str) -> String {
     crate::bacon_core::slugify(text)
 }
-
 fn extract_section(plan: &str, headers: &[&str], fallback: &str) -> String {
     crate::bacon_core::extract_section(plan, headers, fallback)
+}
+
+/// Extract priority level from a spec plan, defaulting to "P2" if not found.
+fn extract_priority(plan: &str) -> String {
+    for line in plan.lines() {
+        let lower = line.trim().to_lowercase();
+        if lower.starts_with("priority:")
+            || lower.starts_with("**priority:**")
+            || lower.starts_with("- priority:")
+        {
+            if let Some(val) = line.split(':').nth(1) {
+                let trimmed = val.trim().trim_matches(&[' ', '*', '`', '"', '\''][..]);
+                match trimmed.to_lowercase().as_str() {
+                    "p0" | "critical" => return "P0".to_string(),
+                    "p1" | "high" => return "P1".to_string(),
+                    "p3" | "low" => return "P3".to_string(),
+                    _ => {}
+                }
+            }
+        }
+    }
+    "P2".to_string() // default medium priority
+}
+
+/// Extract area tags from a spec plan, defaulting to ["bacon"] if not found.
+fn extract_area(plan: &str) -> Vec<String> {
+    for line in plan.lines() {
+        let lower = line.trim().to_lowercase();
+        if lower.starts_with("area:")
+            || lower.starts_with("**area:**")
+            || lower.starts_with("- area:")
+            || lower.starts_with("tags:")
+        {
+            if let Some(val) = line.split(':').nth(1) {
+                let cleaned = val
+                    .trim()
+                    .trim_matches(&[' ', '[', ']', '*', '`', '"', '\''][..]);
+                let areas: Vec<String> = cleaned
+                    .split([',', ' '].as_slice())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if !areas.is_empty() {
+                    return areas;
+                }
+            }
+        }
+    }
+    vec!["bacon".to_string()] // default area
 }
 
 #[cfg(test)]
@@ -273,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_extract_section_found() {
-        let plan = "## Baseline\nCurrent state.\n\n## Validation\nRun check.ps1.";
+        let plan = "## Baseline\nCurrent state.\n\n## Validation\nRun check-fast.ps1.";
         let result = extract_section(plan, &["Baseline"], "fallback");
         assert!(result.contains("## Baseline"));
         assert!(result.contains("Current state."));
@@ -304,7 +361,7 @@ mod tests {
         let spec_dir = active.join("0001-test-spec");
         std::fs::create_dir(&spec_dir)?;
 
-        let plan = "# Test Spec\n\n## Baseline\nCurrent state.\n\n## Validation\nRun check.ps1.\n\n## Design Decisions and Risks\nKeep scope small.";
+        let plan = "# Test Spec\n\n## Baseline\nCurrent state.\n\n## Validation\nRun check-fast.ps1.\n\n## Design Decisions and Risks\nKeep scope small.";
         let spec_path = write_spec_package_in(&spec_dir, "0001-test-spec", "Test Spec", plan)?;
 
         // Verify streamlined file set (3 files)
@@ -316,14 +373,6 @@ mod tests {
         );
 
         // Verify redundant boilerplate files are NOT created
-        assert!(
-            !spec_path.join("internal-api-outline.md").exists(),
-            "internal-api-outline.md should not be created"
-        );
-        assert!(
-            !spec_path.join("implementation-notes.md").exists(),
-            "implementation-notes.md should not be created"
-        );
         assert!(
             !spec_path.join("ci-commands.md").exists(),
             "ci-commands.md should not be created"

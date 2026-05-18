@@ -287,7 +287,9 @@ mod tests {
         assert!(adaptation.reaction_delay_multiplier > 1.0);
         assert!(adaptation.require_strict_verification);
         assert!(adaptation.prefer_coordinate_fallback);
-    }    #[test]
+    }
+
+    #[test]
     fn test_learning_engine_new() {
         let profile = create_test_profile();
         let engine = LearningEngine::new("test-session-123", &profile, true, 14);

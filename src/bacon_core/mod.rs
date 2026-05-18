@@ -942,7 +942,8 @@ pub fn should_run(resume: &Option<Stage>, current: Stage) -> bool {
             }
         }
     }
-}/// Scans the project structure and returns a summary string for use in LLM prompts.
+}
+/// Scans the project structure and returns a summary string for use in LLM prompts.
 ///
 /// This function examines the project directory and produces a human-readable
 /// summary containing:
@@ -1272,20 +1273,77 @@ pub const REFUSAL_PHRASES: &[&str] = &[
     "i don't know how",
 ];
 
-/// Count unique file paths referenced in a spec plan text (e.g., `src/main.rs`).
-/// Used to enforce the "max 3 files" scope constraint at the Strategist gate.
-pub fn count_spec_file_refs(text: &str) -> usize {
-    let path_re = Regex::new(r"\bsrc/[\w./-]+\.rs\b")
-        .expect("static src-path regex for count_spec_file_refs");
-    let mut seen = std::collections::HashSet::new();
-    for m in path_re.find_iter(text) {
-        seen.insert(m.as_str());
-    }
-    seen.len()
+fn normalize_repo_file_ref(token: &str) -> String {
+    token
+        .trim_matches(|c: char| {
+            matches!(
+                c,
+                '"' | '\'' | '`' | '[' | ']' | '(' | ')' | '{' | '}' | '<' | '>' | ',' | ';'
+            )
+        })
+        .trim_end_matches(['.', ':'])
+        .trim_start_matches("./")
+        .replace('\\', "/")
 }
 
-/// Read a spec package's `plan.md`, extract file path references, and verify
-/// they exist on disk. Returns a list of missing file paths (empty = all valid).
+fn is_repo_file_ref(path: &str) -> bool {
+    const ROOT_FILES: &[&str] = &[
+        "Cargo.toml",
+        "Cargo.lock",
+        "build.rs",
+        "bacon.toml",
+        "rust-toolchain.toml",
+        "spec-lint.ps1",
+        "check-fast.ps1",
+        "check.ps1",
+        "README.md",
+        "AGENTS.md",
+    ];
+    const PATH_PREFIXES: &[&str] = &[
+        "src/",
+        "tests/",
+        "docs/",
+        "config/",
+        "scripts/",
+        "benches/",
+        "examples/",
+        ".bacon/",
+    ];
+    const PATH_SUFFIXES: &[&str] = &[
+        ".rs", ".toml", ".md", ".json", ".ps1", ".sh", ".yaml", ".yml",
+    ];
+
+    ROOT_FILES.contains(&path)
+        || (PATH_PREFIXES.iter().any(|prefix| path.starts_with(prefix))
+            && PATH_SUFFIXES.iter().any(|suffix| path.ends_with(suffix)))
+}
+
+fn extract_repo_file_refs(text: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    let mut seen = HashSet::new();
+
+    for token in text.split_whitespace() {
+        let candidate = normalize_repo_file_ref(token);
+        if candidate.is_empty() || !is_repo_file_ref(&candidate) {
+            continue;
+        }
+        if seen.insert(candidate.clone()) {
+            refs.push(candidate);
+        }
+    }
+
+    refs
+}
+
+/// Count unique repo-relative file paths referenced in a spec plan text.
+/// Used to enforce the "max 3 files" scope constraint at the Strategist gate.
+pub fn count_spec_file_refs(text: &str) -> usize {
+    extract_repo_file_refs(text).len()
+}
+
+/// Read a spec package's `plan.md`, extract repo-relative file path references,
+/// and verify they exist on disk. Returns a list of missing file paths
+/// (empty = all valid).
 ///
 /// This is called before the Coder stage to catch hallucinations where the
 /// Strategist references files that don't exist.
@@ -1297,20 +1355,12 @@ pub fn validate_spec_file_refs(spec_dir: &Path) -> Vec<String> {
         Err(_) => return Vec::new(), // No plan.md = nothing to validate
     };
 
-    let path_re = Regex::new(r"\bsrc/[\w./-]+\.rs\b")
-        .expect("static src-path regex for validate_spec_file_refs");
     let mut missing = Vec::new();
-    let mut seen = std::collections::HashSet::new();
 
-    for m in path_re.find_iter(&plan) {
-        let path_str = m.as_str();
-        if seen.contains(path_str) {
-            continue;
-        }
-        seen.insert(path_str.to_string());
-        let full_path = root.join(path_str);
+    for path_str in extract_repo_file_refs(&plan) {
+        let full_path = root.join(&path_str);
         if !full_path.exists() {
-            missing.push(path_str.to_string());
+            missing.push(path_str);
         }
     }
     missing
@@ -1755,6 +1805,34 @@ mod tests {
         let context = collect_source_context(text, 10, 50);
         // Should not crash, just skip nonexistent files
         assert!(context.is_empty() || context.contains("## Relevant Source Files"));
+    }
+
+    #[test]
+    fn count_spec_file_refs_handles_repo_relative_paths_and_backslashes() {
+        let text = r#"
+            Update src\bin\bacon.rs and src/bacon_core/mod.rs.
+            Review docs/specs/README.md, .bacon/workflow.md, and Cargo.toml.
+            Keep src/bin/bacon.rs in the plan only once.
+        "#;
+
+        assert_eq!(count_spec_file_refs(text), 5);
+    }
+
+    #[test]
+    fn validate_spec_file_refs_normalizes_windows_paths_and_keeps_existing_files() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            temp_dir.path().join("plan.md"),
+            r#"
+                Update src\bacon_core\mod.rs and docs/specs/README.md.
+                Review .bacon/workflow.md and Cargo.toml.
+                Fix tests\missing.rs.
+            "#,
+        )
+        .expect("plan.md");
+
+        let missing = validate_spec_file_refs(temp_dir.path());
+        assert_eq!(missing, vec!["tests/missing.rs".to_string()]);
     }
 
     #[test]

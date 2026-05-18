@@ -43,8 +43,8 @@ flowchart TD
 | Stage | Input | Output | Gate |
 |-------|-------|--------|------|
 | **Observer** | Prompt or `_active/` scan | Problem description or approved spec path | `find_approved_spec()` fast-paths to first FIFO-approved spec |
-| **Strategist** | Observer output | Spec package in `_active/` | `spec-lint.ps1` + `count_spec_file_refs()` (>3 files warns) |
-| **Coder** | Spec in `_active/` | Code changes, status=`implemented` or `needs-human-approval` | `check-fast.ps1` temp worktree (max 4 attempts, 2 refusals → abort) |
+| **Strategist** | Observer output | Spec package in `_active/` | `spec-lint.ps1` + `count_spec_file_refs()` (>3 repo file refs warns) |
+| **Coder** | Spec in `_active/` | Code changes, status=`implemented` or `needs-human-approval` | `check-fast.ps1` on the working tree with GitSnapshot rollback (max 4 attempts, 2 refusals → abort) |
 | **Auditor** | Implemented spec + patch | `_done/` or `needs-human-approval` | Approved patch content vs spec criteria; spec-lint re-check before archive |
 
 ## Interactive Gates
@@ -162,7 +162,7 @@ External workers must print one JSON object to stdout; logs go to stderr.
 }
 ```
 
-- stdout must be valid JSON; plain text fails the stage.
+- stdout must contain a `WorkerOutput` JSON object; the runtime extracts the first balanced JSON object, so log prefixes are tolerated but plain text still fails.
 - `status` values `error`, `fail`, `failed`, `reject`, `rejected` stop the pipeline.
 - `spec_path` is optional; Strategist must provide it when creating a spec for Coder.
 

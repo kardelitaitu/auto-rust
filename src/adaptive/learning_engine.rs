@@ -310,7 +310,8 @@ mod tests {
             "Initial state should have 0 successes for unknown selector"
         );
         assert_eq!(
-            engine.interaction_count(), 0,
+            engine.interaction_count(),
+            0,
             "Initial interaction count should be 0"
         );
 

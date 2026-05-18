@@ -8,7 +8,8 @@ use crate::bacon_core::cli_types::RunArgs;
 
 fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("auditor")
-}pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
+}
+pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
     let system_prompt = role_prompt();
 

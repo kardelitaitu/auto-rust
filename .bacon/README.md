@@ -65,7 +65,7 @@ run()
 │     ├── RETRY LOOP (up to 4 attempts)
 │     │   ├── Call LLM with spec + error feedback from previous attempt
 │     │   ├── Parse response for SEARCH/REPLACE blocks
-│     │   ├── Apply patches to shadow workspace
+│     │   ├── Apply patches to working tree with GitSnapshot rollback
 │     │   ├── Run check-fast.ps1 gate
 │     │   ├── On refusal (≥2 consecutive) → abort pipeline
 │     │   ├── On repeated error → skip remaining retries

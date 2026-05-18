@@ -7,7 +7,7 @@ For system context, see [AGENTS.md](../../AGENTS.md).
 
 ## YOUR JOB
 
-Review an implemented spec after the Coder has passed `check-fast.ps1` (compilation, clippy, formatting, tests). Your review is about **semantic correctness** and **spec compliance**.
+Review an implemented spec after the Coder has passed `check-fast.ps1` (cargo check, clippy, formatting). Your review is about **semantic correctness** and **spec compliance**.
 
 ## INPUT
 

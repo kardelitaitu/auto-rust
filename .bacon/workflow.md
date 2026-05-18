@@ -1,6 +1,6 @@
 # Bacon Pipeline — Technical Reference
 
-*last audited 14-05-26 by Buffy*
+*last audited 18-05-26 by Codex*
 
 ## Pipeline Overview
 
@@ -43,7 +43,7 @@ flowchart TD
 | Stage | Input | Output | Gate |
 |-------|-------|--------|------|
 | **Observer** | Prompt or `_active/` scan | Problem description or approved spec path | `find_approved_spec()` fast-paths to first FIFO-approved spec |
-| **Strategist** | Observer output | Spec package in `_active/` | `spec-lint.ps1` + `count_spec_file_refs()` (>3 repo file refs warns) |
+| **Strategist** | Observer output | Spec package in `_active/` | `spec-lint.ps1` + `count_spec_file_refs()` (>3 repo file refs warns); plans must be grounded in verified source text |
 | **Coder** | Spec in `_active/` | Code changes, status=`implemented` or `needs-human-approval` | `check-fast.ps1` on the working tree with GitSnapshot rollback (max 4 attempts, 2 refusals → abort) |
 | **Auditor** | Implemented spec + patch | `_done/` or `needs-human-approval` | Approved patch content vs spec criteria; spec-lint re-check before archive |
 
@@ -80,8 +80,8 @@ The pipeline reads `.bacon/bacon.toml`. Only `[pipeline]` and `[agents.*]` have 
 [pipeline]
 observer = "nvidia"
 strategist = "nvidia"
-coder = "nvidia"
-auditor = "nvidia"
+coder = "bacon"
+auditor = "bacon"
 stage_delay_ms = 500        # Pause in ms between stages
 
 [agents.nvidia]
@@ -126,7 +126,14 @@ bacon test --fixture clippy    # run one fixture
 | Variable | Purpose |
 |----------|---------|
 | `NVIDIA_API_KEY` | NVIDIA AI API key (required for nvidia agent) |
+| `NVIDIA_MODEL` | Overrides the NVIDIA model name |
+| `NVIDIA_BASE_URL` | Overrides the NVIDIA API base URL |
+| `NVIDIA_TEMPERATURE` | Overrides generation temperature |
+| `NVIDIA_TOP_P` | Overrides nucleus sampling |
+| `NVIDIA_MAX_TOKENS` | Overrides output token limit |
 | `RUST_LOG` | Log level (debug, info, warn, error) |
+
+Model precedence: `NVIDIA_MODEL` env > `.bacon/bacon.toml [agents.nvidia].model` > built-in `meta/llama-3.3-70b-instruct`.
 
 ## Error Recovery
 

@@ -115,9 +115,11 @@ Single file: `.bacon/bacon.toml`
 [pipeline]
 observer = "nvidia"
 strategist = "nvidia"
-coder = "nvidia"
-auditor = "nvidia"
+coder = "bacon"
+auditor = "bacon"
 ```
+
+The NVIDIA model defaults to `meta/llama-3.3-70b-instruct` and can be overridden with `NVIDIA_MODEL` or `[agents.nvidia].model`.
 
 See `.bacon/workflow.md` for full configuration reference and error recovery procedures.
 

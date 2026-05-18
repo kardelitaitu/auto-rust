@@ -154,6 +154,42 @@ fn validate_search_replace_blocks(
     Ok(())
 }
 
+/// Detect a Rust item boundary that was accidentally merged onto one line.
+///
+/// This catches invalid patterns like `}    #[test]`, which rustfmt will reject
+/// and which usually indicate the LLM dropped a newline between items.
+fn detect_merged_rust_attribute_boundary(content: &str) -> Option<usize> {
+    content.lines().enumerate().find_map(|(line_idx, line)| {
+        let trimmed = line.trim_start();
+        trimmed.strip_prefix('}').and_then(|rest| {
+            if rest.trim_start().starts_with("#[") {
+                Some(line_idx + 1)
+            } else {
+                None
+            }
+        })
+    })
+}
+
+fn validate_rust_item_boundaries(root: &Path, rel_paths: &[PathBuf]) -> Result<()> {
+    for rel in rel_paths {
+        if rel.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+            continue;
+        }
+        let abs_path = root.join(rel);
+        let content = std::fs::read_to_string(&abs_path)
+            .with_context(|| format!("failed to read {}", abs_path.display()))?;
+        if let Some(line_no) = detect_merged_rust_attribute_boundary(&content) {
+            anyhow::bail!(
+                "merged Rust item boundary detected in {} at line {} - keep `}}` and `#[...]` on separate lines",
+                abs_path.display(),
+                line_no
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Apply SEARCH/REPLACE blocks directly to working tree files with GitSnapshot rollback.
 ///
 /// 1. Creates a GitSnapshot for safe rollback.
@@ -263,6 +299,19 @@ fn apply_search_replace_blocks(
                 clean
             );
         }
+    }
+
+    if let Err(e) = validate_rust_item_boundaries(root, &rel_paths) {
+        if let Err(restore_err) = snapshot.restore() {
+            warn!(
+                "Failed to restore snapshot during Rust boundary validation: {}",
+                restore_err
+            );
+        }
+        anyhow::bail!(
+            "SEARCH/REPLACE introduced a merged Rust item boundary; rolled back: {}",
+            e
+        );
     }
 
     // Run check-fast.ps1 to verify
@@ -516,8 +565,9 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                  =======\n\
                  [new lines]\n\
                  >>>>>>> REPLACE\n\
-                 CRITICAL: Copy SEARCH lines EXACTLY from the source files — character for character.\n\
-                 Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks.",
+                 CRITICAL: Copy SEARCH lines EXACTLY from the source files - character for character.\n\
+                 Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks.\n\
+                 In Rust files, keep `}}` and `#[...]` on separate lines.",
                 spec_context
             )
         } else {
@@ -531,9 +581,10 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                  =======\n\
                  [new lines]\n\
                  >>>>>>> REPLACE\n\
-                 CRITICAL: Copy SEARCH lines EXACTLY from the source files — character for character.\n\
+                 CRITICAL: Copy SEARCH lines EXACTLY from the source files - character for character.\n\
                  Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks. \
-                 Do not refuse or explain why you can't do it — just produce the blocks.",
+                 Do not refuse or explain why you can't do it - just produce the blocks.\n\
+                 In Rust files, keep `}}` and `#[...]` on separate lines.",
                 last_error, spec_context
             )
         };
@@ -651,7 +702,7 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 warn!("Max retries exhausted — signalling scope reduction needed");
                 return Ok(signal_scope_reduction(ctx, errors));
             }
-            last_error = "The previous attempt did not produce valid SEARCH/REPLACE blocks. Output SEARCH/REPLACE blocks with the file path, <<<<<<< SEARCH, =======, >>>>>>> REPLACE format. Do NOT output unified diff patches.".to_string();
+            last_error = "The previous attempt did not produce valid SEARCH/REPLACE blocks. Return only blocks, with the file path on the first non-empty line, then:\npath/to/file.rs\n<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE\nNo markdown, no headings, no prose, no unified diffs.".to_string();
             attempt += 1;
             continue;
         }
@@ -910,6 +961,15 @@ mod tests {
                 phrase
             );
         }
+    }
+
+    #[test]
+    fn test_detect_merged_rust_attribute_boundary() {
+        assert_eq!(detect_merged_rust_attribute_boundary("}\n#[test]\n"), None);
+        assert_eq!(
+            detect_merged_rust_attribute_boundary("}    #[test]\n"),
+            Some(1)
+        );
     }
 
     // ========================================================================

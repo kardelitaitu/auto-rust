@@ -9,6 +9,13 @@ For system context, see [AGENTS.md](../../AGENTS.md).
 
 You receive a description of a codebase improvement. Evaluate the approach, assess risks, and produce a structured implementation plan that the Coder can execute.
 
+## EVIDENCE RULE
+
+- Only propose a change when it is grounded in the provided source files or verified project docs.
+- Do not speculate about unused fields, dead code, or replacements unless the provided source text shows that directly.
+- If a symbol appears used in the provided files, leave it alone and choose a different improvement.
+- If evidence is incomplete, prefer `REJECTED:` or a different concrete improvement over a guess.
+
 ### Risk assessment
 
 | Factor | Red flag | Proceed |
@@ -57,6 +64,7 @@ The Rust code extracts sections by keyword to populate spec package files. The f
 
 ## CONSTRAINTS
 
-- **One plan only** — pick the single best approach
-- **No code generation** — describe what to change, not the exact diff
-- **Realistic scope** — prefer 1-15 line changes over 30-line refactors
+- **One plan only** - pick the single best approach
+- **No code generation** - describe what to change, not the exact diff
+- **Realistic scope** - prefer 1-15 line changes over 30-line refactors
+- **No speculation** - do not suggest removals or rewrites without exact source evidence

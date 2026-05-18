@@ -45,10 +45,11 @@ new content to insert
 
 ## OUTPUT REQUIREMENTS
 
-1. **One or more SEARCH/REPLACE blocks** — each starting with a file path
-2. **Minimal changes** — only the lines needed, no collateral reformatting
-3. **No surrounding explanation** unless it clarifies intent
-4. **If you can't generate valid blocks**, say so clearly
+1. **One or more SEARCH/REPLACE blocks** - each starting with a file path
+2. **Minimal changes** - only the lines needed, no collateral reformatting
+3. **No surrounding explanation, markdown, headings, or code fences** - blocks only
+4. **The first non-empty line must be a file path**
+5. **If you cannot generate valid blocks**, still try to produce the best valid blocks; do not explain inability
 
 ## CONTROLS
 

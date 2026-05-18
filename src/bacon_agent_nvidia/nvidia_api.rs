@@ -3,6 +3,8 @@ use log::{debug, info, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 fn load_env_file() {
@@ -22,6 +24,20 @@ fn load_env_file() {
             }
         }
     }
+}
+
+fn env_string(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+#[cfg(test)]
+static ENV_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn test_env_guard() -> std::sync::MutexGuard<'static, ()> {
+    ENV_TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -65,14 +81,17 @@ pub struct NvidiaConfig {
     pub max_tokens: u32,
 }
 
+pub const DEFAULT_NVIDIA_MODEL: &str = "meta/llama-3.3-70b-instruct";
+
 impl Default for NvidiaConfig {
     fn default() -> Self {
         load_env_file();
         Self {
-            api_key: std::env::var("NVIDIA_API_KEY")
-                .unwrap_or_else(|_| "nvapi-placeholder-key".to_string()),
-            base_url: "https://integrate.api.nvidia.com/v1".to_string(),
-            model: "minimaxai/minimax-m2.7".to_string(),
+            api_key: env_string("NVIDIA_API_KEY")
+                .unwrap_or_else(|| "nvapi-placeholder-key".to_string()),
+            base_url: env_string("NVIDIA_BASE_URL")
+                .unwrap_or_else(|| "https://integrate.api.nvidia.com/v1".to_string()),
+            model: env_string("NVIDIA_MODEL").unwrap_or_else(|| DEFAULT_NVIDIA_MODEL.to_string()),
             temperature: 1.0,
             top_p: 0.95,
             max_tokens: 8192,
@@ -211,39 +230,57 @@ mod tests {
 
     #[test]
     fn test_nvidia_config_default_has_placeholder_key() {
+        let _guard = test_env_guard();
+        std::env::set_var("NVIDIA_API_KEY", "");
         let config = NvidiaConfig::default();
         // Should have a non-empty api_key (env or placeholder)
-        assert!(!config.api_key.is_empty());
+        assert_eq!(config.api_key, "nvapi-placeholder-key");
+        std::env::remove_var("NVIDIA_API_KEY");
     }
 
     #[test]
     fn test_nvidia_config_default_base_url() {
+        let _guard = test_env_guard();
+        std::env::set_var("NVIDIA_BASE_URL", "");
         let config = NvidiaConfig::default();
         assert_eq!(config.base_url, "https://integrate.api.nvidia.com/v1");
+        std::env::remove_var("NVIDIA_BASE_URL");
     }
 
     #[test]
     fn test_nvidia_config_default_model() {
+        let _guard = test_env_guard();
+        std::env::set_var("NVIDIA_MODEL", "");
         let config = NvidiaConfig::default();
-        assert_eq!(config.model, "minimaxai/minimax-m2.7");
+        assert_eq!(config.model, DEFAULT_NVIDIA_MODEL);
+        std::env::remove_var("NVIDIA_MODEL");
     }
 
     #[test]
     fn test_nvidia_config_default_temperature() {
+        let _guard = test_env_guard();
+        std::env::set_var("NVIDIA_TEMPERATURE", "");
         let config = NvidiaConfig::default();
         assert!((config.temperature - 1.0).abs() < 0.01);
+        std::env::remove_var("NVIDIA_TEMPERATURE");
     }
 
     #[test]
     fn test_nvidia_config_default_top_p() {
+        let _guard = test_env_guard();
+        std::env::set_var("NVIDIA_TOP_P", "");
         let config = NvidiaConfig::default();
         assert!((config.top_p - 0.95).abs() < 0.01);
+        std::env::remove_var("NVIDIA_TOP_P");
     }
 
     #[test]
     fn test_nvidia_config_default_max_tokens() {
+        let _guard = test_env_guard();
+        std::env::set_var("NVIDIA_MAX_TOKENS", "");
         let config = NvidiaConfig::default();
         assert_eq!(config.max_tokens, 8192);
+        std::env::remove_var("NVIDIA_MAX_TOKENS");
     }
 
     // ========================================================================
@@ -327,6 +364,7 @@ mod tests {
 
     #[test]
     fn test_nvidia_config_default_loads_env() {
+        let _guard = test_env_guard();
         std::env::remove_var("NVIDIA_API_KEY");
         std::env::set_var("NVIDIA_API_KEY", "test-key");
         let config = NvidiaConfig::default();

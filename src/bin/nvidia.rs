@@ -3,7 +3,7 @@
 //! This agent calls the NVIDIA AI API endpoint:
 //! - Base URL: https://integrate.api.nvidia.com/v1
 //! - API Key: nvapi-* format
-//! - Models: minimaxai/minimax-m2.7 and others
+//! - Models: meta/llama-3.3-70b-instruct and others
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -60,7 +60,7 @@ struct Args {
     base_url: String,
 
     /// Model to use
-    #[arg(long, default_value = "minimaxai/minimax-m2.7")]
+    #[arg(long, default_value = "meta/llama-3.3-70b-instruct")]
     model: String,
 
     /// Temperature for generation
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
         args.max_tokens,
     )
     .await
-    .context("Failed to call NVIDIA API")?
+    .context("Failed to call NVIDIA API")?;
 
     // Create output
     let output = WorkerOutput {

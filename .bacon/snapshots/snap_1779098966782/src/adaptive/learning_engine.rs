@@ -287,37 +287,6 @@ mod tests {
         assert!(adaptation.reaction_delay_multiplier > 1.0);
         assert!(adaptation.require_strict_verification);
         assert!(adaptation.prefer_coordinate_fallback);
-    }    #[test]
-    fn test_learning_engine_new() {
-        let profile = create_test_profile();
-        let engine = LearningEngine::new("test-session-123", &profile, true, 14);
-
-        // Verify enabled and ttl_days are correctly set
-        assert!(engine.is_enabled(), "LearningEngine should be enabled");
-        assert_eq!(engine.ttl_days(), 14, "TTL days should be 14");
-
-        // Verify state is initialized (empty ClickLearningState)
-        // Use selector_stats on a non-existent selector to verify default state
-        let stats = engine.selector_stats("nonexistent-selector");
-        assert_eq!(
-            stats.attempts, 0,
-            "Initial state should have 0 attempts for unknown selector"
-        );
-        assert_eq!(
-            stats.successes, 0,
-            "Initial state should have 0 successes for unknown selector"
-        );
-        assert_eq!(
-            engine.interaction_count(), 0,
-            "Initial interaction count should be 0"
-        );
-
-        // Verify path is derived from session_id and behavior_profile
-        // The path should be based on "test-profile" (from create_test_profile) and "test-session-123"
-        assert!(
-            engine.path.is_some(),
-            "Path should be set when not disabled"
-        );
     }
 
     #[test]

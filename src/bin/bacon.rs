@@ -19,6 +19,7 @@ async fn main() -> anyhow::Result<()> {
         auto,
         auto_apply,
         parallel,
+        max_attempts,
     } = Cli::parse();
 
     let run_args = match command {
@@ -31,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
             auto: auto || run_args.auto,
             auto_apply: auto_apply || run_args.auto_apply,
             parallel: parallel || run_args.parallel,
+            max_attempts: max_attempts.or(run_args.max_attempts),
         },
         _ => RunArgs {
             prompt,
@@ -41,6 +43,7 @@ async fn main() -> anyhow::Result<()> {
             auto,
             auto_apply,
             parallel,
+            max_attempts,
         },
     };
 

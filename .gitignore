@@ -1,4 +1,5 @@
 # development
+.bacon/snapshots
 
 # OS files
 .DS_Store

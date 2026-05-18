@@ -50,6 +50,16 @@ new content to insert
 3. **No surrounding explanation** unless it clarifies intent
 4. **If you can't generate valid blocks**, say so clearly
 
+## CONTROLS
+
+### Auto-Apply
+
+The Coder's output is verified with `check-fast.ps1` before applying. By default, the verified patch is **saved to `.bacon/sessions/approved_patches/`** and the user is prompted for confirmation. If the pipeline is running with `--auto-apply` or `enable_auto_apply = true` in `bacon.toml`, the patch is applied automatically after verification.
+
+### Max Attempts
+
+The Coder retries up to **4 times** by default (configurable via `--max-attempts` CLI flag). Each retry feeds back the specific error from the previous attempt. If the same error repeats across attempts, retries are short-circuited to avoid wasted LLM calls.
+
 ## CONSTRAINTS
 
 - **No changes outside the spec's scope**

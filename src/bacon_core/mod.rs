@@ -168,6 +168,12 @@ pub struct PipelineConfig {
     /// Default: 0 (no delay).
     #[serde(default)]
     pub stage_delay_ms: u64,
+
+    /// Whether to auto-apply Coder patches without user confirmation.
+    /// The CLI `--auto-apply` flag overrides this value.
+    /// Default: false.
+    #[serde(default)]
+    pub enable_auto_apply: bool,
 }
 
 impl Default for PipelineConfig {
@@ -178,6 +184,7 @@ impl Default for PipelineConfig {
             coder: "bacon".into(),
             auditor: "bacon".into(),
             stage_delay_ms: 0,
+            enable_auto_apply: false,
         }
     }
 }
@@ -239,6 +246,11 @@ impl PipelineConfig {
                 .and_then(|v| v.as_integer())
                 .map(|v| v.max(0) as u64)
                 .unwrap_or(0),
+            enable_auto_apply: get(pipeline, "enable_auto_apply").eq_ignore_ascii_case("true")
+                || pipeline
+                    .get("enable_auto_apply")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
         }
     }
 
@@ -930,9 +942,33 @@ pub fn should_run(resume: &Option<Stage>, current: Stage) -> bool {
             }
         }
     }
-}
-
-/// Scan the project structure for a summary string (used in observer prompts).
+}/// Scans the project structure and returns a summary string for use in LLM prompts.
+///
+/// This function examines the project directory and produces a human-readable
+/// summary containing:
+///
+/// - **Source modules**: The number of directories and Rust source files in `src/`
+/// - **Directories**: Names of subdirectories within `src/`
+/// - **Binaries**: Count of Rust files in `src/bin/` (if the directory exists)
+/// - **Active specs**: Number of active specification files in `docs/specs/_active/`
+///
+/// # Returns
+///
+/// A `String` containing newline-separated summary lines describing the project
+/// structure. If directories don't exist or can't be read, those sections are
+/// omitted or report zero counts.
+///
+/// # Examples
+///
+/// ```ignore
+/// let summary = scan_project_structure();
+/// ```
+///
+/// # Testing Usage
+///
+/// This function is primarily used by the Observer stage to generate project context
+/// for LLM analysis. In tests, it can be used to verify that the project structure
+/// is correctly detected and reported.
 pub fn scan_project_structure() -> String {
     let root = manifest_dir();
     let mut parts = Vec::new();

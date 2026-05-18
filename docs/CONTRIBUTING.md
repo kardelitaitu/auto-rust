@@ -31,13 +31,24 @@ cargo clippy --all-targets --all-features
 
 ## Making Changes
 
-### Two-Agent Workflow
+### Bacon Pipeline (Recommended)
 
-For non-trivial work, create a spec package in `docs/specs/_active/<initiative>/` before changing code.
+The Bacon gated-LLM pipeline automates code changes through 4 stages:
+1. **Observer** — scans for approved specs or generates improvement ideas
+2. **Strategist** — creates a spec package with plan and validation criteria
+3. **Coder** — applies SEARCH/REPLACE blocks and verifies with `check-fast.ps1`
+4. **Auditor** — reviews semantic correctness and compliance
 
-- Spec agent writes: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`
-- Implementer agent updates code, tests, docs, and `implementation-notes.md`
-- Move the folder to `_done/` only after `./check.ps1` passes
+Spec packages use a streamlined **3-file format**:
+- `spec.yaml` — metadata (title, status, owner, acceptance criteria)
+- `plan.md` — implementation steps and scope
+- `validation.md` — acceptance criteria and audit results
+
+Manual spec creation for non-trivial work:
+1. Create a spec directory in `docs/specs/_active/<initiative>/`
+2. Write `spec.yaml`, `plan.md`, and (optionally) `validation.md`
+3. Run the pipeline with `bacon --spec <number>` or the full 4-stage flow
+4. Move the folder to `_done/` only after `./check-fast.ps1` passes
 
 ### Code Style
 

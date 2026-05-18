@@ -8,31 +8,37 @@ use crate::bacon_core::cli_types::RunArgs;
 
 fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("auditor")
-}
-
-pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
+}pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
+    let system_prompt = role_prompt();
 
-    let spec_path = match &ctx.spec_path {
-        Some(p) => p.clone(),
-        None if ctx.dry_run => {
-            info!(
-                "DRY RUN: no spec path available; would run Auditor after Coder implements a spec"
-            );
-            return Ok(PipelineCtx::new(ctx.description.clone()).with_dry_run(true));
+    // Resolve spec context: prefer files on disk, fall back to ctx.description
+    let (spec_path, meta, spec_name, plan, validation_spec) = match &ctx.spec_path {
+        Some(p) => {
+            let meta = spec_io::read_spec_meta(p)?;
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let plan = spec_io::read_spec_file(p, "plan.md");
+            let validation_spec = spec_io::read_spec_file(p, "validation.md");
+            (Some(p.clone()), meta, name, plan, validation_spec)
         }
-        None => anyhow::bail!("No spec path provided to Auditor"),
+        None => {
+            warn!("No spec path — using ctx.description as plan for audit");
+            let meta = spec_io::SpecMeta {
+                id: "adhoc".to_string(),
+                title: "Ad-hoc task".to_string(),
+                status: "implemented".to_string(),
+                owner: "pipeline".to_string(),
+                implementer: "auto".to_string(),
+                priority: "medium".to_string(),
+            };
+            let plan = ctx.description.clone();
+            let validation_spec = "See plan for validation criteria.".to_string();
+            (None, meta, "adhoc".to_string(), plan, validation_spec)
+        }
     };
-
-    let meta = spec_io::read_spec_meta(&spec_path)?;
-    let spec_name = spec_path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    // Read spec content files for full context
-    let plan = spec_io::read_spec_file(&spec_path, "plan.md");
-    let validation_spec = spec_io::read_spec_file(&spec_path, "validation.md");
 
     // Read the approved patch file if available; fall back to git diff
     let diff = if let Some(patch_path) = &ctx.patch_path {
@@ -78,19 +84,18 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
             .unwrap_or_else(|| "(no diff available — no patch file present)".to_string())
     };
 
-    let system_prompt = role_prompt();
     let user_prompt = format!(
         "Audit this implemented spec: {} ({})\n\n\
-	         Title: {}\nStatus: {}\n\n\
-	         ## Plan (from plan.md)\n{}\n\n\
-	         ## Validation Criteria\n{}\n\n\
-	         ## Git Diff (working tree)\n```diff\n{}\n```\n\n\
-	         Does the implementation match the spec? \
-	         Are all acceptance criteria met? \
-	         Any missed edge cases, scope violations, or regressions?\n\n\
-	         Respond with PASS or FAIL as the first word, then explain your reasoning.\n\
-	         PASS → the spec should be marked done and moved to _done/.\n\
-	         FAIL → mark needs-human-approval and explain what's missing.",
+         Title: {}\nStatus: {}\n\n\
+         ## Plan (from plan.md)\n{}\n\n\
+         ## Validation Criteria\n{}\n\n\
+         ## Git Diff (working tree)\n```diff\n{}\n```\n\n\
+         Does the implementation match the spec? \
+         Are all acceptance criteria met? \
+         Any missed edge cases, scope violations, or regressions?\n\n\
+         Respond with PASS or FAIL as the first word, then explain your reasoning.\n\
+         PASS → the spec should be marked done and moved to _done/.\n\
+         FAIL → mark needs-human-approval and explain what's missing.",
         meta.title, spec_name, meta.title, meta.status, plan, validation_spec, diff
     );
 
@@ -108,19 +113,28 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
     println!("=============================");
 
     let decision_first = response.split_whitespace().next().unwrap_or("");
-    if decision_first.eq_ignore_ascii_case("PASS") {
-        info!("NVIDIA Auditor PASS");
-        if ctx.dry_run {
-            info!("DRY RUN: would move spec to _done/");
+    if let Some(ref spec_path) = spec_path {
+        if decision_first.eq_ignore_ascii_case("PASS") {
+            info!("NVIDIA Auditor PASS");
+            if ctx.dry_run {
+                info!("DRY RUN: would move spec to _done/");
+            } else {
+                promote_to_done(spec_path)?;
+            }
         } else {
-            promote_to_done(&spec_path)?;
+            info!("NVIDIA Auditor FAIL — marking needs-human-approval");
+            if ctx.dry_run {
+                info!("DRY RUN: would mark needs-human-approval");
+            } else {
+                mark_needs_approval(spec_path, &response)?;
+            }
         }
     } else {
-        info!("NVIDIA Auditor FAIL — marking needs-human-approval");
-        if ctx.dry_run {
-            info!("DRY RUN: would mark needs-human-approval");
+        // No spec path on disk — just log the audit result
+        if decision_first.eq_ignore_ascii_case("PASS") {
+            info!("NVIDIA Auditor PASS (adhoc — no spec to archive)");
         } else {
-            mark_needs_approval(&spec_path, &response)?;
+            warn!("NVIDIA Auditor found issues (adhoc — no spec to file)");
         }
     }
 

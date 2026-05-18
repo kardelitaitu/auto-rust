@@ -10,7 +10,13 @@ use super::spec_io;
 use super::types::PipelineCtx;
 use crate::bacon_core::cli_types::RunArgs;
 
-const MAX_ATTEMPTS: u32 = 4;
+/// Default max retry attempts when no `--max-attempts` CLI flag is provided.
+const DEFAULT_MAX_ATTEMPTS: u32 = 4;
+
+/// Resolve the effective max attempt count from CLI flag (if set) or default.
+fn effective_max_attempts(cli_value: Option<u32>) -> u32 {
+    cli_value.unwrap_or(DEFAULT_MAX_ATTEMPTS)
+}
 
 /// Result of auto-applying a queued patch.
 struct AutoApplyReport {
@@ -532,9 +538,10 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
             )
         };
 
+        let max_attempts = effective_max_attempts(args.max_attempts);
         info!(
             "NVIDIA Coder calling API (attempt {}/{}) with model: {}",
-            attempt, MAX_ATTEMPTS, config.model
+            attempt, max_attempts, config.model
         );
 
         let response = match nvidia_api::chat(&config, &system_prompt, &prompt).await {
@@ -543,7 +550,8 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 let err_msg = format!("NVIDIA API call failed on attempt {}: {}", attempt, e);
                 warn!("{}", err_msg);
                 errors.push(err_msg.clone());
-                if attempt >= MAX_ATTEMPTS {
+                let max_attempts = effective_max_attempts(args.max_attempts);
+                if attempt >= max_attempts {
                     warn!("Max retries exhausted — signalling scope reduction needed");
                     return Ok(signal_scope_reduction(ctx, errors));
                 }
@@ -604,11 +612,12 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 return Ok(output);
             }
 
-            if attempt >= MAX_ATTEMPTS {
+            let max_attempts = effective_max_attempts(args.max_attempts);
+            if attempt >= max_attempts {
                 warn!("Max retries exhausted due to refusals — signalling scope reduction needed");
                 let report = format!(
                     "LLM refused implementation after {} attempts. Last refusal:\n{}",
-                    MAX_ATTEMPTS,
+                    max_attempts,
                     response.chars().take(500).collect::<String>()
                 );
                 let mut output = signal_scope_reduction(ctx, errors);
@@ -637,7 +646,8 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 attempt,
                 response.len()
             ));
-            if attempt >= MAX_ATTEMPTS {
+            let max_attempts = effective_max_attempts(args.max_attempts);
+            if attempt >= max_attempts {
                 warn!("Max retries exhausted — signalling scope reduction needed");
                 return Ok(signal_scope_reduction(ctx, errors));
             }
@@ -653,7 +663,8 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 attempt, e
             );
             errors.push(format!("Attempt {} validation failed: {}", attempt, e));
-            if attempt >= MAX_ATTEMPTS {
+            let max_attempts = effective_max_attempts(args.max_attempts);
+            if attempt >= max_attempts {
                 warn!("Max retries exhausted — signalling scope reduction needed");
                 return Ok(signal_scope_reduction(ctx, errors));
             }
@@ -681,7 +692,8 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
             Err(e) => {
                 warn!("SEARCH/REPLACE failed on attempt {}: {}", attempt, e);
                 errors.push(format!("Attempt {} SEARCH/REPLACE failed: {}", attempt, e));
-                if attempt >= MAX_ATTEMPTS {
+                let max_attempts = effective_max_attempts(args.max_attempts);
+                if attempt >= max_attempts {
                     return Ok(signal_scope_reduction(ctx, errors));
                 }
                 last_error = format!(
@@ -726,8 +738,11 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                     std::fs::write(&patch_path, &patch)?;
                     let saved_patch_path = patch_path.clone();
 
-                    // Gate: auto-apply only if --auto-apply flag is set
-                    if args.auto_apply {
+                    // Gate: auto-apply if --auto-apply flag OR config's enable_auto_apply
+                    let config_auto_apply =
+                        crate::bacon_core::PipelineConfig::from_bacon_toml().enable_auto_apply;
+                    let should_auto_apply = args.auto_apply || config_auto_apply;
+                    if should_auto_apply {
                         let queued = QueuedPatch {
                             patch_path: saved_patch_path.clone(),
                             changed_paths,
@@ -746,7 +761,8 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                                 warn!("Auto-apply failed on attempt {}: {}", attempt, e);
                                 errors
                                     .push(format!("Attempt {} auto-apply failed: {}", attempt, e));
-                                if attempt >= MAX_ATTEMPTS {
+                                let max_attempts = effective_max_attempts(args.max_attempts);
+                                if attempt >= max_attempts {
                                     return Ok(signal_scope_reduction(ctx, errors));
                                 }
                                 last_error = format!(
@@ -776,7 +792,8 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 Err(e) => {
                     warn!("Patch verification failed on attempt {}: {}", attempt, e);
                     errors.push(format!("Attempt {} verification failed: {}", attempt, e));
-                    if attempt >= MAX_ATTEMPTS {
+                    let max_attempts = effective_max_attempts(args.max_attempts);
+                    if attempt >= max_attempts {
                         return Ok(signal_scope_reduction(ctx, errors));
                     }
                     let new_error = format!(

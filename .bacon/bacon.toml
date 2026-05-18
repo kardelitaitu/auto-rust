@@ -20,6 +20,12 @@ auditor = "bacon"
 # Default: 0 (no delay). Set to 1000 for 1s between consecutive stages.
 stage_delay_ms = 500
 
+# Whether to auto-apply Coder patches without user confirmation.
+# When true, patches that pass check-fast.ps1 are applied automatically.
+# The CLI `--auto-apply` flag overrides this value.
+# Default: false.
+enable_auto_apply = false
+
 # ── CI watcher jobs (bacon CLI) ──────────────────────────────────
 # These job definitions are consumed by the external `bacon` CI
 # watcher tool, not by the autonomous pipeline. Preserved here

@@ -40,6 +40,9 @@ pub struct Cli {
 
     #[arg(long, help = "Process independent specs in parallel")]
     pub parallel: bool,
+
+    #[arg(long, help = "Override max retry attempts per stage (default: 4)")]
+    pub max_attempts: Option<u32>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -79,6 +82,9 @@ pub struct RunArgs {
 
     #[arg(long, help = "Process independent specs in parallel")]
     pub parallel: bool,
+
+    #[arg(long, help = "Override max retry attempts per stage (default: 4)")]
+    pub max_attempts: Option<u32>,
 }
 
 #[cfg(test)]
@@ -98,5 +104,26 @@ mod tests {
             panic!("expected run command");
         };
         assert!(args.auto_apply);
+    }
+
+    #[test]
+    fn parses_top_level_max_attempts_flag() {
+        let cli = Cli::try_parse_from(["bacon", "--max-attempts", "8"]).expect("valid cli");
+        assert_eq!(cli.max_attempts, Some(8));
+    }
+
+    #[test]
+    fn parses_run_max_attempts_flag() {
+        let cli = Cli::try_parse_from(["bacon", "run", "--max-attempts", "3"]).expect("valid cli");
+        let Some(Command::Run(args)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(args.max_attempts, Some(3));
+    }
+
+    #[test]
+    fn max_attempts_omitted_is_none() {
+        let cli = Cli::try_parse_from(["bacon"]).expect("valid cli");
+        assert_eq!(cli.max_attempts, None);
     }
 }

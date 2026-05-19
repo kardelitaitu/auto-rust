@@ -13,26 +13,49 @@ fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("strategist")
 }
 
-pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
-    let system_prompt = role_prompt();
+fn build_source_context(seed_text: &str) -> String {
+    let source_context = crate::bacon_core::collect_source_context(seed_text, 8, 300);
+    if source_context.is_empty() {
+        crate::bacon_core::gather_project_context()
+    } else {
+        source_context
+    }
+}
 
-    let prompt = if ctx.scope_reduction_needed {
+fn build_prompt(ctx: &PipelineCtx) -> String {
+    let seed_text = if ctx.scope_reduction_needed {
+        format!(
+            "{}\n\n{}",
+            ctx.coder_errors.join("\n---\n"),
+            ctx.description
+        )
+    } else {
+        ctx.description.clone()
+    };
+    let source_context = build_source_context(&seed_text);
+    let evidence_guard =
+        "IMPORTANT: Treat the source excerpts below as the source of truth. Do not describe a symbol as unused if the excerpts show it being used.";
+
+    if ctx.scope_reduction_needed {
         let errors = ctx.coder_errors.join("\n---\n");
         format!(
             "Review this finding and design a REDUCED-SCOPE implementation plan.\n\n\
              The previous implementation attempt failed with these errors:\n{}\n\n\
              Original finding:\n{}\n\n\
+             {}\n\n\
+             {}\n\n\
              IMPORTANT: Produce a simpler plan with fewer changes. \
              Reduce the number of files touched, simplify the approach, or \
              limit the scope to the most essential part.\n\n\
              If you believe the original scope is already minimal, output:\n\
              SCOPE_AT_MINIMUM: <explanation>",
-            errors, ctx.description
+            errors, ctx.description, source_context, evidence_guard
         )
     } else {
         format!(
             "Review this finding and design an implementation plan:\n\n\
+             {}\n\n\
+             {}\n\n\
              {}\n\n\
              If the approach is sound and risks acceptable, output a plan with:\n\
              1. A clear title (one line)\n\
@@ -42,9 +65,15 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
              5. How to validate\n\
              6. Design decisions and risks\n\n\
              If risks are too high, start your response with 'REJECTED:' and explain why.",
-            ctx.description
+            ctx.description, source_context, evidence_guard
         )
-    };
+    }
+}
+
+pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
+    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
+    let system_prompt = role_prompt();
+    let prompt = build_prompt(ctx);
 
     info!("NVIDIA Strategist calling API with model: {}", config.model);
     let response = nvidia_api::chat(&config, &system_prompt, &prompt).await?;
@@ -175,6 +204,7 @@ fn write_generated_spec_yaml(
     plan: &str,
 ) -> Result<()> {
     let active_prefix = format!("docs/specs/_active/{}/", dir_name);
+    let code_files = extract_code_file_refs(plan);
     let spec = GeneratedSpecYaml {
         version: 1,
         id: dir_name.to_string(),
@@ -185,7 +215,7 @@ fn write_generated_spec_yaml(
         priority: extract_priority(plan),
         area: extract_area(plan),
         files: GeneratedSpecFiles {
-            code: vec!["src/".to_string()],
+            code: code_files,
             docs: ["plan.md", "validation.md"]
                 .into_iter()
                 .map(|file| format!("{}{}", active_prefix, file))
@@ -220,6 +250,34 @@ fn write_generated_spec_yaml(
     let content = serde_yml::to_string(&spec)?;
     std::fs::write(spec_dir.join("spec.yaml"), content)?;
     Ok(())
+}
+
+fn extract_code_file_refs(plan: &str) -> Vec<String> {
+    let refs: Vec<String> = crate::bacon_core::extract_repo_file_refs(plan)
+        .into_iter()
+        .filter(|path| {
+            path.starts_with("src/")
+                || path.starts_with("tests/")
+                || path.starts_with("benches/")
+                || path.starts_with("examples/")
+                || path.starts_with("scripts/")
+                || path.starts_with("config/")
+                || matches!(
+                    path.as_str(),
+                    "Cargo.toml"
+                        | "build.rs"
+                        | "rust-toolchain.toml"
+                        | "check-fast.ps1"
+                        | "check.ps1"
+                )
+        })
+        .collect();
+
+    if refs.is_empty() {
+        vec!["src/".to_string()]
+    } else {
+        refs
+    }
 }
 
 fn extract_title(text: &str) -> String {
@@ -285,6 +343,41 @@ fn extract_area(plan: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_prompt_includes_relevant_source_files() {
+        let ctx = PipelineCtx::new(
+            "Please review src/adaptive/predictive_scorer.rs for an unused field.".to_string(),
+        );
+        let prompt = build_prompt(&ctx);
+
+        assert!(prompt.contains("Please review src/adaptive/predictive_scorer.rs"));
+        assert!(prompt.contains("## Relevant Source Files"));
+        assert!(prompt.contains("src/adaptive/predictive_scorer.rs"));
+        assert!(prompt.contains("source of truth"));
+    }
+
+    #[test]
+    fn build_prompt_uses_coder_errors_for_scope_reduction_context() {
+        let mut ctx = PipelineCtx::new("Original finding".to_string());
+        ctx.scope_reduction_needed = true;
+        ctx.coder_errors =
+            vec!["SEARCH text not found in src/adaptive/predictive_scorer.rs".to_string()];
+
+        let prompt = build_prompt(&ctx);
+
+        assert!(prompt.contains("REDUCED-SCOPE implementation plan"));
+        assert!(prompt.contains("src/adaptive/predictive_scorer.rs"));
+        assert!(prompt.contains("SEARCH text not found"));
+    }
+
+    #[test]
+    fn extract_code_file_refs_prefers_specific_plan_files() {
+        let plan = "Update src/bacon_agent_nvidia/auditor.rs and docs/specs/README.md.";
+        let refs = extract_code_file_refs(plan);
+
+        assert_eq!(refs, vec!["src/bacon_agent_nvidia/auditor.rs"]);
+    }
 
     #[test]
     fn test_extract_title_from_h1() {

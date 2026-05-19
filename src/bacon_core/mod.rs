@@ -1133,12 +1133,13 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut seen: HashSet<String> = HashSet::new();
     let mut contents: Vec<String> = Vec::new();
+    let normalized_text = text.replace('\\', "/");
 
     // Match paths starting from project root directories (src/, tests/, docs/, config/, .bacon/)
     let path_re = Regex::new(r#"\b(?:src|tests|docs|config|scripts|\.bacon)/[\w./-]+\.(?:rs|toml|md|json|ps1|sh|yaml|yml)\b"#)
         .expect("static path regex for collect_source_context");
 
-    for m in path_re.find_iter(text) {
+    for m in path_re.find_iter(&normalized_text) {
         let path_str = m.as_str();
         let full_path = root.join(path_str);
         if full_path.is_file() && seen.insert(path_str.to_string()) {
@@ -1187,7 +1188,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     // Also match root-level files like Cargo.toml, build.rs, bacon.toml
     let root_re = Regex::new(r#"\b(?:Cargo\.toml|build\.rs|bacon\.toml|rust-toolchain\.toml|spec-lint\.ps1|check-fast\.ps1|check\.ps1)\b"#)
         .expect("static root-file regex for collect_source_context");
-    for m in root_re.find_iter(text) {
+    for m in root_re.find_iter(&normalized_text) {
         if contents.len() >= max_files {
             break;
         }
@@ -1318,7 +1319,7 @@ fn is_repo_file_ref(path: &str) -> bool {
             && PATH_SUFFIXES.iter().any(|suffix| path.ends_with(suffix)))
 }
 
-fn extract_repo_file_refs(text: &str) -> Vec<String> {
+pub fn extract_repo_file_refs(text: &str) -> Vec<String> {
     let mut refs = Vec::new();
     let mut seen = HashSet::new();
 
@@ -1805,6 +1806,18 @@ mod tests {
         let context = collect_source_context(text, 10, 50);
         // Should not crash, just skip nonexistent files
         assert!(context.is_empty() || context.contains("## Relevant Source Files"));
+    }
+
+    #[test]
+    fn collect_source_context_handles_windows_path_separators() {
+        let text = r#"
+            Review src\bacon_agent_nvidia\coder.rs and src\bacon_core\mod.rs.
+        "#;
+        let context = collect_source_context(text, 10, 50);
+
+        assert!(context.contains("## Relevant Source Files"));
+        assert!(context.contains("src/bacon_agent_nvidia/coder.rs"));
+        assert!(context.contains("src/bacon_core/mod.rs"));
     }
 
     #[test]

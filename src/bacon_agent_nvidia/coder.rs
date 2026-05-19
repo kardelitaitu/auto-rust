@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::bacon_core::{collect_source_context, read_role_prompt, GitSnapshot};
 
@@ -34,6 +35,10 @@ fn approved_patches_dir(root: &Path) -> PathBuf {
     root.join(".bacon")
         .join("sessions")
         .join("approved_patches")
+}
+
+fn coder_responses_dir(root: &Path) -> PathBuf {
+    root.join(".bacon").join("sessions").join("coder_responses")
 }
 
 fn safe_file_stem(name: &str) -> String {
@@ -75,13 +80,15 @@ const MIN_RESPONSE_LENGTH: usize = 60;
 ///
 /// Returns a list of (file_path, search_text, replace_text) tuples.
 fn parse_search_replace_blocks(response: &str) -> Vec<(String, String, String)> {
+    let normalized = normalize_search_replace_fences(response);
+
     // Match blocks where the file path is on a line before <<<<<<< SEARCH
     let re = regex::Regex::new(
         r"(?ms)(?:^|\n)\s*([^\n]+?\.(?:rs|toml|md|json|ps1|sh|js|ts|css|html))\s*\n\s*<<<<<<< SEARCH\s*\n(.*?)\n\s*=======\s*\n(.*?)\n\s*>>>>>>> REPLACE"
     ).expect("invalid SEARCH/REPLACE regex");
 
     let mut blocks = Vec::new();
-    for cap in re.captures_iter(response) {
+    for cap in re.captures_iter(&normalized) {
         let file_path = cap[1].trim().to_string();
         let search = cap[2].to_string();
         let replace = cap[3].to_string();
@@ -90,6 +97,46 @@ fn parse_search_replace_blocks(response: &str) -> Vec<(String, String, String)> 
         }
     }
     blocks
+}
+
+fn normalize_search_replace_fences(response: &str) -> String {
+    response
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            match trimmed {
+                "<<<<< SEARCH" | "<<<<<< SEARCH" | "<<<<<<< SEARCH" => "<<<<<<< SEARCH",
+                "======" | "=======" | "========" => "=======",
+                ">>>>>> REPLACE" | ">>>>>>> REPLACE" => ">>>>>>> REPLACE",
+                _ => line,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn contains_speculative_prose(response: &str) -> bool {
+    let lower = response.to_lowercase();
+    lower.contains("based on the assumption")
+        || lower.contains("actual implementation may vary")
+        || response
+            .lines()
+            .any(|line| line.trim_start().starts_with("Note:"))
+}
+
+fn stray_patch_marker_line(text: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.len() >= 4
+            && trimmed
+                .chars()
+                .all(|ch| ch == '<' || ch == '>' || ch == '=')
+        {
+            Some(trimmed.to_string())
+        } else {
+            None
+        }
+    })
 }
 
 /// Validate parsed SEARCH/REPLACE blocks for quality and correctness.
@@ -109,9 +156,15 @@ fn validate_search_replace_blocks(
     // 1. Response-level: reject trivially short responses
     if response.trim().len() < MIN_RESPONSE_LENGTH {
         anyhow::bail!(
-            "Response too short ({} bytes, minimum {}) — likely not a real SEARCH/REPLACE output",
+            "Response too short ({} bytes, minimum {}) - likely not a real SEARCH/REPLACE output",
             response.trim().len(),
             MIN_RESPONSE_LENGTH
+        );
+    }
+
+    if contains_speculative_prose(response) {
+        anyhow::bail!(
+            "Response contains speculative prose or assumptions; output concrete SEARCH/REPLACE blocks only"
         );
     }
 
@@ -120,9 +173,27 @@ fn validate_search_replace_blocks(
         let search_trimmed = search.trim();
         let replace_trimmed = replace.trim();
 
+        if let Some(marker) = stray_patch_marker_line(search_trimmed) {
+            anyhow::bail!(
+                "Block #{} ({}): SEARCH text contains stray patch marker `{}`",
+                i + 1,
+                file_path,
+                marker
+            );
+        }
+
+        if let Some(marker) = stray_patch_marker_line(replace_trimmed) {
+            anyhow::bail!(
+                "Block #{} ({}): REPLACE text contains stray patch marker `{}`",
+                i + 1,
+                file_path,
+                marker
+            );
+        }
+
         if search_trimmed.len() < MIN_SEARCH_LENGTH {
             anyhow::bail!(
-                "Block #{} ({}): SEARCH text too short ({} bytes, minimum {}) — likely hallucinated",
+                "Block #{} ({}): SEARCH text too short ({} bytes, minimum {}) - likely hallucinated",
                 i + 1,
                 file_path,
                 search_trimmed.len(),
@@ -152,6 +223,325 @@ fn validate_search_replace_blocks(
     }
 
     Ok(())
+}
+
+/// Find a unique whitespace-insensitive match and map it back to the original content span.
+fn find_unique_whitespace_insensitive_match(
+    content: &str,
+    search: &str,
+) -> Result<Option<(usize, usize)>> {
+    let search_flat: String = search.chars().filter(|c| !c.is_whitespace()).collect();
+    if search_flat.is_empty() {
+        anyhow::bail!("SEARCH text is empty after whitespace normalization");
+    }
+
+    let content_flat: String = content.chars().filter(|c| !c.is_whitespace()).collect();
+    let matches: Vec<_> = content_flat.match_indices(&search_flat).collect();
+    match matches.len() {
+        0 => Ok(None),
+        1 => {
+            let flat_pos = matches[0].0;
+
+            // Map flat position back to original content position by counting chars.
+            let mut orig_pos = 0;
+            let mut flat_idx = 0;
+            for (i, ch) in content.char_indices() {
+                if flat_idx >= flat_pos {
+                    orig_pos = i;
+                    break;
+                }
+                if !ch.is_whitespace() {
+                    flat_idx += ch.len_utf8();
+                }
+            }
+
+            // Find end byte offset in original content by walking forward.
+            let mut end_pos = content.len();
+            let mut consumed = 0usize;
+            for (i, ch) in content[orig_pos..].char_indices() {
+                if consumed >= search_flat.len() {
+                    end_pos = orig_pos + i;
+                    break;
+                }
+                if !ch.is_whitespace() {
+                    consumed += ch.len_utf8();
+                }
+            }
+
+            Ok(Some((orig_pos, end_pos)))
+        }
+        count => anyhow::bail!(
+            "SEARCH text matches {} locations after whitespace normalization; use a more specific block",
+            count
+        ),
+    }
+}
+
+#[derive(Debug)]
+struct NonBlankLine<'a> {
+    text: &'a str,
+    start: usize,
+    end: usize,
+}
+
+fn nonblank_lines(text: &str) -> Vec<NonBlankLine<'_>> {
+    let mut lines = Vec::new();
+    let mut offset = 0usize;
+
+    for segment in text.split_inclusive('\n') {
+        let without_lf = segment.strip_suffix('\n').unwrap_or(segment);
+        let line_text = without_lf.strip_suffix('\r').unwrap_or(without_lf);
+        let start = offset;
+        let end = offset + line_text.len();
+
+        if !line_text.trim().is_empty() {
+            lines.push(NonBlankLine {
+                text: line_text,
+                start,
+                end,
+            });
+        }
+
+        offset += segment.len();
+    }
+
+    if offset < text.len() {
+        let line_text = &text[offset..];
+        if !line_text.trim().is_empty() {
+            lines.push(NonBlankLine {
+                text: line_text,
+                start: offset,
+                end: text.len(),
+            });
+        }
+    }
+
+    lines
+}
+
+fn find_unique_blank_line_insensitive_match(
+    content: &str,
+    search: &str,
+) -> Result<Option<(usize, usize)>> {
+    let search_lines = nonblank_lines(search);
+    if search_lines.is_empty() {
+        anyhow::bail!("SEARCH text has no nonblank lines");
+    }
+
+    let content_lines = nonblank_lines(content);
+    let mut matches = Vec::new();
+    for window in content_lines.windows(search_lines.len()) {
+        if window
+            .iter()
+            .zip(search_lines.iter())
+            .all(|(content_line, search_line)| content_line.text == search_line.text)
+        {
+            let start = window.first().expect("nonempty window").start;
+            let end = window.last().expect("nonempty window").end;
+            matches.push((start, end));
+        }
+    }
+
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(matches.into_iter().next()),
+        count => anyhow::bail!(
+            "SEARCH text matches {} locations when ignoring blank lines; use a more specific block",
+            count
+        ),
+    }
+}
+
+fn allows_whitespace_insensitive_fallback(file_path: &str) -> bool {
+    Path::new(file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        != Some("rs")
+}
+
+fn suggest_existing_rust_target(root: &Path, rel: &Path) -> Option<(PathBuf, String)> {
+    if rel.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+        return None;
+    }
+
+    let parent = rel.parent().unwrap_or_else(|| Path::new(""));
+    let stem = rel.file_stem()?.to_str()?;
+    let candidates = [stem.strip_suffix("_test"), stem.strip_suffix("_tests")];
+
+    for base in candidates.into_iter().flatten() {
+        let candidate = parent.join(format!("{}.rs", base));
+        let abs = root.join(&candidate);
+        if abs.is_file() {
+            let note = std::fs::read_to_string(&abs)
+                .ok()
+                .map(|content| {
+                    if content.contains("mod tests") || content.contains("#[cfg(test)]") {
+                        "That file already contains an inline `mod tests` block.".to_string()
+                    } else {
+                        "That looks like the closest existing Rust source file.".to_string()
+                    }
+                })
+                .unwrap_or_else(|| {
+                    "That looks like the closest existing Rust source file.".to_string()
+                });
+            return Some((candidate, note));
+        }
+    }
+
+    None
+}
+
+fn normalize_scope_path(path: &str) -> String {
+    path.trim_start_matches(&['/', '\\'][..]).replace('\\', "/")
+}
+
+fn yaml_sequence_strings(value: &serde_yml::Value) -> Vec<String> {
+    value
+        .as_sequence()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(normalize_scope_path)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn declared_spec_code_paths(spec_path: &Path) -> Vec<String> {
+    let yaml_path = spec_path.join("spec.yaml");
+    let value = std::fs::read_to_string(&yaml_path)
+        .ok()
+        .and_then(|content| serde_yml::from_str::<serde_yml::Value>(&content).ok());
+
+    let Some(value) = value else {
+        return Vec::new();
+    };
+
+    value
+        .get("files")
+        .and_then(|files| files.get("code"))
+        .map(yaml_sequence_strings)
+        .unwrap_or_default()
+}
+
+fn plan_spec_code_paths(spec_path: &Path) -> Vec<String> {
+    let spec_text = format!(
+        "{}\n{}",
+        spec_io::read_spec_file(spec_path, "plan.md"),
+        spec_io::read_spec_file(spec_path, "validation.md")
+    );
+
+    crate::bacon_core::extract_repo_file_refs(&spec_text)
+        .into_iter()
+        .filter(|path| {
+            path.starts_with("src/")
+                || path.starts_with("tests/")
+                || path.starts_with("benches/")
+                || path.starts_with("examples/")
+                || path.starts_with("scripts/")
+                || path.starts_with("config/")
+                || matches!(
+                    path.as_str(),
+                    "Cargo.toml"
+                        | "build.rs"
+                        | "rust-toolchain.toml"
+                        | "check-fast.ps1"
+                        | "check.ps1"
+                )
+        })
+        .collect()
+}
+
+fn response_preview(response: &str, max_chars: usize) -> String {
+    let trimmed = response.trim();
+    let preview: String = trimmed.chars().take(max_chars).collect();
+    if trimmed.chars().count() > max_chars {
+        format!("{}...[truncated]", preview)
+    } else {
+        preview
+    }
+}
+
+fn save_coder_response(
+    root: &Path,
+    ctx: &PipelineCtx,
+    attempt: u32,
+    response: &str,
+) -> Result<PathBuf> {
+    let responses_dir = coder_responses_dir(root);
+    std::fs::create_dir_all(&responses_dir).context("failed to create coder_responses dir")?;
+
+    let spec_id = ctx
+        .spec_path
+        .as_ref()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown-spec".to_string());
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let response_path = responses_dir.join(format!(
+        "{}_attempt_{}_{}.txt",
+        safe_file_stem(&spec_id),
+        attempt,
+        timestamp_ms
+    ));
+
+    std::fs::write(&response_path, response)
+        .with_context(|| format!("failed to write {}", response_path.display()))?;
+    Ok(response_path)
+}
+
+fn spec_scope_paths(spec_path: &Path) -> Vec<String> {
+    let plan_paths = plan_spec_code_paths(spec_path);
+    if !plan_paths.is_empty() {
+        return plan_paths;
+    }
+    declared_spec_code_paths(spec_path)
+}
+
+fn path_allowed_by_scope(path: &str, scope_paths: &[String]) -> bool {
+    let path = normalize_scope_path(path);
+    scope_paths.iter().any(|scope| {
+        let scope = normalize_scope_path(scope);
+        if scope.ends_with('/') {
+            path.starts_with(&scope)
+        } else {
+            path == scope
+        }
+    })
+}
+
+fn validate_blocks_within_spec_scope(
+    ctx: &PipelineCtx,
+    blocks: &[(String, String, String)],
+) -> Result<()> {
+    let Some(spec_path) = ctx.spec_path.as_deref() else {
+        return Ok(());
+    };
+
+    let scope_paths = spec_scope_paths(spec_path);
+    if scope_paths.is_empty() {
+        return Ok(());
+    }
+
+    let invalid: Vec<String> = blocks
+        .iter()
+        .map(|(file_path, _, _)| normalize_scope_path(file_path))
+        .filter(|file_path| !path_allowed_by_scope(file_path, &scope_paths))
+        .collect();
+
+    if invalid.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "SEARCH/REPLACE targets are outside the active spec scope: {}. Allowed code paths: {}",
+        invalid.join(", "),
+        scope_paths.join(", ")
+    );
 }
 
 /// Detect a Rust item boundary that was accidentally merged onto one line.
@@ -210,10 +600,29 @@ fn apply_search_replace_blocks(
         let rel = PathBuf::from(clean);
         let abs = root.join(&rel);
         if !abs.exists() {
+            let suggestion = suggest_existing_rust_target(root, &rel);
+            let suggestion_text = suggestion
+                .as_ref()
+                .map(|(suggested_rel, note)| {
+                    let source_context =
+                        collect_source_context(&suggested_rel.display().to_string(), 1, 120);
+                    if source_context.is_empty() {
+                        format!("\nDid you mean {}? {}", suggested_rel.display(), note)
+                    } else {
+                        format!(
+                            "\nDid you mean {}? {}\n\n{}",
+                            suggested_rel.display(),
+                            note,
+                            source_context
+                        )
+                    }
+                })
+                .unwrap_or_default();
             anyhow::bail!(
-                "SEARCH/REPLACE target file not found: {} (resolved to {})",
+                "SEARCH/REPLACE target file not found: {} (resolved to {}){}",
                 file_path,
-                abs.display()
+                abs.display(),
+                suggestion_text
             );
         }
         rel_paths.push(rel);
@@ -228,6 +637,7 @@ fn apply_search_replace_blocks(
         let abs_path = root.join(clean);
         let content = std::fs::read_to_string(&abs_path)
             .with_context(|| format!("failed to read {}", abs_path.display()))?;
+        let allow_fuzzy = allows_whitespace_insensitive_fallback(clean);
 
         // Try exact match first
         if let Some(pos) = content.find(search.as_str()) {
@@ -243,61 +653,58 @@ fn apply_search_replace_blocks(
             continue;
         }
 
-        // Fallback: whitespace-insensitive matching
-        // Normalize both search and content by stripping all whitespace
-        let search_flat: String = search.chars().filter(|c| !c.is_whitespace()).collect();
-        if search_flat.is_empty() {
-            anyhow::bail!(
-                "SEARCH text for {} is empty after whitespace normalization",
-                clean
-            );
-        }
-        let content_flat: String = content.chars().filter(|c| !c.is_whitespace()).collect();
-        if let Some(flat_pos) = content_flat.find(&search_flat) {
-            // Map flat position back to original content position by counting chars
-            let mut orig_pos = 0;
-            let mut flat_idx = 0;
-            for (i, ch) in content.char_indices() {
-                if flat_idx >= flat_pos {
-                    orig_pos = i;
-                    break;
+        // Fallback: whitespace-insensitive matching for non-Rust files only.
+        if allow_fuzzy {
+            if let Some((orig_pos, end_pos)) =
+                find_unique_whitespace_insensitive_match(&content, search)?
+            {
+                let new_content =
+                    format!("{}{}{}", &content[..orig_pos], replace, &content[end_pos..]);
+                std::fs::write(&abs_path, &new_content)
+                    .with_context(|| format!("failed to write {}", abs_path.display()))?;
+                info!(
+                    "SEARCH/REPLACE applied to {} (whitespace-insensitive match)",
+                    clean
+                );
+            } else {
+                // Rollback before returning error (warn if restore fails)
+                if let Err(e) = snapshot.restore() {
+                    warn!(
+                        "Failed to restore snapshot during SEARCH/REPLACE error recovery: {}",
+                        e
+                    );
                 }
-                if !ch.is_whitespace() {
-                    flat_idx += ch.len_utf8();
-                }
-            }
-            // Find end byte offset in original content by walking forward
-            // consuming search_flat.len() bytes of non-whitespace characters
-            let mut end_pos = content.len();
-            let mut consumed = 0usize;
-            for (i, ch) in content[orig_pos..].char_indices() {
-                if consumed >= search_flat.len() {
-                    end_pos = orig_pos + i;
-                    break;
-                }
-                if !ch.is_whitespace() {
-                    consumed += ch.len_utf8();
-                }
-            }
-            let new_content = format!("{}{}{}", &content[..orig_pos], replace, &content[end_pos..]);
-            std::fs::write(&abs_path, &new_content)
-                .with_context(|| format!("failed to write {}", abs_path.display()))?;
-            info!(
-                "SEARCH/REPLACE applied to {} (whitespace-insensitive match)",
-                clean
-            );
-        } else {
-            // Rollback before returning error (warn if restore fails)
-            if let Err(e) = snapshot.restore() {
-                warn!(
-                    "Failed to restore snapshot during SEARCH/REPLACE error recovery: {}",
-                    e
+                anyhow::bail!(
+                    "SEARCH text not found in {} - even after whitespace-insensitive matching",
+                    clean
                 );
             }
-            anyhow::bail!(
-                "SEARCH text not found in {} — even after whitespace-insensitive matching",
-                clean
-            );
+        } else {
+            // Rust files allow only blank-line drift; nonblank lines must match exactly.
+            if let Some((orig_pos, end_pos)) =
+                find_unique_blank_line_insensitive_match(&content, search)?
+            {
+                let new_content =
+                    format!("{}{}{}", &content[..orig_pos], replace, &content[end_pos..]);
+                std::fs::write(&abs_path, &new_content)
+                    .with_context(|| format!("failed to write {}", abs_path.display()))?;
+                info!(
+                    "SEARCH/REPLACE applied to {} (blank-line-insensitive Rust match)",
+                    clean
+                );
+            } else {
+                // Rollback before returning error (warn if restore fails)
+                if let Err(e) = snapshot.restore() {
+                    warn!(
+                        "Failed to restore snapshot during SEARCH/REPLACE error recovery: {}",
+                        e
+                    );
+                }
+                anyhow::bail!(
+                    "SEARCH text not found in {} - exact nonblank line match required for Rust files",
+                    clean
+                );
+            }
         }
     }
 
@@ -515,6 +922,18 @@ fn build_spec_context(ctx: &PipelineCtx) -> String {
     }
 }
 
+fn attach_live_source_context(error_text: &str) -> String {
+    let source_context = collect_source_context(error_text, 2, 120);
+    if source_context.is_empty() {
+        error_text.to_string()
+    } else {
+        format!(
+            "{}\n\n{}\n\nIMPORTANT: Use the exact source excerpt above as the basis for the next SEARCH block. Do not reconstruct Rust item boundaries from memory.",
+            error_text, source_context
+        )
+    }
+}
+
 fn signal_scope_reduction(ctx: &PipelineCtx, errors: Vec<String>) -> PipelineCtx {
     let mut output = PipelineCtx::new(ctx.description.clone());
     output.scope_reduction_needed = true;
@@ -567,7 +986,9 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                  >>>>>>> REPLACE\n\
                  CRITICAL: Copy SEARCH lines EXACTLY from the source files - character for character.\n\
                  Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks.\n\
-                 In Rust files, keep `}}` and `#[...]` on separate lines.",
+                 In Rust files, keep `}}` and `#[...]` on separate lines.\n\
+                 For Rust files, the SEARCH text must match exactly; do not rely on whitespace-only matching.\n\
+                 If a Rust change is a test addition, prefer the existing source file that already contains `mod tests` instead of inventing a new `*_test.rs` file.",
                 spec_context
             )
         } else {
@@ -584,7 +1005,9 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                  CRITICAL: Copy SEARCH lines EXACTLY from the source files - character for character.\n\
                  Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks. \
                  Do not refuse or explain why you can't do it - just produce the blocks.\n\
-                 In Rust files, keep `}}` and `#[...]` on separate lines.",
+                 In Rust files, keep `}}` and `#[...]` on separate lines.\n\
+                 For Rust files, the SEARCH text must match exactly; do not rely on whitespace-only matching.\n\
+                 If a Rust change is a test addition, prefer the existing source file that already contains `mod tests` instead of inventing a new `*_test.rs` file.",
                 last_error, spec_context
             )
         };
@@ -611,6 +1034,38 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 continue;
             }
         };
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let response_artifact = if ctx.dry_run {
+            None
+        } else {
+            match save_coder_response(root, ctx, attempt, &response) {
+                Ok(path) => Some(path),
+                Err(e) => {
+                    warn!(
+                        "Failed to save NVIDIA Coder response for attempt {}: {}",
+                        attempt, e
+                    );
+                    None
+                }
+            }
+        };
+        let preview = response_preview(&response, 1200);
+        match response_artifact {
+            Some(path) => info!(
+                "NVIDIA Coder response attempt {} ({} chars; saved to {}):\n{}",
+                attempt,
+                response.chars().count(),
+                path.display(),
+                preview
+            ),
+            None => info!(
+                "NVIDIA Coder response attempt {} ({} chars):\n{}",
+                attempt,
+                response.chars().count(),
+                preview
+            ),
+        }
 
         // Extract and log confidence
         if let Some(conf) = crate::bacon_core::extract_confidence(&response) {
@@ -686,6 +1141,14 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
 
         // Parse SEARCH/REPLACE blocks from LLM response
         let search_replace_blocks = parse_search_replace_blocks(&response);
+        if !search_replace_blocks.is_empty()
+            && normalize_search_replace_fences(&response) != response
+        {
+            warn!(
+                "NVIDIA Coder response attempt {} used malformed SEARCH/REPLACE fence markers; normalized before parsing",
+                attempt
+            );
+        }
 
         if search_replace_blocks.is_empty() {
             warn!(
@@ -699,10 +1162,14 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
             ));
             let max_attempts = effective_max_attempts(args.max_attempts);
             if attempt >= max_attempts {
-                warn!("Max retries exhausted — signalling scope reduction needed");
+                warn!("Max retries exhausted - signalling scope reduction needed");
                 return Ok(signal_scope_reduction(ctx, errors));
             }
-            last_error = "The previous attempt did not produce valid SEARCH/REPLACE blocks. Return only blocks, with the file path on the first non-empty line, then:\npath/to/file.rs\n<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE\nNo markdown, no headings, no prose, no unified diffs.".to_string();
+            let response_preview = response.lines().take(8).collect::<Vec<_>>().join("\n");
+            last_error = format!(
+                "The previous attempt did not produce valid SEARCH/REPLACE blocks.\n\nLast response preview:\n{}\n\nReturn only blocks, with the file path on the first non-empty line, then:\npath/to/file.rs\n<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE\nNo markdown, no headings, no prose, no unified diffs.",
+                response_preview
+            );
             attempt += 1;
             continue;
         }
@@ -729,6 +1196,28 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
             continue;
         }
 
+        if let Err(e) = validate_blocks_within_spec_scope(ctx, &search_replace_blocks) {
+            warn!(
+                "NVIDIA Coder generated out-of-scope SEARCH/REPLACE blocks on attempt {}: {}",
+                attempt, e
+            );
+            errors.push(format!(
+                "Attempt {} scope validation failed: {}",
+                attempt, e
+            ));
+            let max_attempts = effective_max_attempts(args.max_attempts);
+            if attempt >= max_attempts {
+                warn!("Max retries exhausted - signalling scope reduction needed");
+                return Ok(signal_scope_reduction(ctx, errors));
+            }
+            last_error = format!(
+                "{}\n\nOnly edit files listed by the active spec. Do not introduce unrelated files.",
+                e
+            );
+            attempt += 1;
+            continue;
+        }
+
         info!(
             "NVIDIA Coder produced {} SEARCH/REPLACE blocks on attempt {}",
             search_replace_blocks.len(),
@@ -747,12 +1236,12 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                 if attempt >= max_attempts {
                     return Ok(signal_scope_reduction(ctx, errors));
                 }
-                last_error = format!(
+                last_error = attach_live_source_context(&format!(
                     "SEARCH/REPLACE failed: {}\n\n\
                      ---\n\n\
                      Make sure SEARCH lines match the source files EXACTLY.",
                     e
-                );
+                ));
                 attempt += 1;
                 continue;
             }
@@ -847,16 +1336,16 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
                     if attempt >= max_attempts {
                         return Ok(signal_scope_reduction(ctx, errors));
                     }
-                    let new_error = format!(
+                    let new_error = attach_live_source_context(&format!(
                         "Patch verification failed:\n{}\n\n\
                          ---\n\n\
                          Fix the patch and ensure check-fast.ps1 passes.",
                         e
-                    );
+                    ));
                     if attempt > 1 && new_error == last_error {
                         repeated_error_count += 1;
                         if repeated_error_count >= 1 {
-                            warn!("Same verification error repeated — skipping remaining retries");
+                            warn!("Same verification error repeated - skipping remaining retries");
                             return Ok(signal_scope_reduction(ctx, errors));
                         }
                     } else {
@@ -964,12 +1453,239 @@ mod tests {
     }
 
     #[test]
+    fn test_response_preview_truncates_long_output() {
+        let preview = response_preview("abcdef", 3);
+
+        assert_eq!(preview, "abc...[truncated]");
+    }
+
+    #[test]
+    fn test_save_coder_response_writes_raw_reply() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let ctx = PipelineCtx::new("test".to_string());
+
+        let path = save_coder_response(temp.path(), &ctx, 2, "raw coder reply")?;
+
+        assert!(path.exists());
+        assert_eq!(
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|name| name.to_str()),
+            Some("coder_responses")
+        );
+        assert_eq!(std::fs::read_to_string(path)?, "raw coder reply");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_search_replace_blocks_normalizes_near_miss_fences() {
+        let response = r#"
+src/adaptive/learning_engine.rs
+<<<<< SEARCH
+    pub fn new() -> Self {
+========
+    pub fn new() -> Result<Self> {
+>>>>>> REPLACE
+"#;
+
+        let blocks = parse_search_replace_blocks(response);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].0, "src/adaptive/learning_engine.rs");
+        assert!(blocks[0].1.contains("pub fn new() -> Self"));
+        assert!(blocks[0].2.contains("pub fn new() -> Result<Self>"));
+    }
+
+    #[test]
+    fn test_normalize_search_replace_fences_keeps_valid_fences() {
+        let response = "file.rs\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE";
+
+        assert_eq!(normalize_search_replace_fences(response), response);
+    }
+
+    #[test]
+    fn test_validation_rejects_speculative_prose_note() {
+        let response = "x".repeat(100)
+            + "\nNote: The above SEARCH/REPLACE blocks are based on the assumption.";
+        let blocks = vec![make_block(
+            "src/main.rs",
+            "fn old_function() {\n    return 1;\n}",
+            "fn new_function() {\n    return 2;\n}",
+        )];
+
+        let err = validate_search_replace_blocks(&response, &blocks).unwrap_err();
+        let msg = format!("{}", err);
+
+        assert!(msg.contains("speculative prose"));
+    }
+
+    #[test]
+    fn test_validation_rejects_stray_patch_marker_inside_search() {
+        let response = "x".repeat(100);
+        let blocks = vec![make_block(
+            "src/main.rs",
+            "#[allow(dead_code)]\n>>>>>>",
+            "fn new_function() {\n    return 2;\n}",
+        )];
+
+        let err = validate_search_replace_blocks(&response, &blocks).unwrap_err();
+        let msg = format!("{}", err);
+
+        assert!(msg.contains("stray patch marker"));
+    }
+
+    #[test]
     fn test_detect_merged_rust_attribute_boundary() {
         assert_eq!(detect_merged_rust_attribute_boundary("}\n#[test]\n"), None);
         assert_eq!(
             detect_merged_rust_attribute_boundary("}    #[test]\n"),
             Some(1)
         );
+    }
+
+    #[test]
+    fn test_unique_whitespace_insensitive_match() {
+        let content = "fn a() {\n    let value = 1;\n}\n";
+        let search = "fn a() {\nlet value = 1;\n}";
+        let span = find_unique_whitespace_insensitive_match(content, search).unwrap();
+        assert!(span.is_some());
+    }
+
+    #[test]
+    fn test_ambiguous_whitespace_insensitive_match_rejected() {
+        let content = "fn a() {}\nfn a() {}\n";
+        let search = "fn a() {}";
+        let err = find_unique_whitespace_insensitive_match(content, search).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("matches 2 locations"));
+    }
+
+    #[test]
+    fn test_blank_line_insensitive_match_ignores_only_blank_lines() {
+        let content = "fn a() {\n    let one = 1;\n\n    let two = 2;\n}\n";
+        let search = "fn a() {\n    let one = 1;\n    let two = 2;\n}";
+
+        let span = find_unique_blank_line_insensitive_match(content, search).unwrap();
+
+        assert_eq!(span, Some((0, content.trim_end().len())));
+    }
+
+    #[test]
+    fn test_blank_line_insensitive_match_rejects_changed_nonblank_line() {
+        let content = "fn a() {\n    let one = 1;\n\n    let two = 2;\n}\n";
+        let search = "fn a() {\n    let one = 1;\n    let two = 3;\n}";
+
+        let span = find_unique_blank_line_insensitive_match(content, search).unwrap();
+
+        assert_eq!(span, None);
+    }
+
+    #[test]
+    fn test_whitespace_insensitive_fallback_disabled_for_rust_files() {
+        assert!(!allows_whitespace_insensitive_fallback("src/main.rs"));
+        assert!(!allows_whitespace_insensitive_fallback("src/bin/tool.rs"));
+        assert!(allows_whitespace_insensitive_fallback("docs/spec.md"));
+        assert!(allows_whitespace_insensitive_fallback(".bacon/workflow.md"));
+    }
+
+    #[test]
+    fn test_attach_live_source_context_includes_rust_file_excerpt() {
+        let error = "SEARCH text not found in src/adaptive/learning_engine.rs - exact match required for Rust files";
+        let context = attach_live_source_context(error);
+
+        assert!(context.contains("SEARCH text not found"));
+        assert!(context.contains("## Relevant Source Files"));
+        assert!(context.contains("src/adaptive/learning_engine.rs"));
+        assert!(context.contains("IMPORTANT: Use the exact source excerpt above"));
+    }
+
+    #[test]
+    fn test_suggest_existing_rust_target_prefers_module_file() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let rel = Path::new("src/adaptive/learning_engine_test.rs");
+
+        let suggestion = suggest_existing_rust_target(root, rel)
+            .expect("expected a nearby Rust target suggestion");
+
+        assert_eq!(
+            suggestion.0,
+            PathBuf::from("src/adaptive/learning_engine.rs")
+        );
+        assert!(suggestion.1.contains("mod tests") || suggestion.1.contains("closest existing"));
+    }
+
+    #[test]
+    fn test_validate_blocks_within_spec_scope_rejects_unlisted_file() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        std::fs::write(
+            temp.path().join("spec.yaml"),
+            r#"
+id: test-spec
+title: Test Spec
+status: approved
+owner: pipeline
+implementer: pipeline
+priority: P1
+files:
+  code:
+    - src/bacon_agent_nvidia/
+"#,
+        )?;
+        std::fs::write(
+            temp.path().join("plan.md"),
+            "Update src/bacon_agent_nvidia/auditor.rs.",
+        )?;
+        std::fs::write(temp.path().join("validation.md"), "Run check-fast.ps1.")?;
+
+        let mut ctx = PipelineCtx::new("test".to_string());
+        ctx.spec_path = Some(temp.path().to_path_buf());
+        let blocks = vec![(
+            "src/adaptive/predictive_scorer.rs".to_string(),
+            "old content".to_string(),
+            "new content".to_string(),
+        )];
+
+        let err = validate_blocks_within_spec_scope(&ctx, &blocks).unwrap_err();
+        let msg = format!("{}", err);
+
+        assert!(msg.contains("outside the active spec scope"));
+        assert!(msg.contains("src/bacon_agent_nvidia/auditor.rs"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_blocks_within_spec_scope_allows_plan_file() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        std::fs::write(
+            temp.path().join("spec.yaml"),
+            r#"
+id: test-spec
+title: Test Spec
+status: approved
+owner: pipeline
+implementer: pipeline
+priority: P1
+files:
+  code:
+    - src/bacon_agent_nvidia/
+"#,
+        )?;
+        std::fs::write(
+            temp.path().join("plan.md"),
+            "Update src/bacon_agent_nvidia/auditor.rs.",
+        )?;
+        std::fs::write(temp.path().join("validation.md"), "Run check-fast.ps1.")?;
+
+        let mut ctx = PipelineCtx::new("test".to_string());
+        ctx.spec_path = Some(temp.path().to_path_buf());
+        let blocks = vec![(
+            "src/bacon_agent_nvidia/auditor.rs".to_string(),
+            "old content".to_string(),
+            "new content".to_string(),
+        )];
+
+        validate_blocks_within_spec_scope(&ctx, &blocks)?;
+        Ok(())
     }
 
     // ========================================================================

@@ -26,6 +26,12 @@ impl Llm {
         Ok(Self { client })
     }
 
+    pub fn from_config(config: LlmConfig) -> Self {
+        Self {
+            client: LlmClient::new(config),
+        }
+    }
+
     pub async fn generate(&self, prompt: &str) -> anyhow::Result<String> {
         let messages = vec![ChatMessage::user(prompt)];
         self.client.chat(messages).await

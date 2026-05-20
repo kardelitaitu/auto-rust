@@ -79,13 +79,18 @@ pub enum LlmProvider {
     #[default]
     Ollama,
     OpenRouter,
+    Nvidia,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LlmConfig {
     pub provider: LlmProvider,
+    #[serde(default)]
     pub ollama: OllamaConfig,
+    #[serde(default)]
     pub openrouter: OpenRouterConfig,
+    #[serde(default)]
+    pub nvidia: NvidiaConfig,
 }
 
 impl LlmConfig {
@@ -130,6 +135,25 @@ impl Default for OpenRouterConfig {
             model: "anthropic/claude-3-haiku".into(),
             timeout_ms: 60000,
             fallback_models: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NvidiaConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+    pub timeout_ms: u64,
+}
+
+impl Default for NvidiaConfig {
+    fn default() -> Self {
+        Self {
+            api_key: "nvapi-placeholder-key".to_string(),
+            base_url: "https://integrate.api.nvidia.com/v1".to_string(),
+            model: "meta/llama-3.3-70b-instruct".to_string(),
+            timeout_ms: 120000,
         }
     }
 }

@@ -6,7 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::bacon_core::{collect_source_context, read_role_prompt, GitSnapshot};
 
-use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
 use crate::bacon_core::cli_types::RunArgs;
@@ -945,8 +944,7 @@ fn signal_scope_reduction(ctx: &PipelineCtx, errors: Vec<String>) -> PipelineCtx
     output
 }
 
-pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
+pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     let system_prompt = role_prompt();
 
     // Mark spec as in-progress at the start of implementation
@@ -1014,11 +1012,15 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
 
         let max_attempts = effective_max_attempts(args.max_attempts);
         info!(
-            "NVIDIA Coder calling API (attempt {}/{}) with model: {}",
-            attempt, max_attempts, config.model
+            "NVIDIA Coder calling API (attempt {}/{})...",
+            attempt, max_attempts
         );
 
-        let response = match nvidia_api::chat(&config, &system_prompt, &prompt).await {
+        let messages = vec![
+            crate::llm::ChatMessage::system(system_prompt.clone()),
+            crate::llm::ChatMessage::user(prompt),
+        ];
+        let response = match llm.chat(messages).await {
             Ok(r) => r,
             Err(e) => {
                 let err_msg = format!("NVIDIA API call failed on attempt {}: {}", attempt, e);

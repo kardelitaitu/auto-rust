@@ -3,7 +3,6 @@ use log::{info, warn};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
 use crate::bacon_core::cli_types::RunArgs;
@@ -70,13 +69,16 @@ fn build_prompt(ctx: &PipelineCtx) -> String {
     }
 }
 
-pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
+pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     let system_prompt = role_prompt();
     let prompt = build_prompt(ctx);
 
-    info!("NVIDIA Strategist calling API with model: {}", config.model);
-    let response = nvidia_api::chat(&config, &system_prompt, &prompt).await?;
+    info!("NVIDIA Strategist calling API...");
+    let messages = vec![
+        crate::llm::ChatMessage::system(system_prompt),
+        crate::llm::ChatMessage::user(prompt),
+    ];
+    let response = llm.chat(messages).await?;
 
     if response.trim().starts_with("REJECTED:") {
         anyhow::bail!("Strategist rejected: {}", response);
@@ -119,6 +121,17 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
             anyhow::bail!("generated spec failed spec-lint:\n{}", output);
         } else {
             info!("spec-lint passed");
+        }
+
+        // Gate: Existence Guard — verify all file paths in the plan actually exist
+        let missing = crate::bacon_core::validate_spec_file_refs(&spec_path);
+        if !missing.is_empty() {
+            let msg = format!(
+                "Strategist hallucination detected! The plan references non-existent files:\n- {}\nStopping before Coder.",
+                missing.join("\n- ")
+            );
+            warn!("{}", msg);
+            anyhow::bail!("{}", msg);
         }
 
         Some(spec_path)

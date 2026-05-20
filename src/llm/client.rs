@@ -38,6 +38,7 @@ impl LlmClient {
         match self.config.provider {
             LlmProvider::Ollama => self.ollama_chat(messages).await,
             LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
+            LlmProvider::Nvidia => self.nvidia_chat(messages).await,
         }
     }
 
@@ -57,7 +58,72 @@ impl LlmClient {
                 }
             },
             LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
+            LlmProvider::Nvidia => self.nvidia_chat(messages).await,
         }
+    }
+
+    async fn nvidia_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
+        let url = format!("{}/chat/completions", self.config.nvidia.base_url);
+
+        let request = serde_json::json!({
+            "model": self.config.nvidia.model,
+            "messages": messages,
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "max_tokens": 4096,
+            "stream": false,
+        });
+
+        info!("Calling NVIDIA API: {}...", self.config.nvidia.model);
+
+        let response = self
+            .http
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.config.nvidia.api_key))
+            .json(&request)
+            .timeout(Duration::from_millis(self.config.nvidia.timeout_ms))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            error!("NVIDIA API error: {} - {}", status, text);
+            anyhow::bail!("NVIDIA API error: {} - {}", status, text);
+        }
+
+        let body_text = response.text().await.unwrap_or_default();
+        let body: serde_json::Value = match serde_json::from_str(&body_text) {
+            Ok(v) => v,
+            Err(e) => {
+                // Persist raw body for debugging
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let error_path = std::path::PathBuf::from("sessions/api_errors")
+                    .join(format!("nvidia_api_{}.json", ts));
+                let _ = std::fs::create_dir_all("sessions/api_errors");
+                let _ = std::fs::write(&error_path, &body_text);
+                warn!("Failed to parse NVIDIA JSON (saved to {}): {}", error_path.display(), e);
+                return Err(e.into());
+            }
+        };
+
+        let message = &body["choices"][0]["message"];
+        let content = message["content"]
+            .as_str()
+            .or(message["reasoning"].as_str())
+            .or(message["reasoning_content"].as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        if content.is_empty() {
+            let reason = body["choices"][0]["finish_reason"].as_str().unwrap_or("unknown");
+            anyhow::bail!("Empty response from NVIDIA API (finish_reason: {})", reason);
+        }
+
+        Ok(content)
     }
 
     async fn ollama_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
@@ -251,8 +317,38 @@ impl LlmClient {
         match self.config.provider {
             LlmProvider::Ollama => self.ollama_health().await,
             LlmProvider::OpenRouter => self.openrouter_health().await,
+            LlmProvider::Nvidia => self.nvidia_health().await,
         }
         .unwrap_or(false)
+    }
+
+    async fn nvidia_health(&self) -> Result<bool> {
+        let url = format!("{}/chat/completions", self.config.nvidia.base_url);
+
+        // Simple check: send a request with 1 token max to verify connectivity
+        let request = serde_json::json!({
+            "model": self.config.nvidia.model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+        });
+
+        let response = self
+            .http
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.config.nvidia.api_key))
+            .json(&request)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            warn!("NVIDIA health check failed ({}): {}", status, text);
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 
     async fn ollama_health(&self) -> Result<bool> {
@@ -286,7 +382,28 @@ impl LlmClient {
     }
 }
 
+fn load_env_file() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let env_path = root.join(".env");
+    if let Ok(content) = std::fs::read_to_string(&env_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((key, value)) = line.split_once('=') {
+                let key = key.trim();
+                let value = value.trim().trim_matches('"').trim_matches('\'');
+                if std::env::var(key).is_err() {
+                    std::env::set_var(key, value);
+                }
+            }
+        }
+    }
+}
+
 pub fn create_llm_client_from_config() -> Result<LlmConfig> {
+    load_env_file();
     let config_path = std::path::Path::new("config/llm.toml");
 
     let mut config = if config_path.exists() {
@@ -298,10 +415,10 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
 
     // Apply environment variable overrides
     if let Ok(provider) = std::env::var("LLM_PROVIDER") {
-        if provider == "openrouter" {
-            config.provider = LlmProvider::OpenRouter;
-        } else {
-            config.provider = LlmProvider::Ollama;
+        match provider.to_lowercase().as_str() {
+            "openrouter" => config.provider = LlmProvider::OpenRouter,
+            "nvidia" => config.provider = LlmProvider::Nvidia,
+            _ => config.provider = LlmProvider::Ollama,
         }
     }
 
@@ -319,6 +436,18 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
 
     if let Ok(model) = std::env::var("OPENROUTER_MODEL") {
         config.openrouter.model = model;
+    }
+
+    if let Ok(api_key) = std::env::var("NVIDIA_API_KEY") {
+        config.nvidia.api_key = api_key;
+    }
+
+    if let Ok(model) = std::env::var("NVIDIA_MODEL") {
+        config.nvidia.model = model;
+    }
+
+    if let Ok(base_url) = std::env::var("NVIDIA_BASE_URL") {
+        config.nvidia.base_url = base_url;
     }
 
     // Load fallback models from env vars

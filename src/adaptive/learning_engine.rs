@@ -610,3 +610,43 @@ mod tests {
         assert!(engine.state.selectors.contains_key("ancient"));
     }
 }
+    #[test]
+    fn test_learning_engine_new_valid_parameters() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session-123", &profile, true, 14);
+        assert!(engine.is_enabled());
+        assert_eq!(engine.ttl_days(), 14);
+    }
+
+    #[test]
+    fn test_learning_engine_click_learning_persistence() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session-123", &profile, true, 14);
+        engine.record("#button", true).unwrap();
+        let stats = engine.selector_stats("#button");
+        assert_eq!(stats.attempts, 1);
+    }
+
+    #[test]
+    fn test_learning_engine_api_methods() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session-123", &profile, true, 14);
+        engine.record("#button", true).unwrap();
+        let adaptation = engine.adaptation_for("#button", &create_test_context());
+        assert!(adaptation.reaction_delay_multiplier > 0.0);
+    }
+
+    #[test]
+    fn test_learning_engine_invalid_input_parameters() {
+        let profile = create_test_profile();
+        let result = LearningEngine::new("", &profile, true, 14);
+        assert!(result.state.selectors.is_empty());
+    }
+
+    #[test]
+    fn test_learning_engine_error_handling() {
+        let profile = create_test_profile();
+        let mut engine = LearningEngine::new("test-session-123", &profile, true, 14);
+        let result = engine.save();
+        assert!(result.is_ok());
+    }

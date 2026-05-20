@@ -1,7 +1,6 @@
 use anyhow::Result;
 use log::{info, warn};
 
-use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
 use crate::bacon_core::cli_types::RunArgs;
@@ -9,8 +8,7 @@ use crate::bacon_core::cli_types::RunArgs;
 fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("auditor")
 }
-pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
-    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
+pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     let system_prompt = role_prompt();
 
     // Resolve spec context: prefer files on disk, fall back to ctx.description
@@ -100,8 +98,12 @@ pub async fn run(_llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> R
         meta.title, spec_name, meta.title, meta.status, plan, validation_spec, diff
     );
 
-    info!("NVIDIA Auditor calling API with model: {}", config.model);
-    let response = nvidia_api::chat(&config, &system_prompt, &user_prompt).await?;
+    info!("NVIDIA Auditor calling API...");
+    let messages = vec![
+        crate::llm::ChatMessage::system(system_prompt),
+        crate::llm::ChatMessage::user(user_prompt),
+    ];
+    let response = llm.chat(messages).await?;
 
     // Extract and log confidence
     let confidence = crate::bacon_core::extract_confidence(&response);

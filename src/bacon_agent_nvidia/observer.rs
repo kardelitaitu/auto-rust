@@ -1,7 +1,6 @@
 use anyhow::Result;
 use log::info;
 
-use super::nvidia_api;
 use super::spec_io;
 use super::types::PipelineCtx;
 use crate::bacon_core::cli_types::RunArgs;
@@ -49,7 +48,6 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         }
     }
 
-    let config = crate::bacon_agent_nvidia::cli::nvidia_config_from_args(args);
     let prompt = args
         .prompt
         .as_deref()
@@ -57,13 +55,17 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
 
     // Quick health check before the first LLM call
     if !llm.health_check().await {
-        anyhow::bail!("LLM health check failed — check that Ollama/NVIDIA service is running");
+        anyhow::bail!("LLM health check failed — check your provider settings (NVIDIA/Ollama/OpenRouter) and connectivity");
     }
 
-    info!("NVIDIA Observer calling API with model: {}", config.model);
+    info!("NVIDIA Observer calling API...");
     let context = crate::bacon_core::gather_project_context();
     let enriched_prompt = format!("{}\n\n## Task\n\n{}", context, prompt);
-    let response = nvidia_api::chat(&config, &system_prompt(), &enriched_prompt).await?;
+    let messages = vec![
+        crate::llm::ChatMessage::system(system_prompt()),
+        crate::llm::ChatMessage::user(enriched_prompt),
+    ];
+    let response = llm.chat(messages).await?;
 
     // Extract and log confidence
     let confidence = crate::bacon_core::extract_confidence(&response);

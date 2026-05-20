@@ -9,21 +9,16 @@
 
 [pipeline]
 # Agent routing for each pipeline stage.
-# Values: "bacon" (built-in) or an agent name from [agents.<name>].command_args (e.g., "nvidia").
-# The built-in "bacon" agents implement SEARCH/REPLACE parsing, file patching,
-# check-fast.ps1 gating, and retry loops. External agents are text-only wrappers.
-observer = "nvidia"
-strategist = "nvidia"
-coder = "bacon"
-auditor = "bacon"
+# Values: "nvidia" (built-in), "bacon" (built-in), or an agent name from [agents.<name>].
+# Built-in agents use the modern unified LLM client and localized logic.
+observer = "nvidia_observer"
+strategist = "nvidia_strategist"
+coder = "nvidia_coder"
+auditor = "nvidia_auditor"
 # Delay (ms) between pipeline stages to avoid LLM API rate limiting.
-# Default: 0 (no delay). Set to 1000 for 1s between consecutive stages.
 stage_delay_ms = 500
 
 # Whether to auto-apply Coder patches without user confirmation.
-# When true, patches that pass check-fast.ps1 are applied automatically.
-# The CLI `--auto-apply` flag overrides this value.
-# Default: false.
 enable_auto_apply = false
 
 # ── CI watcher jobs (bacon CLI) ──────────────────────────────────
@@ -68,20 +63,41 @@ timeout_seconds = 60
 
 # ── Agent LLM configuration ─────────────────────────────────────
 # Each [agents.<name>] section is read by PipelineConfig::agent_llm_config()
-# and run_external_agent() at runtime. Supports:
-#
-#   type         — "local" (in-process) or "external" (CLI worker)
-#   provider     — "ollama", "openai", "anthropic", "cli", or "nvidia"
-#   model        — Model name/ID
-#   temperature  — LLM temperature (0.0–1.0)
-#   command_args — CLI arguments with {prompt} and {role} placeholders
-#   api_key      — API key (supports {env:VAR_NAME} references)
-#   base_url     — API base URL
-#   top_p        — Nucleus sampling parameter
-#   max_tokens   — Maximum output tokens
+# and used to initialize the stage-specific LLM client.
 
-# NVIDIA agent — requires NVIDIA_API_KEY env var.
-# Used by all 4 pipeline stages (observer, strategist, coder, auditor).
+[agents.nvidia_observer]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.4
+max_tokens = 4096
+
+[agents.nvidia_strategist]
+provider = "nvidia"
+model = "deepseek-ai/deepseek-v4-pro"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.1
+max_tokens = 8192
+
+[agents.nvidia_coder]
+provider = "nvidia"
+model = "deepseek-ai/deepseek-v4-pro"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.0
+max_tokens = 16384
+
+[agents.nvidia_auditor]
+provider = "nvidia"
+model = "deepseek-ai/deepseek-v4-pro"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.1
+max_tokens = 8192
+
+# Base NVIDIA agent — preserved for backward compatibility
 [agents.nvidia]
 type = "external"
 provider = "nvidia"

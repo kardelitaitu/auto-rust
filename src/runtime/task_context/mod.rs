@@ -1680,7 +1680,10 @@ impl TaskContext {
                 &behavior_profile,
                 true,
                 browser_config.learning_ttl_days,
-            )
+            ).unwrap_or_else(|e| {
+                log::warn!("Failed to initialize LearningEngine, falling back to disabled: {}", e);
+                LearningEngine::disabled()
+            })
         } else {
             LearningEngine::disabled()
         };

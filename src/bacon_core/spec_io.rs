@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use log::warn;
 use serde::{Deserialize, Serialize};
 use serde_yml::{Mapping, Value};
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Metadata stored in spec.yaml.
@@ -161,78 +160,87 @@ fn set_yaml_string(mapping: &mut Mapping, key: &str, value: &str) {
 /// Compute the next available spec number by scanning both `_active/` and `_done/`.
 /// Used only as a hint for `allocate_spec_dir` — not race-safe on its own.
 pub fn next_spec_number() -> Result<u32> {
+    next_spec_number_in_dirs([active_dir(), done_dir()])
+}
+
+fn next_spec_number_in_dirs<I, P>(dirs: I) -> Result<u32>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
     let mut max_n = 0u32;
-    for dir in [active_dir(), done_dir()] {
+    for dir in dirs {
+        let dir = dir.as_ref();
         if !dir.is_dir() {
             continue;
         }
         for entry in std::fs::read_dir(&dir)? {
             let entry = entry?;
             let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if let Some(rest) = name.strip_prefix(|c: char| c.is_ascii_digit()) {
-                if let Some(rest) = rest.strip_prefix('-') {
-                    if let Some(n) = rest.split('-').next() {
-                        if let Ok(n) = n.parse::<u32>() {
-                            max_n = max_n.max(n);
-                        }
-                    }
-                }
-            }
-            if let Some(n) = name.split('-').next() {
-                if let Ok(n) = n.parse::<u32>() {
-                    max_n = max_n.max(n);
-                }
+            let name_str = name.to_string_lossy();
+
+            if let Some(n) = parse_spec_number(&name_str) {
+                max_n = max_n.max(n);
             }
         }
     }
     Ok(max_n + 1)
 }
 
-/// Path to the counter hint file used by `allocate_spec_dir`.
-fn counter_path() -> PathBuf {
-    specs_root().join(".counter")
-}
-
-/// Read the current counter hint. Returns 0 if file is missing or corrupt.
-fn load_counter() -> u32 {
-    let path = counter_path();
-    let mut buf = String::new();
-    std::fs::File::open(&path)
-        .and_then(|mut f| f.read_to_string(&mut buf))
-        .ok()
-        .and_then(|_| buf.trim().parse::<u32>().ok())
-        .unwrap_or(0)
-}
-
-/// Write a counter hint (best-effort, non-atomic — used only as a starting hint).
-fn save_counter(value: u32) {
-    let path = counter_path();
-    if let Ok(mut f) = std::fs::File::create(&path) {
-        let _ = write!(f, "{}", value);
+fn parse_spec_number(name: &str) -> Option<u32> {
+    let (prefix, _) = name.split_once('-')?;
+    if prefix.is_empty() || !prefix.chars().all(|c| c.is_ascii_digit()) {
+        return None;
     }
+    prefix.parse::<u32>().ok()
+}
+
+fn sibling_done_dir(active: &Path) -> PathBuf {
+    active
+        .parent()
+        .map(|root| root.join("_done"))
+        .unwrap_or_else(done_dir)
+}
+
+fn spec_number_exists(number: u32, dirs: &[PathBuf]) -> Result<bool> {
+    for dir in dirs {
+        if !dir.is_dir() {
+            continue;
+        }
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if parse_spec_number(&name_str) == Some(number) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Atomically allocate a numbered spec directory under `active` with the given `slug`.
 ///
 /// Uses `std::fs::create_dir` which fails atomically if the directory already
-/// exists. If a collision occurs, increments the number and retries. The
-/// counter file at `docs/specs/.counter` provides a starting hint to keep
-/// retries O(1) amortized but is NOT used for atomicity — concurrent callers
-/// that read the same hint simply retry until they find a free slot.
+/// exists. The starting number is computed by scanning `_active/` and `_done/`
+/// for the largest existing numeric prefix, then adding one. If a concurrent
+/// caller creates the same number first, this function increments and retries.
 ///
 /// Returns `(spec_directory_path, allocated_number)`.
 pub fn allocate_spec_dir(active: &Path, slug: &str) -> Result<(PathBuf, u32)> {
-    let hint = load_counter().max(1);
-    let mut number = hint;
+    std::fs::create_dir_all(active)?;
+    let done = sibling_done_dir(active);
+    let numbered_dirs = [active.to_path_buf(), done];
+    let mut number = next_spec_number_in_dirs(&numbered_dirs)?;
     loop {
+        if spec_number_exists(number, &numbered_dirs)? {
+            number += 1;
+            continue;
+        }
         let dir_name = format!("{:04}-{}", number, slug);
         let spec_dir = active.join(&dir_name);
         match std::fs::create_dir(&spec_dir) {
             Ok(()) => {
-                if number > hint {
-                    save_counter(number);
-                }
                 return Ok((spec_dir, number));
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -255,13 +263,13 @@ pub fn read_spec_file(spec_path: &Path, name: &str) -> String {
 }
 
 /// Move a spec directory from `_active/` to `_done/`.
-pub fn move_to_done(path: &Path) -> Result<()> {
+pub fn move_to_done(path: &Path) -> Result<PathBuf> {
     let done = done_dir();
     std::fs::create_dir_all(&done)?;
     let name = path.file_name().context("spec path has no file name")?;
     let dest = done.join(name);
     std::fs::rename(path, &dest)?;
-    Ok(())
+    Ok(dest)
 }
 
 #[cfg(test)]
@@ -356,6 +364,27 @@ mod tests {
         let result = list_active_specs();
         // Should not error (returns empty vec if dir doesn't exist or has no subdirs)
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn allocate_spec_dir_uses_max_existing_prefix_plus_one() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let active = temp.path().join("_active");
+        let done = temp.path().join("_done");
+        std::fs::create_dir_all(active.join("0004-existing-active"))?;
+        std::fs::create_dir_all(done.join("0005-existing-done"))?;
+        std::fs::write(temp.path().join(".counter"), "99")?;
+
+        let (spec_dir, number) = allocate_spec_dir(&active, "new-slug")?;
+
+        assert_eq!(number, 6);
+        assert_eq!(
+            spec_dir.file_name().and_then(|name| name.to_str()),
+            Some("0006-new-slug")
+        );
+        assert_eq!(std::fs::read_to_string(temp.path().join(".counter"))?, "99");
+
+        Ok(())
     }
 
     #[test]

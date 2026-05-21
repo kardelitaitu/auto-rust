@@ -8,11 +8,12 @@ use crate::bacon_core::cli_types::RunArgs;
 fn role_prompt() -> String {
     crate::bacon_core::read_role_prompt("auditor")
 }
+
 pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> Result<PipelineCtx> {
     let system_prompt = role_prompt();
 
     // Resolve spec context: prefer files on disk, fall back to ctx.description
-    let (spec_path, meta, spec_name, plan, validation_spec) = match &ctx.spec_path {
+    let (_spec_path, meta, spec_name, plan, validation_spec) = match &ctx.spec_path {
         Some(p) => {
             let meta = spec_io::read_spec_meta(p)?;
             let name = p
@@ -115,22 +116,26 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
     println!("{}", response);
     println!("=============================");
 
-    let decision_first = response.split_whitespace().next().unwrap_or("");
-    if let Some(ref spec_path) = spec_path {
+    let mut output = PipelineCtx::new(response).with_confidence(confidence).with_dry_run(ctx.dry_run);
+    output.spec_path = ctx.spec_path.clone();
+    output.patch_path = ctx.patch_path.clone();
+
+    let decision_first = output.description.split_whitespace().next().unwrap_or("");
+    if let Some(ref spec_path) = output.spec_path {
         if decision_first.eq_ignore_ascii_case("PASS") {
             info!("NVIDIA Auditor PASS");
-            if ctx.dry_run {
+            if output.dry_run {
                 info!("DRY RUN: would move spec to _done/");
             } else {
-                promote_to_done(spec_path)?;
+                let archived_path = promote_to_done(spec_path)?;
+                output.spec_path = Some(archived_path);
             }
         } else {
             info!("NVIDIA Auditor FAIL — marking needs-human-approval");
-            if ctx.dry_run {
-                info!("DRY RUN: would mark needs-human-approval");
-            } else {
-                mark_needs_approval(spec_path, &response)?;
+            if !output.dry_run {
+                write_audit_report(spec_path, &output.description)?;
             }
+            output.set_needs_approval();
         }
     } else {
         // No spec path on disk — just log the audit result
@@ -141,10 +146,10 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
         }
     }
 
-    Ok(PipelineCtx::new(response).with_confidence(confidence))
+    Ok(output)
 }
 
-fn promote_to_done(path: &std::path::Path) -> Result<()> {
+fn promote_to_done(path: &std::path::Path) -> Result<std::path::PathBuf> {
     // Gate: run spec-lint before archiving — catches structural errors
     let spec_path_arg = path.to_string_lossy().to_string();
     let (passed, output) = crate::bacon_core::run_powershell_with_args(
@@ -163,20 +168,32 @@ fn promote_to_done(path: &std::path::Path) -> Result<()> {
     meta.status = "done".to_string();
     spec_io::write_spec_meta(path, &meta)?;
 
+    // Rewrite docs array in spec.yaml to point to _done/ instead of _active/
+    let yaml_path = path.join("spec.yaml");
+    match std::fs::read_to_string(&yaml_path) {
+        Ok(content) => {
+            let updated_content = content
+                .replace("docs/specs/_active/", "docs/specs/_done/")
+                .replace("docs\\specs\\_active\\", "docs\\specs\\_done\\");
+            if let Err(e) = std::fs::write(&yaml_path, updated_content) {
+                warn!("Failed to write updated spec.yaml paths: {}", e);
+            }
+        }
+        Err(e) => {
+            warn!("Failed to read spec.yaml for path rewrite: {}", e);
+        }
+    }
+
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     info!("Moving {} to _done/", name);
-    spec_io::move_to_done(path)?;
-    Ok(())
+    let dest = spec_io::move_to_done(path)?;
+    Ok(dest)
 }
 
-fn mark_needs_approval(path: &std::path::Path, report: &str) -> Result<()> {
-    let mut meta = spec_io::read_spec_meta(path)?;
-    meta.status = "needs-human-approval".to_string();
-    spec_io::write_spec_meta(path, &meta)?;
-
+fn write_audit_report(path: &std::path::Path, report: &str) -> Result<()> {
     let validation_path = path.join("validation.md");
     let existing = std::fs::read_to_string(&validation_path).unwrap_or_else(|e| {
         warn!("Failed to read existing validation.md: {}", e);
@@ -187,6 +204,6 @@ fn mark_needs_approval(path: &std::path::Path, report: &str) -> Result<()> {
         format!("# Audit Report\n\n{}\n\n{}", report, existing),
     )?;
 
-    info!("Marked spec as needs-human-approval");
+    info!("Wrote audit report to validation.md");
     Ok(())
 }

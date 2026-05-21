@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use reqwest::Client;
 use std::time::Duration;
 use toml;
@@ -18,7 +18,7 @@ pub struct LlmClient {
 impl LlmClient {
     pub fn new(config: LlmConfig) -> Self {
         let http = Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(600))
             // Enable HTTP/2 for better throughput with LLM APIs (negotiated)
             .http2_adaptive_window(true)
             // Connection pool settings for concurrent requests
@@ -68,13 +68,17 @@ impl LlmClient {
         let request = serde_json::json!({
             "model": self.config.nvidia.model,
             "messages": messages,
-            "temperature": 1.0,
-            "top_p": 0.95,
-            "max_tokens": 4096,
+            "temperature": self.config.nvidia.temperature,
+            "top_p": self.config.nvidia.top_p,
+            "max_tokens": self.config.nvidia.max_tokens,
             "stream": false,
+            "chat_template_kwargs": {
+                "thinking": true,
+                "reasoning_effort": "high"
+            }
         });
 
-        info!("Calling NVIDIA API: {}...", self.config.nvidia.model);
+        info!("Calling NVIDIA API (High Thinking): {}...", self.config.nvidia.model);
 
         let response = self
             .http
@@ -111,10 +115,14 @@ impl LlmClient {
         };
 
         let message = &body["choices"][0]["message"];
+        
+        // Log reasoning if present
+        if let Some(reasoning) = message["reasoning"].as_str().or(message["reasoning_content"].as_str()) {
+            debug!("NVIDIA Reasoning: {}", reasoning);
+        }
+
         let content = message["content"]
             .as_str()
-            .or(message["reasoning"].as_str())
-            .or(message["reasoning_content"].as_str())
             .unwrap_or_default()
             .to_string();
 
@@ -673,6 +681,8 @@ mod tests {
             base_url: "http://custom:11434".to_string(),
             model: "custom-model".to_string(),
             timeout_ms: 60000,
+            temperature: 0.7,
+            max_tokens: 2048,
         };
         assert_eq!(config.base_url, "http://custom:11434");
     }
@@ -773,7 +783,9 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string(), "fallback-2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
         let client = LlmClient::with_http_client(config, Client::new());
@@ -884,7 +896,9 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string(), "fallback-2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
         let client = LlmClient::with_http_client(config, Client::new());
@@ -1023,7 +1037,9 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string(), "fallback-2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
         let client = LlmClient::with_http_client(config, Client::new());

@@ -77,6 +77,29 @@ impl Pipeline {
             }
         }
 
+        if let Some(temp) = agent_cfg.temperature {
+            match llm_cfg.provider {
+                crate::llm::LlmProvider::Nvidia => llm_cfg.nvidia.temperature = temp,
+                crate::llm::LlmProvider::Ollama => llm_cfg.ollama.temperature = temp,
+                crate::llm::LlmProvider::OpenRouter => llm_cfg.openrouter.temperature = temp,
+            }
+        }
+
+        if let Some(top_p) = agent_cfg.top_p {
+            match llm_cfg.provider {
+                crate::llm::LlmProvider::Nvidia => llm_cfg.nvidia.top_p = top_p,
+                _ => {}
+            }
+        }
+
+        if let Some(max_tokens) = agent_cfg.max_tokens {
+            match llm_cfg.provider {
+                crate::llm::LlmProvider::Nvidia => llm_cfg.nvidia.max_tokens = max_tokens as u32,
+                crate::llm::LlmProvider::Ollama => llm_cfg.ollama.max_tokens = max_tokens as u32,
+                crate::llm::LlmProvider::OpenRouter => llm_cfg.openrouter.max_tokens = max_tokens as u32,
+            }
+        }
+
         Ok(Llm::from_config(llm_cfg))
     }
 

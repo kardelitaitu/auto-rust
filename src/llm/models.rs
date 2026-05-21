@@ -100,10 +100,13 @@ impl LlmConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OllamaConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
+    pub temperature: f64,
+    pub max_tokens: u32,
 }
 
 impl Default for OllamaConfig {
@@ -111,17 +114,22 @@ impl Default for OllamaConfig {
         Self {
             base_url: "http://localhost:11434".into(),
             model: "llama3.2:3b".into(),
-            timeout_ms: 120000,
+            timeout_ms: 240000,
+            temperature: 0.7,
+            max_tokens: 2048,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OpenRouterConfig {
     pub api_key: String,
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
+    pub temperature: f64,
+    pub max_tokens: u32,
     /// Fallback models to try if primary fails (timeout or error)
     #[serde(default)]
     pub fallback_models: Vec<String>,
@@ -133,18 +141,24 @@ impl Default for OpenRouterConfig {
             api_key: String::new(),
             base_url: "https://openrouter.ai/api/v1".into(),
             model: "anthropic/claude-3-haiku".into(),
-            timeout_ms: 60000,
+            timeout_ms: 120000,
+            temperature: 0.7,
+            max_tokens: 4096,
             fallback_models: Vec::new(),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct NvidiaConfig {
     pub api_key: String,
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
+    pub temperature: f64,
+    pub top_p: f64,
+    pub max_tokens: u32,
 }
 
 impl Default for NvidiaConfig {
@@ -153,7 +167,10 @@ impl Default for NvidiaConfig {
             api_key: "nvapi-placeholder-key".to_string(),
             base_url: "https://integrate.api.nvidia.com/v1".to_string(),
             model: "meta/llama-3.3-70b-instruct".to_string(),
-            timeout_ms: 120000,
+            timeout_ms: 600000,
+            temperature: 1.0,
+            top_p: 0.95,
+            max_tokens: 16384,
         }
     }
 }
@@ -370,8 +387,7 @@ mod tests {
     fn test_llm_config_custom() {
         let config = LlmConfig {
             provider: LlmProvider::OpenRouter,
-            ollama: OllamaConfig::default(),
-            openrouter: OpenRouterConfig::default(),
+            ..LlmConfig::default()
         };
         assert_eq!(config.provider, LlmProvider::OpenRouter);
     }
@@ -382,6 +398,7 @@ mod tests {
             base_url: "http://custom:11434".to_string(),
             model: "custom-model".to_string(),
             timeout_ms: 60000,
+            ..OllamaConfig::default()
         };
         assert_eq!(config.base_url, "http://custom:11434");
     }

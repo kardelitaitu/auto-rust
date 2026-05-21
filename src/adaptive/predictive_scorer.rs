@@ -36,29 +36,6 @@ struct ModelWeights {
     coefficients: Vec<f32>,
     // Bias term
     bias: f32,
-    // Non-linear transformation parameters
-    nonlinear_params: Option<NonlinearParams>,
-}
-
-/// Nonlinear transformation parameters.
-struct NonlinearParams {
-    activation_function: ActivationFunction,
-    layers: Vec<LayerConfig>,
-}
-
-/// Activation function type.
-enum ActivationFunction {
-    Sigmoid,
-    ReLU,
-    Tanh,
-    Softmax,
-}
-
-/// Neural network layer configuration.
-struct LayerConfig {
-    neurons: usize,
-    weights: Vec<f32>,
-    bias: f32,
 }
 
 /// Model accuracy metrics.
@@ -377,7 +354,6 @@ impl Default for ModelWeights {
         Self {
             coefficients: vec![0.1, 0.2, 0.3],
             bias: 0.0,
-            nonlinear_params: None,
         }
     }
 }

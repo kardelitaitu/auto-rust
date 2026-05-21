@@ -4,7 +4,7 @@
 max_discovery_retries = 3
 discovery_retry_delay_ms = 5000
 connectors = []
-connection_timeout_ms = 30000
+connection_timeout_ms = 60000
 
 [browser.circuit_breaker]
 enabled = true
@@ -24,8 +24,8 @@ api_key = "c6ae203adfe0327a63ccc9174c178dec"
 
 [orchestrator]
 max_global_concurrency = 20
-task_timeout_ms = 600000
-group_timeout_ms = 600000
+task_timeout_ms = 1200000
+group_timeout_ms = 1200000
 worker_wait_timeout_ms = 10000
 stuck_worker_threshold_ms = 120000
 task_stagger_delay_ms = 2000

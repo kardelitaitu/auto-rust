@@ -1,7 +1,7 @@
 version: 1
-id: '0004-simplify-predictiveengagementscorer-stru'
-title: Simplify PredictiveEngagementScorer Struct
-status: needs-human-approval
+id: '0004-remove-unused--nonlinear-params--field-f'
+title: Remove Unused `nonlinear_params` Field from `ModelWeights`
+status: done
 owner: pipeline
 implementer: pipeline
 priority: P2
@@ -11,8 +11,8 @@ files:
   code:
   - src/adaptive/predictive_scorer.rs
   docs:
-  - docs/specs/_active/0004-simplify-predictiveengagementscorer-stru/plan.md
-  - docs/specs/_active/0004-simplify-predictiveengagementscorer-stru/validation.md
+  - docs/specs/_done/0004-remove-unused--nonlinear-params--field-f/plan.md
+  - docs/specs/_done/0004-remove-unused--nonlinear-params--field-f/validation.md
 acceptance:
 - Generated spec package is complete and validated.
 - Implementation validates with check-fast.ps1 before completion.

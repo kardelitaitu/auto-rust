@@ -25,11 +25,12 @@ fn env_u32(name: &str) -> Option<u32> {
         .and_then(|value| value.parse().ok())
 }
 
-/// Build an NvidiaConfig from pipeline run args + env and bacon.toml fallbacks.
+/// Build an `NvidiaConfig` from pipeline run args + env and bacon.toml fallbacks.
 ///
 /// Env vars win first, then `.bacon/bacon.toml [agents.nvidia]`, then the
 /// built-in llama defaults. The shared `RunArgs` type carries only core
 /// pipeline fields.
+#[must_use]
 pub fn nvidia_config_from_args(_args: &RunArgs) -> NvidiaConfig {
     let defaults = NvidiaConfig::default();
     let agent_cfg = PipelineConfig::agent_llm_config("nvidia");

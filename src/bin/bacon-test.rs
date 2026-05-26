@@ -61,6 +61,7 @@ impl TestSuite {
             .count()
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn success_rate(&self) -> f64 {
         if self.tests.is_empty() {
             0.0
@@ -91,6 +92,7 @@ impl BaconTestRunner {
         })
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn run_bash_compatibility_notice(&self) -> TestSuite {
         let mut suite = TestSuite::new("Bash Compatibility".to_string());
 
@@ -178,11 +180,12 @@ impl BaconTestRunner {
                 status: TestStatus::Failed,
                 duration: start.elapsed(),
                 output: String::new(),
-                error: Some(format!("Failed to read config: {}", e)),
+                error: Some(format!("Failed to read config: {e}")),
             },
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn test_json_validation(&self) -> TestResult {
         let start = Instant::now();
 
@@ -227,7 +230,7 @@ impl BaconTestRunner {
         let test_file = sessions_dir.join("bacon_test_temp.txt");
 
         let result = match fs::write(&test_file, "test content") {
-            Ok(_) => {
+            Ok(()) => {
                 let read_result = fs::read_to_string(&test_file);
                 match read_result {
                     Ok(content) => {
@@ -243,10 +246,7 @@ impl BaconTestRunner {
                                 TestStatus::Failed
                             },
                             duration: start.elapsed(),
-                            output: format!(
-                                "Successfully wrote and read file content: {}",
-                                success
-                            ),
+                            output: format!("Successfully wrote and read file content: {success}"),
                             error: None,
                         }
                     }
@@ -255,7 +255,7 @@ impl BaconTestRunner {
                         status: TestStatus::Failed,
                         duration: start.elapsed(),
                         output: String::new(),
-                        error: Some(format!("Failed to read test file: {}", e)),
+                        error: Some(format!("Failed to read test file: {e}")),
                     },
                 }
             }
@@ -264,13 +264,14 @@ impl BaconTestRunner {
                 status: TestStatus::Failed,
                 duration: start.elapsed(),
                 output: String::new(),
-                error: Some(format!("Failed to write test file: {}", e)),
+                error: Some(format!("Failed to write test file: {e}")),
             },
         };
 
         result
     }
 
+    #[allow(clippy::unused_self)]
     fn test_command_execution(&self) -> TestResult {
         let start = Instant::now();
 
@@ -291,7 +292,7 @@ impl BaconTestRunner {
                 status: TestStatus::Failed,
                 duration: start.elapsed(),
                 output: String::new(),
-                error: Some(format!("Failed to execute cargo: {}", e)),
+                error: Some(format!("Failed to execute cargo: {e}")),
             },
         };
 
@@ -344,6 +345,7 @@ impl BaconTestRunner {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn test_system_prerequisites(&self) -> TestResult {
         let start = Instant::now();
 
@@ -360,11 +362,11 @@ impl BaconTestRunner {
                         let version = String::from_utf8_lossy(&output.stdout);
                         command_results.push(format!("{}: {}", cmd, version.trim()));
                     } else {
-                        command_results.push(format!("{}: Command failed", cmd));
+                        command_results.push(format!("{cmd}: Command failed"));
                     }
                 }
                 Err(_) => {
-                    command_results.push(format!("{}: Not found", cmd));
+                    command_results.push(format!("{cmd}: Not found"));
                 }
             }
         }
@@ -387,6 +389,7 @@ impl BaconTestRunner {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn test_script_availability(&self) -> TestResult {
         let start = Instant::now();
 
@@ -403,6 +406,7 @@ impl BaconTestRunner {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn print_suite_results(&self, suite: &TestSuite) {
         println!("\n--- {} Results:", suite.name);
         println!("   Total Tests: {}", suite.tests.len());
@@ -430,13 +434,13 @@ impl BaconTestRunner {
             println!("   {} {} ({:?})", status_icon, test.name, test.duration);
 
             if let Some(error) = &test.error {
-                println!("     Error: {}", error);
+                println!("     Error: {error}");
             }
 
             if !test.output.is_empty() && test.status == TestStatus::Failed {
                 // Show first line of output for failed tests
                 if let Some(first_line) = test.output.lines().next() {
-                    println!("     Output: {}", first_line);
+                    println!("     Output: {first_line}");
                 }
             }
         }
@@ -470,6 +474,7 @@ struct Cli {
     verbose: bool,
 }
 
+#[allow(clippy::cast_precision_loss, clippy::unused_self)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -499,8 +504,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Print overall summary
     let total_tests: usize = suites.iter().map(|s| s.tests.len()).sum();
-    let total_passed: usize = suites.iter().map(|s| s.passed_count()).sum();
-    let total_failed: usize = suites.iter().map(|s| s.failed_count()).sum();
+    let total_passed: usize = suites.iter().map(TestSuite::passed_count).sum();
+    let total_failed: usize = suites.iter().map(TestSuite::failed_count).sum();
     let overall_success_rate = if total_tests > 0 {
         total_passed as f64 / total_tests as f64 * 100.0
     } else {
@@ -508,7 +513,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("\n=== Overall Test Summary ===");
-    println!("   Total Tests: {}", total_tests);
+    println!("   Total Tests: {total_tests}");
     println!(
         "   Passed: {} ({})",
         total_passed,
@@ -518,9 +523,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "partial"
         }
     );
-    println!("   Failed: {}", total_failed);
-    println!("   Success Rate: {:.1}%", overall_success_rate);
-    println!("   Total Duration: {:?}", total_duration);
+    println!("   Failed: {total_failed}");
+    println!("   Success Rate: {overall_success_rate:.1}%");
+    println!("   Total Duration: {total_duration:?}");
 
     // Exit with appropriate code
     if total_failed > 0 {

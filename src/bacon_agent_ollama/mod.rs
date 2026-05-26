@@ -51,21 +51,16 @@ pub async fn run(prompt: &str, role: Option<&str>, _dry_run: bool) -> Result<Str
             model
         ),
         "strategist" => format!(
-            "Ollama Strategic Planning:\nRequest: {}\nLocal AI Analysis: Processing requirements and generating implementation strategy\n\nStrategy: Use local inference for efficient planning.",
-            prompt
+            "Ollama Strategic Planning:\nRequest: {prompt}\nLocal AI Analysis: Processing requirements and generating implementation strategy\n\nStrategy: Use local inference for efficient planning."
         ),
         "coder" => format!(
-            "Ollama Code Generation:\nTask: {}\nLocal Model: Generating code using Ollama's local inference capabilities\n\nImplementation: Code generated locally without API calls.",
-            prompt
+            "Ollama Code Generation:\nTask: {prompt}\nLocal Model: Generating code using Ollama's local inference capabilities\n\nImplementation: Code generated locally without API calls."
         ),
         "auditor" => format!(
-            "Ollama Quality Audit:\nSubject: {}\nLocal Review: Comprehensive analysis using local AI model\n\nAudit Status: PASSED - Local model validation complete.",
-            prompt
+            "Ollama Quality Audit:\nSubject: {prompt}\nLocal Review: Comprehensive analysis using local AI model\n\nAudit Status: PASSED - Local model validation complete."
         ),
         _ => format!(
-            "Ollama Local Processing:\nQuery: {}\nRole: {}\nResponse: Processed locally using Ollama model.",
-            prompt,
-            role_name
+            "Ollama Local Processing:\nQuery: {prompt}\nRole: {role_name}\nResponse: Processed locally using Ollama model."
         )
     };
 
@@ -75,6 +70,6 @@ pub async fn run(prompt: &str, role: Option<&str>, _dry_run: bool) -> Result<Str
     })
     .to_string();
 
-    println!("{}", output);
+    println!("{output}");
     Ok(output)
 }

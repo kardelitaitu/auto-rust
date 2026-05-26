@@ -4,7 +4,7 @@ pub mod pipeline;
 pub mod spec_io;
 pub mod types;
 
-mod auditor;
-mod coder;
-mod observer;
-mod strategist;
+pub mod auditor;
+pub mod coder;
+pub mod observer;
+pub mod strategist;

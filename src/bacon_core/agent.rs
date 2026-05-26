@@ -1,4 +1,4 @@
-//! PipelineAgent trait — canonical pipeline orchestration for all bacon agents.
+//! `PipelineAgent` trait — canonical pipeline orchestration for all bacon agents.
 //!
 //! Defines a shared [`PipelineAgent`] trait with stage methods that each agent
 //! implements, plus a default [`run()`] that drives the full pipeline with
@@ -50,7 +50,7 @@ pub trait PipelineAgent: Send + Sync {
     async fn run_observer(&self, ctx: &PipelineCtx) -> Result<PipelineCtx>;
 
     /// Run the Strategist stage. Returns the updated pipeline context
-    /// with an optional spec_path pointing to the generated spec package.
+    /// with an optional `spec_path` pointing to the generated spec package.
     async fn run_strategist(&self, ctx: &PipelineCtx) -> Result<PipelineCtx>;
 
     /// Run the Coder stage. Returns the updated pipeline context with
@@ -64,7 +64,7 @@ pub trait PipelineAgent: Send + Sync {
     async fn stage_delay(&self) {
         let delay_ms = self.pipeline_cfg().stage_delay_ms;
         if delay_ms > 0 {
-            info!("Stage delay: waiting {}ms before next stage", delay_ms);
+            info!("Stage delay: waiting {delay_ms}ms before next stage");
             sleep(Duration::from_millis(delay_ms)).await;
         }
     }
@@ -76,17 +76,11 @@ pub trait PipelineAgent: Send + Sync {
     /// Check confidence after a stage completes. If Low, warn and prompt in non-auto mode.
     fn check_confidence(stage: &str, ctx: &PipelineCtx, auto: bool) -> Result<bool> {
         if let Some(Confidence::Low) = ctx.confidence {
-            warn!(
-                "Low confidence from {} stage — response may be unreliable",
-                stage
-            );
+            warn!("Low confidence from {stage} stage — response may be unreliable");
             if !auto {
-                println!(
-                    "\n⚠ Low confidence from {}. Review the output above.",
-                    stage
-                );
+                println!("\n⚠ Low confidence from {stage}. Review the output above.");
                 if !confirm("Continue pipeline? [y/N]: ", false)? {
-                    info!("User aborted due to low confidence from {}", stage);
+                    info!("User aborted due to low confidence from {stage}");
                     return Ok(false);
                 }
             }
@@ -100,7 +94,7 @@ pub trait PipelineAgent: Send + Sync {
         let resume_stage = self.resume_stage();
 
         if let Some(stage) = &resume_stage {
-            info!("Resuming from stage: {:?}", stage);
+            info!("Resuming from stage: {stage:?}");
         }
 
         if self.dry_run() {
@@ -118,7 +112,7 @@ pub trait PipelineAgent: Send + Sync {
         // Observer
         let mut ctx = if should_run(&resume_stage, Stage::Observer) {
             let agent = self.pipeline_cfg().agent_for(&Stage::Observer);
-            info!("=== Stage 1: Observer (agent: {}) ===", agent);
+            info!("=== Stage 1: Observer (agent: {agent}) ===");
             log_agent_config(agent);
             self.run_observer(&base_ctx).await?
         } else {
@@ -128,12 +122,16 @@ pub trait PipelineAgent: Send + Sync {
         if !Self::check_confidence("Observer", &ctx, self.auto())? {
             return Ok(());
         }
+        if self.auto() && ctx.spec_path.is_none() && is_no_action_description(&ctx.description) {
+            info!("Observer found no grounded autonomous work; ending auto cycle");
+            return Ok(());
+        }
 
         // Strategist (skip in fast path)
         if !fast_path && should_run(&resume_stage, Stage::Strategist) {
             self.stage_delay().await;
             let agent = self.pipeline_cfg().agent_for(&Stage::Strategist);
-            info!("=== Stage 2: Strategist (agent: {}) ===", agent);
+            info!("=== Stage 2: Strategist (agent: {agent}) ===");
             log_agent_config(agent);
             ctx = self.run_strategist(&ctx).await?;
 
@@ -144,6 +142,11 @@ pub trait PipelineAgent: Send + Sync {
             // User confirmation gate
             if !self.auto() && !confirm("Implement this plan? [Y/n]: ", true)? {
                 info!("User declined — aborting pipeline");
+                return Ok(());
+            }
+
+            if self.auto() && ctx.spec_path.is_none() {
+                info!("Strategist produced no approved spec; ending auto cycle without changes");
                 return Ok(());
             }
         }
@@ -171,7 +174,7 @@ pub trait PipelineAgent: Send + Sync {
         if should_run(&resume_stage, Stage::Coder) {
             self.stage_delay().await;
             let agent = self.pipeline_cfg().agent_for(&Stage::Coder);
-            info!("=== Stage 3: Coder (agent: {}) ===", agent);
+            info!("=== Stage 3: Coder (agent: {agent}) ===");
             log_agent_config(agent);
 
             ctx = self.run_coder(&ctx).await?;
@@ -182,7 +185,7 @@ pub trait PipelineAgent: Send + Sync {
                     "Coder refused to implement after consecutive refusals — \
                      pipeline aborted, spec marked needs-human-approval"
                 );
-                return Ok(());
+                anyhow::bail!("Coder refused to implement; spec marked needs-human-approval");
             }
 
             // Auto-apply failed — skip Auditor, abort pipeline
@@ -191,7 +194,7 @@ pub trait PipelineAgent: Send + Sync {
                     "Auto-apply gate rejected the patch — \
                      pipeline aborted, spec waiting for human approval"
                 );
-                return Ok(());
+                anyhow::bail!("Pipeline requires human approval");
             }
 
             // Scope reduction needed: inner Coder retries exhausted.
@@ -203,27 +206,25 @@ pub trait PipelineAgent: Send + Sync {
                 );
                 if let Some(ref spec_path) = ctx.spec_path {
                     let error_report = ctx.coder_errors.join("\n---\n");
-                    let report = format!(
-                        "Coder retries exhausted.\n\nAccumulated errors:\n{}",
-                        error_report
-                    );
+                    let report =
+                        format!("Coder retries exhausted.\n\nAccumulated errors:\n{error_report}");
                     let validation_path = spec_path.join("validation.md");
                     if let Err(e) = std::fs::write(
                         &validation_path,
-                        format!("# Coder Failure Report\n\n{}", report),
+                        format!("# Coder Failure Report\n\n{report}"),
                     ) {
-                        warn!("Failed to write failure report: {}", e);
+                        warn!("Failed to write failure report: {e}");
                     }
                     if let Ok(mut meta) = crate::bacon_core::spec_io::read_spec_meta(spec_path) {
                         meta.status = "needs-human-approval".to_string();
                         if let Err(e) =
                             crate::bacon_core::spec_io::write_spec_meta(spec_path, &meta)
                         {
-                            warn!("Failed to persist needs-human-approval to spec.yaml: {}", e);
+                            warn!("Failed to persist needs-human-approval to spec.yaml: {e}");
                         }
                     }
                 }
-                return Ok(());
+                anyhow::bail!("Coder retries exhausted; spec marked needs-human-approval");
             }
 
             if !Self::check_confidence("Coder", &ctx, self.auto())? {
@@ -239,7 +240,7 @@ pub trait PipelineAgent: Send + Sync {
                         println!("=== Proposed Changes ===");
                         // Print first 80 lines of diff
                         for line in diff.lines().take(80) {
-                            println!("{}", line);
+                            println!("{line}");
                         }
                         if diff.lines().count() > 80 {
                             println!("... (truncated at 80 lines)");
@@ -258,12 +259,37 @@ pub trait PipelineAgent: Send + Sync {
         if !fast_path && should_run(&resume_stage, Stage::Auditor) {
             self.stage_delay().await;
             let agent = self.pipeline_cfg().agent_for(&Stage::Auditor);
-            info!("=== Stage 4: Auditor (agent: {}) ===", agent);
+            info!("=== Stage 4: Auditor (agent: {agent}) ===");
             log_agent_config(agent);
             self.run_auditor(&ctx).await?;
         }
 
         info!("Pipeline complete");
         Ok(())
+    }
+}
+
+fn is_no_action_description(description: &str) -> bool {
+    let normalized = description.trim().to_lowercase();
+    normalized.starts_with("no clear improvement found")
+        || normalized.starts_with("no actionable improvement found")
+        || normalized.starts_with("no grounded improvement found")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_no_action_description;
+
+    #[test]
+    fn no_action_description_detects_observer_noop() {
+        assert!(is_no_action_description(
+            "No clear improvement found\nConfidence: High"
+        ));
+        assert!(is_no_action_description(
+            " no actionable improvement found for the current source excerpts"
+        ));
+        assert!(!is_no_action_description(
+            "Add a missing unit test for src/bacon_core/spec_io.rs"
+        ));
     }
 }

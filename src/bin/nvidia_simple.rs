@@ -168,7 +168,7 @@ async fn main() -> Result<()> {
             ..WorkerOutput::default()
         };
         let json = serde_json::to_string_pretty(&output)?;
-        println!("{}", json);
+        println!("{json}");
         return Ok(());
     }
 
@@ -226,7 +226,7 @@ async fn main() -> Result<()> {
 
     // Output JSON as required by Bacon contract
     let json = serde_json::to_string_pretty(&output)?;
-    println!("{}", json);
+    println!("{json}");
 
     Ok(())
 }
@@ -243,7 +243,7 @@ async fn call_nvidia_api(
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(120))
         .build()?;
-    let url = format!("{}/chat/completions", base_url);
+    let url = format!("{base_url}/chat/completions");
 
     eprintln!(
         "[nvidia] POST {} ({} messages, {} max_tokens)",
@@ -266,7 +266,7 @@ async fn call_nvidia_api(
     eprintln!("[nvidia] Waiting for response...");
     let response = client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Authorization", format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
         .json(&request)
@@ -279,7 +279,7 @@ async fn call_nvidia_api(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        anyhow::bail!("NVIDIA API error: {} - {}", status, text);
+        anyhow::bail!("NVIDIA API error: {status} - {text}");
     }
 
     // Parse response
@@ -309,7 +309,7 @@ async fn call_nvidia_api(
             .first()
             .and_then(|c| c.finish_reason.as_deref())
             .unwrap_or("unknown");
-        anyhow::bail!("Empty response from NVIDIA API (finish_reason: {})", reason);
+        anyhow::bail!("Empty response from NVIDIA API (finish_reason: {reason})");
     }
 
     eprintln!("[nvidia] Response received ({} chars)", content.len());

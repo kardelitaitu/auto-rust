@@ -13,31 +13,28 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
     let system_prompt = role_prompt();
 
     // Resolve spec context: prefer files on disk, fall back to ctx.description
-    let (_spec_path, meta, spec_name, plan, validation_spec) = match &ctx.spec_path {
-        Some(p) => {
-            let meta = spec_io::read_spec_meta(p)?;
-            let name = p
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let plan = spec_io::read_spec_file(p, "plan.md");
-            let validation_spec = spec_io::read_spec_file(p, "validation.md");
-            (Some(p.clone()), meta, name, plan, validation_spec)
-        }
-        None => {
-            warn!("No spec path — using ctx.description as plan for audit");
-            let meta = spec_io::SpecMeta {
-                id: "adhoc".to_string(),
-                title: "Ad-hoc task".to_string(),
-                status: "implemented".to_string(),
-                owner: "pipeline".to_string(),
-                implementer: "auto".to_string(),
-                priority: "medium".to_string(),
-            };
-            let plan = ctx.description.clone();
-            let validation_spec = "See plan for validation criteria.".to_string();
-            (None, meta, "adhoc".to_string(), plan, validation_spec)
-        }
+    let (_spec_path, meta, spec_name, plan, validation_spec) = if let Some(p) = &ctx.spec_path {
+        let meta = spec_io::read_spec_meta(p)?;
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let plan = spec_io::read_spec_file(p, "plan.md");
+        let validation_spec = spec_io::read_spec_file(p, "validation.md");
+        (Some(p.clone()), meta, name, plan, validation_spec)
+    } else {
+        warn!("No spec path — using ctx.description as plan for audit");
+        let meta = spec_io::SpecMeta {
+            id: "adhoc".to_string(),
+            title: "Ad-hoc task".to_string(),
+            status: "implemented".to_string(),
+            owner: "pipeline".to_string(),
+            implementer: "auto".to_string(),
+            priority: "medium".to_string(),
+        };
+        let plan = ctx.description.clone();
+        let validation_spec = "See plan for validation criteria.".to_string();
+        (None, meta, "adhoc".to_string(), plan, validation_spec)
     };
 
     // Read the approved patch file if available; fall back to git diff
@@ -113,10 +110,12 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
     }
 
     println!("=== NVIDIA Auditor Output ===");
-    println!("{}", response);
+    println!("{response}");
     println!("=============================");
 
-    let mut output = PipelineCtx::new(response).with_confidence(confidence).with_dry_run(ctx.dry_run);
+    let mut output = PipelineCtx::new(response)
+        .with_confidence(confidence)
+        .with_dry_run(ctx.dry_run);
     output.spec_path = ctx.spec_path.clone();
     output.patch_path = ctx.patch_path.clone();
 
@@ -176,11 +175,11 @@ fn promote_to_done(path: &std::path::Path) -> Result<std::path::PathBuf> {
                 .replace("docs/specs/_active/", "docs/specs/_done/")
                 .replace("docs\\specs\\_active\\", "docs\\specs\\_done\\");
             if let Err(e) = std::fs::write(&yaml_path, updated_content) {
-                warn!("Failed to write updated spec.yaml paths: {}", e);
+                warn!("Failed to write updated spec.yaml paths: {e}");
             }
         }
         Err(e) => {
-            warn!("Failed to read spec.yaml for path rewrite: {}", e);
+            warn!("Failed to read spec.yaml for path rewrite: {e}");
         }
     }
 
@@ -188,7 +187,7 @@ fn promote_to_done(path: &std::path::Path) -> Result<std::path::PathBuf> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    info!("Moving {} to _done/", name);
+    info!("Moving {name} to _done/");
     let dest = spec_io::move_to_done(path)?;
     Ok(dest)
 }
@@ -196,12 +195,12 @@ fn promote_to_done(path: &std::path::Path) -> Result<std::path::PathBuf> {
 fn write_audit_report(path: &std::path::Path, report: &str) -> Result<()> {
     let validation_path = path.join("validation.md");
     let existing = std::fs::read_to_string(&validation_path).unwrap_or_else(|e| {
-        warn!("Failed to read existing validation.md: {}", e);
+        warn!("Failed to read existing validation.md: {e}");
         String::new()
     });
     std::fs::write(
         &validation_path,
-        format!("# Audit Report\n\n{}\n\n{}", report, existing),
+        format!("# Audit Report\n\n{report}\n\n{existing}"),
     )?;
 
     info!("Wrote audit report to validation.md");

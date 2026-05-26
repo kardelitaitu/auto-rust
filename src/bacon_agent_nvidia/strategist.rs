@@ -63,6 +63,12 @@ fn build_prompt(ctx: &PipelineCtx) -> String {
              4. Any API changes needed\n\
              5. How to validate\n\
              6. Design decisions and risks\n\n\
+             Hard constraints for autonomous Bacon runs:\n\
+             - Do not add dependencies or edit Cargo.toml.\n\
+             - Keep scope to 1-3 existing repo files.\n\
+             - Include check-fast.ps1 in the Validation section.\n\
+             - Reject performance tuning, dependency changes, rewrites, and speculative efficiency work.\n\
+             - Prefer concrete correctness, cleanup, or test-gap fixes over speculative performance work.\n\n\
              If risks are too high, start your response with 'REJECTED:' and explain why.",
             ctx.description, source_context, evidence_guard
         )
@@ -81,15 +87,23 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
     let response = llm.chat(messages).await?;
 
     if response.trim().starts_with("REJECTED:") {
-        anyhow::bail!("Strategist rejected: {}", response);
+        anyhow::bail!("Strategist rejected: {response}");
+    }
+
+    if let Err(e) = validate_autonomous_plan(&response) {
+        warn!("Strategist produced out-of-scope plan: {e}");
+        return Ok(
+            PipelineCtx::new(format!("No autonomous-safe plan produced: {e}"))
+                .with_dry_run(ctx.dry_run)
+                .with_confidence(crate::bacon_core::extract_confidence(&response)),
+        );
     }
 
     // Scope gate: count unique file paths referenced in the plan
     let file_count = crate::bacon_core::count_spec_file_refs(&response);
     if file_count > 3 {
         warn!(
-            "Strategist plan references {} files (> 3 recommended). Consider reducing scope.",
-            file_count
+            "Strategist plan references {file_count} files (> 3 recommended). Consider reducing scope."
         );
     }
 
@@ -100,7 +114,7 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
     }
 
     println!("=== NVIDIA Strategist Output ===");
-    println!("{}", response);
+    println!("{response}");
     println!("================================");
 
     // Write spec package and validate with spec-lint
@@ -118,10 +132,9 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
             run_powershell_with_args("spec-lint.ps1", &["-Directory", spec_path_arg.as_str()])?;
         if !passed {
             warn!("spec-lint failed — stopping before Coder");
-            anyhow::bail!("generated spec failed spec-lint:\n{}", output);
-        } else {
-            info!("spec-lint passed");
+            anyhow::bail!("generated spec failed spec-lint:\n{output}");
         }
+        info!("spec-lint passed");
 
         // Gate: Existence Guard — verify all file paths in the plan actually exist
         let missing = crate::bacon_core::validate_spec_file_refs(&spec_path);
@@ -130,8 +143,8 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
                 "Strategist hallucination detected! The plan references non-existent files:\n- {}\nStopping before Coder.",
                 missing.join("\n- ")
             );
-            warn!("{}", msg);
-            anyhow::bail!("{}", msg);
+            warn!("{msg}");
+            anyhow::bail!("{msg}");
         }
 
         Some(spec_path)
@@ -141,6 +154,59 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
     result.spec_path = spec_path;
     result.confidence = confidence;
     Ok(result)
+}
+
+fn validate_autonomous_plan(plan: &str) -> Result<()> {
+    let lower = plan.to_lowercase();
+    let banned = [
+        "add a new dependency",
+        "add new dependency",
+        "new crate",
+        "dependency",
+        "dependencies",
+        "as a dependency",
+        "assume that",
+        "assume ",
+        "cargo add",
+        "cargo.toml",
+        "ndarray",
+        "nalgebra",
+        "linear algebra library",
+        "array or matrix",
+        "performance",
+        "performant",
+        "optimize",
+        "optimizing",
+        "optimization",
+        "efficient",
+        "efficiency",
+        "large models",
+        "potentially",
+        "may not be",
+        "without actual",
+        "uncertain",
+        "benchmark",
+        "profiling",
+        "performance benefits",
+        "performance overhead",
+        "performance regressions",
+    ];
+
+    if let Some(hit) = banned.iter().find(|needle| lower.contains(**needle)) {
+        anyhow::bail!(
+            "Strategist plan is outside autonomous scope: mentions '{hit}'. \
+             Bacon auto plans must be grounded, low-risk maintenance work."
+        );
+    }
+
+    let file_count = crate::bacon_core::count_spec_file_refs(plan);
+    if file_count > 3 {
+        anyhow::bail!(
+            "Strategist plan is outside autonomous scope: references {file_count} repo files (> 3)"
+        );
+    }
+
+    Ok(())
 }
 
 pub fn write_spec_package(plan: &str) -> Result<PathBuf> {
@@ -202,7 +268,7 @@ struct GeneratedSpecFiles {
     docs: Vec<String>,
 }
 
-/// Write the generated spec.yaml from a GeneratedSpecYaml struct.
+/// Write the generated spec.yaml from a `GeneratedSpecYaml` struct.
 ///
 /// # Metadata defaults
 ///
@@ -216,7 +282,7 @@ fn write_generated_spec_yaml(
     title: &str,
     plan: &str,
 ) -> Result<()> {
-    let active_prefix = format!("docs/specs/_active/{}/", dir_name);
+    let active_prefix = format!("docs/specs/_active/{dir_name}/");
     let code_files = extract_code_file_refs(plan);
     let spec = GeneratedSpecYaml {
         version: 1,
@@ -231,7 +297,7 @@ fn write_generated_spec_yaml(
             code: code_files,
             docs: ["plan.md", "validation.md"]
                 .into_iter()
-                .map(|file| format!("{}{}", active_prefix, file))
+                .map(|file| format!("{active_prefix}{file}"))
                 .collect(),
         },
         acceptance: {
@@ -390,6 +456,35 @@ mod tests {
         let refs = extract_code_file_refs(plan);
 
         assert_eq!(refs, vec!["src/bacon_agent_nvidia/auditor.rs"]);
+    }
+
+    #[test]
+    fn validate_autonomous_plan_rejects_speculative_performance_work() {
+        let plan = "# Improve Predictive Scorer Performance\n\n\
+            ## Baseline\n\
+            The Vec<f32> storage may not be efficient for large models.\n\n\
+            ## Implementation Steps\n\
+            Replace coefficients with an array or matrix from a linear algebra library.\n\n\
+            ## Validation\n\
+            Run check-fast.ps1.\n\n\
+            Confidence: Medium";
+
+        let err = validate_autonomous_plan(plan).unwrap_err().to_string();
+        assert!(err.contains("outside autonomous scope"));
+    }
+
+    #[test]
+    fn validate_autonomous_plan_accepts_small_grounded_maintenance_work() -> Result<()> {
+        let plan = "# Add Spec Numbering Regression Test\n\n\
+            ## Baseline\n\
+            src/bacon_core/spec_io.rs allocates spec directories by scanning active specs.\n\n\
+            ## Implementation Steps\n\
+            Add one test case in src/bacon_core/spec_io.rs for active and done numbering.\n\n\
+            ## Validation\n\
+            Run check-fast.ps1.\n\n\
+            Confidence: High";
+
+        validate_autonomous_plan(plan)
     }
 
     #[test]

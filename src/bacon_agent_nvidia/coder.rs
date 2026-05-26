@@ -77,7 +77,7 @@ const MIN_RESPONSE_LENGTH: usize = 60;
 /// >>>>>>> REPLACE
 /// ```
 ///
-/// Returns a list of (file_path, search_text, replace_text) tuples.
+/// Returns a list of (`file_path`, `search_text`, `replace_text`) tuples.
 fn parse_search_replace_blocks(response: &str) -> Vec<(String, String, String)> {
     let normalized = normalize_search_replace_fences(response);
 
@@ -141,9 +141,9 @@ fn stray_patch_marker_line(text: &str) -> Option<String> {
 /// Validate parsed SEARCH/REPLACE blocks for quality and correctness.
 ///
 /// Checks performed:
-/// - **Response too short**: Raw response is below MIN_RESPONSE_LENGTH
-/// - **Trivial SEARCH text**: SEARCH content is below MIN_SEARCH_LENGTH bytes
-/// - **Trivial REPLACE text**: REPLACE content is below MIN_REPLACE_LENGTH bytes
+/// - **Response too short**: Raw response is below `MIN_RESPONSE_LENGTH`
+/// - **Trivial SEARCH text**: SEARCH content is below `MIN_SEARCH_LENGTH` bytes
+/// - **Trivial REPLACE text**: REPLACE content is below `MIN_REPLACE_LENGTH` bytes
 /// - **Duplicate blocks**: Same file+search appears more than once (hallucination signal)
 ///
 /// Returns `Ok(())` if all blocks pass validation, or `Err` with a description
@@ -211,12 +211,11 @@ fn validate_search_replace_blocks(
 
     // 3. Deduplication: reject repeated identical blocks (hallucination signal)
     let mut seen = std::collections::HashSet::new();
-    for (file_path, search, _) in blocks.iter() {
-        let key = format!("{}::{}", file_path, search);
+    for (file_path, search, _) in blocks {
+        let key = format!("{file_path}::{search}");
         if !seen.insert(key.clone()) {
             anyhow::bail!(
-                "Duplicate SEARCH block found for {} — LLM likely hallucinated or repeated output",
-                file_path
+                "Duplicate SEARCH block found for {file_path} — LLM likely hallucinated or repeated output"
             );
         }
     }
@@ -270,8 +269,7 @@ fn find_unique_whitespace_insensitive_match(
             Ok(Some((orig_pos, end_pos)))
         }
         count => anyhow::bail!(
-            "SEARCH text matches {} locations after whitespace normalization; use a more specific block",
-            count
+            "SEARCH text matches {count} locations after whitespace normalization; use a more specific block"
         ),
     }
 }
@@ -345,8 +343,7 @@ fn find_unique_blank_line_insensitive_match(
         0 => Ok(None),
         1 => Ok(matches.into_iter().next()),
         count => anyhow::bail!(
-            "SEARCH text matches {} locations when ignoring blank lines; use a more specific block",
-            count
+            "SEARCH text matches {count} locations when ignoring blank lines; use a more specific block"
         ),
     }
 }
@@ -368,21 +365,19 @@ fn suggest_existing_rust_target(root: &Path, rel: &Path) -> Option<(PathBuf, Str
     let candidates = [stem.strip_suffix("_test"), stem.strip_suffix("_tests")];
 
     for base in candidates.into_iter().flatten() {
-        let candidate = parent.join(format!("{}.rs", base));
+        let candidate = parent.join(format!("{base}.rs"));
         let abs = root.join(&candidate);
         if abs.is_file() {
-            let note = std::fs::read_to_string(&abs)
-                .ok()
-                .map(|content| {
+            let note = std::fs::read_to_string(&abs).ok().map_or_else(
+                || "That looks like the closest existing Rust source file.".to_string(),
+                |content| {
                     if content.contains("mod tests") || content.contains("#[cfg(test)]") {
                         "That file already contains an inline `mod tests` block.".to_string()
                     } else {
                         "That looks like the closest existing Rust source file.".to_string()
                     }
-                })
-                .unwrap_or_else(|| {
-                    "That looks like the closest existing Rust source file.".to_string()
-                });
+                },
+            );
             return Some((candidate, note));
         }
     }
@@ -456,7 +451,7 @@ fn response_preview(response: &str, max_chars: usize) -> String {
     let trimmed = response.trim();
     let preview: String = trimmed.chars().take(max_chars).collect();
     if trimmed.chars().count() > max_chars {
-        format!("{}...[truncated]", preview)
+        format!("{preview}...[truncated]")
     } else {
         preview
     }
@@ -475,8 +470,10 @@ fn save_coder_response(
         .spec_path
         .as_ref()
         .and_then(|p| p.file_name())
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown-spec".to_string());
+        .map_or_else(
+            || "unknown-spec".to_string(),
+            |n| n.to_string_lossy().to_string(),
+        );
     let timestamp_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
@@ -579,9 +576,9 @@ fn validate_rust_item_boundaries(root: &Path, rel_paths: &[PathBuf]) -> Result<(
     Ok(())
 }
 
-/// Apply SEARCH/REPLACE blocks directly to working tree files with GitSnapshot rollback.
+/// Apply SEARCH/REPLACE blocks directly to working tree files with `GitSnapshot` rollback.
 ///
-/// 1. Creates a GitSnapshot for safe rollback.
+/// 1. Creates a `GitSnapshot` for safe rollback.
 /// 2. For each block: reads the file, performs SEARCH→REPLACE, writes back.
 /// 3. Runs `check-fast.ps1` to verify compilation.
 /// 4. On success: generates unified diff via `git diff HEAD -- files...`.
@@ -648,7 +645,7 @@ fn apply_search_replace_blocks(
             );
             std::fs::write(&abs_path, &new_content)
                 .with_context(|| format!("failed to write {}", abs_path.display()))?;
-            info!("SEARCH/REPLACE applied to {} (exact match)", clean);
+            info!("SEARCH/REPLACE applied to {clean} (exact match)");
             continue;
         }
 
@@ -661,21 +658,14 @@ fn apply_search_replace_blocks(
                     format!("{}{}{}", &content[..orig_pos], replace, &content[end_pos..]);
                 std::fs::write(&abs_path, &new_content)
                     .with_context(|| format!("failed to write {}", abs_path.display()))?;
-                info!(
-                    "SEARCH/REPLACE applied to {} (whitespace-insensitive match)",
-                    clean
-                );
+                info!("SEARCH/REPLACE applied to {clean} (whitespace-insensitive match)");
             } else {
                 // Rollback before returning error (warn if restore fails)
                 if let Err(e) = snapshot.restore() {
-                    warn!(
-                        "Failed to restore snapshot during SEARCH/REPLACE error recovery: {}",
-                        e
-                    );
+                    warn!("Failed to restore snapshot during SEARCH/REPLACE error recovery: {e}");
                 }
                 anyhow::bail!(
-                    "SEARCH text not found in {} - even after whitespace-insensitive matching",
-                    clean
+                    "SEARCH text not found in {clean} - even after whitespace-insensitive matching"
                 );
             }
         } else {
@@ -687,21 +677,14 @@ fn apply_search_replace_blocks(
                     format!("{}{}{}", &content[..orig_pos], replace, &content[end_pos..]);
                 std::fs::write(&abs_path, &new_content)
                     .with_context(|| format!("failed to write {}", abs_path.display()))?;
-                info!(
-                    "SEARCH/REPLACE applied to {} (blank-line-insensitive Rust match)",
-                    clean
-                );
+                info!("SEARCH/REPLACE applied to {clean} (blank-line-insensitive Rust match)");
             } else {
                 // Rollback before returning error (warn if restore fails)
                 if let Err(e) = snapshot.restore() {
-                    warn!(
-                        "Failed to restore snapshot during SEARCH/REPLACE error recovery: {}",
-                        e
-                    );
+                    warn!("Failed to restore snapshot during SEARCH/REPLACE error recovery: {e}");
                 }
                 anyhow::bail!(
-                    "SEARCH text not found in {} - exact nonblank line match required for Rust files",
-                    clean
+                    "SEARCH text not found in {clean} - exact nonblank line match required for Rust files"
                 );
             }
         }
@@ -709,15 +692,9 @@ fn apply_search_replace_blocks(
 
     if let Err(e) = validate_rust_item_boundaries(root, &rel_paths) {
         if let Err(restore_err) = snapshot.restore() {
-            warn!(
-                "Failed to restore snapshot during Rust boundary validation: {}",
-                restore_err
-            );
+            warn!("Failed to restore snapshot during Rust boundary validation: {restore_err}");
         }
-        anyhow::bail!(
-            "SEARCH/REPLACE introduced a merged Rust item boundary; rolled back: {}",
-            e
-        );
+        anyhow::bail!("SEARCH/REPLACE introduced a merged Rust item boundary; rolled back: {e}");
     }
 
     // Run check-fast.ps1 to verify
@@ -727,12 +704,9 @@ fn apply_search_replace_blocks(
             output.trim()
         ),
         Err(e) => {
-            warn!("check-fast.ps1 failed after SEARCH/REPLACE: {}", e);
+            warn!("check-fast.ps1 failed after SEARCH/REPLACE: {e}");
             snapshot.restore()?;
-            anyhow::bail!(
-                "SEARCH/REPLACE changes failed check-fast.ps1; rolled back: {}",
-                e
-            );
+            anyhow::bail!("SEARCH/REPLACE changes failed check-fast.ps1; rolled back: {e}");
         }
     }
 
@@ -766,7 +740,7 @@ fn apply_search_replace_blocks(
     Ok((diff, rel_paths))
 }
 
-/// Apply a queued patch to the main repository using GitSnapshot for rollback.
+/// Apply a queued patch to the main repository using `GitSnapshot` for rollback.
 fn auto_apply_queued_patch(root: &Path, queued: &QueuedPatch) -> Result<AutoApplyReport> {
     info!(
         "Auto-applying patch: {} ({} files)",
@@ -798,10 +772,7 @@ fn auto_apply_queued_patch(root: &Path, queued: &QueuedPatch) -> Result<AutoAppl
         snapshot
             .restore()
             .context("snapshot rollback failed after apply --check failure")?;
-        anyhow::bail!(
-            "git apply --check failed; rolled back via snapshot:\n{}",
-            stderr
-        );
+        anyhow::bail!("git apply --check failed; rolled back via snapshot:\n{stderr}");
     }
 
     // Apply
@@ -823,7 +794,7 @@ fn auto_apply_queued_patch(root: &Path, queued: &QueuedPatch) -> Result<AutoAppl
         snapshot
             .restore()
             .context("snapshot rollback failed after apply failure")?;
-        anyhow::bail!("git apply failed; rolled back via snapshot:\n{}", stderr);
+        anyhow::bail!("git apply failed; rolled back via snapshot:\n{stderr}");
     }
 
     // Validate
@@ -833,10 +804,7 @@ fn auto_apply_queued_patch(root: &Path, queued: &QueuedPatch) -> Result<AutoAppl
             snapshot
                 .restore()
                 .context("snapshot rollback failed after check-fast failure")?;
-            anyhow::bail!(
-                "auto-apply check-fast.ps1 failed; rolled back via snapshot:\n{}",
-                err
-            );
+            anyhow::bail!("auto-apply check-fast.ps1 failed; rolled back via snapshot:\n{err}");
         }
     };
 
@@ -847,10 +815,7 @@ fn auto_apply_queued_patch(root: &Path, queued: &QueuedPatch) -> Result<AutoAppl
     info!("Auto-apply passed for {}", queued.patch_path.display());
     Ok(AutoApplyReport {
         _applied_path: Some(archive_approved_patch(root, &queued.patch_path)),
-        output: format!(
-            "auto-apply passed\nlocal check-fast:\n{}",
-            check_fast_output
-        ),
+        output: format!("auto-apply passed\nlocal check-fast:\n{check_fast_output}"),
     })
 }
 
@@ -864,11 +829,7 @@ fn run_check_fast(root: &Path) -> Result<String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        anyhow::bail!(
-            "check-fast.ps1 exited with error:\nstdout:\n{}\nstderr:\n{}",
-            stdout,
-            stderr
-        );
+        anyhow::bail!("check-fast.ps1 exited with error:\nstdout:\n{stdout}\nstderr:\n{stderr}");
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -894,29 +855,23 @@ fn is_refusal(response: &str) -> bool {
 }
 
 fn build_spec_context(ctx: &PipelineCtx) -> String {
-    match &ctx.spec_path {
-        Some(spec_path) => {
-            let plan = spec_io::read_spec_file(spec_path, "plan.md");
-            let validation_spec = spec_io::read_spec_file(spec_path, "validation.md");
-            // Collect actual source file contents referenced throughout spec text
-            let all_spec_text = format!("{}\n{}", plan, validation_spec);
-            let source_context = collect_source_context(&all_spec_text, 8, 300);
-            format!(
-                "## Plan\n{}\n\n## Validation Criteria\n{}{}",
-                plan, validation_spec, source_context
-            )
-        }
-        None => {
-            // When the external Strategist didn't write spec files to disk,
-            // fall back to ctx.description but still extract file paths from
-            // the plan text and include their source content. This ensures the
-            // LLM has the actual code to match against in SEARCH/REPLACE blocks.
-            let source_context = collect_source_context(&ctx.description, 8, 300);
-            if source_context.is_empty() {
-                ctx.description.clone()
-            } else {
-                format!("{}\n\n{}", ctx.description, source_context)
-            }
+    if let Some(spec_path) = &ctx.spec_path {
+        let plan = spec_io::read_spec_file(spec_path, "plan.md");
+        let validation_spec = spec_io::read_spec_file(spec_path, "validation.md");
+        // Collect actual source file contents referenced throughout spec text
+        let all_spec_text = format!("{plan}\n{validation_spec}");
+        let source_context = collect_source_context(&all_spec_text, 8, 300);
+        format!("## Plan\n{plan}\n\n## Validation Criteria\n{validation_spec}{source_context}")
+    } else {
+        // When the external Strategist didn't write spec files to disk,
+        // fall back to ctx.description but still extract file paths from
+        // the plan text and include their source content. This ensures the
+        // LLM has the actual code to match against in SEARCH/REPLACE blocks.
+        let source_context = collect_source_context(&ctx.description, 8, 300);
+        if source_context.is_empty() {
+            ctx.description.clone()
+        } else {
+            format!("{}\n\n{}", ctx.description, source_context)
         }
     }
 }
@@ -927,8 +882,7 @@ fn attach_live_source_context(error_text: &str) -> String {
         error_text.to_string()
     } else {
         format!(
-            "{}\n\n{}\n\nIMPORTANT: Use the exact source excerpt above as the basis for the next SEARCH block. Do not reconstruct Rust item boundaries from memory.",
-            error_text, source_context
+            "{error_text}\n\n{source_context}\n\nIMPORTANT: Use the exact source excerpt above as the basis for the next SEARCH block. Do not reconstruct Rust item boundaries from memory."
         )
     }
 }
@@ -954,7 +908,7 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                 if meta.status == "approved" {
                     meta.status = "in-progress".to_string();
                     if let Err(e) = spec_io::write_spec_meta(spec_path, &meta) {
-                        warn!("Failed to set spec status to in-progress: {}", e);
+                        warn!("Failed to set spec status to in-progress: {e}");
                     } else {
                         info!("Set spec status to in-progress");
                     }
@@ -975,7 +929,7 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
 
         let prompt = if attempt == 1 {
             format!(
-                "Implement the following spec using SEARCH/REPLACE blocks.\n\n{}\n\n\
+                "Implement the following spec using SEARCH/REPLACE blocks.\n\n{spec_context}\n\n\
                  For each file you need to change, output the file path, then:\n\
                  <<<<<<< SEARCH\n\
                  [exact lines to replace]\n\
@@ -986,14 +940,13 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                  Do NOT output unified diff patches (diff --git). Only output SEARCH/REPLACE blocks.\n\
                  In Rust files, keep `}}` and `#[...]` on separate lines.\n\
                  For Rust files, the SEARCH text must match exactly; do not rely on whitespace-only matching.\n\
-                 If a Rust change is a test addition, prefer the existing source file that already contains `mod tests` instead of inventing a new `*_test.rs` file.",
-                spec_context
+                 If a Rust change is a test addition, prefer the existing source file that already contains `mod tests` instead of inventing a new `*_test.rs` file."
             )
         } else {
             format!(
                 "Implement the following spec using SEARCH/REPLACE blocks.\n\n\
-                 The previous attempt had these issues:\n{}\n\n\
-                 Spec context:\n{}\n\n\
+                 The previous attempt had these issues:\n{last_error}\n\n\
+                 Spec context:\n{spec_context}\n\n\
                  For each file you need to change, output the file path, then:\n\
                  <<<<<<< SEARCH\n\
                  [exact lines to replace]\n\
@@ -1005,16 +958,12 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                  Do not refuse or explain why you can't do it - just produce the blocks.\n\
                  In Rust files, keep `}}` and `#[...]` on separate lines.\n\
                  For Rust files, the SEARCH text must match exactly; do not rely on whitespace-only matching.\n\
-                 If a Rust change is a test addition, prefer the existing source file that already contains `mod tests` instead of inventing a new `*_test.rs` file.",
-                last_error, spec_context
+                 If a Rust change is a test addition, prefer the existing source file that already contains `mod tests` instead of inventing a new `*_test.rs` file."
             )
         };
 
         let max_attempts = effective_max_attempts(args.max_attempts);
-        info!(
-            "NVIDIA Coder calling API (attempt {}/{})...",
-            attempt, max_attempts
-        );
+        info!("NVIDIA Coder calling API (attempt {attempt}/{max_attempts})...");
 
         let messages = vec![
             crate::llm::ChatMessage::system(system_prompt.clone()),
@@ -1023,15 +972,15 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         let response = match llm.chat(messages).await {
             Ok(r) => r,
             Err(e) => {
-                let err_msg = format!("NVIDIA API call failed on attempt {}: {}", attempt, e);
-                warn!("{}", err_msg);
+                let err_msg = format!("NVIDIA API call failed on attempt {attempt}: {e}");
+                warn!("{err_msg}");
                 errors.push(err_msg.clone());
                 let max_attempts = effective_max_attempts(args.max_attempts);
                 if attempt >= max_attempts {
                     warn!("Max retries exhausted — signalling scope reduction needed");
                     return Ok(signal_scope_reduction(ctx, errors));
                 }
-                last_error = format!("API error: {}", e);
+                last_error = format!("API error: {e}");
                 attempt += 1;
                 continue;
             }
@@ -1044,10 +993,7 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
             match save_coder_response(root, ctx, attempt, &response) {
                 Ok(path) => Some(path),
                 Err(e) => {
-                    warn!(
-                        "Failed to save NVIDIA Coder response for attempt {}: {}",
-                        attempt, e
-                    );
+                    warn!("Failed to save NVIDIA Coder response for attempt {attempt}: {e}");
                     None
                 }
             }
@@ -1084,18 +1030,16 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
             let refusal_log = response.chars().take(200).collect::<String>();
             consecutive_refusals += 1;
             warn!(
-                "NVIDIA Coder refused on attempt {} (consecutive refusal #{})",
-                attempt, consecutive_refusals
+                "NVIDIA Coder refused on attempt {attempt} (consecutive refusal #{consecutive_refusals})"
             );
-            errors.push(format!("Attempt {} refused with: {}", attempt, refusal_log));
+            errors.push(format!("Attempt {attempt} refused with: {refusal_log}"));
 
             // 2 consecutive refusals → abort pipeline, no scope reduction
             if consecutive_refusals >= 2 {
                 let report = format!(
-                    "NVIDIA Coder refused to implement after {} consecutive refusals.\n\n\
-                     Attempt {}:\n{}\n\n\
-                     Refusal chain ({} consecutive refusals).",
-                    consecutive_refusals, attempt, refusal_log, consecutive_refusals
+                    "NVIDIA Coder refused to implement after {consecutive_refusals} consecutive refusals.\n\n\
+                     Attempt {attempt}:\n{refusal_log}\n\n\
+                     Refusal chain ({consecutive_refusals} consecutive refusals)."
                 );
                 warn!("NVIDIA Coder: 2 consecutive refusals — aborting pipeline, needs human approval");
                 if !ctx.dry_run {
@@ -1103,12 +1047,12 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                         let validation_path = spec_path.join("validation.md");
                         let _ = std::fs::write(
                             &validation_path,
-                            format!("# Coder Refusal Report\n\n{}", report),
+                            format!("# Coder Refusal Report\n\n{report}"),
                         );
                         if let Ok(mut meta) = spec_io::read_spec_meta(spec_path) {
                             meta.status = "needs-human-approval".to_string();
                             if let Err(e) = spec_io::write_spec_meta(spec_path, &meta) {
-                                warn!("Failed to persist needs-human-approval to spec.yaml: {}", e);
+                                warn!("Failed to persist needs-human-approval to spec.yaml: {e}");
                             }
                         }
                     }
@@ -1133,8 +1077,7 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                 return Ok(output);
             }
             last_error = format!(
-                "The previous attempt produced a refusal instead of a patch. Provide a concrete diff. Refusal was: {}",
-                refusal_log
+                "The previous attempt produced a refusal instead of a patch. Provide a concrete diff. Refusal was: {refusal_log}"
             );
             attempt += 1;
             continue;
@@ -1147,15 +1090,13 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
             && normalize_search_replace_fences(&response) != response
         {
             warn!(
-                "NVIDIA Coder response attempt {} used malformed SEARCH/REPLACE fence markers; normalized before parsing",
-                attempt
+                "NVIDIA Coder response attempt {attempt} used malformed SEARCH/REPLACE fence markers; normalized before parsing"
             );
         }
 
         if search_replace_blocks.is_empty() {
             warn!(
-                "NVIDIA Coder returned response with no SEARCH/REPLACE blocks on attempt {}",
-                attempt
+                "NVIDIA Coder returned response with no SEARCH/REPLACE blocks on attempt {attempt}"
             );
             errors.push(format!(
                 "Attempt {} produced no valid SEARCH/REPLACE blocks (response length: {})",
@@ -1169,8 +1110,7 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
             }
             let response_preview = response.lines().take(8).collect::<Vec<_>>().join("\n");
             last_error = format!(
-                "The previous attempt did not produce valid SEARCH/REPLACE blocks.\n\nLast response preview:\n{}\n\nReturn only blocks, with the file path on the first non-empty line, then:\npath/to/file.rs\n<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE\nNo markdown, no headings, no prose, no unified diffs.",
-                response_preview
+                "The previous attempt did not produce valid SEARCH/REPLACE blocks.\n\nLast response preview:\n{response_preview}\n\nReturn only blocks, with the file path on the first non-empty line, then:\npath/to/file.rs\n<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE\nNo markdown, no headings, no prose, no unified diffs."
             );
             attempt += 1;
             continue;
@@ -1178,21 +1118,17 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
 
         // Validate block quality before attempting to apply
         if let Err(e) = validate_search_replace_blocks(&response, &search_replace_blocks) {
-            warn!(
-                "NVIDIA Coder SEARCH/REPLACE validation failed on attempt {}: {}",
-                attempt, e
-            );
-            errors.push(format!("Attempt {} validation failed: {}", attempt, e));
+            warn!("NVIDIA Coder SEARCH/REPLACE validation failed on attempt {attempt}: {e}");
+            errors.push(format!("Attempt {attempt} validation failed: {e}"));
             let max_attempts = effective_max_attempts(args.max_attempts);
             if attempt >= max_attempts {
                 warn!("Max retries exhausted — signalling scope reduction needed");
                 return Ok(signal_scope_reduction(ctx, errors));
             }
             last_error = format!(
-                "The previous attempt produced invalid SEARCH/REPLACE blocks: {}\n\n\
-                 Make sure each block has meaningful SEARCH content (at least {} characters) \
-                 and non-empty REPLACE content.",
-                e, MIN_SEARCH_LENGTH
+                "The previous attempt produced invalid SEARCH/REPLACE blocks: {e}\n\n\
+                 Make sure each block has meaningful SEARCH content (at least {MIN_SEARCH_LENGTH} characters) \
+                 and non-empty REPLACE content."
             );
             attempt += 1;
             continue;
@@ -1200,21 +1136,16 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
 
         if let Err(e) = validate_blocks_within_spec_scope(ctx, &search_replace_blocks) {
             warn!(
-                "NVIDIA Coder generated out-of-scope SEARCH/REPLACE blocks on attempt {}: {}",
-                attempt, e
+                "NVIDIA Coder generated out-of-scope SEARCH/REPLACE blocks on attempt {attempt}: {e}"
             );
-            errors.push(format!(
-                "Attempt {} scope validation failed: {}",
-                attempt, e
-            ));
+            errors.push(format!("Attempt {attempt} scope validation failed: {e}"));
             let max_attempts = effective_max_attempts(args.max_attempts);
             if attempt >= max_attempts {
                 warn!("Max retries exhausted - signalling scope reduction needed");
                 return Ok(signal_scope_reduction(ctx, errors));
             }
             last_error = format!(
-                "{}\n\nOnly edit files listed by the active spec. Do not introduce unrelated files.",
-                e
+                "{e}\n\nOnly edit files listed by the active spec. Do not introduce unrelated files."
             );
             attempt += 1;
             continue;
@@ -1232,17 +1163,16 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         {
             Ok(result) => result,
             Err(e) => {
-                warn!("SEARCH/REPLACE failed on attempt {}: {}", attempt, e);
-                errors.push(format!("Attempt {} SEARCH/REPLACE failed: {}", attempt, e));
+                warn!("SEARCH/REPLACE failed on attempt {attempt}: {e}");
+                errors.push(format!("Attempt {attempt} SEARCH/REPLACE failed: {e}"));
                 let max_attempts = effective_max_attempts(args.max_attempts);
                 if attempt >= max_attempts {
                     return Ok(signal_scope_reduction(ctx, errors));
                 }
                 last_error = attach_live_source_context(&format!(
-                    "SEARCH/REPLACE failed: {}\n\n\
+                    "SEARCH/REPLACE failed: {e}\n\n\
                      ---\n\n\
-                     Make sure SEARCH lines match the source files EXACTLY.",
-                    e
+                     Make sure SEARCH lines match the source files EXACTLY."
                 ));
                 attempt += 1;
                 continue;
@@ -1258,11 +1188,18 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         info!("SEARCH/REPLACE applied successfully, continuing to verification");
 
         // Verify with check-fast.ps1 (unless dry run)
-        if !ctx.dry_run {
+        if ctx.dry_run {
+            // Dry run — just return the patch response
+            info!("Dry run: skipping patch verification and queue, returning patch directly");
+            let mut result = PipelineCtx::new(response).with_dry_run(true);
+            result.spec_path = ctx.spec_path.clone();
+            result.confidence = extracted_confidence;
+            return Ok(result);
+        } else {
             let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
             match run_check_fast(root) {
                 Ok(ref check_output) => {
-                    info!("Patch verification passed on attempt {}", attempt);
+                    info!("Patch verification passed on attempt {attempt}");
 
                     // Queue the patch
                     let approved_dir = approved_patches_dir(root);
@@ -1272,8 +1209,10 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                         .spec_path
                         .as_ref()
                         .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown-spec".to_string());
+                        .map_or_else(
+                            || "unknown-spec".to_string(),
+                            |n| n.to_string_lossy().to_string(),
+                        );
                     let patch_name =
                         format!("{}_attempt_{}.diff", safe_file_stem(&spec_id), attempt);
                     let patch_path = approved_dir.join(patch_name);
@@ -1300,17 +1239,15 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                                 return Ok(result);
                             }
                             Err(e) => {
-                                warn!("Auto-apply failed on attempt {}: {}", attempt, e);
-                                errors
-                                    .push(format!("Attempt {} auto-apply failed: {}", attempt, e));
+                                warn!("Auto-apply failed on attempt {attempt}: {e}");
+                                errors.push(format!("Attempt {attempt} auto-apply failed: {e}"));
                                 let max_attempts = effective_max_attempts(args.max_attempts);
                                 if attempt >= max_attempts {
                                     return Ok(signal_scope_reduction(ctx, errors));
                                 }
                                 last_error = format!(
-                                    "Auto-apply failed: {}\nCheck output: {}\n\n\
----\n\nFix the patch and ensure check-fast.ps1 passes.",
-                                    e, check_output
+                                    "Auto-apply failed: {e}\nCheck output: {check_output}\n\n\
+        ---\n\nFix the patch and ensure check-fast.ps1 passes."
                                 );
                                 attempt += 1;
                                 continue;
@@ -1332,17 +1269,16 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                     }
                 }
                 Err(e) => {
-                    warn!("Patch verification failed on attempt {}: {}", attempt, e);
-                    errors.push(format!("Attempt {} verification failed: {}", attempt, e));
+                    warn!("Patch verification failed on attempt {attempt}: {e}");
+                    errors.push(format!("Attempt {attempt} verification failed: {e}"));
                     let max_attempts = effective_max_attempts(args.max_attempts);
                     if attempt >= max_attempts {
                         return Ok(signal_scope_reduction(ctx, errors));
                     }
                     let new_error = attach_live_source_context(&format!(
-                        "Patch verification failed:\n{}\n\n\
-                         ---\n\n\
-                         Fix the patch and ensure check-fast.ps1 passes.",
-                        e
+                        "Patch verification failed:\n{e}\n\n\
+                                 ---\n\n\
+                                 Fix the patch and ensure check-fast.ps1 passes."
                     ));
                     if attempt > 1 && new_error == last_error {
                         repeated_error_count += 1;
@@ -1358,13 +1294,6 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                     continue;
                 }
             }
-        } else {
-            // Dry run — just return the patch response
-            info!("Dry run: skipping patch verification and queue, returning patch directly");
-            let mut result = PipelineCtx::new(response).with_dry_run(true);
-            result.spec_path = ctx.spec_path.clone();
-            result.confidence = extracted_confidence;
-            return Ok(result);
         }
     }
 }

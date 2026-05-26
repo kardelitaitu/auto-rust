@@ -39,6 +39,18 @@ path = "src/bin/bacon.rs"
 name = "nvidia"
 path = "src/bin/nvidia_simple.rs"
 
+[[bin]]
+name = "bacon-spec"
+path = "src/bin/bacon-spec.rs"
+
+[[bin]]
+name = "bacon-coder"
+path = "src/bin/bacon-coder.rs"
+
+[[bin]]
+name = "bacon-review"
+path = "src/bin/bacon-review.rs"
+
 [dependencies]
 # CDP Browser Automation
 chromiumoxide = { version = "0.6", features = ["tokio-runtime"] }
@@ -120,6 +132,11 @@ debug = "line-tables-only"    # Minimal debug info for faster linking
 overflow-checks = false       # Disable overflow checks for speed
 lto = false                   # Disable LTO for dev
 
+
+# Custom profile for TDD: maximum compile speed, readable backtraces
+[profile.tdd]
+inherits = "dev"
+strip = "debuginfo"
 
 
 [dev-dependencies]

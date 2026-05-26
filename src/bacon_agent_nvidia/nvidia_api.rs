@@ -104,7 +104,7 @@ pub async fn chat(config: &NvidiaConfig, system_prompt: &str, user_prompt: &str)
     let url = format!("{}/chat/completions", config.base_url);
 
     info!("NVIDIA API call: model={}, url={}", config.model, url);
-    debug!("system_prompt={}", system_prompt);
+    debug!("system_prompt={system_prompt}");
     debug!(
         "user_prompt={} ({} chars)",
         &user_prompt[..user_prompt.len().min(80)],
@@ -151,7 +151,7 @@ pub async fn chat(config: &NvidiaConfig, system_prompt: &str, user_prompt: &str)
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        anyhow::bail!("NVIDIA API error: {} - {}", status, text);
+        anyhow::bail!("NVIDIA API error: {status} - {text}");
     }
     // Capture raw body first for debugging parse failures
     let body_text = response.text().await.unwrap_or_default();
@@ -161,7 +161,7 @@ pub async fn chat(config: &NvidiaConfig, system_prompt: &str, user_prompt: &str)
         } else {
             body_text.clone()
         };
-        format!("Failed to parse NVIDIA API response. Raw body: {}", snippet)
+        format!("Failed to parse NVIDIA API response. Raw body: {snippet}")
     });
     if let Err(ref _e) = parse_result {
         // Persist raw body to disk for offline debugging
@@ -171,7 +171,7 @@ pub async fn chat(config: &NvidiaConfig, system_prompt: &str, user_prompt: &str)
             .unwrap_or(0);
         let error_dir = PathBuf::from("sessions/api_errors");
         let _ = std::fs::create_dir_all(&error_dir);
-        let error_path = error_dir.join(format!("nvidia_api_{}.json", ts));
+        let error_path = error_dir.join(format!("nvidia_api_{ts}.json"));
         if let Err(write_err) = std::fs::write(&error_path, &body_text) {
             warn!(
                 "Failed to save raw API response to {}: {}",
@@ -207,7 +207,7 @@ pub async fn chat(config: &NvidiaConfig, system_prompt: &str, user_prompt: &str)
             .first()
             .and_then(|c| c.finish_reason.as_deref())
             .unwrap_or("unknown");
-        anyhow::bail!("Empty response from NVIDIA API (finish_reason: {})", reason);
+        anyhow::bail!("Empty response from NVIDIA API (finish_reason: {reason})");
     }
 
     let elapsed = start.elapsed();

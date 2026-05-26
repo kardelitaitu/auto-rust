@@ -1,0 +1,23 @@
+version: 1
+id: '0009-remove-unused-code-in-predictiveengageme'
+title: Remove Unused Code in PredictiveEngagementScorer
+status: needs-human-approval
+owner: pipeline
+implementer: pipeline
+priority: P2
+area:
+- bacon
+files:
+  code:
+  - src/adaptive/predictive_scorer.rs
+  - check-fast.ps1
+  docs:
+  - docs/specs/_active/0009-remove-unused-code-in-predictiveengageme/plan.md
+  - docs/specs/_active/0009-remove-unused-code-in-predictiveengageme/validation.md
+acceptance:
+- Generated spec package is complete and validated.
+- Implementation validates with check-fast.ps1 before completion.
+non_goals:
+- No unchecked auto-apply of generated patches.
+risks:
+- LLM-generated plans may still need human review for scope.

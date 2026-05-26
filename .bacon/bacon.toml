@@ -72,30 +72,34 @@ api_key = "{env:NVIDIA_API_KEY}"
 base_url = "https://integrate.api.nvidia.com/v1"
 temperature = 0.4
 max_tokens = 8192
+timeout_ms = 90000
 
 [agents.nvidia_strategist]
 provider = "nvidia"
-model = "deepseek-ai/deepseek-v4-pro"
+model = "meta/llama-3.3-70b-instruct"
 api_key = "{env:NVIDIA_API_KEY}"
 base_url = "https://integrate.api.nvidia.com/v1"
 temperature = 0.1
 max_tokens = 8192
+timeout_ms = 90000
 
 [agents.nvidia_coder]
 provider = "nvidia"
-model = "deepseek-ai/deepseek-v4-pro"
+model = "meta/llama-3.3-70b-instruct"
 api_key = "{env:NVIDIA_API_KEY}"
 base_url = "https://integrate.api.nvidia.com/v1"
 temperature = 0.0
 max_tokens = 16384
+timeout_ms = 120000
 
 [agents.nvidia_auditor]
 provider = "nvidia"
-model = "deepseek-ai/deepseek-v4-pro"
+model = "meta/llama-3.3-70b-instruct"
 api_key = "{env:NVIDIA_API_KEY}"
 base_url = "https://integrate.api.nvidia.com/v1"
 temperature = 0.1
 max_tokens = 16384
+timeout_ms = 90000
 
 # Base NVIDIA agent — preserved for backward compatibility
 [agents.nvidia]
@@ -108,3 +112,4 @@ model = "meta/llama-3.3-70b-instruct"
 temperature = 0.3
 top_p = 0.95
 max_tokens = 16384
+timeout_ms = 90000

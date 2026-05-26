@@ -21,6 +21,7 @@ pub struct SpecMeta {
 }
 
 /// Root specs directory: `docs/specs`.
+#[must_use]
 pub fn specs_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.push("docs/specs");
@@ -28,6 +29,7 @@ pub fn specs_root() -> PathBuf {
 }
 
 /// Active specs directory: `docs/specs/_active`.
+#[must_use]
 pub fn active_dir() -> PathBuf {
     let mut p = specs_root();
     p.push("_active");
@@ -35,6 +37,7 @@ pub fn active_dir() -> PathBuf {
 }
 
 /// Done specs directory: `docs/specs/_done`.
+#[must_use]
 pub fn done_dir() -> PathBuf {
     let mut p = specs_root();
     p.push("_done");
@@ -48,7 +51,7 @@ pub fn list_active_specs() -> Result<Vec<PathBuf>> {
         return Ok(vec![]);
     }
     let mut entries: Vec<_> = std::fs::read_dir(&dir)?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_dir())
         .map(|e| e.path())
         .collect();
@@ -82,8 +85,8 @@ pub fn find_specs_matching(description: &str) -> Result<Vec<(PathBuf, String)>> 
         if !dir.is_dir() {
             continue;
         }
-        for entry in std::fs::read_dir(&dir)
-            .map_err(|e| anyhow::anyhow!("failed to read {:?}: {}", dir, e))?
+        for entry in
+            std::fs::read_dir(&dir).map_err(|e| anyhow::anyhow!("failed to read {dir:?}: {e}"))?
         {
             let entry = entry?;
             let spec_path = entry.path();
@@ -123,14 +126,13 @@ pub fn write_spec_meta(path: &Path, meta: &SpecMeta) -> Result<()> {
         .and_then(|content| serde_yml::from_str::<Value>(&content).ok())
         .unwrap_or_else(|| Value::Mapping(Mapping::new()));
 
-    let mapping = match &mut value {
-        Value::Mapping(mapping) => mapping,
-        _ => {
-            value = Value::Mapping(Mapping::new());
-            match &mut value {
-                Value::Mapping(mapping) => mapping,
-                _ => unreachable!(),
-            }
+    let mapping = if let Value::Mapping(mapping) = &mut value {
+        mapping
+    } else {
+        value = Value::Mapping(Mapping::new());
+        match &mut value {
+            Value::Mapping(mapping) => mapping,
+            _ => unreachable!(),
         }
     };
 
@@ -174,7 +176,7 @@ where
         if !dir.is_dir() {
             continue;
         }
-        for entry in std::fs::read_dir(&dir)? {
+        for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
@@ -198,8 +200,7 @@ fn parse_spec_number(name: &str) -> Option<u32> {
 fn sibling_done_dir(active: &Path) -> PathBuf {
     active
         .parent()
-        .map(|root| root.join("_done"))
-        .unwrap_or_else(done_dir)
+        .map_or_else(done_dir, |root| root.join("_done"))
 }
 
 fn spec_number_exists(number: u32, dirs: &[PathBuf]) -> Result<bool> {
@@ -237,7 +238,7 @@ pub fn allocate_spec_dir(active: &Path, slug: &str) -> Result<(PathBuf, u32)> {
             number += 1;
             continue;
         }
-        let dir_name = format!("{:04}-{}", number, slug);
+        let dir_name = format!("{number:04}-{slug}");
         let spec_dir = active.join(&dir_name);
         match std::fs::create_dir(&spec_dir) {
             Ok(()) => {
@@ -254,6 +255,7 @@ pub fn allocate_spec_dir(active: &Path, slug: &str) -> Result<(PathBuf, u32)> {
 
 /// Read a spec file (plan.md, validation.md, etc.) from a spec directory.
 /// Returns empty string on failure with a warning.
+#[must_use]
 pub fn read_spec_file(spec_path: &Path, name: &str) -> String {
     let path = spec_path.join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| {

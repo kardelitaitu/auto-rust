@@ -48,7 +48,7 @@ impl GitSnapshot {
         let snapshot_dir = root
             .join(".bacon")
             .join("snapshots")
-            .join(format!("snap_{}", ts));
+            .join(format!("snap_{ts}"));
         std::fs::create_dir_all(&snapshot_dir).with_context(|| {
             format!("failed to create snapshot dir: {}", snapshot_dir.display())
         })?;
@@ -115,7 +115,7 @@ impl GitSnapshot {
                 .context("failed to pop stash during rollback")?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                anyhow::bail!("stash pop failed during rollback: {}", stderr);
+                anyhow::bail!("stash pop failed during rollback: {stderr}");
             }
         }
 
@@ -177,7 +177,7 @@ fn stash_uncommitted(root: &Path) -> Result<bool> {
         .output()
         .context("failed to check git status")?;
     let status = String::from_utf8_lossy(&status_output.stdout);
-    let has_tracked_changes = status.lines().any(|l| !l.is_empty() && !l.starts_with("?"));
+    let has_tracked_changes = status.lines().any(|l| !l.is_empty() && !l.starts_with('?'));
 
     if !has_tracked_changes {
         return Ok(false);
@@ -191,7 +191,7 @@ fn stash_uncommitted(root: &Path) -> Result<bool> {
         .context("failed to stash uncommitted changes")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git stash failed: {}", stderr);
+        anyhow::bail!("git stash failed: {stderr}");
     }
     Ok(true)
 }

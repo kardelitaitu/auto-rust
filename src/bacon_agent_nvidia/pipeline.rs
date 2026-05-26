@@ -29,7 +29,7 @@ impl Pipeline {
         })
     }
 
-    fn llm_for_agent(&self, agent_name: &str) -> Result<Llm> {
+    fn llm_for_agent(agent_name: &str) -> Result<Llm> {
         let agent_cfg = PipelineConfig::agent_llm_config(agent_name);
         let mut llm_cfg = crate::llm::create_llm_client_from_config()?;
 
@@ -53,7 +53,9 @@ impl Pipeline {
             match llm_cfg.provider {
                 crate::llm::LlmProvider::Nvidia => llm_cfg.nvidia.base_url = base_url.clone(),
                 crate::llm::LlmProvider::Ollama => llm_cfg.ollama.base_url = base_url.clone(),
-                crate::llm::LlmProvider::OpenRouter => llm_cfg.openrouter.base_url = base_url.clone(),
+                crate::llm::LlmProvider::OpenRouter => {
+                    llm_cfg.openrouter.base_url = base_url.clone();
+                }
             }
         }
 
@@ -64,7 +66,7 @@ impl Pipeline {
                 if val.len() > 10 {
                     info!("Resolved {} to {}...", var_name, &val[..10]);
                 } else {
-                    info!("Resolved {} (short/empty)", var_name);
+                    info!("Resolved {var_name} (short/empty)");
                 }
                 val
             } else {
@@ -86,9 +88,8 @@ impl Pipeline {
         }
 
         if let Some(top_p) = agent_cfg.top_p {
-            match llm_cfg.provider {
-                crate::llm::LlmProvider::Nvidia => llm_cfg.nvidia.top_p = top_p,
-                _ => {}
+            if matches!(llm_cfg.provider, crate::llm::LlmProvider::Nvidia) {
+                llm_cfg.nvidia.top_p = top_p;
             }
         }
 
@@ -96,14 +97,24 @@ impl Pipeline {
             match llm_cfg.provider {
                 crate::llm::LlmProvider::Nvidia => llm_cfg.nvidia.max_tokens = max_tokens as u32,
                 crate::llm::LlmProvider::Ollama => llm_cfg.ollama.max_tokens = max_tokens as u32,
-                crate::llm::LlmProvider::OpenRouter => llm_cfg.openrouter.max_tokens = max_tokens as u32,
+                crate::llm::LlmProvider::OpenRouter => {
+                    llm_cfg.openrouter.max_tokens = max_tokens as u32;
+                }
+            }
+        }
+
+        if let Some(timeout_ms) = agent_cfg.timeout_ms {
+            match llm_cfg.provider {
+                crate::llm::LlmProvider::Nvidia => llm_cfg.nvidia.timeout_ms = timeout_ms,
+                crate::llm::LlmProvider::Ollama => llm_cfg.ollama.timeout_ms = timeout_ms,
+                crate::llm::LlmProvider::OpenRouter => llm_cfg.openrouter.timeout_ms = timeout_ms,
             }
         }
 
         Ok(Llm::from_config(llm_cfg))
     }
 
-    /// Thin wrapper that delegates to the PipelineAgent trait default.
+    /// Thin wrapper that delegates to the `PipelineAgent` trait default.
     pub async fn run(&self) -> Result<()> {
         PipelineAgent::run(self).await
     }
@@ -115,7 +126,7 @@ impl Pipeline {
 
 #[async_trait::async_trait]
 impl PipelineAgent for Pipeline {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "nvidia"
     }
 
@@ -143,8 +154,12 @@ impl PipelineAgent for Pipeline {
         let agent = self.pipeline_cfg.agent_for(&Stage::Observer);
         let agent_cfg = PipelineConfig::agent_llm_config(agent);
 
-        if agent == "bacon" || agent == "nvidia" || agent_cfg.provider.as_deref() == Some("nvidia") || agent_cfg.provider.as_deref() == Some("ollama") {
-            let llm = self.llm_for_agent(agent)?;
+        if agent == "bacon"
+            || agent == "nvidia"
+            || agent_cfg.provider.as_deref() == Some("nvidia")
+            || agent_cfg.provider.as_deref() == Some("ollama")
+        {
+            let llm = Self::llm_for_agent(agent)?;
             super::observer::run(&llm, &self.args, ctx).await
         } else {
             let prompt = self
@@ -153,7 +168,7 @@ impl PipelineAgent for Pipeline {
                 .as_deref()
                 .unwrap_or("scan for improvements");
             let context = crate::bacon_core::gather_project_context();
-            let enriched_prompt = format!("{}\n\n## Task\n\n{}", context, prompt);
+            let enriched_prompt = format!("{context}\n\n## Task\n\n{prompt}");
             run_external_agent(agent, "observer", &enriched_prompt, self.dry_run)
         }
     }
@@ -162,8 +177,12 @@ impl PipelineAgent for Pipeline {
         let agent = self.pipeline_cfg.agent_for(&Stage::Strategist);
         let agent_cfg = PipelineConfig::agent_llm_config(agent);
 
-        if agent == "bacon" || agent == "nvidia" || agent_cfg.provider.as_deref() == Some("nvidia") || agent_cfg.provider.as_deref() == Some("ollama") {
-            let llm = self.llm_for_agent(agent)?;
+        if agent == "bacon"
+            || agent == "nvidia"
+            || agent_cfg.provider.as_deref() == Some("nvidia")
+            || agent_cfg.provider.as_deref() == Some("ollama")
+        {
+            let llm = Self::llm_for_agent(agent)?;
             super::strategist::run(&llm, &self.args, ctx).await
         } else {
             let mut next = run_external_agent(agent, "strategist", &ctx.description, self.dry_run)?;
@@ -178,8 +197,12 @@ impl PipelineAgent for Pipeline {
         let agent = self.pipeline_cfg.agent_for(&Stage::Coder);
         let agent_cfg = PipelineConfig::agent_llm_config(agent);
 
-        if agent == "bacon" || agent == "nvidia" || agent_cfg.provider.as_deref() == Some("nvidia") || agent_cfg.provider.as_deref() == Some("ollama") {
-            let llm = self.llm_for_agent(agent)?;
+        if agent == "bacon"
+            || agent == "nvidia"
+            || agent_cfg.provider.as_deref() == Some("nvidia")
+            || agent_cfg.provider.as_deref() == Some("ollama")
+        {
+            let llm = Self::llm_for_agent(agent)?;
             super::coder::run(&llm, &self.args, ctx).await
         } else {
             let mut next = run_external_agent(agent, "coder", &ctx.description, self.dry_run)?;
@@ -194,8 +217,12 @@ impl PipelineAgent for Pipeline {
         let agent = self.pipeline_cfg.agent_for(&Stage::Auditor);
         let agent_cfg = PipelineConfig::agent_llm_config(agent);
 
-        if agent == "bacon" || agent == "nvidia" || agent_cfg.provider.as_deref() == Some("nvidia") || agent_cfg.provider.as_deref() == Some("ollama") {
-            let llm = self.llm_for_agent(agent)?;
+        if agent == "bacon"
+            || agent == "nvidia"
+            || agent_cfg.provider.as_deref() == Some("nvidia")
+            || agent_cfg.provider.as_deref() == Some("ollama")
+        {
+            let llm = Self::llm_for_agent(agent)?;
             super::auditor::run(&llm, &self.args, ctx).await
         } else {
             let ctx = run_external_agent(agent, "auditor", &ctx.description, self.dry_run)?;

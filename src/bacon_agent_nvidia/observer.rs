@@ -48,19 +48,16 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         }
     }
 
-    let prompt = args
-        .prompt
-        .as_deref()
-        .unwrap_or("Scan codebase for improvements");
-
-    // Quick health check before the first LLM call
-    if !llm.health_check().await {
-        anyhow::bail!("LLM health check failed — check your provider settings (NVIDIA/Ollama/OpenRouter) and connectivity");
-    }
+    let prompt = args.prompt.as_deref().unwrap_or(
+        "Scan codebase for one grounded, low-risk maintenance improvement. \
+         Only propose work proven by the included source excerpts. \
+         Do not propose performance tuning, dependency changes, or rewrites. \
+         If no concrete issue is visible, respond exactly: No clear improvement found",
+    );
 
     info!("NVIDIA Observer calling API...");
     let context = crate::bacon_core::gather_project_context();
-    let enriched_prompt = format!("{}\n\n## Task\n\n{}", context, prompt);
+    let enriched_prompt = format!("{context}\n\n## Task\n\n{prompt}");
     let messages = vec![
         crate::llm::ChatMessage::system(system_prompt()),
         crate::llm::ChatMessage::user(enriched_prompt),

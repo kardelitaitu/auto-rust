@@ -46,6 +46,7 @@ pub enum Confidence {
 
 impl Confidence {
     /// Parse from a string slice. Case-insensitive.
+    #[must_use]
     pub fn from_string(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "high" => Some(Self::High),
@@ -56,6 +57,7 @@ impl Confidence {
     }
 
     /// Return a static string representation.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::High => "high",
@@ -66,6 +68,7 @@ impl Confidence {
 
     /// Return a numeric score (0.0–1.0) for metrics aggregation.
     /// High = 1.0, Medium = 0.5, Low = 0.0
+    #[must_use]
     pub fn to_score(&self) -> f64 {
         match self {
             Self::High => 1.0,
@@ -76,6 +79,7 @@ impl Confidence {
 }
 
 impl Stage {
+    #[must_use]
     pub fn from_name(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "observer" => Some(Self::Observer),
@@ -100,9 +104,11 @@ pub struct AgentLlmConfig {
     pub base_url: Option<String>,
     pub top_p: Option<f64>,
     pub max_tokens: Option<u64>,
+    pub timeout_ms: Option<u64>,
 }
 
 impl AgentLlmConfig {
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             provider: None,
@@ -113,6 +119,7 @@ impl AgentLlmConfig {
             base_url: None,
             top_p: None,
             max_tokens: None,
+            timeout_ms: None,
         }
     }
 }
@@ -135,13 +142,13 @@ impl WorkerOutput {
             status.as_str(),
             "error" | "fail" | "failed" | "reject" | "rejected"
         ) {
-            anyhow::bail!("worker returned terminal status: {}", status);
+            anyhow::bail!("worker returned terminal status: {status}");
         }
 
         let description = self
             .description
             .or(self.summary)
-            .unwrap_or_else(|| format!("Worker completed with status: {}", status));
+            .unwrap_or_else(|| format!("Worker completed with status: {status}"));
         let mut ctx = PipelineCtx::new(description).with_dry_run(dry_run);
 
         if let Some(spec_path) = self.spec_path {
@@ -191,12 +198,14 @@ impl Default for PipelineConfig {
 
 impl PipelineConfig {
     /// Read pipeline agent routing from `.bacon/bacon.toml`.
+    #[must_use]
     pub fn from_bacon_toml() -> Self {
         Self::from_bacon_toml_path(&manifest_dir().join(".bacon/bacon.toml"))
     }
 
     /// Read pipeline agent routing from a custom config path.
     /// Used by the default [`from_bacon_toml()`] and by integration tests.
+    #[must_use]
     pub fn from_bacon_toml_path(config_path: &Path) -> Self {
         if !config_path.exists() {
             warn!(
@@ -219,22 +228,20 @@ impl PipelineConfig {
         let table: toml::Value = match toml::from_str(&content) {
             Ok(t) => t,
             Err(e) => {
-                warn!("failed to parse bacon.toml: {} — using defaults", e);
+                warn!("failed to parse bacon.toml: {e} — using defaults");
                 return Self::default();
             }
         };
-        let pipeline = match table.get("pipeline") {
-            Some(v) => v,
-            None => {
-                warn!("bacon.toml missing [pipeline] section — using default agent routing");
-                return Self::default();
-            }
+        let pipeline = if let Some(v) = table.get("pipeline") {
+            v
+        } else {
+            warn!("bacon.toml missing [pipeline] section — using default agent routing");
+            return Self::default();
         };
         fn get(v: &toml::Value, key: &str) -> String {
             v.get(key)
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "bacon".to_string())
+                .map_or_else(|| "bacon".to_string(), std::string::ToString::to_string)
         }
         Self {
             observer: get(pipeline, "observer"),
@@ -243,17 +250,17 @@ impl PipelineConfig {
             auditor: get(pipeline, "auditor"),
             stage_delay_ms: pipeline
                 .get("stage_delay_ms")
-                .and_then(|v| v.as_integer())
-                .map(|v| v.max(0) as u64)
-                .unwrap_or(0),
+                .and_then(toml::Value::as_integer)
+                .map_or(0, |v| v.max(0) as u64),
             enable_auto_apply: get(pipeline, "enable_auto_apply").eq_ignore_ascii_case("true")
                 || pipeline
                     .get("enable_auto_apply")
-                    .and_then(|v| v.as_bool())
+                    .and_then(toml::Value::as_bool)
                     .unwrap_or(false),
         }
     }
 
+    #[must_use]
     pub fn agent_for(&self, stage: &Stage) -> &str {
         match stage {
             Stage::Observer => &self.observer,
@@ -264,80 +271,69 @@ impl PipelineConfig {
     }
 
     /// Read LLM config for a specific agent from `bacon.toml [agents.<name>]`.
+    #[must_use]
     pub fn agent_llm_config(agent: &str) -> AgentLlmConfig {
         let config_path = manifest_dir().join(".bacon/bacon.toml");
-        let content = match std::fs::read_to_string(&config_path) {
-            Ok(c) => c,
-            Err(_) => {
-                debug!(
-                    "bacon.toml not readable for agent '{}' config — returning empty",
-                    agent
-                );
-                return AgentLlmConfig::empty();
-            }
+        let content = if let Ok(c) = std::fs::read_to_string(&config_path) {
+            c
+        } else {
+            debug!("bacon.toml not readable for agent '{agent}' config — returning empty");
+            return AgentLlmConfig::empty();
         };
-        let table: toml::Value = match toml::from_str(&content) {
-            Ok(t) => t,
-            Err(_) => {
-                debug!(
-                    "bacon.toml parse error for agent '{}' config — returning empty",
-                    agent
-                );
-                return AgentLlmConfig::empty();
-            }
+        let table: toml::Value = if let Ok(t) = toml::from_str(&content) {
+            t
+        } else {
+            debug!("bacon.toml parse error for agent '{agent}' config — returning empty");
+            return AgentLlmConfig::empty();
         };
-        let agents = match table.get("agents") {
-            Some(v) => v,
-            None => {
-                debug!(
-                    "no [agents] section in bacon.toml for '{}' — returning empty",
-                    agent
-                );
-                return AgentLlmConfig::empty();
-            }
+        let agents = if let Some(v) = table.get("agents") {
+            v
+        } else {
+            debug!("no [agents] section in bacon.toml for '{agent}' — returning empty");
+            return AgentLlmConfig::empty();
         };
-        let agent_cfg = match agents.get(agent) {
-            Some(v) => v,
-            None => {
-                debug!(
-                    "no [agents.{}] config in bacon.toml — returning empty",
-                    agent
-                );
-                return AgentLlmConfig::empty();
-            }
+        let agent_cfg = if let Some(v) = agents.get(agent) {
+            v
+        } else {
+            debug!("no [agents.{agent}] config in bacon.toml — returning empty");
+            return AgentLlmConfig::empty();
         };
         AgentLlmConfig {
             provider: agent_cfg
                 .get("provider")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
             model: agent_cfg
                 .get("model")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            temperature: agent_cfg.get("temperature").and_then(|v| v.as_float()),
+                .map(std::string::ToString::to_string),
+            temperature: agent_cfg.get("temperature").and_then(toml::Value::as_float),
             command_args: agent_cfg
                 .get("command_args")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect()
                 }),
             api_key: agent_cfg
                 .get("api_key")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
             base_url: agent_cfg
                 .get("base_url")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            top_p: agent_cfg.get("top_p").and_then(|v| v.as_float()),
+                .map(std::string::ToString::to_string),
+            top_p: agent_cfg.get("top_p").and_then(toml::Value::as_float),
             max_tokens: agent_cfg
                 .get("max_tokens")
-                .and_then(|v| v.as_integer())
+                .and_then(toml::Value::as_integer)
                 .map(|v| v as u64),
+            timeout_ms: agent_cfg
+                .get("timeout_ms")
+                .and_then(toml::Value::as_integer)
+                .map(|v| v.max(0) as u64),
         }
     }
 }
@@ -368,6 +364,7 @@ pub struct PipelineCtx {
 }
 
 impl PipelineCtx {
+    #[must_use]
     pub fn new(description: String) -> Self {
         Self {
             description,
@@ -383,11 +380,13 @@ impl PipelineCtx {
         }
     }
 
+    #[must_use]
     pub fn with_dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
         self
     }
 
+    #[must_use]
     pub fn with_confidence(mut self, confidence: Option<Confidence>) -> Self {
         self.confidence = confidence;
         self
@@ -396,14 +395,14 @@ impl PipelineCtx {
     ///
     /// Use when the pipeline cannot proceed automatically (coder retries exhausted,
     /// auditor FAIL, refusal escalation). Automatically persists the
-    /// `"needs-human-approval"` status to `spec.yaml` when a spec_path is available.
+    /// `"needs-human-approval"` status to `spec.yaml` when a `spec_path` is available.
     pub fn set_needs_approval(&mut self) -> &mut Self {
         self.needs_human_approval = true;
         if let Some(ref spec_path) = self.spec_path {
             if let Ok(mut meta) = spec_io::read_spec_meta(spec_path) {
                 meta.status = "needs-human-approval".to_string();
                 if let Err(e) = spec_io::write_spec_meta(spec_path, &meta) {
-                    warn!("Failed to persist needs-human-approval to spec.yaml: {}", e);
+                    warn!("Failed to persist needs-human-approval to spec.yaml: {e}");
                 }
             }
         }
@@ -433,19 +432,19 @@ pub fn confirm(prompt: &str, default: bool) -> Result<bool> {
 pub fn log_agent_config(agent: &str) {
     let cfg = PipelineConfig::agent_llm_config(agent);
     if let Some(provider) = &cfg.provider {
-        info!("  Agent config: provider={}", provider);
+        info!("  Agent config: provider={provider}");
     }
     if let Some(model) = &cfg.model {
-        info!("  Agent config: model={}", model);
+        info!("  Agent config: model={model}");
     }
     if let Some(base_url) = &cfg.base_url {
-        info!("  Agent config: base_url={}", base_url);
+        info!("  Agent config: base_url={base_url}");
     }
     if let Some(temp) = cfg.temperature {
-        info!("  Agent config: temperature={}", temp);
+        info!("  Agent config: temperature={temp}");
     }
     if let Some(max_tokens) = cfg.max_tokens {
-        info!("  Agent config: max_tokens={}", max_tokens);
+        info!("  Agent config: max_tokens={max_tokens}");
     }
 }
 
@@ -462,8 +461,7 @@ pub fn validate_pipeline_config(pipeline: &PipelineConfig) {
         let cfg = PipelineConfig::agent_llm_config(agent);
         if cfg.provider.is_none() && cfg.command_args.is_none() {
             warn!(
-                "Pipeline stage {:?} uses agent '{}' which has no [agents.{}] config in bacon.toml",
-                stage, agent, agent
+                "Pipeline stage {stage:?} uses agent '{agent}' which has no [agents.{agent}] config in bacon.toml"
             );
         }
     }
@@ -511,9 +509,7 @@ pub fn validate_bacon_local_only() -> Result<()> {
                     || provider.eq_ignore_ascii_case("nvidia");
                 if !allowed {
                     anyhow::bail!(
-                        "Bacon agent '{}' uses unsupported provider '{}'; use ollama, cli, or nvidia",
-                        name,
-                        provider
+                        "Bacon agent '{name}' uses unsupported provider '{provider}'; use ollama, cli, or nvidia"
                     );
                 }
                 if name == "bacon" && !provider.eq_ignore_ascii_case("ollama") {
@@ -535,13 +531,13 @@ pub fn check_stale_in_progress() -> Result<()> {
     }
 
     let mut entries: Vec<_> = match std::fs::read_dir(&active_dir) {
-        Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
+        Ok(rd) => rd.filter_map(std::result::Result::ok).collect(),
         Err(e) => {
-            debug!("check_stale_in_progress: failed to read _active dir: {}", e);
+            debug!("check_stale_in_progress: failed to read _active dir: {e}");
             return Ok(());
         }
     };
-    entries.sort_by_key(|e| e.file_name());
+    entries.sort_by_key(std::fs::DirEntry::file_name);
 
     for entry in &entries {
         let spec_path = entry.path();
@@ -581,19 +577,15 @@ pub fn check_stale_in_progress() -> Result<()> {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            warn!("Stale in-progress spec found: {} ({})", title, name);
+            warn!("Stale in-progress spec found: {title} ({name})");
 
             // Auto-recovery: if the spec directory is older than 30 minutes,
             // reset status to "approved" so the pipeline can retry.
-            let metadata = match std::fs::metadata(&spec_path) {
-                Ok(m) => m,
-                Err(_) => {
-                    warn!(
-                        "  Cannot read metadata for {} — skipping auto-recovery",
-                        name
-                    );
-                    continue;
-                }
+            let metadata = if let Ok(m) = std::fs::metadata(&spec_path) {
+                m
+            } else {
+                warn!("  Cannot read metadata for {name} — skipping auto-recovery");
+                continue;
             };
             if let Ok(modified) = metadata.modified() {
                 if let Ok(elapsed) = modified.elapsed() {
@@ -630,10 +622,7 @@ pub fn check_stale_in_progress() -> Result<()> {
                         );
                     }
                 } else {
-                    warn!(
-                        "  Cannot determine age for {} — skipping auto-recovery",
-                        name
-                    );
+                    warn!("  Cannot determine age for {name} — skipping auto-recovery");
                 }
             }
         }
@@ -646,6 +635,7 @@ pub fn check_stale_in_progress() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Read the role prompt markdown for an external agent from `.bacon/roles/`.
+#[must_use]
 pub fn read_role_prompt(role: &str) -> String {
     let file = match role {
         "observer" => "01_bacon-observer.md",
@@ -673,6 +663,7 @@ fn is_safe_agent_name(name: &str) -> bool {
 
 /// Resolve an agent binary path. Checks cargo build output first, then PATH.
 /// Validates agent name safety before resolving unless the name is an explicit path.
+#[must_use]
 pub fn resolve_agent_binary(agent: &str, root: &Path) -> PathBuf {
     // If the agent name contains a path separator, treat it as an explicit path
     // and skip validation (e.g., "./fake-worker.sh", "/tmp/worker", "agent.exe").
@@ -681,9 +672,8 @@ pub fn resolve_agent_binary(agent: &str, root: &Path) -> PathBuf {
     }
     if !is_safe_agent_name(agent) {
         warn!(
-            "Unsafe agent name '{}' — only alphanumeric, hyphens, and underscores allowed. \
-             Falling back to 'bacon'.",
-            agent
+            "Unsafe agent name '{agent}' — only alphanumeric, hyphens, and underscores allowed. \
+             Falling back to 'bacon'."
         );
         return root.join("target").join("debug").join(if cfg!(windows) {
             "bacon.exe"
@@ -697,11 +687,11 @@ pub fn resolve_agent_binary(agent: &str, root: &Path) -> PathBuf {
     ];
     for candidate in &candidates {
         let with_ext = if cfg!(windows) {
-            let mut p = candidate.to_path_buf();
+            let mut p = candidate.clone();
             p.set_extension("exe");
             p
         } else {
-            candidate.to_path_buf()
+            candidate.clone()
         };
         if with_ext.exists() {
             return with_ext;
@@ -750,8 +740,7 @@ pub fn run_external_agent(
         prompt_raw
     } else {
         prompt_owned = format!(
-            "Follow these role instructions:\n\n{}\n\nHere is the task:\n\n{}",
-            role_prompt, prompt_raw
+            "Follow these role instructions:\n\n{role_prompt}\n\nHere is the task:\n\n{prompt_raw}"
         );
         &prompt_owned
     };
@@ -806,19 +795,19 @@ pub fn run_external_agent(
     if let Some(temp) = agent_cfg.temperature {
         if !args.iter().any(|a| a == "--temperature") {
             args.push("--temperature".to_string());
-            args.push(format!("{}", temp));
+            args.push(format!("{temp}"));
         }
     }
     if let Some(top_p) = agent_cfg.top_p {
         if !args.iter().any(|a| a == "--top-p") {
             args.push("--top-p".to_string());
-            args.push(format!("{}", top_p));
+            args.push(format!("{top_p}"));
         }
     }
     if let Some(max_tokens) = agent_cfg.max_tokens {
         if !args.iter().any(|a| a == "--max-tokens") {
             args.push("--max-tokens".to_string());
-            args.push(format!("{}", max_tokens));
+            args.push(format!("{max_tokens}"));
         }
     }
 
@@ -828,9 +817,9 @@ pub fn run_external_agent(
     } else {
         prompt.to_string()
     };
-    info!("Spawning external agent: {}", cmd_line);
+    info!("Spawning external agent: {cmd_line}");
     debug!("Agent binary path: {}", agent_path.display());
-    debug!("Agent prompt ({} role): {}", role, prompt_preview);
+    debug!("Agent prompt ({role} role): {prompt_preview}");
 
     let start = Instant::now();
     let child = std::process::Command::new(&agent_path)
@@ -871,10 +860,7 @@ pub fn run_external_agent(
     // Attempt to extract JSON from stdout — handles log-prefixed output
     let json_str = extract_json_object(&stdout).unwrap_or(&stdout);
     let worker: WorkerOutput = serde_json::from_str(json_str).with_context(|| {
-        format!(
-            "agent '{}' must print WorkerOutput JSON on stdout; got: {}",
-            agent, stdout
-        )
+        format!("agent '{agent}' must print WorkerOutput JSON on stdout; got: {stdout}")
     })?;
 
     worker.into_ctx(&root, dry_run)
@@ -884,12 +870,12 @@ pub fn run_external_agent(
 // PowerShell helpers
 // ---------------------------------------------------------------------------
 
-/// Run a PowerShell script with no additional arguments.
+/// Run a `PowerShell` script with no additional arguments.
 pub fn run_powershell(script: &str) -> Result<(bool, String)> {
     run_powershell_with_args(script, &[])
 }
 
-/// Run a PowerShell script with additional arguments.
+/// Run a `PowerShell` script with additional arguments.
 pub fn run_powershell_with_args(script: &str, args: &[&str]) -> Result<(bool, String)> {
     let root = manifest_dir();
     let shell = if cfg!(windows) { "powershell" } else { "pwsh" };
@@ -900,7 +886,7 @@ pub fn run_powershell_with_args(script: &str, args: &[&str]) -> Result<(bool, St
         "-File".to_string(),
         script.to_string(),
     ];
-    command_args.extend(args.iter().map(|arg| arg.to_string()));
+    command_args.extend(args.iter().map(std::string::ToString::to_string));
     let output = std::process::Command::new(shell)
         .args(command_args)
         .current_dir(&root)
@@ -910,7 +896,7 @@ pub fn run_powershell_with_args(script: &str, args: &[&str]) -> Result<(bool, St
     let combined = if stderr.is_empty() {
         stdout
     } else {
-        format!("{}\n{}", stdout, stderr)
+        format!("{stdout}\n{stderr}")
     };
     Ok((output.status.success(), combined))
 }
@@ -920,6 +906,7 @@ pub fn run_powershell_with_args(script: &str, args: &[&str]) -> Result<(bool, St
 // ---------------------------------------------------------------------------
 
 /// Determine whether a stage should run given an optional resume point.
+#[must_use]
 pub fn should_run(resume: &Option<Stage>, current: Stage) -> bool {
     match resume {
         None => true,
@@ -970,6 +957,7 @@ pub fn should_run(resume: &Option<Stage>, current: Stage) -> bool {
 /// This function is primarily used by the Observer stage to generate project context
 /// for LLM analysis. In tests, it can be used to verify that the project structure
 /// is correctly detected and reported.
+#[must_use]
 pub fn scan_project_structure() -> String {
     let root = manifest_dir();
     let mut parts = Vec::new();
@@ -979,7 +967,7 @@ pub fn scan_project_structure() -> String {
         if let Ok(entries) = std::fs::read_dir(&src) {
             let mut dirs = Vec::new();
             let mut files = 0;
-            for entry in entries.filter_map(|e| e.ok()) {
+            for entry in entries.filter_map(std::result::Result::ok) {
                 if entry.path().is_dir() {
                     dirs.push(entry.file_name().to_string_lossy().to_string());
                 } else if entry.path().extension().is_some_and(|x| x == "rs") {
@@ -1001,10 +989,10 @@ pub fn scan_project_structure() -> String {
     if bin.is_dir() {
         if let Ok(entries) = std::fs::read_dir(&bin) {
             let count = entries
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
                 .count();
-            parts.push(format!("Binaries: {} Rust files", count));
+            parts.push(format!("Binaries: {count} Rust files"));
         }
     }
 
@@ -1012,8 +1000,8 @@ pub fn scan_project_structure() -> String {
     let active_dir = root.join("docs/specs/_active");
     if active_dir.is_dir() {
         if let Ok(entries) = std::fs::read_dir(&active_dir) {
-            let count = entries.filter_map(|e| e.ok()).count();
-            parts.push(format!("Active specs: {} specs", count));
+            let count = entries.filter_map(std::result::Result::ok).count();
+            parts.push(format!("Active specs: {count} specs"));
         }
     } else {
         parts.push("Active specs: 0 specs".into());
@@ -1025,6 +1013,7 @@ pub fn scan_project_structure() -> String {
 /// Gather project context for LLM prompts: file tree + source file samples.
 /// This helps the Observer make grounded observations instead of hallucinating
 /// non-existent files or code structures.
+#[must_use]
 pub fn gather_project_context() -> String {
     let root = manifest_dir();
     let src = root.join("src");
@@ -1048,10 +1037,7 @@ pub fn gather_project_context() -> String {
             let line_count = content.lines().count();
             let truncated = if line_count > 40 {
                 let excerpt: String = content.lines().take(40).collect::<Vec<&str>>().join("\n");
-                format!(
-                    "{}\n\n_(... truncated after 40 of {} lines)_",
-                    excerpt, line_count
-                )
+                format!("{excerpt}\n\n_(... truncated after 40 of {line_count} lines)_")
             } else {
                 content
             };
@@ -1080,8 +1066,8 @@ fn build_file_tree(dir: &Path, output: &mut String, depth: usize, max_depth: usi
         return;
     }
     if let Ok(entries) = std::fs::read_dir(dir) {
-        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        entries.sort_by_key(|e| e.file_name());
+        let mut entries: Vec<_> = entries.filter_map(std::result::Result::ok).collect();
+        entries.sort_by_key(std::fs::DirEntry::file_name);
         for entry in entries {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
@@ -1104,7 +1090,7 @@ fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>, depth: usize) {
         return;
     }
     if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
+        for entry in entries.filter_map(std::result::Result::ok) {
             let path = entry.path();
             if path.is_dir() {
                 collect_rs_files(&path, files, depth - 1);
@@ -1129,6 +1115,8 @@ fn manifest_dir() -> PathBuf {
 /// Parses text (e.g., plan.md) for file paths like `src/runtime/shutdown.rs`, validates
 /// they exist on disk, reads their contents, and returns a formatted markdown section.
 /// This lets the LLM work from actual on-disk code rather than hallucinating file contents.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: usize) -> String {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut seen: HashSet<String> = HashSet::new();
@@ -1136,7 +1124,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     let normalized_text = text.replace('\\', "/");
 
     // Match paths starting from project root directories (src/, tests/, docs/, config/, .bacon/)
-    let path_re = Regex::new(r#"\b(?:src|tests|docs|config|scripts|\.bacon)/[\w./-]+\.(?:rs|toml|md|json|ps1|sh|yaml|yml)\b"#)
+    let path_re = Regex::new(r"\b(?:src|tests|docs|config|scripts|\.bacon)/[\w./-]+\.(?:rs|toml|md|json|ps1|sh|yaml|yml)\b")
         .expect("static path regex for collect_source_context");
 
     for m in path_re.find_iter(&normalized_text) {
@@ -1150,8 +1138,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
                     let kb = meta.len() as f64 / 1024.0;
                     let estimated = meta.len() / 80;
                     contents.push(format!(
-                        "### `{}` (~{} lines, {:.1}KB — skipped at threshold)\n```\n_(file skipped at limit)_\n```",
-                        path_str, estimated, kb
+                        "### `{path_str}` (~{estimated} lines, {kb:.1}KB — skipped at threshold)\n```\n_(file skipped at limit)_\n```"
                     ));
                     if contents.len() >= max_files {
                         break;
@@ -1168,15 +1155,13 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
                         .collect::<Vec<&str>>()
                         .join("\n");
                     format!(
-                        "{}\n\n_(... truncated after {} of {} lines)_",
-                        excerpt, max_lines_per_file, line_count
+                        "{excerpt}\n\n_(... truncated after {max_lines_per_file} of {line_count} lines)_"
                     )
                 } else {
                     content
                 };
                 contents.push(format!(
-                    "### `{}` ({} lines)\n```\n{}\n```",
-                    path_str, line_count, truncated
+                    "### `{path_str}` ({line_count} lines)\n```\n{truncated}\n```"
                 ));
                 if contents.len() >= max_files {
                     break;
@@ -1186,7 +1171,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     }
 
     // Also match root-level files like Cargo.toml, build.rs, bacon.toml
-    let root_re = Regex::new(r#"\b(?:Cargo\.toml|build\.rs|bacon\.toml|rust-toolchain\.toml|spec-lint\.ps1|check-fast\.ps1|check\.ps1)\b"#)
+    let root_re = Regex::new(r"\b(?:Cargo\.toml|build\.rs|bacon\.toml|rust-toolchain\.toml|spec-lint\.ps1|check-fast\.ps1|check\.ps1)\b")
         .expect("static root-file regex for collect_source_context");
     for m in root_re.find_iter(&normalized_text) {
         if contents.len() >= max_files {
@@ -1207,15 +1192,13 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
                         .collect::<Vec<&str>>()
                         .join("\n");
                     format!(
-                        "{}\n\n_(... truncated after {} of {} lines)_",
-                        excerpt, max_lines_per_file, line_count
+                        "{excerpt}\n\n_(... truncated after {max_lines_per_file} of {line_count} lines)_"
                     )
                 } else {
                     content
                 };
                 contents.push(format!(
-                    "### `{}` ({} lines)\n```\n{}\n```",
-                    path_str, line_count, truncated
+                    "### `{path_str}` ({line_count} lines)\n```\n{truncated}\n```"
                 ));
             }
         }
@@ -1230,6 +1213,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
 
 /// Extract `Confidence: High/Medium/Low` from an LLM response string.
 /// Handles markdown formatting like `**Confidence: High**` or `*Confidence: Low*`.
+#[must_use]
 pub fn extract_confidence(response: &str) -> Option<Confidence> {
     for line in response.lines() {
         let trimmed = line.trim();
@@ -1319,6 +1303,7 @@ fn is_repo_file_ref(path: &str) -> bool {
             && PATH_SUFFIXES.iter().any(|suffix| path.ends_with(suffix)))
 }
 
+#[must_use]
 pub fn extract_repo_file_refs(text: &str) -> Vec<String> {
     let mut refs = Vec::new();
     let mut seen = HashSet::new();
@@ -1338,6 +1323,7 @@ pub fn extract_repo_file_refs(text: &str) -> Vec<String> {
 
 /// Count unique repo-relative file paths referenced in a spec plan text.
 /// Used to enforce the "max 3 files" scope constraint at the Strategist gate.
+#[must_use]
 pub fn count_spec_file_refs(text: &str) -> usize {
     extract_repo_file_refs(text).len()
 }
@@ -1348,6 +1334,8 @@ pub fn count_spec_file_refs(text: &str) -> usize {
 ///
 /// This is called before the Coder stage to catch hallucinations where the
 /// Strategist references files that don't exist.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn validate_spec_file_refs(spec_dir: &Path) -> Vec<String> {
     let root = manifest_dir();
     let plan_path = spec_dir.join("plan.md");
@@ -1368,12 +1356,14 @@ pub fn validate_spec_file_refs(spec_dir: &Path) -> Vec<String> {
 }
 
 /// Check if an LLM response contains a refusal phrase (case-insensitive).
+#[must_use]
 pub fn is_refusal(response: &str) -> bool {
     let lower = response.to_lowercase();
     REFUSAL_PHRASES.iter().any(|p| lower.contains(p))
 }
 
 /// Extract the title from the first `# Title` or `## Title` line.
+#[must_use]
 pub fn extract_title(text: &str) -> String {
     for line in text.lines() {
         let trimmed = line.trim();
@@ -1386,11 +1376,11 @@ pub fn extract_title(text: &str) -> String {
     }
     text.lines()
         .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim().to_string())
-        .unwrap_or_else(|| "Untitled".to_string())
+        .map_or_else(|| "Untitled".to_string(), |l| l.trim().to_string())
 }
 
 /// Slugify a title string for use in directory names (lowercase, 40 char max).
+#[must_use]
 pub fn slugify(text: &str) -> String {
     text.to_lowercase()
         .chars()
@@ -1414,6 +1404,7 @@ pub fn slugify(text: &str) -> String {
 /// Looks for a line starting with `##` that contains one of the given headers
 /// (case-insensitive), then captures everything until the next `##` section.
 /// If no match is found, returns `fallback`.
+#[must_use]
 pub fn extract_section(plan: &str, headers: &[&str], fallback: &str) -> String {
     let pattern = headers
         .iter()
@@ -1435,19 +1426,13 @@ pub fn extract_section(plan: &str, headers: &[&str], fallback: &str) -> String {
         };
         let result = plan[start..end].to_string();
         if result.trim().is_empty() {
-            warn!(
-                "extract_section: empty section for headers {:?} — using fallback",
-                headers
-            );
+            warn!("extract_section: empty section for headers {headers:?} — using fallback");
             fallback.to_string()
         } else {
             result
         }
     } else {
-        warn!(
-            "extract_section: no match for headers {:?} in plan — using fallback",
-            headers
-        );
+        warn!("extract_section: no match for headers {headers:?} in plan — using fallback");
         fallback.to_string()
     }
 }

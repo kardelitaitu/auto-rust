@@ -200,7 +200,7 @@ impl PipelineConfig {
     /// Read pipeline agent routing from `.bacon/bacon.toml`.
     #[must_use]
     pub fn from_bacon_toml() -> Self {
-        Self::from_bacon_toml_path(&manifest_dir().join(".bacon/bacon.toml"))
+        Self::from_bacon_toml_path(&bacon_config_path())
     }
 
     /// Read pipeline agent routing from a custom config path.
@@ -273,7 +273,7 @@ impl PipelineConfig {
     /// Read LLM config for a specific agent from `bacon.toml [agents.<name>]`.
     #[must_use]
     pub fn agent_llm_config(agent: &str) -> AgentLlmConfig {
-        let config_path = manifest_dir().join(".bacon/bacon.toml");
+        let config_path = bacon_config_path();
         let content = if let Ok(c) = std::fs::read_to_string(&config_path) {
             c
         } else {
@@ -470,7 +470,7 @@ pub fn validate_pipeline_config(pipeline: &PipelineConfig) {
 /// Validate that Bacon is running with a local-only LLM provider.
 pub fn validate_bacon_local_only() -> Result<()> {
     let root = manifest_dir();
-    let bacon_config = root.join(".bacon/bacon.toml");
+    let bacon_config = bacon_config_path();
     let llm_config = root.join("config/llm.toml");
 
     if let Ok(provider) = std::env::var("LLM_PROVIDER") {
@@ -1108,6 +1108,13 @@ fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>, depth: usize) {
 /// Get `CARGO_MANIFEST_DIR` at runtime.
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Resolve Bacon pipeline config, allowing integration tests to isolate routing.
+fn bacon_config_path() -> PathBuf {
+    std::env::var_os("BACON_CONFIG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir().join(".bacon/bacon.toml"))
 }
 
 /// Find and read actual source files referenced in spec text for inclusion in LLM prompts.

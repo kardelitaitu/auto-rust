@@ -1,15 +1,15 @@
 //! DSL parser module.
 //!
 //! Provides functions for parsing and validating DSL task files.
-//! - `parse_task_file` - Parse a YAML task file into a TaskDefinition
-//! - `validate_task_definition` - Validate a TaskDefinition for correctness
+//! - `parse_task_file` - Parse a YAML task file into a `TaskDefinition`
+//! - `validate_task_definition` - Validate a `TaskDefinition` for correctness
 
 use crate::task::dsl::{Action, TaskDefinition};
 use serde_yml;
 use std::path::Path;
 use toml;
 
-/// Parse a DSL task file into a TaskDefinition.
+/// Parse a DSL task file into a `TaskDefinition`.
 ///
 /// # Arguments
 /// * `path` - Path to the YAML task file
@@ -20,8 +20,7 @@ use toml;
 pub fn parse_task_file<P: AsRef<Path>>(path: P) -> Result<TaskDefinition, String> {
     let path = path.as_ref();
 
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
 
     // Try YAML first
     match serde_yml::from_str::<TaskDefinition>(&content) {
@@ -33,8 +32,7 @@ pub fn parse_task_file<P: AsRef<Path>>(path: P) -> Result<TaskDefinition, String
                 Err(toml_err) => {
                     // Both failed, return YAML error as primary
                     Err(format!(
-                        "Failed to parse YAML: {}, TOML error: {}",
-                        yaml_err, toml_err
+                        "Failed to parse YAML: {yaml_err}, TOML error: {toml_err}"
                     ))
                 }
             }
@@ -53,19 +51,20 @@ pub fn parse_task_file<P: AsRef<Path>>(path: P) -> Result<TaskDefinition, String
 /// # Returns
 /// * `Some(TaskDefinition)` if found (cloned)
 /// * `None` if not found
+#[must_use]
 pub fn get_task_definition(name: &str) -> Option<TaskDefinition> {
     let registry = crate::task::registry::TaskRegistry::with_built_in_tasks();
     registry.get_task_definition(name).cloned()
 }
 
-/// Validate a TaskDefinition for correctness.
+/// Validate a `TaskDefinition` for correctness.
 ///
 /// Checks:
 /// - Task name is not empty
 /// - Actions are valid (if any)
 ///
 /// # Arguments
-/// * `task_def` - The TaskDefinition to validate
+/// * `task_def` - The `TaskDefinition` to validate
 ///
 /// # Returns
 /// * `Ok(())` if validation passes
@@ -189,7 +188,7 @@ pub fn validate_task_definition(task_def: &TaskDefinition) -> Result<(), Vec<Str
     }
 }
 
-/// Parse a YAML string into a TaskDefinition.
+/// Parse a YAML string into a `TaskDefinition`.
 ///
 /// # Arguments
 /// * `yaml` - YAML string to parse
@@ -198,10 +197,10 @@ pub fn validate_task_definition(task_def: &TaskDefinition) -> Result<(), Vec<Str
 /// * `Ok(TaskDefinition)` if parsing succeeds
 /// * `Err(String)` with error message if parsing fails
 pub fn parse_task_yaml(yaml: &str) -> Result<TaskDefinition, String> {
-    serde_yml::from_str(yaml).map_err(|e| format!("Failed to parse YAML: {}", e))
+    serde_yml::from_str(yaml).map_err(|e| format!("Failed to parse YAML: {e}"))
 }
 
-/// Parse a TOML string into a TaskDefinition.
+/// Parse a TOML string into a `TaskDefinition`.
 ///
 /// # Arguments
 /// * `toml_str` - TOML string to parse
@@ -210,16 +209,17 @@ pub fn parse_task_yaml(yaml: &str) -> Result<TaskDefinition, String> {
 /// * `Ok(TaskDefinition)` if parsing succeeds
 /// * `Err(String)` with error message if parsing fails
 pub fn parse_task_toml(toml_str: &str) -> Result<TaskDefinition, String> {
-    toml::from_str(toml_str).map_err(|e| format!("Failed to parse TOML: {}", e))
+    toml::from_str(toml_str).map_err(|e| format!("Failed to parse TOML: {e}"))
 }
 
-/// Format a TaskDefinition into a human-readable string.
+/// Format a `TaskDefinition` into a human-readable string.
 ///
 /// # Arguments
-/// * `task_def` - The TaskDefinition to format
+/// * `task_def` - The `TaskDefinition` to format
 ///
 /// # Returns
 /// * Formatted string with task details
+#[must_use]
 pub fn format_task_definition(task_def: &TaskDefinition) -> String {
     let mut output = String::new();
     output.push_str(&format!("Task: {}\n", task_def.name));
@@ -229,7 +229,7 @@ pub fn format_task_definition(task_def: &TaskDefinition) -> String {
     output.push_str(&format!("Actions: {}\n", task_def.actions.len()));
 
     for (idx, action) in task_def.actions.iter().enumerate() {
-        let formatted = format!("{:?}", action);
+        let formatted = format!("{action:?}");
         let action_type = formatted.split('(').next().unwrap_or("Unknown");
         output.push_str(&format!("  {}: {}\n", idx + 1, action_type));
     }

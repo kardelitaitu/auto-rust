@@ -20,14 +20,15 @@ pub struct TaskPayload {
 }
 
 impl TaskPayload {
-    /// Creates a new TaskPayload with the given name and JSON payload.
+    /// Creates a new `TaskPayload` with the given name and JSON payload.
     ///
     /// # Arguments
     /// * `name` - Name of the task (must match a known task type)
     /// * `payload` - JSON parameters for the task
     ///
     /// # Returns
-    /// A new TaskPayload instance ready for validation
+    /// A new `TaskPayload` instance ready for validation
+    #[must_use]
     pub fn new(name: String, payload: Value) -> Self {
         Self { name, payload }
     }
@@ -41,6 +42,7 @@ impl TaskPayload {
     /// # Details
     /// For unknown task types, logs an informational message and returns Ok
     /// (allowing execution to proceed but noting the lack of validation).
+    #[allow(clippy::cast_precision_loss)]
     pub fn validate(&self) -> Result<()> {
         match self.name.as_str() {
             "cookiebot" => self.validate_cookiebot(),
@@ -102,20 +104,17 @@ impl TaskPayload {
             .payload
             .get("username")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_url = self
             .payload
             .get("url")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_value = self
             .payload
             .get("value")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
 
         if !(has_username || has_url || has_value) {
             return Err(OrchestratorError::Task(TaskError::ValidationFailed {
@@ -139,20 +138,17 @@ impl TaskPayload {
             .payload
             .get("url")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_value = self
             .payload
             .get("value")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_quote_text = self
             .payload
             .get("quote_text")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
 
         if !(has_url || has_value) {
             return Err(OrchestratorError::Task(TaskError::ValidationFailed {
@@ -186,14 +182,12 @@ impl TaskPayload {
             .payload
             .get("url")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_value = self
             .payload
             .get("value")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
 
         if !(has_url || has_value) {
             return Err(OrchestratorError::Task(TaskError::ValidationFailed {
@@ -254,6 +248,7 @@ pub struct TaskValidationInfo {
 ///
 /// # Returns
 /// Option containing validation info if the task is known
+#[must_use]
 pub fn get_task_validation_info(task_name: &str) -> Option<TaskValidationInfo> {
     match task_name {
         "cookiebot" => Some(TaskValidationInfo {

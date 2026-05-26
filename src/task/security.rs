@@ -44,8 +44,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
         || (relative_path.len() > 1 && relative_path.as_bytes()[1] == b':')
     {
         return Err(crate::error::TaskError::InvalidPath(format!(
-            "Absolute paths not allowed: {}",
-            relative_path
+            "Absolute paths not allowed: {relative_path}"
         ))
         .into());
     }
@@ -58,8 +57,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
     for component in &components {
         if *component == ".." {
             return Err(crate::error::TaskError::InvalidPath(format!(
-                "Directory traversal not allowed: {}",
-                relative_path
+                "Directory traversal not allowed: {relative_path}"
             ))
             .into());
         }
@@ -84,8 +82,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
                 Ok(p) => p,
                 Err(e) => {
                     return Err(crate::error::TaskError::InvalidPath(format!(
-                        "Failed to resolve path: {}",
-                        e
+                        "Failed to resolve path: {e}"
                     ))
                     .into());
                 }
@@ -93,8 +90,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
 
             if !canonical_path.starts_with(&canonical_base) {
                 return Err(crate::error::TaskError::InvalidPath(format!(
-                    "Path escapes allowed directory: {}",
-                    relative_path
+                    "Path escapes allowed directory: {relative_path}"
                 ))
                 .into());
             }
@@ -112,6 +108,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
 /// Check if a path string contains directory traversal patterns.
 ///
 /// This is a lightweight check that doesn't require file system access.
+#[must_use]
 pub fn contains_traversal(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     normalized.split('/').any(|c| c == "..")
@@ -121,6 +118,7 @@ pub fn contains_traversal(path: &str) -> bool {
 ///
 /// This performs only syntactic checks (no traversal, not absolute).
 /// Useful for write operations where the file doesn't exist yet.
+#[must_use]
 pub fn is_safe_path(relative_path: &str) -> bool {
     if relative_path.is_empty() {
         return false;

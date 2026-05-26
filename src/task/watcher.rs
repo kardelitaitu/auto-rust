@@ -66,7 +66,7 @@ impl TaskWatcher {
     /// * `registry` - The task registry to update when files change
     ///
     /// # Returns
-    /// A new TaskWatcher instance
+    /// A new `TaskWatcher` instance
     pub fn new(registry: Arc<Mutex<TaskRegistry>>) -> Self {
         Self {
             registry,
@@ -104,10 +104,10 @@ impl TaskWatcher {
         let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| match res {
             Ok(event) => {
                 if let Err(e) = Self::handle_notify_event(&event, &watcher_tx) {
-                    log::debug!("Failed to handle notify event: {}", e);
+                    log::debug!("Failed to handle notify event: {e}");
                 }
             }
-            Err(e) => log::warn!("File watcher error: {}", e),
+            Err(e) => log::warn!("File watcher error: {e}"),
         })
         .context("Failed to create file watcher")?;
 
@@ -121,7 +121,7 @@ impl TaskWatcher {
             while let Some(event) = rx.recv().await {
                 match event {
                     FileEvent::Created(path) | FileEvent::Modified(path) => {
-                        log::info!("Task file changed: {}", path);
+                        log::info!("Task file changed: {path}");
                         let mut reg = registry.lock();
                         // Reload the specific task
                         if let Some(name) = std::path::Path::new(&path)
@@ -129,12 +129,12 @@ impl TaskWatcher {
                             .and_then(|s| s.to_str())
                         {
                             if let Err(e) = Self::reload_task(&mut reg, name, &path, &config) {
-                                log::warn!("Failed to reload task '{}': {}", name, e);
+                                log::warn!("Failed to reload task '{name}': {e}");
                             }
                         }
                     }
                     FileEvent::Deleted(path) => {
-                        log::info!("Task file deleted: {}", path);
+                        log::info!("Task file deleted: {path}");
                         // Remove from registry
                         let mut reg = registry.lock();
                         if let Some(name) = std::path::Path::new(&path)
@@ -145,7 +145,7 @@ impl TaskWatcher {
                         }
                     }
                     FileEvent::Renamed(old, new) => {
-                        log::info!("Task file renamed: {} -> {}", old, new);
+                        log::info!("Task file renamed: {old} -> {new}");
                         let mut reg = registry.lock();
                         // Remove old, add new
                         if let Some(old_name) = std::path::Path::new(&old)
@@ -159,7 +159,7 @@ impl TaskWatcher {
                             .and_then(|s| s.to_str())
                         {
                             if let Err(e) = Self::reload_task(&mut reg, new_name, &new, &config) {
-                                log::warn!("Failed to reload task '{}': {}", new_name, e);
+                                log::warn!("Failed to reload task '{new_name}': {e}");
                             }
                         }
                     }
@@ -184,7 +184,7 @@ impl TaskWatcher {
         }
     }
 
-    /// Handle a notify event and convert to FileEvent.
+    /// Handle a notify event and convert to `FileEvent`.
     fn handle_notify_event(event: &Event, tx: &mpsc::Sender<FileEvent>) -> Result<()> {
         use notify::EventKind;
 
@@ -193,8 +193,7 @@ impl TaskWatcher {
             .iter()
             .filter(|p| {
                 p.extension()
-                    .map(|e| e == "task" || e == "yaml" || e == "yml" || e == "toml")
-                    .unwrap_or(false)
+                    .is_some_and(|e| e == "task" || e == "yaml" || e == "yml" || e == "toml")
             })
             .map(|p| p.to_string_lossy().to_string())
             .collect();
@@ -248,11 +247,7 @@ impl TaskWatcher {
             Ok(mut task_def) => {
                 // Validate
                 if let Err(errors) = crate::task::dsl::validate_task_definition(&task_def) {
-                    log::warn!(
-                        "Reloaded task '{}' has validation errors: {:?}",
-                        name,
-                        errors
-                    );
+                    log::warn!("Reloaded task '{name}' has validation errors: {errors:?}");
                 }
 
                 if task_def.name != name {
@@ -277,7 +272,7 @@ impl TaskWatcher {
                 log::info!("Reloaded task '{}' from {}", name, path.display());
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("Failed to parse task file: {}", e));
+                return Err(anyhow::anyhow!("Failed to parse task file: {e}"));
             }
         }
 

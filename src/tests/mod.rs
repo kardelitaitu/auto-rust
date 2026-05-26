@@ -4,6 +4,14 @@ mod page_manager_policy_tests;
 mod result_tests;
 mod task_registry_policy_tests;
 
+/// TDD helpers for twitteractivity tests.
+/// Accessible from unit tests as `crate::tests::twitter_helpers::*`
+/// and from integration tests as `auto::tests::twitter_helpers::*`.
+/// TDD helpers for twitteractivity tests.
+/// Accessible from unit tests as `crate::tests::twitter_helpers::*`
+/// and from integration tests as `auto::tests::twitter_helpers::*`.
+pub mod twitter_helpers;
+
 #[cfg(test)]
 mod config_tests {
     use crate::config::{

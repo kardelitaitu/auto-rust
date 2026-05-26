@@ -19,7 +19,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
         .map_err(|_| {
             OrchestratorError::Task(TaskError::ExecutionFailed {
                 task_name: "cookiebot".to_string(),
-                reason: format!("Task exceeded duration budget of {}ms", duration_ms),
+                reason: format!("Task exceeded duration budget of {duration_ms}ms"),
             })
         })?
 }
@@ -56,7 +56,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
         // Step 1: Navigate to URL (max 15s)
         if let Err(e) = api.navigate(url, 15000).await {
-            warn!("Failed to navigate to {}: {}", url, e);
+            warn!("Failed to navigate to {url}: {e}");
             continue;
         }
 
@@ -65,10 +65,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         let remaining_time = 20000u64.saturating_sub(elapsed_ms);
 
         if let Err(e) = api.wait_for_load(remaining_time).await {
-            warn!(
-                "Page load timeout after {}ms for {}: {}",
-                remaining_time, url, e
-            );
+            warn!("Page load timeout after {remaining_time}ms for {url}: {e}");
             // Continue anyway - page might be partially loaded
         }
         let nav_duration = nav_start.elapsed();
@@ -83,7 +80,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         // Phase 2: Browsing behavior with timing
         let browse_start = Instant::now();
         if let Err(e) = perform_browsing_behavior(api).await {
-            error!("Browsing behavior error: {}", e);
+            error!("Browsing behavior error: {e}");
         }
         let browse_duration = browse_start.elapsed();
 
@@ -127,7 +124,7 @@ pub fn read_cookiebot_urls(data_file: &str) -> Result<Vec<String>> {
     let content = fs::read_to_string(data_file).map_err(|e| {
         OrchestratorError::Task(TaskError::ExecutionFailed {
             task_name: "cookiebot".to_string(),
-            reason: format!("Failed to read {}: {e}", data_file),
+            reason: format!("Failed to read {data_file}: {e}"),
         })
     })?;
 

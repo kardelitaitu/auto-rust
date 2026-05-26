@@ -5,7 +5,7 @@
 
 use chromiumoxide::error::CdpError;
 
-/// Map a CDP error to a consistent TaskError.
+/// Map a CDP error to a consistent `TaskError`.
 ///
 /// Provides consistent error formatting and classification for CDP operations.
 ///
@@ -31,7 +31,7 @@ pub fn map_cdp_error(operation: &str, error: CdpError) -> crate::error::TaskErro
     let reason = match &error {
         CdpError::NotFound => "Page or target not found".to_string(),
         CdpError::Timeout => "Operation timed out".to_string(),
-        _ => format!("CDP operation failed: {}", error),
+        _ => format!("CDP operation failed: {error}"),
     };
 
     crate::error::TaskError::CdpError {
@@ -40,7 +40,7 @@ pub fn map_cdp_error(operation: &str, error: CdpError) -> crate::error::TaskErro
     }
 }
 
-/// Extension trait for Result<T, CdpError> to easily map errors.
+/// Extension trait for Result<T, `CdpError`> to easily map errors.
 ///
 /// This trait allows chaining error mapping directly on CDP operation results.
 ///
@@ -52,7 +52,7 @@ pub fn map_cdp_error(operation: &str, error: CdpError) -> crate::error::TaskErro
 /// let result = page.execute(params).await.map_cdp_err("Network.getCookies");
 /// ```
 pub trait CdpResultExt<T> {
-    /// Map a CDP error to a TaskError with the given operation name.
+    /// Map a CDP error to a `TaskError` with the given operation name.
     fn map_cdp_err(self, operation: &str) -> Result<T, crate::error::TaskError>;
 }
 
@@ -74,7 +74,7 @@ impl<T> CdpResultExt<T> for Result<T, CdpError> {
 /// let result = page.find_element("#btn").await.ok_or_cdp_err("Page.find_element")?;
 /// ```
 pub trait CdpOptionExt<T> {
-    /// Convert None to a CdpError with the given operation name.
+    /// Convert None to a `CdpError` with the given operation name.
     fn ok_or_cdp_err(self, operation: &str) -> Result<T, crate::error::TaskError>;
 }
 

@@ -22,10 +22,7 @@ pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
         .await
         .map_err(|_| {
-            anyhow::anyhow!(
-                "[twittertest] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
+            anyhow::anyhow!("[twittertest] Task exceeded duration budget of {duration_ms}ms")
         })?
 }
 
@@ -34,8 +31,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tests = extract_tests_from_payload(&payload);
 
     info!("[twittertest] === Twitter Comprehensive Test Suite ===");
-    info!("[twittertest] Target: {}", tweet_url);
-    info!("[twittertest] Tests to run: {:?}", tests);
+    info!("[twittertest] Target: {tweet_url}");
+    info!("[twittertest] Tests to run: {tests:?}");
 
     let mut results = TestResults::new();
 
@@ -60,14 +57,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             "reply" => test_reply(api, &mut results).await,
             "dive" => test_dive(api, &mut results).await,
             _ => {
-                warn!("[twittertest] Unknown test: {}", test);
+                warn!("[twittertest] Unknown test: {test}");
             }
         }
 
         // Return to home between tests
         info!("[twittertest] Returning to home...");
         if let Err(e) = goto_home(api).await {
-            warn!("[twittertest] Failed to return to home: {}", e);
+            warn!("[twittertest] Failed to return to home: {e}");
         }
         api.pause(2000).await;
     }
@@ -116,7 +113,11 @@ async fn test_like(api: &TaskContext, results: &mut TestResults) {
 
     match api.page().evaluate(like_js.to_string()).await {
         Ok(result) => {
-            if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+            if result
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 info!("[twittertest] LIKE: Button clicked");
                 results.pass("like", "Button clicked successfully");
             } else {
@@ -145,7 +146,11 @@ async fn test_retweet(api: &TaskContext, results: &mut TestResults) {
 
     match api.page().evaluate(rt_js.to_string()).await {
         Ok(result) => {
-            if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+            if result
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 info!("[twittertest] RETWEET: Menu opened");
                 api.pause(1000).await;
 
@@ -164,7 +169,7 @@ async fn test_retweet(api: &TaskContext, results: &mut TestResults) {
                     Ok(confirm_result) => {
                         if confirm_result
                             .value()
-                            .and_then(|v| v.as_bool())
+                            .and_then(serde_json::Value::as_bool)
                             .unwrap_or(false)
                         {
                             results.pass("retweet", "Retweet menu opened, confirm available");
@@ -172,7 +177,7 @@ async fn test_retweet(api: &TaskContext, results: &mut TestResults) {
                             results.fail("retweet", "Confirm button not found");
                         }
                     }
-                    Err(e) => results.fail("retweet", &format!("Confirm check failed: {}", e)),
+                    Err(e) => results.fail("retweet", &format!("Confirm check failed: {e}")),
                 }
             } else {
                 results.fail("retweet", "Retweet button not found");
@@ -186,7 +191,7 @@ async fn test_quote(api: &TaskContext, results: &mut TestResults) {
     info!("[twittertest] Running QUOTE test...");
 
     // Same as retweet but checks for quote capability
-    let quote_js = r#"
+    let quote_js = r"
         (function() {
             var buttons = document.querySelectorAll('button[data-testid]');
             for (var i = 0; i < buttons.length; i++) {
@@ -198,11 +203,15 @@ async fn test_quote(api: &TaskContext, results: &mut TestResults) {
             }
             return false;
         })()
-    "#;
+    ";
 
     match api.page().evaluate(quote_js.to_string()).await {
         Ok(result) => {
-            if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+            if result
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 results.pass("quote", "Quote button available");
             } else {
                 results.fail("quote", "Quote button not found");
@@ -231,7 +240,11 @@ async fn test_follow(api: &TaskContext, results: &mut TestResults) {
 
     match api.page().evaluate(follow_js.to_string()).await {
         Ok(result) => {
-            if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+            if result
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 results.pass("follow", "Follow button found");
             } else {
                 results.fail("follow", "Follow button not found");
@@ -256,7 +269,11 @@ async fn test_reply(api: &TaskContext, results: &mut TestResults) {
 
     match api.page().evaluate(reply_js.to_string()).await {
         Ok(result) => {
-            if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+            if result
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 results.pass("reply", "Reply button found");
             } else {
                 results.fail("reply", "Reply button not found");
@@ -279,7 +296,11 @@ async fn test_dive(api: &TaskContext, results: &mut TestResults) {
 
     match api.page().evaluate(dive_js.to_string()).await {
         Ok(result) => {
-            if result.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+            if result
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 results.pass("dive", "Thread/replies detected");
             } else {
                 results.fail("dive", "No thread/replies found");
@@ -371,7 +392,7 @@ fn extract_tests_from_payload(payload: &Value) -> Vec<String> {
         if let Some(tests_array) = tests_value.as_array() {
             return tests_array
                 .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                 .collect();
         }
     }

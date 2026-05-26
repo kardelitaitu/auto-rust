@@ -1,7 +1,7 @@
 //! Control flow action handlers for DSL execution.
 //!
 //! Handles conditional execution, loops, and parallel execution
-//! for DSL tasks. These are methods on DslExecutor.
+//! for DSL tasks. These are methods on `DslExecutor`.
 
 use crate::task::dsl::{Action, Condition};
 use anyhow::Result;
@@ -58,6 +58,7 @@ impl RetryConfig {
 
 impl super::DslExecutor<'_> {
     /// Execute an If/Else action.
+    #[allow(clippy::cast_precision_loss)]
     pub(super) async fn execute_if(
         &mut self,
         condition: &Condition,
@@ -97,7 +98,7 @@ impl super::DslExecutor<'_> {
                 i += 1;
             }
             if i >= max_iterations {
-                log::warn!("Loop reached max iterations ({}), breaking", max_iterations);
+                log::warn!("Loop reached max iterations ({max_iterations}), breaking");
             }
             0 // Already executed in the loop above
         } else {
@@ -153,10 +154,7 @@ impl super::DslExecutor<'_> {
                         vec![var_value.clone()]
                     }
                 } else {
-                    log::warn!(
-                        "Foreach variable '{}' not found, using empty collection",
-                        name
-                    );
+                    log::warn!("Foreach variable '{name}' not found, using empty collection");
                     vec![]
                 }
             }
@@ -188,7 +186,7 @@ impl super::DslExecutor<'_> {
             }
         }
 
-        log::info!("Foreach loop completed {} iterations", iteration_count);
+        log::info!("Foreach loop completed {iteration_count} iterations");
         Ok(())
     }
 
@@ -210,13 +208,14 @@ impl super::DslExecutor<'_> {
         }
 
         if iteration_count >= max_iterations {
-            log::warn!("While loop reached max iterations ({})", max_iterations);
+            log::warn!("While loop reached max iterations ({max_iterations})");
         }
 
         Ok(())
     }
 
     /// Execute a Retry action (retry block with backoff).
+    #[allow(clippy::cast_precision_loss)]
     pub(super) async fn execute_retry(
         &mut self,
         actions: &[Action],
@@ -229,16 +228,14 @@ impl super::DslExecutor<'_> {
         let use_jitter = config.jitter;
 
         log::info!(
-            "Executing retry block with max {} attempts, initial delay {}ms",
-            max_attempts,
-            initial_delay_ms
+            "Executing retry block with max {max_attempts} attempts, initial delay {initial_delay_ms}ms"
         );
 
         let mut last_error: Option<anyhow::Error> = None;
         let mut current_delay_ms = initial_delay_ms;
 
         for attempt in 1..=max_attempts {
-            log::debug!("Retry attempt {}/{}", attempt, max_attempts);
+            log::debug!("Retry attempt {attempt}/{max_attempts}");
 
             // Try executing all actions
             let mut attempt_success = true;
@@ -253,8 +250,7 @@ impl super::DslExecutor<'_> {
                         });
                         if !should_retry {
                             log::warn!(
-                                "Error does not match retry patterns, failing immediately: {}",
-                                error_msg
+                                "Error does not match retry patterns, failing immediately: {error_msg}"
                             );
                             return Err(e);
                         }
@@ -268,10 +264,7 @@ impl super::DslExecutor<'_> {
 
             if attempt_success {
                 log::info!(
-                    "Retry attempt {}/{} succeeded after {}ms pause",
-                    attempt,
-                    max_attempts,
-                    current_delay_ms
+                    "Retry attempt {attempt}/{max_attempts} succeeded after {current_delay_ms}ms pause"
                 );
                 return Ok(());
             }
@@ -287,10 +280,7 @@ impl super::DslExecutor<'_> {
                 };
 
                 log::debug!(
-                    "Attempt {}/{} failed, waiting {}ms before retry",
-                    attempt,
-                    max_attempts,
-                    delay_with_jitter
+                    "Attempt {attempt}/{max_attempts} failed, waiting {delay_with_jitter}ms before retry"
                 );
 
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay_with_jitter)).await;
@@ -305,13 +295,12 @@ impl super::DslExecutor<'_> {
         Err(anyhow::anyhow!(
             "Retry block failed after {} attempts. Last error: {}",
             max_attempts,
-            last_error
-                .map(|e| e.to_string())
-                .unwrap_or_else(|| "Unknown error".to_string())
+            last_error.map_or_else(|| "Unknown error".to_string(), |e| e.to_string())
         ))
     }
 
     /// Execute a Parallel action (execute actions in parallel).
+    #[allow(clippy::cast_precision_loss)]
     pub(super) async fn execute_parallel(
         &mut self,
         actions: &[Action],
@@ -336,13 +325,13 @@ impl super::DslExecutor<'_> {
 
             // We need to create a new executor for each parallel action
             // since they can't share mutable state
-            log::debug!("Starting parallel action {}: {:?}", idx, action_clone);
+            log::debug!("Starting parallel action {idx}: {action_clone:?}");
 
             // For now, execute sequentially within each parallel branch
             // Full parallel would require redesigning executor for interior mutability
             let future = async move {
                 let _permit = permit; // Hold permit until completion
-                log::debug!("Executing parallel action {} for '{}'", idx, task_name);
+                log::debug!("Executing parallel action {idx} for '{task_name}'");
                 // Note: In a full implementation, we'd spawn a new executor here
                 // For now, we just log and return Ok
                 Ok::<(), anyhow::Error>(())
@@ -357,7 +346,7 @@ impl super::DslExecutor<'_> {
         let mut errors = Vec::new();
         for (idx, result) in results.iter().enumerate() {
             if let Err(e) = result {
-                errors.push(format!("Action {} failed: {}", idx, e));
+                errors.push(format!("Action {idx} failed: {e}"));
             }
         }
 

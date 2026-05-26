@@ -1,6 +1,6 @@
 //! Variable substitution and condition evaluation for DSL tasks.
 //!
-//! Contains helper methods for the DslExecutor that handle
+//! Contains helper methods for the `DslExecutor` that handle
 //! variable substitution in action parameters and evaluation of
 //! conditional expressions (if/else, while loops, etc.).
 
@@ -10,7 +10,7 @@ use anyhow::Result;
 impl super::DslExecutor<'_> {
     /// Substitute ${variable} placeholders with values from the variables map.
     ///
-    /// Replaces occurrences of ${variable_name} in the input text with
+    /// Replaces occurrences of ${`variable_name`} in the input text with
     /// the corresponding value from the executor's variables map.
     ///
     /// # Arguments
@@ -18,12 +18,13 @@ impl super::DslExecutor<'_> {
     ///
     /// # Returns
     /// Text with all placeholders replaced
+    #[must_use]
     pub fn substitute_variables(&self, text: &str) -> String {
         let mut result = text.to_string();
 
         // Replace ${variable} syntax
         for (key, value) in &self.variables {
-            let placeholder = format!("${{{}}}", key);
+            let placeholder = format!("${{{key}}}");
             result = result.replace(&placeholder, value);
         }
 
@@ -70,7 +71,7 @@ impl super::DslExecutor<'_> {
                         serde_yml::Value::String(s) => s.clone(),
                         serde_yml::Value::Number(n) => n.to_string(),
                         serde_yml::Value::Bool(b) => b.to_string(),
-                        _ => format!("{:?}", value),
+                        _ => format!("{value:?}"),
                     };
                     Ok(var_value == &expected)
                 } else {
@@ -148,7 +149,7 @@ impl super::DslExecutor<'_> {
                     // Simplified: check if value is in a comma-separated string
                     let search = match value {
                         serde_yml::Value::String(s) => s.clone(),
-                        _ => format!("{:?}", value),
+                        _ => format!("{value:?}"),
                     };
                     Ok(var_value.contains(&search))
                 } else {

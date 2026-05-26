@@ -25,6 +25,7 @@ pub struct TaskValidationResult {
 }
 
 /// Check if a task name is known (exists in registry)
+#[must_use]
 pub fn is_known_task(task_name: &str) -> bool {
     let registry = TaskRegistry::with_built_in_tasks();
     registry.is_known(task_name)
@@ -39,6 +40,7 @@ pub fn get_task_descriptor(
 }
 
 /// Validate a task name and return validation result
+#[must_use]
 pub fn validate_task(task_name: &str) -> TaskValidationResult {
     let registry = TaskRegistry::with_built_in_tasks();
     validate_task_with_registry(task_name, &registry)
@@ -59,8 +61,7 @@ fn validate_task_with_registry(task_name: &str, registry: &TaskRegistry) -> Task
         Err(RegistryError::UnknownTask { .. }) => {
             let known_tasks = registry.task_names().join(", ");
             warnings.push(format!(
-                "Unknown task name '{}'. Known tasks: {}",
-                clean_name, known_tasks
+                "Unknown task name '{clean_name}'. Known tasks: {known_tasks}"
             ));
 
             TaskValidationResult {
@@ -86,6 +87,7 @@ fn validate_task_with_registry(task_name: &str, registry: &TaskRegistry) -> Task
 }
 
 /// Validate all tasks in a group and log warnings for unknown tasks
+#[must_use]
 pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidationResult> {
     let mut results = Vec::new();
     let mut seen_tasks: HashSet<String> = HashSet::new();
@@ -98,7 +100,7 @@ pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidatio
 
                 // Log warnings for unknown tasks
                 for warning in &result.warnings {
-                    warn!("{}", warning);
+                    warn!("{warning}");
                 }
 
                 results.push(result);
@@ -129,7 +131,7 @@ pub fn validate_task_groups_strict(groups: &[Vec<TaskDefinition>]) -> Result<()>
 }
 
 fn format_conflict_warning(name: &str, sources: &[crate::task::registry::TaskSource]) -> String {
-    format!("Task '{}' exists in multiple sources: {:?}", name, sources)
+    format!("Task '{name}' exists in multiple sources: {sources:?}")
 }
 
 #[cfg(test)]

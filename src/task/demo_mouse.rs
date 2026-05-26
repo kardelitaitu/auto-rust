@@ -1,5 +1,5 @@
 use crate::prelude::TaskContext;
-use crate::utils::timing::duration_with_variance;
+use crate::utils::timing::{duration_with_variance, run_with_timeout};
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -11,14 +11,7 @@ pub const DEFAULT_DEMO_MOUSE_TASK_DURATION_MS: u64 = 60_000;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[demo-mouse] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "demo-mouse", run_inner(api, payload)).await
 }
 
 fn task_duration_ms() -> u64 {
@@ -29,20 +22,20 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Task started");
 
     let url = extract_url_from_payload(&payload)?;
-    info!("Navigating to: {}", url);
+    info!("Navigating to: {url}");
 
     api.navigate(&url, 30000).await?;
 
     if let Err(e) = api.wait_for_load(10000).await {
-        warn!("Wait for load warning: {}", e);
+        warn!("Wait for load warning: {e}");
     }
 
     let overlay_enabled = payload
         .get("overlay")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(true);
     crate::capabilities::mouse::set_overlay_enabled(overlay_enabled);
-    info!("Mouse overlay in mouse.rs enabled={}", overlay_enabled);
+    info!("Mouse overlay in mouse.rs enabled={overlay_enabled}");
     api.pause(500).await;
 
     let viewport = api.viewport().await?;
@@ -99,7 +92,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Test 6: Multiple clicks (slower)
     info!("Test 6: Multiple clicks...");
     for i in 0..3 {
-        let x = 200.0 + (i as f64 * 100.0);
+        let x = 200.0 + (f64::from(i) * 100.0);
         let y = 200.0;
         info!("Click {} at {:.0}:{:.0}", i + 1, x, y);
         if !run_step_with_timeout("test6_move", api.move_mouse_fast(x, y)).await {
@@ -133,26 +126,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(url) = payload.get("url") {
-        if let Some(url_str) = url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    if let Some(value) = payload.get("value") {
-        if let Some(value_str) = value.as_str() {
-            return Ok(value_str.to_string());
-        }
-    }
-
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    Ok("https://uvi.gg/keyboard-tester/".to_string())
+    crate::utils::url::extract_url_from_payload(payload)
+        .or_else(|_| Ok("https://uvi.gg/keyboard-tester/".to_string()))
 }
 
 async fn run_step_with_timeout<T, F>(label: &str, fut: F) -> bool

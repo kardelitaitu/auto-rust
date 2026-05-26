@@ -46,21 +46,25 @@ pub enum TaskSource {
 
 impl TaskSource {
     /// Returns true if this is a built-in Rust task.
+    #[must_use]
     pub fn is_built_in(&self) -> bool {
         matches!(self, TaskSource::BuiltInRust)
     }
 
     /// Returns true if this is an external configured task.
+    #[must_use]
     pub fn is_configured(&self) -> bool {
         matches!(self, TaskSource::ConfiguredPath(_))
     }
 
     /// Returns true if this represents an unknown task.
+    #[must_use]
     pub fn is_unknown(&self) -> bool {
         matches!(self, TaskSource::Unknown)
     }
 
-    /// Get the path if this is a ConfiguredPath variant.
+    /// Get the path if this is a `ConfiguredPath` variant.
+    #[must_use]
     pub fn path(&self) -> Option<&PathBuf> {
         match self {
             TaskSource::ConfiguredPath(path) => Some(path),
@@ -85,7 +89,7 @@ impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RegistryError::UnknownTask { name } => {
-                write!(f, "Task '{}' not found", name)
+                write!(f, "Task '{name}' not found")
             }
             RegistryError::Conflict { name, sources } => {
                 let formatted_sources = format_conflict_sources(sources);
@@ -141,6 +145,7 @@ pub struct TaskRegistry {
 
 impl TaskRegistry {
     /// Create an empty registry.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tasks: HashMap::new(),
@@ -151,6 +156,7 @@ impl TaskRegistry {
     /// Create a registry pre-populated with all built-in tasks.
     ///
     /// This is the default registry used by the application.
+    #[must_use]
     pub fn with_built_in_tasks() -> Self {
         let mut registry = Self::new();
         registry.register_built_in_tasks();
@@ -211,7 +217,7 @@ impl TaskRegistry {
     /// Load external tasks from configured discovery roots.
     ///
     /// Scans configured directories for task files, parses them as DSL tasks,
-    /// and adds them to the registry with their TaskDefinition.
+    /// and adds them to the registry with their `TaskDefinition`.
     ///
     /// # Arguments
     /// * `config` - Task discovery configuration
@@ -228,15 +234,12 @@ impl TaskRegistry {
         for root in &config.roots {
             let root_path = std::path::Path::new(root);
             if !root_path.exists() || !root_path.is_dir() {
-                log::warn!(
-                    "Task discovery root '{}' does not exist or is not a directory",
-                    root
-                );
+                log::warn!("Task discovery root '{root}' does not exist or is not a directory");
                 continue;
             }
 
             for extension in &config.extensions {
-                let pattern = format!("{}/**/*.{}", root, extension);
+                let pattern = format!("{root}/**/*.{extension}");
                 if let Ok(entries) = glob::glob(&pattern) {
                     for entry in entries.flatten() {
                         if let Some(name) = entry.file_stem().and_then(|s| s.to_str()) {
@@ -246,12 +249,11 @@ impl TaskRegistry {
                                 }
                                 Err(RegistryError::Conflict { name, .. }) => {
                                     log::warn!(
-                                        "Skipping external task '{}': conflicts with existing task",
-                                        name
+                                        "Skipping external task '{name}': conflicts with existing task"
                                     );
                                 }
                                 Err(e) => {
-                                    log::warn!("Failed to load external task '{}': {}", name, e);
+                                    log::warn!("Failed to load external task '{name}': {e}");
                                 }
                             }
                         }
@@ -290,7 +292,7 @@ impl TaskRegistry {
         // Validate the task definition
         if let Err(errors) = crate::task::dsl::validate_task_definition(&task_def) {
             for error in errors {
-                log::warn!("Task '{}' validation warning: {}", name, error);
+                log::warn!("Task '{name}' validation warning: {error}");
             }
         }
 
@@ -339,6 +341,7 @@ impl TaskRegistry {
     }
 
     /// Check if a task is known (exists in registry).
+    #[must_use]
     pub fn is_known(&self, name: &str) -> bool {
         let normalized = crate::task::normalize_task_name(name);
         self.tasks.contains_key(normalized)
@@ -346,7 +349,7 @@ impl TaskRegistry {
 
     /// Get the task definition for a DSL task.
     ///
-    /// Returns the TaskDefinition if the task is an external DSL task,
+    /// Returns the `TaskDefinition` if the task is an external DSL task,
     /// None for built-in Rust tasks.
     ///
     /// # Arguments
@@ -354,6 +357,7 @@ impl TaskRegistry {
     ///
     /// # Returns
     /// Some(TaskDefinition) if found and has a DSL definition, None otherwise
+    #[must_use]
     pub fn get_task_definition(&self, name: &str) -> Option<&TaskDefinition> {
         let normalized = crate::task::normalize_task_name(name);
         self.tasks.get(normalized).and_then(|d| d.task_def.as_ref())
@@ -362,6 +366,7 @@ impl TaskRegistry {
     /// List all registered tasks.
     ///
     /// Returns tasks sorted by name.
+    #[must_use]
     pub fn list_tasks(&self) -> Vec<&TaskDescriptor> {
         let mut tasks: Vec<_> = self.tasks.values().collect();
         tasks.sort_by_key(|t| &t.name);
@@ -369,6 +374,7 @@ impl TaskRegistry {
     }
 
     /// Get the count of registered tasks.
+    #[must_use]
     pub fn task_count(&self) -> usize {
         self.tasks.len()
     }
@@ -385,6 +391,7 @@ impl TaskRegistry {
     }
 
     /// Get all task names.
+    #[must_use]
     pub fn task_names(&self) -> Vec<String> {
         let mut names: Vec<_> = self.tasks.keys().cloned().collect();
         names.sort();
@@ -429,6 +436,7 @@ impl TaskRegistry {
     ///
     /// # Returns
     /// Validation report with valid and invalid tasks
+    #[must_use]
     pub fn validate_all_tasks(&self) -> ValidationReport {
         let mut valid = Vec::new();
         let mut invalid = Vec::new();
@@ -440,7 +448,9 @@ impl TaskRegistry {
                     match crate::task::dsl::validate_task_definition(task_def) {
                         Ok(()) => {
                             // Also check name consistency
-                            if task_def.name != *name {
+                            if task_def.name == *name {
+                                valid.push(name.clone());
+                            } else {
                                 invalid.push((
                                     name.clone(),
                                     format!(
@@ -448,8 +458,6 @@ impl TaskRegistry {
                                         name, task_def.name
                                     ),
                                 ));
-                            } else {
-                                valid.push(name.clone());
                             }
                         }
                         Err(errors) => {
@@ -474,6 +482,7 @@ impl TaskRegistry {
     /// Generate a diagnostics report for the registry.
     ///
     /// Returns detailed information about tasks, sources, and any issues.
+    #[must_use]
     pub fn diagnostics(&self) -> RegistryDiagnostics {
         let built_in_count = self
             .tasks
@@ -519,11 +528,13 @@ pub struct ValidationReport {
 
 impl ValidationReport {
     /// Returns true if all external tasks are valid.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.invalid.is_empty()
     }
 
     /// Returns the total number of external tasks checked.
+    #[must_use]
     pub fn total(&self) -> usize {
         self.valid.len() + self.invalid.len()
     }
@@ -532,6 +543,7 @@ impl ValidationReport {
 /// Format the task list for display (--list-tasks output).
 ///
 /// Returns a formatted string with task names, sources, and policies.
+#[must_use]
 pub fn format_task_list() -> String {
     let registry = TaskRegistry::with_built_in_tasks();
     let tasks = registry.list_tasks();

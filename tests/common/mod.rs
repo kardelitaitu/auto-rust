@@ -12,6 +12,10 @@
 //! let temp = TempTestDir::new();
 //! ```
 
+/// Twitter activity TDD helpers, re-exported from the lib crate.
+/// See `auto::tests::twitter_helpers` for full documentation.
+pub use auto::tests::twitter_helpers;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tempfile::TempDir;

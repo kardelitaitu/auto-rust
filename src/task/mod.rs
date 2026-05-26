@@ -8,6 +8,7 @@
 //! Task authors should import `crate::prelude::*` and accept `api: &TaskContext`.
 
 use anyhow::Result;
+use log::warn;
 use serde_json::Value;
 
 use crate::prelude::TaskContext;
@@ -60,15 +61,18 @@ pub const TASK_NAMES: &[&str] = &[
     "twittertest",
 ];
 
+#[must_use]
 pub fn normalize_task_name(name: &str) -> &str {
     name.strip_suffix(".js").unwrap_or(name)
 }
 
+#[must_use]
 pub fn is_known_task(name: &str) -> bool {
     let clean_name = normalize_task_name(name);
     TASK_NAMES.contains(&clean_name)
 }
 
+#[must_use]
 pub fn known_task_names() -> &'static [&'static str] {
     TASK_NAMES
 }
@@ -121,10 +125,14 @@ async fn execute_single_attempt(
     if let Some(task_def) = registry.get_task_definition(name) {
         // Execute as DSL task with parameters from CLI
         // Convert serde_json::Value to serde_yml::Value for with_parameters
+        // If conversion fails, log a warning and fall back to null payload
         let payload_yaml = serde_yml::to_string(payload)
-            .map_err(|e| anyhow::anyhow!("Failed to convert payload: {}", e))
+            .map_err(|e| anyhow::anyhow!("Failed to convert payload: {e}"))
             .and_then(|s| {
-                serde_yml::from_str(&s).map_err(|e| anyhow::anyhow!("Failed to parse YAML: {}", e))
+                serde_yml::from_str(&s).map_err(|e| anyhow::anyhow!("Failed to parse YAML: {e}"))
+            })
+            .inspect_err(|e| {
+                warn!("DSL payload conversion failed, using null payload: {e}");
             })
             .unwrap_or(serde_yml::Value::Null);
         let mut executor =

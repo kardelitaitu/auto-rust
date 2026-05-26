@@ -51,6 +51,7 @@ impl ActionProfiler {
     }
 
     /// Get average execution duration.
+    #[must_use]
     pub fn average_duration(&self) -> Option<Duration> {
         if self.total_executions > 0 {
             Some(self.total_duration / self.total_executions as u32)
@@ -81,6 +82,7 @@ pub struct ActionMetrics {
 
 impl ActionMetrics {
     /// Create a new action metrics tracker.
+    #[must_use]
     pub fn new(index: usize, action_type: &str) -> Self {
         Self {
             index,
@@ -94,6 +96,7 @@ impl ActionMetrics {
     }
 
     /// Mark the action as completed successfully.
+    #[must_use]
     pub fn complete(mut self) -> Self {
         self.end_time = Some(Instant::now());
         self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
@@ -102,6 +105,7 @@ impl ActionMetrics {
     }
 
     /// Mark the action as failed.
+    #[must_use]
     pub fn fail(mut self, error: &str) -> Self {
         self.end_time = Some(Instant::now());
         self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
@@ -142,11 +146,11 @@ pub struct ExecutionReport {
 
 impl ExecutionReport {
     /// Generate a human-readable summary of the execution.
+    #[must_use]
     pub fn summary(&self) -> String {
         let duration = self
             .total_duration
-            .map(|d| format!("{:?}", d))
-            .unwrap_or_else(|| "N/A".to_string());
+            .map_or_else(|| "N/A".to_string(), |d| format!("{d:?}"));
 
         format!(
             "Task '{}' executed {} actions in {} ({} successful, {} failed)",
@@ -159,6 +163,7 @@ impl ExecutionReport {
     }
 
     /// Export the report as JSON.
+    #[must_use]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "task_name": self.task_name,

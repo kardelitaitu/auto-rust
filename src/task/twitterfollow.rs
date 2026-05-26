@@ -2,14 +2,19 @@ use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
 use std::time::Duration;
-use tokio::time::timeout;
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
 use crate::utils::mouse::{ClickOutcome, ClickStatus};
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
+use crate::utils::timing::{
+    duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
+};
 use crate::utils::twitter::{
-    close_active_popup, twitteractivity_humanized::human_pause, twitteractivity_selectors::*,
+    close_active_popup,
+    twitteractivity_humanized::human_pause,
+    twitteractivity_selectors::{
+        selector_follow_button, selector_following_indicator, selector_tweet_user_avatar,
+    },
 };
 
 const MAX_ATTEMPTS: u32 = 5;
@@ -23,53 +28,19 @@ fn task_duration_ms() -> u64 {
 
 /// Retry delay: base 3s + attempt*1s, with ±500ms jitter
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(normalize_url(url_str));
-        }
-    }
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(normalize_url(url_str));
-        }
-    }
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(normalize_url(url_str));
-        }
-    }
-    for (key, val) in payload
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
-    {
-        if key != "url" && key != "value" && key != "default_url" {
-            if let Some(v) = val.as_str() {
-                if !v.is_empty() && (v.contains("x.com") || v.contains("twitter.com")) {
-                    return Ok(normalize_url(v));
-                }
-            }
-        }
-    }
-    Err(anyhow::anyhow!("No URL found in payload"))
+    crate::utils::url::extract_url_from_payload(payload).map(|url| normalize_url(&url))
 }
 
 fn backoff_delay(attempt: u32) -> u64 {
-    let base = 3000u64 + (attempt as u64) * 1000;
+    let base = 3000u64 + u64::from(attempt) * 1000;
     let jitter = random_in_range(500, 1000);
     base + jitter
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[twitterfollow] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "twitterfollow", run_inner(api, payload)).await
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -80,18 +51,18 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         username = tweet_to_profile_flow(api, &input_url).await?;
     } else {
         username = extract_username_from_payload(&payload)?;
-        let profile_url = format!("https://x.com/{}", username);
-        info!("[twitterfollow] Starting: target=@{}", username);
+        let profile_url = format!("https://x.com/{username}");
+        info!("[twitterfollow] Starting: target=@{username}");
         api.navigate(&profile_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
             .await?;
-        info!("[twitterfollow] Navigated to {}", profile_url);
+        info!("[twitterfollow] Navigated to {profile_url}");
     }
 
     verify_current_profile(api, &username).await?;
 
     // Already following pre-check
     if is_already_following(api, Some(&username)).await? {
-        info!("[twitterfollow] Already following @{}", username);
+        info!("[twitterfollow] Already following @{username}");
         return Ok(());
     }
 
@@ -101,7 +72,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let followed = robust_follow(api, &username).await?;
 
     if followed {
-        info!("[twitterfollow] ✅ Successfully followed @{}", username);
+        info!("[twitterfollow] ✅ Successfully followed @{username}");
     } else {
         info!("[twitterfollow] ℹ️ No action needed");
     }
@@ -124,7 +95,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
             }
             info!("[twitterfollow] Reloading page for retry...");
             api.navigate(
-                &format!("https://x.com/{}", username),
+                &format!("https://x.com/{username}"),
                 DEFAULT_NAVIGATION_TIMEOUT_MS,
             )
             .await?;
@@ -175,7 +146,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
                 continue;
             }
             Err(e) => {
-                warn!("[twitterfollow] Error clicking button: {}", e);
+                warn!("[twitterfollow] Error clicking button: {e}");
                 maybe_backoff(api, attempt).await;
                 continue;
             }
@@ -193,7 +164,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
                 warn!("[twitterfollow] Follow not verified");
             }
             Err(e) => {
-                warn!("[twitterfollow] Verification error: {}", e);
+                warn!("[twitterfollow] Verification error: {e}");
             }
         }
 
@@ -205,7 +176,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
 
 /// Check for soft errors (rate limits, suspended, etc.)
 async fn check_soft_error(api: &TaskContext) -> Result<bool> {
-    let js = r#"
+    let js = r"
         (function() {
             var body = document.body.innerText.toLowerCase();
             var signals = [
@@ -224,7 +195,7 @@ async fn check_soft_error(api: &TaskContext) -> Result<bool> {
             }
             return false;
         })()
-    "#;
+    ";
     let result = api.page().evaluate(js).await?;
     Ok(result
         .value()
@@ -287,13 +258,10 @@ fn following_locator_candidates(username: Option<&str>) -> Vec<String> {
     if let Some(username) = username {
         candidates.insert(
             0,
-            format!(
-                "role=button[name='Following @{}'][scope='main header']",
-                username
-            ),
+            format!("role=button[name='Following @{username}'][scope='main header']"),
         );
-        candidates.insert(1, format!("role=button[name='Following @{}']", username));
-        candidates.push(format!("role=button[name='Unfollow @{}']", username));
+        candidates.insert(1, format!("role=button[name='Following @{username}']"));
+        candidates.push(format!("role=button[name='Unfollow @{username}']"));
     }
     candidates
 }
@@ -349,7 +317,10 @@ async fn find_and_click_follow_button(api: &TaskContext, username: &str) -> Resu
         })()
     "#;
     let result = page.evaluate(follow_js).await?;
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false))
 }
 
 async fn is_already_following(api: &TaskContext, username: Option<&str>) -> Result<bool> {
@@ -421,7 +392,10 @@ async fn is_already_following(api: &TaskContext, username: Option<&str>) -> Resu
         })()
     "#;
     let result = page.evaluate(js).await?;
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false))
 }
 
 struct ButtonInfo {
@@ -439,8 +413,8 @@ async fn get_follow_button_info(api: &TaskContext) -> Result<Option<ButtonInfo>>
     let value = result.value();
     if let Some(obj) = value.and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
+            obj.get("x").and_then(serde_json::Value::as_f64),
+            obj.get("y").and_then(serde_json::Value::as_f64),
         ) {
             let text = obj
                 .get("text")
@@ -498,14 +472,14 @@ async fn check_follow_button_says_following(api: &TaskContext) -> Result<bool> {
 }
 
 async fn verify_current_profile(api: &TaskContext, expected: &str) -> Result<()> {
-    let js = r#"window.location.pathname"#;
+    let js = r"window.location.pathname";
     let result = api.page().evaluate(js.to_string()).await?;
     if let Some(path) = result.value().and_then(|v: &Value| v.as_str()) {
         let clean = path.trim_matches('/');
         if clean == expected || clean.to_lowercase() == expected.to_lowercase() {
             return Ok(());
         }
-        anyhow::bail!("Profile mismatch: expected '{}', got '{}'", expected, path);
+        anyhow::bail!("Profile mismatch: expected '{expected}', got '{path}'");
     }
     anyhow::bail!("Could not read current URL pathname");
 }
@@ -547,7 +521,7 @@ fn extract_username_from_payload(payload: &Value) -> Result<String> {
 fn normalize_url(url: &str) -> String {
     let mut url = url.trim().to_string();
     if !url.starts_with("http") {
-        url = format!("https://{}", url);
+        url = format!("https://{url}");
     }
     url.replace("www.twitter.com/", "x.com/")
         .replace("www.x.com/", "x.com/")
@@ -572,7 +546,7 @@ async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &str) -> Result<Str
     let username = extract_username_from_tweet_url(tweet_url)
         .ok_or_else(|| anyhow::anyhow!("Could not extract username from tweet URL"))?;
 
-    info!("[twitterfollow] Navigating to tweet: {}", tweet_url);
+    info!("[twitterfollow] Navigating to tweet: {tweet_url}");
     api.navigate(tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
         .await?;
 
@@ -592,8 +566,8 @@ async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &str) -> Result<Str
 
     api.pause(1500).await;
 
-    let profile_url = format!("https://x.com/{}", username);
-    info!("[twitterfollow] Navigated to profile: {}", profile_url);
+    let profile_url = format!("https://x.com/{username}");
+    info!("[twitterfollow] Navigated to profile: {profile_url}");
 
     Ok(username)
 }
@@ -605,8 +579,8 @@ async fn click_tweet_avatar(api: &TaskContext) -> Result<ClickOutcome> {
 
     if let Some(coords) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            coords.get("x").and_then(|v| v.as_f64()),
-            coords.get("y").and_then(|v| v.as_f64()),
+            coords.get("x").and_then(serde_json::Value::as_f64),
+            coords.get("y").and_then(serde_json::Value::as_f64),
         ) {
             api.click_at(x, y).await?;
             // Return a synthetic ClickOutcome since click_at doesn't return one

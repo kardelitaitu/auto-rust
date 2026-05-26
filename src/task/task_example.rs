@@ -14,7 +14,9 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 use crate::prelude::TaskContext;
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
+use crate::utils::timing::{
+    duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
+};
 
 // ============================================================================
 // Configuration
@@ -39,7 +41,7 @@ const VISIBILITY_TIMEOUT_MS: u64 = 15_000;
 /// Main task entry point.
 ///
 /// # Arguments
-/// * `api` - TaskContext for browser automation
+/// * `api` - `TaskContext` for browser automation
 /// * `payload` - JSON payload with task parameters
 ///
 /// # Returns
@@ -47,14 +49,7 @@ const VISIBILITY_TIMEOUT_MS: u64 = 15_000;
 /// * `Err(e)` - Task failed with error
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[task-example] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "task-example", run_inner(api, payload)).await
 }
 
 fn task_duration_ms() -> u64 {
@@ -92,12 +87,12 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         .wait_for_visible("#main-content", VISIBILITY_TIMEOUT_MS)
         .await
     {
-        warn!("Main content did not become visible: {}", e);
+        warn!("Main content did not become visible: {e}");
     }
 
     // Get page title for logging
     let title = api.title().await.unwrap_or_else(|_| "unknown".to_string());
-    info!("Page title: {}", title);
+    info!("Page title: {title}");
 
     // Perform the configured action
     match config.action.as_str() {
@@ -132,17 +127,17 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
 /// Demonstrates clicking an element with proper error handling
 async fn perform_click_action(api: &TaskContext, selector: &str) -> Result<()> {
-    info!("Clicking element: {}", selector);
+    info!("Clicking element: {selector}");
 
     let click_result = match timeout(Duration::from_secs(12), api.click(selector)).await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(e)) => {
-            warn!("Click failed: {}", e);
+            warn!("Click failed: {e}");
             return Err(e);
         }
         Err(_) => {
             let e = anyhow::anyhow!("Click timed out after 12s");
-            warn!("{}", e);
+            warn!("{e}");
             return Err(e);
         }
     };
@@ -153,7 +148,7 @@ async fn perform_click_action(api: &TaskContext, selector: &str) -> Result<()> {
 
 /// Demonstrates typing text into an input field
 async fn perform_type_action(api: &TaskContext, selector: &str, value: &str) -> Result<()> {
-    info!("Typing into element: {}", selector);
+    info!("Typing into element: {selector}");
 
     // Click to focus
     let focus_result = api.click(selector).await?;
@@ -167,23 +162,23 @@ async fn perform_type_action(api: &TaskContext, selector: &str, value: &str) -> 
 
     // Verify the value was entered
     let actual_value = api.value(selector).await?.unwrap_or_default();
-    info!("Entered value: {}", actual_value);
+    info!("Entered value: {actual_value}");
 
     Ok(())
 }
 
 /// Demonstrates verification of element content
 async fn perform_verification(api: &TaskContext, selector: &str, expected: &str) -> Result<()> {
-    info!("Verifying element: {}", selector);
+    info!("Verifying element: {selector}");
 
     let text = api.text(selector).await?.unwrap_or_default();
-    info!("Element text: {}", text);
+    info!("Element text: {text}");
 
     if !text.contains(expected) {
-        bail!("Verification failed: expected '{}' in '{}'", expected, text);
+        bail!("Verification failed: expected '{expected}' in '{text}'");
     }
 
-    info!("Verification passed: found '{}'", expected);
+    info!("Verification passed: found '{expected}'");
     Ok(())
 }
 
@@ -248,19 +243,7 @@ impl ExampleConfig {
 
 /// Extract URL from payload with fallback to default
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    Ok(DEFAULT_URL.to_string())
+    crate::utils::url::extract_url_from_payload(payload).or_else(|_| Ok(DEFAULT_URL.to_string()))
 }
 
 /// Read string from payload with default value
@@ -268,8 +251,7 @@ fn read_string(payload: &Value, key: &str, default: &str) -> String {
     payload
         .get(key)
         .and_then(|value| value.as_str())
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| default.to_string())
+        .map_or_else(|| default.to_string(), std::string::ToString::to_string)
 }
 
 // ============================================================================

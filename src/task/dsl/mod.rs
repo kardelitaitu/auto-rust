@@ -1,13 +1,13 @@
 //! DSL module.
 //!
 //! Contains the DSL types and executor implementation.
-//! - `types`: DSL type definitions (TaskDefinition, Action, Condition, etc.)
-//! - `cache`: SelectorCache with LRU eviction
-//! - `debug`: DebugEvent, Breakpoint, debug infrastructure
-//! - `profiling`: ActionProfiler, ActionMetrics, ExecutionReport
+//! - `types`: DSL type definitions (`TaskDefinition`, Action, Condition, etc.)
+//! - `cache`: `SelectorCache` with LRU eviction
+//! - `debug`: `DebugEvent`, Breakpoint, debug infrastructure
+//! - `profiling`: `ActionProfiler`, `ActionMetrics`, `ExecutionReport`
 //! - `evaluator`: Variable substitution, condition evaluation
 //! - `control_flow`: Control flow action handlers (If, Loop, Foreach, etc.)
-//! - `executor`: DslExecutor struct and main execution methods
+//! - `executor`: `DslExecutor` struct and main execution methods
 //! - `parser`: Parser functions for DSL task files
 
 // DSL types (moved from dsl.rs)

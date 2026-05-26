@@ -32,6 +32,7 @@ pub struct SelectorCacheEntry {
 
 impl SelectorCacheEntry {
     /// Create a new cache entry with default TTL of 5 seconds.
+    #[must_use]
     pub fn new(exists: bool, visible: bool, text: Option<String>, count: usize) -> Self {
         Self {
             exists,
@@ -44,6 +45,7 @@ impl SelectorCacheEntry {
     }
 
     /// Check if this cache entry is still valid.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         Instant::now().duration_since(self.cached_at) < self.ttl
     }
@@ -64,6 +66,7 @@ pub struct SelectorCache {
 
 impl SelectorCache {
     /// Create a new selector cache.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cache: HashMap::with_capacity(SELECTOR_CACHE_SIZE),
@@ -135,6 +138,8 @@ impl SelectorCache {
     }
 
     /// Get cache statistics.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn stats(&self) -> CacheStats {
         CacheStats {
             size: self.cache.len(),

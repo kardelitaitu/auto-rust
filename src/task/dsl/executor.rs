@@ -1,12 +1,12 @@
 //! Main DSL Executor implementation.
 //!
-//! Contains DslExecutor struct and core execution methods.
+//! Contains `DslExecutor` struct and core execution methods.
 //! Other method groups are split into separate modules:
-//! - cache.rs: SelectorCache, cache operations
-//! - debug.rs: DebugEvent, Breakpoint, debug infrastructure
-//! - profiling.rs: ActionProfiler, ActionMetrics, ExecutionReport
+//! - cache.rs: `SelectorCache`, cache operations
+//! - debug.rs: `DebugEvent`, Breakpoint, debug infrastructure
+//! - profiling.rs: `ActionProfiler`, `ActionMetrics`, `ExecutionReport`
 //! - evaluator.rs: Variable substitution, condition evaluation
-//! - control_flow.rs: If, Loop, Foreach, While, Retry, Parallel handlers
+//! - `control_flow.rs`: If, Loop, Foreach, While, Retry, Parallel handlers
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -81,6 +81,7 @@ pub struct DslExecutor<'a> {
 
 impl<'a> DslExecutor<'a> {
     /// Create a new DSL executor.
+    #[must_use]
     pub fn new(api: &'a TaskContext, task_def: TaskDefinition) -> Self {
         Self {
             api,
@@ -131,6 +132,7 @@ impl<'a> DslExecutor<'a> {
     }
 
     /// Set initial parameters from CLI payload.
+    #[must_use]
     pub fn with_parameters(mut self, payload: &serde_yml::Value) -> Self {
         if let Some(obj) = payload.as_mapping() {
             for (key, value) in obj {
@@ -139,9 +141,9 @@ impl<'a> DslExecutor<'a> {
                     serde_yml::Value::String(s) => s.clone(),
                     serde_yml::Value::Number(n) => n.to_string(),
                     serde_yml::Value::Bool(b) => b.to_string(),
-                    _ => format!("{:?}", value),
+                    _ => format!("{value:?}"),
                 };
-                log::debug!("Set parameter '{}': {}", key_str, value_str);
+                log::debug!("Set parameter '{key_str}': {value_str}");
                 self.variables.insert(key_str, value_str);
             }
         }
@@ -157,7 +159,7 @@ impl<'a> DslExecutor<'a> {
         );
 
         for (idx, action) in self.task_def.actions.clone().iter().enumerate() {
-            let action_type = format!("{:?}", action)
+            let action_type = format!("{action:?}")
                 .split_whitespace()
                 .next()
                 .unwrap_or("Unknown")
@@ -176,11 +178,7 @@ impl<'a> DslExecutor<'a> {
                     None,
                     None,
                 );
-                log::info!(
-                    "Breakpoint hit at action {} ({}), execution paused",
-                    idx,
-                    action_type
-                );
+                log::info!("Breakpoint hit at action {idx} ({action_type}), execution paused");
             }
 
             // Wait if paused (using loop pattern to avoid clippy warning)
@@ -205,7 +203,7 @@ impl<'a> DslExecutor<'a> {
             log::debug!("Action {}: {:?}", idx + 1, action);
 
             match self.execute_action(action).await {
-                Ok(_) => {
+                Ok(()) => {
                     metrics = metrics.complete();
                     self.actions_succeeded += 1;
                     log::debug!("Action {} completed in {:?}", idx + 1, metrics.duration);
@@ -222,7 +220,7 @@ impl<'a> DslExecutor<'a> {
                     );
                 }
                 Err(e) => {
-                    let error_msg = format!("{}", e);
+                    let error_msg = format!("{e}");
                     metrics = metrics.fail(&error_msg);
                     self.actions_failed += 1;
                     log::error!(
@@ -312,8 +310,7 @@ impl<'a> DslExecutor<'a> {
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 }
                 Err(anyhow::anyhow!(
-                    "Timeout waiting for element: {}",
-                    resolved_selector
+                    "Timeout waiting for element: {resolved_selector}"
                 ))
             }
             Action::ScrollTo { selector } => {
@@ -325,7 +322,7 @@ impl<'a> DslExecutor<'a> {
                 let resolved_selector = self.substitute_variables(selector);
                 let text = self.api.text(&resolved_selector).await?.unwrap_or_default();
                 if let Some(var_name) = variable {
-                    log::debug!("Extracting variable '{}': {}", var_name, text);
+                    log::debug!("Extracting variable '{var_name}': {text}");
                     self.variables.insert(var_name.clone(), text);
                 }
                 Ok(())
@@ -337,10 +334,10 @@ impl<'a> DslExecutor<'a> {
             Action::Log { message, level } => {
                 let resolved_message = self.substitute_variables(message);
                 match level.as_ref().unwrap_or(&LogLevel::Info) {
-                    LogLevel::Debug => log::debug!("{}", resolved_message),
-                    LogLevel::Info => log::info!("{}", resolved_message),
-                    LogLevel::Warn => log::warn!("{}", resolved_message),
-                    LogLevel::Error => log::error!("{}", resolved_message),
+                    LogLevel::Debug => log::debug!("{resolved_message}"),
+                    LogLevel::Info => log::info!("{resolved_message}"),
+                    LogLevel::Warn => log::warn!("{resolved_message}"),
+                    LogLevel::Error => log::error!("{resolved_message}"),
                 }
                 Ok(())
             }
@@ -365,20 +362,20 @@ impl<'a> DslExecutor<'a> {
                 }
 
                 if let Some(p) = resolved_path {
-                    log::info!("Screenshot would be saved to: {}", p);
+                    log::info!("Screenshot would be saved to: {p}");
                 }
                 // Note: Full implementation requires TaskContext to support screenshots
                 Ok(())
             }
             Action::Clear { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
-                log::debug!("Clearing input field '{}'", resolved_selector);
+                log::debug!("Clearing input field '{resolved_selector}'");
                 self.api.clear(&resolved_selector).await?;
                 Ok(())
             }
             Action::Hover { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
-                log::debug!("Hovering over element '{}'", resolved_selector);
+                log::debug!("Hovering over element '{resolved_selector}'");
                 self.api.hover(&resolved_selector).await?;
                 Ok(())
             }
@@ -392,42 +389,37 @@ impl<'a> DslExecutor<'a> {
                 let use_value_attr = by_value.unwrap_or(false);
 
                 log::debug!(
-                    "Selecting '{}' from dropdown '{}' (by_value={})",
-                    resolved_value,
-                    resolved_selector,
-                    use_value_attr
+                    "Selecting '{resolved_value}' from dropdown '{resolved_selector}' (by_value={use_value_attr})"
                 );
 
                 // Use JavaScript to select the option
                 let script = if use_value_attr {
                     format!(
-                        r#"document.querySelector('{}').value = '{}';"#,
-                        resolved_selector, resolved_value
+                        r"document.querySelector('{resolved_selector}').value = '{resolved_value}';"
                     )
                 } else {
                     format!(
-                        r#"const select = document.querySelector('{}');
+                        r"const select = document.querySelector('{resolved_selector}');
                         const options = Array.from(select.options);
-                        const option = options.find(o => o.text.trim() === '{}');
-                        if (option) select.value = option.value;"#,
-                        resolved_selector, resolved_value
+                        const option = options.find(o => o.text.trim() === '{resolved_value}');
+                        if (option) select.value = option.value;"
                     )
                 };
 
                 // Execute the JavaScript via the page
                 // Note: This requires TaskContext to have execute_script capability
-                log::info!("Would execute select script: {}", script);
+                log::info!("Would execute select script: {script}");
                 Ok(())
             }
             Action::RightClick { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
-                log::debug!("Right-clicking element '{}'", resolved_selector);
+                log::debug!("Right-clicking element '{resolved_selector}'");
                 self.api.right_click(&resolved_selector).await?;
                 Ok(())
             }
             Action::DoubleClick { selector } => {
                 let resolved_selector = self.substitute_variables(selector);
-                log::debug!("Double-clicking element '{}'", resolved_selector);
+                log::debug!("Double-clicking element '{resolved_selector}'");
                 self.api.double_click(&resolved_selector).await?;
                 Ok(())
             }
@@ -596,11 +588,13 @@ impl<'a> DslExecutor<'a> {
     }
 
     /// Get cache statistics.
+    #[must_use]
     pub fn get_cache_stats(&self) -> super::cache::CacheStats {
         self.selector_cache.stats()
     }
 
     /// Get performance profiling data.
+    #[must_use]
     pub fn get_profiler_stats(&self) -> HashMap<String, serde_json::Value> {
         self.action_profilers
             .iter()
@@ -718,9 +712,7 @@ impl<'a> DslExecutor<'a> {
         // Check recursion depth
         if self.call_depth >= MAX_CALL_DEPTH {
             return Err(anyhow::anyhow!(
-                "Maximum call depth ({}) exceeded when calling task '{}'",
-                MAX_CALL_DEPTH,
-                task_name
+                "Maximum call depth ({MAX_CALL_DEPTH}) exceeded when calling task '{task_name}'"
             ));
         }
 
@@ -733,7 +725,7 @@ impl<'a> DslExecutor<'a> {
 
         // Find the task definition
         let task_def = crate::task::dsl::get_task_definition(task_name)
-            .ok_or_else(|| anyhow::anyhow!("Task '{}' not found for Call action", task_name))?;
+            .ok_or_else(|| anyhow::anyhow!("Task '{task_name}' not found for Call action"))?;
 
         // Create a new executor with incremented call depth
         let mut called_executor = Self::with_depth(self.api, task_def, self.call_depth + 1);
@@ -761,7 +753,7 @@ impl<'a> DslExecutor<'a> {
             self.variables.insert(key, value);
         }
 
-        result.with_context(|| format!("Failed to execute called task '{}'", task_name))
+        result.with_context(|| format!("Failed to execute called task '{task_name}'"))
     }
 }
 

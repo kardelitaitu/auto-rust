@@ -3,7 +3,9 @@
 
 use crate::prelude::TaskContext;
 use crate::utils::math::random_in_range;
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
+use crate::utils::timing::{
+    duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
+};
 use crate::utils::twitter::{
     close_active_popup, twitteractivity_feed::identify_engagement_candidates,
     twitteractivity_humanized::human_pause, twitteractivity_navigation::goto_home,
@@ -11,8 +13,6 @@ use crate::utils::twitter::{
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
-use std::time::Duration;
-use tokio::time::timeout;
 
 const POST_WAIT_MS: u64 = 3000;
 pub const DEFAULT_TWITTERLIKE_TASK_DURATION_MS: u64 = 30_000;
@@ -23,32 +23,22 @@ fn task_duration_ms() -> u64 {
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[twitterlike] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "twitterlike", run_inner(api, payload)).await
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     let max_likes = payload
         .get("max_likes")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(1) as u32;
     let from_feed = payload
         .get("from_feed")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     info!("[twitterlike] Task started");
-    info!(
-        "[twitterlike] Max likes: {}, From feed: {}",
-        max_likes, from_feed
-    );
+    info!("[twitterlike] Max likes: {max_likes}, From feed: {from_feed}");
 
     let mut likes_count = 0u32;
 
@@ -119,7 +109,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         }
     } else {
         // Like specific tweet
-        info!("[twitterlike] Navigating to tweet: {}", tweet_url);
+        info!("[twitterlike] Navigating to tweet: {tweet_url}");
         api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
             .await?;
         api.pause(2000).await;
@@ -145,7 +135,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                 })()
             "#;
             let result = api.page().evaluate(like_js.to_string()).await?;
-            let clicked = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+            let clicked = result
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
 
             if clicked {
                 info!("[twitterlike] Like clicked successfully");
@@ -162,43 +155,13 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
 
     api.pause(POST_WAIT_MS).await;
-    info!(
-        "[twitterlike] Task completed - liked {} tweets",
-        likes_count
-    );
+    info!("[twitterlike] Task completed - liked {likes_count} tweets");
     Ok(())
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    for (key, val) in payload
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
-    {
-        if key != "url" && key != "value" && key != "default_url" {
-            if let Some(v) = val.as_str() {
-                if !v.is_empty() && v.contains("x.com") {
-                    return Ok(v.to_string());
-                }
-            }
-        }
-    }
-    Ok(String::new()) // Empty string means use feed
+    // Returns empty string to mean "use feed" when no URL found
+    crate::utils::url::extract_url_from_payload(payload).or_else(|_| Ok(String::new()))
 }
 
 #[cfg(test)]

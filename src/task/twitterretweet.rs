@@ -3,13 +3,13 @@
 
 use crate::llm::{reply_engine_system_prompt, ChatMessage, Llm};
 use crate::prelude::TaskContext;
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
+use crate::utils::timing::{
+    duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
+};
 use crate::utils::twitter::twitteractivity_llm::validate_reply;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
-use std::time::Duration;
-use tokio::time::timeout;
 
 const POST_WAIT_MS: u64 = 5000;
 pub const DEFAULT_TWITTERRETWEET_TASK_DURATION_MS: u64 = 45_000;
@@ -20,14 +20,7 @@ fn task_duration_ms() -> u64 {
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[twitterretweet] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "twitterretweet", run_inner(api, payload)).await
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -35,13 +28,13 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let quote_text = payload
         .get("quote_text")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let use_llm = payload
         .get("use_llm")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(true);
 
-    info!("[twitterretweet] Task started - target: {}", tweet_url);
+    info!("[twitterretweet] Task started - target: {tweet_url}");
 
     // Navigate to tweet
     info!("[twitterretweet] Navigating to tweet...");
@@ -60,7 +53,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         } else if use_llm {
             info!("[twitterretweet] Generating LLM quote...");
             let (author, tweet_text) = extract_tweet_context(api).await?;
-            info!("[twitterretweet] Tweet by @{}", author);
+            info!("[twitterretweet] Tweet by @{author}");
 
             let llm = Llm::new()?;
             let messages = build_quote_messages(&author, &tweet_text);
@@ -70,7 +63,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                     validate_reply(&text).unwrap_or_else(|_| "Interesting take!".to_string())
                 }
                 Err(e) => {
-                    warn!("[twitterretweet] LLM failed: {}, using fallback", e);
+                    warn!("[twitterretweet] LLM failed: {e}, using fallback");
                     "Interesting take!".to_string()
                 }
             }
@@ -78,7 +71,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             "Interesting take!".to_string()
         };
 
-        info!("[twitterretweet] Quote text: {}", commentary);
+        info!("[twitterretweet] Quote text: {commentary}");
 
         // Click quote button
         info!("[twitterretweet] Clicking quote button...");
@@ -114,7 +107,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         "#;
 
         let clicked = api.page().evaluate(rt_js.to_string()).await?;
-        if clicked.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+        if clicked
+            .value()
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
             info!("[twitterretweet] Retweet menu opened");
             api.pause(1000).await;
 
@@ -131,7 +128,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                 })()
             "#;
             let confirmed = api.page().evaluate(confirm_js.to_string()).await?;
-            if confirmed.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+            if confirmed
+                .value()
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 info!("[twitterretweet] Retweet confirmed!");
             } else {
                 warn!("[twitterretweet] Failed to confirm retweet");
@@ -147,35 +148,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    for (key, val) in payload
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
-    {
-        if key != "url" && key != "value" && key != "default_url" {
-            if let Some(v) = val.as_str() {
-                if !v.is_empty() && v.contains("x.com") {
-                    return Ok(v.to_string());
-                }
-            }
-        }
-    }
-    Err(anyhow::anyhow!("No URL found in payload"))
+    crate::utils::url::extract_url_from_payload(payload)
 }
 
 async fn extract_tweet_context(api: &TaskContext) -> Result<(String, String)> {
@@ -215,7 +188,7 @@ async fn extract_tweet_context(api: &TaskContext) -> Result<(String, String)> {
 }
 
 async fn click_quote_button(api: &TaskContext) -> Result<()> {
-    let js = r#"
+    let js = r"
         (function() {
             var buttons = document.querySelectorAll('button[data-testid]');
             for (var i = 0; i < buttons.length; i++) {
@@ -231,12 +204,12 @@ async fn click_quote_button(api: &TaskContext) -> Result<()> {
             }
             return { success: false };
         })()
-    "#;
+    ";
     let result = api.page().evaluate(js).await?;
     let value = result.value();
     if let Some(v) = value {
         if let Some(obj) = v.as_object() {
-            if let Some(true) = obj.get("success").and_then(|v| v.as_bool()) {
+            if let Some(true) = obj.get("success").and_then(serde_json::Value::as_bool) {
                 return Ok(());
             }
         }
@@ -287,17 +260,11 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
         match post_quote(api).await {
             Ok(true) => return Ok(true),
             Ok(false) => {
-                warn!(
-                    "[twitterretweet] Post failed (attempt {}/{})",
-                    attempt, max_retries
-                );
+                warn!("[twitterretweet] Post failed (attempt {attempt}/{max_retries})");
                 last_error = Some(anyhow::anyhow!("Post returned false"));
             }
             Err(e) => {
-                warn!(
-                    "[twitterretweet] Post error (attempt {}/{}): {}",
-                    attempt, max_retries, e
-                );
+                warn!("[twitterretweet] Post error (attempt {attempt}/{max_retries}): {e}");
                 last_error = Some(e);
             }
         }
@@ -305,14 +272,13 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
             api.pause(2000).await;
         }
     }
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {} retries", max_retries)))
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {max_retries} retries")))
 }
 
 fn build_quote_messages(tweet_author: &str, tweet_text: &str) -> Vec<ChatMessage> {
     let system = reply_engine_system_prompt();
     let user = format!(
-        "Quote this tweet by @{}:\n{}\n\nGenerate a short, engaging quote commentary (max 280 chars):",
-        tweet_author, tweet_text
+        "Quote this tweet by @{tweet_author}:\n{tweet_text}\n\nGenerate a short, engaging quote commentary (max 280 chars):"
     );
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }

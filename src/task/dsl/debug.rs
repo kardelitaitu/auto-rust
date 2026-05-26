@@ -89,6 +89,7 @@ impl Clone for Breakpoint {
 
 impl Breakpoint {
     /// Create a breakpoint on a specific action index.
+    #[must_use]
     pub fn on_action(index: usize) -> Self {
         Self {
             action_index: Some(index),
@@ -119,6 +120,7 @@ impl Breakpoint {
     }
 
     /// Check if this breakpoint should trigger for the given action.
+    #[must_use]
     pub fn should_trigger(
         &self,
         action_index: usize,

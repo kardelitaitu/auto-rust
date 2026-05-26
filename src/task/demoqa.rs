@@ -1,6 +1,6 @@
-//! DemoQA text box demo task.
+//! `DemoQA` text box demo task.
 //!
-//! Writes a fixed sample record to the DemoQA text box page and verifies the rendered output.
+//! Writes a fixed sample record to the `DemoQA` text box page and verifies the rendered output.
 
 use anyhow::{bail, Result};
 use log::{debug, info, warn};
@@ -11,7 +11,7 @@ use tokio::time::timeout;
 use crate::capabilities::mouse;
 use crate::logger::scoped_log_context;
 use crate::prelude::TaskContext;
-use crate::utils::timing::duration_with_variance;
+use crate::utils::timing::{duration_with_variance, run_with_timeout};
 
 const DEMO_URL: &str = "https://demoqa.com/text-box";
 const DEMO_FULL_NAME: &str = "Demo QA";
@@ -23,14 +23,7 @@ pub const DEFAULT_DEMOQA_TASK_DURATION_MS: u64 = 60_000;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[demoqa] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "demoqa", run_inner(api, payload)).await
 }
 
 fn task_duration_ms() -> u64 {
@@ -57,11 +50,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
 
     if let Err(e) = api.wait_for_visible("#userName", 15_000).await {
-        warn!("DemoQA text box did not become visible in time: {}", e);
+        warn!("DemoQA text box did not become visible in time: {e}");
     }
 
     let title = api.title().await.unwrap_or_else(|_| "unknown".to_string());
-    info!("Title: {}", title);
+    info!("Title: {title}");
     api.pause(1500).await;
 
     fill_text_field(api, "#userName", &config.full_name).await?;
@@ -74,10 +67,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let current_address = api.value("#currentAddress").await?.unwrap_or_default();
     let permanent_address = api.value("#permanentAddress").await?.unwrap_or_default();
 
-    info!("userName value: {}", user_name);
-    info!("userEmail value: {}", user_email);
-    info!("currentAddress value: {}", current_address);
-    info!("permanentAddress value: {}", permanent_address);
+    info!("userName value: {user_name}");
+    info!("userEmail value: {user_email}");
+    info!("currentAddress value: {current_address}");
+    info!("permanentAddress value: {permanent_address}");
 
     info!("Clicking submit button");
     let session_id = api.session_id().to_string();
@@ -85,30 +78,24 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         let mut ctx = crate::logger::get_log_context();
         ctx.session_id = Some(session_id.clone());
         let _guard = scoped_log_context(ctx);
-        info!(
-            "[task-api] submit nativeclick session={} selector=#submit phase=before",
-            session_id
-        );
+        info!("[task-api] submit nativeclick session={session_id} selector=#submit phase=before");
     }
     info!("Submit nativeclick phase=before selector=#submit");
     warm_nativecursor(api).await?;
     let submit_click = match timeout(Duration::from_secs(12), api.nativeclick("#submit")).await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(e)) => {
-            warn!("Submit click failed: {}", e);
+            warn!("Submit click failed: {e}");
             return Err(e);
         }
         Err(_) => {
             let e = anyhow::anyhow!("Submit click timed out after 12s");
-            warn!("{}", e);
+            warn!("{e}");
             return Err(e);
         }
     };
     if let (Some(screen_x), Some(screen_y)) = (submit_click.screen_x, submit_click.screen_y) {
-        info!(
-            "Submit nativeclick screen point: ({}, {}) phase=after",
-            screen_x, screen_y
-        );
+        info!("Submit nativeclick screen point: ({screen_x}, {screen_y}) phase=after");
     }
     {
         let mut ctx = crate::logger::get_log_context();
@@ -123,17 +110,13 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.pause(7500).await;
     let output_exists_before_wait = api.exists("#output").await?;
-    info!(
-        "Output precheck before wait: exists={}",
-        output_exists_before_wait
-    );
+    info!("Output precheck before wait: exists={output_exists_before_wait}");
     info!("Waiting for output panel");
     if !api.wait_for_visible("#output", 15_000).await? {
         let output_exists_after_wait = api.exists("#output").await?;
         let output_visible_after_wait = api.visible("#output").await?;
         warn!(
-            "DemoQA output wait failed: exists={} visible={}",
-            output_exists_after_wait, output_visible_after_wait
+            "DemoQA output wait failed: exists={output_exists_after_wait} visible={output_visible_after_wait}"
         );
         if !output_exists_after_wait {
             bail!("DemoQA output element did not exist after submit");
@@ -182,8 +165,7 @@ async fn warm_nativecursor(api: &TaskContext) -> Result<()> {
         Ok(outcome) => outcome,
         Err(err) => {
             debug!(
-                "nativecursor button warm-up unavailable, falling back to any visible element: {}",
-                err
+                "nativecursor button warm-up unavailable, falling back to any visible element: {err}"
             );
             api.nativecursor().await?
         }
@@ -194,14 +176,9 @@ async fn warm_nativecursor(api: &TaskContext) -> Result<()> {
 fn assert_contains(label: &str, actual: Option<String>, expected: &str) -> Result<()> {
     let actual = actual.unwrap_or_default();
     if !actual.contains(expected) {
-        bail!(
-            "DemoQA {} mismatch: expected '{}' in '{}';",
-            label,
-            expected,
-            actual
-        );
+        bail!("DemoQA {label} mismatch: expected '{expected}' in '{actual}';");
     }
-    info!("Verified {}: {}", label, actual);
+    info!("Verified {label}: {actual}");
     Ok(())
 }
 
@@ -226,34 +203,14 @@ impl DemoQaConfig {
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    Ok(DEMO_URL.to_string())
+    crate::utils::url::extract_url_from_payload(payload).or_else(|_| Ok(DEMO_URL.to_string()))
 }
 
 fn read_string(payload: &Value, key: &str, default: &str) -> String {
     payload
         .get(key)
         .and_then(|value| value.as_str())
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| default.to_string())
+        .map_or_else(|| default.to_string(), std::string::ToString::to_string)
 }
 
 #[cfg(test)]

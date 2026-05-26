@@ -59,17 +59,16 @@ max_thread_dives = 3
 max_bookmarks = 0                  # Disabled in V1
 max_total_actions = 10
 
-# LLM Configuration (for smart replies & quote tweets)
+# Enables reply/quote text generation. Provider settings come from
+# config/llm.toml and LLM_* / OPENROUTER_* / NVIDIA_* environment variables.
 [twitter_activity.llm]
-enabled = false                    # Set true for AI-powered features
-provider = "ollama"                # Options: ollama, openrouter
-model = "llama3.2:latest"
-
-# Smart Decision Engine (7.1 feature)
-smart_decision_enabled = false     # AI-powered engagement decisions
-enhanced_sentiment_enabled = false # Multi-layer sentiment analysis
-dry_run_actions = false            # Simulate actions without executing
+enabled = false
 ```
+
+Smart-decision flags are task payload fields, not TOML fields. When both
+`smart_decision_enabled` and `llm_enabled` are true, decision scoring uses the
+DashScope/Qwen decision strategy and reads `DASHSCOPE_API_KEY` or `QWEN_API_KEY`.
+Reply and quote generation still use the general app LLM config.
 
 ## Payload Parameters
 
@@ -81,6 +80,7 @@ dry_run_actions = false            # Simulate actions without executing
 | `weights` | object | persona | Engagement probabilities |
 | `profile` | string | Average | Persona preset |
 | `smart_decision_enabled` | bool | false | Enable AI-powered engagement decisions |
+| `llm_enabled` | bool | config | Enable LLM decision mode and reply/quote text generation |
 | `enhanced_sentiment_enabled` | bool | false | Enable multi-layer sentiment analysis |
 | `dry_run_actions` | bool | false | Simulate actions without executing |
 
@@ -93,7 +93,7 @@ dry_run_actions = false            # Simulate actions without executing
 1. Navigates to Twitter/X home feed
 2. Scrolls through feed (respecting `scroll_count`)
 3. Identifies candidate tweets for engagement
-4. Applies persona-based decision logic
+4. Applies persona-based action selection and optional smart-decision gating
 5. Executes engagements (like, retweet, follow, reply)
 6. Respects all engagement limits
 7. Optionally dives into threads for context
@@ -115,6 +115,10 @@ The implementation lives in `src/utils/twitter/` and is split into focused modul
 - `twitteractivity_decision_hybrid.rs`: Hybrid persona/LLM decisions
 - `twitteractivity_decision_llm.rs`: LLM-only decision path
 - `twitteractivity_decision_persona.rs`: Persona-based decision weights
+
+Smart decisions gate the persona-selected action set by engagement level:
+`Full` keeps all selected actions, `Medium` keeps like/retweet, `Minimal` keeps
+like only, and `None` skips engagement.
 
 **LLM Integration:**
 - `twitteractivity_llm.rs`: LLM-powered reply/quote generation

@@ -308,6 +308,12 @@ Uses LLM/ML to score tweet quality (0-100):
 - Interest matching
 - Applies `interest_multiplier` to base probabilities
 
+Decision levels narrow persona-selected actions:
+- `Full`: keep all selected actions
+- `Medium`: keep like and retweet
+- `Minimal`: keep like only
+- `None`: skip engagement
+
 **Fallback:** If smart decision unavailable, uses base persona probabilities.
 
 ## Entropy and Randomization

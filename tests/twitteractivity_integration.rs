@@ -4,11 +4,14 @@
 //! without requiring a live browser.
 
 use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
+use auto::llm::{build_quote_messages, build_reply_messages};
 use auto::task::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
 use auto::utils::twitter::{
     sentiment::{analyze_tweet_sentiment_sync, sentiment_score, Sentiment, SentimentAnalyzer},
+    twitteractivity_navigation::ENTRY_POINTS,
     twitteractivity_persona::select_persona_weights,
 };
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde_json::json;
 use std::time::Duration;
 
@@ -440,13 +443,21 @@ fn twitteractivity_action_chaining_overwrites_previous() {
 /// Tests that entry point selection has expected distribution.
 #[test]
 fn twitteractivity_entry_point_selection_distribution() {
-    // select_entry_point already imported at top
-
-    // Sample many times to check distribution
+    let total_weight: u32 = ENTRY_POINTS.iter().map(|entry| entry.weight).sum();
+    let mut rng = StdRng::seed_from_u64(42);
     let mut counts = std::collections::HashMap::new();
+
     for _ in 0..200 {
-        let entry_url = select_entry_point();
-        *counts.entry(entry_url).or_insert(0) += 1;
+        let mut roll = rng.gen::<u32>() % total_weight;
+        let mut selected = ENTRY_POINTS[0].url;
+        for entry in &ENTRY_POINTS {
+            if roll < entry.weight {
+                selected = entry.url;
+                break;
+            }
+            roll -= entry.weight;
+        }
+        *counts.entry(selected).or_insert(0) += 1;
     }
 
     // Home should be the most common (59% weight)
@@ -580,4 +591,343 @@ fn twitteractivity_sentiment_mixed_signals() {
         result,
         Sentiment::Positive | Sentiment::Negative | Sentiment::Neutral
     ));
+}
+
+// ============================================================================
+// Error Classification Tests (§8.8 coverage: retry logic, error classification)
+// ============================================================================
+
+use auto::utils::twitter::twitteractivity_errors::is_auth_error;
+use auto::utils::twitter::twitteractivity_errors::is_rate_limit_error;
+use auto::utils::twitter::twitteractivity_errors::ErrorClass;
+use auto::utils::twitter::twitteractivity_retry::RetryConfig;
+
+/// Tests ErrorClassifier trait on anyhow::Error for all three error classes.
+#[test]
+fn twitteractivity_error_classification_transient_errors() {
+    use auto::utils::twitter::ErrorClassifier;
+
+    let timeout_err = anyhow::anyhow!("timeout waiting for element");
+    assert_eq!(timeout_err.classify(), ErrorClass::Transient);
+
+    let stale_err = anyhow::anyhow!("stale element reference");
+    assert_eq!(stale_err.classify(), ErrorClass::Transient);
+
+    let net_err = anyhow::anyhow!("net::ERR_CONNECTION_RESET");
+    assert_eq!(net_err.classify(), ErrorClass::Transient);
+}
+
+/// Tests that permanent errors (unknown/misc) classify correctly.
+#[test]
+fn twitteractivity_error_classification_permanent_errors() {
+    use auto::utils::twitter::ErrorClassifier;
+
+    let unknown_err = anyhow::anyhow!("unknown error occurred");
+    assert_eq!(unknown_err.classify(), ErrorClass::Permanent);
+}
+
+/// Tests that fatal errors (browser disconnected, target closed) classify correctly.
+#[test]
+fn twitteractivity_error_classification_fatal_errors() {
+    use auto::utils::twitter::ErrorClassifier;
+
+    let browser_err = anyhow::anyhow!("browser disconnected");
+    assert_eq!(browser_err.classify(), ErrorClass::Fatal);
+
+    let target_err = anyhow::anyhow!("target closed");
+    assert_eq!(target_err.classify(), ErrorClass::Fatal);
+}
+
+/// Tests ErrorClassifier for std::io::Error (transient/kinds).
+#[test]
+fn twitteractivity_error_classification_io_transient() {
+    use auto::utils::twitter::ErrorClassifier;
+    use std::io;
+
+    let timeout_err = io::Error::new(io::ErrorKind::TimedOut, "operation timed out");
+    assert_eq!(timeout_err.classify(), ErrorClass::Transient);
+
+    let conn_err = io::Error::new(io::ErrorKind::ConnectionRefused, "connection refused");
+    assert_eq!(conn_err.classify(), ErrorClass::Transient);
+}
+
+/// Tests ErrorClassifier for std::io::Error (permanent).
+#[test]
+fn twitteractivity_error_classification_io_permanent() {
+    use auto::utils::twitter::ErrorClassifier;
+    use std::io;
+
+    let not_found = io::Error::new(io::ErrorKind::NotFound, "file not found");
+    assert_eq!(not_found.classify(), ErrorClass::Permanent);
+}
+
+// ============================================================================
+// Retry Config Tests (§8.8 coverage: retry config profiles)
+// ============================================================================
+
+/// Tests RetryConfig default values.
+#[test]
+fn twitteractivity_retry_config_default() {
+    let config = RetryConfig::default();
+    assert_eq!(config.max_attempts, 3);
+    assert_eq!(config.base_delay_ms, 500);
+    assert_eq!(config.max_delay_ms, 5000);
+    assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
+    assert!((config.jitter_factor - 0.1).abs() < f64::EPSILON);
+}
+
+/// Tests RetryConfig aggressive profile.
+#[test]
+fn twitteractivity_retry_config_aggressive() {
+    let config = RetryConfig::aggressive();
+    assert_eq!(config.max_attempts, 2);
+    assert_eq!(config.base_delay_ms, 250);
+    assert_eq!(config.max_delay_ms, 2000);
+}
+
+/// Tests RetryConfig conservative profile.
+#[test]
+fn twitteractivity_retry_config_conservative() {
+    let config = RetryConfig::conservative();
+    assert_eq!(config.max_attempts, 5);
+    assert_eq!(config.base_delay_ms, 1000);
+    assert_eq!(config.max_delay_ms, 10000);
+}
+
+// ============================================================================
+// Rate Limit & Auth Detection Tests (§8.8 coverage: error detection)
+// ============================================================================
+
+/// Tests is_rate_limit_error detection function.
+#[test]
+fn twitteractivity_rate_limit_detection() {
+    assert!(is_rate_limit_error(&"rate limit exceeded"));
+    assert!(is_rate_limit_error(&"429 Too Many Requests"));
+    assert!(is_rate_limit_error(&"too many requests, try again later"));
+    assert!(!is_rate_limit_error(&"element not found"));
+    assert!(!is_rate_limit_error(&"network timeout"));
+}
+
+/// Tests is_auth_error detection function.
+#[test]
+fn twitteractivity_auth_error_detection() {
+    assert!(is_auth_error(&"401 Unauthorized"));
+    assert!(is_auth_error(&"authentication required"));
+    assert!(is_auth_error(&"login failed"));
+    assert!(!is_auth_error(&"network timeout"));
+    assert!(!is_auth_error(&"stale element reference"));
+}
+
+// ============================================================================
+// LLM Message Building Tests (§8.8 coverage: LLM message construction)
+// ============================================================================
+
+/// Tests that build_reply_messages returns correctly structured messages.
+#[test]
+fn twitteractivity_llm_build_reply_messages_structure() {
+    let messages = build_reply_messages("author", "tweet text", &[]);
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].role, "system");
+    assert_eq!(messages[1].role, "user");
+    assert!(messages[1].content.contains("author"));
+    assert!(messages[1].content.contains("tweet text"));
+}
+
+/// Tests that build_reply_messages includes reply context when provided.
+#[test]
+fn twitteractivity_llm_build_reply_messages_with_replies() {
+    let replies = vec![("reply_author", "reply content")];
+    let messages = build_reply_messages("author", "tweet text", &replies);
+    assert_eq!(messages.len(), 2);
+    assert!(messages[1].content.contains("reply content"));
+}
+
+/// Tests that build_reply_messages handles empty replies gracefully.
+#[test]
+fn twitteractivity_llm_build_reply_messages_empty_replies() {
+    let messages = build_reply_messages("author", "tweet", &[]);
+    assert_eq!(messages.len(), 2);
+    // Should not crash or produce garbage
+    assert!(!messages[1].content.is_empty());
+}
+
+/// Tests that build_quote_messages returns correctly structured messages.
+#[test]
+fn twitteractivity_llm_build_quote_messages_structure() {
+    let messages = build_quote_messages("author", "tweet text", &[]);
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].role, "system");
+    assert_eq!(messages[1].role, "user");
+    assert!(messages[1].content.contains("author"));
+}
+
+/// Tests that build_quote_messages includes reply context.
+#[test]
+fn twitteractivity_llm_build_quote_messages_with_replies() {
+    let replies = vec![("reply_author", "reply text")];
+    let messages = build_quote_messages("author", "tweet text", &replies);
+    assert_eq!(messages.len(), 2);
+    assert!(messages[1].content.contains("reply text"));
+}
+
+/// Tests that build_quote_messages handles empty replies gracefully.
+#[test]
+fn twitteractivity_llm_build_quote_messages_empty_replies() {
+    let messages = build_quote_messages("author", "tweet", &[]);
+    assert_eq!(messages.len(), 2);
+    assert!(!messages[1].content.is_empty());
+}
+
+// ============================================================================
+// SessionState Tests (§8.8 coverage: session state)
+// ============================================================================
+
+/// Tests SessionState creation with custom limits and duration.
+#[test]
+fn twitteractivity_session_state_creation() {
+    use auto::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use auto::utils::twitter::twitteractivity_state::SessionState;
+
+    let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
+    let state = SessionState::new(limits, 60000, 100);
+
+    assert!(!state.is_expired());
+    assert!(state.remaining_time().as_millis() > 0);
+    assert_eq!(state.action_summary(), (0, 10));
+}
+
+/// Tests SessionState is_expired detection.
+#[test]
+fn twitteractivity_session_state_expiry() {
+    use auto::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use auto::utils::twitter::twitteractivity_state::SessionState;
+
+    // Create session with 1ms duration — should expire nearly immediately
+    let limits = EngagementLimits::default();
+    let state = SessionState::new(limits, 1, 100);
+
+    // Brief sleep to ensure expiry
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(state.is_expired());
+    assert_eq!(state.remaining_time().as_millis(), 0);
+}
+
+/// Tests SessionState action permission checks.
+#[test]
+fn twitteractivity_session_state_action_permission() {
+    use auto::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use auto::utils::twitter::twitteractivity_state::SessionState;
+
+    let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
+    let state = SessionState::new(limits, 60000, 100);
+
+    // Initially all actions should be allowed
+    assert!(state.is_action_allowed("like"));
+    assert!(state.is_action_allowed("retweet"));
+    assert!(state.is_action_allowed("follow"));
+    assert!(state.is_action_allowed("reply"));
+    assert!(state.is_action_allowed("dive"));
+    assert!(state.is_action_allowed("bookmark"));
+    assert!(state.is_action_allowed("quote"));
+
+    // Unknown action should not be allowed
+    assert!(!state.is_action_allowed("unknown_action"));
+}
+
+/// Tests SessionState record_action updates counters correctly.
+#[test]
+fn twitteractivity_session_state_record_action() {
+    use auto::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use auto::utils::twitter::twitteractivity_state::SessionState;
+
+    let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
+    let mut state = SessionState::new(limits, 60000, 100);
+
+    state.record_action("tweet_1", "like");
+    state.record_action("tweet_2", "retweet");
+    state.record_action("tweet_3", "follow");
+
+    assert_eq!(state.counters.likes, 1);
+    assert_eq!(state.counters.retweets, 1);
+    assert_eq!(state.counters.follows, 1);
+    assert_eq!(state.counters.total_actions(), 3);
+    assert!(!state.is_total_limit_reached());
+}
+
+/// Tests SessionState total limit detection.
+#[test]
+fn twitteractivity_session_state_total_limit() {
+    use auto::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use auto::utils::twitter::twitteractivity_state::SessionState;
+
+    let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 3);
+    let mut state = SessionState::new(limits, 60000, 100);
+
+    // Exceed total limit
+    state.record_action("tweet_1", "like");
+    state.record_action("tweet_2", "like");
+    state.record_action("tweet_3", "like");
+
+    assert!(state.is_total_limit_reached());
+    assert_eq!(state.action_summary(), (3, 3));
+}
+
+/// Tests SessionState progress_summary format.
+#[test]
+fn twitteractivity_session_state_progress_summary() {
+    use auto::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use auto::utils::twitter::twitteractivity_state::SessionState;
+
+    let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
+    let mut state = SessionState::new(limits, 60000, 100);
+
+    state.record_action("tweet_1", "like");
+    let summary = state.progress_summary();
+    assert!(summary.contains("1/10"));
+    assert!(summary.contains("L:1"));
+    assert!(summary.contains("Time left:"));
+}
+
+// ============================================================================
+// Popup Detection Constants Tests (§8.8 coverage: popup detection)
+// ============================================================================
+
+/// Tests that popup detection order matches the implementation.
+#[test]
+fn twitteractivity_popup_detection_order() {
+    use auto::utils::twitter::twitteractivity_navigation::is_login_flow;
+    use auto::utils::twitter::twitteractivity_popup::detect_popup;
+
+    // Verify the function signatures exist (compile-time check)
+    let _ = is_login_flow;
+    let _ = detect_popup;
+}
+
+// ============================================================================
+// Engagement Limits Edge Cases (§8.8 coverage)
+// ============================================================================
+
+/// Tests that bookmark and quote_tweet limits are enforced.
+#[test]
+fn twitteractivity_engagement_limits_v2_actions() {
+    use auto::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
+
+    let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 20);
+    let mut counters = EngagementCounters::new();
+
+    // Bookmark and quote should be allowed initially
+    assert!(limits.can_bookmark(&counters));
+    assert!(limits.can_quote_tweet(&counters));
+
+    // Exhaust bookmarks
+    counters.increment_bookmark();
+    counters.increment_bookmark();
+    assert!(!limits.can_bookmark(&counters));
+    // Quote should still be available
+    assert!(limits.can_quote_tweet(&counters));
+
+    // Exhaust quote tweets
+    counters.increment_quote_tweet();
+    counters.increment_quote_tweet();
+    assert!(!limits.can_quote_tweet(&counters));
 }

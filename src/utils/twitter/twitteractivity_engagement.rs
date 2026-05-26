@@ -1,21 +1,42 @@
 //! Engagement logic for Twitter activity task.
-//! Contains process_candidate() and helper functions for tweet engagement.
+//! Contains `process_candidate()` and helper functions for tweet engagement.
 
 use super::twitteractivity_retry::{retry_with_backoff, RetryConfig};
-use super::twitteractivity_state::*;
-use crate::metrics::*;
+use super::twitteractivity_state::{
+    CandidateContext, CandidateResult, SentimentTemplates, TaskConfig, TweetActionTracker,
+};
+use crate::metrics::{
+    RUN_COUNTER_BOOKMARK_FAILURE, RUN_COUNTER_BOOKMARK_SUCCESS, RUN_COUNTER_BUTTON_MISSING,
+    RUN_COUNTER_CLICK_VERIFY_FAILED, RUN_COUNTER_DIVE_FAILURE, RUN_COUNTER_DIVE_SUCCESS,
+    RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, RUN_COUNTER_FOLLOW_FAILURE, RUN_COUNTER_FOLLOW_SUCCESS,
+    RUN_COUNTER_LIKE_FAILURE, RUN_COUNTER_LIKE_SUCCESS, RUN_COUNTER_QUOTE_FAILURE,
+    RUN_COUNTER_QUOTE_SUCCESS, RUN_COUNTER_REPLY_FAILURE, RUN_COUNTER_REPLY_SUCCESS,
+    RUN_COUNTER_RETWEET_FAILURE, RUN_COUNTER_RETWEET_SUCCESS, RUN_COUNTER_TRANSIENT_ERROR,
+};
 use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
 use crate::utils::twitter::{
-    decision::*,
+    decision::{
+        DecisionEngineFactory, DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext,
+    },
     sentiment::Sentiment,
-    twitteractivity_dive::*,
-    twitteractivity_humanized::*,
-    twitteractivity_interact::*,
+    twitteractivity_dive::{dive_into_thread, identify_thread_replies},
+    twitteractivity_humanized::{
+        click_post_pause, click_prep_pause, clustered_engagement_pause, clustered_reply_pause,
+        human_pause, scroll_pause,
+    },
+    twitteractivity_interact::{
+        bookmark_tweet, follow_from_tweet, like_tweet, reply_to_tweet, retweet_tweet,
+    },
     twitteractivity_limits::{EngagementCounters, EngagementLimits},
-    twitteractivity_llm::*,
-    twitteractivity_navigation::*,
-    twitteractivity_persona::*,
+    twitteractivity_llm::{
+        extract_tweet_context, generate_quote_commentary, generate_reply, quote_tweet,
+    },
+    twitteractivity_navigation::goto_home,
+    twitteractivity_persona::{
+        should_bookmark, should_dive, should_follow, should_like, should_quote, should_reply,
+        should_retweet, PersonaWeights,
+    },
 };
 use anyhow::Result;
 use log::{info, warn};
@@ -91,6 +112,7 @@ pub async fn handle_engagement_decision(
 }
 
 /// Analyze tweet sentiment and modulate persona weights accordingly.
+#[allow(clippy::cast_precision_loss)]
 fn modulate_persona_by_sentiment(
     tweet: &Value,
     task_config: &TaskConfig,
@@ -187,8 +209,14 @@ async fn engage_replies(
                 {
                     if decision.score > 30 {
                         if let Some(pos) = reply.get("like_pos").and_then(|v| v.as_object()) {
-                            let x = pos.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            let y = pos.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let x = pos
+                                .get("x")
+                                .and_then(serde_json::Value::as_f64)
+                                .unwrap_or(0.0);
+                            let y = pos
+                                .get("y")
+                                .and_then(serde_json::Value::as_f64)
+                                .unwrap_or(0.0);
                             match retry_with_backoff(
                                 || like_at_position(api, x, y),
                                 &RetryConfig::aggressive(),
@@ -216,7 +244,7 @@ async fn engage_replies(
             }
         }
         Err(e) => {
-            warn!("Depth-First: Failed to identify replies: {}", e);
+            warn!("Depth-First: Failed to identify replies: {e}");
         }
     }
     Ok(())
@@ -224,6 +252,7 @@ async fn engage_replies(
 
 /// Process a single candidate tweet for engagement.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::cast_precision_loss)]
 pub async fn process_candidate(
     mut ctx: CandidateContext<'_>,
     actions_this_scan: u32,
@@ -285,52 +314,36 @@ pub async fn process_candidate(
         }
     }
 
-    // Determine actions to perform on this tweet
-    let mut actions_to_do: Vec<&str> = Vec::new();
     let tweet_id = tweet
         .get("id")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-
-    // Check each action type, respecting limits and chaining
-    if should_like(&candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "like")
-        && limits.can_like(counters)
-    {
-        actions_to_do.push("like");
-    }
-    if should_retweet(&candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "retweet")
-        && limits.can_retweet(counters)
-    {
-        actions_to_do.push("retweet");
-    }
-    if should_quote(&candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "quote_tweet")
-        && limits.can_quote_tweet(counters)
-    {
-        actions_to_do.push("quote");
-    }
-    if should_follow(&candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "follow")
-        && limits.can_follow(counters)
-    {
-        actions_to_do.push("follow");
-    }
-    if should_reply(&candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "reply")
-        && limits.can_reply(counters)
-    {
-        actions_to_do.push("reply");
-    }
-    if should_bookmark(&candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "bookmark")
-        && limits.can_bookmark(counters)
-    {
-        actions_to_do.push("bookmark");
+    let mut actions_to_do = selected_candidate_actions(
+        &candidate_persona,
+        tweet_id,
+        limits,
+        counters,
+        action_tracker,
+    );
+    if let Some(decision) = engagement_decision.as_ref() {
+        filter_actions_for_decision_level(&mut actions_to_do, decision.level);
     }
 
     let status_url = tweet.get("status_url").and_then(|v| v.as_str());
+
+    let needs_detail_view = actions_to_do.iter().any(|&action| action != "like");
+    if needs_detail_view {
+        let has_status_url = status_url.is_some();
+        let dive_allowed = has_status_url && should_dive(&candidate_persona);
+        if !has_status_url {
+            info!("Skipping detail-only actions for tweet {tweet_id}: missing status URL");
+        } else if !dive_allowed {
+            info!(
+                "Skipping detail-only actions for tweet {tweet_id}: thread dive gate did not pass"
+            );
+        }
+        filter_detail_actions_for_gate(&mut actions_to_do, has_status_url, dive_allowed);
+    }
 
     if actions_to_do.is_empty() {
         return Ok(CandidateResult {
@@ -360,6 +373,14 @@ pub async fn process_candidate(
                 "Skipping dive: limit reached ({}/{})",
                 counters.thread_dives, limits.max_thread_dives
             );
+        } else if task_config.dry_run_actions {
+            info!("Dry-run: would dive into thread for tweet {tweet_id}");
+            counters.increment_thread_dive();
+            actions_this_scan += 1;
+            action_tracker.record_action(tweet_id.to_string(), "dive");
+            did_dive = true;
+            next_scroll = Instant::now() + scroll_interval;
+            next_candidate_scan = Instant::now() + scroll_interval;
         } else if let Some(status_url) = status_url {
             // Pause continuous scrolling before diving to avoid interference
             let original_next_scroll = next_scroll;
@@ -381,7 +402,7 @@ pub async fn process_candidate(
             let dive_outcome = match dive_result {
                 Ok(outcome) => outcome,
                 Err(e) => {
-                    warn!("Thread dive failed after retries: {}", e);
+                    warn!("Thread dive failed after retries: {e}");
                     api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                     api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
                     // Resume scrolling if dive failed and skip this candidate
@@ -397,16 +418,11 @@ pub async fn process_candidate(
             if dive_outcome.used_fallback_target {
                 api.increment_run_counter(RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, 1);
             }
-            if !dive_outcome.opened {
-                info!("Thread dive failed: no valid target resolved");
-                // Resume scrolling if dive failed
-                next_scroll = original_next_scroll;
-                api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
-            } else {
+            if dive_outcome.opened {
                 api.increment_run_counter(RUN_COUNTER_DIVE_SUCCESS, 1);
                 // Read thread context for LLM use (not cached, extracted fresh when needed)
                 if let Err(e) = api.scroll_to_top().await {
-                    warn!("Scroll to top failed: {}", e);
+                    warn!("Scroll to top failed: {e}");
                     // Non-fatal, continue
                 }
                 human_pause(api, 800).await;
@@ -416,6 +432,11 @@ pub async fn process_candidate(
                 // Record dive action
                 action_tracker.record_action(tweet_id.to_string(), "dive");
                 did_dive = true;
+            } else {
+                info!("Thread dive failed: no valid target resolved");
+                // Resume scrolling if dive failed
+                next_scroll = original_next_scroll;
+                api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
             }
         }
     }
@@ -423,22 +444,6 @@ pub async fn process_candidate(
     // Perform the selected action.
     let mut root_action_success = false;
     for action in actions_to_do {
-        if task_config.dry_run_actions {
-            if action != "like" && !did_dive {
-                info!(
-                    "Dry-run: would skip {} on tweet {} because thread detail did not open",
-                    action, tweet_id
-                );
-                continue;
-            }
-            info!(
-                "Dry-run: would perform {} on tweet {} (did_dive={})",
-                action, tweet_id, did_dive
-            );
-            root_action_success = true; // Pretend success for sub-loop simulation
-            continue;
-        }
-
         if actions_this_scan >= task_config.max_actions_per_scan {
             info!(
                 "Skipping {}: per-scan action budget reached after dive ({}/{})",
@@ -447,7 +452,22 @@ pub async fn process_candidate(
             continue;
         }
         if !action_allowed_by_limits(action, limits, counters) {
-            info!("Skipping {}: engagement limit reached after dive", action);
+            info!("Skipping {action}: engagement limit reached after dive");
+            continue;
+        }
+
+        if task_config.dry_run_actions {
+            if action != "like" && !did_dive {
+                info!(
+                    "Dry-run: would skip {action} on tweet {tweet_id} because thread detail did not open"
+                );
+                continue;
+            }
+            info!("Dry-run: would perform {action} on tweet {tweet_id} (did_dive={did_dive})");
+            counters.increment(action);
+            actions_this_scan += 1;
+            action_tracker.record_action(tweet_id.to_string(), action);
+            root_action_success = true; // Pretend success for sub-loop simulation
             continue;
         }
 
@@ -466,7 +486,7 @@ pub async fn process_candidate(
                     {
                         Ok(result) => result,
                         Err(e) => {
-                            warn!("Like failed after retries: {}", e);
+                            warn!("Like failed after retries: {e}");
                             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                             api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
                             false
@@ -485,14 +505,14 @@ pub async fn process_candidate(
                         {
                             Ok(result) => result,
                             Err(e) => {
-                                warn!("Like at position failed after retries: {}", e);
+                                warn!("Like at position failed after retries: {e}");
                                 api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                                 api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
                                 false
                             }
                         }
                     } else {
-                        warn!("Like button not found in tweet payload for {}", tweet_id);
+                        warn!("Like button not found in tweet payload for {tweet_id}");
                         api.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 1);
                         false
                     }
@@ -500,13 +520,7 @@ pub async fn process_candidate(
             }
             "retweet" => {
                 // Validate we're in thread detail view before retweeting
-                if !did_dive {
-                    warn!(
-                        "Skipping retweet: not in thread detail view for tweet {}",
-                        tweet_id
-                    );
-                    false
-                } else {
+                if did_dive {
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
@@ -521,7 +535,7 @@ pub async fn process_candidate(
                             {
                                 Ok(result) => result,
                                 Err(e) => {
-                                    warn!("Retweet failed after retries: {}", e);
+                                    warn!("Retweet failed after retries: {e}");
                                     api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                                     api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
                                     false
@@ -529,25 +543,22 @@ pub async fn process_candidate(
                             }
                         }
                         Ok(false) => {
-                            warn!("Skipping retweet: not on tweet page for tweet {}", tweet_id);
+                            warn!("Skipping retweet: not on tweet page for tweet {tweet_id}");
                             false
                         }
                         Err(e) => {
-                            warn!("Failed to validate tweet page context for retweet: {}", e);
+                            warn!("Failed to validate tweet page context for retweet: {e}");
                             false
                         }
                     }
+                } else {
+                    warn!("Skipping retweet: not in thread detail view for tweet {tweet_id}");
+                    false
                 }
             }
             "quote" => {
                 // Validate we're in thread detail view before quoting
-                if !did_dive {
-                    warn!(
-                        "Skipping quote: not in thread detail view for tweet {}",
-                        tweet_id
-                    );
-                    false
-                } else {
+                if did_dive {
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
@@ -555,17 +566,17 @@ pub async fn process_candidate(
                             let quote_text = if task_config.llm_enabled {
                                 let (author, text, replies) =
                                     extract_tweet_context(api).await.unwrap_or_else(|e| {
-                                        warn!("Failed to extract tweet context for quote: {}", e);
+                                        warn!("Failed to extract tweet context for quote: {e}");
                                         ("unknown".to_string(), String::new(), Vec::new())
                                     });
                                 match generate_quote_commentary(api, &author, &text, replies).await
                                 {
                                     Ok(commentary) => {
-                                        info!("Generated LLM quote: {}", commentary);
+                                        info!("Generated LLM quote: {commentary}");
                                         commentary
                                     }
                                     Err(e) => {
-                                        warn!("LLM quote failed, using template: {}", e);
+                                        warn!("LLM quote failed, using template: {e}");
                                         generate_quote_text(
                                             sentiment,
                                             counters.quote_tweets,
@@ -583,36 +594,33 @@ pub async fn process_candidate(
                             match quote_tweet(api, &quote_text).await {
                                 Ok(success) => {
                                     if success {
-                                        info!("Quote tweeted with commentary: {}", quote_text);
+                                        info!("Quote tweeted with commentary: {quote_text}");
                                     }
                                     success
                                 }
                                 Err(e) => {
-                                    warn!("Quote tweet error: {}", e);
+                                    warn!("Quote tweet error: {e}");
                                     false
                                 }
                             }
                         }
                         Ok(false) => {
-                            warn!("Skipping quote: not on tweet page for tweet {}", tweet_id);
+                            warn!("Skipping quote: not on tweet page for tweet {tweet_id}");
                             false
                         }
                         Err(e) => {
-                            warn!("Failed to validate tweet page context for quote: {}", e);
+                            warn!("Failed to validate tweet page context for quote: {e}");
                             false
                         }
                     }
+                } else {
+                    warn!("Skipping quote: not in thread detail view for tweet {tweet_id}");
+                    false
                 }
             }
             "follow" => {
                 // Validate we're in thread detail view before following
-                if !did_dive {
-                    warn!(
-                        "Skipping follow: not in thread detail view for tweet {}",
-                        tweet_id
-                    );
-                    false
-                } else {
+                if did_dive {
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
@@ -627,7 +635,7 @@ pub async fn process_candidate(
                             {
                                 Ok(result) => result,
                                 Err(e) => {
-                                    warn!("Follow failed after retries: {}", e);
+                                    warn!("Follow failed after retries: {e}");
                                     api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                                     api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
                                     false
@@ -635,25 +643,22 @@ pub async fn process_candidate(
                             }
                         }
                         Ok(false) => {
-                            warn!("Skipping follow: not on tweet page for tweet {}", tweet_id);
+                            warn!("Skipping follow: not on tweet page for tweet {tweet_id}");
                             false
                         }
                         Err(e) => {
-                            warn!("Failed to validate tweet page context for follow: {}", e);
+                            warn!("Failed to validate tweet page context for follow: {e}");
                             false
                         }
                     }
+                } else {
+                    warn!("Skipping follow: not in thread detail view for tweet {tweet_id}");
+                    false
                 }
             }
             "reply" => {
                 // Validate we're in thread detail view before replying
-                if !did_dive {
-                    warn!(
-                        "Skipping reply: not in thread detail view for tweet {}",
-                        tweet_id
-                    );
-                    false
-                } else {
+                if did_dive {
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
@@ -661,16 +666,16 @@ pub async fn process_candidate(
                             let reply_text = if task_config.llm_enabled {
                                 let (author, text, replies) =
                                     extract_tweet_context(api).await.unwrap_or_else(|e| {
-                                        warn!("Failed to extract tweet context for reply: {}", e);
+                                        warn!("Failed to extract tweet context for reply: {e}");
                                         ("unknown".to_string(), String::new(), Vec::new())
                                     });
                                 match generate_reply(api, &author, &text, replies).await {
                                     Ok(reply) => {
-                                        info!("Generated LLM reply: {}", reply);
+                                        info!("Generated LLM reply: {reply}");
                                         reply
                                     }
                                     Err(e) => {
-                                        warn!("LLM reply failed, using template: {}", e);
+                                        warn!("LLM reply failed, using template: {e}");
                                         generate_reply_text(
                                             sentiment,
                                             counters.replies,
@@ -695,7 +700,7 @@ pub async fn process_candidate(
                             {
                                 Ok(result) => result,
                                 Err(e) => {
-                                    warn!("Reply failed after retries: {}", e);
+                                    warn!("Reply failed after retries: {e}");
                                     api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                                     api.increment_run_counter(RUN_COUNTER_REPLY_FAILURE, 1);
                                     false
@@ -703,25 +708,22 @@ pub async fn process_candidate(
                             }
                         }
                         Ok(false) => {
-                            warn!("Skipping reply: not on tweet page for tweet {}", tweet_id);
+                            warn!("Skipping reply: not on tweet page for tweet {tweet_id}");
                             false
                         }
                         Err(e) => {
-                            warn!("Failed to validate tweet page context for reply: {}", e);
+                            warn!("Failed to validate tweet page context for reply: {e}");
                             false
                         }
                     }
+                } else {
+                    warn!("Skipping reply: not in thread detail view for tweet {tweet_id}");
+                    false
                 }
             }
             "bookmark" => {
                 // Validate we're in thread detail view before bookmarking
-                if !did_dive {
-                    warn!(
-                        "Skipping bookmark: not in thread detail view for tweet {}",
-                        tweet_id
-                    );
-                    false
-                } else {
+                if did_dive {
                     match crate::utils::twitter::twitteractivity_interact::is_on_tweet_page(api)
                         .await
                     {
@@ -736,7 +738,7 @@ pub async fn process_candidate(
                             {
                                 Ok(result) => result,
                                 Err(e) => {
-                                    warn!("Bookmark failed after retries: {}", e);
+                                    warn!("Bookmark failed after retries: {e}");
                                     api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                                     api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
                                     false
@@ -744,17 +746,17 @@ pub async fn process_candidate(
                             }
                         }
                         Ok(false) => {
-                            warn!(
-                                "Skipping bookmark: not on tweet page for tweet {}",
-                                tweet_id
-                            );
+                            warn!("Skipping bookmark: not on tweet page for tweet {tweet_id}");
                             false
                         }
                         Err(e) => {
-                            warn!("Failed to validate tweet page context for bookmark: {}", e);
+                            warn!("Failed to validate tweet page context for bookmark: {e}");
                             false
                         }
                     }
+                } else {
+                    warn!("Skipping bookmark: not in thread detail view for tweet {tweet_id}");
+                    false
                 }
             }
             _ => false,
@@ -784,7 +786,7 @@ pub async fn process_candidate(
                     api.increment_run_counter(RUN_COUNTER_FOLLOW_SUCCESS, 1);
                 }
                 "reply" => {
-                    info!("Replied with sentiment {:?}", sentiment);
+                    info!("Replied with sentiment {sentiment:?}");
                     counters.increment_reply();
                     api.increment_run_counter(RUN_COUNTER_REPLY_SUCCESS, 1);
                 }
@@ -821,7 +823,7 @@ pub async fn process_candidate(
     }
 
     // Depth-First Engagement: Engage with replies if we dived and root engagement was successful
-    if did_dive && root_action_success {
+    if should_engage_replies_after_root_action(did_dive, root_action_success, task_config) {
         engage_replies(
             api,
             &candidate_persona,
@@ -834,7 +836,7 @@ pub async fn process_candidate(
     }
 
     // Navigate back to home after dive
-    if did_dive {
+    if should_navigate_home_after_dive(did_dive, task_config) {
         // Wait 3-5s after engagement before going home
         let home_wait_ms = rand::random::<u64>() % 2000 + 3000; // 3-5s
         human_pause(api, home_wait_ms).await;
@@ -842,7 +844,7 @@ pub async fn process_candidate(
         if let Err(e) =
             retry_with_backoff(|| goto_home(api), &RetryConfig::default(), api, "goto_home").await
         {
-            warn!("Navigation to home failed after retries: {}", e);
+            warn!("Navigation to home failed after retries: {e}");
             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
             // Continue anyway - not fatal
         }
@@ -862,6 +864,7 @@ pub async fn process_candidate(
 }
 
 /// Helper: extract tweet text from tweet object
+#[must_use]
 pub fn extract_tweet_text(tweet_obj: &Value) -> String {
     if let Some(text) = tweet_obj.get("text").or_else(|| tweet_obj.get("full_text")) {
         if let Some(text_str) = text.as_str() {
@@ -872,6 +875,7 @@ pub fn extract_tweet_text(tweet_obj: &Value) -> String {
 }
 
 /// Helper: extract a per-tweet button center from candidate payload.
+#[must_use]
 pub fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64, f64)> {
     let button_obj = tweet
         .get("buttons")
@@ -879,8 +883,8 @@ pub fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64
         .and_then(|buttons| buttons.get(button))
         .and_then(|v| v.as_object())?;
 
-    let x = button_obj.get("x").and_then(|v| v.as_f64())?;
-    let y = button_obj.get("y").and_then(|v| v.as_f64())?;
+    let x = button_obj.get("x").and_then(serde_json::Value::as_f64)?;
+    let y = button_obj.get("y").and_then(serde_json::Value::as_f64)?;
     Some((x, y))
 }
 
@@ -895,7 +899,7 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool>
 
     // Verify like was registered by checking if button state changed
     let verify_js = format!(
-        r#"
+        r"
         (function() {{
             var x = {x};
             var y = {y};
@@ -926,9 +930,7 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool>
             var color = (svg.getAttribute('color') || svg.getAttribute('fill') || '').toLowerCase();
             return color.includes('rgb') || color.includes('#');
         }})()
-        "#,
-        x = x,
-        y = y
+        "
     );
 
     let result = page.evaluate(verify_js).await?;
@@ -945,6 +947,7 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool>
 }
 
 /// Generate a short reply string based on sentiment.
+#[must_use]
 pub fn generate_reply_text(
     sentiment: Sentiment,
     reply_idx: u32,
@@ -959,6 +962,7 @@ pub fn generate_reply_text(
 }
 
 /// Generate a short quote commentary string based on sentiment.
+#[must_use]
 pub fn generate_quote_text(
     sentiment: Sentiment,
     quote_idx: u32,
@@ -973,6 +977,8 @@ pub fn generate_quote_text(
 }
 
 /// Calculate success rate as a percentage.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn calc_rate(success: usize, total: usize) -> f64 {
     if total == 0 {
         0.0
@@ -981,7 +987,8 @@ pub fn calc_rate(success: usize, total: usize) -> f64 {
     }
 }
 
-/// Check if action is allowed by limits (helper for process_candidate).
+/// Check if action is allowed by limits (helper for `process_candidate`).
+#[must_use]
 pub fn action_allowed_by_limits(
     action: &str,
     limits: &EngagementLimits,
@@ -996,6 +1003,95 @@ pub fn action_allowed_by_limits(
         "bookmark" => limits.can_bookmark(counters),
         _ => false,
     }
+}
+
+fn selected_candidate_actions(
+    candidate_persona: &PersonaWeights,
+    tweet_id: &str,
+    limits: &EngagementLimits,
+    counters: &EngagementCounters,
+    action_tracker: &TweetActionTracker,
+) -> Vec<&'static str> {
+    let mut actions_to_do = Vec::new();
+
+    if should_like(candidate_persona)
+        && action_tracker.can_perform_action(tweet_id, "like")
+        && limits.can_like(counters)
+    {
+        actions_to_do.push("like");
+    }
+    if should_retweet(candidate_persona)
+        && action_tracker.can_perform_action(tweet_id, "retweet")
+        && limits.can_retweet(counters)
+    {
+        actions_to_do.push("retweet");
+    }
+    if should_quote(candidate_persona)
+        && action_tracker.can_perform_action(tweet_id, "quote")
+        && limits.can_quote_tweet(counters)
+    {
+        actions_to_do.push("quote");
+    }
+    if should_follow(candidate_persona)
+        && action_tracker.can_perform_action(tweet_id, "follow")
+        && limits.can_follow(counters)
+    {
+        actions_to_do.push("follow");
+    }
+    if should_reply(candidate_persona)
+        && action_tracker.can_perform_action(tweet_id, "reply")
+        && limits.can_reply(counters)
+    {
+        actions_to_do.push("reply");
+    }
+    if should_bookmark(candidate_persona)
+        && action_tracker.can_perform_action(tweet_id, "bookmark")
+        && limits.can_bookmark(counters)
+    {
+        actions_to_do.push("bookmark");
+    }
+
+    actions_to_do
+}
+
+fn filter_detail_actions_for_gate(
+    actions_to_do: &mut Vec<&'static str>,
+    has_status_url: bool,
+    dive_allowed: bool,
+) {
+    if actions_to_do.iter().any(|&action| action != "like") && (!has_status_url || !dive_allowed) {
+        actions_to_do.retain(|&action| action == "like");
+    }
+}
+
+fn filter_actions_for_decision_level(
+    actions_to_do: &mut Vec<&'static str>,
+    level: EngagementLevel,
+) {
+    match level {
+        EngagementLevel::Full => {}
+        EngagementLevel::Medium => {
+            actions_to_do.retain(|&action| matches!(action, "like" | "retweet"));
+        }
+        EngagementLevel::Minimal => {
+            actions_to_do.retain(|&action| action == "like");
+        }
+        EngagementLevel::None => {
+            actions_to_do.clear();
+        }
+    }
+}
+
+fn should_engage_replies_after_root_action(
+    did_dive: bool,
+    root_action_success: bool,
+    task_config: &TaskConfig,
+) -> bool {
+    did_dive && root_action_success && !task_config.dry_run_actions
+}
+
+fn should_navigate_home_after_dive(did_dive: bool, task_config: &TaskConfig) -> bool {
+    did_dive && !task_config.dry_run_actions
 }
 
 // ============================================================================
@@ -1039,6 +1135,117 @@ mod integration_tests {
             &limits,
             &counters
         ));
+    }
+
+    #[test]
+    fn selected_candidate_actions_respects_persona_limits_and_tracker() {
+        let persona = PersonaWeights {
+            like_prob: 1.0,
+            retweet_prob: 1.0,
+            quote_prob: 1.0,
+            follow_prob: 1.0,
+            reply_prob: 1.0,
+            bookmark_prob: 1.0,
+            thread_dive_prob: 1.0,
+            interest_multiplier: 1.0,
+        };
+        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 10);
+        let counters = EngagementCounters::new();
+        let mut tracker = TweetActionTracker::new(60_000);
+
+        let actions = selected_candidate_actions(&persona, "tweet_1", &limits, &counters, &tracker);
+        assert_eq!(
+            actions,
+            vec!["like", "retweet", "quote", "follow", "reply", "bookmark"]
+        );
+
+        tracker.record_action("tweet_1".to_string(), "like");
+        let blocked = selected_candidate_actions(&persona, "tweet_1", &limits, &counters, &tracker);
+        assert!(blocked.is_empty());
+    }
+
+    #[test]
+    fn thread_dive_prob_zero_drops_detail_actions() {
+        let persona = PersonaWeights {
+            thread_dive_prob: 0.0,
+            ..PersonaWeights::default()
+        };
+        let mut actions = vec!["like", "retweet", "reply"];
+
+        filter_detail_actions_for_gate(&mut actions, true, should_dive(&persona));
+
+        assert_eq!(actions, vec!["like"]);
+    }
+
+    #[test]
+    fn thread_dive_prob_one_keeps_detail_actions_when_status_url_exists() {
+        let persona = PersonaWeights {
+            thread_dive_prob: 1.0,
+            ..PersonaWeights::default()
+        };
+        let mut actions = vec!["like", "retweet", "reply"];
+
+        filter_detail_actions_for_gate(&mut actions, true, should_dive(&persona));
+
+        assert_eq!(actions, vec!["like", "retweet", "reply"]);
+    }
+
+    #[test]
+    fn decision_level_minimal_keeps_like_only() {
+        let mut actions = vec!["like", "retweet", "quote", "follow", "reply", "bookmark"];
+
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::Minimal);
+
+        assert_eq!(actions, vec!["like"]);
+    }
+
+    #[test]
+    fn decision_level_medium_keeps_like_and_retweet_only() {
+        let mut actions = vec!["like", "retweet", "quote", "follow", "reply", "bookmark"];
+
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::Medium);
+
+        assert_eq!(actions, vec!["like", "retweet"]);
+    }
+
+    #[test]
+    fn decision_level_full_keeps_selected_actions() {
+        let mut actions = vec!["like", "retweet", "quote", "follow", "reply", "bookmark"];
+
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::Full);
+
+        assert_eq!(
+            actions,
+            vec!["like", "retweet", "quote", "follow", "reply", "bookmark"]
+        );
+    }
+
+    #[test]
+    fn decision_level_none_clears_selected_actions() {
+        let mut actions = vec!["like", "retweet"];
+
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::None);
+
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn dry_run_skips_post_dive_browser_work() {
+        let dry_run = TaskConfig {
+            dry_run_actions: true,
+            ..Default::default()
+        };
+        let live = TaskConfig {
+            dry_run_actions: false,
+            ..Default::default()
+        };
+
+        assert!(!should_engage_replies_after_root_action(
+            true, true, &dry_run
+        ));
+        assert!(!should_navigate_home_after_dive(true, &dry_run));
+        assert!(should_engage_replies_after_root_action(true, true, &live));
+        assert!(should_navigate_home_after_dive(true, &live));
     }
 
     /// Test extract_tweet_text with text field

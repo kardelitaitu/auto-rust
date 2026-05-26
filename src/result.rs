@@ -51,7 +51,8 @@ impl TaskResult {
     /// * `duration_ms` - Time taken to execute the task in milliseconds
     ///
     /// # Returns
-    /// A TaskResult with Success status and default retry values
+    /// A `TaskResult` with Success status and default retry values
+    #[must_use]
     pub fn success(duration_ms: u64) -> Self {
         Self {
             status: TaskStatus::Success,
@@ -64,6 +65,7 @@ impl TaskResult {
         }
     }
 
+    #[must_use]
     pub fn failure(duration_ms: u64, error: String, error_kind: TaskErrorKind) -> Self {
         let status = if matches!(error_kind, TaskErrorKind::Timeout) {
             TaskStatus::Timeout
@@ -82,6 +84,7 @@ impl TaskResult {
         }
     }
 
+    #[must_use]
     pub fn cancelled(duration_ms: u64, error: String, error_kind: TaskErrorKind) -> Self {
         Self {
             status: TaskStatus::Cancelled,
@@ -104,6 +107,7 @@ impl TaskResult {
     ///
     /// # Returns
     /// Self with updated retry information and Failed status
+    #[must_use]
     pub fn with_retry(mut self, attempt: u32, max_retries: u32, last_error: String) -> Self {
         self.attempt = attempt;
         self.max_retries = max_retries;
@@ -111,17 +115,20 @@ impl TaskResult {
         self
     }
 
+    #[must_use]
     pub fn with_attempt(mut self, attempt: u32, max_retries: u32) -> Self {
         self.attempt = attempt;
         self.max_retries = max_retries;
         self
     }
 
+    #[must_use]
     pub fn with_error_kind(mut self, error_kind: TaskErrorKind) -> Self {
         self.error_kind = Some(error_kind);
         self
     }
 
+    #[must_use]
     pub fn is_success(&self) -> bool {
         matches!(self.status, TaskStatus::Success)
     }
@@ -140,7 +147,7 @@ pub enum TaskErrorKind {
     Navigation,
     /// Session management error (connection lost, session expired)
     Session,
-    /// Browser connection or automation error (WebDriver issues, browser crashes)
+    /// Browser connection or automation error (`WebDriver` issues, browser crashes)
     Browser,
     /// Unknown or uncategorized error type
     Unknown,
@@ -155,7 +162,8 @@ impl TaskErrorKind {
     /// * `error` - Error message string to classify
     ///
     /// # Returns
-    /// The most appropriate TaskErrorKind for the given error message
+    /// The most appropriate `TaskErrorKind` for the given error message
+    #[must_use]
     pub fn classify(error: &str) -> Self {
         let e = error.to_lowercase();
         if e.contains("timeout") || e.contains("deadline") {
@@ -189,6 +197,7 @@ impl TaskErrorKind {
         }
     }
 
+    #[must_use]
     pub fn is_retryable(self) -> bool {
         matches!(
             self,
@@ -201,7 +210,7 @@ impl TaskErrorKind {
     }
 }
 
-/// A boxed function that returns a TaskResult when executed.
+/// A boxed function that returns a `TaskResult` when executed.
 /// Used for deferred task execution and retry mechanisms.
 /// The function must be Send and Sync for use in async contexts.
 pub type TaskResultFn = Box<dyn Fn() -> TaskResult + Send + Sync>;
@@ -228,6 +237,7 @@ pub struct RunSummary {
 }
 
 impl RunSummary {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             total_tasks: 0,
@@ -254,6 +264,8 @@ impl RunSummary {
         self.results.push(result);
     }
 
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn success_rate(&self) -> f64 {
         if self.total_tasks == 0 {
             return 0.0;
@@ -265,6 +277,30 @@ impl RunSummary {
 impl Default for RunSummary {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskStatus::Success => write!(f, "Success"),
+            TaskStatus::Failed(msg) => write!(f, "Failed: {msg}"),
+            TaskStatus::Timeout => write!(f, "Timeout"),
+            TaskStatus::Cancelled => write!(f, "Cancelled"),
+        }
+    }
+}
+
+impl std::fmt::Display for TaskErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskErrorKind::Timeout => write!(f, "Timeout"),
+            TaskErrorKind::Validation => write!(f, "Validation"),
+            TaskErrorKind::Navigation => write!(f, "Navigation"),
+            TaskErrorKind::Session => write!(f, "Session"),
+            TaskErrorKind::Browser => write!(f, "Browser"),
+            TaskErrorKind::Unknown => write!(f, "Unknown"),
+        }
     }
 }
 
@@ -1060,5 +1096,305 @@ mod tests {
             TaskStatus::Cancelled,
         ];
         assert_eq!(variants.len(), 4);
+    }
+}
+
+#[cfg(test)]
+#[allow(missing_docs)]
+mod tdd_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    // ─── RED TESTS ─────────────────────────────────────────────────
+    // These test Display implementations for TaskStatus and TaskErrorKind.
+    // They will fail until Display is implemented for both types.
+
+    #[test]
+    fn tdd_red_task_status_display_success() {
+        let status = TaskStatus::Success;
+        assert_eq!(status.to_string(), "Success");
+    }
+
+    #[test]
+    fn tdd_red_task_status_display_failed() {
+        let status = TaskStatus::Failed("error occurred".to_string());
+        assert_eq!(status.to_string(), "Failed: error occurred");
+    }
+
+    #[test]
+    fn tdd_red_task_status_display_timeout() {
+        let status = TaskStatus::Timeout;
+        assert_eq!(status.to_string(), "Timeout");
+    }
+
+    #[test]
+    fn tdd_red_task_status_display_cancelled() {
+        let status = TaskStatus::Cancelled;
+        assert_eq!(status.to_string(), "Cancelled");
+    }
+
+    #[test]
+    fn tdd_red_task_error_kind_display_all_variants() {
+        assert_eq!(TaskErrorKind::Timeout.to_string(), "Timeout");
+        assert_eq!(TaskErrorKind::Validation.to_string(), "Validation");
+        assert_eq!(TaskErrorKind::Navigation.to_string(), "Navigation");
+        assert_eq!(TaskErrorKind::Session.to_string(), "Session");
+        assert_eq!(TaskErrorKind::Browser.to_string(), "Browser");
+        assert_eq!(TaskErrorKind::Unknown.to_string(), "Unknown");
+    }
+
+    // ─── GREEN TESTS ───────────────────────────────────────────────
+    // These verify existing behavior that was not previously tested.
+
+    #[test]
+    fn tdd_green_full_serde_round_trip_task_result() {
+        let original = TaskResult {
+            status: TaskStatus::Failed("network error".to_string()),
+            attempt: 2,
+            max_retries: 3,
+            last_error: Some("network error".to_string()),
+            error_kind: Some(TaskErrorKind::Session),
+            duration_ms: 1500,
+            metadata: None,
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let round_trip: TaskResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(round_trip.status, original.status);
+        assert_eq!(round_trip.attempt, original.attempt);
+        assert_eq!(round_trip.max_retries, original.max_retries);
+        assert_eq!(round_trip.last_error, original.last_error);
+        assert_eq!(round_trip.error_kind, original.error_kind);
+        assert_eq!(round_trip.duration_ms, original.duration_ms);
+    }
+
+    #[test]
+    fn tdd_green_full_serde_round_trip_run_summary() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::failure(
+            50,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
+        summary.add(TaskResult::cancelled(
+            25,
+            "cancel".to_string(),
+            TaskErrorKind::Timeout,
+        ));
+
+        let json = serde_json::to_string(&summary).expect("serialize");
+        let round_trip: RunSummary = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(round_trip.total_tasks, 3);
+        assert_eq!(round_trip.succeeded, 1);
+        assert_eq!(round_trip.failed, 1);
+        assert_eq!(round_trip.cancelled, 1);
+        assert_eq!(round_trip.total_duration_ms, 175);
+        assert_eq!(round_trip.results.len(), 3);
+    }
+
+    #[test]
+    fn tdd_green_full_serde_round_trip_task_error_kind() {
+        let variants = [
+            TaskErrorKind::Timeout,
+            TaskErrorKind::Validation,
+            TaskErrorKind::Navigation,
+            TaskErrorKind::Session,
+            TaskErrorKind::Browser,
+            TaskErrorKind::Unknown,
+        ];
+        for variant in variants {
+            let json = serde_json::to_string(&variant).expect("serialize");
+            let round_trip: TaskErrorKind = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(round_trip, variant);
+        }
+    }
+
+    #[test]
+    fn tdd_green_full_serde_round_trip_task_status() {
+        let statuses = [
+            TaskStatus::Success,
+            TaskStatus::Failed("test".to_string()),
+            TaskStatus::Timeout,
+            TaskStatus::Cancelled,
+        ];
+        for status in statuses {
+            let json = serde_json::to_string(&status).expect("serialize");
+            let round_trip: TaskStatus = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(round_trip, status);
+        }
+    }
+
+    #[test]
+    fn tdd_green_error_kind_is_retryable_individual() {
+        // Validation is the only non-retryable variant
+        assert!(!TaskErrorKind::Validation.is_retryable());
+
+        // All others are retryable
+        assert!(TaskErrorKind::Timeout.is_retryable());
+        assert!(TaskErrorKind::Navigation.is_retryable());
+        assert!(TaskErrorKind::Session.is_retryable());
+        assert!(TaskErrorKind::Browser.is_retryable());
+        assert!(TaskErrorKind::Unknown.is_retryable());
+    }
+
+    #[test]
+    fn tdd_green_run_summary_all_four_status_types() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::failure(
+            50,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
+        summary.add(TaskResult::failure(
+            30,
+            "timeout".to_string(),
+            TaskErrorKind::Timeout,
+        ));
+        summary.add(TaskResult::cancelled(
+            10,
+            "cancel".to_string(),
+            TaskErrorKind::Session,
+        ));
+
+        assert_eq!(summary.total_tasks, 4);
+        assert_eq!(summary.succeeded, 1);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.timed_out, 1);
+        assert_eq!(summary.cancelled, 1);
+        assert_eq!(summary.total_duration_ms, 190);
+    }
+
+    #[test]
+    fn tdd_green_builder_full_chaining() {
+        let result = TaskResult::success(100)
+            .with_attempt(2, 5)
+            .with_error_kind(TaskErrorKind::Timeout)
+            .with_retry(3, 5, "timeout on attempt 2".to_string());
+
+        // with_retry overwrites attempt/error_kind set by earlier chain calls
+        assert_eq!(result.attempt, 3);
+        assert_eq!(result.max_retries, 5);
+        assert_eq!(result.last_error, Some("timeout on attempt 2".to_string()));
+        // error_kind is not overwritten by with_retry
+        assert_eq!(result.error_kind, Some(TaskErrorKind::Timeout));
+        assert_eq!(result.duration_ms, 100);
+    }
+
+    #[test]
+    fn tdd_green_struct_literal_with_metadata() {
+        let mut metadata = BTreeMap::new();
+        metadata.insert("source".to_string(), "manual".to_string());
+        metadata.insert("run_id".to_string(), "abc-123".to_string());
+
+        let result = TaskResult {
+            status: TaskStatus::Success,
+            attempt: 1,
+            max_retries: 0,
+            last_error: None,
+            error_kind: None,
+            duration_ms: 42,
+            metadata: Some(metadata),
+        };
+
+        assert!(result.is_success());
+        assert_eq!(result.metadata.as_ref().unwrap().len(), 2);
+        assert_eq!(
+            result.metadata.as_ref().unwrap().get("source"),
+            Some(&"manual".to_string())
+        );
+    }
+
+    #[test]
+    fn tdd_green_struct_literal_with_metadata_serde_round_trip() {
+        let mut metadata = BTreeMap::new();
+        metadata.insert("env".to_string(), "staging".to_string());
+
+        let result = TaskResult {
+            status: TaskStatus::Failed("crash".to_string()),
+            attempt: 3,
+            max_retries: 5,
+            last_error: Some("crash".to_string()),
+            error_kind: Some(TaskErrorKind::Browser),
+            duration_ms: 999,
+            metadata: Some(metadata),
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(json.contains("metadata"));
+        assert!(json.contains("staging"));
+
+        let round_trip: TaskResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(round_trip.status, result.status);
+        assert_eq!(round_trip.metadata, result.metadata);
+        assert_eq!(round_trip.duration_ms, 999);
+    }
+
+    #[test]
+    fn tdd_green_classify_empty_string_returns_unknown() {
+        assert_eq!(TaskErrorKind::classify(""), TaskErrorKind::Unknown);
+    }
+
+    #[test]
+    fn tdd_green_classify_whitespace_returns_unknown() {
+        assert_eq!(TaskErrorKind::classify("   "), TaskErrorKind::Unknown);
+        assert_eq!(TaskErrorKind::classify("\t\n"), TaskErrorKind::Unknown);
+    }
+
+    #[test]
+    fn tdd_green_classify_keyword_priority_validation_before_browser() {
+        // validation is checked before browser keywords
+        assert_eq!(
+            TaskErrorKind::classify("invalid browser request"),
+            TaskErrorKind::Validation
+        );
+    }
+
+    #[test]
+    fn tdd_green_classify_navigation_keyword_in_url_context() {
+        assert_eq!(
+            TaskErrorKind::classify("goto failed after timeout"),
+            // timeout checked first
+            TaskErrorKind::Timeout
+        );
+        // Without timeout keyword, goto → Navigation
+        assert_eq!(
+            TaskErrorKind::classify("goto failed"),
+            TaskErrorKind::Navigation
+        );
+    }
+
+    #[test]
+    fn tdd_green_task_result_fn_type_exists() {
+        // Verify the type alias compiles and can be constructed
+        let _fn: TaskResultFn = Box::new(|| TaskResult::success(0));
+        let result = (_fn)();
+        assert!(result.is_success());
+    }
+
+    #[test]
+    fn tdd_green_run_summary_display_format() {
+        let mut summary = RunSummary::new();
+        summary.add(TaskResult::success(100));
+        summary.add(TaskResult::success(200));
+
+        let debug = format!("{:?}", summary);
+        assert!(debug.contains("succeeded: 2"));
+        assert!(debug.contains("total_tasks: 2"));
+    }
+
+    #[test]
+    fn tdd_green_failure_with_empty_error_string() {
+        let result = TaskResult::failure(10, "".to_string(), TaskErrorKind::Validation);
+        assert!(matches!(result.status, TaskStatus::Failed(_)));
+        assert_eq!(result.last_error, Some("".to_string()));
+    }
+
+    #[test]
+    fn tdd_green_cancelled_with_empty_error_string() {
+        let result = TaskResult::cancelled(10, "".to_string(), TaskErrorKind::Unknown);
+        assert!(matches!(result.status, TaskStatus::Cancelled));
+        assert_eq!(result.last_error, Some("".to_string()));
     }
 }

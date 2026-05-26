@@ -50,7 +50,7 @@ pub struct WorkerPermit<'a> {
     active_workers: &'a std::sync::atomic::AtomicUsize,
 }
 
-impl<'a> Drop for WorkerPermit<'a> {
+impl Drop for WorkerPermit<'_> {
     fn drop(&mut self) {
         self.active_workers
             .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
@@ -189,6 +189,8 @@ impl Session {
     /// );
     /// ```
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    #[allow(clippy::unused_self)]
     pub fn new(
         id: String,
         name: String,
@@ -205,7 +207,7 @@ impl Session {
             let mut handler = handler;
             loop {
                 match tokio::time::timeout(Duration::from_secs(5), handler.next()).await {
-                    Ok(Some(Ok(_))) => {}
+                    Ok(Some(Ok(()))) => {}
                     Ok(Some(Err(_))) => {}
                     Ok(None) => {
                         // Handler stream ended
@@ -279,7 +281,7 @@ impl Session {
     ///
     /// # Arguments
     ///
-    /// * `page_id` - The TargetId of the page to register
+    /// * `page_id` - The `TargetId` of the page to register
     pub fn register_page(&self, page_id: TargetId) {
         self.active_pages.insert(page_id);
     }
@@ -449,7 +451,8 @@ impl Session {
 }
 
 /// Pure function to determine if circuit breaker should be open.
-/// This logic is extracted for testability without requiring SystemTime calls.
+/// This logic is extracted for testability without requiring `SystemTime` calls.
+#[must_use]
 pub fn is_circuit_breaker_open_pure(
     failure_count: usize,
     failure_threshold: usize,

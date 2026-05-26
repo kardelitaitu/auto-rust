@@ -16,22 +16,26 @@ pub struct ShutdownManager {
 
 impl ShutdownManager {
     /// Create a shutdown manager with the default channel capacity.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(1)
     }
 
     /// Create a shutdown manager with an explicit channel capacity.
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         let (tx, _rx) = broadcast::channel(capacity.max(1));
         Self { tx: Arc::new(tx) }
     }
 
     /// Subscribe to shutdown requests.
+    #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<()> {
         self.tx.subscribe()
     }
 
     /// Request shutdown and notify active subscribers.
+    #[must_use]
     pub fn request_shutdown(&self) -> bool {
         self.tx.send(()).is_ok()
     }
@@ -43,6 +47,7 @@ impl ShutdownManager {
     }
 
     /// Spawn the Ctrl+C listener that requests shutdown.
+    #[must_use]
     pub fn spawn_ctrl_c_listener(&self) -> JoinHandle<()> {
         let manager = self.clone();
         tokio::spawn(async move {

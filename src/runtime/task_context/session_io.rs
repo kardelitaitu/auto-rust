@@ -1,4 +1,4 @@
-//! Session and browser data export/import methods for TaskContext.
+//! Session and browser data export/import methods for `TaskContext`.
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -23,12 +23,12 @@ impl TaskContext {
                 serde_json::to_value(&cookies.cookies).unwrap_or(serde_json::Value::Array(vec![]))
             }
             Err(e) => {
-                log::warn!("Failed to export cookies: {}", e);
+                log::warn!("Failed to export cookies: {e}");
                 serde_json::Value::Array(vec![])
             }
         };
         let cookies = cookies_json.as_array().unwrap_or(&vec![]).clone();
-        let local_storage_js = r#"
+        let local_storage_js = r"
             (function() {
                 const data = {};
                 for (let i = 0; i < localStorage.length; i++) {
@@ -37,12 +37,12 @@ impl TaskContext {
                 }
                 return JSON.stringify(data);
             })()
-        "#;
+        ";
         let local_storage_str = self
             .page
             .evaluate(local_storage_js)
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
         let local_storage_value = local_storage_str
             .value()
             .cloned()
@@ -78,23 +78,22 @@ impl TaskContext {
         }
         self.import_cookies(&session_data.cookies).await?;
         let local_storage_json = serde_json::to_string(&session_data.local_storage)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage: {e}"))?;
         let js_code = format!(
-            r#"
+            r"
             (function() {{
-                const data = {};
+                const data = {local_storage_json};
                 Object.entries(data).forEach(([k, v]) => {{
                     localStorage.setItem(k, v);
                 }});
                 return 'localStorage restored';
             }})()
-            "#,
-            local_storage_json
+            "
         );
         self.page
             .evaluate(js_code)
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
             self.session_id,

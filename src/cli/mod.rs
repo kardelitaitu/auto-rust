@@ -81,6 +81,7 @@ pub struct Args {
 ///
 /// # Returns
 /// Parsed command-line arguments as an Args struct
+#[must_use]
 pub fn parse_args() -> Args {
     Args::parse()
 }
@@ -95,6 +96,7 @@ pub fn parse_args() -> Args {
 ///
 /// # Returns
 /// Option containing the help text if the task is known
+#[must_use]
 pub fn get_task_help(task_name: &str) -> Option<String> {
     use crate::task::registry::{TaskRegistry, TaskSource};
 
@@ -130,8 +132,7 @@ fn get_payload_guidance(task_name: &str) -> String {
     match validation_info {
         Some(info) => format_payload_guidance(task_name, &info),
         None => format!(
-            "Payload: Object with task-specific parameters\n\nExamples:\n  {}={{}}\n  {}={{\"key\": \"value\"}}",
-            task_name, task_name
+            "Payload: Object with task-specific parameters\n\nExamples:\n  {task_name}={{}}\n  {task_name}={{\"key\": \"value\"}}"
         ),
     }
 }
@@ -148,18 +149,18 @@ fn format_payload_guidance(
     ];
 
     for example in &info.examples {
-        lines.push(format!("  {}", example));
+        lines.push(format!("  {example}"));
     }
 
     if info.required_fields.is_empty() && info.optional_fields.is_empty() {
-        lines.push(format!("  {}={{}}", task_name));
+        lines.push(format!("  {task_name}={{}}"));
     }
 
     if !info.required_fields.is_empty() {
         lines.push(String::new());
         lines.push("Required fields:".to_string());
         for field in &info.required_fields {
-            lines.push(format!("  - {}", field));
+            lines.push(format!("  - {field}"));
         }
     }
 
@@ -167,7 +168,7 @@ fn format_payload_guidance(
         lines.push(String::new());
         lines.push("Optional fields:".to_string());
         for field in &info.optional_fields {
-            lines.push(format!("  - {}", field));
+            lines.push(format!("  - {field}"));
         }
     }
 
@@ -178,13 +179,13 @@ fn format_payload_guidance(
 ///
 /// Returns formatted help text suitable for CLI display.
 /// If the task is not found, returns an error message.
+#[must_use]
 pub fn render_task_help(task_name: &str) -> String {
     match get_task_help(task_name) {
         Some(help) => help,
-        None => format!(
-            "Unknown task: '{}'\nRun with --list-tasks to see available tasks.",
-            task_name
-        ),
+        None => {
+            format!("Unknown task: '{task_name}'\nRun with --list-tasks to see available tasks.")
+        }
     }
 }
 
@@ -430,8 +431,7 @@ mod tests {
     #[test]
     fn test_get_task_help_known_task() {
         let help = get_task_help("cookiebot");
-        assert!(help.is_some());
-        let help_text = help.unwrap();
+        let help_text = help.expect("help should be returned for known task");
         assert!(help_text.contains("Task: cookiebot"));
         assert!(help_text.contains("built-in task"));
         assert!(help_text.contains("policy:"));

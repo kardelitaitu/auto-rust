@@ -1,6 +1,6 @@
-//! Shared types for the task_context module.
+//! Shared types for the `task_context` module.
 //!
-//! This module contains types used across multiple submodules of task_context,
+//! This module contains types used across multiple submodules of `task_context`,
 //! including outcome structs, HTTP response types, and file metadata.
 
 use crate::utils::mouse::CursorMovementConfig;
@@ -97,7 +97,7 @@ impl InteractionRequest {
         }
     }
 
-    /// Create a new select_all interaction request
+    /// Create a new `select_all` interaction request
     pub fn select_all(selector: impl Into<String>) -> Self {
         Self {
             kind: InteractionKind::SelectAll,
@@ -110,18 +110,21 @@ impl InteractionRequest {
     }
 
     /// Disable verification for this interaction
+    #[must_use]
     pub fn without_verification(mut self) -> Self {
         self.verify = false;
         self
     }
 
     /// Disable fallback for this interaction
+    #[must_use]
     pub fn without_fallback(mut self) -> Self {
         self.allow_fallback = false;
         self
     }
 
     /// Set a custom post-action pause
+    #[must_use]
     pub fn with_pause(mut self, ms: u64) -> Self {
         self.post_action_pause_ms = ms;
         self
@@ -147,6 +150,7 @@ pub struct InteractionResult {
 
 impl InteractionResult {
     /// Create a successful result
+    #[must_use]
     pub fn success() -> Self {
         Self {
             success: true,
@@ -159,6 +163,7 @@ impl InteractionResult {
     }
 
     /// Create a successful result with coordinates
+    #[must_use]
     pub fn success_at(x: f64, y: f64) -> Self {
         Self {
             success: true,
@@ -171,6 +176,7 @@ impl InteractionResult {
     }
 
     /// Create a successful result with fallback
+    #[must_use]
     pub fn fallback_success() -> Self {
         Self {
             success: true,
@@ -195,11 +201,13 @@ impl InteractionResult {
     }
 
     /// Check if result is success
+    #[must_use]
     pub fn is_success(&self) -> bool {
         self.success
     }
 
     /// Check if fallback was used
+    #[must_use]
     pub fn is_fallback(&self) -> bool {
         self.fallback_used
     }
@@ -256,6 +264,7 @@ pub struct FocusOutcome {
 }
 
 impl FocusOutcome {
+    #[must_use]
     pub fn summary(&self) -> String {
         let status = match self.focus {
             FocusStatus::Success => "success",
@@ -274,6 +283,7 @@ pub struct RandomCursorOutcome {
 }
 
 impl RandomCursorOutcome {
+    #[must_use]
     pub fn summary(&self) -> String {
         format!(
             "randomcursor ({:.1},{:.1}) delay:{}..{}",
@@ -297,6 +307,7 @@ pub struct ClickAndWaitOutcome {
 }
 
 impl ClickAndWaitOutcome {
+    #[must_use]
     pub fn summary(&self) -> String {
         let next_visible = match self.next_visible {
             WaitForVisibleStatus::Visible => "visible",

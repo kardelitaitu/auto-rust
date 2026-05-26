@@ -55,6 +55,7 @@ impl Default for PluginRegistry {
 
 impl PluginRegistry {
     /// Create a new empty plugin registry
+    #[must_use]
     pub fn new() -> Self {
         Self {
             plugins: HashMap::new(),
@@ -87,7 +88,7 @@ impl PluginRegistry {
         self.plugins.insert(name.clone(), plugin);
         self.load_order.push(name.clone());
 
-        log::info!("Registered plugin: {}", name);
+        log::info!("Registered plugin: {name}");
         Ok(())
     }
 
@@ -101,13 +102,14 @@ impl PluginRegistry {
         self.manifests.remove(name);
         self.load_order.retain(|n| n != name);
 
-        log::info!("Unregistered plugin: {}", name);
+        log::info!("Unregistered plugin: {name}");
         Ok(())
     }
 
     /// Get a plugin by name
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn super::Plugin> {
-        self.plugins.get(name).map(|p| p.as_ref())
+        self.plugins.get(name).map(std::convert::AsRef::as_ref)
     }
 
     /// Get a mutable plugin by name
@@ -116,16 +118,19 @@ impl PluginRegistry {
     }
 
     /// Check if a plugin is registered
+    #[must_use]
     pub fn contains(&self, name: &str) -> bool {
         self.plugins.contains_key(name)
     }
 
     /// Get all registered plugin names
+    #[must_use]
     pub fn plugin_names(&self) -> Vec<String> {
         self.load_order.clone()
     }
 
     /// Get plugin info for all registered plugins
+    #[must_use]
     pub fn list_plugins(&self) -> Vec<PluginInfo> {
         self.load_order
             .iter()
@@ -138,6 +143,7 @@ impl PluginRegistry {
     }
 
     /// Get manifest for a plugin
+    #[must_use]
     pub fn get_manifest(&self, name: &str) -> Option<&PluginManifest> {
         self.manifests.get(name)
     }
@@ -155,8 +161,7 @@ impl PluginRegistry {
                 if let Some(plugin) = self.plugins.get_mut(name) {
                     plugin.initialize(&config).await.map_err(|e| {
                         RegistryError::InvalidConfiguration(format!(
-                            "Failed to initialize plugin '{}': {}",
-                            name, e
+                            "Failed to initialize plugin '{name}': {e}"
                         ))
                     })?;
                 }
@@ -174,7 +179,7 @@ impl PluginRegistry {
         for name in self.load_order.iter().rev() {
             if let Some(plugin) = self.plugins.get_mut(name) {
                 if let Err(e) = plugin.shutdown().await {
-                    log::warn!("Error shutting down plugin '{}': {}", name, e);
+                    log::warn!("Error shutting down plugin '{name}': {e}");
                 }
             }
         }
@@ -200,22 +205,21 @@ impl PluginRegistry {
                 match plugin.execute_hook(hook, context, data).await {
                     Ok(HookResult::Continue) => continue,
                     Ok(HookResult::Skip) => {
-                        log::debug!("Plugin '{}' requested skip", name);
+                        log::debug!("Plugin '{name}' requested skip");
                         return Ok(HookResult::Skip);
                     }
                     Ok(HookResult::Replace(replacement)) => {
-                        log::debug!("Plugin '{}' requested replace", name);
+                        log::debug!("Plugin '{name}' requested replace");
                         return Ok(HookResult::Replace(replacement));
                     }
                     Ok(HookResult::Abort(reason)) => {
-                        log::warn!("Plugin '{}' requested abort: {}", name, reason);
+                        log::warn!("Plugin '{name}' requested abort: {reason}");
                         return Ok(HookResult::Abort(reason));
                     }
                     Err(e) => {
-                        log::error!("Plugin '{}' hook execution failed: {}", name, e);
+                        log::error!("Plugin '{name}' hook execution failed: {e}");
                         return Err(RegistryError::HookExecutionFailed(format!(
-                            "Plugin '{}': {}",
-                            name, e
+                            "Plugin '{name}': {e}"
                         )));
                     }
                 }
@@ -245,16 +249,19 @@ impl PluginRegistry {
     }
 
     /// Get the number of registered plugins
+    #[must_use]
     pub fn len(&self) -> usize {
         self.plugins.len()
     }
 
     /// Check if registry is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.plugins.is_empty()
     }
 
     /// Check if registry is initialized
+    #[must_use]
     pub fn is_initialized(&self) -> bool {
         self.initialized
     }

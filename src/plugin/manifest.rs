@@ -64,6 +64,7 @@ pub struct PluginManifest {
 
 impl PluginManifest {
     /// Parse manifest from TOML string
+    #[allow(clippy::unused_self)]
     pub fn from_toml(toml_str: &str) -> anyhow::Result<Self> {
         let manifest: Self = toml::from_str(toml_str)?;
         manifest.validate()?;
@@ -115,11 +116,13 @@ impl PluginManifest {
     }
 
     /// Check if manifest has a specific capability
+    #[must_use]
     pub fn has_capability(&self, capability: PluginCapability) -> bool {
         self.capabilities.contains(&capability)
     }
 
     /// Check if manifest depends on a plugin
+    #[must_use]
     pub fn depends_on(&self, plugin_name: &str) -> bool {
         self.dependencies.iter().any(|dep| dep.name == plugin_name)
     }
@@ -141,9 +144,10 @@ impl PluginManifest {
 }
 
 /// Default manifest template
+#[must_use]
 pub fn default_manifest_template(name: &str) -> String {
     format!(
-        r##"name = "{name}"
+        r#"name = "{name}"
 version = "0.1.0"
 api_version = "1.0.0"
 author = "Your Name"
@@ -158,8 +162,7 @@ capabilities = ["custom_actions", "task_hooks"]
 # Plugin-specific configuration
 debug = false
 timeout_ms = 5000
-"##,
-        name = name
+"#
     )
 }
 

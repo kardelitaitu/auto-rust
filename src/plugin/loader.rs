@@ -48,6 +48,7 @@ impl PluginLoaderConfig {
     }
 
     /// Disable plugins
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -63,6 +64,7 @@ pub struct PluginLoader {
 
 impl PluginLoader {
     /// Create a new plugin loader with configuration
+    #[must_use]
     pub fn new(config: PluginLoaderConfig) -> Self {
         Self { config }
     }
@@ -96,10 +98,10 @@ impl PluginLoader {
                     result.loaded.push(name);
                 }
                 Err(e) => {
-                    let name = manifest_path
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
+                    let name = manifest_path.file_stem().map_or_else(
+                        || "unknown".to_string(),
+                        |s| s.to_string_lossy().to_string(),
+                    );
                     log::warn!(
                         "Failed to load plugin from '{}': {}",
                         manifest_path.display(),
@@ -231,17 +233,9 @@ impl PluginLoader {
             .with_context(|| format!("Failed to read manifest: {}", manifest_path.display()))?;
 
         // Parse manifest based on extension
-        let manifest = if manifest_path
-            .extension()
-            .map(|e| e == "toml")
-            .unwrap_or(false)
-        {
+        let manifest = if manifest_path.extension().is_some_and(|e| e == "toml") {
             PluginManifest::from_toml(&content)?
-        } else if manifest_path
-            .extension()
-            .map(|e| e == "json")
-            .unwrap_or(false)
-        {
+        } else if manifest_path.extension().is_some_and(|e| e == "json") {
             PluginManifest::from_json(&content)?
         } else {
             PluginManifest::from_yaml(&content)?
@@ -320,16 +314,19 @@ impl LoadResult {
     }
 
     /// Get total number of plugins attempted
+    #[must_use]
     pub fn total(&self) -> usize {
         self.loaded.len() + self.failed.len()
     }
 
     /// Check if all plugins loaded successfully
+    #[must_use]
     pub fn all_succeeded(&self) -> bool {
         self.failed.is_empty()
     }
 
     /// Check if any plugins loaded successfully
+    #[must_use]
     pub fn any_succeeded(&self) -> bool {
         !self.loaded.is_empty()
     }

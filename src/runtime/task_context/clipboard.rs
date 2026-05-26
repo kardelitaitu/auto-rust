@@ -1,4 +1,4 @@
-//! Clipboard management methods for TaskContext.
+//! Clipboard management methods for `TaskContext`.
 
 use anyhow::Result;
 
@@ -52,8 +52,7 @@ impl TaskContext {
         }
         let has_content = crate::state::ClipboardState::new(self.session_id.clone())
             .get()
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.is_empty());
         Ok(has_content)
     }
 

@@ -29,19 +29,20 @@ pub struct LogContext {
 
 impl LogContext {
     /// Returns formatted context string like "\[brave-9002\]\[Teen\]\[pageview\]"
+    #[must_use]
     pub fn format(&self) -> String {
         let mut parts = Vec::new();
 
         if let Some(ref sid) = self.session_id {
-            parts.push(format!("[{}]", sid));
+            parts.push(format!("[{sid}]"));
         }
 
         if let Some(ref profile) = self.profile_name {
-            parts.push(format!("[{}]", profile));
+            parts.push(format!("[{profile}]"));
         }
 
         if let Some(ref task) = self.task_name {
-            parts.push(format!("[{}]", task));
+            parts.push(format!("[{task}]"));
         }
 
         parts.join("")
@@ -54,6 +55,7 @@ pub fn set_log_context(ctx: LogContext) {
 }
 
 /// Gets the current logging context.
+#[must_use]
 pub fn get_log_context() -> LogContext {
     LOG_CONTEXT.with(|c| c.borrow().clone())
 }
@@ -76,6 +78,7 @@ impl Drop for LogContextGuard {
 }
 
 /// Sets the logging context for the current scope and restores the previous context automatically.
+#[must_use]
 pub fn scoped_log_context(ctx: LogContext) -> LogContextGuard {
     let previous = get_log_context();
     set_log_context(ctx);
@@ -92,7 +95,7 @@ pub struct FileLogger {
 }
 
 impl FileLogger {
-    /// Creates a new FileLogger that writes to the specified file path.
+    /// Creates a new `FileLogger` that writes to the specified file path.
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, std::io::Error> {
         let file = OpenOptions::new()
             .write(true)

@@ -107,7 +107,7 @@ where
                 run_group.await;
                 break;
             }
-            _ = &mut run_group => {
+            () = &mut run_group => {
                 completed_groups += 1;
             }
         }

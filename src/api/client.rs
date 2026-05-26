@@ -18,7 +18,7 @@ use std::time::Duration;
 
 /// HTTP client for making API requests with consistent error handling.
 /// Provides a wrapper around reqwest with timeout and retry capabilities.
-/// Used for communicating with external APIs like RoxyBrowser.
+/// Used for communicating with external APIs like `RoxyBrowser`.
 pub struct ApiClient {
     /// Underlying HTTP client instance
     client: Client,
@@ -39,7 +39,8 @@ impl ApiClient {
     /// * `base_url` - Base URL for all API requests (e.g., "<https://api.example.com>")
     ///
     /// # Returns
-    /// A new ApiClient instance ready for making requests
+    /// A new `ApiClient` instance ready for making requests
+    #[must_use]
     pub fn new(base_url: String) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
@@ -61,7 +62,8 @@ impl ApiClient {
     /// * `circuit_breaker` - Circuit breaker instance for fault tolerance
     ///
     /// # Returns
-    /// A new ApiClient instance with circuit breaker enabled
+    /// A new `ApiClient` instance with circuit breaker enabled
+    #[must_use]
     pub fn with_circuit_breaker(base_url: String, circuit_breaker: CircuitBreaker) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
@@ -77,6 +79,7 @@ impl ApiClient {
     }
 
     /// Creates a new API client with a custom retry policy.
+    #[must_use]
     pub fn with_retry_policy(base_url: String, retry_policy: RetryPolicy) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
@@ -92,6 +95,7 @@ impl ApiClient {
     }
 
     /// Creates a new API client with both circuit breaker and custom retry policy.
+    #[must_use]
     pub fn with_circuit_breaker_and_retry_policy(
         base_url: String,
         circuit_breaker: CircuitBreaker,
@@ -117,7 +121,8 @@ impl ApiClient {
     /// * `timeout` - Request timeout duration
     ///
     /// # Returns
-    /// A new ApiClient instance with custom timeout
+    /// A new `ApiClient` instance with custom timeout
+    #[must_use]
     pub fn with_timeout(base_url: String, timeout: Duration) -> Self {
         let client = Client::builder()
             .timeout(timeout)
@@ -145,10 +150,10 @@ impl ApiClient {
     /// Checks circuit breaker before executing and records success/failure.
     ///
     /// # Type Parameters
-    /// * `T` - Type to deserialize the response into (must implement DeserializeOwned)
+    /// * `T` - Type to deserialize the response into (must implement `DeserializeOwned`)
     ///
     /// # Arguments
-    /// * `path` - API endpoint path (will be appended to base_url)
+    /// * `path` - API endpoint path (will be appended to `base_url`)
     ///
     /// # Returns
     /// Deserialized response data or an error
@@ -330,7 +335,8 @@ impl CircuitBreaker {
     /// * `half_open_timeout_ms` - Timeout before retrying in half-open state
     ///
     /// # Returns
-    /// A new CircuitBreaker instance in Closed state
+    /// A new `CircuitBreaker` instance in Closed state
+    #[must_use]
     pub const fn new(
         failure_threshold: u32,
         success_threshold: u32,
@@ -347,6 +353,7 @@ impl CircuitBreaker {
     }
 
     /// Check if a request can be executed based on circuit state
+    #[must_use]
     pub fn can_execute(&self) -> bool {
         match self.state {
             CircuitState::Closed => true,
@@ -355,14 +362,17 @@ impl CircuitBreaker {
         }
     }
 
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         self.state == CircuitState::Closed
     }
 
+    #[must_use]
     pub fn is_open(&self) -> bool {
         self.state == CircuitState::Open
     }
 
+    #[must_use]
     pub fn state(&self) -> CircuitState {
         self.state
     }
@@ -1003,6 +1013,8 @@ impl RetryPolicy {
     ///
     /// Uses "full jitter" strategy: delay = random(0, min(initial * factor^attempt, max))
     /// If `jitter` is 0.0, returns the exact capped exponential delay (deterministic).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
         if attempt == 0 {
             return Duration::ZERO;

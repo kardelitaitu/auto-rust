@@ -1,4 +1,4 @@
-//! DOM query and inspection methods for TaskContext.
+//! DOM query and inspection methods for `TaskContext`.
 //!
 //! Provides methods for checking element existence, visibility,
 //! extracting content, and waiting for elements.

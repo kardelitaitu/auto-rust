@@ -169,8 +169,8 @@ impl PluginInfo {
         Self {
             name: plugin.name().to_string(),
             version: plugin.version().to_string(),
-            author: plugin.author().map(|s| s.to_string()),
-            description: plugin.description().map(|s| s.to_string()),
+            author: plugin.author().map(std::string::ToString::to_string),
+            description: plugin.description().map(std::string::ToString::to_string),
             supported_hooks: vec![], // Would need to query plugin
             custom_actions: plugin.custom_actions(),
         }

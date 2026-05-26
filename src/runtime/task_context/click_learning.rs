@@ -106,6 +106,8 @@ impl ClickLearningState {
     pub const RECENT_WINDOW: usize = 32;
 
     /// Calculate recent success rate (last 32 results).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn recent_success_rate(&self) -> f64 {
         if self.recent_results.is_empty() {
             return 1.0;
@@ -139,11 +141,13 @@ impl ClickLearningState {
     }
 
     /// Get statistics for a specific selector.
+    #[must_use]
     pub fn selector_stats(&self, selector: &str) -> SelectorLearningStats {
         self.selectors.get(selector).cloned().unwrap_or_default()
     }
 
     /// Calculate adaptations based on context and selector performance.
+    #[must_use]
     pub fn adaptation_for(&self, selector: &str, context: &ClickTimingContext) -> ClickAdaptation {
         let mut adaptation = ClickAdaptation::default();
         let selector_stats = self.selector_stats(selector);
@@ -160,7 +164,7 @@ impl ClickLearningState {
 
         if selector_stats.attempts >= 3 {
             let selector_success_rate =
-                selector_stats.successes as f64 / selector_stats.attempts as f64;
+                f64::from(selector_stats.successes) / f64::from(selector_stats.attempts);
             if selector_success_rate < 0.75 {
                 adaptation.extra_stability_wait_ms = adaptation.extra_stability_wait_ms.max(250);
                 adaptation.reaction_delay_multiplier *= 1.20;
@@ -191,6 +195,7 @@ impl ClickLearningState {
 
 impl ClickTimingContext {
     /// Classify page type from URL.
+    #[must_use]
     pub fn classify_page(url: &str) -> ClickPageContext {
         if url.contains("x.com") || url.contains("twitter.com") {
             ClickPageContext::Social
@@ -208,6 +213,7 @@ impl ClickTimingContext {
     }
 
     /// Classify element priority from selector.
+    #[must_use]
     pub fn classify_priority(selector: &str) -> ClickElementPriority {
         if selector.contains("submit")
             || selector.contains("confirm")
@@ -226,6 +232,7 @@ impl ClickTimingContext {
     }
 
     /// Classify fatigue level from interaction count.
+    #[must_use]
     pub fn classify_fatigue(interaction_count: u64) -> ClickFatigueLevel {
         if interaction_count < 15 {
             ClickFatigueLevel::Rested
@@ -237,6 +244,7 @@ impl ClickTimingContext {
     }
 
     /// Create context from observation.
+    #[must_use]
     pub fn from_observation(
         url: &str,
         selector: &str,
@@ -252,6 +260,8 @@ impl ClickTimingContext {
     }
 
     /// Compute timing profile based on context and adaptations.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn timing_profile(
         &self,
         base_reaction_delay_ms: u64,
@@ -363,6 +373,7 @@ pub(crate) fn sanitize_path_component(value: &str) -> String {
 }
 
 /// Get the file path for click learning data.
+#[must_use]
 pub fn click_learning_path(session_id: &str, behavior_profile: &BrowserProfile) -> Option<PathBuf> {
     let base_dir = std::env::current_dir().ok()?.join("click-learning");
     let profile_component = sanitize_path_component(&behavior_profile.name);
@@ -375,12 +386,14 @@ pub fn click_learning_path(session_id: &str, behavior_profile: &BrowserProfile) 
 }
 
 /// Load click learning state from file.
+#[must_use]
 pub fn load_click_learning(path: &Path) -> Option<ClickLearningState> {
     let content = fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()
 }
 
 /// Save click learning state to file.
+#[allow(clippy::cast_precision_loss)]
 pub fn save_click_learning(path: &Path, state: &ClickLearningState) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

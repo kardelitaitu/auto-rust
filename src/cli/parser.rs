@@ -42,6 +42,7 @@ pub struct TaskDefinition {
 /// let all = parse_browser_filters(None);
 /// assert!(all.is_empty());
 /// ```
+#[must_use]
 pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
     let mut seen = HashSet::new();
 
@@ -89,6 +90,7 @@ pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
 /// let groups = parse_task_groups(&["pageview=www.example.com".to_string()]);
 /// assert_eq!(groups[0][0].name, "pageview");
 /// ```
+#[must_use]
 pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
     let mut groups: Vec<Vec<TaskDefinition>> = Vec::new();
     let mut current_group: Vec<TaskDefinition> = Vec::new();
@@ -182,12 +184,10 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     } else {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     }
+                } else if key == "url" {
+                    current_payload.insert(key.to_string(), Value::String(format_url(value)));
                 } else {
-                    if key == "url" {
-                        current_payload.insert(key.to_string(), Value::String(format_url(value)));
-                    } else {
-                        current_payload.insert(key.to_string(), parse_scalar_value(value));
-                    }
+                    current_payload.insert(key.to_string(), parse_scalar_value(value));
                 }
             }
         } else {

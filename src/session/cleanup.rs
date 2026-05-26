@@ -74,7 +74,7 @@ pub async fn cleanup_managed_tabs<T: ManagedTabCleanup>(sessions: &[T]) {
     }
 
     if total_closed > 0 {
-        log::info!("Closed {} managed tab(s) before exit", total_closed);
+        log::info!("Closed {total_closed} managed tab(s) before exit");
     }
 }
 

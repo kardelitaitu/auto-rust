@@ -42,12 +42,12 @@ pub struct BrowserConfig {
     /// Delay between browser discovery attempts in milliseconds
     pub discovery_retry_delay_ms: u64,
     /// Circuit breaker configuration for fault tolerance.
-    /// Note: Validated but not yet wired to ApiClient. Future use for API fault tolerance.
+    /// Note: Validated but not yet wired to `ApiClient`. Future use for API fault tolerance.
     #[allow(dead_code)]
     pub circuit_breaker: CircuitBreakerConfig,
     /// List of browser profiles available for task execution
     pub profiles: Vec<BrowserProfile>,
-    /// RoxyBrowser API integration settings
+    /// `RoxyBrowser` API integration settings
     pub roxybrowser: RoxybrowserConfig,
     /// Optional browser user-agent override applied to new pages
     #[serde(default)]
@@ -83,21 +83,20 @@ pub enum NativeClickCalibrationMode {
 }
 
 impl NativeClickCalibrationMode {
+    #[must_use]
     pub fn from_env_value(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "mac" | "darwin" | "osx" => Self::Mac,
             "linux" => Self::Linux,
             "windows" => Self::Windows,
             other => {
-                warn!(
-                    "Invalid native click calibration mode '{}', falling back to windows",
-                    other
-                );
+                warn!("Invalid native click calibration mode '{other}', falling back to windows");
                 Self::Windows
             }
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Windows => "windows",
@@ -118,21 +117,20 @@ pub enum NativeInputBackend {
 }
 
 impl NativeInputBackend {
+    #[must_use]
     pub fn from_env_value(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "enigo" => Self::Enigo,
             "sendinput" | "send_input" | "win32" => Self::Sendinput,
             "rdev" => Self::Rdev,
             other => {
-                warn!(
-                    "Invalid native input backend '{}', falling back to enigo",
-                    other
-                );
+                warn!("Invalid native input backend '{other}', falling back to enigo");
                 Self::Enigo
             }
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Enigo => "enigo",
@@ -196,15 +194,15 @@ pub struct BrowserProfile {
     pub ws_endpoint: String,
 }
 
-/// Configuration for RoxyBrowser API integration.
-/// RoxyBrowser provides cloud-hosted browser instances for automation tasks.
+/// Configuration for `RoxyBrowser` API integration.
+/// `RoxyBrowser` provides cloud-hosted browser instances for automation tasks.
 #[derive(Debug, Deserialize, Clone)]
 pub struct RoxybrowserConfig {
-    /// Whether RoxyBrowser integration is enabled
+    /// Whether `RoxyBrowser` integration is enabled
     pub enabled: bool,
-    /// Base URL for the RoxyBrowser API
+    /// Base URL for the `RoxyBrowser` API
     pub api_url: String,
-    /// API authentication key for RoxyBrowser
+    /// API authentication key for `RoxyBrowser`
     pub api_key: String,
 }
 
@@ -360,7 +358,7 @@ pub struct TracingConfig {
     /// Whether OpenTelemetry tracing is enabled
     #[serde(default)]
     pub enabled: bool,
-    /// OTLP endpoint URL (e.g., "http://localhost:4317")
+    /// OTLP endpoint URL (e.g., "<http://localhost:4317>")
     #[serde(default = "default_otlp_endpoint")]
     pub otlp_endpoint: String,
     /// Service name for tracing
@@ -1132,8 +1130,12 @@ extensions = ["task"]
             persona_file_path: Some("/path/to/persona.json".to_string()),
             ..Default::default()
         };
-        assert!(config.persona_file_path.is_some());
-        assert_eq!(config.persona_file_path.unwrap(), "/path/to/persona.json");
+        assert_eq!(
+            config
+                .persona_file_path
+                .expect("persona_file_path should be set"),
+            "/path/to/persona.json"
+        );
     }
 
     #[test]
@@ -1191,8 +1193,10 @@ extensions = ["task"]
             user_agent: Some("CustomAgent/1.0".to_string()),
             ..Default::default()
         };
-        assert!(config.user_agent.is_some());
-        assert_eq!(config.user_agent.unwrap(), "CustomAgent/1.0");
+        assert_eq!(
+            config.user_agent.expect("user_agent should be set"),
+            "CustomAgent/1.0"
+        );
     }
 
     #[test]
@@ -1314,8 +1318,8 @@ extensions = ["task"]
 /// variable overrides. Falls back to hardcoded defaults if no config file exists.
 ///
 /// # Environment Variables
-/// - `ROXYBROWSER_API_URL`: Override the RoxyBrowser API URL
-/// - `ROXYBROWSER_API_KEY`: Override the RoxyBrowser API key
+/// - `ROXYBROWSER_API_URL`: Override the `RoxyBrowser` API URL
+/// - `ROXYBROWSER_API_KEY`: Override the `RoxyBrowser` API key
 ///
 /// # Returns
 /// A complete Config struct with all settings resolved
@@ -1519,19 +1523,15 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             let clean_prob = prob_str.split('#').next().unwrap_or(&prob_str).trim();
             match clean_prob.parse::<f64>() {
                 Ok(val) => {
-                    log::info!("Loaded {} from env: '{}' -> {:.3}", var_name, prob_str, val);
+                    log::info!("Loaded {var_name} from env: '{prob_str}' -> {val:.3}");
                     *config = val;
                 }
                 Err(e) => log::warn!(
-                    "Failed to parse {} '{}' (cleaned: '{}'): {}",
-                    var_name,
-                    prob_str,
-                    clean_prob,
-                    e
+                    "Failed to parse {var_name} '{prob_str}' (cleaned: '{clean_prob}'): {e}"
                 ),
             }
         } else {
-            log::debug!("{} not set in environment", var_name);
+            log::debug!("{var_name} not set in environment");
         }
     }
 
@@ -1713,6 +1713,7 @@ pub struct ConfigValidationReport {
 }
 
 impl ConfigValidationReport {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             errors: Vec::new(),
@@ -1815,7 +1816,7 @@ impl ConfigValidationReport {
         }
 
         // Cross-field validation: total retry time should not exceed task timeout
-        let total_retry_time = config.retry_delay_ms * config.max_retries as u64;
+        let total_retry_time = config.retry_delay_ms * u64::from(config.max_retries);
         if total_retry_time > config.task_timeout_ms {
             warn!(
                 "Total retry time ({}ms) exceeds task_timeout_ms ({}ms). \
@@ -1916,8 +1917,7 @@ impl ConfigValidationReport {
             }
             if !url.ends_with('/') {
                 warn!(
-                    "RoxyBrowser API URL does not end with '/'. This may cause incorrect API paths. Got: {}",
-                    url
+                    "RoxyBrowser API URL does not end with '/'. This may cause incorrect API paths. Got: {url}"
                 );
             }
         }
@@ -2032,10 +2032,7 @@ impl ConfigValidationReport {
         // Persona file path validation (if provided)
         if let Some(path) = &config.persona_file_path {
             if !std::path::Path::new(path).exists() {
-                warn!(
-                    "twitter_activity.persona_file_path does not exist: {}",
-                    path
-                );
+                warn!("twitter_activity.persona_file_path does not exist: {path}");
             }
         }
 

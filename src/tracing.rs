@@ -16,7 +16,7 @@ use tracing_subscriber::EnvFilter;
 /// Initializes OpenTelemetry tracing with OTLP exporter.
 ///
 /// # Arguments
-/// * `endpoint` - OTLP endpoint URL (e.g., "http://localhost:4317")
+/// * `endpoint` - OTLP endpoint URL (e.g., "<http://localhost:4317>")
 /// * `service_name` - Name of the service for tracing
 ///
 /// # Returns

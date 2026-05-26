@@ -56,25 +56,25 @@ use tokio_util::sync::CancellationToken;
 /// ```
 fn format_duration(ms: u64) -> String {
     if ms < 1000 {
-        format!("{}ms", ms)
+        format!("{ms}ms")
     } else if ms < 60000 {
         let secs = ms / 1000;
-        format!("{}s", secs)
+        format!("{secs}s")
     } else if ms < 3600000 {
         let mins = ms / 60000;
         let secs = (ms % 60000) / 1000;
         if secs == 0 {
-            format!("{}min", mins)
+            format!("{mins}min")
         } else {
-            format!("{}min {}s", mins, secs)
+            format!("{mins}min {secs}s")
         }
     } else {
         let hours = ms / 3600000;
         let mins = (ms % 3600000) / 60000;
         if mins == 0 {
-            format!("{}h", hours)
+            format!("{hours}h")
         } else {
-            format!("{}h {}min", hours, mins)
+            format!("{hours}h {mins}min")
         }
     }
 }
@@ -172,7 +172,7 @@ async fn acquire_global_execution_slot(
 ) -> std::result::Result<GlobalExecutionSlot, TaskResult> {
     let permit = tokio::select! {
         permit = global_semaphore.acquire_owned() => permit,
-        _ = cancel_token.cancelled() => {
+        () = cancel_token.cancelled() => {
             return Err(TaskResult::cancelled(
                 queue_start.elapsed().as_millis() as u64,
                 format!(
@@ -246,6 +246,7 @@ impl Orchestrator {
     /// # let config: Config = todo!();
     /// let orchestrator = Orchestrator::new(config);
     /// ```
+    #[must_use]
     pub fn new(config: Config) -> Self {
         Self {
             global_active_tasks: Arc::new(AtomicUsize::new(0)),
@@ -334,10 +335,10 @@ impl Orchestrator {
 
                     // Stagger task starts to prevent network spikes
                     tokio::select! {
-                        _ = cancel_token.cancelled() => {
+                        () = cancel_token.cancelled() => {
                             return Ok(());
                         }
-                        _ = tokio::time::sleep(Duration::from_millis(
+                        () = tokio::time::sleep(Duration::from_millis(
                             config.orchestrator.task_stagger_delay_ms,
                         )) => {}
                     }
@@ -366,7 +367,7 @@ impl Orchestrator {
 
         while !task_futures.is_empty() {
             tokio::select! {
-                _ = &mut group_deadline, if !timed_out => {
+                () = &mut group_deadline, if !timed_out => {
                     timed_out = true;
                     warn!(
                         "Group timeout exceeded ({}ms), cancelling outstanding tasks",
@@ -374,7 +375,7 @@ impl Orchestrator {
                     );
                     group_cancel.cancel();
                 }
-                _ = group_cancel.cancelled(), if !timed_out && !cancelled => {
+                () = group_cancel.cancelled(), if !timed_out && !cancelled => {
                     cancelled = true;
                     warn!("Group cancelled, waiting for outstanding tasks to stop");
                 }
@@ -613,7 +614,7 @@ async fn execute_task_with_retry(
 
     let permit = match tokio::select! {
         permit = session.acquire_worker(config.orchestrator.worker_wait_timeout_ms) => permit,
-        _ = cancel_token.cancelled() => {
+        () = cancel_token.cancelled() => {
             warn!(
                 "task_cancel | task={} session={} stage=worker_acquisition",
                 task_def.name, session.id
@@ -693,7 +694,7 @@ async fn execute_task_with_retry(
         );
 
         let task_result = tokio::select! {
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 drop(task_ctx);
                 warn!(
                     "task_cancel | task={} session={} stage=execution attempt={}",
@@ -770,8 +771,7 @@ async fn execute_task_with_retry(
 
         if !last_failure
             .as_ref()
-            .map(|failure| failure.kind.is_retryable())
-            .unwrap_or(false)
+            .is_some_and(|failure| failure.kind.is_retryable())
         {
             break;
         }
@@ -785,11 +785,10 @@ async fn execute_task_with_retry(
             delay.as_millis(),
             last_failure
                 .as_ref()
-                .map(|failure| failure.kind)
-                .unwrap_or(TaskErrorKind::Unknown)
+                .map_or(TaskErrorKind::Unknown, |failure| failure.kind)
         );
         tokio::select! {
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 warn!(
                     "task_cancel | task={} session={} stage=backoff attempt={}",
                     task_def.name, session.id, current_attempt
@@ -800,7 +799,7 @@ async fn execute_task_with_retry(
                 ));
                 break;
             }
-            _ = tokio::time::sleep(delay) => {}
+            () = tokio::time::sleep(delay) => {}
         }
     }
 
@@ -809,8 +808,7 @@ async fn execute_task_with_retry(
 
     let was_cancelled = last_failure
         .as_ref()
-        .map(|failure| failure.cancelled)
-        .unwrap_or(false);
+        .is_some_and(|failure| failure.cancelled);
     if !was_cancelled {
         session.increment_failure();
     }

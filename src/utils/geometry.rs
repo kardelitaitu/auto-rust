@@ -11,6 +11,7 @@ pub struct BoundingBox {
 
 impl BoundingBox {
     /// Check if this bbox is approximately equal to another (delta <= threshold)
+    #[must_use]
     pub fn approx_eq(&self, other: &BoundingBox, threshold: f64) -> bool {
         let dx = (self.x - other.x).abs();
         let dy = (self.y - other.y).abs();

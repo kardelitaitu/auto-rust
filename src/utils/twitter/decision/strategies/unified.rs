@@ -48,7 +48,7 @@ impl UnifiedAnalysis {
         }
     }
 
-    /// Convert to EngagementDecision for trait compatibility
+    /// Convert to `EngagementDecision` for trait compatibility
     pub fn to_engagement_decision(&self) -> EngagementDecision {
         let level = match self.level.as_str() {
             "Full" => EngagementLevel::Full,
@@ -134,6 +134,7 @@ Respond ONLY with valid JSON matching this exact schema:
     }
 
     /// Build user prompt from tweet context
+    #[allow(clippy::unused_self)]
     fn build_user_prompt(&self, ctx: &TweetContext) -> String {
         let mut prompt = format!("TWEET: \"{}\"\nAUTHOR: @{}\n", ctx.text, ctx.author);
 
@@ -141,13 +142,13 @@ Respond ONLY with valid JSON matching this exact schema:
         if !ctx.replies.is_empty() {
             prompt.push_str("REPLIES:\n");
             for reply in ctx.replies.iter().take(5) {
-                prompt.push_str(&format!("- {}\n", reply));
+                prompt.push_str(&format!("- {reply}\n"));
             }
         }
 
         // Add persona tone
         let tone = self.infer_persona_tone(&ctx.persona);
-        prompt.push_str(&format!("\nTONE: \"{}\"\n", tone));
+        prompt.push_str(&format!("\nTONE: \"{tone}\"\n"));
 
         // Add context hints
         prompt.push_str(&format!(
@@ -179,6 +180,7 @@ Respond ONLY with valid JSON matching this exact schema:
     }
 
     /// Check if topic is aligned with tech/dev focus
+    #[allow(clippy::unused_self)]
     fn is_topic_aligned(&self, text: &str) -> bool {
         let text_lower = text.to_lowercase();
         let tech_keywords = ["ai", "code", "dev", "startup", "tech", "product", "app"];
@@ -225,7 +227,7 @@ Respond ONLY with valid JSON matching this exact schema:
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(format!("LLM API error: {} - {}", status, error_text).into());
+            return Err(format!("LLM API error: {status} - {error_text}").into());
         }
 
         let response_json: serde_json::Value = response.json().await?;
@@ -241,6 +243,7 @@ Respond ONLY with valid JSON matching this exact schema:
     }
 
     /// Check for safety triggers in content
+    #[allow(clippy::unused_self)]
     fn check_safety(&self, ctx: &TweetContext) -> Option<String> {
         let text_lower = ctx.text.to_lowercase();
         let combined = format!("{} {}", text_lower, ctx.replies.join(" ").to_lowercase());
@@ -289,7 +292,7 @@ impl DecisionStrategyImpl for UnifiedStrategy {
     async fn decide(&self, ctx: &TweetContext) -> EngagementDecision {
         // 1. Pre-flight safety check (fast path)
         if let Some(safety_reason) = self.check_safety(ctx) {
-            info!("UnifiedStrategy: Safety trigger - {}", safety_reason);
+            info!("UnifiedStrategy: Safety trigger - {safety_reason}");
             return UnifiedAnalysis::skip(&safety_reason).to_engagement_decision();
         }
 
@@ -298,12 +301,12 @@ impl DecisionStrategyImpl for UnifiedStrategy {
             Ok(response) => match serde_json::from_str::<UnifiedAnalysis>(&response) {
                 Ok(a) => a,
                 Err(e) => {
-                    error!("UnifiedStrategy: JSON parse error: {}", e);
+                    error!("UnifiedStrategy: JSON parse error: {e}");
                     UnifiedAnalysis::skip("Parse error")
                 }
             },
             Err(e) => {
-                warn!("UnifiedStrategy: LLM call failed: {}", e);
+                warn!("UnifiedStrategy: LLM call failed: {e}");
                 UnifiedAnalysis::skip("LLM unavailable")
             }
         };

@@ -76,10 +76,7 @@ pub fn validate_reply(text: &str) -> Result<String> {
 
     // Check for banned AI words
     if let Some(banned_word) = check_banned_words(&sanitized) {
-        warn!(
-            "Reply contains banned AI word: '{}', but proceeding",
-            banned_word
-        );
+        warn!("Reply contains banned AI word: '{banned_word}', but proceeding");
     }
 
     // Ensure non-empty
@@ -90,7 +87,7 @@ pub fn validate_reply(text: &str) -> Result<String> {
     Ok(sanitized)
 }
 
-/// Truncates text to max_length at word boundary.
+/// Truncates text to `max_length` at word boundary.
 fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
     if text.len() <= max_length {
         return text.to_string();

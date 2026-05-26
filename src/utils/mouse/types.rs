@@ -22,6 +22,7 @@ pub struct ClickOutcome {
 
 impl ClickOutcome {
     /// Returns a summary string for logging.
+    #[must_use]
     pub fn summary(&self) -> String {
         match self.click {
             ClickStatus::Success => format!("Clicked ({:.1},{:.1})", self.x, self.y),
@@ -47,6 +48,7 @@ pub struct HoverOutcome {
 
 impl HoverOutcome {
     /// Returns a summary string for logging.
+    #[must_use]
     pub fn summary(&self) -> String {
         let status = match self.hover {
             HoverStatus::Success => "success",
@@ -68,6 +70,7 @@ pub struct NativeCursorOutcome {
 
 impl NativeCursorOutcome {
     /// Returns a summary string for logging.
+    #[must_use]
     pub fn summary(&self) -> String {
         format!("nativecursor {} ({:.1},{:.1})", self.target, self.x, self.y)
     }

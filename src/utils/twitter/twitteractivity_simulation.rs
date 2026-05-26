@@ -39,6 +39,7 @@ pub enum SimulationStopReason {
 }
 
 impl SimulationStopReason {
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             Self::DurationExhausted => "duration_exhausted",
@@ -142,11 +143,12 @@ impl SimAction {
 pub fn run_simulation(task_config: &TaskConfig, config: &Config) -> Result<()> {
     let report = simulate(task_config, config);
     for line in report.lines {
-        info!("{}", line);
+        info!("{line}");
     }
     Ok(())
 }
 
+#[must_use]
 pub fn simulate(task_config: &TaskConfig, config: &Config) -> SimulationReport {
     let persona = build_persona_weights(task_config, config);
     let persona_label = if task_config.weights.is_some() {
@@ -190,8 +192,7 @@ pub fn simulate(task_config: &TaskConfig, config: &Config) -> SimulationReport {
         let candidate_budget = task_config.candidate_count;
         let candidates_found = rng.gen_range(1..=candidate_budget);
         lines.push(format!(
-            "simulation | phase=scan scan_index={} candidate_budget={} candidates_found={}",
-            scan_index, candidate_budget, candidates_found
+            "simulation | phase=scan scan_index={scan_index} candidate_budget={candidate_budget} candidates_found={candidates_found}"
         ));
 
         let mut actions_this_scan = 0u32;
@@ -295,41 +296,45 @@ fn build_persona_weights(task_config: &TaskConfig, config: &Config) -> PersonaWe
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::{Config, EngagementLimitsConfig};
+use crate::config::EngagementLimitsConfig;
 
-    fn simulation_config() -> Config {
-        Config {
-            twitter_activity: crate::config::TwitterActivityConfig {
-                candidate_scan_interval_ms: 2500,
-                engagement_candidate_count: 3,
-                engagement_limits: EngagementLimitsConfig {
-                    max_likes: 2,
-                    max_retweets: 2,
-                    max_follows: 1,
-                    max_replies: 1,
-                    max_thread_dives: 1,
-                    max_bookmarks: 1,
-                    max_quote_tweets: 1,
-                    max_total_actions: 4,
-                },
-                ..Default::default()
+#[cfg(test)]
+pub(super) fn simulation_config() -> Config {
+    Config {
+        twitter_activity: crate::config::TwitterActivityConfig {
+            candidate_scan_interval_ms: 2500,
+            engagement_candidate_count: 3,
+            engagement_limits: EngagementLimitsConfig {
+                max_likes: 2,
+                max_retweets: 2,
+                max_follows: 1,
+                max_replies: 1,
+                max_thread_dives: 1,
+                max_bookmarks: 1,
+                max_quote_tweets: 1,
+                max_total_actions: 4,
             },
             ..Default::default()
-        }
+        },
+        ..Default::default()
     }
+}
 
-    fn simulation_task(seed: u64) -> TaskConfig {
-        TaskConfig {
-            duration_ms: 10_000,
-            candidate_count: 3,
-            max_actions_per_scan: 2,
-            simulate_only: true,
-            seed,
-            ..Default::default()
-        }
+#[cfg(test)]
+pub(super) fn simulation_task(seed: u64) -> TaskConfig {
+    TaskConfig {
+        duration_ms: 10_000,
+        candidate_count: 3,
+        max_actions_per_scan: 2,
+        simulate_only: true,
+        seed,
+        ..Default::default()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn simulation_is_deterministic_for_same_seed() {
@@ -371,5 +376,278 @@ mod tests {
             .lines
             .iter()
             .any(|line| line.starts_with("simulation | stop_reason=")));
+    }
+
+    #[test]
+    fn sim_stop_reason_as_str_all_variants() {
+        assert_eq!(
+            SimulationStopReason::DurationExhausted.as_str(),
+            "duration_exhausted"
+        );
+        assert_eq!(SimulationStopReason::LimitReached.as_str(), "limit_reached");
+        assert_eq!(
+            SimulationStopReason::CandidateBudgetExhausted.as_str(),
+            "candidate_budget_exhausted"
+        );
+        assert_eq!(
+            SimulationStopReason::NoMorePlannedActions.as_str(),
+            "no_more_planned_actions"
+        );
+        assert_eq!(
+            SimulationStopReason::SimulatedError("connection lost".into()).as_str(),
+            "simulated_error"
+        );
+    }
+
+    #[test]
+    fn sim_stop_reason_display_normal_variants() {
+        assert_eq!(
+            SimulationStopReason::DurationExhausted.to_string(),
+            "duration_exhausted"
+        );
+        assert_eq!(
+            SimulationStopReason::LimitReached.to_string(),
+            "limit_reached"
+        );
+        assert_eq!(
+            SimulationStopReason::NoMorePlannedActions.to_string(),
+            "no_more_planned_actions"
+        );
+    }
+
+    #[test]
+    fn sim_stop_reason_display_simulated_error_includes_message() {
+        let reason = SimulationStopReason::SimulatedError("timeout".into());
+        let display = reason.to_string();
+        assert!(display.contains("simulated_error"));
+        assert!(display.contains("timeout"));
+        assert_eq!(display, "simulated_error: timeout");
+    }
+
+    #[test]
+    fn sim_stop_reason_equality() {
+        assert_eq!(
+            SimulationStopReason::DurationExhausted,
+            SimulationStopReason::DurationExhausted
+        );
+        assert_ne!(
+            SimulationStopReason::DurationExhausted,
+            SimulationStopReason::LimitReached
+        );
+        assert_eq!(
+            SimulationStopReason::SimulatedError("err".into()),
+            SimulationStopReason::SimulatedError("err".into())
+        );
+        assert_ne!(
+            SimulationStopReason::SimulatedError("err1".into()),
+            SimulationStopReason::SimulatedError("err2".into())
+        );
+    }
+
+    #[test]
+    fn sim_action_name_all_variants() {
+        assert_eq!(SimAction::Like.name(), "like");
+        assert_eq!(SimAction::Retweet.name(), "retweet");
+        assert_eq!(SimAction::Quote.name(), "quote");
+        assert_eq!(SimAction::Follow.name(), "follow");
+        assert_eq!(SimAction::Reply.name(), "reply");
+        assert_eq!(SimAction::Bookmark.name(), "bookmark");
+        assert_eq!(SimAction::Dive.name(), "dive");
+    }
+
+    #[test]
+    fn sim_action_all_contains_seven_actions() {
+        assert_eq!(SimAction::ALL.len(), 7);
+    }
+
+    #[test]
+    fn sim_action_used_and_limit_returns_zero_initially() {
+        let counters = EngagementCounters::new();
+        let limits = EngagementLimits::with_limits(10, 10, 5, 5, 3, 3, 3, 20);
+
+        assert_eq!(SimAction::Like.used_and_limit(&counters, &limits), (0, 10));
+        assert_eq!(
+            SimAction::Retweet.used_and_limit(&counters, &limits),
+            (0, 10)
+        );
+        assert_eq!(SimAction::Follow.used_and_limit(&counters, &limits), (0, 5));
+        assert_eq!(SimAction::Reply.used_and_limit(&counters, &limits), (0, 5));
+    }
+
+    #[test]
+    fn sim_action_is_allowed_under_limits() {
+        let counters = EngagementCounters::new();
+        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 10);
+
+        assert!(SimAction::Like.is_allowed(&counters, &limits));
+        assert!(SimAction::Retweet.is_allowed(&counters, &limits));
+    }
+
+    #[test]
+    fn sim_action_is_allowed_blocked_when_limit_reached() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_like(); // 2 likes used
+        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 10);
+
+        assert!(!SimAction::Like.is_allowed(&counters, &limits));
+    }
+
+    #[test]
+    fn sim_action_is_allowed_blocked_by_total_limit() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_retweet();
+        let limits = EngagementLimits::with_limits(5, 5, 5, 5, 5, 5, 5, 2);
+
+        // Total actions = 2, max_total_actions = 2 → blocked
+        assert!(!SimAction::Like.is_allowed(&counters, &limits));
+        assert!(!SimAction::Retweet.is_allowed(&counters, &limits));
+        assert!(!SimAction::Follow.is_allowed(&counters, &limits));
+    }
+
+    #[test]
+    fn sim_action_increment_adds_to_correct_counter() {
+        let mut counters = EngagementCounters::new();
+
+        SimAction::Like.increment(&mut counters);
+        assert_eq!(counters.likes, 1);
+        assert_eq!(counters.total_actions(), 1);
+
+        SimAction::Retweet.increment(&mut counters);
+        assert_eq!(counters.retweets, 1);
+        assert_eq!(counters.total_actions(), 2);
+
+        SimAction::Follow.increment(&mut counters);
+        assert_eq!(counters.follows, 1);
+        assert_eq!(counters.total_actions(), 3);
+
+        SimAction::Reply.increment(&mut counters);
+        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.total_actions(), 4);
+
+        SimAction::Bookmark.increment(&mut counters);
+        assert_eq!(counters.bookmarks, 1);
+        assert_eq!(counters.total_actions(), 5);
+
+        SimAction::Quote.increment(&mut counters);
+        assert_eq!(counters.quote_tweets, 1);
+        assert_eq!(counters.total_actions(), 6);
+
+        SimAction::Dive.increment(&mut counters);
+        assert_eq!(counters.thread_dives, 1);
+        assert_eq!(counters.total_actions(), 7);
+    }
+
+    #[test]
+    fn sim_report_contains_metadata_fields() {
+        let config = simulation_config();
+        let report = simulate(&simulation_task(99), &config);
+
+        assert!(
+            report.total_actions > 0
+                || report.stop_reason == SimulationStopReason::DurationExhausted
+        );
+        assert!(report.scans > 0);
+        assert!(report.lines.iter().any(|l| l.contains("seed=99")));
+    }
+
+    #[test]
+    fn sim_short_duration_ends_with_duration_exhausted() {
+        let config = simulation_config();
+        let mut task = simulation_task(42);
+        task.duration_ms = 1; // Minimal duration → will run exactly 1 scan cycle at most
+        let report = simulate(&task, &config);
+
+        assert_eq!(report.stop_reason, SimulationStopReason::DurationExhausted);
+    }
+
+    #[test]
+    fn sim_zero_candidates_scan_reports_candidate_scan() {
+        let config = simulation_config();
+        let mut task = simulation_task(42);
+        task.candidate_count = 1;
+        task.max_actions_per_scan = 0; // 0 actions allowed per scan → no actions
+        let report = simulate(&task, &config);
+        // Should still produce scan phase lines
+        assert!(report.lines.iter().any(|l| l.contains("phase=scan")));
+    }
+}
+
+#[cfg(test)]
+mod tdd_tests {
+    use super::*;
+
+    #[test]
+    fn tdd_red_simulation_all_limits_reached_stops() {
+        // With low limits and long duration, simulation should stop at LimitReached
+        let config = simulation_config();
+        let mut task = simulation_task(42);
+        task.duration_ms = 60_000;
+        let report = simulate(&task, &config);
+        assert_eq!(
+            report.stop_reason,
+            SimulationStopReason::LimitReached,
+            "Expected LimitReached with max_total_actions=4, got {}",
+            report.stop_reason
+        );
+        assert_eq!(report.total_actions, 4);
+    }
+
+    #[test]
+    fn tdd_red_simulation_zero_duration_ends_immediately() {
+        let config = simulation_config();
+        let mut task = simulation_task(42);
+        task.duration_ms = 0;
+        let report = simulate(&task, &config);
+        assert_eq!(report.stop_reason, SimulationStopReason::DurationExhausted);
+        assert_eq!(report.total_actions, 0);
+    }
+
+    #[test]
+    fn tdd_green_simulation_high_candidate_count_generates_correct_budget_lines() {
+        let config = simulation_config();
+        let mut task = simulation_task(42);
+        task.candidate_count = 10;
+        let report = simulate(&task, &config);
+        assert!(
+            report
+                .lines
+                .iter()
+                .any(|l| l.contains("candidate_budget=10")),
+            "Should include candidate_budget=10 in output"
+        );
+    }
+
+    #[test]
+    fn tdd_green_simulation_emits_allow_block_budget_lines() {
+        let config = simulation_config();
+        let report = simulate(&simulation_task(42), &config);
+        assert!(
+            report.lines.iter().any(|l| l.contains("result=allow")),
+            "Should emit allow/block budget lines"
+        );
+    }
+
+    #[test]
+    fn tdd_green_simulation_stop_reasons_display_all_variants() {
+        let reasons = [
+            (
+                SimulationStopReason::DurationExhausted,
+                "duration_exhausted",
+            ),
+            (SimulationStopReason::LimitReached, "limit_reached"),
+            (
+                SimulationStopReason::CandidateBudgetExhausted,
+                "candidate_budget_exhausted",
+            ),
+            (
+                SimulationStopReason::NoMorePlannedActions,
+                "no_more_planned_actions",
+            ),
+        ];
+        for (reason, expected) in &reasons {
+            assert_eq!(reason.to_string(), *expected);
+        }
     }
 }

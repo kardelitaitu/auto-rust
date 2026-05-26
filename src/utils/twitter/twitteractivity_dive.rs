@@ -48,7 +48,9 @@ use anyhow::{Context, Result};
 use log::info;
 use tracing::instrument;
 
-use super::twitteractivity_selectors::*;
+use super::twitteractivity_selectors::{
+    js_get_current_url, js_identify_thread_replies, selector_all_tweets,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct DiveIntoThreadOutcome {
@@ -117,10 +119,10 @@ pub async fn dive_into_thread(
     info!("Attempting to dive into thread: {}", status_url);
 
     // Click the tweet link using the high-level API (handles scrolling, movement, clicking)
-    let link_selector = format!("a[href='{}']", status_url);
+    let link_selector = format!("a[href='{status_url}']");
     info!("Clicking tweet link selector: {}", link_selector);
     if let Err(e) = api.click(&link_selector).await {
-        info!("Dive failed: click on link failed: {}", e);
+        info!("Dive failed: click on link failed: {e}");
         return Ok(DiveIntoThreadOutcome {
             opened: false,
             used_fallback_target: false,
@@ -151,9 +153,10 @@ pub async fn dive_into_thread(
         })
         .unwrap_or_default();
     let target_status_id = status_id_from_url(status_url);
-    let url_matches = target_status_id
-        .map(|id| current_url.contains(&format!("/status/{id}")))
-        .unwrap_or_else(|| current_url.contains(status_url));
+    let url_matches = target_status_id.map_or_else(
+        || current_url.contains(status_url),
+        |id| current_url.contains(&format!("/status/{id}")),
+    );
     let tweet_article_visible = api
         .wait_for_any_visible_selector(&[r#"article[data-testid="tweet"]"#], 1_000)
         .await
@@ -164,8 +167,7 @@ pub async fn dive_into_thread(
         info!("Thread view opened successfully");
     } else {
         info!(
-            "Thread view did not open within timeout or URL mismatch (detail_visible={}, tweet_article_visible={}, url_matches={}, current_url={})",
-            detail_visible, tweet_article_visible, url_matches, current_url
+            "Thread view did not open within timeout or URL mismatch (detail_visible={detail_visible}, tweet_article_visible={tweet_article_visible}, url_matches={url_matches}, current_url={current_url})"
         );
     }
 
@@ -260,5 +262,100 @@ mod tests {
         let outcome = DiveIntoThreadOutcome::default();
         assert!(!outcome.opened);
         assert!(!outcome.used_fallback_target);
+    }
+
+    #[test]
+    fn test_status_id_from_numeric_username_path() {
+        // Edge case: username is numeric (e.g., user ID-based URL)
+        assert_eq!(status_id_from_url("/12345/status/67890"), Some("67890"));
+    }
+
+    #[test]
+    fn test_status_id_from_url_with_special_chars() {
+        // Edge case: URL with encoded characters
+        assert_eq!(
+            status_id_from_url("/user.name/status/12345?source=search"),
+            Some("12345")
+        );
+    }
+
+    #[test]
+    fn test_status_id_from_url_with_multiple_query_params() {
+        assert_eq!(
+            status_id_from_url("https://x.com/user/status/12345?lang=en&t=abc123&s=01"),
+            Some("12345")
+        );
+    }
+
+    #[test]
+    fn test_status_id_from_url_with_www_prefix() {
+        // Edge case: www subdomain
+        assert_eq!(
+            status_id_from_url("https://www.x.com/user/status/12345"),
+            Some("12345")
+        );
+    }
+
+    #[test]
+    fn test_status_id_from_short_status_url() {
+        // Edge case: minimal valid status URL
+        assert_eq!(status_id_from_url("/status/1"), Some("1"));
+    }
+
+    #[test]
+    fn test_identify_thread_replies_js_includes_function_wrapper() {
+        let js = js_identify_thread_replies();
+        assert!(js.starts_with("(function()"));
+        assert!(js.ends_with("})()"));
+        assert!(js.contains("querySelectorAll"));
+    }
+
+    #[test]
+    fn test_selector_all_tweets_returns_valid_js() {
+        let js = selector_all_tweets();
+        assert!(js.contains("querySelectorAll"));
+        assert!(js.contains("article"));
+        assert!(js.contains("data-testid"));
+    }
+}
+
+#[cfg(test)]
+mod tdd_tests {
+    use super::*;
+
+    #[test]
+    fn tdd_red_dive_status_id_rejects_malformed_urls() {
+        assert_eq!(status_id_from_url("not a url"), None);
+        assert_eq!(status_id_from_url(""), None);
+        assert_eq!(status_id_from_url("/status/"), None);
+        assert_eq!(status_id_from_url("//status/"), None);
+    }
+
+    #[test]
+    fn tdd_red_dive_status_id_accepts_minimal_valid_url() {
+        assert_eq!(status_id_from_url("/status/0"), Some("0"));
+        assert_eq!(status_id_from_url("/status/1"), Some("1"));
+    }
+
+    #[test]
+    fn tdd_green_dive_status_id_with_multiple_slashes_in_path() {
+        assert_eq!(
+            status_id_from_url("/user/extra/status/12345"),
+            Some("12345")
+        );
+    }
+
+    #[test]
+    fn tdd_green_dive_outcome_default_clone_fields() {
+        let outcome = DiveIntoThreadOutcome::default();
+        assert!(!outcome.opened);
+        assert!(!outcome.used_fallback_target);
+        // Verify we can clone and modify
+        let modified = DiveIntoThreadOutcome {
+            opened: true,
+            ..outcome
+        };
+        assert!(modified.opened);
+        assert!(!modified.used_fallback_target);
     }
 }

@@ -21,6 +21,7 @@ pub struct UnifiedEngine {
 
 impl UnifiedEngine {
     /// Create engine with specific strategy.
+    #[must_use]
     pub fn with_strategy(strategy: DecisionStrategy) -> Self {
         let (primary, fallback) = Self::create_strategies(strategy, None);
         Self {
@@ -30,6 +31,7 @@ impl UnifiedEngine {
     }
 
     /// Create engine with LLM support.
+    #[must_use]
     pub fn with_llm(strategy: DecisionStrategy, api_key: String) -> Self {
         let (primary, fallback) = Self::create_strategies(strategy, Some(api_key));
         Self {
@@ -90,6 +92,7 @@ impl UnifiedEngine {
     }
 
     /// Get the configured strategy type.
+    #[must_use]
     pub fn strategy_type(&self) -> DecisionStrategy {
         self.strategy.strategy_type()
     }
@@ -139,6 +142,7 @@ pub struct DecisionEngineFactory;
 
 impl DecisionEngineFactory {
     /// Create appropriate engine based on strategy and config.
+    #[must_use]
     pub fn create(
         strategy: DecisionStrategy,
         llm_api_key: Option<String>,

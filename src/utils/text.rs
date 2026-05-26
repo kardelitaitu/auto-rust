@@ -1,16 +1,19 @@
 //! UTF-8 safe text helpers used by task and utility code.
 
 /// Returns a preview limited to the requested number of characters.
+#[must_use]
 pub fn preview_chars(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
 /// Truncates text to the requested number of characters.
+#[must_use]
 pub fn truncate_chars(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
 /// Truncates text and appends an ellipsis when truncation occurs.
+#[must_use]
 pub fn truncate_with_ellipsis(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();

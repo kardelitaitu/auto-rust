@@ -1,6 +1,6 @@
 //! Hybrid decision strategy combining multiple approaches.
 //!
-//! Uses weighted ensemble of PersonaStrategy and LlmStrategy.
+//! Uses weighted ensemble of `PersonaStrategy` and `LlmStrategy`.
 //! Ported from `twitteractivity_decision_hybrid.rs`.
 
 use crate::utils::twitter::decision::strategies::{
@@ -82,14 +82,14 @@ impl HybridStrategy {
         let l_norm = self.llm_weight / total_weight;
 
         // Weighted score
-        let score = ((persona_decision.score as f64) * p_norm
-            + (llm_decision.score as f64) * l_norm) as i32;
+        let score = (f64::from(persona_decision.score) * p_norm
+            + f64::from(llm_decision.score) * l_norm) as i32;
 
         // Weighted multiplier
         let multiplier = persona_decision.multiplier * p_norm + llm_decision.multiplier * l_norm;
 
         // Average confidence
-        let confidence = (persona_decision.confidence + llm_decision.confidence) / 2.0;
+        let confidence = f64::midpoint(persona_decision.confidence, llm_decision.confidence);
 
         // Determine level from combined score
         let level = if score >= 75 {
@@ -138,6 +138,7 @@ impl HybridStrategy {
     }
 
     /// LLM primary strategy - use LLM if available and confident
+    #[allow(clippy::unused_self)]
     fn combine_llm_primary(
         &self,
         persona_decision: &EngagementDecision,
@@ -169,13 +170,13 @@ impl HybridStrategy {
         if persona_skip || llm_skip {
             return EngagementDecision {
                 level: EngagementLevel::None,
-                score: (persona_decision.score + llm_decision.score) / 2,
+                score: i32::midpoint(persona_decision.score, llm_decision.score),
                 reason: format!(
                     "Consensus skip: Persona={:?}, LLM={:?}",
                     persona_decision.level, llm_decision.level
                 ),
                 multiplier: 0.0,
-                confidence: (persona_decision.confidence + llm_decision.confidence) / 2.0,
+                confidence: f64::midpoint(persona_decision.confidence, llm_decision.confidence),
             };
         }
 

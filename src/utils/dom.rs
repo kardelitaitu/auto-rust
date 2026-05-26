@@ -22,7 +22,7 @@ use crate::utils::page_size;
 pub async fn focus(page: &Page, selector: &str) -> Result<()> {
     let selector_json = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_json});
             if (!el) return false;
 
@@ -36,7 +36,7 @@ pub async fn focus(page: &Page, selector: &str) -> Result<()> {
 
             const active = document.activeElement;
             return active === el || (active && el.contains(active));
-        }})()"#,
+        }})()",
     );
 
     page.evaluate(js).await?;
@@ -252,6 +252,7 @@ pub async fn selector_text(page: &Page, selector: &str) -> Result<Option<String>
     }
 }
 
+#[must_use]
 pub fn selector_uses_accessibility_locator(selector: &str) -> bool {
     #[cfg(feature = "accessibility-locator")]
     {
@@ -281,7 +282,7 @@ pub async fn selector_action_point(page: &Page, selector: &str) -> Result<(f64, 
 
 pub async fn focus_at_point(page: &Page, x: f64, y: f64) -> Result<()> {
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.elementFromPoint({x}, {y});
             if (!el) return false;
             if (typeof el.focus === 'function') {{
@@ -293,10 +294,13 @@ pub async fn focus_at_point(page: &Page, x: f64, y: f64) -> Result<()> {
             }}
             const active = document.activeElement;
             return active === el || (active && el.contains(active));
-        }})()"#
+        }})()"
     );
     let result = page.evaluate(js).await?;
-    let focused = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+    let focused = result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     if !focused {
         anyhow::bail!("[task-api] focus: no focusable element at resolved action point");
     }
@@ -435,18 +439,21 @@ fn quad_center(points: &[f64]) -> Option<(f64, f64)> {
 async fn css_selector_exists(page: &Page, selector: &str) -> Result<bool> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             return !!document.querySelector({selector_js});
-        }})()"#
+        }})()"
     );
     let result = page.evaluate(js).await?;
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false))
 }
 
 async fn css_selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return false;
             const rect = el.getBoundingClientRect();
@@ -461,11 +468,14 @@ async fn css_selector_is_visible(page: &Page, selector: &str) -> Result<bool> {
             if (rect.left >= windowWidth || rect.right <= 0) return false;
 
             return true;
-        }})()"#,
+        }})()",
     );
 
     let result = page.evaluate(js).await?;
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false))
 }
 
 async fn css_selector_text(page: &Page, selector: &str) -> Result<Option<String>> {
@@ -482,7 +492,7 @@ async fn css_selector_text(page: &Page, selector: &str) -> Result<Option<String>
     let result = page.evaluate(js).await?;
     Ok(result
         .value()
-        .and_then(|v| v.as_str().map(|s| s.to_string())))
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string)))
 }
 
 #[cfg(feature = "accessibility-locator")]
@@ -742,46 +752,46 @@ async fn css_selector_html(page: &Page, selector: &str) -> Result<Option<String>
     let result = page.evaluate(js).await?;
     Ok(result
         .value()
-        .and_then(|v| v.as_str().map(|s| s.to_string())))
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string)))
 }
 
 async fn css_selector_attr(page: &Page, selector: &str, name: &str) -> Result<Option<String>> {
     let selector_js = serde_json::to_string(selector)?;
     let name_js = serde_json::to_string(name)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return null;
             const value = el.getAttribute({name_js});
             if (value == null) return null;
             const trimmed = String(value).trim();
             return trimmed.length ? trimmed : null;
-        }})()"#,
+        }})()",
     );
 
     let result = page.evaluate(js).await?;
     Ok(result
         .value()
-        .and_then(|v| v.as_str().map(|s| s.to_string())))
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string)))
 }
 
 async fn css_selector_value(page: &Page, selector: &str) -> Result<Option<String>> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return null;
             const value = typeof el.value === 'string' ? el.value : null;
             if (value == null) return null;
             const trimmed = String(value).trim();
             return trimmed.length ? trimmed : null;
-        }})()"#,
+        }})()",
     );
 
     let result = page.evaluate(js).await?;
     Ok(result
         .value()
-        .and_then(|v| v.as_str().map(|s| s.to_string())))
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string)))
 }
 
 pub async fn wait_for_selector(page: &Page, selector: &str, timeout_ms: u64) -> Result<bool> {
@@ -792,9 +802,8 @@ pub async fn wait_for_selector(page: &Page, selector: &str, timeout_ms: u64) -> 
                 return Ok(true);
             } else if std::time::Instant::now() >= deadline {
                 return Ok(false);
-            } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
             }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await
@@ -816,9 +825,8 @@ pub async fn wait_for_visible_selector(
                 return Ok(true);
             } else if std::time::Instant::now() >= deadline {
                 return Ok(false);
-            } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
             }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await
@@ -844,9 +852,8 @@ pub async fn wait_for_any_visible_selector(
 
             if std::time::Instant::now() >= deadline {
                 return Ok(false);
-            } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
             }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await

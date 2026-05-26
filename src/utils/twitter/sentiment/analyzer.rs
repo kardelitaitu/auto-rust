@@ -236,6 +236,7 @@ impl SentimentStrategy for EmojiStrategy {
 }
 
 impl SentimentStrategy for DomainStrategy {
+    #[allow(clippy::unused_self)]
     fn analyze(&self, text: &str) -> f32 {
         let d = domain::detect_domain(text);
         domain::analyze_domain_sentiment(text, d)
@@ -492,10 +493,12 @@ impl Default for SentimentAnalyzer {
 }
 
 impl SentimentAnalyzer {
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(SentimentConfig::default())
     }
 
+    #[must_use]
     pub fn with_config(config: SentimentConfig) -> Self {
         let mut strategies: Vec<Box<dyn SentimentStrategy>> = Vec::new();
         if config.use_basic_keywords {
@@ -517,6 +520,7 @@ impl SentimentAnalyzer {
         }
     }
 
+    #[must_use]
     pub fn with_llm_client(mut self, llm_client: LlmClient) -> Self {
         self.llm_client = Some(llm_client);
         self
@@ -543,6 +547,7 @@ impl SentimentAnalyzer {
         score_to_sentiment(total_score)
     }
 
+    #[must_use]
     pub fn analyze_sentiment_sync(&self, text: &str) -> Sentiment {
         let mut total_score = 0.0;
         for strategy in &self.strategies {
@@ -551,6 +556,7 @@ impl SentimentAnalyzer {
         score_to_sentiment(total_score)
     }
 
+    #[must_use]
     pub fn analyze_enhanced(
         &self,
         tweet_text: &str,
@@ -595,6 +601,9 @@ impl SentimentAnalyzer {
         }
     }
 
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn analyze_thread_context(&self, context: &ThreadContext) -> f32 {
         let mut modifier = 0.0;
         if context.reply_count > 0 {
@@ -646,6 +655,9 @@ impl SentimentAnalyzer {
         modifier
     }
 
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn analyze_user_reputation(&self, reputation: &UserReputation) -> f32 {
         let mut modifier = 0.0;
         if reputation.is_verified {
@@ -703,6 +715,7 @@ impl SentimentAnalyzer {
         modifier
     }
 
+    #[allow(clippy::unused_self)]
     fn analyze_temporal_factors(&self, temporal: &TemporalFactors) -> f32 {
         let mut modifier = 0.0;
         modifier += match temporal.hour_of_day {
@@ -759,6 +772,9 @@ impl SentimentAnalyzer {
         confidence.clamp(0.0, 1.0)
     }
 
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn calculate_factor_agreement(&self, breakdown: &ScoreBreakdown) -> f32 {
         let factors = vec![
             breakdown.text_score,
@@ -782,6 +798,7 @@ impl SentimentAnalyzer {
     }
 }
 
+#[must_use]
 pub fn sentiment_score(sentiment: Sentiment) -> i32 {
     match sentiment {
         Sentiment::Positive => 1,
@@ -795,6 +812,7 @@ pub async fn analyze_tweet_sentiment(analyzer: &SentimentAnalyzer, tweet_obj: &V
     analyzer.analyze_sentiment(&text).await
 }
 
+#[must_use]
 pub fn analyze_tweet_sentiment_sync(analyzer: &SentimentAnalyzer, tweet_obj: &Value) -> Sentiment {
     let text = extract_tweet_text(tweet_obj);
     analyzer.analyze_sentiment_sync(&text)
@@ -823,6 +841,7 @@ pub struct SentimentStats {
 }
 
 impl SentimentStats {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -833,6 +852,7 @@ impl SentimentStats {
             Sentiment::Negative => self.negative += 1,
         }
     }
+    #[must_use]
     pub fn dominant(&self) -> Sentiment {
         if self.positive > self.neutral && self.positive > self.negative {
             Sentiment::Positive
@@ -842,17 +862,19 @@ impl SentimentStats {
             Sentiment::Neutral
         }
     }
+    #[must_use]
     pub fn total(&self) -> u32 {
         self.positive + self.neutral + self.negative
     }
 }
 
+#[must_use]
 pub fn feed_sentiment_score(stats: &SentimentStats) -> f64 {
-    let total = stats.total() as f64;
+    let total = f64::from(stats.total());
     if total == 0.0 {
         return 0.0;
     }
-    (stats.positive as f64 / total) - (stats.negative as f64 / total)
+    (f64::from(stats.positive) / total) - (f64::from(stats.negative) / total)
 }
 
 fn sentiment_to_score(s: Sentiment) -> f32 {
@@ -873,16 +895,18 @@ fn score_to_sentiment(score: f32) -> Sentiment {
     }
 }
 
+#[must_use]
 pub fn analyze_sentiment_sync(text: &str) -> Sentiment {
     SentimentAnalyzer::new().analyze_sentiment_sync(text)
 }
 
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
     let reply_count = tweet_obj
         .get("replies")
         .and_then(|v| v.as_array())
-        .map(|a| a.len() as u32)
-        .unwrap_or(0);
+        .map_or(0, |a| a.len() as u32);
     let mut reply_scores = Vec::new();
     if let Some(replies) = tweet_obj.get("replies").and_then(|v| v.as_array()) {
         for reply in replies {
@@ -907,6 +931,7 @@ pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
     })
 }
 
+#[must_use]
 pub fn extract_user_reputation(_tweet_obj: &Value) -> Option<UserReputation> {
     Some(UserReputation {
         follower_count: 1000,
@@ -918,6 +943,7 @@ pub fn extract_user_reputation(_tweet_obj: &Value) -> Option<UserReputation> {
     })
 }
 
+#[must_use]
 pub fn extract_temporal_factors(_tweet_obj: &Value) -> Option<TemporalFactors> {
     Some(TemporalFactors {
         hour_of_day: 12,
@@ -928,6 +954,7 @@ pub fn extract_temporal_factors(_tweet_obj: &Value) -> Option<TemporalFactors> {
     })
 }
 
+#[must_use]
 pub fn detect_conversation_indicators(text: &str) -> Vec<ConversationIndicator> {
     let lower = text.to_lowercase();
     let mut indicators = Vec::new();

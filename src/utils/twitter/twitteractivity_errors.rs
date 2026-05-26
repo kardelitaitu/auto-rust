@@ -96,6 +96,7 @@ impl ErrorClassifier for std::io::Error {
 }
 
 /// Check if an error indicates a rate limit from Twitter/X.
+#[must_use]
 pub fn is_rate_limit_error<E: std::fmt::Display>(err: &E) -> bool {
     let err_str = err.to_string().to_lowercase();
     err_str.contains("rate limit")
@@ -104,6 +105,7 @@ pub fn is_rate_limit_error<E: std::fmt::Display>(err: &E) -> bool {
 }
 
 /// Check if an error indicates an authentication failure.
+#[must_use]
 pub fn is_auth_error<E: std::fmt::Display>(err: &E) -> bool {
     let err_str = err.to_string().to_lowercase();
     err_str.contains("unauthorized")
@@ -111,6 +113,90 @@ pub fn is_auth_error<E: std::fmt::Display>(err: &E) -> bool {
         || err_str.contains("login")
         || err_str.contains("401")
         || err_str.contains("403")
+}
+
+#[cfg(test)]
+mod tdd_tests {
+    use super::*;
+
+    // ====================================================================
+    // RED Tests — describe desired behavior (expected to fail on first run)
+    // ====================================================================
+
+    #[test]
+    fn tdd_red_error_classifier_empty_string() {
+        // RED: Empty string should classify as Permanent (not crash)
+        let err = anyhow::anyhow!("");
+        let classification = err.classify();
+        // Empty string doesn't match any known pattern, expect Permanent
+        assert_eq!(classification, ErrorClass::Permanent);
+    }
+
+    // ====================================================================
+    // GREEN Tests — validate working behavior
+    // ====================================================================
+
+    #[test]
+    fn tdd_green_error_classifier_network_timeout() {
+        // GREEN: Network timeout classifies as Transient
+        let err = anyhow::anyhow!("network timeout occurred");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn tdd_green_error_classifier_navigation_error() {
+        // GREEN: Navigation errors classify as Transient
+        let err = anyhow::anyhow!("navigation failed");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn tdd_green_is_rate_limit_detects_all_variants() {
+        // GREEN: All rate limit variants detected
+        assert!(is_rate_limit_error(&"rate limit exceeded"));
+        assert!(is_rate_limit_error(&"429 Too Many Requests"));
+        assert!(is_rate_limit_error(&"too many requests"));
+        assert!(!is_rate_limit_error(&"element not found"));
+    }
+
+    // ====================================================================
+    // EDGE Case Tests
+    // ====================================================================
+
+    #[test]
+    fn tdd_edge_error_classifier_case_insensitive() {
+        // EDGE: Error classifier should be case-insensitive
+        let err = anyhow::anyhow!("TIMEOUT WAITING FOR ELEMENT");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+
+        let err = anyhow::anyhow!("STALE ELEMENT REFERENCE");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn tdd_edge_is_auth_error_handles_empty_string() {
+        // EDGE: Empty string should not match auth error
+        assert!(!is_auth_error(&""));
+    }
+
+    #[test]
+    fn tdd_edge_is_rate_limit_handles_empty_string() {
+        // EDGE: Empty string should not match rate limit
+        assert!(!is_rate_limit_error(&""));
+    }
+
+    // ====================================================================
+    // REGRESSION Tests
+    // ====================================================================
+
+    #[test]
+    fn tdd_regression_error_classifier_not_confused_by_partial_matches() {
+        // REGRESSION: Partial word matches should not misclassify
+        // "rate" alone is NOT a rate limit error
+        assert!(!is_rate_limit_error(&"the going rate for"));
+        // "auth" alone is NOT auth error
+        assert!(!is_auth_error(&"authoress wrote"));
+    }
 }
 
 #[cfg(test)]

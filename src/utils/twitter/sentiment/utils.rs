@@ -11,6 +11,7 @@ use std::collections::HashMap;
 ///
 /// # Returns
 /// Vector of lowercase word tokens
+#[must_use]
 pub fn tokenize(text: &str) -> Vec<String> {
     text.split_whitespace()
         .map(|word| {
@@ -29,6 +30,7 @@ pub fn tokenize(text: &str) -> Vec<String> {
 /// # Arguments
 /// * `text` - The text to search
 /// * `word` - The word to find
+#[must_use]
 pub fn contains_word(text: &str, word: &str) -> bool {
     let tokens = tokenize(text);
     let word_lower = word.to_lowercase();
@@ -36,10 +38,11 @@ pub fn contains_word(text: &str, word: &str) -> bool {
 }
 
 /// Count occurrences of words in text.
-/// Returns a HashMap of word -> count.
+/// Returns a `HashMap` of word -> count.
 ///
 /// # Arguments
 /// * `text` - The text to analyze
+#[must_use]
 pub fn word_counts(text: &str) -> HashMap<String, usize> {
     let tokens = tokenize(text);
     let mut counts = HashMap::new();
@@ -57,6 +60,7 @@ pub fn word_counts(text: &str) -> HashMap<String, usize> {
 /// # Arguments
 /// * `text` - The text to search
 /// * `pattern` - The substring pattern to find
+#[must_use]
 pub fn contains_substring(text: &str, pattern: &str) -> bool {
     text.to_lowercase().contains(&pattern.to_lowercase())
 }
@@ -66,6 +70,7 @@ pub fn contains_substring(text: &str, pattern: &str) -> bool {
 ///
 /// # Arguments
 /// * `text` - The text to normalize
+#[must_use]
 pub fn normalize_text(text: &str) -> String {
     text.to_lowercase().trim().to_string()
 }

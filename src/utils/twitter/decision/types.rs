@@ -77,6 +77,7 @@ pub enum DecisionStrategy {
 
 impl DecisionStrategy {
     /// Get all available strategies.
+    #[must_use]
     pub fn all() -> &'static [DecisionStrategy] {
         &[
             DecisionStrategy::Legacy,
@@ -89,6 +90,7 @@ impl DecisionStrategy {
     }
 
     /// Get human-readable name for strategy.
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             DecisionStrategy::Legacy => "legacy",

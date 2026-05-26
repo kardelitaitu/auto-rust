@@ -26,6 +26,7 @@ use rand_distr::{Distribution, Normal};
 /// assert!(roll >= 1 && roll <= 6);
 /// ```
 #[allow(dead_code)]
+#[must_use]
 pub fn random_in_range(min: u64, max: u64) -> u64 {
     let mut rng = rand::thread_rng();
     rng.gen_range(min..=max)
@@ -62,6 +63,7 @@ pub fn random_in_range(min: u64, max: u64) -> u64 {
 #[cfg(test)]
 const MAX_GAUSSIAN_ITERATIONS: u32 = 1000;
 
+#[must_use]
 pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
     if !mean.is_finite() || !std_dev.is_finite() || !min.is_finite() || !max.is_finite() {
         return mean;

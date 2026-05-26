@@ -53,8 +53,10 @@ use std::time::Instant;
 use tracing::instrument;
 
 use super::{
-    twitteractivity_humanized::*, twitteractivity_interact::*, twitteractivity_popup::*,
-    twitteractivity_selectors::*,
+    twitteractivity_humanized::{after_navigation_pause, human_pause},
+    twitteractivity_interact::is_on_home_feed,
+    twitteractivity_popup::{close_active_popup, dismiss_cookie_banner},
+    twitteractivity_selectors::{selector_feed_visible, selector_login_flow},
 };
 
 // Use TIMEOUT_MEDIUM_MS (15s) from timing module for wait operations
@@ -77,7 +79,7 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
 
     // Get position of home logo for logging
     if let Some((x, y)) = get_element_center(api, selector).await? {
-        info!("Navigated to home ({:.1}, {:.1})", x, y);
+        info!("Navigated to home ({x:.1}, {y:.1})");
     }
 
     // Click the home logo
@@ -99,9 +101,9 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
 /// Returns None if element not found or rect invalid.
 async fn get_element_center(api: &TaskContext, selector: &str) -> Result<Option<(f64, f64)>> {
     let js = format!(
-        r#"
+        r"
         (function() {{
-            var el = document.querySelector('{}');
+            var el = document.querySelector('{selector}');
             if (!el) return null;
             var rect = el.getBoundingClientRect();
             if (rect.width <= 0 || rect.height <= 0) return null;
@@ -110,15 +112,14 @@ async fn get_element_center(api: &TaskContext, selector: &str) -> Result<Option<
                 y: rect.y + rect.height / 2
             }};
         }})()
-        "#,
-        selector
+        "
     );
 
     let result = api.page().evaluate(js).await?;
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
+            obj.get("x").and_then(serde_json::Value::as_f64),
+            obj.get("y").and_then(serde_json::Value::as_f64),
         ) {
             return Ok(Some((x, y)));
         }
@@ -152,7 +153,7 @@ async fn goto_home_fallback(api: &TaskContext) -> Result<()> {
 }
 
 /// Navigates to the notifications page.
-/// Typically https://x.com/notifications or similar.
+/// Typically <https://x.com/notifications> or similar.
 pub async fn goto_notifications(api: &TaskContext) -> Result<()> {
     let url = "https://x.com/notifications";
     api.navigate(url, DEFAULT_NAVIGATION_TIMEOUT_MS).await?;
@@ -186,8 +187,8 @@ pub async fn is_login_flow(api: &TaskContext) -> Result<bool> {
     let js = selector_login_flow();
     let result = api.page().evaluate(js.to_string()).await?;
     let value = result.value();
-    let flow = value.and_then(|v: &Value| v.as_str().map(|s| s.to_string()));
-    Ok(flow.is_some() && !flow.as_ref().unwrap().is_empty())
+    let flow = value.and_then(|v: &Value| v.as_str().map(std::string::ToString::to_string));
+    Ok(flow.as_ref().is_some_and(|s| !s.is_empty()))
 }
 
 /// Verifies that the user is logged in by checking absence of login indicators.
@@ -221,11 +222,12 @@ pub async fn wait_for_page_ready(
 
 /// Select a weighted entry point randomly using a seeded RNG.
 /// If `seed` is 0, uses non-deterministic random (backward compat).
+#[must_use]
 pub fn select_entry_point() -> &'static str {
     let total_weight: u32 = ENTRY_POINTS.iter().map(|ep| ep.weight).sum();
     let mut random = rand::random::<u32>() % total_weight;
 
-    for entry in ENTRY_POINTS.iter() {
+    for entry in &ENTRY_POINTS {
         if random < entry.weight {
             return entry.url;
         }
@@ -245,7 +247,7 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
         &entry_name
     };
 
-    info!("🎲 Rolled entry point: {} → {}", entry_name, entry_url);
+    info!("🎲 Rolled entry point: {entry_name} → {entry_url}");
 
     // Navigate to entry point
     api.navigate(entry_url, 60000).await?;
@@ -265,7 +267,7 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
 
         let scroll_start = Instant::now();
         let profile = api.behavior_runtime();
-        while scroll_start.elapsed().as_millis() < scroll_duration as u128 {
+        while scroll_start.elapsed().as_millis() < u128::from(scroll_duration) {
             let scroll_amount = (rand::random::<u64>() % 400 + 200) as i32;
             let _ = api
                 .scroll_read(
@@ -297,10 +299,10 @@ pub async fn phase1_navigation(api: &TaskContext) -> Result<()> {
     match dismiss_cookie_banner(api).await {
         Ok(true) => info!("Cookie banner dismissed"),
         Ok(false) => {}
-        Err(e) => warn!("Cookie banner dismissal failed: {}", e),
+        Err(e) => warn!("Cookie banner dismissal failed: {e}"),
     }
     if let Err(e) = close_active_popup(api).await {
-        warn!("Popup close failed: {}", e);
+        warn!("Popup close failed: {e}");
     }
 
     if verify_login(api).await? {
@@ -389,6 +391,13 @@ pub const ENTRY_POINTS: [EntryPoint; 15] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Selector functions used in tests that aren't imported at the parent module level
+    use super::super::twitteractivity_selectors::{
+        js_extract_username_from_url, js_get_current_url, selector_all_tweets,
+        selector_close_button, selector_element_center, selector_engagement_buttons,
+        selector_follow_button, selector_follow_confirm_modal, selector_following_indicator,
+        selector_health_check, selector_popup_overlay, selector_tweet_user_avatar,
+    };
 
     #[test]
     fn test_default_navigation_timeout_constant() {
@@ -635,5 +644,69 @@ mod tests {
                 entry.url
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tdd_tests {
+    use super::*;
+
+    #[test]
+    fn tdd_red_navigation_home_has_greatest_weight() {
+        // Home (https://x.com/) should be the heaviest entry point
+        let home = ENTRY_POINTS
+            .iter()
+            .find(|e| e.url == "https://x.com/")
+            .expect("Home entry point must exist");
+        let max_non_home = ENTRY_POINTS
+            .iter()
+            .filter(|e| e.url != "https://x.com/")
+            .map(|e| e.weight)
+            .max()
+            .unwrap_or(0);
+        assert!(
+            home.weight > max_non_home,
+            "Home weight ({}) should be greater than any other entry point ({})",
+            home.weight,
+            max_non_home
+        );
+    }
+
+    #[test]
+    fn tdd_red_navigation_entry_point_exact_count() {
+        assert_eq!(
+            ENTRY_POINTS.len(),
+            15,
+            "Should have exactly 15 entry points"
+        );
+    }
+
+    #[test]
+    fn tdd_red_navigation_entry_point_urls_all_have_x_com() {
+        for entry in ENTRY_POINTS.iter() {
+            assert!(
+                entry.url.contains("x.com"),
+                "Entry point URL '{}' must be on x.com",
+                entry.url
+            );
+            assert!(
+                entry.url.starts_with("https://"),
+                "Entry point URL '{}' must use HTTPS",
+                entry.url
+            );
+        }
+    }
+
+    #[test]
+    fn tdd_green_navigation_entry_point_weight_structure() {
+        // Count entry points by their weight values
+        let weight_59 = ENTRY_POINTS.iter().filter(|e| e.weight == 59).count();
+        let weight_4 = ENTRY_POINTS.iter().filter(|e| e.weight == 4).count();
+        let weight_2 = ENTRY_POINTS.iter().filter(|e| e.weight == 2).count();
+        let weight_1 = ENTRY_POINTS.iter().filter(|e| e.weight == 1).count();
+        assert_eq!(weight_59, 1, "Exactly 1 entry point should have weight 59");
+        assert_eq!(weight_4, 8, "Exactly 8 entry points should have weight 4");
+        assert_eq!(weight_2, 3, "Exactly 3 entry points should have weight 2");
+        assert_eq!(weight_1, 3, "Exactly 3 entry points should have weight 1");
     }
 }

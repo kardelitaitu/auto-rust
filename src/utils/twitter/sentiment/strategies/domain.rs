@@ -175,6 +175,7 @@ const ENT_NEGATIVE: &[&str] = &[
 ];
 
 /// Detect domain from tweet content.
+#[must_use]
 pub fn detect_domain(text: &str) -> SentimentDomain {
     let lower = text.to_lowercase();
 
@@ -231,6 +232,7 @@ fn count_matches(text: &str, keywords: &[&str]) -> usize {
 }
 
 /// Analyze sentiment with domain-specific keywords.
+#[must_use]
 pub fn analyze_domain_sentiment(text: &str, domain: SentimentDomain) -> f32 {
     let lower = text.to_lowercase();
     let (positive, negative): (&[&str], &[&str]) = match domain {

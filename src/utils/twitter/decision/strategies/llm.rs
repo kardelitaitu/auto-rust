@@ -105,6 +105,7 @@ CRITICAL:
     }
 
     /// Build user prompt from tweet context
+    #[allow(clippy::unused_self)]
     fn build_user_prompt(&self, ctx: &TweetContext) -> String {
         let mut prompt = format!("TWEET: \"{}\"\nAUTHOR: @{}\n", ctx.text, ctx.author);
 
@@ -112,7 +113,7 @@ CRITICAL:
         if !ctx.replies.is_empty() {
             prompt.push_str("REPLIES:\n");
             for reply in ctx.replies.iter().take(5) {
-                prompt.push_str(&format!("- {}\n", reply));
+                prompt.push_str(&format!("- {reply}\n"));
             }
         }
 
@@ -161,21 +162,21 @@ CRITICAL:
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            anyhow::bail!("LLM API error: {} - {}", status, text);
+            anyhow::bail!("LLM API error: {status} - {text}");
         }
 
         let llm_response: LlmResponse = response.json().await?;
         let content = &llm_response.choices[0].message.content;
 
         // Parse JSON from response
-        let decision: LlmDecision = serde_json::from_str(content).map_err(|e| {
-            anyhow::anyhow!("Failed to parse LLM JSON: {} - Content: {}", e, content)
-        })?;
+        let decision: LlmDecision = serde_json::from_str(content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse LLM JSON: {e} - Content: {content}"))?;
 
         Ok(decision)
     }
 
-    /// Convert LLM level string to EngagementLevel
+    /// Convert LLM level string to `EngagementLevel`
+    #[allow(clippy::unused_self)]
     fn parse_level(&self, level: &str) -> EngagementLevel {
         match level.to_lowercase().as_str() {
             "skip" | "none" => EngagementLevel::None,
@@ -226,11 +227,11 @@ impl DecisionStrategyImpl for LlmStrategy {
                 }
             }
             Ok(Err(e)) => {
-                warn!("LlmStrategy error: {}, falling back to neutral", e);
+                warn!("LlmStrategy error: {e}, falling back to neutral");
                 EngagementDecision {
                     level: EngagementLevel::Medium,
                     score: 50,
-                    reason: format!("LLM error fallback: {}", e),
+                    reason: format!("LLM error fallback: {e}"),
                     multiplier: 1.0,
                     confidence: 0.5,
                 }

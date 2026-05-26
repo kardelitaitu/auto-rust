@@ -110,12 +110,14 @@ impl PersonaStrategy {
     }
 
     /// Check if text contains any keywords from list.
+    #[allow(clippy::unused_self)]
     fn contains_any(&self, text: &str, keywords: &[&str]) -> bool {
         let text_lower = text.to_lowercase();
         keywords.iter().any(|kw| text_lower.contains(kw))
     }
 
     /// Calculate base score from persona weights.
+    #[allow(clippy::unused_self)]
     fn calculate_base_score(&self, ctx: &TweetContext) -> f64 {
         let persona = &ctx.persona;
 
@@ -133,6 +135,8 @@ impl PersonaStrategy {
     }
 
     /// Analyze replies for community reception.
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn analyze_replies(&self, ctx: &TweetContext) -> f64 {
         if ctx.replies.is_empty() {
             return 50.0; // Neutral if no replies
@@ -171,8 +175,8 @@ impl PersonaStrategy {
         }
 
         let total = ctx.replies.len() as f64;
-        let positive_ratio = positive_signals as f64 / total;
-        let negative_ratio = negative_signals as f64 / total;
+        let positive_ratio = f64::from(positive_signals) / total;
+        let negative_ratio = f64::from(negative_signals) / total;
 
         // Score based on positive ratio minus penalty for negative
         (positive_ratio * 100.0) - (negative_ratio * 50.0) + 30.0
@@ -181,10 +185,11 @@ impl PersonaStrategy {
 
 #[async_trait]
 impl DecisionStrategyImpl for PersonaStrategy {
+    #[allow(clippy::cast_precision_loss)]
     async fn decide(&self, ctx: &TweetContext) -> EngagementDecision {
         let text = &ctx.text;
         let replies_combined = ctx.replies.join(" ");
-        let combined_text = format!("{} {}", text, replies_combined);
+        let combined_text = format!("{text} {replies_combined}");
 
         // 1. CRITICAL: Check for tragedy (NEVER engage)
         if self.contains_any(&combined_text, &self.tragedy_keywords) {
@@ -258,8 +263,7 @@ impl DecisionStrategyImpl for PersonaStrategy {
         };
 
         info!(
-            "PersonaStrategy: score={:.1}, level={:?}, multiplier={:.2}",
-            final_score, level, multiplier
+            "PersonaStrategy: score={final_score:.1}, level={level:?}, multiplier={multiplier:.2}"
         );
 
         EngagementDecision {

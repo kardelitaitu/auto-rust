@@ -13,6 +13,7 @@ use tokio::time::{timeout, Duration};
 use crate::utils::math::random_in_range;
 use crate::utils::timing::human_pause;
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn goto(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
     goto_with_trampoline(page, url, timeout_ms).await
 }
@@ -111,7 +112,7 @@ async fn wait_for_page_settle(page: &Page) -> Result<()> {
             .value()
             .and_then(|v| v.as_str().map(str::to_string));
 
-        if matches!(state.as_deref(), Some("interactive") | Some("complete")) {
+        if matches!(state.as_deref(), Some("interactive" | "complete")) {
             return Ok(());
         }
 

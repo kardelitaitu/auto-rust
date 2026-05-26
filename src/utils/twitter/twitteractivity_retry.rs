@@ -45,6 +45,7 @@ impl Default for RetryConfig {
 
 impl RetryConfig {
     /// Conservative config for critical operations (more retries, longer delays).
+    #[must_use]
     pub fn conservative() -> Self {
         Self {
             max_attempts: 5,
@@ -56,6 +57,7 @@ impl RetryConfig {
     }
 
     /// Aggressive config for fast operations (fewer retries, shorter delays).
+    #[must_use]
     pub fn aggressive() -> Self {
         Self {
             max_attempts: 2,
@@ -87,6 +89,7 @@ pub struct CircuitBreaker {
 }
 
 impl CircuitBreaker {
+    #[must_use]
     pub fn new(threshold: u32, reset_timeout_ms: u64) -> Self {
         Self {
             threshold,
@@ -97,6 +100,7 @@ impl CircuitBreaker {
         }
     }
 
+    #[must_use]
     pub async fn is_open(&self) -> bool {
         let is_open = *self.is_open.read().await;
         if is_open {
@@ -131,10 +135,7 @@ impl CircuitBreaker {
         if failures >= self.threshold {
             let mut is_open = self.is_open.write().await;
             *is_open = true;
-            warn!(
-                "Circuit breaker opened after {} consecutive failures",
-                failures
-            );
+            warn!("Circuit breaker opened after {failures} consecutive failures");
         }
     }
 
@@ -167,6 +168,7 @@ impl Default for CircuitBreaker {
 }
 
 /// Calculate delay with exponential backoff and jitter.
+#[allow(clippy::cast_precision_loss)]
 fn calculate_delay(attempt: u32, config: &RetryConfig) -> u64 {
     let base = config.base_delay_ms as f64 * config.backoff_multiplier.powi(attempt as i32 - 1);
     let delay = base.min(config.max_delay_ms as f64);
@@ -183,29 +185,20 @@ fn calculate_delay(attempt: u32, config: &RetryConfig) -> u64 {
     (delay + jitter) as u64
 }
 
-/// Retry an async operation with exponential backoff.
+/// Core retry loop with a generic delay function.
 ///
-/// Only retries transient errors. Permanent and fatal errors fail immediately.
-///
-/// # Arguments
-///
-/// * `operation` - The async operation to retry (FnMut allows captured vars)
-/// * `config` - Retry configuration
-/// * `api` - Task context for humanized pauses
-/// * `operation_name` - Name for logging
-///
-/// # Returns
-///
-/// Returns `Ok(T)` on success, or the last error after all retries exhausted.
-pub async fn retry_with_backoff<T, F, Fut>(
+/// Extracted from `retry_with_backoff` to allow testing without a real `TaskContext`.
+pub(crate) async fn retry_with_backoff_inner<T, F, Fut, D, DFut>(
     mut operation: F,
     config: &RetryConfig,
-    api: &TaskContext,
+    mut delay_fn: D,
     operation_name: &str,
 ) -> Result<T>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
+    D: FnMut(u64) -> DFut,
+    DFut: std::future::Future<Output = ()>,
 {
     let mut last_error = None;
 
@@ -213,16 +206,13 @@ where
         match operation().await {
             Ok(result) => {
                 if attempt > 1 {
-                    info!("{} succeeded after {} attempts", operation_name, attempt);
+                    info!("{operation_name} succeeded after {attempt} attempts");
                 }
                 return Ok(result);
             }
             Err(e) => {
                 let error_class = e.classify();
-                debug!(
-                    "{} attempt {} failed: {} (class: {})",
-                    operation_name, attempt, e, error_class
-                );
+                debug!("{operation_name} attempt {attempt} failed: {e} (class: {error_class})");
 
                 match error_class {
                     ErrorClass::Transient => {
@@ -232,22 +222,19 @@ where
                                 "{} transient error (attempt {}/{}): {}. Retrying in {}ms...",
                                 operation_name, attempt, config.max_attempts, e, delay_ms
                             );
-                            human_pause(api, delay_ms).await;
+                            delay_fn(delay_ms).await;
                             last_error = Some(e);
                         } else {
-                            warn!(
-                                "{} failed after {} attempts: {}",
-                                operation_name, attempt, e
-                            );
+                            warn!("{operation_name} failed after {attempt} attempts: {e}");
                             return Err(e);
                         }
                     }
                     ErrorClass::Permanent => {
-                        debug!("{} permanent error, not retrying: {}", operation_name, e);
+                        debug!("{operation_name} permanent error, not retrying: {e}");
                         return Err(e);
                     }
                     ErrorClass::Fatal => {
-                        warn!("{} fatal error, aborting: {}", operation_name, e);
+                        warn!("{operation_name} fatal error, aborting: {e}");
                         return Err(e);
                     }
                 }
@@ -257,6 +244,39 @@ where
 
     // Should not reach here, but handle gracefully
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Retry exhausted")))
+}
+
+/// Retry an async operation with exponential backoff.
+///
+/// Only retries transient errors. Permanent and fatal errors fail immediately.
+///
+/// # Arguments
+///
+/// * `operation` - The async operation to retry (`FnMut` allows captured vars)
+/// * `config` - Retry configuration
+/// * `api` - Task context for humanized pauses
+/// * `operation_name` - Name for logging
+///
+/// # Returns
+///
+/// Returns `Ok(T)` on success, or the last error after all retries exhausted.
+pub async fn retry_with_backoff<T, F, Fut>(
+    operation: F,
+    config: &RetryConfig,
+    api: &TaskContext,
+    operation_name: &str,
+) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    retry_with_backoff_inner(
+        operation,
+        config,
+        |delay_ms| human_pause(api, delay_ms),
+        operation_name,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -286,6 +306,274 @@ mod delay_tests {
         // Second attempt: 2x base
         let d2 = calculate_delay(2, &config);
         assert!((900..=1100).contains(&d2));
+    }
+}
+
+#[cfg(test)]
+mod retry_inner_tests {
+    use super::{retry_with_backoff_inner, RetryConfig};
+    use std::sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    };
+
+    use std::pin::Pin;
+
+    /// A no-op delay function that records calls.
+    fn make_recording_delay(
+        call_count: Arc<AtomicU32>,
+    ) -> impl FnMut(u64) -> Pin<Box<dyn std::future::Future<Output = ()>>> {
+        move |_ms| {
+            call_count.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {})
+        }
+    }
+
+    #[tokio::test]
+    async fn immediate_success_no_retry_needed() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result = retry_with_backoff_inner(
+            || async { Ok::<_, anyhow::Error>(42) },
+            &RetryConfig::default(),
+            delay,
+            "immediate_test",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn transient_then_success_retries_once() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt == 1 {
+                        Err(anyhow::anyhow!("stale element reference"))
+                    } else {
+                        Ok::<_, anyhow::Error>(99)
+                    }
+                }
+            },
+            &RetryConfig::default(),
+            delay,
+            "transient_then_success",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 99);
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn transient_exhaustion_returns_last_error() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &RetryConfig::default(),
+            delay,
+            "exhaustion_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("stale element reference"));
+        // Default max_attempts = 3, so 2 delays (attempts 1 and 2)
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn permanent_error_stops_immediately() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("invalid selector syntax")) },
+            &RetryConfig::default(),
+            delay,
+            "permanent_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("invalid selector syntax"));
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn fatal_error_stops_immediately() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("browser disconnected")) },
+            &RetryConfig::default(),
+            delay,
+            "fatal_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("browser disconnected"));
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn aggressive_config_retries_less() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let config = RetryConfig::aggressive();
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay,
+            "aggressive_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        // Aggressive: max_attempts=2, so 1 delay
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn conservative_config_retries_more() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let config = RetryConfig::conservative();
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay,
+            "conservative_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        // Conservative: max_attempts=5, so 4 delays
+        assert_eq!(call_count.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn single_attempt_config_does_not_retry() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let config = RetryConfig {
+            max_attempts: 1,
+            ..RetryConfig::default()
+        };
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay,
+            "single_attempt",
+        )
+        .await;
+
+        assert!(result.is_err());
+        // max_attempts=1, no retries possible
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn delay_fn_receives_increasing_delays() {
+        let delays = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let d = delays.clone();
+
+        let delay_fn = move |ms| {
+            d.lock().unwrap().push(ms);
+            Box::pin(async {}) as Pin<Box<dyn std::future::Future<Output = ()>>>
+        };
+
+        let config = RetryConfig {
+            max_attempts: 3,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            backoff_multiplier: 2.0,
+            jitter_factor: 0.0, // No jitter for deterministic test
+        };
+
+        let _result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay_fn,
+            "delay_tracking",
+        )
+        .await;
+
+        let recorded = delays.lock().unwrap();
+        // Attempt 1: delay = 100 * 2^0 = 100
+        // Attempt 2: delay = 100 * 2^1 = 200
+        assert_eq!(recorded.len(), 2);
+        assert_eq!(recorded[0], 100);
+        assert_eq!(recorded[1], 200);
+    }
+
+    #[tokio::test]
+    async fn operation_name_appears_in_errors() {
+        let delay = |_ms| Box::pin(async {}) as Pin<Box<dyn std::future::Future<Output = ()>>>;
+
+        let result: Result<u32, anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &RetryConfig {
+                max_attempts: 1,
+                ..RetryConfig::default()
+            },
+            delay,
+            "my_custom_operation",
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn multiple_transient_then_success_after_retries() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let config = RetryConfig {
+            max_attempts: 5,
+            ..RetryConfig::default()
+        };
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt <= 3 {
+                        Err(anyhow::anyhow!("stale element reference"))
+                    } else {
+                        Ok::<_, anyhow::Error>(attempt)
+                    }
+                }
+            },
+            &config,
+            delay,
+            "multi_retry_success",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 4);
+        // 3 failures → 3 delay calls
+        assert_eq!(call_count.load(Ordering::SeqCst), 3);
     }
 }
 

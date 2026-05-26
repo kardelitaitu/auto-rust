@@ -40,8 +40,8 @@ pub async fn read_by_duration(page: &Page, duration_ms: u64) -> Result<()> {
 #[allow(dead_code)]
 pub async fn human_scroll(page: &Page, direction: &str, amount: i32) -> Result<()> {
     let signed = match direction {
-        "down" => amount as f64,
-        "up" => -(amount as f64),
+        "down" => f64::from(amount),
+        "up" => -f64::from(amount),
         _ => return Err(anyhow::anyhow!("Invalid scroll direction: {direction}")),
     };
     let duration = if signed.abs() > 800.0 {
@@ -63,7 +63,7 @@ pub async fn read(
     for i in 0..pauses {
         let amplitude = if variable_speed {
             let jitter = gaussian(0.0, 0.18, -0.35, 0.35);
-            ((scroll_amount as f64) * (1.0 + jitter)).round() as i32
+            (f64::from(scroll_amount) * (1.0 + jitter)).round() as i32
         } else {
             scroll_amount
         };
@@ -92,9 +92,10 @@ pub async fn read(
     Ok(())
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn back(page: &Page, distance: i32) -> Result<()> {
     let steps = random_in_range(2, 3);
-    let total = distance.abs().max(1) as f64;
+    let total = f64::from(distance.abs().max(1));
     let step_size = total / steps as f64;
 
     for i in 0..steps {
@@ -150,7 +151,7 @@ pub async fn scroll_to_bottom(page: &Page) -> Result<()> {
         .evaluate("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)")
         .await?
         .value()
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .ok_or_else(|| anyhow::anyhow!("Failed to read document height"))?;
     smooth_scroll_to_y(page, bottom, random_in_range(650, 1100)).await?;
     human_pause(120, 60).await;
@@ -160,7 +161,7 @@ pub async fn scroll_to_bottom(page: &Page) -> Result<()> {
 async fn human_scroll_into_view(page: &Page, selector: &str) -> Result<()> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return false;
 
@@ -239,7 +240,7 @@ async fn human_scroll_into_view(page: &Page, selector: &str) -> Result<()> {
                     resolve(true);
                 }}, duration + 250);
             }});
-        }})()"#,
+        }})()",
     );
 
     let result = timeout(Duration::from_secs(2), page.evaluate(js))
@@ -252,7 +253,7 @@ async fn human_scroll_into_view(page: &Page, selector: &str) -> Result<()> {
 async fn target_still_offscreen(page: &Page, selector: &str) -> Result<bool> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return true;
             const rect = el.getBoundingClientRect();
@@ -281,7 +282,7 @@ async fn target_still_offscreen(page: &Page, selector: &str) -> Result<bool> {
             }}
 
             return rect.bottom < 16 || rect.top > window.innerHeight - 16;
-        }})()"#,
+        }})()",
     );
 
     let result = timeout(Duration::from_secs(2), page.evaluate(js))
@@ -298,12 +299,12 @@ async fn target_still_offscreen(page: &Page, selector: &str) -> Result<bool> {
 async fn scroll_into_view_native(page: &Page, selector: &str) -> Result<()> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return false;
             el.scrollIntoView({{behavior: 'smooth', block: 'center', inline: 'nearest'}});
             return true;
-        }})()"#,
+        }})()",
     );
 
     timeout(Duration::from_secs(2), page.evaluate(js))
@@ -320,16 +321,16 @@ async fn smooth_scroll_by(page: &Page, delta_y: f64, duration_ms: u64) -> Result
         .evaluate("window.scrollY")
         .await?
         .value()
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .ok_or_else(|| anyhow::anyhow!("Failed to read current scroll position"))?;
     smooth_scroll_to_y(page, current_y + delta_y, duration_ms).await
 }
 
 async fn smooth_scroll_to_y(page: &Page, target_y: f64, duration_ms: u64) -> Result<()> {
     let js = format!(
-        r#"(async () => {{
-            const targetY = {};
-            const duration = Math.max({}, 50);
+        r"(async () => {{
+            const targetY = {target_y};
+            const duration = Math.max({duration_ms}, 50);
             const startY = window.scrollY;
             const deltaY = targetY - startY;
             if (Math.abs(deltaY) < 0.5) return;
@@ -355,8 +356,7 @@ async fn smooth_scroll_to_y(page: &Page, target_y: f64, duration_ms: u64) -> Res
                     resolve();
                 }}, duration + 400);
             }});
-        }})()"#,
-        target_y, duration_ms
+        }})()"
     );
 
     timeout(Duration::from_secs(5), page.evaluate(js))

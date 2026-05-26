@@ -110,14 +110,13 @@ async fn simulate_drag(
     page.evaluate(format!(
         "if (!window.touch) {{ window.touch = {{}}}}; \
          window.touch.identifier = 1; \
-         window.touch.clientX = {}; \
-         window.touch.clientY = {}; \
+         window.touch.clientX = {start_x}; \
+         window.touch.clientY = {start_y}; \
          const touchStart = new TouchEvent('touchstart', {{ \
            touches: [window.touch], \
            bubbles: true \
          }}); \
-         document.dispatchEvent(touchStart);",
-        start_x, start_y
+         document.dispatchEvent(touchStart);"
     ))
     .await?;
 
@@ -162,13 +161,12 @@ async fn simulate_drag(
 pub async fn wheel_zoom(page: &Page, delta_y: f64, x: f64, y: f64) -> Result<()> {
     page.evaluate(format!(
         "const wheelEvent = new WheelEvent('wheel', {{ \
-          deltaY: {}, \
-          clientX: {}, \
-          clientY: {}, \
+          deltaY: {delta_y}, \
+          clientX: {x}, \
+          clientY: {y}, \
           bubbles: true \
         }}); \
-        document.dispatchEvent(wheelEvent);",
-        delta_y, x, y
+        document.dispatchEvent(wheelEvent);"
     ))
     .await?;
 
@@ -188,10 +186,9 @@ pub async fn wheel_zoom(page: &Page, delta_y: f64, x: f64, y: f64) -> Result<()>
 #[allow(dead_code)]
 pub async fn set_zoom_level(page: &Page, scale: f64) -> Result<()> {
     page.evaluate(format!(
-        "document.body.style.transform = 'scale({})'; \
+        "document.body.style.transform = 'scale({scale})'; \
          document.body.style.transformOrigin = '0 0'; \
-         document.body.style.transition = 'transform 0.3s ease';",
-        scale
+         document.body.style.transition = 'transform 0.3s ease';"
     ))
     .await?;
 
@@ -223,6 +220,7 @@ pub async fn reset_zoom(page: &Page) -> Result<()> {
 /// # Returns
 /// Ok(()) if successful
 #[allow(dead_code)]
+#[allow(clippy::cast_precision_loss)]
 pub async fn zoom_to(page: &Page, target_scale: f64, duration_ms: u64) -> Result<()> {
     // Get current zoom level (assuming we start at 1.0)
     let current_scale = 1.0;

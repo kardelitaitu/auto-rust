@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::time::Duration;
 use tracing::instrument;
 
-use super::twitteractivity_selectors::*;
+use super::twitteractivity_selectors::selector_close_button;
 
 /// Human pause with variance based on profile action delay behavior.
 #[instrument(skip(api))]
@@ -21,6 +21,7 @@ pub async fn human_pause(api: &TaskContext, base_ms: u64) {
 }
 
 /// Short micro-pause typical of human hesitation between actions.
+#[allow(clippy::cast_precision_loss)]
 pub async fn micro_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let avg = runtime.action_delay.min_ms;
@@ -47,16 +48,18 @@ pub async fn after_click_pause(api: &TaskContext) {
 }
 
 /// Sleep using Tokio directly (blocking sleep for fixed periods).
-/// Used when TaskContext.pause() is not appropriate (e.g., fixed timeout after an action).
+/// Used when `TaskContext.pause()` is not appropriate (e.g., fixed timeout after an action).
 pub async fn fixed_sleep(ms: u64) {
     tokio::time::sleep(Duration::from_millis(ms)).await;
 }
 
 /// Random duration between two bounds using human-like distribution.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn random_duration(min_ms: u64, max_ms: u64) -> Duration {
     let min = min_ms as f64;
     let max = max_ms as f64;
-    let mean = (min + max) / 2.0;
+    let mean = f64::midpoint(min, max);
     let stddev = (max - min) / 4.0; // 95% within range
     let duration_ms = gaussian(mean, stddev, min, max);
     Duration::from_millis(duration_ms as u64)
@@ -224,7 +227,7 @@ mod duration_tests {
 
 #[cfg(test)]
 mod selector_tests {
-    use super::{
+    use super::super::twitteractivity_selectors::{
         js_extract_username_from_url, js_get_current_url, selector_all_tweets,
         selector_close_button, selector_element_center, selector_engagement_buttons,
         selector_feed_visible, selector_follow_button, selector_follow_confirm_modal,

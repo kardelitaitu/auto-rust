@@ -58,6 +58,8 @@ pub struct CursorBehavior {
 
 impl CursorBehavior {
     /// Converts cursor cadence into a concrete movement config.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn to_movement_config(&self) -> CursorMovementConfig {
         let interval_min_ms = self.interval_min_ms.max(1);
         let interval_max_ms = self.interval_max_ms.max(interval_min_ms);
@@ -133,6 +135,7 @@ pub struct ProfileRuntime {
 
 impl ProfileParam {
     /// Creates a new profile parameter.
+    #[must_use]
     pub fn new(base: f64, deviation_pct: f64) -> Self {
         Self {
             base,
@@ -141,8 +144,9 @@ impl ProfileParam {
     }
 
     /// Returns randomized value within deviation range.
-    /// Uses uniform distribution: base * (1 ± deviation_pct/100)
+    /// Uses uniform distribution: base * (1 ± `deviation_pct/100`)
     #[allow(dead_code)]
+    #[must_use]
     pub fn random(&self) -> f64 {
         if self.deviation_pct == 0.0 {
             return self.base;
@@ -154,18 +158,22 @@ impl ProfileParam {
 
     /// Returns randomized value as u64.
     #[allow(dead_code)]
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn random_u64(&self) -> u64 {
         self.random() as u64
     }
 
     /// Returns randomized value as u32.
     #[allow(dead_code)]
+    #[must_use]
     pub fn random_u32(&self) -> u32 {
         self.random() as u32
     }
 
     /// Returns randomized value clamped to range.
     #[allow(dead_code)]
+    #[must_use]
     pub fn random_clamped(&self, min: f64, max: f64) -> f64 {
         self.random().clamp(min, max)
     }
@@ -255,6 +263,7 @@ fn default_dive_probability() -> ProfileParam {
 
 impl BrowserProfile {
     /// Creates a profile from a preset.
+    #[must_use]
     pub fn from_preset(preset: &ProfilePreset) -> Self {
         match preset {
             ProfilePreset::Average => Self::average(),
@@ -282,6 +291,7 @@ impl BrowserProfile {
     }
 
     /// Derives scroll behavior from the profile.
+    #[must_use]
     pub fn scroll_behavior(&self) -> ScrollBehavior {
         let amount = self.scroll_amount.random_clamped(120.0, 2_000.0).round() as i32;
         let pause_ms = self.scroll_pause.random_clamped(80.0, 3_000.0).round() as u64;
@@ -296,6 +306,8 @@ impl BrowserProfile {
     }
 
     /// Derives cursor behavior from the profile.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn cursor_behavior(&self) -> CursorBehavior {
         let speed = self.cursor_speed.random_clamped(0.25, 3.0);
         let step_delay = self.cursor_step_delay.random_clamped(1.0, 60.0);
@@ -317,12 +329,15 @@ impl BrowserProfile {
     }
 
     /// Converts cursor behavior into a concrete movement config.
+    #[must_use]
     pub fn cursor_movement_config(&self) -> CursorMovementConfig {
         let cursor = self.cursor_behavior();
         cursor.to_movement_config()
     }
 
     /// Derives typing behavior from the profile.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn typing_behavior(&self) -> TypingBehavior {
         TypingBehavior {
             keystroke_mean_ms: self.typing_speed_mean.random_clamped(20.0, 500.0).round() as u64,
@@ -337,6 +352,7 @@ impl BrowserProfile {
     }
 
     /// Derives click behavior from the profile.
+    #[must_use]
     pub fn click_behavior(&self) -> ClickBehavior {
         ClickBehavior {
             reaction_delay_ms: self
@@ -349,6 +365,7 @@ impl BrowserProfile {
     }
 
     /// Derives general action delay behavior from the profile.
+    #[must_use]
     pub fn action_delay_behavior(&self) -> ActionDelayBehavior {
         ActionDelayBehavior {
             min_ms: self.action_delay_min.random_clamped(0.0, 5_000.0).round() as u64,
@@ -358,6 +375,7 @@ impl BrowserProfile {
 
     /// Derives safe edge ratio for random cursor moves.
     /// Larger values keep movement farther from viewport edges.
+    #[must_use]
     pub fn random_cursor_safe_edge_ratio(&self) -> f64 {
         let precision = self.cursor_precision.base.clamp(60.0, 100.0);
         let extra = ((100.0 - precision) / 40.0) * 0.08;
@@ -365,6 +383,7 @@ impl BrowserProfile {
     }
 
     /// Builds a stable runtime snapshot for a session.
+    #[must_use]
     pub fn runtime(&self) -> ProfileRuntime {
         ProfileRuntime {
             cursor: self.cursor_behavior(),
@@ -430,6 +449,7 @@ pub enum ProfilePreset {
 
 impl BrowserProfile {
     /// Average user - typical everyday browsing
+    #[must_use]
     pub fn average() -> Self {
         Self {
             name: "Average".into(),
@@ -459,6 +479,7 @@ impl BrowserProfile {
     }
 
     /// Teen - fast, less precise
+    #[must_use]
     pub fn teen() -> Self {
         Self {
             name: "Teen".into(),
@@ -488,6 +509,7 @@ impl BrowserProfile {
     }
 
     /// Senior - slower, more deliberate
+    #[must_use]
     pub fn senior() -> Self {
         Self {
             name: "Senior".into(),
@@ -517,6 +539,7 @@ impl BrowserProfile {
     }
 
     /// Enthusiast - precise, researched
+    #[must_use]
     pub fn enthusiast() -> Self {
         Self {
             name: "Enthusiast".into(),
@@ -546,6 +569,7 @@ impl BrowserProfile {
     }
 
     /// Power user - fast, efficient
+    #[must_use]
     pub fn power_user() -> Self {
         Self {
             name: "PowerUser".into(),
@@ -575,6 +599,7 @@ impl BrowserProfile {
     }
 
     /// Cautious - careful, lots of pauses
+    #[must_use]
     pub fn cautious() -> Self {
         Self {
             name: "Cautious".into(),
@@ -604,6 +629,7 @@ impl BrowserProfile {
     }
 
     /// Impatient - quick, minimal pauses
+    #[must_use]
     pub fn impatient() -> Self {
         Self {
             name: "Impatient".into(),
@@ -633,6 +659,7 @@ impl BrowserProfile {
     }
 
     /// Erratic - inconsistent timing
+    #[must_use]
     pub fn erratic() -> Self {
         Self {
             name: "Erratic".into(),
@@ -662,6 +689,7 @@ impl BrowserProfile {
     }
 
     /// Researcher - slow, thorough
+    #[must_use]
     pub fn researcher() -> Self {
         Self {
             name: "Researcher".into(),
@@ -691,6 +719,7 @@ impl BrowserProfile {
     }
 
     /// Casual - relaxed browsing
+    #[must_use]
     pub fn casual() -> Self {
         Self {
             name: "Casual".into(),
@@ -720,6 +749,7 @@ impl BrowserProfile {
     }
 
     /// Professional - efficient, minimal waste
+    #[must_use]
     pub fn professional() -> Self {
         Self {
             name: "Professional".into(),
@@ -749,6 +779,7 @@ impl BrowserProfile {
     }
 
     /// Novice - slow learning curve
+    #[must_use]
     pub fn novice() -> Self {
         Self {
             name: "Novice".into(),
@@ -778,6 +809,7 @@ impl BrowserProfile {
     }
 
     /// Expert - fast, precise
+    #[must_use]
     pub fn expert() -> Self {
         Self {
             name: "Expert".into(),
@@ -807,6 +839,7 @@ impl BrowserProfile {
     }
 
     /// Distracted - frequent random pauses
+    #[must_use]
     pub fn distracted() -> Self {
         Self {
             name: "Distracted".into(),
@@ -836,6 +869,7 @@ impl BrowserProfile {
     }
 
     /// Focused - consistent, few pauses
+    #[must_use]
     pub fn focused() -> Self {
         Self {
             name: "Focused".into(),
@@ -865,6 +899,7 @@ impl BrowserProfile {
     }
 
     /// Analytical - methodical scrolling
+    #[must_use]
     pub fn analytical() -> Self {
         Self {
             name: "Analytical".into(),
@@ -894,6 +929,7 @@ impl BrowserProfile {
     }
 
     /// Quick scanner - fast scroll, quick clicks
+    #[must_use]
     pub fn quick_scanner() -> Self {
         Self {
             name: "QuickScanner".into(),
@@ -923,6 +959,7 @@ impl BrowserProfile {
     }
 
     /// Thorough - slow, complete coverage
+    #[must_use]
     pub fn thorough() -> Self {
         Self {
             name: "Thorough".into(),
@@ -952,6 +989,7 @@ impl BrowserProfile {
     }
 
     /// Adaptive - adjusts based on content
+    #[must_use]
     pub fn adaptive() -> Self {
         Self {
             name: "Adaptive".into(),
@@ -981,6 +1019,7 @@ impl BrowserProfile {
     }
 
     /// Stressed - fast, less accurate
+    #[must_use]
     pub fn stressed() -> Self {
         Self {
             name: "Stressed".into(),
@@ -1010,6 +1049,7 @@ impl BrowserProfile {
     }
 
     /// Leisure - slow, exploratory
+    #[must_use]
     pub fn leisure() -> Self {
         Self {
             name: "Leisure".into(),
@@ -1039,13 +1079,14 @@ impl BrowserProfile {
     }
 }
 
-/// Helper to create ProfileParam with base and deviation.
+/// Helper to create `ProfileParam` with base and deviation.
 fn p(base: f64, deviation_pct: f64) -> ProfileParam {
     ProfileParam::new(base, deviation_pct)
 }
 
 /// Creates a randomized profile from a preset for this session.
 /// Applies random variation to all parameters based on their deviation percentages.
+#[must_use]
 pub fn randomize_profile(preset: &ProfilePreset) -> BrowserProfile {
     // Note: The ProfileParam::random() is called when using the profile,
     // so the profile itself stores the base values and deviation.
@@ -1055,6 +1096,7 @@ pub fn randomize_profile(preset: &ProfilePreset) -> BrowserProfile {
 }
 
 /// Returns a random profile preset.
+#[must_use]
 pub fn random_preset() -> ProfilePreset {
     let presets = [
         ProfilePreset::Average,

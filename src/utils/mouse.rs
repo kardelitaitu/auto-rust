@@ -24,7 +24,6 @@ use chromiumoxide::cdp::browser_protocol::input::{
 };
 use chromiumoxide::Page;
 use log::debug;
-use once_cell::sync::Lazy;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -79,34 +78,47 @@ pub async fn wait_for_stable_element(
     let mut prev_box: Option<BoundingBox> = None;
     let mut stable_count = 0u32;
 
-    while start_time.elapsed().as_millis() < max_wait_ms as u128 {
+    while start_time.elapsed().as_millis() < u128::from(max_wait_ms) {
         // Query bounding box via JavaScript evaluation
         let js = format!(
-            r#"(function() {{
+            r"(function() {{
                 const el = document.querySelector('{}');
                 if (!el) return null;
                 const r = el.getBoundingClientRect();
                 return {{ x: r.x, y: r.y, width: r.width, height: r.height }};
-            }})()"#,
+            }})()",
             selector.replace('\'', "\\'")
         );
 
-        let result = match timeout(Duration::from_millis(500), page.evaluate(js)).await {
-            Ok(Ok(eval_result)) => eval_result,
-            _ => {
-                sleep(Duration::from_millis(100)).await;
-                continue;
-            }
+        let result = if let Ok(Ok(eval_result)) =
+            timeout(Duration::from_millis(500), page.evaluate(js)).await
+        {
+            eval_result
+        } else {
+            sleep(Duration::from_millis(100)).await;
+            continue;
         };
 
         // Extract object from serde_json::Value
         let obj_opt = result.value().and_then(|v| v.as_object());
 
         let bbox = if let Some(obj) = obj_opt {
-            let x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let width = obj.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let height = obj.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let x = obj
+                .get("x")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let y = obj
+                .get("y")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let width = obj
+                .get("width")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let height = obj
+                .get("height")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
             BoundingBox {
                 x,
                 y,
@@ -151,12 +163,13 @@ const DEFAULT_OVERLAY_SIZE_PX: f64 = 12.0;
 const MIN_OVERLAY_SIZE_PX: f64 = 4.0;
 const MAX_OVERLAY_SIZE_PX: f64 = 64.0;
 
-static OVERLAY_SIZE_PX: Lazy<f64> = Lazy::new(|| {
+static OVERLAY_SIZE_PX: std::sync::LazyLock<f64> = std::sync::LazyLock::new(|| {
     std::env::var("MOUSE_OVERLAY_SIZE_PX")
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
-        .map(|value| value.clamp(MIN_OVERLAY_SIZE_PX, MAX_OVERLAY_SIZE_PX))
-        .unwrap_or(DEFAULT_OVERLAY_SIZE_PX)
+        .map_or(DEFAULT_OVERLAY_SIZE_PX, |value| {
+            value.clamp(MIN_OVERLAY_SIZE_PX, MAX_OVERLAY_SIZE_PX)
+        })
 });
 
 /// Internal helper for logging within nativeclick context.
@@ -177,8 +190,7 @@ fn nativeclick_debug(
     native::record_nativeclick_trace_phase(session_id, phase);
     with_nativeclick_log_context(session_id, || {
         debug!(
-            "nativeclick trace={} session={} selector={} phase={}: {}",
-            trace_id, session_id, selector, phase, message
+            "nativeclick trace={trace_id} session={session_id} selector={selector} phase={phase}: {message}"
         );
     });
 }
@@ -258,18 +270,21 @@ impl Default for CursorMovementConfig {
 
 impl CursorMovementConfig {
     #[allow(dead_code)]
+    #[must_use]
     pub fn with_speed(mut self, speed: Speed) -> Self {
         self.speed = speed;
         self
     }
 
     #[allow(dead_code)]
+    #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
         self.precision = precision;
         self
     }
 
     #[allow(dead_code)]
+    #[must_use]
     pub fn with_path_style(mut self, style: PathStyle) -> Self {
         self.path_style = style;
         self
@@ -288,6 +303,7 @@ pub fn set_overlay_enabled(enabled: bool) {
     set_overlay_enabled_for_all(enabled);
 }
 
+#[must_use]
 pub fn is_overlay_enabled() -> bool {
     are_all_overlays_enabled()
 }
@@ -308,6 +324,7 @@ pub async fn cursor_move_to(page: &Page, target_x: f64, target_y: f64) -> Result
     cursor_move_to_with_config(page, target_x, target_y, &CursorMovementConfig::default()).await
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn cursor_move_to_with_config(
     page: &Page,
     target_x: f64,
@@ -366,6 +383,7 @@ pub async fn cursor_move_to_with_config(
     Ok(())
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn cursor_move_to_immediate(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
     dispatch_mousemove(page, target_x, target_y).await?;
     sync_cursor_overlay_force(page).await.ok();
@@ -408,19 +426,18 @@ async fn dispatch_mousemove_dom(page: &Page, x: f64, y: f64) -> Result<()> {
 
     // Fallback path for environments where CDP mouse dispatch fails.
     let eval = page.evaluate(format!(
-        r#"(function() {{
-            const el = document.elementFromPoint({}, {});
+        r"(function() {{
+            const el = document.elementFromPoint({x}, {y});
             if (!el) return;
             const evt = new MouseEvent('mousemove', {{
                 bubbles: true,
                 cancelable: true,
-                clientX: {},
-                clientY: {},
+                clientX: {x},
+                clientY: {y},
                 button: 0
             }});
             el.dispatchEvent(evt);
-        }})()"#,
-        x, y, x, y
+        }})()"
     ));
     timeout(Duration::from_secs(2), eval)
         .await
@@ -455,7 +472,7 @@ pub async fn run_cursor_overlay_background(
         };
 
         if let Err(e) = sync_cursor_overlay(&active_page).await {
-            log::debug!("[{}] cursor overlay error: {}", session_id, e);
+            log::debug!("[{session_id}] cursor overlay error: {e}");
         }
     }
 }
@@ -495,7 +512,7 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    log::debug!("Syncing cursor overlay to ({}, {})", x, y);
+    log::debug!("Syncing cursor overlay to ({x}, {y})");
     let eval = page.evaluate(format!(
         "(function() {{
             let dot = document.getElementById('__auto_rust_mouse_overlay');
@@ -568,6 +585,7 @@ pub async fn right_click_at_without_move(page: &Page, x: f64, y: f64) -> Result<
 }
 
 #[allow(dead_code)]
+#[allow(clippy::cast_precision_loss)]
 pub async fn click_at_with_options(
     page: &Page,
     x: f64,
@@ -617,6 +635,7 @@ pub async fn click_at_with_options(
     dispatch_click(page, target_x, target_y, button).await
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn left_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     cursor_move_to(page, x, y).await?;
     human_pause(50, 50).await;
@@ -703,27 +722,29 @@ async fn dispatch_single_mouse_event(
     // Fallback to JS dispatch
     let eval = page.evaluate(format!(
         "(function() {{
-            const el = document.elementFromPoint({}, {});
+            const el = document.elementFromPoint({x}, {y});
             if (!el) return false;
 
-            const evt = new MouseEvent('{}', {{
+            const evt = new MouseEvent('{event_type}', {{
                 bubbles: true,
                 cancelable: true,
-                clientX: {},
-                clientY: {},
-                button: {}
+                clientX: {x},
+                clientY: {y},
+                button: {button_idx}
             }});
             el.dispatchEvent(evt);
             return true;
-        }})();",
-        x, y, event_type, x, y, button_idx
+        }})();"
     ));
 
     let result = timeout(Duration::from_secs(2), eval)
         .await
         .map_err(|_| anyhow::anyhow!("dispatch_single_mouse_event timed out"))??;
 
-    let did_dispatch = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+    let did_dispatch = result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     if !did_dispatch {
         anyhow::bail!("dispatch_single_mouse_event found no element at ({x:.1},{y:.1})");
     }
@@ -781,16 +802,16 @@ async fn dispatch_pointer_event(
     let buttons = mouse_button_mask(button_idx);
 
     let js = format!(
-        r#"(function() {{
-            const el = document.elementFromPoint({}, {});
+        r"(function() {{
+            const el = document.elementFromPoint({x}, {y});
             if (!el) return false;
             
-            const evt = new PointerEvent('{}', {{
+            const evt = new PointerEvent('{event_type}', {{
                 bubbles: true,
                 cancelable: true,
-                clientX: {},
-                clientY: {},
-                pointerId: {},
+                clientX: {x},
+                clientY: {y},
+                pointerId: {pointer_id},
                 width: 1,
                 height: 1,
                 pressure: 0.5,
@@ -798,24 +819,26 @@ async fn dispatch_pointer_event(
                 tiltY: 0,
                 pointerType: 'mouse',
                 isPrimary: true,
-                button: {},
-                buttons: {}
+                button: {button_idx},
+                buttons: {buttons}
             }});
             
             el.dispatchEvent(evt);
             return true;
-        }})();"#,
-        x, y, event_type, x, y, pointer_id, button_idx, buttons
+        }})();"
     );
 
     let result = timeout(Duration::from_secs(2), page.evaluate(js))
         .await
         .map_err(|_| anyhow::anyhow!("dispatch_pointer_event timed out"))??;
 
-    let did_dispatch = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+    let did_dispatch = result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     if !did_dispatch {
         // Non-fatal - some elements don't support pointer events
-        debug!("dispatch_pointer_event: no element at ({}, {})", x, y);
+        debug!("dispatch_pointer_event: no element at ({x}, {y})");
     }
 
     Ok(())
@@ -879,7 +902,7 @@ pub async fn hover_selector_human(
 ) -> Result<HoverOutcome> {
     // Phase1: Visual clickability confirmation
     if !is_element_clickable(page, selector).await? {
-        return Err(anyhow::anyhow!("Element '{}' not hoverable", selector));
+        return Err(anyhow::anyhow!("Element '{selector}' not hoverable"));
     }
 
     scroll::scroll_into_view(page, selector).await?;
@@ -887,8 +910,7 @@ pub async fn hover_selector_human(
     // Phase2: Verify element is in viewport after scroll
     if !is_in_viewport_internal(page, selector).await? {
         return Err(anyhow::anyhow!(
-            "Element '{}' not in viewport after scroll",
-            selector
+            "Element '{selector}' not in viewport after scroll"
         ));
     }
 
@@ -922,11 +944,7 @@ pub async fn native_move_cursor_human(
 
     let _native_click_guard = acquire_native_input_lock(session_id, trace_id, "nativecursor").await;
     page.bring_to_front().await.map_err(|err| {
-        anyhow::anyhow!(
-            "trace={} nativecursor bring_to_front failed: {}",
-            trace_id,
-            err
-        )
+        anyhow::anyhow!("trace={trace_id} nativecursor bring_to_front failed: {err}")
     })?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
 
@@ -941,15 +959,11 @@ pub async fn native_move_cursor_human(
         native_interaction,
     )
     .await
-    .map_err(|err| anyhow::anyhow!("trace={} nativecursor mapping failed: {}", trace_id, err))?;
+    .map_err(|err| anyhow::anyhow!("trace={trace_id} nativecursor mapping failed: {err}"))?;
     sync_native_overlay_position(page, candidate.x, candidate.y).await;
 
     page.bring_to_front().await.map_err(|err| {
-        anyhow::anyhow!(
-            "trace={} nativecursor bring_to_front failed: {}",
-            trace_id,
-            err
-        )
+        anyhow::anyhow!("trace={trace_id} nativecursor bring_to_front failed: {err}")
     })?;
     native_move_to_point(
         trace_id,
@@ -1074,15 +1088,15 @@ async fn wait_for_element_stability(page: &Page, selector: &str, timeout_ms: u64
     let required_stable_checks = 3;
     let mut stable_count = 0;
 
-    while start_time.elapsed().as_millis() < timeout_ms as u128 {
+    while start_time.elapsed().as_millis() < u128::from(timeout_ms) {
         // Check if element exists and is visible
         let exists_js = format!(
-            r#"(() => {{
+            r"(() => {{
                 const el = document.querySelector({});
                 if (!el) return false;
                 const rect = el.getBoundingClientRect();
                 return rect.width > 0 && rect.height > 0 && rect.top >= 0;
-            }})()"#,
+            }})()",
             serde_json::to_string(selector)?
         );
 
@@ -1090,7 +1104,7 @@ async fn wait_for_element_stability(page: &Page, selector: &str, timeout_ms: u64
             .evaluate(exists_js)
             .await?
             .value()
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
 
         if !exists {
@@ -1101,12 +1115,12 @@ async fn wait_for_element_stability(page: &Page, selector: &str, timeout_ms: u64
 
         // Get current position
         let pos_js = format!(
-            r#"(() => {{
+            r"(() => {{
                 const el = document.querySelector({});
                 if (!el) return null;
                 const rect = el.getBoundingClientRect();
                 return {{ x: rect.left, y: rect.top, width: rect.width, height: rect.height }};
-            }})()"#,
+            }})()",
             serde_json::to_string(selector)?
         );
 
@@ -1126,10 +1140,22 @@ async fn wait_for_element_stability(page: &Page, selector: &str, timeout_ms: u64
         let next_pos = next_result.value().and_then(|v| v.as_object());
 
         if let (Some(curr), Some(next)) = (current_pos, next_pos) {
-            let curr_x = curr.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let curr_y = curr.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let next_x = next.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let next_y = next.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let curr_x = curr
+                .get("x")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let curr_y = curr
+                .get("y")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let next_x = next
+                .get("x")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let next_y = next
+                .get("y")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
 
             // Check if position changed significantly (tolerance: 2px)
             let dx = (curr_x - next_x).abs();
@@ -1248,6 +1274,7 @@ enum ElementPriority {
 }
 
 /// Moves cursor along points with adaptive speed (slower near target)
+#[allow(clippy::cast_precision_loss)]
 async fn move_along_points_adaptive(
     page: &Page,
     points: &[Point],
@@ -1293,7 +1320,7 @@ async fn move_along_points_adaptive(
 /// Returns true if the point is over an interactive element.
 async fn check_point_collision(page: &Page, point: &Point) -> Result<bool> {
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.elementFromPoint({}, {});
             if (el && el !== document.body && el !== document.documentElement) {{
                 // Check if it's a significant UI element
@@ -1309,12 +1336,12 @@ async fn check_point_collision(page: &Page, point: &Point) -> Result<bool> {
                 }}
             }}
             return false;
-        }})()"#,
+        }})()",
         point.x, point.y
     );
 
     if let Ok(result) = page.evaluate(js).await {
-        if let Some(collision) = result.value().and_then(|v| v.as_bool()) {
+        if let Some(collision) = result.value().and_then(serde_json::Value::as_bool) {
             return Ok(collision);
         }
     }
@@ -1366,8 +1393,8 @@ fn generate_collision_free_path(
             // Insert intermediate points to detour around collision
             let prev = original_points[i - 1];
             let detour_point = Point::new(
-                (prev.x + point.x) / 2.0 + (point.y - prev.y) * 0.3, // Perpendicular offset
-                (prev.y + point.y) / 2.0 - (point.x - prev.x) * 0.3,
+                f64::midpoint(prev.x, point.x) + (point.y - prev.y) * 0.3, // Perpendicular offset
+                f64::midpoint(prev.y, point.y) - (point.x - prev.x) * 0.3,
             );
             safe_points.push(detour_point);
         }
@@ -1380,6 +1407,7 @@ fn generate_collision_free_path(
 
 /// Moves cursor along a series of points with human-like timing and attention simulation
 #[allow(dead_code)]
+#[allow(clippy::cast_precision_loss)]
 async fn move_along_points(
     page: &Page,
     points: &[Point],
@@ -1415,6 +1443,7 @@ async fn move_along_points(
 }
 
 /// Simulates human attention drift - cursor briefly moves away then corrects back
+#[allow(clippy::cast_precision_loss)]
 async fn simulate_attention_drift(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
     // Generate a small drift (10-30 pixels away)
     let drift_distance = random_in_range(10, 30) as f64;
@@ -1439,9 +1468,10 @@ async fn simulate_attention_drift(page: &Page, target_x: f64, target_y: f64) -> 
 }
 
 /// Checks if element is visually clickable (not obscured, enabled, etc.)
+#[allow(clippy::cast_precision_loss)]
 async fn is_element_clickable(page: &Page, selector: &str) -> Result<bool> {
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({});
             if (!el) return false;
 
@@ -1477,14 +1507,14 @@ async fn is_element_clickable(page: &Page, selector: &str) -> Result<bool> {
 
             // Element is clickable if it's the top element or contains it
             return el === topElement || el.contains(topElement);
-        }})()"#,
+        }})()",
         serde_json::to_string(selector)?
     );
 
     page.evaluate(js)
         .await?
         .value()
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .ok_or_else(|| anyhow::anyhow!("Failed to evaluate clickability"))
 }
 
@@ -1497,15 +1527,12 @@ pub async fn click_selector_human(
 ) -> Result<ClickOutcome> {
     // Phase 1: Smart element waiting and stability check
     if !wait_for_element_stability(page, selector, 5000).await? {
-        return Err(anyhow::anyhow!(
-            "Element '{}' not stable within 5s",
-            selector
-        ));
+        return Err(anyhow::anyhow!("Element '{selector}' not stable within 5s"));
     }
 
     // Phase 1: Visual clickability confirmation
     if !is_element_clickable(page, selector).await? {
-        return Err(anyhow::anyhow!("Element '{}' not clickable", selector));
+        return Err(anyhow::anyhow!("Element '{selector}' not clickable"));
     }
 
     // Use the improved human-like scroll_into_view
@@ -1515,8 +1542,7 @@ pub async fn click_selector_human(
     // Phase 2: Verify element is in viewport after scroll
     if !is_in_viewport_internal(page, selector).await? {
         return Err(anyhow::anyhow!(
-            "Element '{}' not in viewport after scroll",
-            selector
+            "Element '{selector}' not in viewport after scroll"
         ));
     }
 
@@ -1572,18 +1598,13 @@ pub async fn native_click_selector_human(
     let stability_wait_ms = native_interaction.stability_wait_ms.clamp(1_000, 30_000);
     if !wait_for_element_stability(page, selector, stability_wait_ms).await? {
         return Err(anyhow::anyhow!(
-            "trace={} nativeclick element '{}' not stable within {}ms",
-            trace_id,
-            selector,
-            stability_wait_ms
+            "trace={trace_id} nativeclick element '{selector}' not stable within {stability_wait_ms}ms"
         ));
     }
 
     if !is_element_clickable(page, selector).await? {
         return Err(anyhow::anyhow!(
-            "trace={} nativeclick element '{}' not clickable",
-            trace_id,
-            selector
+            "trace={trace_id} nativeclick element '{selector}' not clickable"
         ));
     }
 
@@ -1597,11 +1618,7 @@ pub async fn native_click_selector_human(
     // do not fight over the single global cursor or foreground focus.
     let _native_click_guard = acquire_native_input_lock(session_id, trace_id, "nativeclick").await;
     page.bring_to_front().await.map_err(|err| {
-        anyhow::anyhow!(
-            "trace={} nativeclick bring_to_front failed: {}",
-            trace_id,
-            err
-        )
+        anyhow::anyhow!("trace={trace_id} nativeclick bring_to_front failed: {err}")
     })?;
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
     nativeclick_debug(session_id, trace_id, selector, "scroll-into-view", "start");
@@ -1610,9 +1627,7 @@ pub async fn native_click_selector_human(
     // Phase2: Verify element is in viewport after scroll (matching click_selector_human)
     if !is_in_viewport_internal(page, selector).await? {
         return Err(anyhow::anyhow!(
-            "trace={} nativeclick element '{}' not in viewport after scroll",
-            trace_id,
-            selector
+            "trace={trace_id} nativeclick element '{selector}' not in viewport after scroll"
         ));
     }
 
@@ -1623,8 +1638,7 @@ pub async fn native_click_selector_human(
     .await
     .map_err(|_| {
         anyhow::anyhow!(
-            "trace={} nativeclick resolve_selector_bbox timeout for selector={selector}",
-            trace_id
+            "trace={trace_id} nativeclick resolve_selector_bbox timeout for selector={selector}"
         )
     })??;
     nativeclick_debug(
@@ -1650,14 +1664,10 @@ pub async fn native_click_selector_human(
         native_interaction,
     )
     .await
-    .map_err(|err| anyhow::anyhow!("trace={} nativeclick mapping failed: {}", trace_id, err))?;
+    .map_err(|err| anyhow::anyhow!("trace={trace_id} nativeclick mapping failed: {err}"))?;
     sync_native_overlay_position(page, content_x, content_y).await;
     page.bring_to_front().await.map_err(|err| {
-        anyhow::anyhow!(
-            "trace={} nativeclick bring_to_front failed: {}",
-            trace_id,
-            err
-        )
+        anyhow::anyhow!("trace={trace_id} nativeclick bring_to_front failed: {err}")
     })?;
     nativeclick_debug(
         session_id,
@@ -1680,29 +1690,18 @@ pub async fn native_click_selector_human(
     )
     .await
     .map_err(|err| {
-        anyhow::anyhow!(
-            "trace={} nativeclick dispatch failed for '{}': {}",
-            trace_id,
-            selector,
-            err
-        )
+        anyhow::anyhow!("trace={trace_id} nativeclick dispatch failed for '{selector}': {err}")
     })?;
 
     let verified = verify_click_target(page, selector, content_x, content_y)
         .await
         .map_err(|err| {
-            anyhow::anyhow!(
-                "trace={} nativeclick verification check failed: {}",
-                trace_id,
-                err
-            )
+            anyhow::anyhow!("trace={trace_id} nativeclick verification check failed: {err}")
         })?;
     sync_native_overlay_position(page, content_x, content_y).await;
     if !verified {
         return Err(anyhow::anyhow!(
-            "trace={} nativeclick verification failed for '{}'",
-            trace_id,
-            selector
+            "trace={trace_id} nativeclick verification failed for '{selector}'"
         ));
     }
 
@@ -1795,8 +1794,8 @@ pub async fn drag_selector_to_selector(
     human_pause(reaction_delay_ms, reaction_delay_variance_pct).await;
     dispatch_mouse_action(page, start_x, start_y, 0, "mousedown").await?;
 
-    let mid_x = (start_x + end_x) / 2.0;
-    let mid_y = (start_y + end_y) / 2.0;
+    let mid_x = f64::midpoint(start_x, end_x);
+    let mid_y = f64::midpoint(start_y, end_y);
     cursor_move_to(page, mid_x, mid_y).await?;
     cursor_move_to(page, end_x, end_y).await?;
 
@@ -1817,8 +1816,8 @@ pub async fn drag_between_points_human(
     human_pause(reaction_delay_ms, reaction_delay_variance_pct).await;
     dispatch_mouse_action(page, start_x, start_y, 0, "mousedown").await?;
 
-    let mid_x = (start_x + end_x) / 2.0;
-    let mid_y = (start_y + end_y) / 2.0;
+    let mid_x = f64::midpoint(start_x, end_x);
+    let mid_y = f64::midpoint(start_y, end_y);
     cursor_move_to(page, mid_x, mid_y).await?;
     cursor_move_to(page, end_x, end_y).await?;
     dispatch_mouse_action(page, end_x, end_y, 0, "mouseup").await?;
@@ -1834,7 +1833,7 @@ fn choose_click_point(bbox: &BoundingBox, click_offset_px: i32) -> (f64, f64) {
     let max_x = (bbox.x + bbox.width - 1.0).max(min_x);
     let max_y = (bbox.y + bbox.height - 1.0).max(min_y);
 
-    let spread = (click_offset_px.abs() as f64).max(4.0);
+    let spread = f64::from(click_offset_px.abs()).max(4.0);
     let spread_x = spread.min((bbox.width / 3.0).max(4.0));
     let spread_y = spread.min((bbox.height / 3.0).max(4.0));
 
@@ -1843,13 +1842,14 @@ fn choose_click_point(bbox: &BoundingBox, click_offset_px: i32) -> (f64, f64) {
     (x, y)
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn native_click_center_bounds(
     bbox: &BoundingBox,
     click_offset_px: i32,
 ) -> Option<(i32, i32, i32, i32)> {
     let center_x = bbox.x + bbox.width / 2.0;
     let center_y = bbox.y + bbox.height / 2.0;
-    let spread = (click_offset_px.abs() as f64).max(4.0);
+    let spread = f64::from(click_offset_px.abs()).max(4.0);
     let min_x = ((center_x - spread).ceil()).max((bbox.x + 1.0).ceil());
     let max_x = ((center_x + spread).floor()).min((bbox.x + bbox.width - 1.0).floor());
     let min_y = ((center_y - spread).ceil()).max((bbox.y + 1.0).ceil());
@@ -1862,6 +1862,7 @@ fn native_click_center_bounds(
     Some((min_x as i32, max_x as i32, min_y as i32, max_y as i32))
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn native_click_random_center_point(bbox: &BoundingBox, click_offset_px: i32) -> (f64, f64) {
     if let Some((min_x, max_x, min_y, max_y)) = native_click_center_bounds(bbox, click_offset_px) {
         let x = random_in_range(min_x as u64, max_x as u64) as f64;
@@ -1886,25 +1887,27 @@ async fn point_hits_selector(
 ) -> Result<bool> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return false;
             const hit = document.elementFromPoint({x}, {y});
             if (!hit) return false;
             return el === hit || el.contains(hit) || hit.contains(el);
-        }})()"#
+        }})()"
     );
 
     let result = timeout(Duration::from_millis(400), page.evaluate(js))
         .await
         .map_err(|_| {
             anyhow::anyhow!(
-                "trace={} nativeclick point hit-test timeout for selector={selector}",
-                trace_id
+                "trace={trace_id} nativeclick point hit-test timeout for selector={selector}"
             )
         })??;
 
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false))
 }
 
 async fn resolve_native_click_point(
@@ -1926,15 +1929,14 @@ async fn resolve_native_click_point(
                 trace_id,
                 selector,
                 "resolved-point",
-                format!("content_point=({:.1},{:.1})", x, y),
+                format!("content_point=({x:.1},{y:.1})"),
             );
             return Ok((x, y));
         }
     }
 
     anyhow::bail!(
-        "trace={} nativeclick could not resolve a verified point for selector={selector}",
-        trace_id
+        "trace={trace_id} nativeclick could not resolve a verified point for selector={selector}"
     );
 }
 
@@ -1950,7 +1952,7 @@ async fn resolve_native_cursor_candidate(
         None => "null".to_string(),
     };
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const query = {query_js};
             const root = document.body || document.documentElement;
             if (!root) return null;
@@ -2010,7 +2012,7 @@ async fn resolve_native_cursor_candidate(
 
             if (!matches.length) return null;
             return matches[Math.floor(Math.random() * matches.length)];
-        }})()"#,
+        }})()",
     );
 
     let result = timeout(
@@ -2019,24 +2021,14 @@ async fn resolve_native_cursor_candidate(
     )
     .await
     .map_err(|_| {
-        anyhow::anyhow!(
-            "trace={} nativecursor candidate lookup timed out for '{}'",
-            trace_id,
-            scope
-        )
+        anyhow::anyhow!("trace={trace_id} nativecursor candidate lookup timed out for '{scope}'")
     })??;
     let value = result.value().cloned().ok_or_else(|| {
-        anyhow::anyhow!(
-            "trace={} nativecursor found no visible candidates for '{scope}'",
-            trace_id
-        )
+        anyhow::anyhow!("trace={trace_id} nativecursor found no visible candidates for '{scope}'")
     })?;
 
     if value.is_null() {
-        anyhow::bail!(
-            "trace={} nativecursor found no visible candidates for '{scope}'",
-            trace_id
-        );
+        anyhow::bail!("trace={trace_id} nativecursor found no visible candidates for '{scope}'");
     }
 
     if let Some(error) = value.get("error").and_then(|v| v.as_str()) {
@@ -2059,11 +2051,11 @@ async fn resolve_selector_bbox(page: &Page, selector: &str) -> Result<BoundingBo
 }
 
 /// Check if element is in viewport (internal helper, no permissions required).
-/// Unlike TaskContext::is_in_viewport(), this doesn't require allow_dom_inspection permission.
+/// Unlike `TaskContext::is_in_viewport()`, this doesn't require `allow_dom_inspection` permission.
 async fn is_in_viewport_internal(page: &Page, selector: &str) -> Result<bool> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return false;
             const rect = el.getBoundingClientRect();
@@ -2071,14 +2063,14 @@ async fn is_in_viewport_internal(page: &Page, selector: &str) -> Result<bool> {
             const windowWidth = window.innerWidth || document.documentElement.clientWidth;
             return rect.top < windowHeight && rect.bottom > 0 &&
                    rect.left < windowWidth && rect.right > 0;
-        }})()"#
+        }})()"
     );
 
     let result = page
         .evaluate(js)
         .await?
         .value()
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     Ok(result)
@@ -2104,9 +2096,7 @@ async fn resolve_selector_bbox_with_retry(
                     continue;
                 }
                 anyhow::bail!(
-                    "Element '{}' has invalid bounds after {} retries",
-                    selector,
-                    max_retries
+                    "Element '{selector}' has invalid bounds after {max_retries} retries"
                 );
             }
             Err(e) => {
@@ -2119,23 +2109,19 @@ async fn resolve_selector_bbox_with_retry(
     }
 
     Err(last_err.unwrap_or_else(|| {
-        anyhow::anyhow!(
-            "Failed to resolve bbox for '{}' after {} retries",
-            selector,
-            max_retries
-        )
+        anyhow::anyhow!("Failed to resolve bbox for '{selector}' after {max_retries} retries")
     }))
 }
 
 async fn get_selector_bbox_once(page: &Page, selector: &str) -> Result<BoundingBox> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return null;
             const r = el.getBoundingClientRect();
             return {{ x: r.x, y: r.y, width: r.width, height: r.height }};
-        }})()"#
+        }})()"
     );
 
     let result = timeout(Duration::from_millis(800), page.evaluate(js))
@@ -2148,10 +2134,22 @@ async fn get_selector_bbox_once(page: &Page, selector: &str) -> Result<BoundingB
         .ok_or_else(|| anyhow::anyhow!("Element not found: {selector}"))?;
 
     let bbox = BoundingBox {
-        x: obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
-        y: obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
-        width: obj.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0),
-        height: obj.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        x: obj
+            .get("x")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0),
+        y: obj
+            .get("y")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0),
+        width: obj
+            .get("width")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0),
+        height: obj
+            .get("height")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0),
     };
 
     if bbox.width <= 0.0 || bbox.height <= 0.0 {
@@ -2171,7 +2169,7 @@ async fn click_selector_with_button(
 ) -> Result<ClickOutcome> {
     // Phase1: Visual clickability confirmation
     if !is_element_clickable(page, selector).await? {
-        return Err(anyhow::anyhow!("Element '{}' not clickable", selector));
+        return Err(anyhow::anyhow!("Element '{selector}' not clickable"));
     }
 
     scroll::scroll_into_view(page, selector).await?;
@@ -2179,8 +2177,7 @@ async fn click_selector_with_button(
     // Phase2: Verify element is in viewport after scroll
     if !is_in_viewport_internal(page, selector).await? {
         return Err(anyhow::anyhow!(
-            "Element '{}' not in viewport after scroll",
-            selector
+            "Element '{selector}' not in viewport after scroll"
         ));
     }
 
@@ -2222,7 +2219,7 @@ async fn click_selector_with_button(
 async fn verify_click_target(page: &Page, selector: &str, x: f64, y: f64) -> Result<bool> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
-        r#"(() => {{
+        r"(() => {{
             const el = document.querySelector({selector_js});
             if (!el) return false;
             const rect = el.getBoundingClientRect();
@@ -2230,24 +2227,27 @@ async fn verify_click_target(page: &Page, selector: &str, x: f64, y: f64) -> Res
             const hit = document.elementFromPoint({x}, {y});
             if (!hit) return false;
             return el === hit || el.contains(hit) || hit.contains(el);
-        }})()"#
+        }})()"
     );
 
     let result = timeout(Duration::from_millis(500), page.evaluate(js))
         .await
         .map_err(|_| anyhow::anyhow!("click verification timeout"))??;
 
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false))
 }
 
 #[allow(dead_code)]
 async fn native_click_probe_point(page: &Page) -> Result<Option<(f64, f64)>> {
     let js = format!(
-        r#"(function() {{
+        r"(function() {{
             const value = window.{probe_point_flag};
             if (!value) return null;
             return {{ x: value.x ?? null, y: value.y ?? null }};
-        }})()"#,
+        }})()",
         probe_point_flag = "__auto_rust_nativeclick_probe_point",
     );
     let result = timeout(Duration::from_millis(400), page.evaluate(js))
@@ -2257,8 +2257,8 @@ async fn native_click_probe_point(page: &Page) -> Result<Option<(f64, f64)>> {
     let Some(obj) = value.and_then(|v| v.as_object().cloned()) else {
         return Ok(None);
     };
-    let x = obj.get("x").and_then(|v| v.as_f64());
-    let y = obj.get("y").and_then(|v| v.as_f64());
+    let x = obj.get("x").and_then(serde_json::Value::as_f64);
+    let y = obj.get("y").and_then(serde_json::Value::as_f64);
     Ok(match (x, y) {
         (Some(x), Some(y)) => Some((x, y)),
         _ => None,
@@ -2273,7 +2273,7 @@ async fn inject_native_click_probe(page: &Page) -> Result<()> {
 #[allow(dead_code)]
 async fn inject_native_click_probe_at(page: &Page, left: f64, top: f64) -> Result<()> {
     let js = format!(
-        r#"(function() {{
+        r"(function() {{
             window.{hit_flag} = false;
             window.__auto_rust_nativeclick_probe_point = null;
             let probe = document.getElementById({probe_id});
@@ -2314,7 +2314,7 @@ async fn inject_native_click_probe_at(page: &Page, left: f64, top: f64) -> Resul
                 }};
             }}
             return true;
-        }})()"#,
+        }})()",
         probe_id = serde_json::to_string(NATIVE_CLICK_PROBE_ID)?,
         hit_flag = NATIVE_CLICK_PROBE_HIT_FLAG,
         left = left,
@@ -2329,7 +2329,7 @@ async fn inject_native_click_probe_at(page: &Page, left: f64, top: f64) -> Resul
 }
 
 async fn browser_window_metrics(page: &Page) -> Result<BrowserWindowMetrics> {
-    let js = r#"(() => ({
+    let js = r"(() => ({
         screen_x: window.screenX ?? window.screenLeft ?? 0,
         screen_y: window.screenY ?? window.screenTop ?? 0,
         outer_width: window.outerWidth ?? window.innerWidth,
@@ -2340,7 +2340,7 @@ async fn browser_window_metrics(page: &Page) -> Result<BrowserWindowMetrics> {
         visual_viewport_scale: window.visualViewport ? window.visualViewport.scale : 1,
         visual_viewport_offset_left: window.visualViewport ? window.visualViewport.offsetLeft : 0,
         visual_viewport_offset_top: window.visualViewport ? window.visualViewport.offsetTop : 0,
-    }))()"#;
+    }))()";
 
     let result = timeout(Duration::from_secs(2), page.evaluate(js))
         .await
@@ -2387,7 +2387,7 @@ async fn content_point_to_screen_point(
         }
     }
     validate_native_calibration(&calibration)
-        .map_err(|err| anyhow::anyhow!("nativeclick calibration invalid: {}", err))?;
+        .map_err(|err| anyhow::anyhow!("nativeclick calibration invalid: {err}"))?;
     Ok(screen_point_from_calibration(&metrics, &calibration, x, y))
 }
 
@@ -2410,7 +2410,7 @@ async fn native_move_and_click_point(
         )
     })
     .await
-    .map_err(|err| anyhow::anyhow!("trace={} nativeclick join error: {err}", trace_id))?
+    .map_err(|err| anyhow::anyhow!("trace={trace_id} nativeclick join error: {err}"))?
 }
 
 async fn native_move_to_point(
@@ -2432,10 +2432,11 @@ async fn native_move_to_point(
         )
     })
     .await
-    .map_err(|err| anyhow::anyhow!("trace={} nativecursor join error: {err}", trace_id))?
+    .map_err(|err| anyhow::anyhow!("trace={trace_id} nativecursor join error: {err}"))?
 }
 
 #[allow(dead_code)]
+#[must_use]
 pub fn fitts_law_optimal_size(distance: f64, time: f64) -> f64 {
     let id = time / 100.0;
     2.0 * distance / (2.0_f64.powf(id))

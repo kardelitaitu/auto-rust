@@ -321,6 +321,8 @@ fn get_emoji_map() -> &'static HashMap<String, f32> {
 }
 
 /// Analyze emojis in text and calculate average sentiment score.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn analyze_emoji_sentiment(text: &str) -> f32 {
     let emoji_map = get_emoji_map();
     let mut total_score = 0.0;

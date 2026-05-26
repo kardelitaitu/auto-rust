@@ -87,7 +87,7 @@ impl EngagementCounters {
     }
 
     /// Increments counter by action type string.
-    /// Used by SessionState for unified action recording.
+    /// Used by `SessionState` for unified action recording.
     #[instrument]
     pub fn increment(&mut self, action: &str) {
         match action {
@@ -102,7 +102,7 @@ impl EngagementCounters {
         }
     }
 
-    /// Returns a summary of all counters as a HashMap.
+    /// Returns a summary of all counters as a `HashMap`.
     #[instrument]
     pub fn to_summary(&self) -> HashMap<String, u32> {
         let mut summary = HashMap::new();
@@ -278,6 +278,7 @@ impl EngagementLimits {
     }
 
     /// Returns which actions are still available given current counters.
+    #[must_use]
     pub fn available_actions(&self, counters: &EngagementCounters) -> Vec<&'static str> {
         let mut actions = Vec::new();
 
@@ -306,7 +307,8 @@ impl EngagementLimits {
         actions
     }
 
-    /// Returns a summary of remaining actions as a HashMap.
+    /// Returns a summary of remaining actions as a `HashMap`.
+    #[must_use]
     pub fn remaining(&self, counters: &EngagementCounters) -> HashMap<String, u32> {
         let mut remaining = HashMap::new();
         remaining.insert(
@@ -343,6 +345,130 @@ impl EngagementLimits {
                 .saturating_sub(counters.total_actions()),
         );
         remaining
+    }
+}
+
+#[cfg(test)]
+mod tdd_tests {
+    use super::*;
+    use crate::tests::twitter_helpers::*;
+
+    // ====================================================================
+    // RED Tests — describe desired behavior (expected to fail on first run)
+    // ====================================================================
+
+    #[test]
+    fn tdd_red_engagement_limit_can_bookmark_checks_max_bookmarks() {
+        // RED: Verify can_bookmark respects max_bookmarks limit
+        let limits = EngagementLimits {
+            max_bookmarks: 1,
+            ..Default::default()
+        };
+        let mut counters = EngagementCounters::new();
+
+        // First bookmark should be allowed
+        assert!(limits.can_bookmark(&counters));
+        counters.increment_bookmark();
+
+        // Second bookmark should be blocked
+        assert!(
+            !limits.can_bookmark(&counters),
+            "can_bookmark should return false when bookmarks >= max_bookmarks"
+        );
+    }
+
+    // ====================================================================
+    // GREEN Tests — validate working behavior
+    // ====================================================================
+
+    #[test]
+    fn tdd_green_limits_available_actions_excludes_exhausted() {
+        // GREEN: available_actions should not include exhausted actions
+        let limits = EngagementLimits::new();
+        let counters = test_counters_with_actions(5, 0, 0, 0);
+
+        let available = limits.available_actions(&counters);
+        assert!(!available.contains(&"like"), "Like should not be available");
+        assert!(
+            available.contains(&"retweet"),
+            "Other actions should be available"
+        );
+    }
+
+    #[test]
+    fn tdd_green_limits_counters_increment_method_unified() {
+        // GREEN: Unified increment() dispatches to correct method
+        let mut counters = EngagementCounters::new();
+
+        counters.increment("like");
+        counters.increment("retweet");
+        counters.increment("follow");
+        counters.increment("reply");
+        counters.increment("bookmark");
+        counters.increment("quote");
+        counters.increment("dive");
+
+        assert_eq!(counters.likes, 1);
+        assert_eq!(counters.retweets, 1);
+        assert_eq!(counters.follows, 1);
+        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.bookmarks, 1);
+        assert_eq!(counters.quote_tweets, 1);
+        assert_eq!(counters.thread_dives, 1);
+    }
+
+    #[test]
+    fn tdd_green_limits_increment_unknown_action_noop() {
+        // GREEN: Unknown action type should not change counters
+        let mut counters = EngagementCounters::new();
+        counters.increment("unknown_action");
+        assert_eq!(counters.total_actions(), 0);
+    }
+
+    #[test]
+    fn tdd_green_limits_total_actions_bounded_by_individual() {
+        // GREEN: total_actions should be sum of individual counters
+        let counters = test_counters_with_actions(3, 1, 1, 0);
+        assert_eq!(counters.total_actions(), 5);
+    }
+
+    // ====================================================================
+    // EDGE Case Tests
+    // ====================================================================
+
+    #[test]
+    fn tdd_edge_counters_overflow_does_not_panic() {
+        // EDGE: Large counts should not panic
+        let mut counters = EngagementCounters::new();
+        for _ in 0..10_000 {
+            counters.increment_like();
+        }
+        assert_eq!(counters.likes, 10_000);
+    }
+
+    #[test]
+    fn tdd_edge_limits_remaining_saturates_at_zero() {
+        // EDGE: remaining() should not underflow when counters exceed limits
+        let limits = EngagementLimits::new();
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..100 {
+            counters.increment_like();
+        }
+
+        let remaining = limits.remaining(&counters);
+        assert_eq!(remaining.get("likes").copied().unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn tdd_edge_limits_remaining_total_actions() {
+        // EDGE: remaining total_actions must be present
+        let limits = EngagementLimits::new();
+        let counters = EngagementCounters::new();
+
+        let remaining = limits.remaining(&counters);
+        assert!(remaining.contains_key("total_actions"));
+        assert_eq!(remaining.get("total_actions").copied().unwrap_or(0), 10);
     }
 }
 

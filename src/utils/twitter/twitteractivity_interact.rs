@@ -18,7 +18,7 @@
 //! - [`retweet_tweet()`]: Complete retweet action
 //! - [`follow_from_tweet()`]: Follow a tweet author
 //! - [`reply_to_tweet()`]: Reply to a tweet
-//! - [`quote_tweet()`]: Quote a tweet (in twitteractivity_llm module)
+//! - [`quote_tweet()`]: Quote a tweet (in `twitteractivity_llm` module)
 //! - [`bookmark_tweet()`]: Bookmark a tweet
 //!
 //! ## Usage
@@ -54,7 +54,7 @@ use log::info;
 use rand;
 use tracing::instrument;
 
-use super::twitteractivity_humanized::*;
+use super::twitteractivity_humanized::human_pause;
 use super::twitteractivity_selectors::{
     js_confirm_retweet_click, js_find_reply_submit_button, js_find_reply_textarea,
     js_root_tweet_button_center, selector_follow_button, REPLY_BUTTON_SELECTOR,
@@ -63,16 +63,16 @@ use super::twitteractivity_selectors::{
 /// Gets the current page URL.
 #[instrument(skip(api))]
 pub async fn get_current_url(api: &TaskContext) -> Result<String> {
-    let js = r#"
+    let js = r"
         (function() {
             return window.location.href;
         })()
-    "#;
+    ";
     let result = api.page().evaluate(js).await?;
     result
         .value()
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .ok_or_else(|| anyhow::anyhow!("Failed to get current URL"))
 }
 
@@ -109,7 +109,10 @@ pub async fn is_on_tweet_page(api: &TaskContext) -> Result<bool> {
     "#;
 
     let result = api.page().evaluate(js).await?;
-    Ok(result.value().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false))
 }
 
 fn root_tweet_button_center_js(selector: &str) -> String {
@@ -126,13 +129,10 @@ async fn click_root_tweet_button(
 
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
+            obj.get("x").and_then(serde_json::Value::as_f64),
+            obj.get("y").and_then(serde_json::Value::as_f64),
         ) {
-            info!(
-                "Found root tweet {} button at ({:.1}, {:.1})",
-                action_name, x, y
-            );
+            info!("Found root tweet {action_name} button at ({x:.1}, {y:.1})");
             api.move_mouse_to(x, y).await?;
             human_pause(api, 250).await;
             api.click_at(x, y).await?;
@@ -141,7 +141,7 @@ async fn click_root_tweet_button(
         }
     }
 
-    info!("Root tweet {} button not found", action_name);
+    info!("Root tweet {action_name} button not found");
     Ok(false)
 }
 
@@ -264,10 +264,10 @@ pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
 
     if let Some(obj) = result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
+            obj.get("x").and_then(serde_json::Value::as_f64),
+            obj.get("y").and_then(serde_json::Value::as_f64),
         ) {
-            info!("Found retweet confirm button at ({:.1}, {:.1})", x, y);
+            info!("Found retweet confirm button at ({x:.1}, {y:.1})");
             api.move_mouse_to(x, y).await?;
             human_pause(api, 200).await;
             api.click_at(x, y).await?;
@@ -321,12 +321,12 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
 
     // Scroll retweet confirm button into view before clicking
     if let Err(e) = api.scroll_into_view(RETWEET_CONFIRM_SELECTOR).await {
-        info!("Failed to scroll retweet confirm button into view: {}", e);
+        info!("Failed to scroll retweet confirm button into view: {e}");
         return Ok(false);
     }
     // Click confirm button
     if let Err(e) = api.click(RETWEET_CONFIRM_SELECTOR).await {
-        info!("Failed to click retweet confirm: {}", e);
+        info!("Failed to click retweet confirm: {e}");
         return Ok(false);
     }
     info!("Retweet confirmed");
@@ -417,36 +417,33 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     use tokio::time::timeout;
     // Timeout constants imported from crate::utils::timing
 
-    info!("Starting send_reply with text: '{}'", reply_text);
+    info!("Starting send_reply with text: '{reply_text}'");
 
     // Focus the specific reply textarea.
     let textarea_js = js_find_reply_textarea();
 
     info!("Focusing reply textarea");
-    match timeout(
+    if let Ok(result) = timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(textarea_js),
     )
     .await
     {
-        Ok(result) => {
-            let textarea_result = result?;
-            let found = textarea_result
-                .value()
-                .and_then(|v| v.as_object())
-                .and_then(|o| o.get("found"))
-                .and_then(|fv| fv.as_bool())
-                .unwrap_or(false);
+        let textarea_result = result?;
+        let found = textarea_result
+            .value()
+            .and_then(|v| v.as_object())
+            .and_then(|o| o.get("found"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
 
-            if !found {
-                info!("Reply textarea not found");
-                return Ok(false);
-            }
-        }
-        Err(_) => {
-            info!("Timeout focusing reply textarea");
+        if !found {
+            info!("Reply textarea not found");
             return Ok(false);
         }
+    } else {
+        info!("Timeout focusing reply textarea");
+        return Ok(false);
     }
 
     info!("Reply textarea focused");
@@ -454,17 +451,15 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 
     // Type the reply text
     info!("Typing reply text");
-    match timeout(
+    if timeout(
         Duration::from_secs(TIMEOUT_MEDIUM_SECS),
         api.type_text(reply_text),
     )
     .await
+    .is_err()
     {
-        Ok(_) => {}
-        Err(_) => {
-            info!("Timeout typing reply text");
-            return Ok(false);
-        }
+        info!("Timeout typing reply text");
+        return Ok(false);
     }
     human_pause(api, 400).await;
 
@@ -472,48 +467,44 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     let reply_button_js = js_find_reply_submit_button();
 
     info!("Finding reply button");
-    let button_result = match timeout(
+    let button_result = if let Ok(result) = timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(reply_button_js),
     )
     .await
     {
-        Ok(result) => result?,
-        Err(_) => {
-            info!("Timeout finding reply button");
-            return Ok(false);
-        }
+        result?
+    } else {
+        info!("Timeout finding reply button");
+        return Ok(false);
     };
 
     if let Some(coords) = button_result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            coords.get("x").and_then(|v| v.as_f64()),
-            coords.get("y").and_then(|v| v.as_f64()),
+            coords.get("x").and_then(serde_json::Value::as_f64),
+            coords.get("y").and_then(serde_json::Value::as_f64),
         ) {
-            info!("Found reply button at ({:.1}, {:.1})", x, y);
-            match timeout(
+            info!("Found reply button at ({x:.1}, {y:.1})");
+            if timeout(
                 Duration::from_secs(TIMEOUT_SHORT_SECS),
                 api.move_mouse_to(x, y),
             )
             .await
+            .is_ok()
             {
-                Ok(_) => {
-                    human_pause(api, 200).await;
-                    match timeout(Duration::from_secs(TIMEOUT_SHORT_SECS), api.click_at(x, y)).await
-                    {
-                        Ok(_) => {
-                            info!("Clicked Reply button successfully");
-                        }
-                        Err(_) => {
-                            info!("Timeout clicking reply button");
-                            return Ok(false);
-                        }
-                    }
-                }
-                Err(_) => {
-                    info!("Timeout moving mouse to reply button");
+                human_pause(api, 200).await;
+                if timeout(Duration::from_secs(TIMEOUT_SHORT_SECS), api.click_at(x, y))
+                    .await
+                    .is_ok()
+                {
+                    info!("Clicked Reply button successfully");
+                } else {
+                    info!("Timeout clicking reply button");
                     return Ok(false);
                 }
+            } else {
+                info!("Timeout moving mouse to reply button");
+                return Ok(false);
             }
         } else {
             info!("Reply button coordinates not found");
@@ -539,7 +530,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 
     let verify_result = api.page().evaluate(verify_js).await?;
     if let Some(obj) = verify_result.value().and_then(|v| v.as_object()) {
-        if let Some(sent) = obj.get("sent").and_then(|v| v.as_bool()) {
+        if let Some(sent) = obj.get("sent").and_then(serde_json::Value::as_bool) {
             if sent {
                 info!("Reply send completed and verified");
                 Ok(true)
@@ -548,7 +539,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
                     .get("reason")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                info!("Reply send verification failed: {}", reason);
+                info!("Reply send verification failed: {reason}");
                 Ok(false)
             }
         } else {
@@ -660,7 +651,7 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     let following_result = api.page().evaluate(following_js).await?;
     if following_result
         .value()
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
     {
         info!("Already following tweet author");
@@ -670,10 +661,10 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     let follow_result = api.page().evaluate(selector_follow_button()).await?;
     if let Some(obj) = follow_result.value().and_then(|v| v.as_object()) {
         if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
+            obj.get("x").and_then(serde_json::Value::as_f64),
+            obj.get("y").and_then(serde_json::Value::as_f64),
         ) {
-            info!("Found scoped follow button at ({:.1}, {:.1})", x, y);
+            info!("Found scoped follow button at ({x:.1}, {y:.1})");
             api.move_mouse_to(x, y).await?;
             human_pause(api, 250).await;
             api.click_at(x, y).await?;

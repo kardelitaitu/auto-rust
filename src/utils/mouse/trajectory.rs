@@ -19,6 +19,7 @@ pub struct Point {
 
 impl Point {
     /// Create a new point with the given coordinates.
+    #[must_use]
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
@@ -26,6 +27,7 @@ impl Point {
 
 /// Generate a Bezier curve with custom configuration.
 /// Uses cubic Bezier with Gaussian-distributed control points.
+#[must_use]
 pub fn generate_bezier_curve_with_config(
     start: &Point,
     end: &Point,
@@ -36,13 +38,13 @@ pub fn generate_bezier_curve_with_config(
 
     let cp1 = Point::new(
         gaussian(
-            (start.x + end.x) / 2.0,
+            f64::midpoint(start.x, end.x),
             spread,
             start.x.min(end.x),
             start.x.max(end.x),
         ),
         gaussian(
-            (start.y + end.y) / 2.0,
+            f64::midpoint(start.y, end.y),
             spread,
             start.y.min(end.y),
             start.y.max(end.y),
@@ -51,13 +53,13 @@ pub fn generate_bezier_curve_with_config(
 
     let cp2 = Point::new(
         gaussian(
-            (start.x + end.x) / 2.0,
+            f64::midpoint(start.x, end.x),
             spread * 0.6,
             start.x.min(end.x),
             start.x.max(end.x),
         ),
         gaussian(
-            (start.y + end.y) / 2.0,
+            f64::midpoint(start.y, end.y),
             spread * 0.6,
             start.y.min(end.y),
             start.y.max(end.y),
@@ -66,7 +68,7 @@ pub fn generate_bezier_curve_with_config(
 
     let step_count = steps.unwrap_or_else(|| random_in_range(10, 20) as u32);
     for i in 0..=step_count {
-        let t = i as f64 / step_count as f64;
+        let t = f64::from(i) / f64::from(step_count);
         let point = bezier_point(*start, cp1, cp2, *end, t);
         points.push(point);
     }
@@ -75,6 +77,7 @@ pub fn generate_bezier_curve_with_config(
 }
 
 /// Calculate a point on a cubic Bezier curve at parameter t.
+#[must_use]
 pub fn bezier_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
     let x = (1.0 - t).powi(3) * p0.x
         + 3.0 * (1.0 - t).powi(2) * t * p1.x
@@ -89,10 +92,11 @@ pub fn bezier_point(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point
 
 /// Generate an arc curve between two points.
 /// Creates a curved path with upward or downward arc.
+#[must_use]
 pub fn generate_arc_curve(start: &Point, end: &Point) -> Vec<Point> {
-    let mid_x = (start.x + end.x) / 2.0;
+    let mid_x = f64::midpoint(start.x, end.x);
     let distance = ((end.x - start.x).powi(2) + (end.y - start.y).powi(2)).sqrt();
-    let mid_y = (start.y + end.y) / 2.0
+    let mid_y = f64::midpoint(start.y, end.y)
         - distance
             * 0.3
             * if random_in_range(0, 2) == 0 {
@@ -106,7 +110,7 @@ pub fn generate_arc_curve(start: &Point, end: &Point) -> Vec<Point> {
     let steps = 10;
 
     for i in 0..=steps {
-        let t = i as f64 / steps as f64;
+        let t = f64::from(i) / f64::from(steps);
         points.push(bezier_point(*start, control, control, *end, t));
     }
     points
@@ -114,6 +118,7 @@ pub fn generate_arc_curve(start: &Point, end: &Point) -> Vec<Point> {
 
 /// Generate a zigzag curve for erratic movement.
 /// Creates a perpendicular zigzag pattern along the path.
+#[must_use]
 pub fn generate_zigzag_curve(start: &Point, end: &Point) -> Vec<Point> {
     let mut points = Vec::new();
     let steps = 4;
@@ -121,7 +126,7 @@ pub fn generate_zigzag_curve(start: &Point, end: &Point) -> Vec<Point> {
     let zigzag_amount = distance * 0.1;
 
     for i in 0..=steps {
-        let progress = i as f64 / steps as f64;
+        let progress = f64::from(i) / f64::from(steps);
         let base_x = start.x + (end.x - start.x) * progress;
         let base_y = start.y + (end.y - start.y) * progress;
 
@@ -137,6 +142,7 @@ pub fn generate_zigzag_curve(start: &Point, end: &Point) -> Vec<Point> {
 
 /// Generate an overshoot curve that goes past the target.
 /// Simulates human correction behavior.
+#[must_use]
 pub fn generate_overshoot_curve(start: &Point, end: &Point) -> Vec<Point> {
     let overshoot_scale = 1.2;
     let overshoot_x = start.x + (end.x - start.x) * overshoot_scale;
@@ -147,12 +153,13 @@ pub fn generate_overshoot_curve(start: &Point, end: &Point) -> Vec<Point> {
 
 /// Generate a stopped curve with pauses along the path.
 /// Creates intermediate stop points.
+#[must_use]
 pub fn generate_stopped_curve(start: &Point, end: &Point) -> Vec<Point> {
     let stops = 3;
     let mut points = Vec::new();
 
     for i in 0..=stops {
-        let progress = i as f64 / stops as f64;
+        let progress = f64::from(i) / f64::from(stops);
         let x = start.x + (end.x - start.x) * progress;
         let y = start.y + (end.y - start.y) * progress;
         points.push(Point::new(x, y));
@@ -162,6 +169,7 @@ pub fn generate_stopped_curve(start: &Point, end: &Point) -> Vec<Point> {
 
 /// Generate a muscle-based path using simulation.
 /// Simulates muscle movement with jitter and step adjustments.
+#[must_use]
 pub fn generate_muscle_path(start: &Point, end: &Point) -> Vec<Point> {
     let mut points = Vec::new();
     let max_steps = 20;

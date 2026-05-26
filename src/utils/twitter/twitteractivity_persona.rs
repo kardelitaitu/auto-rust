@@ -47,6 +47,7 @@ impl PersonaWeights {
     /// Modifies weights based on detected sentiment in the current feed.
     /// Positive sentiment slightly increases engagement probabilities,
     /// while negative sentiment suppresses engagement.
+    #[must_use]
     pub fn with_sentiment_modulation(mut self, sentiment_score: f64) -> Self {
         // sentiment_score is in [-1.0, +1.0]
         // Scale and apply to interest_multiplier
@@ -55,7 +56,8 @@ impl PersonaWeights {
         self
     }
 
-    /// Applies profile-based variance — randomizes weights within ±profile_variance%.
+    /// Applies profile-based variance — randomizes weights within ±`profile_variance`%.
+    #[must_use]
     pub fn with_profile_variance(mut self, profile: &BrowserProfile) -> Self {
         let variance = profile.action_delay_variance_pct.base / 100.0; // e.g., 0.5 = ±50%
         let mut rng = rand::thread_rng();
@@ -80,6 +82,7 @@ impl PersonaWeights {
     }
 
     /// Clamps all probabilities to ensure they are within \[0,1\].
+    #[must_use]
     pub fn normalized(mut self) -> Self {
         macro_rules! clamp {
             ($field:expr) => {
@@ -101,7 +104,7 @@ fn effective_probability(base_probability: f64, persona: &PersonaWeights) -> f64
     (base_probability * persona.interest_multiplier).clamp(0.0, 1.0)
 }
 
-/// Selects a PersonaWeights configuration based on the provided weights dictionary.
+/// Selects a `PersonaWeights` configuration based on the provided weights dictionary.
 /// The `weights` JSON may include any of: `like_prob`, `retweet_prob`, `quote_prob`, `follow_prob`, `reply_prob`, `thread_dive_prob`, `interest_multiplier`.
 /// Any missing weights default to the provided config probabilities.
 #[instrument]
@@ -127,38 +130,38 @@ pub fn select_persona_weights(
         let mut overrides = Vec::new();
         if let Some(v) = w.get("like_prob").and_then(|v: &Value| v.as_f64()) {
             persona.like_prob = v;
-            overrides.push(format!("like={:.3}", v));
+            overrides.push(format!("like={v:.3}"));
         }
         if let Some(v) = w.get("retweet_prob").and_then(|v: &Value| v.as_f64()) {
             persona.retweet_prob = v;
-            overrides.push(format!("retweet={:.3}", v));
+            overrides.push(format!("retweet={v:.3}"));
         }
         if let Some(v) = w.get("quote_prob").and_then(|v: &Value| v.as_f64()) {
             persona.quote_prob = v;
-            overrides.push(format!("quote={:.3}", v));
+            overrides.push(format!("quote={v:.3}"));
         }
         if let Some(v) = w.get("follow_prob").and_then(|v: &Value| v.as_f64()) {
             persona.follow_prob = v;
-            overrides.push(format!("follow={:.3}", v));
+            overrides.push(format!("follow={v:.3}"));
         }
         if let Some(v) = w.get("reply_prob").and_then(|v: &Value| v.as_f64()) {
             persona.reply_prob = v;
-            overrides.push(format!("reply={:.3}", v));
+            overrides.push(format!("reply={v:.3}"));
         }
         if let Some(v) = w.get("bookmark_prob").and_then(|v: &Value| v.as_f64()) {
             persona.bookmark_prob = v;
-            overrides.push(format!("bookmark={:.3}", v));
+            overrides.push(format!("bookmark={v:.3}"));
         }
         if let Some(v) = w.get("thread_dive_prob").and_then(|v: &Value| v.as_f64()) {
             persona.thread_dive_prob = v;
-            overrides.push(format!("dive={:.3}", v));
+            overrides.push(format!("dive={v:.3}"));
         }
         if let Some(v) = w
             .get("interest_multiplier")
             .and_then(|v: &Value| v.as_f64())
         {
             persona.interest_multiplier = v;
-            overrides.push(format!("interest_multiplier={:.3}", v));
+            overrides.push(format!("interest_multiplier={v:.3}"));
         }
         if !overrides.is_empty() {
             log::info!("Persona overrides from payload: {}", overrides.join(", "));
@@ -187,45 +190,52 @@ pub fn apply_behavior_profile(
 
 /// Decides whether to like a tweet given the persona weights.
 /// Returns `true` if the randomized chance was met.
+#[must_use]
 pub fn should_like(persona: &PersonaWeights) -> bool {
     let prob = effective_probability(persona.like_prob, persona);
     let mut rng = rand::thread_rng();
     let result = rng.gen_bool(prob);
-    log::debug!("should_like: prob={:.3}, result={}", prob, result);
+    log::debug!("should_like: prob={prob:.3}, result={result}");
     result
 }
 
 /// Decides whether to retweet.
+#[must_use]
 pub fn should_retweet(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
     rng.gen_bool(effective_probability(persona.retweet_prob, persona))
 }
 
 /// Decides whether to quote tweet.
+#[must_use]
 pub fn should_quote(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
     rng.gen_bool(effective_probability(persona.quote_prob, persona))
 }
 
 /// Decides whether to follow the author.
+#[must_use]
 pub fn should_follow(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
     rng.gen_bool(effective_probability(persona.follow_prob, persona))
 }
 
 /// Decides whether to reply.
+#[must_use]
 pub fn should_reply(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
     rng.gen_bool(effective_probability(persona.reply_prob, persona))
 }
 
 /// Decides whether to bookmark a tweet.
+#[must_use]
 pub fn should_bookmark(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
     rng.gen_bool(effective_probability(persona.bookmark_prob, persona))
 }
 
 /// Decides whether to dive into the thread.
+#[must_use]
 pub fn should_dive(persona: &PersonaWeights) -> bool {
     let mut rng = rand::thread_rng();
     rng.gen_bool(effective_probability(persona.thread_dive_prob, persona))
@@ -233,6 +243,7 @@ pub fn should_dive(persona: &PersonaWeights) -> bool {
 
 /// Builds a persona payload for task configuration.
 /// Returns a JSON-compatible Value that can be passed to the task.
+#[must_use]
 pub fn build_persona_config(
     weights: Option<PersonaWeights>,
     profile_preset: Option<ProfilePreset>,
@@ -585,5 +596,96 @@ mod tests {
         assert!(result.like_prob >= 0.0 && result.like_prob <= 1.0);
         assert!(result.retweet_prob >= 0.0 && result.retweet_prob <= 1.0);
         assert!(result.interest_multiplier >= 0.5);
+    }
+}
+
+#[cfg(test)]
+mod tdd_tests {
+    use super::*;
+
+    #[test]
+    fn tdd_red_persona_profile_variance_zero_unchanged() {
+        // With zero variance, with_profile_variance should leave weights unchanged
+        let weights = PersonaWeights::default();
+        let profile = BrowserProfile {
+            action_delay_variance_pct: crate::utils::profile::ProfileParam::new(0.0, 0.0),
+            ..BrowserProfile::average()
+        };
+        let result = weights.clone().with_profile_variance(&profile);
+        assert_eq!(result.like_prob, weights.like_prob);
+        assert_eq!(result.retweet_prob, weights.retweet_prob);
+        assert_eq!(result.follow_prob, weights.follow_prob);
+        assert_eq!(result.reply_prob, weights.reply_prob);
+        assert_eq!(result.quote_prob, weights.quote_prob);
+        assert_eq!(result.bookmark_prob, weights.bookmark_prob);
+        assert_eq!(result.thread_dive_prob, weights.thread_dive_prob);
+    }
+
+    #[test]
+    fn tdd_red_persona_sentiment_extreme_boundaries() {
+        // Sentiment +1.0 should give interest_multiplier = 1.0
+        let weights = PersonaWeights::default().with_sentiment_modulation(1.0);
+        assert!(
+            (weights.interest_multiplier - 1.0).abs() < f64::EPSILON,
+            "Expected 1.0, got {}",
+            weights.interest_multiplier
+        );
+
+        // Sentiment -1.0 should give interest_multiplier = 0.5
+        let weights = PersonaWeights::default().with_sentiment_modulation(-1.0);
+        assert!(
+            (weights.interest_multiplier - 0.5).abs() < f64::EPSILON,
+            "Expected 0.5, got {}",
+            weights.interest_multiplier
+        );
+    }
+
+    #[test]
+    fn tdd_green_persona_normalized_preserves_valid_values() {
+        let weights = PersonaWeights {
+            like_prob: 0.3,
+            retweet_prob: 0.1,
+            quote_prob: 0.05,
+            follow_prob: 0.05,
+            reply_prob: 0.02,
+            bookmark_prob: 0.0,
+            thread_dive_prob: 0.2,
+            interest_multiplier: 1.0,
+        };
+        let normalized = weights.clone().normalized();
+        assert_eq!(normalized.like_prob, weights.like_prob);
+        assert_eq!(normalized.retweet_prob, weights.retweet_prob);
+        assert_eq!(normalized.quote_prob, weights.quote_prob);
+        assert_eq!(normalized.follow_prob, weights.follow_prob);
+        assert_eq!(normalized.reply_prob, weights.reply_prob);
+        assert_eq!(normalized.bookmark_prob, weights.bookmark_prob);
+        assert_eq!(normalized.thread_dive_prob, weights.thread_dive_prob);
+    }
+
+    #[test]
+    fn tdd_green_persona_select_with_interest_multiplier_override() {
+        let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+        let weights = json!({"interest_multiplier": 0.5});
+        let persona = select_persona_weights(Some(&weights), &config_probs);
+        assert!(
+            (persona.interest_multiplier - 0.5).abs() < f64::EPSILON,
+            "Expected 0.5, got {}",
+            persona.interest_multiplier
+        );
+    }
+
+    #[test]
+    fn tdd_green_persona_build_config_contains_all_expected_fields() {
+        let config = build_persona_config(None, None);
+        let weights = config.get("weights").unwrap().as_object().unwrap();
+        assert!(weights.contains_key("like_prob"));
+        assert!(weights.contains_key("retweet_prob"));
+        assert!(weights.contains_key("quote_prob"));
+        assert!(weights.contains_key("follow_prob"));
+        assert!(weights.contains_key("reply_prob"));
+        assert!(weights.contains_key("bookmark_prob"));
+        assert!(weights.contains_key("thread_dive_prob"));
+        assert!(weights.contains_key("interest_multiplier"));
+        assert_eq!(weights.len(), 8, "Should have exactly 8 weight fields");
     }
 }

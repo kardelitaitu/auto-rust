@@ -50,7 +50,9 @@ use anyhow::Result;
 use serde_json::Value;
 use tracing::instrument;
 
-use super::twitteractivity_selectors::*;
+use super::twitteractivity_selectors::{
+    js_identify_engagement_candidates, selector_following_indicator,
+};
 
 /// Scans the current viewport for tweet articles that are good engagement candidates.
 ///
@@ -153,11 +155,7 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
         log::warn!("[candidate_scan] No tweet elements found in DOM");
     } else if candidates.is_empty() {
         log::warn!(
-            "[candidate_scan] Found {} tweets but filtered: no_id={}, viewport={}, height={}",
-            total_found,
-            filtered_no_id,
-            filtered_viewport,
-            filtered_height
+            "[candidate_scan] Found {total_found} tweets but filtered: no_id={filtered_no_id}, viewport={filtered_viewport}, height={filtered_height}"
         );
     }
 
@@ -166,6 +164,7 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
 
 /// Checks if a given tweet (by center coordinates) currently shows "Following" state
 /// for the author (used to decide whether a follow action is needed).
+#[allow(clippy::cast_precision_loss)]
 pub async fn is_following_user_at_position(api: &TaskContext, _x: f64, _y: f64) -> Result<bool> {
     // Move mouse near the tweet to expose any hover-only indicators (optional)
     // For now, evaluate globally

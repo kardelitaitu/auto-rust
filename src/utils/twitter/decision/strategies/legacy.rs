@@ -253,7 +253,7 @@ impl LegacyStrategy {
             .chars()
             .filter(|c| c.is_alphabetic())
             .collect();
-        if !alpha_chars.is_empty() && alpha_chars.chars().all(|c| c.is_uppercase()) {
+        if !alpha_chars.is_empty() && alpha_chars.chars().all(char::is_uppercase) {
             penalty += 30;
         }
 
@@ -283,6 +283,9 @@ impl LegacyStrategy {
     }
 
     /// Analyzes the sentiment and quality of replies.
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn analyze_replies(&self, replies: &[String]) -> ReplyAnalysis {
         if replies.is_empty() {
             return ReplyAnalysis {
@@ -311,18 +314,20 @@ impl LegacyStrategy {
         let total = replies.len() as f64;
 
         ReplyAnalysis {
-            positive_ratio: positive_count as f64 / total,
-            negative_ratio: negative_count as f64 / total,
-            spam_ratio: spam_count as f64 / total,
+            positive_ratio: f64::from(positive_count) / total,
+            negative_ratio: f64::from(negative_count) / total,
+            spam_ratio: f64::from(spam_count) / total,
         }
     }
 
     /// Check if text contains any of the given patterns.
+    #[allow(clippy::unused_self)]
     fn contains_any(&self, text: &str, patterns: &[&str]) -> bool {
         patterns.iter().any(|pattern| text.contains(pattern))
     }
 
     /// Check if a character is an emoji.
+    #[allow(clippy::unused_self)]
     fn is_emoji(&self, c: char) -> bool {
         let cp = c as u32;
         // Common emoji Unicode ranges

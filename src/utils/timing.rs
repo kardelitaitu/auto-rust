@@ -6,7 +6,9 @@
 //! - Utilities for simulating realistic timing in automated tasks
 
 use crate::utils::math::{gaussian, random_in_range};
-use tokio::time::{sleep, Duration};
+use anyhow::{anyhow, Result};
+use std::future::Future;
+use tokio::time::{sleep, timeout, Duration};
 use tokio_util::sync::CancellationToken;
 
 /// Default runtime budget for demo helper files.
@@ -48,13 +50,14 @@ pub const TIMEOUT_EXTRA_MS: u64 = 60_000;
 ///
 /// Example: `duration_with_variance(300_000, 20)` yields a value in
 /// `240_000..=360_000`.
+#[must_use]
 pub fn duration_with_variance(base_ms: u64, variance_pct: u32) -> u64 {
     if base_ms == 0 {
         return 0;
     }
 
     let variance_pct = variance_pct.min(100);
-    let delta = base_ms.saturating_mul(variance_pct as u64) / 100;
+    let delta = base_ms.saturating_mul(u64::from(variance_pct)) / 100;
     let min_ms = base_ms.saturating_sub(delta);
     let max_ms = base_ms.saturating_add(delta);
     random_in_range(min_ms, max_ms)
@@ -69,8 +72,8 @@ pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
         None => sleep(Duration::from_millis(ms)).await,
         Some(token) => {
             tokio::select! {
-                _ = token.cancelled() => {}
-                _ = sleep(Duration::from_millis(ms)) => {}
+                () = token.cancelled() => {}
+                () = sleep(Duration::from_millis(ms)) => {}
             }
         }
     }
@@ -84,7 +87,7 @@ pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
 /// * `max_ms` - Maximum delay in milliseconds (inclusive)
 ///
 /// # Details
-/// The delay is uniformly distributed between min_ms and max_ms.
+/// The delay is uniformly distributed between `min_ms` and `max_ms`.
 /// This function is asynchronous and uses Tokio's sleep timer.
 #[allow(dead_code)]
 pub async fn random_delay(min_ms: u64, max_ms: u64) {
@@ -119,12 +122,13 @@ pub async fn human_pause(base_ms: u64, variance_pct: u32) {
 
 /// Gaussian pause (same distribution as [`human_pause`]) with optional cooperative cancel.
 #[allow(dead_code)]
+#[allow(clippy::cast_precision_loss)]
 pub async fn human_pause_with_cancel(
     cancel: Option<&CancellationToken>,
     base_ms: u64,
     variance_pct: u32,
 ) {
-    let variance = (variance_pct as f64 / 100.0).clamp(0.0, 1.0);
+    let variance = (f64::from(variance_pct) / 100.0).clamp(0.0, 1.0);
     let std_dev = (base_ms as f64) * variance;
     let min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
     let max_delay = (base_ms as f64 * (1.0 + variance)).min(30000.0);
@@ -144,12 +148,13 @@ pub async fn uniform_pause(base_ms: u64, variance_pct: u32) {
 
 /// Uniform random pause (same distribution as [`uniform_pause`]) with optional cooperative cancel.
 #[allow(dead_code)]
+#[allow(clippy::cast_precision_loss)]
 pub async fn uniform_pause_with_cancel(
     cancel: Option<&CancellationToken>,
     base_ms: u64,
     variance_pct: u32,
 ) {
-    let variance = (variance_pct as f64 / 100.0).clamp(0.0, 1.0);
+    let variance = (f64::from(variance_pct) / 100.0).clamp(0.0, 1.0);
     let min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
     let max_delay = (base_ms as f64 * (1.0 + variance)).min(30000.0);
     let delay = random_in_range(min_delay.round() as u64, max_delay.round() as u64);
@@ -198,6 +203,25 @@ pub async fn clustered_pause(
             human_pause(cluster_delay, cluster_variance).await;
         }
     }
+}
+
+/// Run a future with a timeout, returning `Err` on timeout with a task-specific name.
+///
+/// # Arguments
+/// * `duration_ms` - Maximum execution time in milliseconds
+/// * `task_name` - Name used in the timeout error message (e.g. "twitterlike", "demoqa")
+/// * `future` - The async operation to execute
+///
+/// # Returns
+/// * `Ok(())` - Future completed within the timeout
+/// * `Err` - Future timed out or returned an error
+pub async fn run_with_timeout<F>(duration_ms: u64, task_name: &str, future: F) -> Result<()>
+where
+    F: Future<Output = Result<()>>,
+{
+    timeout(Duration::from_millis(duration_ms), future)
+        .await
+        .map_err(|_| anyhow!("[{task_name}] Task exceeded duration budget of {duration_ms}ms"))?
 }
 
 #[cfg(test)]

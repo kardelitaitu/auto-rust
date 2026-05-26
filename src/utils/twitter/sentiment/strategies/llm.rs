@@ -4,7 +4,6 @@ use crate::llm::client::LlmClient;
 use crate::llm::models::ChatMessage;
 use crate::utils::twitter::sentiment::Sentiment;
 use anyhow::Result;
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,6 +28,7 @@ Respond with this exact JSON format:
     "reasoning": "one sentence explanation"
 }"#;
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn analyze_sentiment_llm(llm: &LlmClient, text: &str) -> Result<LlmSentimentResult> {
     let truncated = if text.len() > 400 { &text[..400] } else { text };
     let prompt = SENTIMENT_PROMPT.replace("{tweet_text}", truncated);
@@ -44,6 +44,7 @@ pub async fn analyze_sentiment_llm(llm: &LlmClient, text: &str) -> Result<LlmSen
     Ok(result)
 }
 
+#[must_use]
 pub fn llm_sentiment_to_enum(llm_sentiment: &str) -> Sentiment {
     match llm_sentiment.to_lowercase().as_str() {
         "positive" => Sentiment::Positive,
@@ -53,8 +54,8 @@ pub fn llm_sentiment_to_enum(llm_sentiment: &str) -> Sentiment {
 }
 
 type SentimentCache = Arc<RwLock<HashMap<String, Sentiment>>>;
-static SENTIMENT_CACHE: Lazy<SentimentCache> =
-    Lazy::new(|| Arc::new(RwLock::new(HashMap::with_capacity(100))));
+static SENTIMENT_CACHE: std::sync::LazyLock<SentimentCache> =
+    std::sync::LazyLock::new(|| Arc::new(RwLock::new(HashMap::with_capacity(100))));
 
 pub async fn analyze_sentiment_hybrid(
     llm: Option<&LlmClient>,

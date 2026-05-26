@@ -92,6 +92,7 @@ pub struct ErrorRecovery {
 }
 
 impl ErrorRecovery {
+    #[must_use]
     pub fn select_recovery_action(&self) -> RecoveryActionType {
         RecoveryActionType::RestartService
     }
@@ -179,6 +180,7 @@ pub struct RecoveryStrategies {
 }
 
 impl RecoveryStrategies {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             connection: ConnectionRecovery::default(),

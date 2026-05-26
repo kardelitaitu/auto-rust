@@ -51,6 +51,7 @@ pub struct HealthMonitor {
 }
 
 impl HealthMonitor {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             status: SystemHealth::Healthy,

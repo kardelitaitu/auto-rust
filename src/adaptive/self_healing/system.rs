@@ -3,10 +3,12 @@
 use crate::metrics::TwitterActivityRunCounters;
 use std::time::{Duration, Instant};
 
-use super::health::*;
-use super::history::*;
-use super::state::*;
-use super::strategy::*;
+use super::health::{
+    HealthCheckResult, HealthCheckStatus, HealthCheckType, HealthMonitor, SystemHealth,
+};
+use super::history::{FailureHistory, FailureRecord, FailureType};
+use super::state::RecoveryState;
+use super::strategy::{HealthImpact, RecoveryActionType, RecoveryResult, RecoveryStrategies};
 
 /// Self-healing system for automatic recovery.
 pub struct SelfHealingSystem {
@@ -17,6 +19,7 @@ pub struct SelfHealingSystem {
 }
 
 impl SelfHealingSystem {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             health_monitor: HealthMonitor::new(),
@@ -56,25 +59,26 @@ impl SelfHealingSystem {
         &mut self,
         metrics: &TwitterActivityRunCounters,
     ) -> Option<RecoveryResult> {
-        if self.detect_failure(metrics) {
+        if Self::detect_failure(metrics) {
             self.initiate_recovery()
         } else {
             None
         }
     }
 
-    fn detect_failure(&self, metrics: &TwitterActivityRunCounters) -> bool {
+    fn detect_failure(metrics: &TwitterActivityRunCounters) -> bool {
         metrics.button_missing > 10
     }
 
+    #[allow(clippy::unused_self)]
     fn initiate_recovery(&mut self) -> Option<RecoveryResult> {
         let action = self.strategies.error.select_recovery_action();
-        let result = self.execute_recovery(&action);
+        let result = Self::execute_recovery(&action);
         self.update_recovery_state(&result);
         Some(result)
     }
 
-    fn execute_recovery(&self, action: &RecoveryActionType) -> RecoveryResult {
+    fn execute_recovery(action: &RecoveryActionType) -> RecoveryResult {
         RecoveryResult {
             action: action.clone(),
             success: true,
@@ -113,6 +117,7 @@ impl Default for SelfHealingSystem {
 
 #[cfg(test)]
 mod tests {
+    use super::super::state::RecoveryMode;
     use super::*;
 
     // ========================================================================
@@ -189,7 +194,7 @@ mod tests {
             button_missing: 15,
             ..Default::default()
         };
-        assert!(system.detect_failure(&metrics));
+        assert!(SelfHealingSystem::detect_failure(&metrics));
     }
 
     #[test]
@@ -199,7 +204,7 @@ mod tests {
             button_missing: 5,
             ..Default::default()
         };
-        assert!(!system.detect_failure(&metrics));
+        assert!(!SelfHealingSystem::detect_failure(&metrics));
     }
 
     #[test]
@@ -210,13 +215,13 @@ mod tests {
             button_missing: 10,
             ..Default::default()
         };
-        assert!(!system.detect_failure(&metrics));
+        assert!(!SelfHealingSystem::detect_failure(&metrics));
         // Just over threshold
         let metrics = TwitterActivityRunCounters {
             button_missing: 11,
             ..Default::default()
         };
-        assert!(system.detect_failure(&metrics));
+        assert!(SelfHealingSystem::detect_failure(&metrics));
     }
 
     // ========================================================================
@@ -252,7 +257,7 @@ mod tests {
     fn test_execute_recovery_returns_success() {
         let system = SelfHealingSystem::new();
         let action = RecoveryActionType::RestartService;
-        let result = system.execute_recovery(&action);
+        let result = SelfHealingSystem::execute_recovery(&action);
         assert!(result.success);
         assert!(matches!(result.action, RecoveryActionType::RestartService));
     }

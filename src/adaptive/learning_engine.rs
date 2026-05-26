@@ -4,7 +4,7 @@
 //! - TTL-based data expiration
 //! - Privacy controls (enable/disable)
 //! - Automatic cleanup of stale data
-//! - Decoupled from TaskContext for better testability
+//! - Decoupled from `TaskContext` for better testability
 
 use crate::runtime::task_context::click_learning::{
     ClickAdaptation, ClickLearningState, ClickTimingContext, SelectorLearningStats,
@@ -15,9 +15,9 @@ use chrono::{Duration, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// LearningEngine manages click learning persistence and adaptation.
+/// `LearningEngine` manages click learning persistence and adaptation.
 ///
-/// This service decouples click learning from TaskContext and provides
+/// This service decouples click learning from `TaskContext` and provides
 /// a clean API for recording, retrieving, and managing learning data.
 pub struct LearningEngine {
     state: ClickLearningState,
@@ -27,7 +27,7 @@ pub struct LearningEngine {
 }
 
 impl LearningEngine {
-    /// Create a new LearningEngine for a session.
+    /// Create a new `LearningEngine` for a session.
     ///
     /// # Arguments
     /// * `session_id` - Unique session identifier
@@ -62,6 +62,7 @@ impl LearningEngine {
     }
 
     /// Create a disabled engine (no-op, no persistence).
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             state: ClickLearningState::default(),
@@ -85,11 +86,13 @@ impl LearningEngine {
     }
 
     /// Get adaptation for a selector based on current state.
+    #[must_use]
     pub fn adaptation_for(&self, selector: &str, context: &ClickTimingContext) -> ClickAdaptation {
         self.state.adaptation_for(selector, context)
     }
 
     /// Get statistics for a specific selector.
+    #[must_use]
     pub fn selector_stats(&self, selector: &str) -> SelectorLearningStats {
         self.state.selector_stats(selector)
     }
@@ -113,11 +116,11 @@ impl LearningEngine {
             return Ok(0);
         }
 
-        let cutoff = Utc::now() - Duration::days(self.ttl_days as i64);
+        let cutoff = Utc::now() - Duration::days(i64::from(self.ttl_days));
         let before = self.state.selectors.len();
 
         self.state.selectors.retain(|_, stats| {
-            stats.last_updated.map(|dt| dt > cutoff).unwrap_or(true) // Keep if no timestamp (backward compat)
+            stats.last_updated.is_none_or(|dt| dt > cutoff) // Keep if no timestamp (backward compat)
         });
 
         let pruned = before - self.state.selectors.len();
@@ -139,21 +142,25 @@ impl LearningEngine {
     }
 
     /// Get recent success rate (last 32 interactions).
+    #[must_use]
     pub fn recent_success_rate(&self) -> f64 {
         self.state.recent_success_rate()
     }
 
     /// Get total interaction count.
+    #[must_use]
     pub fn interaction_count(&self) -> u64 {
         self.state.interaction_count
     }
 
     /// Check if learning is enabled.
+    #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
     /// Get TTL in days.
+    #[must_use]
     pub fn ttl_days(&self) -> u32 {
         self.ttl_days
     }

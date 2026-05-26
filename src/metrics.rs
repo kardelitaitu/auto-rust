@@ -14,7 +14,6 @@ findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependen
 //! - Memory usage monitoring
 
 use log::{info, warn};
-use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
@@ -29,19 +28,20 @@ use crate::result::TaskErrorKind;
 use crate::result::TaskResult;
 use crate::utils::mouse::native_input_lock_metrics_snapshot;
 
-/// Pre-computed string representations for TaskErrorKind variants.
+/// Pre-computed string representations for `TaskErrorKind` variants.
 /// Used for zero-allocation error kind string lookup in metrics.
-/// Matches the TitleCase format from Debug trait.
-static ERROR_KIND_STRINGS: Lazy<FxHashMap<TaskErrorKind, &'static str>> = Lazy::new(|| {
-    let mut m = FxHashMap::default();
-    m.insert(TaskErrorKind::Timeout, "Timeout");
-    m.insert(TaskErrorKind::Validation, "Validation");
-    m.insert(TaskErrorKind::Navigation, "Navigation");
-    m.insert(TaskErrorKind::Session, "Session");
-    m.insert(TaskErrorKind::Browser, "Browser");
-    m.insert(TaskErrorKind::Unknown, "Unknown");
-    m
-});
+/// Matches the `TitleCase` format from Debug trait.
+static ERROR_KIND_STRINGS: std::sync::LazyLock<FxHashMap<TaskErrorKind, &'static str>> =
+    std::sync::LazyLock::new(|| {
+        let mut m = FxHashMap::default();
+        m.insert(TaskErrorKind::Timeout, "Timeout");
+        m.insert(TaskErrorKind::Validation, "Validation");
+        m.insert(TaskErrorKind::Navigation, "Navigation");
+        m.insert(TaskErrorKind::Session, "Session");
+        m.insert(TaskErrorKind::Browser, "Browser");
+        m.insert(TaskErrorKind::Unknown, "Unknown");
+        m
+    });
 
 pub const RUN_COUNTER_CANDIDATE_SCANNED: &str = "candidate_scanned";
 pub const RUN_COUNTER_BUTTON_MISSING: &str = "button_missing";
@@ -83,7 +83,7 @@ pub const RUN_COUNTER_CONFIDENCE_LOW: &str = "confidence_low";
 /// Captures timing, outcome, and execution context for performance analysis
 /// and debugging purposes.
 ///
-/// Uses `Arc<String>` for task_name and session_id to enable cheap cloning
+/// Uses `Arc<String>` for `task_name` and `session_id` to enable cheap cloning
 /// (O(1) ref count increment vs O(n) string copy) when recording metrics.
 #[derive(Debug, Clone)]
 pub struct TaskMetrics {
@@ -145,8 +145,8 @@ impl Default for MemoryThresholds {
 }
 
 /// Status of a task execution outcome.
-/// Uses unit variant `Failed` for metrics (error message stored separately in last_error).
-/// Differs from result::TaskStatus::Failed(String) which stores the error for persistence.
+/// Uses unit variant `Failed` for metrics (error message stored separately in `last_error`).
+/// Differs from `result::TaskStatus::Failed(String)` which stores the error for persistence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStatus {
     Success,
@@ -218,7 +218,8 @@ impl MetricsCollector {
     /// * `max_history` - Maximum number of task records to keep in memory
     ///
     /// # Returns
-    /// A new MetricsCollector instance ready for recording metrics
+    /// A new `MetricsCollector` instance ready for recording metrics
+    #[must_use]
     pub fn new(max_history: usize) -> Self {
         Self {
             total_tasks: Arc::new(AtomicUsize::new(0)),
@@ -256,6 +257,7 @@ impl MetricsCollector {
         *counters.entry(name.to_string()).or_insert(0) += amount;
     }
 
+    #[must_use]
     pub fn run_counter(&self, name: &str) -> usize {
         *self.run_counters.read().get(name).unwrap_or(&0)
     }
@@ -343,6 +345,7 @@ impl MetricsCollector {
         });
     }
 
+    #[must_use]
     pub fn get_stats(&self) -> MetricsSnapshot {
         // Use interned strings for error kinds to avoid allocations
         let failure_breakdown = self
@@ -389,6 +392,8 @@ impl MetricsCollector {
     ///
     /// # Returns
     /// Success rate as a percentage (0.0 to 100.0)
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn success_rate(&self) -> f64 {
         let total = self.total_tasks.load(Ordering::SeqCst);
         if total == 0 {
@@ -398,6 +403,8 @@ impl MetricsCollector {
     }
 
     /// Get a memory and performance snapshot
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn get_memory_snapshot(
         &self,
         active_sessions: usize,
@@ -434,6 +441,7 @@ impl MetricsCollector {
     }
 
     /// Log current memory and performance status
+    #[allow(clippy::cast_precision_loss)]
     pub fn log_status(&self, active_sessions: usize) {
         let snapshot = self.get_memory_snapshot(active_sessions, 0);
         let stats = self.get_stats();
@@ -465,8 +473,10 @@ impl MetricsCollector {
             let top_failure = failures
                 .iter()
                 .max_by_key(|(_, count)| **count)
-                .map(|(kind, count)| format!("{:?}={}", kind, count))
-                .unwrap_or_else(|| "none".to_string());
+                .map_or_else(
+                    || "none".to_string(),
+                    |(kind, count)| format!("{kind:?}={count}"),
+                );
             info!(
                 "Metrics failure breakdown | top={top_failure} | kinds={}",
                 failures.len()
@@ -641,7 +651,7 @@ pub struct FanOutMetrics {
     pub planned_groups: usize,
     /// Number of task groups actually completed
     pub completed_groups: usize,
-    /// Total planned task executions (groups × sessions × tasks_per_group)
+    /// Total planned task executions (groups × sessions × `tasks_per_group`)
     pub planned_executions: usize,
     /// Total actual task executions completed
     pub actual_executions: usize,
@@ -650,6 +660,7 @@ pub struct FanOutMetrics {
 }
 
 impl MetricsCollector {
+    #[allow(clippy::cast_precision_loss)]
     pub fn export_summary(
         &self,
         active_sessions: usize,
@@ -667,6 +678,7 @@ impl MetricsCollector {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::cast_precision_loss)]
     pub fn export_summary_to<P: AsRef<Path>>(
         &self,
         path: P,

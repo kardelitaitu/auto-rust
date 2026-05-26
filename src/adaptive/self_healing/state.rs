@@ -68,6 +68,7 @@ pub struct RecoveryState {
 }
 
 impl RecoveryState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             mode: RecoveryMode::Normal,

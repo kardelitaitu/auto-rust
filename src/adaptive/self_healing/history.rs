@@ -51,6 +51,7 @@ pub struct FailureHistory {
 }
 
 impl FailureHistory {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             recent_failures: VecDeque::new(),

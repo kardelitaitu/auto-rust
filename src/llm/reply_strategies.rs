@@ -301,6 +301,7 @@ pub struct StrategyContext {
 
 /// Pick a strategy using weighted random selection.
 /// All strategies start at base weight 1; context boosts multiply specific keys.
+#[must_use]
 pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
     // Build boost map from matching context keys
     let mut boost_map: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
@@ -311,10 +312,10 @@ pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
         &context.engagement_level,
     ];
 
-    for key in context_keys.iter() {
-        for (ctx_key, boosts) in CONTEXT_BOOSTS.iter() {
+    for key in &context_keys {
+        for (ctx_key, boosts) in CONTEXT_BOOSTS {
             if ctx_key == key {
-                for (strategy, multiplier) in boosts.iter() {
+                for (strategy, multiplier) in *boosts {
                     let entry = boost_map.entry(*strategy).or_insert(1);
                     *entry = (*entry).max(*multiplier);
                 }
@@ -338,17 +339,17 @@ pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
             return STRATEGY_INSTRUCTIONS
                 .iter()
                 .find(|(k, _)| *k == key)
-                .map(|(_, instruction)| *instruction)
-                .unwrap_or(STRATEGY_INSTRUCTIONS[0].1);
+                .map_or(STRATEGY_INSTRUCTIONS[0].1, |(_, instruction)| *instruction);
         }
         r -= weight;
     }
 
     // Fallback to last strategy
-    STRATEGY_INSTRUCTIONS.last().map(|(_, i)| *i).unwrap_or("")
+    STRATEGY_INSTRUCTIONS.last().map_or("", |(_, i)| *i)
 }
 
 /// Build reply prompt with strategy selection
+#[must_use]
 pub fn build_reply_prompt(
     tweet_text: &str,
     author: &str,
@@ -374,7 +375,9 @@ pub fn build_reply_prompt(
     ));
 
     // Add replies
-    if !replies.is_empty() {
+    if replies.is_empty() {
+        prompt.push_str("\n\n(no other replies visible)\n");
+    } else {
         prompt.push_str("\n\nReplies:\n");
         for (i, (reply_author, reply_text)) in replies.iter().take(20).enumerate() {
             // Strip hashtags and emojis from replies
@@ -400,8 +403,6 @@ pub fn build_reply_prompt(
                 clean_text.trim()
             ));
         }
-    } else {
-        prompt.push_str("\n\n(no other replies visible)\n");
     }
 
     prompt.push_str("\n\nGenerate one reply for each reply above. Respond with a JSON array of objects, each with a 'content' field containing the reply.");

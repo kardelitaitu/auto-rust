@@ -25,6 +25,7 @@ impl Default for UnifiedLLMProcessor {
 }
 
 impl UnifiedLLMProcessor {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             llm: crate::llm::Llm::new().expect("Failed to create LLM"),
@@ -62,7 +63,7 @@ impl UnifiedLLMProcessor {
         let response = self.llm.chat(vec![ChatMessage::user(prompt)]).await?;
 
         // Parse response into individual reply results
-        let parsed = self.parse_batch_response(&response, replies.len())?;
+        let parsed = Self::parse_batch_response(&response, replies.len())?;
 
         Ok(parsed)
     }
@@ -79,8 +80,7 @@ impl UnifiedLLMProcessor {
         // Build prompt
         let system = crate::llm::reply_engine::reply_engine_system_prompt();
         let user = format!(
-            "Quote this tweet:\n{}\n\nGenerate a short, engaging quote commentary (max 280 chars):",
-            tweet_text
+            "Quote this tweet:\n{tweet_text}\n\nGenerate a short, engaging quote commentary (max 280 chars):"
         );
         let messages = vec![ChatMessage::system(system), ChatMessage::user(user)];
 
@@ -88,8 +88,8 @@ impl UnifiedLLMProcessor {
         let response = self.llm.chat(messages).await?;
 
         // Parse quote response with sentiment
-        let sentiment = self.extract_sentiment_from_quote(&response)?;
-        let content = self.extract_content_from_quote(&response)?;
+        let sentiment = Self::extract_sentiment_from_quote(&response)?;
+        let content = Self::extract_content_from_quote(&response)?;
 
         // Calculate confidence based on content
         let confidence = sentiment.confidence;
@@ -104,27 +104,24 @@ impl UnifiedLLMProcessor {
     /// Parse batch response into individual reply results.
     /// Parses LLM response that contains multiple replies separated by delimiters.
     fn parse_batch_response(
-        &self,
         response: &str,
         expected_count: usize,
     ) -> Result<Vec<UnifiedReplyResponse>, anyhow::Error> {
         Self::parse_batch_response_static(response, expected_count)
     }
 
-    /// Static version of parse_batch_response for testing without LLM client.
+    /// Static version of `parse_batch_response` for testing without LLM client.
     pub fn parse_batch_response_static(
         response: &str,
         expected_count: usize,
     ) -> Result<Vec<UnifiedReplyResponse>, anyhow::Error> {
         // Try JSON parsing first if the response looks like JSON
         if Self::is_json_response(response) {
-            match Self::parse_json_batch_response(response, expected_count) {
-                Ok(results) => return Ok(results),
-                Err(_) => {
-                    // JSON parsing failed, fall back to line-based parsing
-                    // This handles cases where the response looks like JSON but is malformed
-                }
+            if let Ok(results) = Self::parse_json_batch_response(response, expected_count) {
+                return Ok(results);
             }
+            // JSON parsing failed, fall back to line-based parsing
+            // This handles cases where the response looks like JSON but is malformed
         }
 
         // Fall back to line-based parsing
@@ -175,7 +172,7 @@ impl UnifiedLLMProcessor {
                     '}' | ']' if !in_string => {
                         depth -= 1;
                         if depth == 0 {
-                            return trimmed[start..start + i + 1].trim().to_string();
+                            return trimmed[start..=(start + i)].trim().to_string();
                         }
                     }
                     _ => {}
@@ -209,7 +206,7 @@ impl UnifiedLLMProcessor {
                         '}' | ']' if !in_string => {
                             depth -= 1;
                             if depth == 0 {
-                                return candidate[..i + 1].trim().to_string();
+                                return candidate[..=i].trim().to_string();
                             }
                         }
                         _ => {}
@@ -299,7 +296,7 @@ impl UnifiedLLMProcessor {
         // Split response by common delimiters (newlines, numbers, etc.)
         let lines: Vec<&str> = response
             .lines()
-            .map(|l| l.trim())
+            .map(str::trim)
             .filter(|l| !l.is_empty())
             .collect();
 
@@ -343,6 +340,7 @@ impl UnifiedLLMProcessor {
     }
 
     /// Clean and sanitize reply content.
+    #[must_use]
     pub fn clean_reply_content(text: &str) -> String {
         text.trim()
             .chars()
@@ -362,6 +360,7 @@ impl UnifiedLLMProcessor {
     }
 
     /// Analyze sentiment from text using sentiment analysis utilities.
+    #[must_use]
     pub fn analyze_sentiment_from_text(text: &str) -> SentimentAnalysis {
         use crate::utils::twitter::sentiment::analyze_sentiment_sync;
 
@@ -377,6 +376,7 @@ impl UnifiedLLMProcessor {
     }
 
     /// Extract sentiment indicators from text.
+    #[must_use]
     pub fn extract_sentiment_indicators(text: &str) -> Vec<String> {
         let lower = text.to_ascii_lowercase();
         let mut indicators = Vec::new();
@@ -409,6 +409,7 @@ impl UnifiedLLMProcessor {
     }
 
     /// Calculate confidence score based on text and indicators.
+    #[must_use]
     pub fn calculate_confidence(text: &str, indicators: &[String]) -> f32 {
         let mut confidence: f32 = 0.5; // Base confidence
 
@@ -427,17 +428,14 @@ impl UnifiedLLMProcessor {
     }
 
     /// Extract sentiment from quote response.
-    fn extract_sentiment_from_quote(
-        &self,
-        response: &str,
-    ) -> Result<SentimentAnalysis, anyhow::Error> {
+    fn extract_sentiment_from_quote(response: &str) -> Result<SentimentAnalysis, anyhow::Error> {
         // Use actual sentiment analysis on the LLM response
-        let content = self.extract_content_from_quote(response)?;
+        let content = Self::extract_content_from_quote(response)?;
         Ok(Self::analyze_sentiment_from_text(&content))
     }
 
     /// Extract content from quote response.
-    fn extract_content_from_quote(&self, response: &str) -> Result<String, anyhow::Error> {
+    fn extract_content_from_quote(response: &str) -> Result<String, anyhow::Error> {
         // Extract generated content
         Ok(response.to_string())
     }

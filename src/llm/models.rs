@@ -94,6 +94,7 @@ pub struct LlmConfig {
 }
 
 impl LlmConfig {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -221,7 +222,7 @@ mod tests {
         let config = OllamaConfig::default();
         assert_eq!(config.base_url, "http://localhost:11434");
         assert_eq!(config.model, "llama3.2:3b");
-        assert_eq!(config.timeout_ms, 120000);
+        assert_eq!(config.timeout_ms, 240000);
     }
 
     #[test]
@@ -411,6 +412,7 @@ mod tests {
             model: "gpt-4".to_string(),
             timeout_ms: 90000,
             fallback_models: vec!["gpt-3.5-turbo".to_string()],
+            ..OpenRouterConfig::default()
         };
         assert_eq!(config.api_key, "key");
         assert_eq!(config.fallback_models.len(), 1);
@@ -436,6 +438,7 @@ mod tests {
             model: "tencent/hy3-preview:free".to_string(),
             timeout_ms: 60000,
             fallback_models: fallbacks.clone(),
+            ..OpenRouterConfig::default()
         };
         assert_eq!(config.fallback_models.len(), 4);
         assert_eq!(config.fallback_models, fallbacks);
@@ -452,7 +455,9 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 60000,
                 fallback_models: vec!["fb1".to_string(), "fb2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
         assert_eq!(config.openrouter.fallback_models.len(), 2);
     }

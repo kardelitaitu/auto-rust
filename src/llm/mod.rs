@@ -26,6 +26,7 @@ impl Llm {
         Ok(Self { client })
     }
 
+    #[must_use]
     pub fn from_config(config: LlmConfig) -> Self {
         Self {
             client: LlmClient::new(config),
@@ -52,6 +53,10 @@ impl Llm {
 
     pub async fn health_check(&self) -> bool {
         self.client.health_check().await
+    }
+
+    pub async fn health_check_result(&self) -> anyhow::Result<bool> {
+        self.client.health_check_result().await
     }
 }
 

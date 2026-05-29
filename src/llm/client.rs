@@ -6,10 +6,11 @@ use tokio::time::sleep;
 use toml;
 
 use crate::llm::models::{
-    ChatChoice, ChatMessage, ChatRequest, ChatResponse, LlmConfig, LlmProvider, OllamaConfig,
-    OpenRouterConfig, OpenRouterError, OpenRouterResponse,
+    ChatChoice, ChatMessage, ChatResponse, LlmConfig, LlmProvider, OpenRouterResponse,
 };
 
+#[cfg(test)]
+use crate::llm::models::{ChatRequest, OllamaConfig, OpenRouterConfig, OpenRouterError};
 #[cfg(test)]
 use serde_json;
 

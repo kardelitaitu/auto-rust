@@ -9,7 +9,7 @@
 //! These tests require real browser instances and may take longer to run.
 
 use auto::{
-    cli::TaskDefinition, config::load_config, metrics::MetricsCollector,
+    cli::CliTaskDefinition, config::load_config, metrics::MetricsCollector,
     orchestrator::Orchestrator, session::Session,
 };
 use std::sync::Arc;
@@ -49,7 +49,7 @@ async fn test_execute_group_runs_on_all_sessions() {
     let metrics = Arc::new(MetricsCollector::new(100));
 
     // Create a simple task
-    let tasks = vec![TaskDefinition {
+    let tasks = vec![CliTaskDefinition {
         name: "pageview".to_string(),
         payload: Default::default(),
     }];
@@ -91,7 +91,7 @@ async fn test_execute_group_empty_sessions() {
     let mut orchestrator = Orchestrator::new(config);
     let sessions: Vec<Session> = vec![];
     let metrics = Arc::new(MetricsCollector::new(100));
-    let tasks = vec![TaskDefinition {
+    let tasks = vec![CliTaskDefinition {
         name: "pageview".to_string(),
         payload: Default::default(),
     }];
@@ -121,7 +121,7 @@ async fn test_task_broadcast_to_all_sessions() {
     let metrics = Arc::new(MetricsCollector::new(100));
 
     // Single task should be broadcast to all sessions
-    let tasks = vec![TaskDefinition {
+    let tasks = vec![CliTaskDefinition {
         name: "pageview".to_string(),
         payload: Default::default(),
     }];
@@ -155,7 +155,7 @@ async fn test_cancellation_stops_execution() {
 
     let metrics = Arc::new(MetricsCollector::new(100));
 
-    let tasks = vec![TaskDefinition {
+    let tasks = vec![CliTaskDefinition {
         name: "pageview".to_string(),
         payload: Default::default(),
     }];
@@ -191,7 +191,7 @@ async fn test_unhealthy_sessions_handled() {
     sessions[1].mark_unhealthy();
 
     let metrics = Arc::new(MetricsCollector::new(100));
-    let tasks = vec![TaskDefinition {
+    let tasks = vec![CliTaskDefinition {
         name: "pageview".to_string(),
         payload: Default::default(),
     }];
@@ -226,7 +226,7 @@ async fn test_session_state_transitions() {
     assert!(sessions[0].is_idle(), "Session should start idle");
 
     let metrics = Arc::new(MetricsCollector::new(100));
-    let tasks = vec![TaskDefinition {
+    let tasks = vec![CliTaskDefinition {
         name: "pageview".to_string(),
         payload: Default::default(),
     }];

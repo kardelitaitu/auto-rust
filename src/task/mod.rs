@@ -20,7 +20,6 @@ pub mod demo_keyboard;
 pub mod demo_mouse;
 pub mod demoqa;
 pub mod dsl;
-pub mod dsl_executor;
 pub mod pageview;
 pub mod policy;
 pub mod registry;

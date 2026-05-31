@@ -7,7 +7,7 @@
 use crate::task::dsl::Condition;
 use anyhow::Result;
 
-impl super::DslExecutor<'_> {
+impl<T: super::DslApi> super::DslExecutor<'_, T> {
     /// Substitute ${variable} placeholders with values from the variables map.
     ///
     /// Replaces occurrences of ${`variable_name`} in the input text with
@@ -244,23 +244,28 @@ impl super::DslExecutor<'_> {
             let ref_date = chrono::NaiveDate::parse_from_str(date, date_format);
             let ref_datetime = chrono::NaiveDateTime::parse_from_str(date, date_format);
 
-            match (var_date, ref_date, var_datetime, ref_datetime) {
+            let comparison_result = match (var_date, ref_date, var_datetime, ref_datetime) {
                 (Ok(v), Ok(r), _, _) => {
                     if is_before {
-                        Ok(v < r)
+                        v < r
                     } else {
-                        Ok(v > r)
+                        v > r
                     }
                 }
                 (_, _, Ok(v), Ok(r)) => {
                     if is_before {
-                        Ok(v < r)
+                        v < r
                     } else {
-                        Ok(v > r)
+                        v > r
                     }
                 }
-                _ => Ok(false),
-            }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Failed to parse date for variable '{name}': value='{var_value}', format='{date_format}'"
+                    ));
+                }
+            };
+            Ok(comparison_result)
         } else {
             Ok(false)
         }

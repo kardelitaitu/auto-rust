@@ -147,6 +147,10 @@ pub fn validate_task_definition(task_def: &TaskDefinition) -> Result<(), Vec<Str
                 }
             }
             Action::Parallel { actions, .. } => {
+                errors.push(
+                    "'parallel' blocks are not yet implemented — use sequential actions instead"
+                        .to_string(),
+                );
                 for sub_action in actions {
                     validate_action(sub_action, errors);
                 }
@@ -320,5 +324,445 @@ actions:
         let errors = result.unwrap_err();
         assert!(!errors.is_empty());
         assert!(errors[0].contains("cannot be empty"));
+    }
+
+    /// Proptest fuzz strategies for DSL parser round-trip.
+    ///
+    /// Generates random valid TaskDefinitions, serializes to YAML, parses back,
+    /// and asserts structural equality. This catches serde tag mismatches,
+    /// missing fields, and other serialization/deserialization bugs.
+    mod proptests {
+        use super::*;
+        use crate::task::dsl::{
+            Condition, ForeachCollection, IncludeSpec, LogLevel, ParameterDef, ParameterType,
+        };
+        use proptest::collection::{hash_map, vec};
+        use proptest::prelude::*;
+
+        /// Maximum recursion depth for nested action/condition trees.
+        const MAX_DEPTH: usize = 3;
+
+        /// Maximum number of collection elements (actions, conditions, values).
+        const MAX_SIZE: usize = 3;
+
+        // ── Value strategies ────────────────────────────────────────────────
+
+        fn arb_serde_yml_value() -> impl Strategy<Value = serde_yml::Value> {
+            prop_oneof![
+                any::<String>().prop_map(serde_yml::Value::String),
+                any::<i64>().prop_map(|n| serde_yml::Value::Number(serde_yml::Number::from(n))),
+                any::<bool>().prop_map(serde_yml::Value::Bool),
+            ]
+        }
+
+        fn arb_log_level() -> impl Strategy<Value = LogLevel> {
+            prop_oneof![
+                Just(LogLevel::Info),
+                Just(LogLevel::Debug),
+                Just(LogLevel::Warn),
+                Just(LogLevel::Error),
+            ]
+        }
+
+        fn arb_parameter_type() -> impl Strategy<Value = ParameterType> {
+            prop_oneof![
+                Just(ParameterType::String),
+                Just(ParameterType::Integer),
+                Just(ParameterType::Boolean),
+                Just(ParameterType::Url),
+                Just(ParameterType::Selector),
+            ]
+        }
+
+        // ── Condition strategies (recursive, depth-limited) ─────────────────
+
+        fn arb_condition() -> impl Strategy<Value = Condition> {
+            arb_condition_depth(0)
+        }
+
+        fn arb_condition_depth(depth: usize) -> impl Strategy<Value = Condition> {
+            let leaf = prop_oneof![
+                any::<String>().prop_map(|s| Condition::ElementExists { selector: s }),
+                any::<String>().prop_map(|s| Condition::ElementVisible { selector: s }),
+                (any::<String>(), any::<String>()).prop_map(|(s, v)| Condition::TextEquals {
+                    selector: s,
+                    value: v
+                }),
+                (any::<String>(), any::<String>()).prop_map(|(s, p)| Condition::TextMatches {
+                    selector: s,
+                    pattern: p
+                }),
+                (any::<String>(), arb_serde_yml_value())
+                    .prop_map(|(n, v)| Condition::VariableEquals { name: n, value: v }),
+                (any::<String>(), any::<String>()).prop_map(|(n, p)| Condition::VariableMatches {
+                    name: n,
+                    pattern: p
+                }),
+                (any::<String>(), any::<f64>())
+                    .prop_map(|(n, v)| Condition::NumericGreaterThan { name: n, value: v }),
+                (any::<String>(), any::<f64>())
+                    .prop_map(|(n, v)| Condition::NumericLessThan { name: n, value: v }),
+                (any::<String>(), any::<f64>(), any::<f64>()).prop_map(|(n, mn, mx)| {
+                    Condition::NumericRange {
+                        name: n,
+                        min: mn,
+                        max: mx,
+                    }
+                }),
+                (
+                    any::<String>(),
+                    any::<String>(),
+                    proptest::option::of(any::<String>())
+                )
+                    .prop_map(|(n, d, f)| Condition::DateBefore {
+                        name: n,
+                        date: d,
+                        format: f,
+                    }),
+                (
+                    any::<String>(),
+                    any::<String>(),
+                    proptest::option::of(any::<String>())
+                )
+                    .prop_map(|(n, d, f)| Condition::DateAfter {
+                        name: n,
+                        date: d,
+                        format: f,
+                    }),
+                (any::<String>(), arb_serde_yml_value())
+                    .prop_map(|(n, v)| Condition::ArrayContains { name: n, value: v }),
+                (
+                    any::<String>(),
+                    proptest::option::of(1..10usize),
+                    proptest::option::of(1..10usize),
+                    proptest::option::of(1..10usize),
+                )
+                    .prop_map(|(n, min, max, exact)| Condition::ArrayLength {
+                        name: n,
+                        min,
+                        max,
+                        exact,
+                    }),
+                Just(Condition::True),
+                Just(Condition::False),
+                any::<String>().prop_map(|s| Condition::VariableDefined { name: s }),
+                any::<String>().prop_map(|s| Condition::VariableNotDefined { name: s }),
+            ];
+
+            if depth >= MAX_DEPTH {
+                return leaf.boxed();
+            }
+
+            let sub = arb_condition_depth(depth + 1).boxed();
+            let recursive = prop_oneof![
+                vec(sub.clone(), 0..MAX_SIZE)
+                    .prop_map(|conds| Condition::And { conditions: conds }),
+                vec(sub.clone(), 0..MAX_SIZE).prop_map(|conds| Condition::Or { conditions: conds }),
+                sub.clone().prop_map(|cond| Condition::Not {
+                    condition: Box::new(cond),
+                }),
+            ];
+
+            prop_oneof![leaf, recursive].boxed()
+        }
+
+        // ── Action strategies (recursive, depth-limited) ────────────────────
+
+        fn arb_foreach_collection() -> impl Strategy<Value = ForeachCollection> {
+            prop_oneof![
+                vec(arb_serde_yml_value(), 0..MAX_SIZE)
+                    .prop_map(|values| ForeachCollection::Array { values }),
+                (any::<i64>(), any::<i64>()).prop_map(|(s, e)| {
+                    if s < e {
+                        ForeachCollection::Range { start: s, end: e }
+                    } else {
+                        ForeachCollection::Range {
+                            start: e,
+                            end: s + 1,
+                        }
+                    }
+                }),
+                any::<String>().prop_map(|sel| ForeachCollection::Elements { selector: sel }),
+                any::<String>().prop_map(|name| ForeachCollection::Variable { name }),
+            ]
+        }
+
+        fn arb_action() -> impl Strategy<Value = Action> {
+            arb_action_depth(0)
+        }
+
+        fn arb_action_depth(depth: usize) -> impl Strategy<Value = Action> {
+            let leaf = prop_oneof![
+                any::<String>().prop_map(|url| Action::Navigate { url }),
+                any::<String>().prop_map(|sel| Action::Click { selector: sel }),
+                (any::<String>(), any::<String>()).prop_map(|(sel, text)| Action::Type {
+                    selector: sel,
+                    text
+                }),
+                (1..60000u64).prop_map(|ms| Action::Wait { duration_ms: ms }),
+                (any::<String>(), proptest::option::of(1..30000u64)).prop_map(|(sel, t)| {
+                    Action::WaitFor {
+                        selector: sel,
+                        timeout_ms: t,
+                    }
+                },),
+                any::<String>().prop_map(|sel| Action::ScrollTo { selector: sel }),
+                (any::<String>(), proptest::option::of(any::<String>())).prop_map(|(sel, v)| {
+                    Action::Extract {
+                        selector: sel,
+                        variable: v,
+                    }
+                },),
+                any::<String>().prop_map(|script| Action::Execute { script }),
+                (any::<String>(), proptest::option::of(arb_log_level())).prop_map(|(msg, lvl)| {
+                    Action::Log {
+                        message: msg,
+                        level: lvl,
+                    }
+                },),
+                (
+                    proptest::option::of(any::<String>()),
+                    proptest::option::of(any::<String>())
+                )
+                    .prop_map(|(p, s)| Action::Screenshot {
+                        path: p,
+                        selector: s,
+                    }),
+                any::<String>().prop_map(|sel| Action::Clear { selector: sel }),
+                any::<String>().prop_map(|sel| Action::Hover { selector: sel }),
+                (
+                    any::<String>(),
+                    any::<String>(),
+                    proptest::option::of(any::<bool>())
+                )
+                    .prop_map(|(sel, val, bv)| Action::Select {
+                        selector: sel,
+                        value: val,
+                        by_value: bv,
+                    },),
+                any::<String>().prop_map(|sel| Action::RightClick { selector: sel }),
+                any::<String>().prop_map(|sel| Action::DoubleClick { selector: sel }),
+                (
+                    any::<String>(),
+                    proptest::option::of(hash_map(
+                        any::<String>(),
+                        arb_serde_yml_value(),
+                        0..MAX_SIZE
+                    ))
+                )
+                    .prop_map(|(task, params)| Action::Call {
+                        task,
+                        parameters: params,
+                    }),
+            ];
+
+            if depth >= MAX_DEPTH {
+                return leaf.boxed();
+            }
+
+            let sub_action = arb_action_depth(depth + 1).boxed();
+            let sub_actions = vec(sub_action.clone(), 0..MAX_SIZE);
+
+            let recursive = prop_oneof![
+                (
+                    arb_condition(),
+                    sub_actions.clone(),
+                    proptest::option::of(sub_actions.clone())
+                )
+                    .prop_map(|(cond, then, r#else)| Action::If {
+                        condition: cond,
+                        then,
+                        r#else,
+                    }),
+                (
+                    proptest::option::of(1..10u32),
+                    proptest::option::of(arb_condition()),
+                    sub_actions.clone(),
+                )
+                    .prop_map(|(count, cond, actions)| Action::Loop {
+                        count,
+                        condition: cond,
+                        actions,
+                    }),
+                (
+                    any::<String>(),
+                    arb_foreach_collection(),
+                    sub_actions.clone(),
+                    proptest::option::of(1..20u32)
+                )
+                    .prop_map(|(var, coll, acts, max_iter)| Action::Foreach {
+                        variable: var,
+                        collection: coll,
+                        actions: acts,
+                        max_iterations: max_iter,
+                    }),
+                (
+                    arb_condition(),
+                    sub_actions.clone(),
+                    proptest::option::of(1..20u32)
+                )
+                    .prop_map(|(cond, acts, max_iter)| Action::While {
+                        condition: cond,
+                        actions: acts,
+                        max_iterations: max_iter,
+                    }),
+                (
+                    sub_actions.clone(),
+                    proptest::option::of(1..10u32),
+                    proptest::option::of(1..5000u64),
+                    proptest::option::of(1..60000u64),
+                    proptest::option::of(any::<f64>()),
+                    proptest::option::of(any::<bool>()),
+                    proptest::option::of(vec(any::<String>(), 0..MAX_SIZE)),
+                )
+                    .prop_map(
+                        |(acts, max_att, init_d, max_d, mult, jit, retry_on)| Action::Retry {
+                            actions: acts,
+                            max_attempts: max_att,
+                            initial_delay_ms: init_d,
+                            max_delay_ms: max_d,
+                            backoff_multiplier: mult,
+                            jitter: jit,
+                            retry_on,
+                        },
+                    ),
+                (sub_actions.clone(), proptest::option::of(1..5usize),).prop_map(
+                    |(acts, max_conc)| Action::Parallel {
+                        actions: acts,
+                        max_concurrency: max_conc,
+                    }
+                ),
+                (
+                    sub_actions.clone(),
+                    proptest::option::of(sub_actions.clone()),
+                    proptest::option::of(any::<String>()),
+                    proptest::option::of(sub_actions.clone()),
+                )
+                    .prop_map(|(try_acts, catch_acts, err_var, finally_acts)| {
+                        Action::Try {
+                            try_actions: try_acts,
+                            catch_actions: catch_acts,
+                            error_variable: err_var,
+                            finally_actions: finally_acts,
+                        }
+                    },),
+            ];
+
+            prop_oneof![leaf, recursive].boxed()
+        }
+
+        // ── Task definition strategy ────────────────────────────────────────
+
+        fn arb_parameter_def() -> impl Strategy<Value = ParameterDef> {
+            (
+                arb_parameter_type(),
+                any::<String>(),
+                proptest::option::of(arb_serde_yml_value()),
+                any::<bool>(),
+            )
+                .prop_map(|(r#type, description, default, required)| ParameterDef {
+                    r#type,
+                    description,
+                    default,
+                    required,
+                })
+        }
+
+        fn arb_include_spec() -> impl Strategy<Value = IncludeSpec> {
+            (any::<String>(), proptest::option::of(any::<String>()))
+                .prop_map(|(path, condition)| IncludeSpec { path, condition })
+        }
+
+        fn arb_task_definition() -> impl Strategy<Value = TaskDefinition> {
+            (
+                any::<String>(),
+                any::<String>(),
+                any::<String>(),
+                hash_map(any::<String>(), arb_parameter_def(), 0..MAX_SIZE),
+                vec(arb_include_spec(), 0..2),
+                vec(arb_action(), 0..MAX_SIZE),
+            )
+                .prop_map(
+                    |(name, description, policy, parameters, include, actions)| TaskDefinition {
+                        name,
+                        description,
+                        policy,
+                        parameters,
+                        include,
+                        actions,
+                    },
+                )
+        }
+
+        // ── Round-trip tests ───────────────────────────────────────────────
+
+        proptest! {
+            /// Round-trip a TaskDefinition through YAML serialization and parsing.
+            /// Generates random task definitions and verifies structural equality.
+            #[test]
+            fn test_yaml_round_trip(task_def in arb_task_definition()) {
+                let yaml = serde_yml::to_string(&task_def)
+                    .expect("YAML serialization should succeed");
+                let parsed: TaskDefinition = serde_yml::from_str(&yaml)
+                    .expect("YAML deserialization should succeed");
+                prop_assert_eq!(task_def, parsed);
+            }
+
+            /// Round-trip individual Actions through YAML.
+            /// Catches per-action serde tag mismatches.
+            #[test]
+            fn test_action_yaml_round_trip(action in arb_action()) {
+                let yaml = serde_yml::to_string(&action)
+                    .expect("Action YAML serialization should succeed");
+                let parsed: Action = serde_yml::from_str(&yaml)
+                    .expect("Action YAML deserialization should succeed");
+                prop_assert_eq!(action, parsed);
+            }
+
+            /// Round-trip individual Conditions through YAML.
+            /// Catches condition serde tag mismatches.
+            #[test]
+            fn test_condition_yaml_round_trip(condition in arb_condition()) {
+                let yaml = serde_yml::to_string(&condition)
+                    .expect("Condition YAML serialization should succeed");
+                let parsed: Condition = serde_yml::from_str(&yaml)
+                    .expect("Condition YAML deserialization should succeed");
+                prop_assert_eq!(condition, parsed);
+            }
+
+            /// Round-trip ForeachCollection through YAML.
+            #[test]
+            fn test_foreach_collection_yaml_round_trip(
+                collection in arb_foreach_collection()
+            ) {
+                let yaml = serde_yml::to_string(&collection)
+                    .expect("ForeachCollection YAML serialization should succeed");
+                let parsed: ForeachCollection = serde_yml::from_str(&yaml)
+                    .expect("ForeachCollection YAML deserialization should succeed");
+                prop_assert_eq!(collection, parsed);
+            }
+
+            /// Round-trip a ParameterDef through YAML.
+            #[test]
+            fn test_parameter_def_yaml_round_trip(def in arb_parameter_def()) {
+                let yaml = serde_yml::to_string(&def)
+                    .expect("ParameterDef YAML serialization should succeed");
+                let parsed: ParameterDef = serde_yml::from_str(&yaml)
+                    .expect("ParameterDef YAML deserialization should succeed");
+                prop_assert_eq!(def, parsed);
+            }
+
+            /// Round-trip a TaskDefinition through TOML serialization and parsing.
+            /// Note: TOML has limitations with tagged unions, so this covers
+            /// simpler task definitions (no deeply nested tagged enums).
+            #[test]
+            fn test_task_definition_toml_round_trip(task_def in arb_task_definition()) {
+                let toml_str = toml::to_string(&task_def)
+                    .expect("TOML serialization should succeed");
+                let parsed: TaskDefinition = toml::from_str(&toml_str)
+                    .expect("TOML deserialization should succeed");
+                prop_assert_eq!(task_def, parsed);
+            }
+        }
     }
 }

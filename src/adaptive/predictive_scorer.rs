@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_feature_extraction() {
-        let extractor = FeatureExtractor::new();
+        let _extractor = FeatureExtractor::new();
         let features = FeatureExtractor::extract_text_features("Hello world!");
 
         assert_eq!(features.length, 12);
@@ -614,14 +614,14 @@ mod tests {
 
     #[test]
     fn test_text_features_length_calculation() {
-        let extractor = FeatureExtractor::new();
+        let _extractor = FeatureExtractor::new();
         let features = FeatureExtractor::extract_text_features("Hello");
         assert_eq!(features.length, 5);
     }
 
     #[test]
     fn test_user_features_extraction() {
-        let extractor = FeatureExtractor::new();
+        let _extractor = FeatureExtractor::new();
         let profile = UserBehaviorProfile::default();
         let features = FeatureExtractor::extract_user_features(&profile);
         assert_eq!(features.account_age, 365);
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_temporal_features_extraction() {
-        let extractor = FeatureExtractor::new();
+        let _extractor = FeatureExtractor::new();
         let temporal = TemporalFeatures {
             hour: 15,
             ..Default::default()
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_context_features_extraction() {
-        let extractor = FeatureExtractor::new();
+        let _extractor = FeatureExtractor::new();
         let context = ContextFeatures {
             reply_count: 10,
             ..Default::default()
@@ -651,7 +651,7 @@ mod tests {
 
     #[test]
     fn test_feature_combination() {
-        let extractor = FeatureExtractor::new();
+        let _extractor = FeatureExtractor::new();
         let vector = FeatureExtractor::combine_features(
             TextFeatures::default(),
             UserFeatures::default(),
@@ -765,7 +765,7 @@ mod property_tests {
             topic_category in any::<String>(),
             trending_score in any::<f32>(),
         ) {
-            let scorer = PredictiveEngagementScorer::new();
+            let _scorer = PredictiveEngagementScorer::new();
             let user_profile = build_user_profile(like_count);
             let temporal = build_temporal_features(
                 hour,

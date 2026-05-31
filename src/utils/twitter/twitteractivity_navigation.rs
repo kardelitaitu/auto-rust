@@ -410,12 +410,14 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_timeout_constants_are_positive() {
         assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > 0);
         assert!(TIMEOUT_MEDIUM_MS > 0);
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_navigation_timeout_greater_than_medium_timeout() {
         assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > TIMEOUT_MEDIUM_MS);
     }

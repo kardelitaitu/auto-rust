@@ -174,7 +174,6 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_detect_popup_types_are_known() {

@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_detect_failure_true_when_many_missing_buttons() {
-        let system = SelfHealingSystem::new();
+        let _system = SelfHealingSystem::new();
         let metrics = TwitterActivityRunCounters {
             button_missing: 15,
             ..Default::default()
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_detect_failure_false_when_few_missing_buttons() {
-        let system = SelfHealingSystem::new();
+        let _system = SelfHealingSystem::new();
         let metrics = TwitterActivityRunCounters {
             button_missing: 5,
             ..Default::default()
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_detect_failure_threshold_boundary() {
-        let system = SelfHealingSystem::new();
+        let _system = SelfHealingSystem::new();
         // Exactly at threshold (10 is NOT > 10)
         let metrics = TwitterActivityRunCounters {
             button_missing: 10,
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_execute_recovery_returns_success() {
-        let system = SelfHealingSystem::new();
+        let _system = SelfHealingSystem::new();
         let action = RecoveryActionType::RestartService;
         let result = SelfHealingSystem::execute_recovery(&action);
         assert!(result.success);

@@ -56,7 +56,7 @@ impl RetryConfig {
     }
 }
 
-impl super::DslExecutor<'_> {
+impl<T: super::DslApi> super::DslExecutor<'_, T> {
     /// Execute an If/Else action.
     #[allow(clippy::cast_precision_loss)]
     pub(super) async fn execute_if(
@@ -69,8 +69,7 @@ impl super::DslExecutor<'_> {
             for action in then {
                 Box::pin(self.execute_action(action)).await?;
             }
-        }
-        if let Some(else_actions) = r#else {
+        } else if let Some(else_actions) = r#else {
             for action in else_actions {
                 Box::pin(self.execute_action(action)).await?;
             }
@@ -133,7 +132,11 @@ impl super::DslExecutor<'_> {
                 (*start..*end).map(|i| i.to_string()).collect()
             }
             crate::task::dsl::ForeachCollection::Elements { selector } => {
-                // Count matching elements and create index-based values
+                // Count matching elements and create index-based values.
+                // Note: Uses :nth-of-type() selectors which are fragile with mixed
+                // DOM structures and don't handle dynamic element changes between
+                // iterations. Prefer data-testid selectors with Array collections
+                // for more robust iteration.
                 let resolved_selector = self.substitute_variables(selector);
                 let count = self
                     .api
@@ -358,6 +361,51 @@ impl super::DslExecutor<'_> {
         }
 
         log::info!("Parallel execution complete");
+        Ok(())
+    }
+
+    /// Execute a Try/Catch/Finally action.
+    pub(super) async fn execute_try(
+        &mut self,
+        try_actions: &[Action],
+        catch_actions: Option<&Vec<Action>>,
+        error_variable: Option<&str>,
+        finally_actions: Option<&Vec<Action>>,
+    ) -> Result<()> {
+        // Execute try block
+        let result = async {
+            for action in try_actions {
+                Box::pin(self.execute_action(action)).await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        match result {
+            Ok(()) => {
+                // Try succeeded, do nothing
+            }
+            Err(e) => {
+                // Try failed, execute catch block
+                if let Some(catch) = catch_actions {
+                    for action in catch {
+                        Box::pin(self.execute_action(action)).await?;
+                    }
+                }
+                // Set error variable if specified
+                if let Some(var_name) = error_variable {
+                    self.variables.insert(var_name.to_string(), e.to_string());
+                }
+            }
+        }
+
+        // Execute finally block (always runs)
+        if let Some(finally) = finally_actions {
+            for action in finally {
+                Box::pin(self.execute_action(action)).await?;
+            }
+        }
+
         Ok(())
     }
 }

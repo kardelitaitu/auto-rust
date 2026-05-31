@@ -44,6 +44,25 @@ impl SelectorCacheEntry {
         }
     }
 
+    /// Create a new cache entry with a custom TTL.
+    #[must_use]
+    pub fn with_ttl(
+        exists: bool,
+        visible: bool,
+        text: Option<String>,
+        count: usize,
+        ttl: Duration,
+    ) -> Self {
+        Self {
+            exists,
+            visible,
+            text,
+            count,
+            cached_at: Instant::now(),
+            ttl,
+        }
+    }
+
     /// Check if this cache entry is still valid.
     #[must_use]
     pub fn is_valid(&self) -> bool {

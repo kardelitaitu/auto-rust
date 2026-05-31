@@ -289,6 +289,15 @@ impl TaskRegistry {
             }
         };
 
+        // Resolve includes (merge actions from included task files)
+        let parent_dir = path.parent();
+        task_def = task_def.resolve_includes(parent_dir).map_err(|e| {
+            log::error!("Failed to resolve includes for '{}': {}", path.display(), e);
+            RegistryError::UnknownTask {
+                name: name.to_string(),
+            }
+        })?;
+
         // Validate the task definition
         if let Err(errors) = crate::task::dsl::validate_task_definition(&task_def) {
             for error in errors {
@@ -975,5 +984,185 @@ actions:
         let descriptor = registry.lookup("file_canonical").unwrap();
         assert_eq!(descriptor.name, "file_canonical");
         assert_eq!(descriptor.task_def.as_ref().unwrap().name, "file_canonical");
+    }
+
+    #[test]
+    fn test_load_external_task_with_includes() {
+        // Creates a main.task that includes sub.task, loads through registry,
+        // and verifies actions from both files are merged. Included files
+        // live in a sibling 'lib' directory to avoid discovery-root overlap.
+        let dir = TempDir::new().unwrap();
+        let discovery_dir = dir.path().join("discovery");
+        let lib_dir = dir.path().join("lib");
+        fs::create_dir_all(&discovery_dir).unwrap();
+        fs::create_dir_all(&lib_dir).unwrap();
+
+        // Create the included sub-task in lib/ (outside discovery root)
+        let sub_yaml = r##"
+name: sub
+description: "included sub task"
+policy: default
+actions:
+  - action: click
+    selector: "#btn"
+"##;
+        fs::write(lib_dir.join("sub.task"), sub_yaml).unwrap();
+
+        // Create the main task that includes sub.task with relative path
+        let main_yaml = r#"
+name: main
+description: "main task with include"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: ../lib/sub.task
+"#;
+        fs::write(discovery_dir.join("main.task"), main_yaml).unwrap();
+
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![discovery_dir.to_string_lossy().to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let mut registry = TaskRegistry::new();
+        let loaded = registry.load_external_tasks(&config);
+
+        // Only discovery/main.task is in the root; lib/sub.task is not
+        assert_eq!(loaded, 1, "Should have loaded 1 external task (main.task)");
+        assert!(
+            registry.is_known("main"),
+            "Registry should know the 'main' task"
+        );
+
+        let descriptor = registry.lookup("main").unwrap();
+        assert!(descriptor.source.is_configured());
+        assert_eq!(descriptor.policy_name, "default");
+
+        let task_def = descriptor
+            .task_def
+            .as_ref()
+            .expect("Should have a parsed TaskDefinition");
+
+        // Should have 2 actions: main's Wait(100) + resolved sub's Click("#btn")
+        assert_eq!(
+            task_def.actions.len(),
+            2,
+            "Should have 2 merged actions (main Wait + included sub Click), got {}",
+            task_def.actions.len()
+        );
+
+        let has_wait = task_def
+            .actions
+            .iter()
+            .any(|a| matches!(a, crate::task::dsl::Action::Wait { duration_ms: 100 }));
+        let has_click = task_def.actions.iter().any(|a| {
+            matches!(
+                a,
+                crate::task::dsl::Action::Click { selector } if selector == "#btn"
+            )
+        });
+
+        assert!(has_wait, "Main task's Wait(100) action should be present");
+        assert!(
+            has_click,
+            "Included sub task's Click('#btn') action should be present"
+        );
+    }
+
+    #[test]
+    fn test_load_external_task_with_multilevel_includes() {
+        // A → B → C chain: main.task includes sub_a.task, sub_a.task includes sub_b.task.
+        // Verifies multi-level include resolution through the registry.
+        let dir = TempDir::new().unwrap();
+        let task_dir = dir.path().join("tasks");
+        fs::create_dir_all(&task_dir).unwrap();
+
+        // sub_b.task (leaf, no includes)
+        let sub_b = r##"
+name: sub_b
+description: "leaf sub"
+policy: default
+actions:
+  - action: log
+    message: "from sub_b"
+"##;
+        fs::write(task_dir.join("sub_b.task"), sub_b).unwrap();
+
+        // sub_a.task includes sub_b.task
+        let sub_a = r#"
+name: sub_a
+description: "middle sub"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 200
+include:
+  - path: sub_b.task
+"#;
+        fs::write(task_dir.join("sub_a.task"), sub_a).unwrap();
+
+        // main.task includes sub_a.task
+        let main_yaml = r#"
+name: main
+description: "main task"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: sub_a.task
+"#;
+        fs::write(task_dir.join("main.task"), main_yaml).unwrap();
+
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![task_dir.to_string_lossy().to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let mut registry = TaskRegistry::new();
+        let loaded = registry.load_external_tasks(&config);
+
+        assert_eq!(
+            loaded, 3,
+            "Should have loaded 3 external tasks (main, sub_a, sub_b from same root), got {}",
+            loaded
+        );
+
+        let descriptor = registry.lookup("main").unwrap();
+        let task_def = descriptor
+            .task_def
+            .as_ref()
+            .expect("Should have a TaskDefinition");
+
+        // 3 actions: main's Wait, sub_a's Wait, sub_b's Log
+        assert_eq!(
+            task_def.actions.len(),
+            3,
+            "Should have 3 merged actions (main + sub_a + sub_b), got {}",
+            task_def.actions.len()
+        );
+
+        let has_main = task_def
+            .actions
+            .iter()
+            .any(|a| matches!(a, crate::task::dsl::Action::Wait { duration_ms: 100 }));
+        let has_sub_a = task_def
+            .actions
+            .iter()
+            .any(|a| matches!(a, crate::task::dsl::Action::Wait { duration_ms: 200 }));
+        let has_sub_b = task_def.actions.iter().any(|a| {
+            matches!(
+                a,
+                crate::task::dsl::Action::Log { message, .. } if message == "from sub_b"
+            )
+        });
+
+        assert!(has_main, "main.task Wait(100) should be present");
+        assert!(has_sub_a, "sub_a.task Wait(200) should be present");
+        assert!(has_sub_b, "sub_b.task Log should be present");
     }
 }

@@ -68,12 +68,8 @@ The `twitteractivity` task simulates **human-like engagement** on Twitter/X time
 │              Phase 3: Candidate Processing                       │
 │                                                                   │
 │  For each candidate tweet (up to candidate_count):               │
+│  (Candidates are already in viewport — no scrolling needed)      │
 │                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ 3a. Scroll to Tweet                                          │ │
-│  │     • Smooth scroll into viewport                            │ │
-│  │     • Hover for human-like duration                          │ │
-│  └─────────────────────────────────────────────────────────────┘ │
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -135,7 +131,7 @@ The `twitteractivity` task simulates **human-like engagement** on Twitter/X time
 
 ### 1. Entry Point Selection
 
-**File:** `select_entry_point()`
+**File:** `select_entry_point()` in `twitteractivity_navigation.rs`
 
 Weighted random selection from 15 possible entry points:
 
@@ -157,18 +153,18 @@ Weighted random selection from 15 possible entry points:
 | Entertainment | 1 | 1.0% |
 | For You (alt) | 1 | 1.0% |
 
-**Total Weight:** 99
+**Total Weight:** 100
 
 ### 2. Navigation and Reading Simulation
 
-**Function:** `navigate_and_read()`
+**Function:** `navigate_and_read()` in `twitteractivity_navigation.rs`
 
 When navigating to a non-home entry point:
 1. Navigate to selected URL (60s timeout)
 2. Pause 2 seconds for page load
 3. If not on home feed:
    - Scroll for 10-20 seconds (random duration)
-   - Scroll amount: 200-600px per scroll
+   - Scroll amount: configurable via `scroll_amount_pixels` or profile default (typically 500-1500px)
    - Uses profile-based scroll configuration
 4. Navigate to home feed afterward
 
@@ -196,18 +192,22 @@ Hard caps per session to prevent runaway engagement:
 
 ```rust
 pub struct EngagementLimits {
-    pub max_likes: u32,        // Default: 50
-    pub max_retweets: u32,     // Default: 20
-    pub max_follows: u32,      // Default: 10
-    pub max_replies: u32,      // Default: 5
-    pub max_quotes: u32,       // Default: 5
-    pub max_bookmarks: u32,    // Default: 10
-    pub max_thread_dives: u32, // Default: 5
-    pub max_actions_total: u32, // Default: 100
+    pub max_likes: u32,           // Default: 5
+    pub max_retweets: u32,        // Default: 3
+    pub max_follows: u32,         // Default: 2
+    pub max_replies: u32,         // Default: 1
+    pub max_quote_tweets: u32,    // Default: 2  (NOTE: `max_quotes` is not a field — use `max_quote_tweets`)
+    pub max_bookmarks: u32,       // Default: 2 (default.toml overrides to 0 — "Disabled in V1")
+    pub max_thread_dives: u32,    // Default: 3
+    pub max_total_actions: u32,   // Default: 10  (NOTE: `max_actions_total` is not a field — use `max_total_actions`)
 }
 ```
 
 **Checked before every action.**
+
+> **Note:** `EngagementLimits::available_actions()` returns action strings `"dive"`,
+> `"quote"`, `"like"`, `"retweet"`, `"follow"`, `"reply"`, `"bookmark"` — these match
+> the keys used by `SessionState::is_action_allowed()` and `EngagementCounters::increment()`.
 
 ### 5. Persona-Based Action Selection
 
@@ -228,11 +228,16 @@ pub struct PersonaWeights {
 }
 ```
 
-**Built-in Personas:**
-- `Passive` - Low engagement rates (like: 0.2, retweet: 0.05)
-- `Casual` - Moderate engagement (like: 0.4, retweet: 0.15)
-- `Engaged` - High engagement (like: 0.7, retweet: 0.4)
-- `PowerUser` - Very high engagement (like: 0.9, retweet: 0.6)
+**Persona Presets (21):**
+`Average`, `Teen`, `Senior`, `Enthusiast`, `PowerUser`, `Cautious`, `Impatient`,
+`Erratic`, `Researcher`, `Casual`, `Professional`, `Novice`, `Expert`, `Distracted`,
+`Focused`, `Analytical`, `QuickScanner`, `Thorough`, `Adaptive`, `Stressed`, `Leisure`
+
+Personas are loaded from `BrowserProfile` — they control scroll behavior, timing
+variance, and engagement probabilities. See `src/utils/profile.md` for details.
+
+Note: The 4-hardcoded-persona model (`Passive`, `Casual`, `Engaged`, `PowerUser`) no
+longer exists. Use the BrowserProfile-based presets above instead.
 
 ### 6. Action Tracker (Anti-Detection)
 
@@ -245,7 +250,7 @@ Prevents rapid-fire actions on the same tweet:
 
 ### 7. Thread Diving
 
-**Function:** `perform_thread_dive()` (from `twitteractivity_dive`)
+**Function:** `dive_into_thread()` in `twitteractivity_dive.rs`
 
 Deep engagement on individual tweets:
 1. Click tweet to open detail view
@@ -254,7 +259,8 @@ Deep engagement on individual tweets:
 4. Engage with replies (like, reply)
 5. Return to main feed
 
-**Uses thread cache** to avoid re-processing same thread.
+No thread caching — each dive starts with fresh context to prevent cross-tweet
+contamination.
 
 ## Engagement Types and Mechanism
 
@@ -276,14 +282,21 @@ select_entry_point() ──► navigate_and_read() ──► is_on_home_feed()
                               ┌──────────────────────────┐
                               │   For Each Candidate:    │
                               │                          │
-                              │  1. Scroll to tweet      │
-                              │  2. Hover/pause          │
-                              │  3. Smart decision?      │
+                              │  1. Modulate persona by  │
+                              │     sentiment analysis   │
+                              │  2. Smart decision (opt) │
+                              │  3. Select actions by    │
+                              │     persona probabilities│
                               │  4. Check limits         │
-                              │  5. Apply probabilities  │
+                              │  5. Dive into thread?    │
                               │  6. Execute action(s)    │
-                              │  7. Thread dive?         │
+                              │  7. Engage replies       │
+                              │  8. Return to home feed  │
                               └──────────────────────────┘
+
+> Note: Candidates are already in viewport — no scrolling to individual
+> tweets occurs. The flow above reflects the actual `process_candidate()`
+> implementation in `twitteractivity_engagement.rs`.
 ```
 
 ### Engagement Actions
@@ -294,7 +307,7 @@ select_entry_point() ──► navigate_and_read() ──► is_on_home_feed()
 | **Retweet** | `retweet_prob` | max_retweets | Click retweet → confirm |
 | **Follow** | `follow_prob` | max_follows | Click follow on tweet author |
 | **Reply** | `reply_prob` | max_replies | Open reply box → type → submit |
-| **Quote** | `quote_prob` | max_quotes | Retweet with comment |
+| **Quote** | `quote_prob` | max_quote_tweets | Retweet with comment |
 | **Bookmark** | `bookmark_prob` | max_bookmarks | Click bookmark button |
 | **Thread Dive** | `thread_dive_prob` | max_thread_dives | Open tweet → read replies |
 
@@ -302,11 +315,12 @@ select_entry_point() ──► navigate_and_read() ──► is_on_home_feed()
 
 **Enabled by:** `smart_decision_enabled: true`
 
-Uses LLM/ML to score tweet quality (0-100):
-- Tweet content analysis
-- Engagement prediction
-- Interest matching
-- Applies `interest_multiplier` to base probabilities
+When enabled, the decision engine gates persona-selected actions by engagement level.
+The strategy depends on the `llm_enabled` flag:
+- **`llm_enabled: false`** (default): Uses `LegacyStrategy` — keyword-based heuristic
+  scoring (controversial topics, spam patterns, reply analysis, media detection)
+- **`llm_enabled: true`**: Uses `Auto` strategy — `UnifiedStrategy` with `PersonaStrategy`
+  fallback, via DashScope/Qwen API
 
 Decision levels narrow persona-selected actions:
 - `Full`: keep all selected actions
@@ -326,7 +340,7 @@ The task uses multiple sources of entropy to appear human:
 |-----------|---------------|
 | Entry point | Weighted random (15 options) |
 | Reading duration | 10-20 seconds uniform |
-| Scroll amount | 200-600px per scroll |
+| Scroll amount | Configurable via `scroll_amount_pixels` or profile default (typically 500-1500px) |
 | Candidate scan interval | 2.5s minimum + processing time |
 | Action chain delay | 3s minimum between same-tweet actions |
 
@@ -376,24 +390,26 @@ Before clicking:
 
 ## Metrics and Observability
 
-The task emits detailed metrics:
+The task emits metrics via `RunCounters` and logs summary at task end:
 
 ```
-candidate_scan | candidates=N duration_ms=X
-engagement_action | action=like tweet_id=XXX result=success
-engagement_action | action=retweet tweet_id=XXX result=failure reason=timeout
-dive_complete | depth=N engagements=M duration_ms=X
-phase_summary | phase=3 likes=N retweets=N follows=N
+[twitter] Engagement summary | likes=5 retweets=2 follows=1 ... duration=120.3s
+[twitter] Remaining limits | likes=0 retweets=1 follows=4 ...
 ```
 
-**Run Counters:**
-- `RUN_COUNTER_CANDIDATE_SCANNED`
-- `RUN_COUNTER_LIKE_SUCCESS/FAILURE`
-- `RUN_COUNTER_RETWEET_SUCCESS/FAILURE`
-- `RUN_COUNTER_FOLLOW_SUCCESS/FAILURE`
-- `RUN_COUNTER_REPLY_SUCCESS/FAILURE`
-- `RUN_COUNTER_DIVE_SUCCESS/FAILURE`
-- And more...
+Per-action success/failure is tracked through run counters (`src/metrics.rs`):
+- `RUN_COUNTER_CANDIDATE_SCANNED` — total candidates identified
+- `RUN_COUNTER_LIKE_SUCCESS` / `RUN_COUNTER_LIKE_FAILURE`
+- `RUN_COUNTER_RETWEET_SUCCESS` / `RUN_COUNTER_RETWEET_FAILURE`
+- `RUN_COUNTER_FOLLOW_SUCCESS` / `RUN_COUNTER_FOLLOW_FAILURE`
+- `RUN_COUNTER_REPLY_SUCCESS` / `RUN_COUNTER_REPLY_FAILURE`
+- `RUN_COUNTER_BOOKMARK_SUCCESS` / `RUN_COUNTER_BOOKMARK_FAILURE`
+- `RUN_COUNTER_QUOTE_SUCCESS` / `RUN_COUNTER_QUOTE_FAILURE`
+- `RUN_COUNTER_DIVE_SUCCESS` / `RUN_COUNTER_DIVE_FAILURE`
+- `RUN_COUNTER_BUTTON_MISSING` / `RUN_COUNTER_CLICK_VERIFY_FAILED`
+- `RUN_COUNTER_DIVE_TARGET_FALLBACK_USED`
+
+See `TwitterActivityRunCounters` struct in `src/metrics.rs` for the full set of 18 fields.
 
 ## Payload Configuration
 

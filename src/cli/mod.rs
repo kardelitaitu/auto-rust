@@ -12,7 +12,7 @@ use clap::Parser;
 
 // Re-export parser functions and types
 pub mod parser;
-pub use parser::{format_task_groups, parse_browser_filters, parse_task_groups, TaskDefinition};
+pub use parser::{format_task_groups, parse_browser_filters, parse_task_groups, CliTaskDefinition};
 
 // Re-export validation functions from validation layer
 pub use crate::validation::{
@@ -336,16 +336,16 @@ mod tests {
     fn test_format_task_groups() {
         let groups = vec![
             vec![
-                TaskDefinition {
+                CliTaskDefinition {
                     name: "cookiebot".to_string(),
                     payload: std::collections::HashMap::new(),
                 },
-                TaskDefinition {
+                CliTaskDefinition {
                     name: "pageview".to_string(),
                     payload: [("url".to_string(), json!("https://reddit.com"))].into(),
                 },
             ],
-            vec![TaskDefinition {
+            vec![CliTaskDefinition {
                 name: "cookiebot".to_string(),
                 payload: std::collections::HashMap::new(),
             }],

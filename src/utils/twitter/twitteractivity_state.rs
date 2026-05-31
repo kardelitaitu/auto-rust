@@ -796,7 +796,7 @@ mod tdd_tests {
         let cooldown_after_success = backoff.remaining_cooldown_ms();
 
         assert!(
-            cooldown_after_success >= 90 && cooldown_after_success <= 150,
+            (90..=150).contains(&cooldown_after_success),
             "After success+re-hit, cooldown {} should be ≈ base (100ms), not escalated (200ms)",
             cooldown_after_success
         );

@@ -17,6 +17,7 @@ pub mod types;
 pub mod parser;
 
 // Executor submodules
+pub mod api;
 pub mod cache;
 pub mod control_flow;
 pub mod debug;
@@ -24,10 +25,8 @@ pub mod evaluator;
 pub mod executor;
 pub mod profiling;
 
-// Compatibility module for code that expects `dsl_executor` as separate module
-pub mod dsl_executor;
-
-// Re-exports for backward compatibility
+// Re-exports
+pub use api::DslApi;
 pub use cache::{CacheStats, SelectorCache, SelectorCacheEntry};
 pub use debug::{Breakpoint, DebugEvent, DebugEventType};
 pub use executor::{DslExecutionStats, DslExecutor, DEFAULT_CACHE_ENABLED, MAX_CALL_DEPTH};

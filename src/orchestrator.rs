@@ -14,7 +14,7 @@ findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependen
 //! - Resource allocation and distribution
 
 use crate::api::RetryPolicy;
-use crate::cli::TaskDefinition;
+use crate::cli::CliTaskDefinition;
 use crate::config::Config;
 use crate::error::{OrchestratorError, Result, SessionError, TaskError};
 use crate::logger::{scoped_log_context, LogContext};
@@ -280,7 +280,7 @@ impl Orchestrator {
     /// `Err(OrchestratorError)` if all sessions fail for all tasks
     pub async fn execute_group(
         &mut self,
-        group: &[TaskDefinition],
+        group: &[CliTaskDefinition],
         sessions: &[Session],
         metrics: Arc<MetricsCollector>,
     ) -> Result<()> {
@@ -291,7 +291,7 @@ impl Orchestrator {
     /// Executes a group of tasks with an external cancellation token.
     pub async fn execute_group_with_cancel(
         &mut self,
-        group: &[TaskDefinition],
+        group: &[CliTaskDefinition],
         sessions: &[Session],
         metrics: Arc<MetricsCollector>,
         cancel_token: CancellationToken,
@@ -437,7 +437,7 @@ impl Orchestrator {
 /// `Ok(())` if at least one session succeeds
 /// `Err(OrchestratorError)` if all sessions fail
 async fn execute_task_on_session(
-    task_def: &TaskDefinition,
+    task_def: &CliTaskDefinition,
     sessions: &[Session],
     config: &Config,
     metrics: Arc<MetricsCollector>,
@@ -540,7 +540,7 @@ async fn execute_task_on_session(
 
 /// Execute a task with timeout and retry logic using exponential backoff
 async fn execute_task_with_retry(
-    task_def: &TaskDefinition,
+    task_def: &CliTaskDefinition,
     session: &Session,
     config: &Config,
     metrics: Arc<MetricsCollector>,
@@ -1240,7 +1240,7 @@ mod tests {
         let mut orchestrator = Orchestrator::new(config);
         let sessions: Vec<Session> = vec![];
         let metrics = Arc::new(crate::metrics::MetricsCollector::new(100));
-        let task_def = TaskDefinition {
+        let task_def = CliTaskDefinition {
             name: "test_task".to_string(),
             payload: Default::default(),
         };
@@ -1260,7 +1260,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_group_with_empty_task_group_returns_ok() {
-        let tasks: Vec<TaskDefinition> = vec![];
+        let tasks: Vec<CliTaskDefinition> = vec![];
         assert!(tasks.is_empty());
     }
 
@@ -1279,7 +1279,7 @@ mod tests {
         let metrics = Arc::new(crate::metrics::MetricsCollector::new(100));
 
         // Create a task that would normally take time
-        let task_def = TaskDefinition {
+        let task_def = CliTaskDefinition {
             name: "slow_task".to_string(),
             payload: Default::default(),
         };
@@ -1523,7 +1523,7 @@ mod tests {
 
         let mut orchestrator = Orchestrator::new(config.clone());
         let metrics = Arc::new(MetricsCollector::new(10));
-        let tasks = vec![TaskDefinition {
+        let tasks = vec![CliTaskDefinition {
             name: "pageview".to_string(),
             payload: Default::default(),
         }];
@@ -1559,7 +1559,7 @@ mod tests {
 
         let mut orchestrator = Orchestrator::new(config.clone());
         let metrics = Arc::new(MetricsCollector::new(10));
-        let tasks = vec![TaskDefinition {
+        let tasks = vec![CliTaskDefinition {
             name: "pageview".to_string(),
             payload: Default::default(),
         }];
@@ -1590,7 +1590,7 @@ mod tests {
 
         let config = create_test_config();
         let metrics = Arc::new(MetricsCollector::new(10));
-        let task_def = TaskDefinition {
+        let task_def = CliTaskDefinition {
             name: "pageview".to_string(),
             payload: Default::default(),
         };

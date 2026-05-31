@@ -1,7 +1,7 @@
 //! Integration tests for CLI parsing functionality.
 //! Tests task group parsing, browser filters, and payload handling.
 
-use auto::cli::{parse_browser_filters, parse_task_groups, TaskDefinition};
+use auto::cli::{parse_browser_filters, parse_task_groups, CliTaskDefinition};
 
 /// Test browser filter parsing with multiple browsers
 #[test]
@@ -178,7 +178,7 @@ fn parse_task_groups_numeric_value() {
 /// Test task definition structure
 #[test]
 fn task_definition_structure() {
-    let task = TaskDefinition {
+    let task = CliTaskDefinition {
         name: "test".to_string(),
         payload: std::collections::HashMap::new(),
     };

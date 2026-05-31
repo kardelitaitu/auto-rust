@@ -8,7 +8,7 @@
 //! - `DurationMs` - wrapper type for u64 that supports dereferencing
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 mod tests {
@@ -223,6 +223,154 @@ mod tests {
         assert_eq!(LogLevel::Warn as u8, 2);
         assert_eq!(LogLevel::Error as u8, 3);
     }
+
+    #[test]
+    fn test_resolve_includes_circular_detection() {
+        // A circular include graph: A.task includes B.task, B.task includes A.task.
+        // The cycle guard (visited HashSet in resolve_includes_inner) should detect
+        // the cycle and skip the duplicate include rather than infinite-looping.
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create A.task — references B.task
+        let a_yaml = r#"
+name: task_a
+description: "Task A"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: B.task
+"#;
+        std::fs::write(dir_path.join("A.task"), a_yaml).unwrap();
+
+        // Create B.task — references A.task (circular!)
+        let b_yaml = r##"
+name: task_b
+description: "Task B"
+policy: default
+actions:
+  - action: click
+    selector: "#btn"
+include:
+  - path: A.task
+"##;
+        std::fs::write(dir_path.join("B.task"), b_yaml).unwrap();
+
+        // Create the initial TaskDefinition for A (with its include spec)
+        let task = TaskDefinition {
+            name: "task_a".to_string(),
+            description: "Task A".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "B.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        // Resolve includes — this should NOT infinite-loop
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(
+            result.is_ok(),
+            "resolve_includes should succeed: {:?}",
+            result
+        );
+
+        let resolved = result.unwrap();
+
+        // Expected actions = 3:
+        //   1. A's own Wait(100) — from the initial TaskDefinition
+        //   2. B's Click("#btn") — from including B.task
+        //   3. A's Wait(100) — B.task includes A.task on disk, so A's actions are
+        //      legitimately added via B's include resolution
+        //
+        // The cycle guard prevents action #4 (re-including B from the on-disk A.task).
+        // Without the guard, the chain would be infinite:
+        //   A → B → A → B → ...
+        // The visited.insert() for "B.task" on the second pass returns false,
+        // stopping the recursion. Total = 3, not infinite.
+        assert_eq!(
+            resolved.actions.len(),
+            3,
+            "Should have exactly 3 merged actions (A + B + A from B's include), not {}. \
+             The cycle guard prevents infinite recursion, but A.task is a distinct file \
+             that B legitimately includes, so its actions appear once.",
+            resolved.actions.len()
+        );
+
+        // Verify both action types are present
+        let wait_count = resolved
+            .actions
+            .iter()
+            .filter(|a| matches!(a, Action::Wait { duration_ms: 100 }))
+            .count();
+        let has_click = resolved
+            .actions
+            .iter()
+            .any(|a| matches!(a, Action::Click { selector } if selector == "#btn"));
+        // Wait(100) appears twice: once from initial A, once from on-disk A (included by B)
+        assert_eq!(
+            wait_count, 2,
+            "Wait(100) should appear twice (initial A + on-disk A via B)"
+        );
+        assert!(has_click, "Click from B.task should be present");
+    }
+
+    #[test]
+    fn test_resolve_includes_no_cycle_no_duplication() {
+        // Sanity check: a non-circular chain should merge all actions exactly once.
+        // A.task includes B.task, but B.task does NOT include A.task back.
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let a_yaml = r#"
+name: task_a
+description: "Task A"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: B.task
+"#;
+        std::fs::write(dir_path.join("A.task"), a_yaml).unwrap();
+
+        let b_yaml = r##"
+name: task_b
+description: "Task B"
+policy: default
+actions:
+  - action: click
+    selector: "#btn2"
+include: []
+"##;
+        std::fs::write(dir_path.join("B.task"), b_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "task_a".to_string(),
+            description: "Task A".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "B.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(result.is_ok());
+
+        let resolved = result.unwrap();
+        assert_eq!(
+            resolved.actions.len(),
+            2,
+            "Non-circular chain should merge exactly 2 actions"
+        );
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TaskDefinition {
@@ -257,6 +405,98 @@ pub struct IncludeSpec {
 
 fn default_policy() -> String {
     "default".to_string()
+}
+
+impl TaskDefinition {
+    /// Resolve includes by loading and merging included task files into actions.
+    ///
+    /// Recursively resolves nested includes. Unconditional includes (condition is None)
+    /// are resolved eagerly; conditional includes are skipped with a warning.
+    ///
+    /// # Arguments
+    /// * `base_path` - Optional base directory for resolving relative include paths.
+    ///   If None, relative paths are resolved against the current working directory.
+    ///
+    /// # Returns
+    /// `Ok(self)` with all included actions merged, or `Err` with error message.
+    pub fn resolve_includes(self, base_path: Option<&std::path::Path>) -> Result<Self, String> {
+        let mut visited = HashSet::new();
+        self.resolve_includes_inner(base_path, &mut visited)
+    }
+
+    /// Internal recursive resolve with cycle detection.
+    fn resolve_includes_inner(
+        mut self,
+        base_path: Option<&std::path::Path>,
+        visited: &mut HashSet<std::path::PathBuf>,
+    ) -> Result<Self, String> {
+        let includes = std::mem::take(&mut self.include);
+
+        if includes.is_empty() {
+            return Ok(self);
+        }
+
+        for include in includes {
+            // Skip conditional includes for now
+            if include.condition.is_some() {
+                log::warn!(
+                    "Conditional includes not yet supported: skipping '{}'",
+                    include.path
+                );
+                continue;
+            }
+
+            // Resolve the path
+            let path = std::path::Path::new(&include.path);
+            let resolved_path = if path.is_relative() {
+                if let Some(base) = base_path {
+                    base.join(path)
+                } else {
+                    path.to_path_buf()
+                }
+            } else {
+                path.to_path_buf()
+            };
+
+            log::debug!(
+                "Resolving include '{}' from path '{:?}'",
+                include.path,
+                resolved_path
+            );
+
+            // Check for circular includes
+            if !visited.insert(resolved_path.clone()) {
+                log::warn!(
+                    "Circular include detected: '{}' already processed, skipping",
+                    include.path
+                );
+                continue;
+            }
+
+            // Load the included task file
+            let included = crate::task::dsl::parser::parse_task_file(&resolved_path)?;
+
+            // Recursively resolve its includes (with the same base dir)
+            let base_for_child = resolved_path.parent();
+            let resolved = included.resolve_includes_inner(base_for_child, visited)?;
+
+            // Merge actions from the included task
+            let count = resolved.actions.len();
+            self.actions.extend(resolved.actions);
+            log::info!(
+                "Merged {} actions from included task '{}'",
+                count,
+                include.path
+            );
+
+            // Merge parameters (don't overwrite existing)
+            for (key, value) in resolved.parameters {
+                self.parameters.entry(key).or_insert(value);
+            }
+        }
+
+        Ok(self)
+    }
 }
 
 /// Parameter definition for task inputs.

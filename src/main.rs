@@ -41,7 +41,10 @@ fn render_list_tasks_output() -> String {
     format_task_list()
 }
 
-fn render_dry_run_output(groups: &[Vec<cli::TaskDefinition>], config: &config::Config) -> String {
+fn render_dry_run_output(
+    groups: &[Vec<cli::CliTaskDefinition>],
+    config: &config::Config,
+) -> String {
     use auto::task::registry::{TaskRegistry, TaskSource};
     use std::fmt::Write;
 
@@ -194,7 +197,10 @@ fn run() -> Result<()> {
 /// Run in dry-run mode: show what would be executed without actually running.
 ///
 /// Validates all tasks and prints execution plan without connecting to browsers.
-async fn run_dry_run(groups: &[Vec<cli::TaskDefinition>], config: &config::Config) -> Result<()> {
+async fn run_dry_run(
+    groups: &[Vec<cli::CliTaskDefinition>],
+    config: &config::Config,
+) -> Result<()> {
     print!("{}", render_dry_run_output(groups, config));
     Ok(())
 }

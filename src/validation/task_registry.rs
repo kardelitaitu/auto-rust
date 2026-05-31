@@ -8,7 +8,7 @@
 //! This module handles task name validation, while `task.rs`
 //! handles task payload validation.
 
-use crate::cli::TaskDefinition;
+use crate::cli::CliTaskDefinition;
 use crate::error::{ConfigError, Result};
 use crate::task::registry::{RegistryError, TaskRegistry};
 use log::warn;
@@ -88,7 +88,7 @@ fn validate_task_with_registry(task_name: &str, registry: &TaskRegistry) -> Task
 
 /// Validate all tasks in a group and log warnings for unknown tasks
 #[must_use]
-pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidationResult> {
+pub fn validate_task_groups(groups: &[Vec<CliTaskDefinition>]) -> Vec<TaskValidationResult> {
     let mut results = Vec::new();
     let mut seen_tasks: HashSet<String> = HashSet::new();
 
@@ -113,7 +113,7 @@ pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidatio
 }
 
 /// Validate task groups and fail fast on any warning.
-pub fn validate_task_groups_strict(groups: &[Vec<TaskDefinition>]) -> Result<()> {
+pub fn validate_task_groups_strict(groups: &[Vec<CliTaskDefinition>]) -> Result<()> {
     let results = validate_task_groups(groups);
     let mut errors = Vec::new();
 
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_validate_task_groups_strict_known_tasks() {
-        let groups = vec![vec![TaskDefinition {
+        let groups = vec![vec![CliTaskDefinition {
             name: "cookiebot".to_string(),
             payload: HashMap::new(),
         }]];
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_validate_task_groups_strict_unknown_task() {
-        let groups = vec![vec![TaskDefinition {
+        let groups = vec![vec![CliTaskDefinition {
             name: "unknown_task".to_string(),
             payload: HashMap::new(),
         }]];
@@ -221,11 +221,11 @@ mod tests {
     #[test]
     fn test_validate_task_groups_logs_warnings() {
         let groups = vec![vec![
-            TaskDefinition {
+            CliTaskDefinition {
                 name: "cookiebot".to_string(),
                 payload: HashMap::new(),
             },
-            TaskDefinition {
+            CliTaskDefinition {
                 name: "unknown_task".to_string(),
                 payload: HashMap::new(),
             },

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use auto::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
-use auto::task::dsl_executor::{DslExecutionStats, ExecutionReport};
+use auto::task::dsl::{DslExecutionStats, ExecutionReport};
 
 /// Helper to create a simple task definition for testing
 fn create_test_task(name: &str, actions: Vec<Action>) -> TaskDefinition {

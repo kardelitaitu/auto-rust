@@ -40,7 +40,13 @@ cargo run 'twitteractivity,weights={"like_prob":0.4,"retweet_prob":0.15,"follow_
 | Follows | 2 | `TWITTER_MAX_FOLLOWS` |
 | Replies | 1 | `TWITTER_MAX_REPLIES` |
 | Thread Dives | 3 | `TWITTER_MAX_THREAD_DIVES` |
+| Quote Tweets | 2 | `TWITTER_MAX_QUOTE_TWEETS` |
+| Bookmarks | 0 (V1 disabled) | `TWITTER_MAX_BOOKMARKS` |
 | **Total** | **10** | `TWITTER_MAX_TOTAL_ACTIONS` |
+
+> **Note:** `EngagementLimits::available_actions()` returns action strings `"dive"`,
+> `"quote"`, `"like"`, `"retweet"`, `"follow"`, `"reply"`, `"bookmark"` — these match
+> the keys used by `SessionState::is_action_allowed()` and `EngagementCounters::increment()`.
 
 ## Configuration
 
@@ -55,8 +61,9 @@ max_likes = 5
 max_retweets = 3
 max_follows = 2
 max_replies = 1
+max_quote_tweets = 2
 max_thread_dives = 3
-max_bookmarks = 0                  # Disabled in V1
+max_bookmarks = 0                  # Disabled in V1 (code default is 2, default.toml overrides to 0)
 max_total_actions = 10
 
 # Enables reply/quote text generation. Provider settings come from
@@ -65,10 +72,16 @@ max_total_actions = 10
 enabled = false
 ```
 
-Smart-decision flags are task payload fields, not TOML fields. When both
-`smart_decision_enabled` and `llm_enabled` are true, decision scoring uses the
-DashScope/Qwen decision strategy and reads `DASHSCOPE_API_KEY` or `QWEN_API_KEY`.
-Reply and quote generation still use the general app LLM config.
+Smart-decision flags are task payload fields, not TOML fields. The strategy
+depends on the `llm_enabled` flag:
+- **`llm_enabled: false`** (default): Uses `LegacyStrategy` — keyword-based heuristic
+  scoring (controversial topics, spam patterns, reply analysis, media detection)
+- **`llm_enabled: true`**: Uses `Auto` strategy — `UnifiedStrategy` with `PersonaStrategy`
+  fallback, via DashScope/Qwen API (`DASHSCOPE_API_KEY` or `QWEN_API_KEY`)
+
+When both `smart_decision_enabled: true` and `llm_enabled: true` are set, decision scoring
+reads `DASHSCOPE_API_KEY` or `QWEN_API_KEY`. Reply and quote generation still use the
+general app LLM config.
 
 ## Payload Parameters
 
@@ -104,46 +117,48 @@ Reply and quote generation still use the general app LLM config.
 The implementation lives in `src/utils/twitter/` and is split into focused modules with rustdoc coverage.
 
 **Core Engagement:**
-- `twitteractivity.rs`: Main engagement logic and action orchestration
+- `twitteractivity_engagement.rs`: Main engagement logic, `process_candidate()`, action orchestration
 - `twitteractivity_feed.rs`: Feed scrolling, candidate identification, and progress tracking
-- `twitteractivity_dive.rs`: Thread diving and reading
-- `twitteractivity_interact.rs`: Engagement actions (like, retweet, follow, reply, bookmark) - located in `src/utils/twitter/`
+- `twitteractivity_dive.rs`: Thread diving (`dive_into_thread()`) and reading
+- `twitteractivity_interact.rs`: DOM interaction actions (like, retweet, follow, reply, bookmark)
 
 **Decision & Strategy:**
-- `twitteractivity_decision.rs`: Legacy engagement decision logic
-- `twitteractivity_decision_unified.rs`: Unified smart decision engine
-- `twitteractivity_decision_hybrid.rs`: Hybrid persona/LLM decisions
-- `twitteractivity_decision_llm.rs`: LLM-only decision path
-- `twitteractivity_decision_persona.rs`: Persona-based decision weights
+- `decision/types.rs`: `TweetContext`, `EngagementDecision`, `EngagementLevel` types
+- `decision/engine.rs`: `UnifiedEngine`, `DecisionEngineFactory`
+- `decision/strategies/`: `legacy.rs` (keyword-based), `persona.rs` (probabilistic),
+  `llm.rs` (LLM-powered), `hybrid.rs` (weighted combo), `unified.rs` (smart fallback)
 
 Smart decisions gate the persona-selected action set by engagement level:
 `Full` keeps all selected actions, `Medium` keeps like/retweet, `Minimal` keeps
 like only, and `None` skips engagement.
+When `llm_enabled: false` (default), uses `LegacyStrategy` — keyword-based heuristic.
+When `llm_enabled: true`, uses `Auto` strategy — `UnifiedStrategy` with `PersonaStrategy`
+fallback, via DashScope/Qwen API.
 
 **LLM Integration:**
-- `twitteractivity_llm.rs`: LLM-powered reply/quote generation
-- `twitteractivity_sentiment_llm.rs`: LLM sentiment analysis
+- `twitteractivity_llm.rs`: LLM-powered reply/quote generation (`generate_reply()`, `generate_quote_commentary()`)
+- `twitteractivity_llm_execute.rs`: Quote tweet DOM interaction flow
+- `twitteractivity_llm_validation.rs`: LLM output sanitization and banned word filtering
 
 **Sentiment Analysis:**
-- `twitteractivity_sentiment.rs`: Core sentiment types and templates
-- `twitteractivity_sentiment_enhanced.rs`: Enhanced sentiment with context
-- `twitteractivity_sentiment_emoji.rs`: Emoji-based sentiment detection
-- `twitteractivity_sentiment_context.rs`: Context-aware sentiment modifiers
-- `twitteractivity_sentiment_domains.rs`: Domain-specific sentiment rules
+- `sentiment/analyzer.rs`: `SentimentAnalyzer`, multi-strategy pipeline
+- `sentiment/utils.rs`: Helper functions
+- `sentiment/strategies/`: `emoji.rs`, `domain.rs`, `llm.rs` (per-strategy implementations)
 
 **State & Configuration:**
-- `twitteractivity_state.rs`: TaskConfig, CandidateContext, SessionState
+- `twitteractivity_state.rs`: `TaskConfig`, `SessionState`, `CandidateContext`, `CandidateResult`
 - `twitteractivity_constants.rs`: Timing constants
-- `twitteractivity_limits.rs`: EngagementCounters, EngagementLimits
-- `twitteractivity_persona.rs`: PersonaWeights, behavior profiles
+- `twitteractivity_limits.rs`: `EngagementCounters`, `EngagementLimits`, `available_actions()`
+- `twitteractivity_persona.rs`: `PersonaWeights`, `select_persona_weights()`
 
 **Infrastructure:**
 - `twitteractivity_navigation.rs`: Page navigation and entry points
 - `twitteractivity_selectors.rs`: DOM selectors and CSS generators
 - `twitteractivity_humanized.rs`: Human-like timing and cursor movements
 - `twitteractivity_popup.rs`: Popup/modal handling
-- `twitteractivity_retry.rs`: Retry logic with exponential backoff, CircuitBreaker
-- `twitteractivity_errors.rs`: Error classification and recovery
+- `twitteractivity_retry.rs`: Retry logic with exponential backoff, `CircuitBreaker`
+- `twitteractivity_errors.rs`: Error classification and recovery (`ErrorClassifier`)
+- `twitteractivity_cookiebot.rs`: Cookie consent automation
 
 **Documentation:**
 All functions include detailed rustdoc with Arguments, Returns, Errors, Behavior, and Selectors sections. Generate with `cargo doc --all-features`.

@@ -13,11 +13,11 @@
 //!
 //! ## Key Functions
 //!
-//! - [`navigate_to_home()`]: Navigate to home timeline
-//! - [`navigate_to_notifications()`]: Navigate to notifications page
-//! - [`is_logged_in()`]: Check if user is authenticated
-//! - [`get_current_url()`]: Get current page URL
-//! - [`wait_for_navigation()`]: Wait for page navigation to complete
+//! - [`goto_home()`]: Navigate to home timeline
+//! - [`goto_notifications()`]: Navigate to notifications page
+//! - [`verify_login()`]: Check if user is authenticated
+//! - [`is_feed_visible()`]: Check if feed is visible
+//! - [`wait_for_page_ready()`]: Wait for page navigation to complete
 //!
 //! ## Usage
 //!
@@ -73,7 +73,7 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
         .wait_for_any_visible_selector(&[selector], timeout_ms)
         .await?
     {
-        log::warn!("Home logo not found, falling back to URL navigation");
+        warn!("Home logo not found, falling back to URL navigation");
         return goto_home_fallback(api).await;
     }
 
@@ -93,7 +93,7 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
     }
 
     // If feed not visible, fallback to URL navigation
-    log::warn!("Feed not visible after home logo click, falling back to URL navigation");
+    warn!("Feed not visible after home logo click, falling back to URL navigation");
     goto_home_fallback(api).await
 }
 
@@ -411,13 +411,13 @@ mod tests {
 
     #[test]
     fn test_timeout_constants_are_positive() {
-        const { assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > 0) }
-        const { assert!(TIMEOUT_MEDIUM_MS > 0) }
+        assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > 0);
+        assert!(TIMEOUT_MEDIUM_MS > 0);
     }
 
     #[test]
     fn test_navigation_timeout_greater_than_medium_timeout() {
-        const { assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > TIMEOUT_MEDIUM_MS) }
+        assert!(DEFAULT_NAVIGATION_TIMEOUT_MS > TIMEOUT_MEDIUM_MS);
     }
 
     #[test]

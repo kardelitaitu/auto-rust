@@ -14,7 +14,6 @@
 //!
 //! - [`click_like_button()`]: Like a tweet
 //! - [`click_retweet_button()`]: Open retweet menu
-//! - [`confirm_retweet()`]: Confirm retweet from modal
 //! - [`retweet_tweet()`]: Complete retweet action
 //! - [`follow_from_tweet()`]: Follow a tweet author
 //! - [`reply_to_tweet()`]: Reply to a tweet
@@ -56,7 +55,7 @@ use tracing::instrument;
 
 use super::twitteractivity_humanized::human_pause;
 use super::twitteractivity_selectors::{
-    js_confirm_retweet_click, js_find_reply_submit_button, js_find_reply_textarea,
+    js_find_reply_submit_button, js_find_reply_textarea,
     js_root_tweet_button_center, selector_follow_button, REPLY_BUTTON_SELECTOR,
 };
 
@@ -189,7 +188,6 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
 ///
 /// This function finds the retweet button by filtering for elements with
 /// data-testid containing "retweet" (but not "unretweet"), then clicks it.
-/// It does not confirm the retweet - that's handled by `confirm_retweet()`.
 ///
 /// # Arguments
 ///
@@ -225,58 +223,6 @@ pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
     }
 
     info!("Retweet button not found");
-    Ok(false)
-}
-
-/// Confirms a retweet from the retweet modal.
-///
-/// This function clicks the "Retweet" confirm button in the modal that appears
-/// after clicking the retweet button. It scrolls the button into view first for
-/// reliability.
-///
-/// # Arguments
-///
-/// * `api` - Task context with page and browser automation capabilities
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if the confirm button was clicked successfully.
-/// Returns `Ok(false)` if the button is not found or click fails.
-///
-/// # Errors
-///
-/// Returns error if the DOM evaluation or click operation fails unexpectedly.
-///
-/// # Behavior
-///
-/// - Finds the retweet confirm button by data-testid
-/// - Scrolls the button into view
-/// - Moves mouse to button and clicks
-/// - Adds 200ms pause before click, 800ms after click
-///
-/// # Selector Used
-///
-/// - Confirm button: `button[data-testid="retweetConfirm"]`
-#[instrument(skip(api))]
-pub async fn confirm_retweet(api: &TaskContext) -> Result<bool> {
-    let js = js_confirm_retweet_click();
-    let result = api.page().evaluate(js).await?;
-
-    if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(serde_json::Value::as_f64),
-            obj.get("y").and_then(serde_json::Value::as_f64),
-        ) {
-            info!("Found retweet confirm button at ({x:.1}, {y:.1})");
-            api.move_mouse_to(x, y).await?;
-            human_pause(api, 200).await;
-            api.click_at(x, y).await?;
-            info!("Clicked retweet confirm");
-            human_pause(api, 800).await;
-            return Ok(true);
-        }
-    }
-    info!("Retweet confirm button not found");
     Ok(false)
 }
 

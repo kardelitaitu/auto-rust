@@ -172,23 +172,9 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
     Ok(false)
 }
 
-/// Closes any "sign up to join the conversation" nag screens.
-/// Returns true if a signup nag was dismissed.
-/// DISABLED: Causing hangs, skip for now.
-pub async fn dismiss_signup_nag(_api: &TaskContext) -> Result<bool> {
-    Ok(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_dismiss_signup_nag_exists_and_compiles() {
-        // The function is intentionally disabled (returns Ok(false) unconditionally).
-        // This test verifies the function signature compiles and is accessible.
-        let _ = dismiss_signup_nag;
-    }
 
     #[test]
     fn test_detect_popup_types_are_known() {

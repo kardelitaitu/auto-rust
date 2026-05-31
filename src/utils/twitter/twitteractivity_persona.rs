@@ -52,7 +52,7 @@ impl PersonaWeights {
         // sentiment_score is in [-1.0, +1.0]
         // Scale and apply to interest_multiplier
         let boost = (sentiment_score * 0.5) + 0.5; // normalize to [0, 1]
-        self.interest_multiplier = 0.5 + (boost * 0.5); // [0.5, 1.0]
+        self.interest_multiplier = boost; // [0.0, 1.0] — allow full range now that effective_probability doesn't double-count
         self
     }
 
@@ -100,8 +100,11 @@ impl PersonaWeights {
     }
 }
 
-fn effective_probability(base_probability: f64, persona: &PersonaWeights) -> f64 {
-    (base_probability * persona.interest_multiplier).clamp(0.0, 1.0)
+fn effective_probability(base_probability: f64, _persona: &PersonaWeights) -> f64 {
+    // interest_multiplier is already applied to base probabilities via
+    // with_sentiment_modulation before they reach this function.
+    // Using it again would double-count.
+    base_probability.clamp(0.0, 1.0)
 }
 
 /// Selects a `PersonaWeights` configuration based on the provided weights dictionary.
@@ -296,9 +299,12 @@ mod tests {
     fn test_persona_weights_with_sentiment_modulation_negative() {
         let weights = PersonaWeights::default();
         let modulated = weights.with_sentiment_modulation(-1.0);
-        // Negative sentiment should decrease interest multiplier
-        assert!(modulated.interest_multiplier >= 0.5);
-        assert!(modulated.interest_multiplier <= 1.0);
+        // Negative sentiment should decrease interest multiplier to 0.0
+        assert!(
+            (modulated.interest_multiplier - 0.0).abs() < f64::EPSILON,
+            "Expected 0.0, got {}",
+            modulated.interest_multiplier
+        );
     }
 
     #[test]
@@ -386,16 +392,16 @@ mod tests {
     }
 
     #[test]
-    fn test_interest_multiplier_suppresses_decisions() {
+    fn test_probability_zero_suppresses_all_decisions() {
         let weights = PersonaWeights {
-            like_prob: 1.0,
-            retweet_prob: 1.0,
-            quote_prob: 1.0,
-            follow_prob: 1.0,
-            reply_prob: 1.0,
-            bookmark_prob: 1.0,
-            thread_dive_prob: 1.0,
-            interest_multiplier: 0.0,
+            like_prob: 0.0,
+            retweet_prob: 0.0,
+            quote_prob: 0.0,
+            follow_prob: 0.0,
+            reply_prob: 0.0,
+            bookmark_prob: 0.0,
+            thread_dive_prob: 0.0,
+            interest_multiplier: 1.0,
         };
 
         assert!(!should_like(&weights));
@@ -408,16 +414,16 @@ mod tests {
     }
 
     #[test]
-    fn test_interest_multiplier_boosts_and_clamps_decisions() {
+    fn test_probability_one_always_triggers_all_decisions() {
         let weights = PersonaWeights {
-            like_prob: 0.6,
-            retweet_prob: 0.6,
-            quote_prob: 0.6,
-            follow_prob: 0.6,
-            reply_prob: 0.6,
-            bookmark_prob: 0.6,
-            thread_dive_prob: 0.6,
-            interest_multiplier: 2.0,
+            like_prob: 1.0,
+            retweet_prob: 1.0,
+            quote_prob: 1.0,
+            follow_prob: 1.0,
+            reply_prob: 1.0,
+            bookmark_prob: 1.0,
+            thread_dive_prob: 1.0,
+            interest_multiplier: 1.0,
         };
 
         assert!(should_like(&weights));
@@ -631,11 +637,11 @@ mod tdd_tests {
             weights.interest_multiplier
         );
 
-        // Sentiment -1.0 should give interest_multiplier = 0.5
+        // Sentiment -1.0 should give interest_multiplier = 0.0 (full range [0.0, 1.0])
         let weights = PersonaWeights::default().with_sentiment_modulation(-1.0);
         assert!(
-            (weights.interest_multiplier - 0.5).abs() < f64::EPSILON,
-            "Expected 0.5, got {}",
+            (weights.interest_multiplier - 0.0).abs() < f64::EPSILON,
+            "Expected 0.0, got {}",
             weights.interest_multiplier
         );
     }

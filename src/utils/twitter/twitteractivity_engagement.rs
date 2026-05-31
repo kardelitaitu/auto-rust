@@ -6,7 +6,7 @@ use super::twitteractivity_state::{
     CandidateContext, CandidateResult, SentimentTemplates, TaskConfig, TweetActionTracker,
 };
 use crate::metrics::{
-    RUN_COUNTER_BOOKMARK_FAILURE, RUN_COUNTER_BOOKMARK_SUCCESS, RUN_COUNTER_BUTTON_MISSING,
+    RUN_COUNTER_BOOKMARK_FAILURE, RUN_COUNTER_BOOKMARK_SUCCESS,
     RUN_COUNTER_CLICK_VERIFY_FAILED, RUN_COUNTER_DIVE_FAILURE, RUN_COUNTER_DIVE_SUCCESS,
     RUN_COUNTER_DIVE_TARGET_FALLBACK_USED, RUN_COUNTER_FOLLOW_FAILURE, RUN_COUNTER_FOLLOW_SUCCESS,
     RUN_COUNTER_LIKE_FAILURE, RUN_COUNTER_LIKE_SUCCESS, RUN_COUNTER_QUOTE_FAILURE,
@@ -512,9 +512,24 @@ pub async fn process_candidate(
                             }
                         }
                     } else {
-                        warn!("Like button not found in tweet payload for {tweet_id}");
-                        api.increment_run_counter(RUN_COUNTER_BUTTON_MISSING, 1);
-                        false
+                        warn!("Like button position not found in tweet payload for {tweet_id}, falling back to selector-based like");
+                        // Fallback to selector-based like (works on feed too)
+                        match retry_with_backoff(
+                            || like_tweet(api),
+                            &RetryConfig::aggressive(),
+                            api,
+                            "like_tweet",
+                        )
+                        .await
+                        {
+                            Ok(result) => result,
+                            Err(e) => {
+                                warn!("Selector-based like failed after retries: {e}");
+                                api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                                api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
+                                false
+                            }
+                        }
                     }
                 }
             }
@@ -892,18 +907,21 @@ pub fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64
 pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
     let page = api.page();
     let element_type = "button";
-    hover_before_click(page, "", x, y, element_type).await?;
+    hover_before_click(page, x, y, element_type).await?;
     click_prep_pause(api).await;
     api.click_at(x, y).await?;
     click_post_pause(api).await;
 
     // Verify like was registered by checking if button state changed
+    // Scope query to the nearest tweet article to avoid scanning the entire DOM.
     let verify_js = format!(
-        r"
+        r#"
         (function() {{
             var x = {x};
             var y = {y};
-            var controls = document.querySelectorAll('button[data-testid], a[data-testid]');
+            var tweetArticle = document.querySelector('article[data-testid="tweet"]');
+            var root = tweetArticle || document;
+            var controls = root.querySelectorAll('button[data-testid], a[data-testid]');
             var nearest = null;
             var best = Number.POSITIVE_INFINITY;
             for (var i = 0; i < controls.length; i++) {{
@@ -930,7 +948,7 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool>
             var color = (svg.getAttribute('color') || svg.getAttribute('fill') || '').toLowerCase();
             return color.includes('rgb') || color.includes('#');
         }})()
-        "
+        "#
     );
 
     let result = page.evaluate(verify_js).await?;
@@ -958,6 +976,9 @@ pub fn generate_reply_text(
         Sentiment::Neutral => &templates.reply_neutral,
         Sentiment::Negative => &templates.reply_negative,
     };
+    if phrases.is_empty() {
+        return String::new();
+    }
     phrases[(reply_idx as usize) % phrases.len()].clone()
 }
 
@@ -973,6 +994,9 @@ pub fn generate_quote_text(
         Sentiment::Neutral => &templates.quote_neutral,
         Sentiment::Negative => &templates.quote_negative,
     };
+    if phrases.is_empty() {
+        return String::new();
+    }
     phrases[(quote_idx as usize) % phrases.len()].clone()
 }
 

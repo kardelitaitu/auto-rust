@@ -14,7 +14,11 @@ use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::prelude::TaskContext;
+use crate::utils::profile::BrowserProfile;
 use crate::utils::timing::run_with_timeout;
+// Runtime thresholds for consecutive failures/empty scans are driven
+// by config.twitter_activity fields. The MAX_CONSECUTIVE_* constants
+// in twitteractivity_constants.rs serve as defaults for new configs.
 use crate::utils::twitter::{
     twitteractivity_engagement::process_candidate,
     twitteractivity_feed::identify_engagement_candidates,
@@ -49,7 +53,7 @@ pub async fn run(api: &TaskContext, payload: Value, config: &Config) -> Result<(
     run_with_timeout(
         duration_ms,
         "twitteractivity",
-        run_inner(api, payload, config, task_config),
+        run_inner(api, config, task_config),
     )
     .await
 }
@@ -68,13 +72,12 @@ pub async fn run(api: &TaskContext, payload: Value, config: &Config) -> Result<(
 ///
 /// # Arguments
 /// * `api` - Task context with page, profile, clipboard
-/// * `_payload` - JSON task configuration (already parsed into `task_config`)
 /// * `config` - Application configuration
 /// * `task_config` - Pre-parsed task configuration
 ///
 /// Build persona weights from config and behavior profile.
 async fn build_persona(
-    api: &TaskContext,
+    profile: &BrowserProfile,
     task_config: &TaskConfig,
     config: &Config,
 ) -> crate::utils::twitter::twitteractivity_persona::PersonaWeights {
@@ -82,7 +85,6 @@ async fn build_persona(
         task_config.weights.as_ref(),
         &config.twitter_activity.probabilities,
     );
-    let profile = api.behavior_profile();
     persona = apply_behavior_profile(persona, profile, 0.0);
 
     info!(
@@ -142,6 +144,7 @@ async fn scroll_feed(
     back_scroll: bool,
     scroll_pause_ms: u64,
     consecutive_failures: &mut u32,
+    max_consecutive_failures: u32,
 ) -> bool {
     match api.scroll_read(1, scroll_amount, smooth, back_scroll).await {
         Ok(()) => {
@@ -154,7 +157,7 @@ async fn scroll_feed(
                 "[twitter] Scroll failed (attempt {}): {}",
                 *consecutive_failures, err
             );
-            if *consecutive_failures >= 3 {
+            if *consecutive_failures >= max_consecutive_failures {
                 error!("[twitter] Too many consecutive scroll failures, stopping task");
                 return false;
             }
@@ -224,14 +227,13 @@ async fn scan_and_process_candidates(
 /// Main task logic — thin orchestrator that delegates to utility modules.
 async fn run_inner(
     api: &TaskContext,
-    _payload: Value,
     config: &Config,
     task_config: TaskConfig,
 ) -> Result<()> {
     info!("Task started");
 
-    // Build persona weights
-    let persona = build_persona(api, &task_config, config).await;
+    // Build persona weights from behavior profile
+    let persona = build_persona(api.behavior_profile(), &task_config, config).await;
 
     // Initialize session state
     let mut session = init_session(config, &task_config);
@@ -288,6 +290,7 @@ async fn run_inner(
                 profile.scroll.back_scroll,
                 scroll_pause_ms,
                 &mut consecutive_scroll_failures,
+                config.twitter_activity.max_consecutive_scroll_failures,
             )
             .await
             {
@@ -314,7 +317,7 @@ async fn run_inner(
         } else {
             consecutive_empty_scans += 1;
             warn!("[twitter] No candidates found (attempt {consecutive_empty_scans})");
-            if consecutive_empty_scans >= 3 {
+            if consecutive_empty_scans >= config.twitter_activity.max_consecutive_empty_scans {
                 error!("[twitter] Too many empty scans, stopping task");
                 break;
             }
@@ -326,22 +329,26 @@ async fn run_inner(
     }
 
     // Final summary
-    log_summary(&session, &task_config, api);
+    log_summary(&session, &task_config, config);
     Ok(())
 }
 
-/// Log final engagement summary.
-fn log_summary(session: &SessionState, task_config: &TaskConfig, _api: &TaskContext) {
+/// Log final engagement summary including guard threshold values.
+fn log_summary(session: &SessionState, task_config: &TaskConfig, config: &Config) {
     let (summary_line, remaining_limits_line) = build_summary_lines(session, task_config);
     info!("{summary_line}");
     info!("{remaining_limits_line}");
+    info!(
+        "[twitter] Guard thresholds | max_scroll_failures={} max_empty_scans={}",
+        config.twitter_activity.max_consecutive_scroll_failures,
+        config.twitter_activity.max_consecutive_empty_scans,
+    );
 }
 
 fn build_summary_lines(session: &SessionState, task_config: &TaskConfig) -> (String, String) {
     let last_remaining = session.remaining_time();
     let duration_secs = Duration::from_millis(task_config.duration_ms)
-        .checked_sub(last_remaining)
-        .unwrap()
+        .saturating_sub(last_remaining)
         .as_secs_f64();
     let summary_line = format!(
         "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
@@ -356,17 +363,18 @@ fn build_summary_lines(session: &SessionState, task_config: &TaskConfig) -> (Str
         duration_secs
     );
 
-    let remaining_limits = session.limits.remaining(&session.counters);
+    let c = &session.counters;
+    let l = &session.limits;
     let remaining_limits_line = format!(
         "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
-        remaining_limits.get("likes").unwrap_or(&0),
-        remaining_limits.get("retweets").unwrap_or(&0),
-        remaining_limits.get("follows").unwrap_or(&0),
-        remaining_limits.get("replies").unwrap_or(&0),
-        remaining_limits.get("thread_dives").unwrap_or(&0),
-        remaining_limits.get("bookmarks").unwrap_or(&0),
-        remaining_limits.get("quote_tweets").unwrap_or(&0),
-        remaining_limits.get("total_actions").unwrap_or(&0)
+        l.max_likes.saturating_sub(c.likes),
+        l.max_retweets.saturating_sub(c.retweets),
+        l.max_follows.saturating_sub(c.follows),
+        l.max_replies.saturating_sub(c.replies),
+        l.max_thread_dives.saturating_sub(c.thread_dives),
+        l.max_bookmarks.saturating_sub(c.bookmarks),
+        l.max_quote_tweets.saturating_sub(c.quote_tweets),
+        l.max_total_actions.saturating_sub(c.total_actions()),
     );
 
     (summary_line, remaining_limits_line)

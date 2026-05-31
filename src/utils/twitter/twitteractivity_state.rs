@@ -19,22 +19,6 @@ use std::time::{Duration, Instant};
 /// Validation errors for task payload.
 #[derive(Debug)]
 pub enum TaskValidationError {
-    InvalidDuration {
-        field: String,
-        value: i64,
-    },
-    InvalidCandidateCount {
-        field: String,
-        value: i64,
-    },
-    InvalidThreadDepth {
-        field: String,
-        value: i64,
-    },
-    InvalidMaxActionsPerScan {
-        field: String,
-        value: i64,
-    },
     InvalidPositiveNumber {
         field: String,
         value: i64,
@@ -49,19 +33,6 @@ pub enum TaskValidationError {
 impl std::fmt::Display for TaskValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TaskValidationError::InvalidDuration { field, value } => {
-                write!(f, "Invalid value for '{field}': {value} (must be positive)")
-            }
-            TaskValidationError::InvalidCandidateCount { field, value } => {
-                write!(f, "Invalid value for '{field}': {value} (must be u32)")
-            }
-            TaskValidationError::InvalidThreadDepth { field, value } => {
-                write!(f, "Invalid value for '{field}': {value} (must be u32)")
-            }
-            TaskValidationError::InvalidMaxActionsPerScan { field, value } => write!(
-                f,
-                "Invalid value for '{field}': {value} (must be u32, min 1)"
-            ),
             TaskValidationError::InvalidPositiveNumber { field, value } => {
                 write!(f, "Invalid value for '{field}': {value} (must be positive)")
             }
@@ -868,7 +839,7 @@ mod display_tests {
 
     #[test]
     fn task_validation_error_display_mentions_field() {
-        let err = TaskValidationError::InvalidDuration {
+        let err = TaskValidationError::InvalidPositiveNumber {
             field: "duration_ms".to_string(),
             value: -100,
         };

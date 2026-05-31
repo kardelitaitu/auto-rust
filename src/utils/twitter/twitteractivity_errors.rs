@@ -44,7 +44,6 @@ impl ErrorClassifier for anyhow::Error {
         // Fatal errors - abort session immediately
         if err_str.contains("browser disconnected")
             || err_str.contains("target closed")
-            || err_str.contains("connection refused")
             || err_str.contains("out of memory")
             || root_str.contains("browser disconnected")
         {
@@ -56,6 +55,7 @@ impl ErrorClassifier for anyhow::Error {
             || err_str.contains("element not found")
             || err_str.contains("timeout")
             || err_str.contains("timed out")
+            || err_str.contains("connection refused")
             || err_str.contains("execution context was destroyed")
             || err_str.contains("unable to click element")
             || err_str.contains("node is detached from document")

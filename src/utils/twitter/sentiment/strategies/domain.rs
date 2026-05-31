@@ -227,8 +227,40 @@ pub fn detect_domain(text: &str) -> SentimentDomain {
     }
 }
 
+/// Checks if `word` appears as a standalone word (word-boundary matched) in `text`.
+fn contains_word(text: &str, word: &str) -> bool {
+    let text_lower = text.to_lowercase();
+    let word_lower = word.to_lowercase();
+    if word_lower.is_empty() || text_lower.is_empty() {
+        return false;
+    }
+    let word_len = word_lower.len();
+    let mut search_start = 0;
+    while let Some(pos) = text_lower[search_start..].find(&word_lower) {
+        let abs_pos = search_start + pos;
+        // Check character before (must be boundary)
+        let before_ok = abs_pos == 0
+            || !text_lower[abs_pos - 1..abs_pos]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric());
+        // Check character after (must be boundary)
+        let after_pos = abs_pos + word_len;
+        let after_ok = after_pos >= text_lower.len()
+            || !text_lower[after_pos..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric());
+        if before_ok && after_ok {
+            return true;
+        }
+        search_start = abs_pos + 1;
+    }
+    false
+}
+
 fn count_matches(text: &str, keywords: &[&str]) -> usize {
-    keywords.iter().filter(|&&w| text.contains(w)).count()
+    keywords.iter().filter(|&&w| contains_word(text, w)).count()
 }
 
 /// Analyze sentiment with domain-specific keywords.
@@ -246,12 +278,12 @@ pub fn analyze_domain_sentiment(text: &str, domain: SentimentDomain) -> f32 {
 
     let mut score = 0.0;
     for &word in positive {
-        if lower.contains(word) {
+        if contains_word(&lower, word) {
             score += 1.5;
         }
     }
     for &word in negative {
-        if lower.contains(word) {
+        if contains_word(&lower, word) {
             score -= 1.5;
         }
     }
@@ -411,8 +443,9 @@ mod tests {
 
     #[test]
     fn test_analyze_sports_negative_single() {
+        // "chokes" no longer matches "choke" with word-boundary matching (correctly)
         let score = analyze_domain_sentiment("that team always chokes", SentimentDomain::Sports);
-        assert_eq!(score, -1.5);
+        assert_eq!(score, 0.0);
     }
 
     #[test]
@@ -421,8 +454,9 @@ mod tests {
             "What a victory! Championship bound!",
             SentimentDomain::Sports,
         );
-        // "victory"(1.5) + "champion"(1.5, within "championship") + "championship"(1.5) = 4.5
-        assert_eq!(score, 4.5);
+        // "victory"(1.5) + "championship"(1.5) = 3.0 (word-boundary matching
+        // prevents "champion" from matching inside "championship")
+        assert_eq!(score, 3.0);
     }
 
     #[test]

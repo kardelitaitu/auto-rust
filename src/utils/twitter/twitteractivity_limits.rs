@@ -295,13 +295,13 @@ impl EngagementLimits {
             actions.push("reply");
         }
         if self.can_dive(counters) {
-            actions.push("thread_dive");
+            actions.push("dive");
         }
         if self.can_bookmark(counters) {
             actions.push("bookmark");
         }
         if self.can_quote_tweet(counters) {
-            actions.push("quote_tweet");
+            actions.push("quote");
         }
 
         actions
@@ -724,7 +724,7 @@ mod tests {
         let counters = EngagementCounters::new();
         let available = limits.available_actions(&counters);
         assert!(available.contains(&"bookmark"));
-        assert!(available.contains(&"quote_tweet"));
+        assert!(available.contains(&"quote"));
     }
 
     #[test]

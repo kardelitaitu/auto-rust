@@ -158,7 +158,7 @@ pub async fn dive_into_thread(
         |id| current_url.contains(&format!("/status/{id}")),
     );
     let tweet_article_visible = api
-        .wait_for_any_visible_selector(&[r#"article[data-testid="tweet"]"#], 1_000)
+        .wait_for_any_visible_selector(&[r#"article[data-testid="tweet"]"#], 3_000)
         .await
         .unwrap_or(false);
     let thread_opened = url_matches && (detail_visible || tweet_article_visible);

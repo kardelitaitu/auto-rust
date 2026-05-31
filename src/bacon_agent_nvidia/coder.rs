@@ -68,7 +68,7 @@ const MIN_RESPONSE_LENGTH: usize = 60;
 /// Parse SEARCH/REPLACE blocks from LLM output (Aider-style format).
 ///
 /// Format:
-/// ```
+/// ```text
 /// path/to/file.ext
 /// <<<<<<< SEARCH
 /// existing content

@@ -776,13 +776,13 @@ impl SentimentAnalyzer {
     #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn calculate_factor_agreement(&self, breakdown: &ScoreBreakdown) -> f32 {
+        // reputation_score and temporal_score are stub values (hardcoded), so exclude them
+        // from factor agreement to avoid false signals.
         let factors = vec![
             breakdown.text_score,
             breakdown.emoji_score,
             breakdown.domain_score,
             breakdown.context_score,
-            breakdown.reputation_score,
-            breakdown.temporal_score,
         ];
         let non_zero: Vec<f32> = factors.into_iter().filter(|&x| x != 0.0).collect();
         if non_zero.len() < 2 {
@@ -931,8 +931,14 @@ pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
     })
 }
 
+/// Extracts user reputation from a tweet object.
+///
+/// **NOTE: This is a stub.** It returns hardcoded default values regardless of input.
+/// TODO: Implement actual extraction using tweet author data (follower count, verification status, etc.).
+/// Currently excluded from `calculate_factor_agreement()` to avoid false signals.
 #[must_use]
 pub fn extract_user_reputation(_tweet_obj: &Value) -> Option<UserReputation> {
+    log::warn!("extract_user_reputation is a stub — returning hardcoded defaults (ignoring tweet data)");
     Some(UserReputation {
         follower_count: 1000,
         is_verified: false,
@@ -943,8 +949,14 @@ pub fn extract_user_reputation(_tweet_obj: &Value) -> Option<UserReputation> {
     })
 }
 
+/// Extracts temporal factors from a tweet object.
+///
+/// **NOTE: This is a stub.** It returns hardcoded default values regardless of input.
+/// TODO: Implement actual extraction using tweet timestamp and current time.
+/// Currently excluded from `calculate_factor_agreement()` to avoid false signals.
 #[must_use]
 pub fn extract_temporal_factors(_tweet_obj: &Value) -> Option<TemporalFactors> {
+    log::warn!("extract_temporal_factors is a stub — returning hardcoded defaults (ignoring tweet data)");
     Some(TemporalFactors {
         hour_of_day: 12,
         day_of_week: 1,

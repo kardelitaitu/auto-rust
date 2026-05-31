@@ -95,7 +95,9 @@ fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
 
     // Find last space before max_length (leave room for "...")
     let truncate_limit = max_length.saturating_sub(3);
-    let truncate_at = text[..truncate_limit].rfind(' ').unwrap_or(truncate_limit);
+    // Use char-safe boundary to avoid panic on multi-byte UTF-8
+    let safe_boundary = text.floor_char_boundary(truncate_limit);
+    let truncate_at = text[..safe_boundary].rfind(' ').unwrap_or(safe_boundary);
 
     format!("{}...", &text[..truncate_at])
 }

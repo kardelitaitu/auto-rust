@@ -25,14 +25,9 @@
 //! # use auto::runtime::task_context::TaskContext;
 //! # async fn example(api: &TaskContext) -> anyhow::Result<()> {
 //!
-//! // Scroll through feed with reading pauses
-//! scroll_feed(api, 10, true).await?;
-//!
 //! // Identify tweets for engagement
 //! let candidates = identify_engagement_candidates(api).await?;
 //!
-//! // Check scroll progress
-//! let progress = get_scroll_progress(api).await?;
 //! # Ok(())
 //! # }
 //! ```

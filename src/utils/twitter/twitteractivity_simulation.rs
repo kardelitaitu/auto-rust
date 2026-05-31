@@ -190,6 +190,10 @@ pub fn simulate(task_config: &TaskConfig, config: &Config) -> SimulationReport {
         scan_index += 1;
 
         let candidate_budget = task_config.candidate_count;
+        if candidate_budget == 0 {
+            elapsed_ms = elapsed_ms.saturating_add(scan_interval_ms);
+            continue;
+        }
         let candidates_found = rng.gen_range(1..=candidate_budget);
         lines.push(format!(
             "simulation | phase=scan scan_index={scan_index} candidate_budget={candidate_budget} candidates_found={candidates_found}"

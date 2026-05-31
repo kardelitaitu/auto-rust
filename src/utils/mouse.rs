@@ -1009,7 +1009,6 @@ pub async fn middle_click_selector_human(
 
 pub async fn hover_before_click(
     page: &Page,
-    _selector: &str,
     x: f64,
     y: f64,
     element_type: &str,
@@ -1563,7 +1562,7 @@ pub async fn click_selector_human(
 
     // Add human-like hover before clicking
     let element_type = detect_element_type(selector);
-    hover_before_click(page, selector, x, y, &element_type).await?;
+    hover_before_click(page, x, y, &element_type).await?;
 
     timeout(
         Duration::from_secs(2),
@@ -2188,7 +2187,7 @@ async fn click_selector_with_button(
 
     // Add human-like hover before clicking
     let element_type = detect_element_type(selector);
-    hover_before_click(page, selector, x, y, &element_type).await?;
+    hover_before_click(page, x, y, &element_type).await?;
 
     dispatch_click(page, x, y, button).await?;
 

@@ -30,8 +30,8 @@ Respond with this exact JSON format:
 
 #[allow(clippy::cast_precision_loss)]
 pub async fn analyze_sentiment_llm(llm: &LlmClient, text: &str) -> Result<LlmSentimentResult> {
-    let truncated = if text.len() > 400 { &text[..400] } else { text };
-    let prompt = SENTIMENT_PROMPT.replace("{tweet_text}", truncated);
+    let truncated: String = text.chars().take(400).collect();
+    let prompt = SENTIMENT_PROMPT.replace("{tweet_text}", &truncated);
     let messages = vec![ChatMessage {
         role: "user".to_string(),
         content: prompt,
@@ -63,7 +63,7 @@ pub async fn analyze_sentiment_hybrid(
     llm_probability: f32,
     min_confidence: f32,
 ) -> Sentiment {
-    let cache_key = if text.len() > 100 { &text[..100] } else { text }.to_string();
+    let cache_key: String = text.chars().take(100).collect();
     {
         let cache = SENTIMENT_CACHE.read().await;
         if let Some(&sentiment) = cache.get(&cache_key) {

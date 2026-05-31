@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use log::{debug, info, warn};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -69,23 +69,23 @@ impl RetryConfig {
     }
 }
 
-/// Statistics for retry operations.
-#[derive(Debug, Default, Clone)]
-pub struct RetryStats {
-    pub total_attempts: u32,
-    pub transient_errors: u32,
-    pub permanent_errors: u32,
-    pub success_after_retry: u32,
-}
+/// Circuit breaker state constants for AtomicU8.
+const CLOSED: u8 = 0;
+const HALF_OPEN: u8 = 1;
+const OPEN: u8 = 2;
 
 /// Circuit breaker for preventing cascade failures.
+///
+/// Uses an `AtomicU8` state machine with compare-and-swap to ensure
+/// only one concurrent caller transitions from OPEN to HALF_OPEN,
+/// eliminating the TOCTOU race in the previous `RwLock<bool>` design.
 #[derive(Debug, Clone)]
 pub struct CircuitBreaker {
     threshold: u32,
     reset_timeout: Duration,
     failures: Arc<AtomicU32>,
     last_failure: Arc<RwLock<Option<Instant>>>,
-    is_open: Arc<RwLock<bool>>,
+    state: Arc<AtomicU8>,
 }
 
 impl CircuitBreaker {
@@ -96,35 +96,44 @@ impl CircuitBreaker {
             reset_timeout: Duration::from_millis(reset_timeout_ms),
             failures: Arc::new(AtomicU32::new(0)),
             last_failure: Arc::new(RwLock::new(None)),
-            is_open: Arc::new(RwLock::new(false)),
+            state: Arc::new(AtomicU8::new(CLOSED)),
         }
     }
 
+    /// Returns `true` if the circuit is open (calls should be rejected).
+    ///
+    /// When the reset timeout expires, only one caller atomically transitions
+    /// the state from OPEN to HALF_OPEN via CAS. All other callers see `true`.
     #[must_use]
     pub async fn is_open(&self) -> bool {
-        let is_open = *self.is_open.read().await;
-        if is_open {
-            let last_failure_lock = self.last_failure.read().await;
-            if let Some(last_time) = *last_failure_lock {
-                if last_time.elapsed() > self.reset_timeout {
-                    drop(last_failure_lock);
-                    let mut is_open_write = self.is_open.write().await;
-                    *is_open_write = false;
-                    self.failures.store(0, Ordering::SeqCst);
-                    return false;
+        let s = self.state.load(Ordering::Acquire);
+        if s == CLOSED {
+            return false;
+        }
+        if s == OPEN {
+            let elapsed = self.last_failure.read().await.map(|t| t.elapsed());
+            if elapsed.is_some_and(|e| e > self.reset_timeout) {
+                // CAS: only one caller transitions to HALF_OPEN
+                if self
+                    .state
+                    .compare_exchange(OPEN, HALF_OPEN, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    self.failures.store(0, Ordering::Release);
+                    return false; // this caller gets the probe
                 }
             }
-            return true;
+            return true; // still open for everyone else
         }
-        false
+        // HALF_OPEN — only one caller gets through; reject others
+        true
     }
 
     pub async fn record_success(&self) {
-        self.failures.store(0, Ordering::SeqCst);
+        self.state.store(CLOSED, Ordering::Release);
+        self.failures.store(0, Ordering::Release);
         let mut last_failure = self.last_failure.write().await;
         *last_failure = None;
-        let mut is_open = self.is_open.write().await;
-        *is_open = false;
     }
 
     pub async fn record_failure(&self) {
@@ -133,8 +142,7 @@ impl CircuitBreaker {
         *last_failure = Some(Instant::now());
 
         if failures >= self.threshold {
-            let mut is_open = self.is_open.write().await;
-            *is_open = true;
+            self.state.store(OPEN, Ordering::Release);
             warn!("Circuit breaker opened after {failures} consecutive failures");
         }
     }

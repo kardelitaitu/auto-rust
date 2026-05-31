@@ -1333,13 +1333,11 @@ extensions = ["task"]
         let config = apply_env_overrides(Config::default()).unwrap();
 
         assert_eq!(
-            config.twitter_activity.max_consecutive_scroll_failures,
-            10,
+            config.twitter_activity.max_consecutive_scroll_failures, 10,
             "TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES env var should override default (3) to 10"
         );
         assert_eq!(
-            config.twitter_activity.max_consecutive_empty_scans,
-            7,
+            config.twitter_activity.max_consecutive_empty_scans, 7,
             "TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS env var should override default (3) to 7"
         );
 
@@ -1376,13 +1374,11 @@ extensions = ["task"]
 
         // Invalid parse should fall back to the default value (3)
         assert_eq!(
-            config.twitter_activity.max_consecutive_scroll_failures,
-            3,
+            config.twitter_activity.max_consecutive_scroll_failures, 3,
             "Invalid env var value should fall back to default (3)"
         );
         assert_eq!(
-            config.twitter_activity.max_consecutive_empty_scans,
-            3,
+            config.twitter_activity.max_consecutive_empty_scans, 3,
             "Invalid env var value should fall back to default (3)"
         );
 
@@ -1484,13 +1480,11 @@ max_total_actions = 10
 
         // Env vars should override TOML values (15 > 10, 8 > 5)
         assert_eq!(
-            config.twitter_activity.max_consecutive_scroll_failures,
-            15,
+            config.twitter_activity.max_consecutive_scroll_failures, 15,
             "Env var should override TOML value (10 -> 15)"
         );
         assert_eq!(
-            config.twitter_activity.max_consecutive_empty_scans,
-            8,
+            config.twitter_activity.max_consecutive_empty_scans, 8,
             "Env var should override TOML value (5 -> 8)"
         );
     }
@@ -1583,13 +1577,11 @@ max_total_actions = 10
 
         // Invalid env vars should fall back to TOML file values (10, 5), not hardcoded defaults (3)
         assert_eq!(
-            config.twitter_activity.max_consecutive_scroll_failures,
-            10,
+            config.twitter_activity.max_consecutive_scroll_failures, 10,
             "Invalid env var should fall back to TOML value (10), not hardcoded default (3)"
         );
         assert_eq!(
-            config.twitter_activity.max_consecutive_empty_scans,
-            5,
+            config.twitter_activity.max_consecutive_empty_scans, 5,
             "Invalid env var should fall back to TOML value (5), not hardcoded default (3)"
         );
     }
@@ -1681,11 +1673,26 @@ max_total_actions = 10
         }
 
         let limits = &config.twitter_activity.engagement_limits;
-        assert_eq!(limits.max_likes, 12, "Env var should override TOML (5 -> 12)");
-        assert_eq!(limits.max_retweets, 7, "Env var should override TOML (3 -> 7)");
-        assert_eq!(limits.max_follows, 5, "Env var should override TOML (2 -> 5)");
-        assert_eq!(limits.max_replies, 3, "Env var should override TOML (1 -> 3)");
-        assert_eq!(limits.max_total_actions, 25, "Env var should override TOML (10 -> 25)");
+        assert_eq!(
+            limits.max_likes, 12,
+            "Env var should override TOML (5 -> 12)"
+        );
+        assert_eq!(
+            limits.max_retweets, 7,
+            "Env var should override TOML (3 -> 7)"
+        );
+        assert_eq!(
+            limits.max_follows, 5,
+            "Env var should override TOML (2 -> 5)"
+        );
+        assert_eq!(
+            limits.max_replies, 3,
+            "Env var should override TOML (1 -> 3)"
+        );
+        assert_eq!(
+            limits.max_total_actions, 25,
+            "Env var should override TOML (10 -> 25)"
+        );
     }
 
     #[test]
@@ -1776,11 +1783,26 @@ max_total_actions = 10
 
         // Invalid env vars should fall back to TOML file values, not hardcoded defaults
         let limits = &config.twitter_activity.engagement_limits;
-        assert_eq!(limits.max_likes, 5, "Invalid env var should fall back to TOML value (5)");
-        assert_eq!(limits.max_retweets, 3, "Invalid env var should fall back to TOML value (3)");
-        assert_eq!(limits.max_follows, 2, "Invalid env var should fall back to TOML value (2)");
-        assert_eq!(limits.max_replies, 1, "Invalid env var should fall back to TOML value (1)");
-        assert_eq!(limits.max_total_actions, 10, "Invalid env var should fall back to TOML value (10)");
+        assert_eq!(
+            limits.max_likes, 5,
+            "Invalid env var should fall back to TOML value (5)"
+        );
+        assert_eq!(
+            limits.max_retweets, 3,
+            "Invalid env var should fall back to TOML value (3)"
+        );
+        assert_eq!(
+            limits.max_follows, 2,
+            "Invalid env var should fall back to TOML value (2)"
+        );
+        assert_eq!(
+            limits.max_replies, 1,
+            "Invalid env var should fall back to TOML value (1)"
+        );
+        assert_eq!(
+            limits.max_total_actions, 10,
+            "Invalid env var should fall back to TOML value (10)"
+        );
     }
 
     #[test]
@@ -1883,13 +1905,41 @@ thread_dive_probability = 0.25
         }
 
         let probs = &config.twitter_activity.probabilities;
-        assert!((probs.like_probability - 0.6).abs() < 1e-9, "Like prob should be 0.6 (was {})", probs.like_probability);
-        assert!((probs.retweet_probability - 0.25).abs() < 1e-9, "Retweet prob should be 0.25 (was {})", probs.retweet_probability);
-        assert!((probs.quote_probability - 0.10).abs() < 1e-9, "Quote prob should be 0.10 (was {})", probs.quote_probability);
-        assert!((probs.follow_probability - 0.08).abs() < 1e-9, "Follow prob should be 0.08 (was {})", probs.follow_probability);
-        assert!((probs.reply_probability - 0.12).abs() < 1e-9, "Reply prob should be 0.12 (was {})", probs.reply_probability);
-        assert!((probs.bookmark_probability - 0.04).abs() < 1e-9, "Bookmark prob should be 0.04 (was {})", probs.bookmark_probability);
-        assert!((probs.thread_dive_probability - 0.30).abs() < 1e-9, "Thread dive prob should be 0.30 (was {})", probs.thread_dive_probability);
+        assert!(
+            (probs.like_probability - 0.6).abs() < 1e-9,
+            "Like prob should be 0.6 (was {})",
+            probs.like_probability
+        );
+        assert!(
+            (probs.retweet_probability - 0.25).abs() < 1e-9,
+            "Retweet prob should be 0.25 (was {})",
+            probs.retweet_probability
+        );
+        assert!(
+            (probs.quote_probability - 0.10).abs() < 1e-9,
+            "Quote prob should be 0.10 (was {})",
+            probs.quote_probability
+        );
+        assert!(
+            (probs.follow_probability - 0.08).abs() < 1e-9,
+            "Follow prob should be 0.08 (was {})",
+            probs.follow_probability
+        );
+        assert!(
+            (probs.reply_probability - 0.12).abs() < 1e-9,
+            "Reply prob should be 0.12 (was {})",
+            probs.reply_probability
+        );
+        assert!(
+            (probs.bookmark_probability - 0.04).abs() < 1e-9,
+            "Bookmark prob should be 0.04 (was {})",
+            probs.bookmark_probability
+        );
+        assert!(
+            (probs.thread_dive_probability - 0.30).abs() < 1e-9,
+            "Thread dive prob should be 0.30 (was {})",
+            probs.thread_dive_probability
+        );
     }
 
     #[test]
@@ -1993,13 +2043,41 @@ thread_dive_probability = 0.25
 
         // Invalid env vars should fall back to TOML file values
         let probs = &config.twitter_activity.probabilities;
-        assert!((probs.like_probability - 0.4).abs() < 1e-9, "Like prob should fall back to TOML value 0.4 (was {})", probs.like_probability);
-        assert!((probs.retweet_probability - 0.15).abs() < 1e-9, "Retweet prob should fall back to TOML value 0.15 (was {})", probs.retweet_probability);
-        assert!((probs.quote_probability - 0.15).abs() < 1e-9, "Quote prob should fall back to TOML value 0.15 (was {})", probs.quote_probability);
-        assert!((probs.follow_probability - 0.05).abs() < 1e-9, "Follow prob should fall back to TOML value 0.05 (was {})", probs.follow_probability);
-        assert!((probs.reply_probability - 0.05).abs() < 1e-9, "Reply prob should fall back to TOML value 0.05 (was {})", probs.reply_probability);
-        assert!((probs.bookmark_probability - 0.02).abs() < 1e-9, "Bookmark prob should fall back to TOML value 0.02 (was {})", probs.bookmark_probability);
-        assert!((probs.thread_dive_probability - 0.25).abs() < 1e-9, "Thread dive prob should fall back to TOML value 0.25 (was {})", probs.thread_dive_probability);
+        assert!(
+            (probs.like_probability - 0.4).abs() < 1e-9,
+            "Like prob should fall back to TOML value 0.4 (was {})",
+            probs.like_probability
+        );
+        assert!(
+            (probs.retweet_probability - 0.15).abs() < 1e-9,
+            "Retweet prob should fall back to TOML value 0.15 (was {})",
+            probs.retweet_probability
+        );
+        assert!(
+            (probs.quote_probability - 0.15).abs() < 1e-9,
+            "Quote prob should fall back to TOML value 0.15 (was {})",
+            probs.quote_probability
+        );
+        assert!(
+            (probs.follow_probability - 0.05).abs() < 1e-9,
+            "Follow prob should fall back to TOML value 0.05 (was {})",
+            probs.follow_probability
+        );
+        assert!(
+            (probs.reply_probability - 0.05).abs() < 1e-9,
+            "Reply prob should fall back to TOML value 0.05 (was {})",
+            probs.reply_probability
+        );
+        assert!(
+            (probs.bookmark_probability - 0.02).abs() < 1e-9,
+            "Bookmark prob should fall back to TOML value 0.02 (was {})",
+            probs.bookmark_probability
+        );
+        assert!(
+            (probs.thread_dive_probability - 0.25).abs() < 1e-9,
+            "Thread dive prob should fall back to TOML value 0.25 (was {})",
+            probs.thread_dive_probability
+        );
     }
 
     #[test]
@@ -2267,7 +2345,10 @@ max_total_actions = 10
         env::set_var("ROXYBROWSER_API_KEY", "custom-key-456");
         env::set_var("TASK_TIMEOUT_MS", "120000");
         env::set_var("MAX_RETRIES", "7");
-        env::set_var("BROWSER_EXTRA_HTTP_HEADERS", "X-Custom=value1; X-Debug=true");
+        env::set_var(
+            "BROWSER_EXTRA_HTTP_HEADERS",
+            "X-Custom=value1; X-Debug=true",
+        );
         env::set_var("NATIVE_INTERACTION_STABILITY_WAIT_MS", "3000");
         env::set_var("NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS", "1500");
         env::set_var("NATIVE_INTERACTION_SETTLE_MS", "500");
@@ -2283,7 +2364,10 @@ max_total_actions = 10
         let cwd = env::current_dir().unwrap();
         env::set_current_dir(temp_dir.path()).unwrap();
 
-        assert!(config_dir.join("default.toml").exists(), "TOML file must exist before load_config()");
+        assert!(
+            config_dir.join("default.toml").exists(),
+            "TOML file must exist before load_config()"
+        );
         let config = load_config().unwrap();
 
         env::set_current_dir(cwd).unwrap();
@@ -2296,13 +2380,11 @@ max_total_actions = 10
 
         // Roxybrowser overrides (String)
         assert_eq!(
-            config.browser.roxybrowser.api_url,
-            "https://custom.roxybrowser.com/",
+            config.browser.roxybrowser.api_url, "https://custom.roxybrowser.com/",
             "ROXYBROWSER_API_URL should override TOML value"
         );
         assert_eq!(
-            config.browser.roxybrowser.api_key,
-            "custom-key-456",
+            config.browser.roxybrowser.api_key, "custom-key-456",
             "ROXYBROWSER_API_KEY should override TOML value"
         );
 
@@ -2358,13 +2440,11 @@ max_total_actions = 10
             "TWITTER_LLM_ENABLED should override to true"
         );
         assert_eq!(
-            config.twitter_activity.llm.provider,
-            "openrouter",
+            config.twitter_activity.llm.provider, "openrouter",
             "TWITTER_LLM_PROVIDER should override to openrouter"
         );
         assert_eq!(
-            config.twitter_activity.llm.model,
-            "gpt-4",
+            config.twitter_activity.llm.model, "gpt-4",
             "TWITTER_LLM_MODEL should override to gpt-4"
         );
         assert!(
@@ -2484,7 +2564,10 @@ max_total_actions = 10
         let cwd = env::current_dir().unwrap();
         env::set_current_dir(temp_dir.path()).unwrap();
 
-        assert!(config_dir.join("default.toml").exists(), "TOML file must exist before load_config()");
+        assert!(
+            config_dir.join("default.toml").exists(),
+            "TOML file must exist before load_config()"
+        );
         let config = load_config().unwrap();
 
         env::set_current_dir(cwd).unwrap();
@@ -2497,13 +2580,11 @@ max_total_actions = 10
 
         // Roxybrowser strings — should retain TOML values since no invalid env vars set for them
         assert_eq!(
-            config.browser.roxybrowser.api_url,
-            "http://fallback.roxybrowser.com",
+            config.browser.roxybrowser.api_url, "http://fallback.roxybrowser.com",
             "ROXYBROWSER_API_URL not set, should retain TOML value"
         );
         assert_eq!(
-            config.browser.roxybrowser.api_key,
-            "fallback-key",
+            config.browser.roxybrowser.api_key, "fallback-key",
             "ROXYBROWSER_API_KEY not set, should retain TOML value"
         );
 
@@ -2553,13 +2634,11 @@ max_total_actions = 10
             "TWITTER_LLM_ENABLED not set as invalid val (parse fails), should retain TOML value (true)"
         );
         assert_eq!(
-            config.twitter_activity.llm.provider,
-            "fallback-provider",
+            config.twitter_activity.llm.provider, "fallback-provider",
             "TWITTER_LLM_PROVIDER not set as env var, should retain TOML value"
         );
         assert_eq!(
-            config.twitter_activity.llm.model,
-            "fallback-model",
+            config.twitter_activity.llm.model, "fallback-model",
             "TWITTER_LLM_MODEL not set as env var, should retain TOML value"
         );
         // Parse-dependent LLM fields fall back to TOML values

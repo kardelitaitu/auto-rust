@@ -225,11 +225,7 @@ async fn scan_and_process_candidates(
 }
 
 /// Main task logic — thin orchestrator that delegates to utility modules.
-async fn run_inner(
-    api: &TaskContext,
-    config: &Config,
-    task_config: TaskConfig,
-) -> Result<()> {
+async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) -> Result<()> {
     info!("Task started");
 
     // Build persona weights from behavior profile

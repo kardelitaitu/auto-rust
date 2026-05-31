@@ -938,7 +938,9 @@ pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
 /// Currently excluded from `calculate_factor_agreement()` to avoid false signals.
 #[must_use]
 pub fn extract_user_reputation(_tweet_obj: &Value) -> Option<UserReputation> {
-    log::warn!("extract_user_reputation is a stub — returning hardcoded defaults (ignoring tweet data)");
+    log::warn!(
+        "extract_user_reputation is a stub — returning hardcoded defaults (ignoring tweet data)"
+    );
     Some(UserReputation {
         follower_count: 1000,
         is_verified: false,
@@ -956,7 +958,9 @@ pub fn extract_user_reputation(_tweet_obj: &Value) -> Option<UserReputation> {
 /// Currently excluded from `calculate_factor_agreement()` to avoid false signals.
 #[must_use]
 pub fn extract_temporal_factors(_tweet_obj: &Value) -> Option<TemporalFactors> {
-    log::warn!("extract_temporal_factors is a stub — returning hardcoded defaults (ignoring tweet data)");
+    log::warn!(
+        "extract_temporal_factors is a stub — returning hardcoded defaults (ignoring tweet data)"
+    );
     Some(TemporalFactors {
         hour_of_day: 12,
         day_of_week: 1,

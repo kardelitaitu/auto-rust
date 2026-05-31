@@ -1007,12 +1007,7 @@ pub async fn middle_click_selector_human(
     .await
 }
 
-pub async fn hover_before_click(
-    page: &Page,
-    x: f64,
-    y: f64,
-    element_type: &str,
-) -> Result<()> {
+pub async fn hover_before_click(page: &Page, x: f64, y: f64, element_type: &str) -> Result<()> {
     // Different elements have different natural hover times based on human behavior
     let base_hover_ms: u64 = match element_type {
         "button" => random_in_range(80, 200),

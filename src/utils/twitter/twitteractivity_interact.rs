@@ -55,8 +55,8 @@ use tracing::instrument;
 
 use super::twitteractivity_humanized::human_pause;
 use super::twitteractivity_selectors::{
-    js_find_reply_submit_button, js_find_reply_textarea,
-    js_root_tweet_button_center, selector_follow_button, REPLY_BUTTON_SELECTOR,
+    js_find_reply_submit_button, js_find_reply_textarea, js_root_tweet_button_center,
+    selector_follow_button, REPLY_BUTTON_SELECTOR,
 };
 
 /// Gets the current page URL.

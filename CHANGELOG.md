@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **panic**: Replaced byte-index string slicing `&text[..N]` with `chars().take(N).collect()` in LLM sentiment analysis to prevent panic on multi-byte Unicode characters (wasm/pyodide-safe compilation)
+- **panic**: Replaced manual byte-index in `truncate_to_word_boundary` with `floor_char_boundary()` to prevent panic on non-ASCII text
+- **panic**: Guarded `candidate_budget == 0` case in simulation loop with elapsed-ms advancement before `continue` to prevent `gen_range(1..=0)` panic and infinite loop
+- **panic**: Added `phrases.is_empty()` guards in `generate_reply_text` and `generate_quote_text` to prevent modulo-by-zero panic on empty sentiment templates
+- **race**: Replaced `RwLock<bool>` circuit breaker with `AtomicU8` CAS state machine (`CLOSED`/`HALF_OPEN`/`OPEN`) to eliminate TOCTOU race where multiple concurrent callers could all probe during the reset window
+- **race**: Scoped `like_at_position` verification JS from full-page `document` root to nearest `article[data-testid="tweet"]` container to prevent DOM queries scanning unrelated page sections concurrently
+- **corruption**: Removed 11 overlapping emojis from `NEUTRAL_EMOJIS` that also existed in `NEGATIVE_EMOJIS` (fixes sentiment HashMap overlap causing corrupted classification)
+- **corruption**: Fixed action string mismatch in `available_actions()` — renamed `"thread_dive"` → `"dive"`, `"quote_tweet"` → `"quote"` to match state-machine action tracker keys
+- **corruption**: Removed `interest_multiplier` from `effective_probability()` calculation to fix double-count (multiplier is already applied in `get_probability()`, which calls `effective_probability()`)
+- **corruption**: Added word-boundary matching (`contains_word` helper) for domain sentiment keywords — prevents false matches like `"bug"` matching inside `"bugatti"` or `"pr"` matching inside `"prayer"`
+- **logic**: Increased tweet article detection timeout from 1s to 3s in `dive()` to reduce flaky failures on slow page loads
+- **logic**: Added selector-based `like_tweet()` fallback when `extract_tweet_button_position` returns `None` in feed view (missing like button coordinates no longer skips the action)
+- **logic**: Removed empty-string `_selector` parameter from `hover_before_click()` signature — was passing `""` which caused unintended behavior
+- **logic**: Moved `"connection refused"` from `Fatal` to `Transient` classification in `ErrorClassifier` (was inconsistent with `std::io::Error::ConnectionRefused` which was already transient)
+- **docs**: Changed SEARCH/REPLACE format example from ` ``` ` to ` ```text ` so `path/to/file.ext` is not parsed as Rust code in doc-test
+- **docs**: Removed references to non-existent functions `scroll_feed` and `get_scroll_progress` from `twitteractivity_feed` module doc example
+
+### Changed
+- **sentiment**: Expanded `with_sentiment_modulation` range from `[0.5, 1.0]` to `[0.0, 1.0]` so neutral/low-sentiment content can reduce interest multiplier appropriately
+- **sentiment**: Added warning-level logs to stub functions `extract_user_reputation` and `extract_temporal_factors`; excluded `reputation_score` and `temporal_score` from `calculate_factor_agreement()` to avoid false agreement with default values
+- **config**: Extracted magic number thresholds (`3`) into `TwitterActivityConfig` fields `max_consecutive_scroll_failures` and `max_consecutive_empty_scans` (configurable via TOML or env vars)
+- **config**: Added env var overrides `TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES` and `TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS` to `apply_env_overrides()`
+- **config**: Added validation warnings for threshold values of 0 or >20 in `validate_twitter_activity_config`
+- **docs**: Updated `API_REFERENCE.md` with new config fields, env var overrides, and validation rules
+- **docs**: Updated `config/default.toml` with inline config fields and env var documentation
+- **engagement**: Changed `like_at_position` raw string from `r"..."` to `r#"..."#` syntax to allow literal double quotes in JS selector strings
+- **twitteractivity**: Replaced `checked_sub().unwrap()` in `build_summary_lines` with `saturating_sub()` to eliminate panic risk from clock drift
+- **twitteractivity**: Removed unused `_payload` parameter from `run_inner` signature
+- **twitteractivity**: Simplified `build_persona` to take `&BrowserProfile` instead of `&TaskContext`
+- **twitteractivity**: Replaced `HashMap::get().unwrap_or(&0)` in `build_summary_lines` with direct struct field access
+- **twitteractivity**: `log_summary` now takes `&Config` and emits guard threshold values in summary log
+- **navigation**: Replaced `const { assert!(...) }` with regular `assert!(...)` (unstable Rust construct)
+- **navigation**: Changed `log::warn!` to `warn!` for consistency with existing `use log::{info, warn}` import
+- **navigation**: Updated module doc to list actual function names (`goto_home`, `goto_notifications`, `verify_login`, `is_feed_visible`, `wait_for_page_ready`) instead of non-existent ones
+
+### Removed
+- **cleanup**: Removed `confirm_retweet()` function and its `js_confirm_retweet_click` import (dead code, never called)
+- **cleanup**: Removed unused `RetryStats` struct from `twitteractivity_retry.rs`
+- **cleanup**: Removed stub `dismiss_signup_nag()` function and its unit test from `twitteractivity_popup.rs`
+- **cleanup**: Removed 4 unused `TaskValidationError` enum variants: `InvalidDuration`, `InvalidCandidateCount`, `InvalidThreadDepth`, `InvalidMaxActionsPerScan`
+- **cleanup**: Updated `TaskValidationError` test to use `InvalidPositiveNumber` instead of removed `InvalidDuration`
+
+### Added
+- **tests**: `test_twitter_consecutive_threshold_env_overrides` — verifies env var overrides produce expected values
+- **tests**: `test_twitter_consecutive_threshold_env_overrides_invalid_parse_falls_back` — verifies fallback to defaults on invalid env var values
+- **tests**: `test_load_config_applies_twitter_consecutive_threshold_env_overrides` — full-path integration test: TOML file + env vars through `load_config()` for consecutive threshold overrides
+- **tests**: `test_load_config_applies_twitter_consecutive_threshold_invalid_env_falls_back_to_toml` — full-path integration test: invalid env vars fall back to TOML file values, not hardcoded defaults
+- **tests**: `test_load_config_applies_twitter_engagement_limit_env_overrides` — full-path integration test: all 5 engagement limit env vars (`TWITTER_MAX_LIKES`, `TWITTER_MAX_RETWEETS`, `TWITTER_MAX_FOLLOWS`, `TWITTER_MAX_REPLIES`, `TWITTER_MAX_TOTAL_ACTIONS`) override TOML file through `load_config()`
+- **tests**: `test_load_config_applies_twitter_engagement_limit_invalid_env_falls_back_to_toml` — full-path integration test: invalid engagement limit env vars fall back to TOML file values
+- **tests**: `test_load_config_applies_twitter_probability_env_overrides` — full-path integration test: all 7 probability env vars override TOML file through `load_config()`
+- **tests**: `test_load_config_applies_twitter_probability_invalid_env_falls_back_to_toml` — full-path integration test: invalid probability env vars fall back to TOML file values
+- **tests**: `test_load_config_applies_browser_orchestrator_env_overrides` — full-path integration test: 5 browser/orchestrator env vars override TOML file through `load_config()`
+- **tests**: `test_load_config_applies_browser_orchestrator_invalid_env_falls_back` — full-path integration test: invalid browser/orchestrator env vars fall back to TOML values or safe defaults
+
 ## [0.1.1] - 2026-05-05
 
 ### Added

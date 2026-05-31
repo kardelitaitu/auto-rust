@@ -127,12 +127,42 @@ api.focus(selector: &str) -> Result<()>
 
 ## Configuration
 
+### Native Interaction
+
 Environment variables for native interaction:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NATIVE_INPUT_BACKEND` | `enigo` | Backend for native input (`enigo` only for now) |
 | `NATIVE_INTERACTION_STABILITY_WAIT_MS` | 1000 | Wait for element stabilization |
+
+### Twitter Activity — Consecutive Failure Thresholds
+
+Config fields that control when the feed loop stops on repeated failures:
+
+**TOML (`config/default.toml`):**
+```toml
+[twitter_activity]
+# Maximum consecutive scroll failures before stopping the feed loop (default: 3)
+max_consecutive_scroll_failures = 3
+# Maximum consecutive empty candidate scans before stopping the feed loop (default: 3)
+max_consecutive_empty_scans = 3
+```
+
+**Environment variable overrides:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES` | `3` | Override max consecutive scroll failures |
+| `TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS` | `3` | Override max consecutive empty scans |
+
+**Validation rules** (applied at startup via `validate_config`):
+
+| Condition | Severity | Message |
+|-----------|----------|---------|
+| Value = 0 | Warning | The feed loop will stop on the first failure. Consider setting >= 1. |
+| Value > 20 | Warning | Very high threshold — may cause excessive retries or extended loops. |
+| Invalid env var (non-numeric) | Silently ignored | Falls back to config/default value. |
 
 ## Logging
 

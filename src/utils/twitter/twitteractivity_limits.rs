@@ -1,6 +1,7 @@
 //! Engagement limits and counters for Twitter automation.
 //! Enforces rate limits to prevent bans and realistic behavior.
 
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::instrument;
@@ -101,7 +102,7 @@ impl EngagementCounters {
             "bookmark" => self.increment_bookmark(),
             "quote" => self.increment_quote_tweet(),
             "dive" => self.increment_thread_dive(),
-            _ => {}
+            _ => warn!("Unknown action type: {action}"),
         }
     }
 

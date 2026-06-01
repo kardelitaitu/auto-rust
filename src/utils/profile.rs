@@ -248,10 +248,24 @@ pub struct BrowserProfile {
     /// Maximum delay variance as percentage of min
     pub action_delay_variance_pct: ProfileParam,
 
+    // === Behavioral Variance ===
+    /// Variance applied to engagement probability weights (e.g., 40.0 = ±40%).
+    /// Separate from action_delay_variance_pct which controls timing jitter.
+    /// Higher values = more unpredictable engagement behavior.
+    #[serde(default = "default_behavior_variance")]
+    pub behavior_variance_pct: ProfileParam,
+
     // === Twitter-specific ===
     /// Probability of diving into a thread when viewing a tweet (0-100%)
     #[serde(default = "default_dive_probability")]
     pub dive_probability: ProfileParam,
+}
+
+fn default_behavior_variance() -> ProfileParam {
+    ProfileParam {
+        base: 40.0,
+        deviation_pct: 20.0,
+    }
 }
 
 fn default_dive_probability() -> ProfileParam {
@@ -474,6 +488,7 @@ impl BrowserProfile {
             scroll_pause: p(500.0, 30.0),
             action_delay_min: p(500.0, 30.0),
             action_delay_variance_pct: p(50.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -504,6 +519,7 @@ impl BrowserProfile {
             scroll_pause: p(200.0, 40.0),
             action_delay_min: p(300.0, 40.0),
             action_delay_variance_pct: p(60.0, 30.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -534,6 +550,7 @@ impl BrowserProfile {
             scroll_pause: p(800.0, 20.0),
             action_delay_min: p(800.0, 20.0),
             action_delay_variance_pct: p(30.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -564,6 +581,7 @@ impl BrowserProfile {
             scroll_pause: p(600.0, 25.0),
             action_delay_min: p(600.0, 25.0),
             action_delay_variance_pct: p(40.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -594,6 +612,7 @@ impl BrowserProfile {
             scroll_pause: p(150.0, 30.0),
             action_delay_min: p(200.0, 30.0),
             action_delay_variance_pct: p(30.0, 30.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -624,6 +643,7 @@ impl BrowserProfile {
             scroll_pause: p(1000.0, 15.0),
             action_delay_min: p(1000.0, 20.0),
             action_delay_variance_pct: p(25.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -654,6 +674,7 @@ impl BrowserProfile {
             scroll_pause: p(100.0, 40.0),
             action_delay_min: p(100.0, 40.0),
             action_delay_variance_pct: p(20.0, 40.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -684,6 +705,7 @@ impl BrowserProfile {
             scroll_pause: p(400.0, 60.0),
             action_delay_min: p(400.0, 60.0),
             action_delay_variance_pct: p(70.0, 40.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -714,6 +736,7 @@ impl BrowserProfile {
             scroll_pause: p(1500.0, 15.0),
             action_delay_min: p(1500.0, 15.0),
             action_delay_variance_pct: p(20.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -744,6 +767,7 @@ impl BrowserProfile {
             scroll_pause: p(700.0, 25.0),
             action_delay_min: p(700.0, 25.0),
             action_delay_variance_pct: p(45.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -774,6 +798,7 @@ impl BrowserProfile {
             scroll_pause: p(300.0, 20.0),
             action_delay_min: p(400.0, 20.0),
             action_delay_variance_pct: p(30.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -804,6 +829,7 @@ impl BrowserProfile {
             scroll_pause: p(1200.0, 20.0),
             action_delay_min: p(1200.0, 20.0),
             action_delay_variance_pct: p(30.0, 25.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -834,6 +860,7 @@ impl BrowserProfile {
             scroll_pause: p(100.0, 25.0),
             action_delay_min: p(150.0, 25.0),
             action_delay_variance_pct: p(25.0, 25.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -864,6 +891,7 @@ impl BrowserProfile {
             scroll_pause: p(600.0, 50.0),
             action_delay_min: p(600.0, 50.0),
             action_delay_variance_pct: p(80.0, 30.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -894,6 +922,7 @@ impl BrowserProfile {
             scroll_pause: p(250.0, 15.0),
             action_delay_min: p(300.0, 15.0),
             action_delay_variance_pct: p(20.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -924,6 +953,7 @@ impl BrowserProfile {
             scroll_pause: p(1800.0, 10.0),
             action_delay_min: p(1800.0, 10.0),
             action_delay_variance_pct: p(15.0, 12.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -954,6 +984,7 @@ impl BrowserProfile {
             scroll_pause: p(80.0, 50.0),
             action_delay_min: p(80.0, 50.0),
             action_delay_variance_pct: p(15.0, 50.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -984,6 +1015,7 @@ impl BrowserProfile {
             scroll_pause: p(2000.0, 10.0),
             action_delay_min: p(2000.0, 10.0),
             action_delay_variance_pct: p(12.0, 12.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -1014,6 +1046,7 @@ impl BrowserProfile {
             scroll_pause: p(550.0, 50.0),
             action_delay_min: p(550.0, 50.0),
             action_delay_variance_pct: p(55.0, 40.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -1044,6 +1077,7 @@ impl BrowserProfile {
             scroll_pause: p(130.0, 45.0),
             action_delay_min: p(130.0, 45.0),
             action_delay_variance_pct: p(25.0, 45.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
@@ -1074,6 +1108,7 @@ impl BrowserProfile {
             scroll_pause: p(1000.0, 18.0),
             action_delay_min: p(1000.0, 18.0),
             action_delay_variance_pct: p(35.0, 18.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }

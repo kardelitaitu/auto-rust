@@ -56,10 +56,10 @@ impl PersonaWeights {
         self
     }
 
-    /// Applies profile-based variance — randomizes weights within ±`profile_variance`%.
+    /// Applies profile-based variance — randomizes weights within ±`behavior_variance_pct`%.
     #[must_use]
     pub fn with_profile_variance(mut self, profile: &BrowserProfile) -> Self {
-        let variance = profile.action_delay_variance_pct.base / 100.0; // e.g., 0.5 = ±50%
+        let variance = profile.behavior_variance_pct.base / 100.0; // e.g., 0.5 = ±50%
         let mut rng = rand::thread_rng();
 
         macro_rules! perturb {
@@ -592,7 +592,7 @@ mod tdd_tests {
         // With zero variance, with_profile_variance should leave weights unchanged
         let weights = PersonaWeights::default();
         let profile = BrowserProfile {
-            action_delay_variance_pct: crate::utils::profile::ProfileParam::new(0.0, 0.0),
+            behavior_variance_pct: crate::utils::profile::ProfileParam::new(0.0, 0.0),
             ..BrowserProfile::average()
         };
         let result = weights.clone().with_profile_variance(&profile);
@@ -742,7 +742,7 @@ mod gap_tests {
             interest_multiplier: 1.0,
         };
         let profile = BrowserProfile {
-            action_delay_variance_pct: crate::utils::profile::ProfileParam::new(100.0, 100.0),
+            behavior_variance_pct: crate::utils::profile::ProfileParam::new(100.0, 100.0),
             ..BrowserProfile::average()
         };
 

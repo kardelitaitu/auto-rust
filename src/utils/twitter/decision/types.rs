@@ -24,8 +24,6 @@ pub struct TweetContext {
     pub task_config: crate::utils::twitter::twitteractivity_state::TaskConfig,
     /// Human-readable tweet age description
     pub tweet_age: String,
-    /// Topic alignment score/description
-    pub topic_alignment: String,
 }
 
 /// Engagement level determines which actions are allowed.
@@ -313,7 +311,6 @@ mod tests {
             persona: crate::utils::twitter::twitteractivity_persona::PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
         };
         let decision = engine.decide(&ctx).await;
         assert_eq!(decision.level, EngagementLevel::Full);
@@ -334,7 +331,6 @@ mod tests {
             persona: crate::utils::twitter::twitteractivity_persona::PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "recent".to_string(),
-            topic_alignment: "tech".to_string(),
         };
         assert_eq!(ctx.tweet_id, "123");
         assert_eq!(ctx.author, "testuser");

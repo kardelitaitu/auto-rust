@@ -520,7 +520,7 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
+
         };
         assert!(s.check_safety(&ctx).is_some());
         assert!(s.check_safety(&ctx).unwrap().contains("tragedy"));
@@ -537,7 +537,7 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
+
         };
         assert!(s.check_safety(&ctx).is_some());
         assert!(s.check_safety(&ctx).unwrap().contains("crypto scam"));
@@ -554,7 +554,7 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
+
         };
         assert!(s.check_safety(&ctx).is_some());
         assert!(s.check_safety(&ctx).unwrap().contains("hashtags"));
@@ -571,7 +571,7 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
+
         };
         assert!(s.check_safety(&ctx).is_none());
     }
@@ -587,7 +587,7 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
+
         };
         assert!(s.check_safety(&ctx).is_some());
     }
@@ -603,7 +603,7 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
+
         };
         assert!(s.check_safety(&ctx).is_none());
     }

@@ -124,7 +124,6 @@ CRITICAL:
 
         // Add tweet metadata
         prompt.push_str(&format!("\nTweet age: {}\n", ctx.tweet_age));
-        prompt.push_str(&format!("Topic alignment: {}\n", ctx.topic_alignment));
 
         // Final prompt instruction
         prompt.push_str("\nDECIDE ACTION AND GENERATE CONTENT:");

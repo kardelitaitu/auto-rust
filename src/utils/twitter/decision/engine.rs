@@ -322,7 +322,6 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: TaskConfig::default(),
             tweet_age: "".to_string(),
-            topic_alignment: "".to_string(),
         };
         let decision = engine.decide(&ctx).await;
         // Should have fallen back to Persona, which may decide to engage or not

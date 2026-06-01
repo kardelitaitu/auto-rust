@@ -364,7 +364,7 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: TaskConfig::default(),
             tweet_age: "recent".to_string(),
-            topic_alignment: "neutral".to_string(),
+
         }
     }
 

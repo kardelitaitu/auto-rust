@@ -112,7 +112,6 @@ pub async fn handle_engagement_decision(
         persona: persona.clone(),
         task_config: task_config.clone(),
         tweet_age: "Recent".to_string(), // Default for feed view
-        topic_alignment: "Unknown".to_string(),
     };
 
     // Use Factory to create appropriate engine

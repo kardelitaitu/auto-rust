@@ -70,31 +70,17 @@ Created unified `js_extract_all_tweets.js` returning a superset of all tweet dat
 
 ## LOW Severity
 
-### L1. `EngagementCounters::increment()` Silently Ignores Unknown Actions (limits.rs:101)
+### L1. `EngagementCounters::increment()` Silently Ignores Unknown Actions (limits.rs:101) ✅ FIXED
 
-```rust
-_ => {}
-```
+Changed `_ => {}` to `_ => warn!("Unknown action type: {action}")`.
 
-If a new action type is added but `increment()` isn't updated, the counter silently does nothing.
+### L2. Persona Variance Uses Timing Parameter for Probability Perturbation (persona.rs:62) ✅ FIXED
 
-**Fix:** Log a warning: `_ => warn!("Unknown action type: {action}")`.
+Added `behavior_variance_pct: ProfileParam` to `BrowserProfile` (all 21 presets set to `p(40.0, 20.0)`). `with_profile_variance` now uses `profile.behavior_variance_pct.base` instead of `profile.action_delay_variance_pct.base`.
 
-### L2. Persona Variance Uses Timing Parameter for Probability Perturbation (persona.rs:62)
+### L3. `handle_engagement_decision` Always Uses `topic_alignment: "Unknown"` (engagement.rs:98) ✅ FIXED
 
-`with_profile_variance` derives variance from `profile.action_delay_variance_pct.base`, which is a timing parameter, not a behavioral one. Using timing variance to perturb engagement probabilities conflates two different behavioral dimensions.
-
-**Fix:** Add a dedicated `behavior_variance_pct` to `BrowserProfile`, or use a separate configurable variance.
-
-### L3. `handle_engagement_decision` Always Uses `topic_alignment: "Unknown"` (engagement.rs:98)
-
-```rust
-topic_alignment: "Unknown".to_string(),
-```
-
-The `TweetContext.topic_alignment` field is always "Unknown" in feed view. Decision strategies that use this field get no useful signal.
-
-**Fix:** Either compute topic alignment from tweet text vs profile interests, or remove the field.
+Removed the `topic_alignment` field from `TweetContext` entirely. No behavioral change — the field was always `"Unknown"`, `""`, or `"neutral"`, providing no real signal. LLM strategy prompt adjusted accordingly.
 
 ### L4. `RETWEET_CONFIRM_BUTTON_SELECTOR` Has Escaped Quotes Unlike Other Constants (selectors.rs:152)
 
@@ -147,3 +133,6 @@ Verification checks if the composer still contains text. But the composer may be
 9. **M4** — hardcoded keywords (operational flexibility) ✅
 10. **M8** — LLM timeout too short ✅
 11. **M9** — reply extraction unification ✅
+12. **L1** — warn on unknown action ✅
+13. **L2** — behavioral variance separate from timing ✅
+14. **L3** — remove dead topic_alignment field ✅

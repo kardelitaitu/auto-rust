@@ -6,12 +6,14 @@
 
 pub mod decision;
 pub mod sentiment;
+pub mod twitteractivity_actions;
 pub mod twitteractivity_constants;
 pub mod twitteractivity_dive;
 pub mod twitteractivity_engagement;
 pub mod twitteractivity_errors;
 pub mod twitteractivity_feed;
 pub mod twitteractivity_humanized;
+pub mod twitteractivity_helpers;
 pub mod twitteractivity_interact;
 pub mod twitteractivity_limits;
 pub mod twitteractivity_llm;

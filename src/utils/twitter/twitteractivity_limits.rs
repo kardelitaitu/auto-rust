@@ -23,6 +23,8 @@ pub struct EngagementCounters {
     pub bookmarks: u32,
     /// Number of quote tweets performed in current session (V2)
     pub quote_tweets: u32,
+    /// Cached total (avoids recomputing sum on every `can_*` call)
+    cached_total_actions: u32,
 }
 
 impl EngagementCounters {
@@ -35,55 +37,56 @@ impl EngagementCounters {
     /// Returns total number of engagement actions taken.
     #[instrument]
     pub fn total_actions(&self) -> u32 {
-        self.likes
-            + self.retweets
-            + self.follows
-            + self.replies
-            + self.thread_dives
-            + self.bookmarks
-            + self.quote_tweets
+        self.cached_total_actions
     }
 
     /// Increments the like counter.
     #[instrument]
     pub fn increment_like(&mut self) {
         self.likes += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the retweet counter.
     #[instrument]
     pub fn increment_retweet(&mut self) {
         self.retweets += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the follow counter.
     #[instrument]
     pub fn increment_follow(&mut self) {
         self.follows += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the reply counter.
     #[instrument]
     pub fn increment_reply(&mut self) {
         self.replies += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the thread dive counter.
     #[instrument]
     pub fn increment_thread_dive(&mut self) {
         self.thread_dives += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the bookmark counter.
     #[instrument]
     pub fn increment_bookmark(&mut self) {
         self.bookmarks += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the quote tweet counter.
     #[instrument]
     pub fn increment_quote_tweet(&mut self) {
         self.quote_tweets += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments counter by action type string.

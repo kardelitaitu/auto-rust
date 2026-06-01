@@ -26,6 +26,19 @@ pub fn truncate_with_ellipsis(text: &str, max_chars: usize) -> String {
     result
 }
 
+/// Normalizes a browser token for filter matching.
+///
+/// Removes non-alphanumeric characters and converts to lowercase
+/// for consistent case-insensitive comparison.
+#[must_use]
+pub fn normalize_browser_token(value: &str) -> String {
+    value
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{preview_chars, truncate_chars, truncate_with_ellipsis};

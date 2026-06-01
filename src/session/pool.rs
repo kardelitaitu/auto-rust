@@ -264,14 +264,7 @@ impl Default for SessionPoolManager {
     }
 }
 
-/// Normalizes a browser token for filter matching.
-fn normalize_browser_token(value: &str) -> String {
-    value
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .flat_map(char::to_lowercase)
-        .collect()
-}
+use crate::utils::normalize_browser_token;
 
 #[cfg(test)]
 mod tests {

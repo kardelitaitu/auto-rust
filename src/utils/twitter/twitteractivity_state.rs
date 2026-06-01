@@ -326,13 +326,13 @@ impl SessionState {
     #[must_use]
     pub fn is_action_allowed(&self, action: &str) -> bool {
         match action {
-            "like" => self.counters.likes < self.limits.max_likes,
-            "retweet" => self.counters.retweets < self.limits.max_retweets,
-            "follow" => self.counters.follows < self.limits.max_follows,
-            "reply" => self.counters.replies < self.limits.max_replies,
-            "bookmark" => self.counters.bookmarks < self.limits.max_bookmarks,
-            "quote" => self.counters.quote_tweets < self.limits.max_quote_tweets,
-            "dive" => self.counters.thread_dives < self.limits.max_thread_dives,
+            "like" => self.limits.can_like(&self.counters),
+            "retweet" => self.limits.can_retweet(&self.counters),
+            "follow" => self.limits.can_follow(&self.counters),
+            "reply" => self.limits.can_reply(&self.counters),
+            "bookmark" => self.limits.can_bookmark(&self.counters),
+            "quote" => self.limits.can_quote_tweet(&self.counters),
+            "dive" => self.limits.can_dive(&self.counters),
             _ => false,
         }
     }
@@ -904,12 +904,30 @@ mod gap_tests {
     #[test]
     fn sentiment_templates_default_has_non_empty_vectors() {
         let t = SentimentTemplates::default();
-        assert!(t.reply_positive.len() >= 3, "reply_positive should have templates");
-        assert!(t.reply_neutral.len() >= 3, "reply_neutral should have templates");
-        assert!(t.reply_negative.len() >= 3, "reply_negative should have templates");
-        assert!(t.quote_positive.len() >= 3, "quote_positive should have templates");
-        assert!(t.quote_neutral.len() >= 3, "quote_neutral should have templates");
-        assert!(t.quote_negative.len() >= 3, "quote_negative should have templates");
+        assert!(
+            t.reply_positive.len() >= 3,
+            "reply_positive should have templates"
+        );
+        assert!(
+            t.reply_neutral.len() >= 3,
+            "reply_neutral should have templates"
+        );
+        assert!(
+            t.reply_negative.len() >= 3,
+            "reply_negative should have templates"
+        );
+        assert!(
+            t.quote_positive.len() >= 3,
+            "quote_positive should have templates"
+        );
+        assert!(
+            t.quote_neutral.len() >= 3,
+            "quote_neutral should have templates"
+        );
+        assert!(
+            t.quote_negative.len() >= 3,
+            "quote_negative should have templates"
+        );
     }
 
     #[test]
@@ -936,8 +954,13 @@ mod gap_tests {
         let mut session = SessionState::new(limits, 60_000, 100);
 
         // All allowed initially
-        for action in &["like", "retweet", "follow", "reply", "bookmark", "quote", "dive"] {
-            assert!(session.is_action_allowed(action), "{action} should be allowed");
+        for action in &[
+            "like", "retweet", "follow", "reply", "bookmark", "quote", "dive",
+        ] {
+            assert!(
+                session.is_action_allowed(action),
+                "{action} should be allowed"
+            );
         }
 
         // Record one of each — all should be blocked

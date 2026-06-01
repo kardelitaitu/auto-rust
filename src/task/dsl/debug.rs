@@ -293,9 +293,7 @@ mod tests {
             action_type: None,
             watch_variable: None,
             condition: Some(Arc::new(|vars: &HashMap<String, String>| {
-                vars.get("status")
-                    .map(|v| v == "active")
-                    .unwrap_or(false)
+                vars.get("status").map(|v| v == "active").unwrap_or(false)
             })),
         };
 

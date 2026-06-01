@@ -415,10 +415,11 @@ impl MetricsCollector {
             active_sessions,
             active_workers: self.active_tasks.load(Ordering::SeqCst),
             task_queue_depth,
-            timestamp_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
+            timestamp_ms: crate::utils::duration_ms(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default(),
+            ),
         }
     }
 

@@ -91,7 +91,7 @@ impl UnifiedStrategy {
             api_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
                 .to_string(),
             model: "qwen-turbo".to_string(),
-            timeout_ms: 5000,
+            timeout_ms: 15_000,
             client: Client::new(),
         }
     }
@@ -640,7 +640,7 @@ mod tests {
     fn test_new_sets_defaults() {
         let s = UnifiedStrategy::new("key".to_string());
         assert_eq!(s.model, "qwen-turbo");
-        assert_eq!(s.timeout_ms, 5000);
+        assert_eq!(s.timeout_ms, 15_000);
         assert!(s.api_url.contains("dashscope-intl"));
         assert_eq!(s.api_key, "key");
     }

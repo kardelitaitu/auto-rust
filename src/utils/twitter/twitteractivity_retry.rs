@@ -395,7 +395,7 @@ mod delay_tests {
         for _ in 0..100 {
             let d = calculate_delay(1, &config);
             // Base = 100, jitter_range = 50, so delay in [75, 125]
-            assert!(d >= 50 && d <= 150, "delay {d} out of bounds");
+            assert!((50..=150).contains(&d), "delay {d} out of bounds");
         }
     }
 }
@@ -704,9 +704,8 @@ mod circuit_breaker_tests {
     async fn circuit_breaker_execute_failure_records_failure() {
         let cb = CircuitBreaker::new(2, 1000);
 
-        let result: Result<(), anyhow::Error> = cb
-            .execute(|| async { Err(anyhow::anyhow!("fail")) })
-            .await;
+        let result: Result<(), anyhow::Error> =
+            cb.execute(|| async { Err(anyhow::anyhow!("fail")) }).await;
         assert!(result.is_err());
         // One failure recorded, still below threshold
         assert!(!cb.is_open().await);
@@ -729,7 +728,10 @@ mod circuit_breaker_tests {
         // Execute should be rejected
         let result: Result<u32, anyhow::Error> = cb.execute(|| async { Ok(42) }).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Circuit breaker is open"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circuit breaker is open"));
     }
 
     #[tokio::test]

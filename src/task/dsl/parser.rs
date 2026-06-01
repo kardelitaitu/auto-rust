@@ -351,8 +351,12 @@ actions:
             parameters: std::collections::HashMap::new(),
             include: vec![],
             actions: vec![
-                Action::Navigate { url: "https://a".to_string() },
-                Action::Click { selector: "#b".to_string() },
+                Action::Navigate {
+                    url: "https://a".to_string(),
+                },
+                Action::Click {
+                    selector: "#b".to_string(),
+                },
             ],
         };
 
@@ -372,8 +376,7 @@ actions:
             "format output should start with task name"
         );
         assert_eq!(
-            action_lines,
-            3,
+            action_lines, 3,
             "format output should list both actions in order"
         );
     }
@@ -400,7 +403,11 @@ actions:
         };
 
         let result = validate_task_definition(&task_def);
-        assert!(result.is_ok(), "Valid Retry block should pass: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Valid Retry block should pass: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -592,10 +599,7 @@ actions:
     #[test]
     fn test_get_task_definition_not_found() {
         let result = get_task_definition("definitely-nonexistent-task-name-xyz");
-        assert!(
-            result.is_none(),
-            "Should return None for unknown task name"
-        );
+        assert!(result.is_none(), "Should return None for unknown task name");
     }
 
     #[test]

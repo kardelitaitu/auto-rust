@@ -15,6 +15,7 @@ use tracing::instrument;
 use crate::llm::{build_quote_messages, build_reply_messages, Llm};
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_LONG_SECS;
+use crate::utils::twitter::twitteractivity_selectors;
 
 fn llm_instance() -> Result<&'static Llm> {
     static LLM: OnceLock<Llm> = OnceLock::new();
@@ -126,37 +127,7 @@ pub async fn generate_quote_commentary(
 pub async fn extract_tweet_context(
     api: &TaskContext,
 ) -> Result<(String, String, Vec<(String, String)>)> {
-    let js = r#"
-        (function() {
-            // Extract tweet author from the first visible tweet article
-            var authorEl = document.querySelector('article[data-testid="tweet"] [dir="auto"]');
-            var author = authorEl ? authorEl.textContent.trim() : 'unknown';
-            
-            // Extract tweet text
-            var tweetEl = document.querySelector('[data-testid="tweetText"]');
-            var text = tweetEl ? tweetEl.textContent.trim() : '';
-            
-            // Extract up to 20 replies with their own author per reply
-            var replies = [];
-            var replyEls = document.querySelectorAll('article[data-testid="tweet"]');
-            for (var i = 1; i < Math.min(replyEls.length, 21); i++) {
-                var reply = replyEls[i];
-                var replyAuthorEl = reply.querySelector('[dir="auto"]');
-                var replyTextEl = reply.querySelector('[data-testid="tweetText"]');
-                var replyAuthor = replyAuthorEl ? replyAuthorEl.textContent.trim() : 'unknown';
-                var replyText = replyTextEl ? replyTextEl.textContent.trim() : '';
-                if (replyText && replyText.length > 0) {
-                    replies.push({ author: replyAuthor, text: replyText });
-                }
-            }
-            
-            return {
-                author: author,
-                text: text,
-                replies: replies.map(function(r) { return [r.author, r.text]; })
-            };
-        })()
-    "#;
+    let js = twitteractivity_selectors::js_extract_tweet_context();
 
     let result = api.page().evaluate(js.to_string()).await?;
     let value = result.value().context("Failed to extract tweet context")?;

@@ -224,6 +224,15 @@ where
         .map_err(|_| anyhow!("[{task_name}] Task exceeded duration budget of {duration_ms}ms"))?
 }
 
+/// Converts a [`Duration`] to milliseconds as a [`u64`].
+///
+/// Uses a saturating cast from `u128` to `u64`. In practice the truncation
+/// only matters for durations longer than ~584 million years.
+#[must_use]
+pub fn duration_ms(d: Duration) -> u64 {
+    d.as_millis() as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

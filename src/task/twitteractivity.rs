@@ -692,7 +692,7 @@ mod timeout_tests {
 #[cfg(test)]
 mod gap_tests {
     use super::{build_summary_lines, should_continue_feed_loop, TaskConfig};
-    use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
+    use crate::utils::twitter::twitteractivity_limits::EngagementLimits;
     use crate::utils::twitter::twitteractivity_state::SessionState;
 
     #[test]
@@ -705,20 +705,38 @@ mod gap_tests {
         session.record_action("t3", "retweet");
         session.record_action("t4", "follow");
 
-        let (summary, remaining) = build_summary_lines(&session, &TaskConfig {
-            duration_ms: 60_000,
-            ..Default::default()
-        });
+        let (summary, remaining) = build_summary_lines(
+            &session,
+            &TaskConfig {
+                duration_ms: 60_000,
+                ..Default::default()
+            },
+        );
 
         // Summary should reflect actual counter values
-        assert!(summary.contains("likes=2"), "Expected likes=2, got: {summary}");
-        assert!(summary.contains("retweets=1"), "Expected retweets=1, got: {summary}");
-        assert!(summary.contains("follows=1"), "Expected follows=1, got: {summary}");
+        assert!(
+            summary.contains("likes=2"),
+            "Expected likes=2, got: {summary}"
+        );
+        assert!(
+            summary.contains("retweets=1"),
+            "Expected retweets=1, got: {summary}"
+        );
+        assert!(
+            summary.contains("follows=1"),
+            "Expected follows=1, got: {summary}"
+        );
         assert!(summary.contains("total_actions=4"));
 
         // Remaining should show what's left
-        assert!(remaining.contains("likes=8"), "Expected remaining likes=8, got: {remaining}");
-        assert!(remaining.contains("retweets=7"), "Expected remaining retweets=7, got: {remaining}");
+        assert!(
+            remaining.contains("likes=8"),
+            "Expected remaining likes=8, got: {remaining}"
+        );
+        assert!(
+            remaining.contains("retweets=7"),
+            "Expected remaining retweets=7, got: {remaining}"
+        );
     }
 
     #[test]
@@ -786,10 +804,13 @@ mod gap_tests {
         session.counters.likes = 5;
         session.counters.retweets = 3;
 
-        let (_, remaining) = build_summary_lines(&session, &TaskConfig {
-            duration_ms: 60_000,
-            ..Default::default()
-        });
+        let (_, remaining) = build_summary_lines(
+            &session,
+            &TaskConfig {
+                duration_ms: 60_000,
+                ..Default::default()
+            },
+        );
 
         // Should saturate at 0, not underflow
         assert!(remaining.contains("likes=0"));

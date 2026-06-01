@@ -381,8 +381,7 @@ mod tests {
     #[test]
     fn test_substitute_variables_noop_when_placeholder_has_no_match() {
         let text = "${missing}-end";
-        let variables: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+        let variables: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
         let mut result = text.to_string();
         for (key, value) in &variables {

@@ -211,7 +211,11 @@ mod tests {
         for action in &actions {
             let yaml = serde_yml::to_string(&action).unwrap();
             let deserialized: Action = serde_yml::from_str(&yaml).unwrap();
-            assert_eq!(*action, deserialized, "YAML round-trip failed for {:?}", action);
+            assert_eq!(
+                *action, deserialized,
+                "YAML round-trip failed for {:?}",
+                action
+            );
         }
     }
 
@@ -650,7 +654,10 @@ actions:
         };
 
         let result = task.resolve_includes(Some(dir_path));
-        assert!(result.is_ok(), "Conditional includes should be skipped, not error");
+        assert!(
+            result.is_ok(),
+            "Conditional includes should be skipped, not error"
+        );
 
         let resolved = result.unwrap();
         assert_eq!(
@@ -658,7 +665,10 @@ actions:
             1,
             "Conditional include should be skipped, only original action should remain"
         );
-        assert!(matches!(resolved.actions[0], Action::Wait { duration_ms: 100 }));
+        assert!(matches!(
+            resolved.actions[0],
+            Action::Wait { duration_ms: 100 }
+        ));
     }
 
     #[test]
@@ -704,7 +714,11 @@ include:
         };
 
         let result = task.resolve_includes(Some(dir_path));
-        assert!(result.is_ok(), "3-level nesting should resolve: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "3-level nesting should resolve: {:?}",
+            result
+        );
 
         let resolved = result.unwrap();
         assert_eq!(

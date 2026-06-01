@@ -149,10 +149,10 @@ pub const DIR_AUTO_SPAN_SELECTOR: &str = r#"[dir="auto"] span:first-child"#;
 pub const TWEET_BUTTON_SELECTOR: &str = r"button[data-testid], a[data-testid]";
 
 /// Retweet confirm button selector (in modal/dialog)
-pub const RETWEET_CONFIRM_BUTTON_SELECTOR: &str = r#"button[data-testid=\"retweetConfirm\"]"#;
+pub const RETWEET_CONFIRM_BUTTON_SELECTOR: &str = "button[data-testid=\"retweetConfirm\"]";
 
 /// Tweet button inline selector (reply submit button in composer)
-pub const TWEET_BUTTON_INLINE_SELECTOR: &str = r#"button[data-testid=\"tweetButtonInline\"]"#;
+pub const TWEET_BUTTON_INLINE_SELECTOR: &str = "button[data-testid=\"tweetButtonInline\"]";
 
 /// Returns JS to find and return center coordinates of the retweet confirm button.
 /// Returns `{x, y}` or `null` if not found.
@@ -218,6 +218,49 @@ pub fn selector_health_check() -> &'static str {
     include_str!("js/selector_health_check.js")
 }
 
+/// Returns JS to verify a like was registered by checking button state.
+/// Replaces {X} and {Y} with click coordinates.
+#[must_use]
+pub fn js_verify_like(x: f64, y: f64) -> String {
+    include_str!("js/js_verify_like.js")
+        .replace("{X}", &x.to_string())
+        .replace("{Y}", &y.to_string())
+}
+
+/// Returns JS to extract tweet context (author, text, replies) for LLM.
+#[must_use]
+pub fn js_extract_tweet_context() -> &'static str {
+    include_str!("js/js_extract_tweet_context.js")
+}
+
+/// Returns JS to find the quote tweet button in the retweet menu.
+/// Returns `{x, y}` or `null` if not found.
+#[must_use]
+pub fn js_find_quote_button() -> &'static str {
+    include_str!("js/js_find_quote_button.js")
+}
+
+/// Returns JS to find and focus the composer textarea for quote tweets.
+/// Returns `true` if found and focused, `false` otherwise.
+#[must_use]
+pub fn js_focus_composer() -> &'static str {
+    include_str!("js/js_focus_composer.js")
+}
+
+/// Returns JS to find the tweet/post button in the composer.
+/// Returns `{x, y}` or `null` if not found.
+#[must_use]
+pub fn js_find_tweet_button() -> &'static str {
+    include_str!("js/js_find_tweet_button.js")
+}
+
+/// Returns JS to verify a quote tweet was posted (composer cleared).
+/// Returns `{posted, reason}` object.
+#[must_use]
+pub fn js_verify_quote_posted() -> &'static str {
+    include_str!("js/js_verify_quote_posted.js")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,6 +293,8 @@ mod tests {
             REPLY_TESTID_SELECTOR,
             DIR_AUTO_SPAN_SELECTOR,
             TWEET_BUTTON_SELECTOR,
+            RETWEET_CONFIRM_BUTTON_SELECTOR,
+            TWEET_BUTTON_INLINE_SELECTOR,
         ];
 
         for selector in selectors {

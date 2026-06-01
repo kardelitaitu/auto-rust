@@ -21,6 +21,7 @@ use crate::logger::{scoped_log_context, LogContext};
 use crate::metrics::MetricsCollector;
 use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 use crate::session::{Session, SessionState};
+use crate::utils::duration_ms;
 use futures::stream::{FuturesUnordered, StreamExt};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -174,7 +175,7 @@ async fn acquire_global_execution_slot(
         permit = global_semaphore.acquire_owned() => permit,
         () = cancel_token.cancelled() => {
             return Err(TaskResult::cancelled(
-                queue_start.elapsed().as_millis() as u64,
+                duration_ms(queue_start.elapsed()),
                 format!(
                     "Task {task_name} cancelled before acquiring global execution slot for session {session_id}"
                 ),
@@ -186,7 +187,7 @@ async fn acquire_global_execution_slot(
     match permit {
         Ok(permit) => Ok(GlobalExecutionSlot::new(global_active_tasks, permit)),
         Err(_) => Err(TaskResult::failure(
-            queue_start.elapsed().as_millis() as u64,
+            duration_ms(queue_start.elapsed()),
             format!(
                 "Task {task_name} failed to acquire global execution slot for session {session_id}"
             ),
@@ -575,7 +576,7 @@ async fn execute_task_with_retry(
 
     if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
         return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!("Task {} validation failed: {}", task_def.name, e),
             TaskErrorKind::Validation,
         );
@@ -585,7 +586,7 @@ async fn execute_task_with_retry(
         session.mark_unhealthy();
         session.set_state(crate::session::SessionState::Failed);
         return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!("Session {} is unhealthy, skipping task", session.id),
             TaskErrorKind::Session,
         );
@@ -598,7 +599,7 @@ async fn execute_task_with_retry(
     // See: https://github.com/your-org/rust-orchestrator/docs/ARCHITECTURE.md#session-concurrency
     if !session.is_idle() {
         return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!(
                 "Session {} is not idle (state: {:?}), skipping task",
                 session.id,
@@ -620,7 +621,7 @@ async fn execute_task_with_retry(
                 task_def.name, session.id
             );
             return TaskResult::cancelled(
-                start.elapsed().as_millis() as u64,
+                duration_ms(start.elapsed()),
                 format!("Task {} cancelled before worker acquisition", task_def.name),
                 TaskErrorKind::Timeout,
             );
@@ -629,7 +630,7 @@ async fn execute_task_with_retry(
         Some(permit) => permit,
         None => {
             return TaskResult::failure(
-                start.elapsed().as_millis() as u64,
+                duration_ms(start.elapsed()),
                 "Failed to acquire worker".to_string(),
                 TaskErrorKind::Session,
             );
@@ -641,7 +642,7 @@ async fn execute_task_with_retry(
         Err(e) => {
             drop(permit);
             return TaskResult::failure(
-                start.elapsed().as_millis() as u64,
+                duration_ms(start.elapsed()),
                 e.to_string(),
                 TaskErrorKind::Browser,
             );
@@ -836,7 +837,7 @@ async fn execute_task_with_retry(
 
     if was_cancelled {
         return TaskResult::cancelled(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!("Task {} cancelled after retries: {}", task_def.name, msg),
             kind,
         )
@@ -844,7 +845,7 @@ async fn execute_task_with_retry(
     }
 
     TaskResult::failure(
-        start.elapsed().as_millis() as u64,
+        duration_ms(start.elapsed()),
         format!("Task {} failed after retries: {}", task_def.name, msg),
         kind,
     )

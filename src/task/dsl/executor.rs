@@ -4030,9 +4030,7 @@ mod tests {
         let exec = create_executor(&mock, vec![]);
 
         let result = exec
-            .evaluate_condition(&Condition::And {
-                conditions: vec![],
-            })
+            .evaluate_condition(&Condition::And { conditions: vec![] })
             .await
             .unwrap();
         assert!(result, "And with empty conditions should return true");
@@ -4072,9 +4070,7 @@ mod tests {
         let exec = create_executor(&mock, vec![]);
 
         let result = exec
-            .evaluate_condition(&Condition::Or {
-                conditions: vec![],
-            })
+            .evaluate_condition(&Condition::Or { conditions: vec![] })
             .await
             .unwrap();
         assert!(!result, "Or with empty conditions should return false");
@@ -4208,7 +4204,10 @@ mod tests {
             })
             .await;
 
-        assert!(result.is_err(), "WaitFor should timeout when element never appears");
+        assert!(
+            result.is_err(),
+            "WaitFor should timeout when element never appears"
+        );
         assert!(
             result.unwrap_err().to_string().contains("Timeout"),
             "error should mention timeout"
@@ -4555,7 +4554,10 @@ mod tests {
         assert!(exec.cache_enabled, "caching should be enabled by default");
 
         exec.disable_caching();
-        assert!(!exec.cache_enabled, "disable_caching should set flag to false");
+        assert!(
+            !exec.cache_enabled,
+            "disable_caching should set flag to false"
+        );
 
         exec.enable_caching();
         assert!(exec.cache_enabled, "enable_caching should set flag to true");

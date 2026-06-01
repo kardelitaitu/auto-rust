@@ -13,10 +13,10 @@ use log::info;
 
 /// Rule-based decision engine using persona configuration.
 pub(crate) struct PersonaStrategy {
-    controversial_keywords: Vec<&'static str>,
-    spam_patterns: Vec<&'static str>,
-    tragedy_keywords: Vec<&'static str>,
-    crypto_keywords: Vec<&'static str>,
+    controversial_keywords: Vec<String>,
+    spam_patterns: Vec<String>,
+    tragedy_keywords: Vec<String>,
+    crypto_keywords: Vec<String>,
     /// Base legacy strategy for shared logic
     _base: LegacyStrategy,
 }
@@ -24,96 +24,31 @@ pub(crate) struct PersonaStrategy {
 impl PersonaStrategy {
     pub fn new() -> Self {
         Self {
-            controversial_keywords: vec![
-                "election",
-                "vote",
-                "democrat",
-                "republican",
-                "congress",
-                "senate",
-                "woke",
-                "fascist",
-                "liberal",
-                "conservative",
-                "biden",
-                "trump",
-                "abortion",
-                "gun control",
-                "immigration",
-                "taxes",
-                "exposed",
-                "cancelled",
-                "drama",
-                "beef",
-                "feud",
-                "scandal",
-                "controversy",
-                "backlash",
-                "callout",
-                "nsfw",
-                "onlyfans",
-                "adult content",
-                "xxx",
-            ],
-            spam_patterns: vec![
-                "follow for follow",
-                "f4f",
-                "l4l",
-                "like4like",
-                "follow4follow",
-                "check my bio",
-                "link in bio",
-                "dm me",
-                "dm for",
-                "1000x",
-                "guaranteed gains",
-                "buy now",
-                "🚀🚀🚀",
-                "💰💰💰",
-            ],
-            tragedy_keywords: vec![
-                "passed away",
-                "died",
-                "death",
-                "funeral",
-                "grief",
-                "mourning",
-                "rest in peace",
-                "rip",
-                "lost my",
-                "my grandmother",
-                "my grandfather",
-                "my mother died",
-                "my father died",
-                "miss her so much",
-                "miss him so much",
-                "devastated",
-                "heartbroken",
-                "tragedy",
-                "accident",
-                "cancer battle",
-            ],
-            crypto_keywords: vec![
-                "nft",
-                "crypto",
-                "bitcoin",
-                "ethereum",
-                "blockchain",
-                "buy my nft",
-                "mint now",
-                "limited nft",
-                "airdrop",
-                "token",
-            ],
+            controversial_keywords: serde_json::from_str(include_str!(
+                "../../persona_keywords/controversial_keywords.json"
+            ))
+            .expect("invalid controversial_keywords.json"),
+            spam_patterns: serde_json::from_str(include_str!(
+                "../../persona_keywords/spam_patterns.json"
+            ))
+            .expect("invalid spam_patterns.json"),
+            tragedy_keywords: serde_json::from_str(include_str!(
+                "../../persona_keywords/tragedy_keywords.json"
+            ))
+            .expect("invalid tragedy_keywords.json"),
+            crypto_keywords: serde_json::from_str(include_str!(
+                "../../persona_keywords/crypto_keywords.json"
+            ))
+            .expect("invalid crypto_keywords.json"),
             _base: LegacyStrategy,
         }
     }
 
     /// Check if text contains any keywords from list.
     #[allow(clippy::unused_self)]
-    fn contains_any(&self, text: &str, keywords: &[&str]) -> bool {
+    fn contains_any(&self, text: &str, keywords: &[impl AsRef<str>]) -> bool {
         let text_lower = text.to_lowercase();
-        keywords.iter().any(|kw| text_lower.contains(kw))
+        keywords.iter().any(|kw| text_lower.contains(kw.as_ref()))
     }
 
     /// Calculate base score from persona weights.
@@ -378,7 +313,7 @@ mod tests {
     #[test]
     fn test_contains_any_empty_keywords() {
         let strategy = PersonaStrategy::new();
-        assert!(!strategy.contains_any("test", &[]));
+        assert!(!strategy.contains_any("test", &[] as &[&str]));
     }
 
     #[test]

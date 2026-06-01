@@ -672,7 +672,10 @@ mod gap_tests {
     // SimulationStopReason as_str for all variants
     #[test]
     fn stop_reason_as_str_all_variants() {
-        assert_eq!(SimulationStopReason::DurationExhausted.as_str(), "duration_exhausted");
+        assert_eq!(
+            SimulationStopReason::DurationExhausted.as_str(),
+            "duration_exhausted"
+        );
         assert_eq!(SimulationStopReason::LimitReached.as_str(), "limit_reached");
         assert_eq!(
             SimulationStopReason::CandidateBudgetExhausted.as_str(),
@@ -746,6 +749,9 @@ mod gap_tests {
         let differs = report1.total_actions != report2.total_actions
             || report1.stop_reason != report2.stop_reason
             || report1.lines != report2.lines;
-        assert!(differs, "Different seeds should typically produce different results");
+        assert!(
+            differs,
+            "Different seeds should typically produce different results"
+        );
     }
 }

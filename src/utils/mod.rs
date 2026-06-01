@@ -48,7 +48,7 @@ pub use profile::*;
 #[allow(unused_imports)]
 pub use scroll::*;
 #[allow(unused_imports)]
-pub use text::*;
+pub use text::{normalize_browser_token, *};
 #[allow(unused_imports)]
 pub use timing::*;
 #[allow(unused_imports)]

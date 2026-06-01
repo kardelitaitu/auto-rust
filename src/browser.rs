@@ -21,18 +21,7 @@ use crate::session::pool::SessionPoolManager;
 use crate::session::Session;
 use log::{info, warn};
 
-/// Normalizes a browser token for filter matching.
-///
-/// Removes non-alphanumeric characters and converts to lowercase
-/// for consistent case-insensitive comparison.
-#[must_use]
-pub fn normalize_browser_token(value: &str) -> String {
-    value
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .flat_map(char::to_lowercase)
-        .collect()
-}
+use crate::utils::normalize_browser_token;
 
 /// Checks if a browser candidate matches any of the specified filters.
 ///

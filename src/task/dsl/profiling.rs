@@ -98,8 +98,9 @@ impl ActionMetrics {
     /// Mark the action as completed successfully.
     #[must_use]
     pub fn complete(mut self) -> Self {
-        self.end_time = Some(Instant::now());
-        self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
+        let end_time = Instant::now();
+        self.end_time = Some(end_time);
+        self.duration = Some(end_time.duration_since(self.start_time));
         self.success = true;
         self
     }
@@ -107,8 +108,9 @@ impl ActionMetrics {
     /// Mark the action as failed.
     #[must_use]
     pub fn fail(mut self, error: &str) -> Self {
-        self.end_time = Some(Instant::now());
-        self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
+        let end_time = Instant::now();
+        self.end_time = Some(end_time);
+        self.duration = Some(end_time.duration_since(self.start_time));
         self.success = false;
         self.error = Some(error.to_string());
         self

@@ -100,11 +100,8 @@ impl PersonaWeights {
     }
 }
 
-fn effective_probability(base_probability: f64, _persona: &PersonaWeights) -> f64 {
-    // interest_multiplier is already applied to base probabilities via
-    // with_sentiment_modulation before they reach this function.
-    // Using it again would double-count.
-    base_probability.clamp(0.0, 1.0)
+fn effective_probability(base_probability: f64, persona: &PersonaWeights) -> f64 {
+    (base_probability * persona.interest_multiplier).clamp(0.0, 1.0)
 }
 
 /// Selects a `PersonaWeights` configuration based on the provided weights dictionary.

@@ -1,7 +1,6 @@
 //! LLM output validation and sanitization for Twitter.
 
 use anyhow::Result;
-use log::warn;
 use std::sync::OnceLock;
 
 /// Banned AI-sounding words list.
@@ -76,7 +75,7 @@ pub fn validate_reply(text: &str) -> Result<String> {
 
     // Check for banned AI words
     if let Some(banned_word) = check_banned_words(&sanitized) {
-        warn!("Reply contains banned AI word: '{banned_word}', but proceeding");
+        anyhow::bail!("Reply contains banned AI word: '{banned_word}'");
     }
 
     // Ensure non-empty

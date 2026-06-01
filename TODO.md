@@ -50,11 +50,9 @@ Several files had inline JavaScript strings instead of using the centralized sel
 
 Changed to `anyhow::bail!()` — banned words now cause `validate_reply` to return `Err`, which propagates via `?` or falls back via `unwrap_or_else`.
 
-### M6. Emoji Removal Uses Incomplete Unicode Ranges (llm_validation.rs:126-138)
+### M6. Emoji Removal Uses Incomplete Unicode Ranges (llm_validation.rs:126-138) ✅ FIXED
 
-Only covers 6 basic emoji blocks (Emoticons, Misc Symbols, Transport, Flags, Misc symbols, Dingbats). **Missing:** Supplemental Symbols (1F900-1F9FF), Symbols Extended-A/B (1FA00-1FAFF), skin tone modifiers, etc.
-
-**Fix:** Use the `unicode-emoji` crate or maintain a more comprehensive range list.
+Added Supplemental Symbols (0x1F900-1F9FF), Symbols Extended-A (0x1FA00-1FAFF), skin tone modifiers (0x1F3FB-1F3FF), variation selectors (0xFE00-FE0F), and ZWJ (U+200D). Covers ~800 more codepoints than before.
 
 ### M7. Like Verification JS Queries Wrong DOM Scope (engagement.rs:922-923)
 

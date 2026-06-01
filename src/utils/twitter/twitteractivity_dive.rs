@@ -48,7 +48,9 @@ use anyhow::{Context, Result};
 use log::info;
 use tracing::instrument;
 
-use super::twitteractivity_selectors::{js_extract_all_tweets, js_get_current_url, selector_all_tweets};
+use super::twitteractivity_selectors::{
+    js_extract_all_tweets, js_get_current_url, selector_all_tweets,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct DiveIntoThreadOutcome {

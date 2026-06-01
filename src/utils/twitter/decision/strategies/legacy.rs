@@ -364,7 +364,6 @@ mod tests {
             persona: PersonaWeights::default(),
             task_config: TaskConfig::default(),
             tweet_age: "recent".to_string(),
-
         }
     }
 

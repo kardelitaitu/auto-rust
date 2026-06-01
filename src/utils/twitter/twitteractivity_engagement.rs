@@ -2,9 +2,7 @@
 //! Contains `process_candidate()` and helper functions for tweet engagement.
 
 use super::twitteractivity_retry::{retry_with_backoff, RetryConfig};
-use super::twitteractivity_state::{
-    CandidateContext, CandidateResult, TaskConfig,
-};
+use super::twitteractivity_state::{CandidateContext, CandidateResult, TaskConfig};
 use crate::metrics::{
     RUN_COUNTER_BOOKMARK_FAILURE, RUN_COUNTER_BOOKMARK_SUCCESS, RUN_COUNTER_CLICK_VERIFY_FAILED,
     RUN_COUNTER_DIVE_FAILURE, RUN_COUNTER_DIVE_SUCCESS, RUN_COUNTER_DIVE_TARGET_FALLBACK_USED,
@@ -17,14 +15,12 @@ use crate::prelude::TaskContext;
 use crate::utils::twitter::sentiment::SentimentAnalyzer;
 use crate::utils::twitter::{
     decision::{
-        DecisionEngineFactory, DecisionStrategy, EngagementDecision, EngagementLevel,
-        TweetContext,
+        DecisionEngineFactory, DecisionStrategy, EngagementDecision, EngagementLevel, TweetContext,
     },
     sentiment::Sentiment,
     twitteractivity_dive::{dive_into_thread, identify_thread_replies},
     twitteractivity_humanized::{
-        clustered_engagement_pause, clustered_reply_pause,
-        human_pause, scroll_pause,
+        clustered_engagement_pause, clustered_reply_pause, human_pause, scroll_pause,
     },
     twitteractivity_interact::{
         bookmark_tweet, follow_from_tweet, like_tweet, reply_to_tweet, retweet_tweet,
@@ -34,9 +30,7 @@ use crate::utils::twitter::{
         extract_tweet_context, generate_quote_commentary, generate_reply, quote_tweet,
     },
     twitteractivity_navigation::goto_home,
-    twitteractivity_persona::{
-        should_dive, PersonaWeights,
-    },
+    twitteractivity_persona::{should_dive, PersonaWeights},
 };
 use anyhow::Result;
 use log::{info, warn};

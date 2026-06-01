@@ -143,7 +143,13 @@ pub fn select_persona_weights(
         override_field!(w, persona, overrides, reply_prob, "reply");
         override_field!(w, persona, overrides, bookmark_prob, "bookmark");
         override_field!(w, persona, overrides, thread_dive_prob, "dive");
-        override_field!(w, persona, overrides, interest_multiplier, "interest_multiplier");
+        override_field!(
+            w,
+            persona,
+            overrides,
+            interest_multiplier,
+            "interest_multiplier"
+        );
         if !overrides.is_empty() {
             log::info!("Persona overrides from payload: {}", overrides.join(", "));
         }

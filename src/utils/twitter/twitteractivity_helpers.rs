@@ -6,8 +6,8 @@ use crate::utils::twitter::{
     twitteractivity_interact::is_on_tweet_page,
     twitteractivity_limits::{EngagementCounters, EngagementLimits},
     twitteractivity_persona::{
-        should_bookmark, should_follow, should_like, should_quote, should_reply,
-        should_retweet, PersonaWeights,
+        should_bookmark, should_follow, should_like, should_quote, should_reply, should_retweet,
+        PersonaWeights,
     },
     twitteractivity_state::{TaskConfig, TweetActionTracker},
 };

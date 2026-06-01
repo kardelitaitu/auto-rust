@@ -82,31 +82,17 @@ Added `behavior_variance_pct: ProfileParam` to `BrowserProfile` (all 21 presets 
 
 Removed the `topic_alignment` field from `TweetContext` entirely. No behavioral change — the field was always `"Unknown"`, `""`, or `"neutral"`, providing no real signal. LLM strategy prompt adjusted accordingly.
 
-### L4. `RETWEET_CONFIRM_BUTTON_SELECTOR` Has Escaped Quotes Unlike Other Constants (selectors.rs:152)
+### L4. `RETWEET_CONFIRM_BUTTON_SELECTOR` Has Escaped Quotes Unlike Other Constants (selectors.rs:152) ✅ FIXED
 
-```rust
-pub const RETWEET_CONFIRM_BUTTON_SELECTOR: &str = r#"button[data-testid=\"retweetConfirm\"]"#;
-```
+Changed `"button[data-testid=\"retweetConfirm\"]"` to `r#"button[data-testid="retweetConfirm"]"#` — consistent with all other raw-string selector constants.
 
-Contains literal `\"` unlike all other selector constants. The test `test_css_selector_constants_do_not_contain_literal_backslashes` doesn't include these in its check array.
+### L5. `modulate_persona_by_sentiment` Creates New `SentimentAnalyzer` Per Call (engagement.rs:121) ✅ FIXED
 
-**Fix:** Use regular string literals with proper escaping, or add these to the test array.
+Cached in a `OnceLock<Mutex<SentimentAnalyzer>>` static. Added `Send + Sync` bounds to `SentimentStrategy` trait so the Mutex satisfies Sync.
 
-### L5. `modulate_persona_by_sentiment` Creates New `SentimentAnalyzer` Per Call (engagement.rs:121)
+### L6. `quote_tweet` Verification Heuristic is Fragile (llm_execute.rs:231-240) ✅ FIXED
 
-```rust
-let analyzer = crate::utils::twitter::sentiment::SentimentAnalyzer::new();
-```
-
-A new analyzer instance is created for every candidate. If the analyzer has initialization cost (loading word lists), this is wasteful.
-
-**Fix:** Create the analyzer once at session init and pass it through.
-
-### L6. `quote_tweet` Verification Heuristic is Fragile (llm_execute.rs:231-240)
-
-Verification checks if the composer still contains text. But the composer may be cleared for other reasons (user navigated away, page refreshed). A false positive "posted" is possible.
-
-**Fix:** Also check if the page URL changed or if a new tweet appears in the timeline.
+Now also checks URL has a status path, tweets visible, and no dialog — requires at least 2 corroborating signals beyond cleared composer to confirm posted.
 
 ---
 
@@ -136,3 +122,6 @@ Verification checks if the composer still contains text. But the composer may be
 12. **L1** — warn on unknown action ✅
 13. **L2** — behavioral variance separate from timing ✅
 14. **L3** — remove dead topic_alignment field ✅
+15. **L4** — retweet confirm selector raw string ✅
+16. **L5** — cache SentimentAnalyzer ✅
+17. **L6** — robustify quote_tweet verification ✅

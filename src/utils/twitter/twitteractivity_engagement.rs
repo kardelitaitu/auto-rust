@@ -1589,3 +1589,181 @@ mod property_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
+
+    // should_engage_replies_after_root_action combinations
+    #[test]
+    fn should_engage_replies_requires_all_conditions() {
+        let config = TaskConfig {
+            dry_run_actions: false,
+            ..Default::default()
+        };
+
+        // All true → true
+        assert!(should_engage_replies_after_root_action(true, true, &config));
+
+        // did_dive=false → false
+        assert!(!should_engage_replies_after_root_action(false, true, &config));
+
+        // root_action_success=false → false
+        assert!(!should_engage_replies_after_root_action(true, false, &config));
+
+        // Both false → false
+        assert!(!should_engage_replies_after_root_action(false, false, &config));
+    }
+
+    #[test]
+    fn should_engage_replies_dry_run_blocks() {
+        let config = TaskConfig {
+            dry_run_actions: true,
+            ..Default::default()
+        };
+        // Even with dive+success, dry_run blocks it
+        assert!(!should_engage_replies_after_root_action(true, true, &config));
+    }
+
+    // should_navigate_home_after_dive combinations
+    #[test]
+    fn should_navigate_home_requires_dive_and_not_dry_run() {
+        let config = TaskConfig {
+            dry_run_actions: false,
+            ..Default::default()
+        };
+
+        assert!(should_navigate_home_after_dive(true, &config));
+        assert!(!should_navigate_home_after_dive(false, &config));
+    }
+
+    #[test]
+    fn should_navigate_home_dry_run_blocks() {
+        let config = TaskConfig {
+            dry_run_actions: true,
+            ..Default::default()
+        };
+        assert!(!should_navigate_home_after_dive(true, &config));
+    }
+
+    // filter_detail_actions_for_gate edge cases
+    #[test]
+    fn filter_detail_actions_no_status_url_keeps_only_like() {
+        let mut actions = vec!["like", "retweet", "reply"];
+        filter_detail_actions_for_gate(&mut actions, false, true);
+        assert_eq!(actions, vec!["like"]);
+    }
+
+    #[test]
+    fn filter_detail_actions_dive_not_allowed_keeps_only_like() {
+        let mut actions = vec!["like", "retweet", "reply"];
+        filter_detail_actions_for_gate(&mut actions, true, false);
+        assert_eq!(actions, vec!["like"]);
+    }
+
+    #[test]
+    fn filter_detail_actions_like_only_unaffected() {
+        let mut actions = vec!["like"];
+        filter_detail_actions_for_gate(&mut actions, false, false);
+        assert_eq!(actions, vec!["like"]);
+    }
+
+    #[test]
+    fn filter_detail_actions_empty_list_stays_empty() {
+        let mut actions: Vec<&str> = vec![];
+        filter_detail_actions_for_gate(&mut actions, true, true);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn filter_detail_actions_all_allowed_when_status_and_dive() {
+        let mut actions = vec!["like", "retweet", "reply"];
+        filter_detail_actions_for_gate(&mut actions, true, true);
+        assert_eq!(actions, vec!["like", "retweet", "reply"]);
+    }
+
+    // filter_actions_for_decision_level with empty list
+    #[test]
+    fn filter_decision_level_empty_actions_stays_empty() {
+        let mut actions: Vec<&str> = vec![];
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::Full);
+        assert!(actions.is_empty());
+
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::Medium);
+        assert!(actions.is_empty());
+
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::Minimal);
+        assert!(actions.is_empty());
+
+        filter_actions_for_decision_level(&mut actions, EngagementLevel::None);
+        assert!(actions.is_empty());
+    }
+
+    // action_allowed_by_limits with "dive" action
+    #[test]
+    fn action_allowed_by_limits_dive_returns_false() {
+        let limits = EngagementLimits::default();
+        let counters = EngagementCounters::new();
+        // "dive" is not in the match statement of action_allowed_by_limits
+        assert!(!action_allowed_by_limits("dive", &limits, &counters));
+    }
+
+    #[test]
+    fn action_allowed_by_limits_empty_string_returns_false() {
+        let limits = EngagementLimits::default();
+        let counters = EngagementCounters::new();
+        assert!(!action_allowed_by_limits("", &limits, &counters));
+    }
+
+    // calc_rate edge cases
+    #[test]
+    fn calc_rate_hundred_percent() {
+        assert_eq!(calc_rate(100, 100), 100.0);
+    }
+
+    #[test]
+    fn calc_rate_fractional() {
+        let rate = calc_rate(1, 3);
+        assert!((rate - 33.333333).abs() < 0.01);
+    }
+
+    // extract_tweet_text with truncated text (Twitter API v2 uses "text" with note_text)
+    #[test]
+    fn extract_tweet_text_handles_empty_string_value() {
+        let tweet = serde_json::json!({"text": ""});
+        assert_eq!(extract_tweet_text(&tweet), "");
+    }
+
+    // selected_candidate_actions with tracker blocking specific tweets
+    #[test]
+    fn selected_candidate_actions_tracker_blocks_per_tweet() {
+        let persona = PersonaWeights {
+            like_prob: 1.0,
+            retweet_prob: 1.0,
+            quote_prob: 0.0,
+            follow_prob: 0.0,
+            reply_prob: 0.0,
+            bookmark_prob: 0.0,
+            thread_dive_prob: 0.0,
+            interest_multiplier: 1.0,
+        };
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 10, 100);
+        let counters = EngagementCounters::new();
+        let mut tracker = TweetActionTracker::new(60_000);
+
+        // First call should include like and retweet
+        let actions = selected_candidate_actions(&persona, "tweet_x", &limits, &counters, &tracker);
+        assert!(actions.contains(&"like"));
+        assert!(actions.contains(&"retweet"));
+
+        // Record an action on tweet_x — tracker blocks further actions on same tweet
+        tracker.record_action("tweet_x".to_string(), "like");
+        let blocked = selected_candidate_actions(&persona, "tweet_x", &limits, &counters, &tracker);
+        assert!(blocked.is_empty());
+
+        // Different tweet should still be allowed
+        let other = selected_candidate_actions(&persona, "tweet_y", &limits, &counters, &tracker);
+        assert!(!other.is_empty());
+    }
+}

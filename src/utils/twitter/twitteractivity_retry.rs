@@ -296,6 +296,39 @@ mod config_tests {
         let config = RetryConfig::default();
         assert_eq!(config.max_attempts, 3);
         assert_eq!(config.base_delay_ms, 500);
+        assert_eq!(config.max_delay_ms, 5000);
+        assert_eq!(config.backoff_multiplier, 2.0);
+        assert!((config.jitter_factor - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn retry_config_conservative_values() {
+        let config = RetryConfig::conservative();
+        assert_eq!(config.max_attempts, 5);
+        assert_eq!(config.base_delay_ms, 1000);
+        assert_eq!(config.max_delay_ms, 10000);
+        assert_eq!(config.backoff_multiplier, 1.5);
+        assert!((config.jitter_factor - 0.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn retry_config_aggressive_values() {
+        let config = RetryConfig::aggressive();
+        assert_eq!(config.max_attempts, 2);
+        assert_eq!(config.base_delay_ms, 250);
+        assert_eq!(config.max_delay_ms, 2000);
+        assert_eq!(config.backoff_multiplier, 2.0);
+        assert!((config.jitter_factor - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn conservative_has_more_retries_than_default() {
+        assert!(RetryConfig::conservative().max_attempts > RetryConfig::default().max_attempts);
+    }
+
+    #[test]
+    fn aggressive_has_fewer_retries_than_default() {
+        assert!(RetryConfig::aggressive().max_attempts < RetryConfig::default().max_attempts);
     }
 }
 
@@ -314,6 +347,56 @@ mod delay_tests {
         // Second attempt: 2x base
         let d2 = calculate_delay(2, &config);
         assert!((900..=1100).contains(&d2));
+    }
+
+    #[test]
+    fn calculate_delay_capped_at_max_delay() {
+        let config = RetryConfig {
+            max_attempts: 10,
+            base_delay_ms: 100,
+            max_delay_ms: 500,
+            backoff_multiplier: 10.0,
+            jitter_factor: 0.0,
+        };
+
+        // attempt 3: 100 * 10^2 = 10000, but capped at 500
+        let d = calculate_delay(3, &config);
+        assert_eq!(d, 500);
+    }
+
+    #[test]
+    fn calculate_delay_no_jitter_is_deterministic() {
+        let config = RetryConfig {
+            max_attempts: 5,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            backoff_multiplier: 2.0,
+            jitter_factor: 0.0,
+        };
+
+        // attempt 1: 100 * 2^0 = 100
+        assert_eq!(calculate_delay(1, &config), 100);
+        // attempt 2: 100 * 2^1 = 200
+        assert_eq!(calculate_delay(2, &config), 200);
+        // attempt 3: 100 * 2^2 = 400
+        assert_eq!(calculate_delay(3, &config), 400);
+    }
+
+    #[test]
+    fn calculate_delay_with_jitter_stays_bounded() {
+        let config = RetryConfig {
+            max_attempts: 5,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            backoff_multiplier: 2.0,
+            jitter_factor: 0.5, // 50% jitter
+        };
+
+        for _ in 0..100 {
+            let d = calculate_delay(1, &config);
+            // Base = 100, jitter_range = 50, so delay in [75, 125]
+            assert!(d >= 50 && d <= 150, "delay {d} out of bounds");
+        }
     }
 }
 
@@ -604,6 +687,99 @@ mod circuit_breaker_tests {
 
         // After success, should be closed
         cb.record_success().await;
+        assert!(!cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_execute_success_path() {
+        let cb = CircuitBreaker::new(3, 1000);
+
+        let result = cb.execute(|| async { Ok::<_, anyhow::Error>(42) }).await;
+        assert_eq!(result.unwrap(), 42);
+        // Should remain closed after success
+        assert!(!cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_execute_failure_records_failure() {
+        let cb = CircuitBreaker::new(2, 1000);
+
+        let result: Result<(), anyhow::Error> = cb
+            .execute(|| async { Err(anyhow::anyhow!("fail")) })
+            .await;
+        assert!(result.is_err());
+        // One failure recorded, still below threshold
+        assert!(!cb.is_open().await);
+
+        // Second failure hits threshold
+        let _: Result<(), anyhow::Error> = cb
+            .execute(|| async { Err(anyhow::anyhow!("fail again")) })
+            .await;
+        assert!(cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_execute_rejects_when_open() {
+        let cb = CircuitBreaker::new(1, 10_000);
+
+        // Trip the breaker
+        cb.record_failure().await;
+        assert!(cb.is_open().await);
+
+        // Execute should be rejected
+        let result: Result<u32, anyhow::Error> = cb.execute(|| async { Ok(42) }).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Circuit breaker is open"));
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_half_open_to_closed_on_success() {
+        let cb = CircuitBreaker::new(2, 50); // 50ms reset timeout
+
+        // Trip the breaker
+        cb.record_failure().await;
+        cb.record_failure().await;
+        assert!(cb.is_open().await);
+
+        // Wait for reset timeout
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+
+        // One caller gets through (HALF_OPEN probe)
+        assert!(!cb.is_open().await);
+
+        // Record success → should close
+        cb.record_success().await;
+        assert!(!cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_default_config() {
+        let cb = CircuitBreaker::default();
+        assert!(!cb.is_open().await);
+        // Default: threshold=5, timeout=30s
+        // 4 failures should not open
+        for _ in 0..4 {
+            cb.record_failure().await;
+        }
+        assert!(!cb.is_open().await);
+        // 5th failure opens
+        cb.record_failure().await;
+        assert!(cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_success_resets_failure_counter() {
+        let cb = CircuitBreaker::new(3, 10_000);
+
+        cb.record_failure().await;
+        cb.record_failure().await;
+        // 2 failures, below threshold
+        cb.record_success().await;
+        // Success resets counter to 0
+
+        cb.record_failure().await;
+        cb.record_failure().await;
+        // Only 2 failures again (not 4), still closed
         assert!(!cb.is_open().await);
     }
 }

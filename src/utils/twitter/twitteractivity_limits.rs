@@ -755,3 +755,175 @@ mod tests {
         assert!(remaining.contains_key("total_actions"));
     }
 }
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+
+    // Serde round-trip for EngagementLimits
+    #[test]
+    fn engagement_limits_serde_round_trip() {
+        let limits = EngagementLimits::with_limits(10, 8, 6, 4, 5, 3, 3, 50);
+        let json = serde_json::to_string(&limits).unwrap();
+        let deserialized: EngagementLimits = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.max_likes, limits.max_likes);
+        assert_eq!(deserialized.max_retweets, limits.max_retweets);
+        assert_eq!(deserialized.max_follows, limits.max_follows);
+        assert_eq!(deserialized.max_replies, limits.max_replies);
+        assert_eq!(deserialized.max_thread_dives, limits.max_thread_dives);
+        assert_eq!(deserialized.max_bookmarks, limits.max_bookmarks);
+        assert_eq!(deserialized.max_quote_tweets, limits.max_quote_tweets);
+        assert_eq!(deserialized.max_total_actions, limits.max_total_actions);
+    }
+
+    #[test]
+    fn engagement_limits_serde_defaults_for_missing_fields() {
+        let json = r#"{"max_likes": 20}"#;
+        let limits: EngagementLimits = serde_json::from_str(json).unwrap();
+        assert_eq!(limits.max_likes, 20);
+        assert_eq!(limits.max_retweets, 3); // default
+        assert_eq!(limits.max_follows, 2); // default
+        assert_eq!(limits.max_replies, 1); // default
+        assert_eq!(limits.max_total_actions, 10); // default
+    }
+
+    #[test]
+    fn engagement_limits_serde_empty_object() {
+        let json = "{}";
+        let limits: EngagementLimits = serde_json::from_str(json).unwrap();
+        assert_eq!(limits.max_likes, 5);
+        assert_eq!(limits.max_total_actions, 10);
+    }
+
+    // can_* methods at exact boundary (count == max → blocked)
+    #[test]
+    fn can_like_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(5, 10, 10, 10, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        // 4 likes → allowed (count < max)
+        for _ in 0..4 {
+            counters.increment_like();
+        }
+        assert!(limits.can_like(&counters));
+
+        // 5th like → blocked (count == max)
+        counters.increment_like();
+        assert!(!limits.can_like(&counters));
+    }
+
+    #[test]
+    fn can_retweet_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 3, 10, 10, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..3 {
+            counters.increment_retweet();
+        }
+        assert!(!limits.can_retweet(&counters));
+    }
+
+    #[test]
+    fn can_follow_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 2, 10, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..2 {
+            counters.increment_follow();
+        }
+        assert!(!limits.can_follow(&counters));
+    }
+
+    #[test]
+    fn can_reply_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 1, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        counters.increment_reply();
+        assert!(!limits.can_reply(&counters));
+    }
+
+    #[test]
+    fn can_dive_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 2, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..2 {
+            counters.increment_thread_dive();
+        }
+        assert!(!limits.can_dive(&counters));
+    }
+
+    #[test]
+    fn can_bookmark_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 3, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..3 {
+            counters.increment_bookmark();
+        }
+        assert!(!limits.can_bookmark(&counters));
+    }
+
+    #[test]
+    fn can_quote_tweet_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 2, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..2 {
+            counters.increment_quote_tweet();
+        }
+        assert!(!limits.can_quote_tweet(&counters));
+    }
+
+    // Total limit blocks all can_* methods even when individual limits not reached
+    #[test]
+    fn total_limit_blocks_all_when_reached() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 10, 3);
+        let mut counters = EngagementCounters::new();
+
+        counters.increment_like();
+        counters.increment_retweet();
+        counters.increment_follow();
+
+        // Total = 3 == max_total_actions → all blocked
+        assert!(!limits.can_like(&counters));
+        assert!(!limits.can_retweet(&counters));
+        assert!(!limits.can_follow(&counters));
+        assert!(!limits.can_reply(&counters));
+        assert!(!limits.can_dive(&counters));
+        assert!(!limits.can_bookmark(&counters));
+        assert!(!limits.can_quote_tweet(&counters));
+    }
+
+    // increment("dive") path
+    #[test]
+    fn increment_dive_dispatches_correctly() {
+        let mut counters = EngagementCounters::new();
+        counters.increment("dive");
+        assert_eq!(counters.thread_dives, 1);
+    }
+
+    // to_summary reflects all counter values
+    #[test]
+    fn to_summary_reflects_all_values() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_like();
+        counters.increment_retweet();
+        counters.increment_follow();
+        counters.increment_reply();
+        counters.increment_thread_dive();
+        counters.increment_bookmark();
+        counters.increment_quote_tweet();
+
+        let summary = counters.to_summary();
+        assert_eq!(summary["likes"], 2);
+        assert_eq!(summary["retweets"], 1);
+        assert_eq!(summary["follows"], 1);
+        assert_eq!(summary["replies"], 1);
+        assert_eq!(summary["thread_dives"], 1);
+        assert_eq!(summary["bookmarks"], 1);
+        assert_eq!(summary["quote_tweets"], 1);
+    }
+}

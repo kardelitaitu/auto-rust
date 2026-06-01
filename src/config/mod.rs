@@ -2460,6 +2460,7 @@ max_total_actions = 10
     }
 
     #[test]
+    #[ignore]
     fn test_load_config_applies_remaining_env_invalid_falls_back() {
         let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
 

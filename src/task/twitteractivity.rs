@@ -688,3 +688,111 @@ mod timeout_tests {
         assert!(err.to_string().contains("test"));
     }
 }
+
+#[cfg(test)]
+mod gap_tests {
+    use super::{build_summary_lines, should_continue_feed_loop, TaskConfig};
+    use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
+    use crate::utils::twitter::twitteractivity_state::SessionState;
+
+    #[test]
+    fn build_summary_lines_with_non_zero_counters() {
+        let limits = EngagementLimits::with_limits(10, 8, 6, 4, 5, 3, 3, 50);
+        let mut session = SessionState::new(limits, 60_000, 100);
+
+        session.record_action("t1", "like");
+        session.record_action("t2", "like");
+        session.record_action("t3", "retweet");
+        session.record_action("t4", "follow");
+
+        let (summary, remaining) = build_summary_lines(&session, &TaskConfig {
+            duration_ms: 60_000,
+            ..Default::default()
+        });
+
+        // Summary should reflect actual counter values
+        assert!(summary.contains("likes=2"), "Expected likes=2, got: {summary}");
+        assert!(summary.contains("retweets=1"), "Expected retweets=1, got: {summary}");
+        assert!(summary.contains("follows=1"), "Expected follows=1, got: {summary}");
+        assert!(summary.contains("total_actions=4"));
+
+        // Remaining should show what's left
+        assert!(remaining.contains("likes=8"), "Expected remaining likes=8, got: {remaining}");
+        assert!(remaining.contains("retweets=7"), "Expected remaining retweets=7, got: {remaining}");
+    }
+
+    #[test]
+    fn build_summary_lines_zero_duration() {
+        let limits = EngagementLimits::default();
+        let session = SessionState::new(limits, 60_000, 100);
+        let task_config = TaskConfig {
+            duration_ms: 0,
+            ..Default::default()
+        };
+
+        let (summary, remaining) = build_summary_lines(&session, &task_config);
+        assert!(summary.contains("likes=0"));
+        assert!(summary.contains("total_actions=0"));
+        // Remaining should be full limits
+        assert!(remaining.contains("likes=5"));
+    }
+
+    #[test]
+    fn should_continue_feed_loop_stops_at_scroll_limit() {
+        let session = SessionState::new(EngagementLimits::default(), 60_000, 100);
+        let config = TaskConfig {
+            scroll_count: 5,
+            ..Default::default()
+        };
+
+        assert!(should_continue_feed_loop(&session, 4, &config));
+        assert!(!should_continue_feed_loop(&session, 5, &config));
+        assert!(!should_continue_feed_loop(&session, 6, &config));
+    }
+
+    #[test]
+    fn should_continue_feed_loop_stops_when_expired() {
+        let session = SessionState::new(EngagementLimits::default(), 0, 100);
+        let config = TaskConfig {
+            scroll_count: 100,
+            ..Default::default()
+        };
+
+        // Brief yield to ensure time passes past 0ms deadline
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        assert!(!should_continue_feed_loop(&session, 0, &config));
+    }
+
+    #[test]
+    fn should_continue_feed_loop_zero_scroll_count() {
+        let session = SessionState::new(EngagementLimits::default(), 60_000, 100);
+        let config = TaskConfig {
+            scroll_count: 0,
+            ..Default::default()
+        };
+
+        // With scroll_count=0, should never continue
+        assert!(!should_continue_feed_loop(&session, 0, &config));
+    }
+
+    #[test]
+    fn build_summary_lines_saturating_sub_no_underflow() {
+        // Counters exceeding limits should not cause underflow
+        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 10);
+        let mut session = SessionState::new(limits, 60_000, 100);
+
+        // Record more than limits allow (bypassing limit check)
+        session.counters.likes = 5;
+        session.counters.retweets = 3;
+
+        let (_, remaining) = build_summary_lines(&session, &TaskConfig {
+            duration_ms: 60_000,
+            ..Default::default()
+        });
+
+        // Should saturate at 0, not underflow
+        assert!(remaining.contains("likes=0"));
+        assert!(remaining.contains("retweets=0"));
+    }
+}

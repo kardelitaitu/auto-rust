@@ -695,3 +695,158 @@ mod tdd_tests {
         assert_eq!(weights.len(), 8, "Should have exactly 8 weight fields");
     }
 }
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+
+    // select_persona_weights with ALL override fields
+    #[test]
+    fn select_persona_weights_all_overrides_applied() {
+        let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+        let weights = json!({
+            "like_prob": 0.9,
+            "retweet_prob": 0.8,
+            "quote_prob": 0.7,
+            "follow_prob": 0.6,
+            "reply_prob": 0.5,
+            "bookmark_prob": 0.4,
+            "thread_dive_prob": 0.3,
+            "interest_multiplier": 0.2
+        });
+        let persona = select_persona_weights(Some(&weights), &config_probs);
+        assert_eq!(persona.like_prob, 0.9);
+        assert_eq!(persona.retweet_prob, 0.8);
+        assert_eq!(persona.quote_prob, 0.7);
+        assert_eq!(persona.follow_prob, 0.6);
+        assert_eq!(persona.reply_prob, 0.5);
+        assert_eq!(persona.bookmark_prob, 0.4);
+        assert_eq!(persona.thread_dive_prob, 0.3);
+        assert!((persona.interest_multiplier - 0.2).abs() < f64::EPSILON);
+    }
+
+    // select_persona_weights ignores non-f64 values
+    #[test]
+    fn select_persona_weights_ignores_non_numeric() {
+        let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+        let weights = json!({
+            "like_prob": "high",
+            "retweet_prob": true
+        });
+        let persona = select_persona_weights(Some(&weights), &config_probs);
+        // Non-numeric values should be ignored, defaults used
+        assert!(persona.like_prob >= 0.0 && persona.like_prob <= 1.0);
+        assert!(persona.retweet_prob >= 0.0 && persona.retweet_prob <= 1.0);
+    }
+
+    // select_persona_weights with empty object
+    #[test]
+    fn select_persona_weights_empty_object() {
+        let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+        let weights = json!({});
+        let persona = select_persona_weights(Some(&weights), &config_probs);
+        // Should use config defaults
+        assert!(persona.like_prob >= 0.0 && persona.like_prob <= 1.0);
+    }
+
+    // with_profile_variance clamps to [0, 1]
+    #[test]
+    fn with_profile_variance_clamps_to_valid_range() {
+        // Use extreme weights and high variance
+        let weights = PersonaWeights {
+            like_prob: 0.95,
+            retweet_prob: 0.05,
+            quote_prob: 0.5,
+            follow_prob: 0.5,
+            reply_prob: 0.5,
+            bookmark_prob: 0.5,
+            thread_dive_prob: 0.5,
+            interest_multiplier: 1.0,
+        };
+        let profile = BrowserProfile {
+            action_delay_variance_pct: crate::utils::profile::ProfileParam::new(100.0, 100.0),
+            ..BrowserProfile::average()
+        };
+
+        // Run 100 times to check clamping with high variance
+        for _ in 0..100 {
+            let result = weights.clone().with_profile_variance(&profile);
+            assert!(result.like_prob >= 0.0 && result.like_prob <= 1.0);
+            assert!(result.retweet_prob >= 0.0 && result.retweet_prob <= 1.0);
+            assert!(result.quote_prob >= 0.0 && result.quote_prob <= 1.0);
+            assert!(result.follow_prob >= 0.0 && result.follow_prob <= 1.0);
+            assert!(result.reply_prob >= 0.0 && result.reply_prob <= 1.0);
+            assert!(result.bookmark_prob >= 0.0 && result.bookmark_prob <= 1.0);
+            assert!(result.thread_dive_prob >= 0.0 && result.thread_dive_prob <= 1.0);
+        }
+    }
+
+    // PersonaWeights clone produces equal values
+    #[test]
+    fn persona_weights_clone_preserves_values() {
+        let original = PersonaWeights {
+            like_prob: 0.42,
+            retweet_prob: 0.13,
+            quote_prob: 0.07,
+            follow_prob: 0.09,
+            reply_prob: 0.03,
+            bookmark_prob: 0.01,
+            thread_dive_prob: 0.25,
+            interest_multiplier: 0.8,
+        };
+        let cloned = original.clone();
+        assert!((cloned.like_prob - original.like_prob).abs() < f64::EPSILON);
+        assert!((cloned.retweet_prob - original.retweet_prob).abs() < f64::EPSILON);
+        assert!((cloned.quote_prob - original.quote_prob).abs() < f64::EPSILON);
+        assert!((cloned.follow_prob - original.follow_prob).abs() < f64::EPSILON);
+        assert!((cloned.reply_prob - original.reply_prob).abs() < f64::EPSILON);
+        assert!((cloned.bookmark_prob - original.bookmark_prob).abs() < f64::EPSILON);
+        assert!((cloned.thread_dive_prob - original.thread_dive_prob).abs() < f64::EPSILON);
+        assert!((cloned.interest_multiplier - original.interest_multiplier).abs() < f64::EPSILON);
+    }
+
+    // effective_probability clamps to [0, 1]
+    #[test]
+    fn effective_probability_clamps_input() {
+        let persona = PersonaWeights::default();
+        assert_eq!(effective_probability(-0.5, &persona), 0.0);
+        assert_eq!(effective_probability(1.5, &persona), 1.0);
+        assert_eq!(effective_probability(0.5, &persona), 0.5);
+    }
+
+    // with_sentiment_modulation at boundary values
+    #[test]
+    fn sentiment_modulation_at_boundaries() {
+        let w = PersonaWeights::default();
+
+        // Midpoint (0.0 sentiment) → 0.5
+        let mid = w.clone().with_sentiment_modulation(0.0);
+        assert!((mid.interest_multiplier - 0.5).abs() < f64::EPSILON);
+
+        // Maximum (1.0) → 1.0
+        let max = w.clone().with_sentiment_modulation(1.0);
+        assert!((max.interest_multiplier - 1.0).abs() < f64::EPSILON);
+
+        // Minimum (-1.0) → 0.0
+        let min = w.clone().with_sentiment_modulation(-1.0);
+        assert!((min.interest_multiplier - 0.0).abs() < f64::EPSILON);
+    }
+
+    // apply_behavior_profile returns normalized result
+    #[test]
+    fn apply_behavior_profile_always_returns_valid_weights() {
+        let persona = PersonaWeights::default();
+        let profile = BrowserProfile::average();
+
+        for sentiment in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let result = apply_behavior_profile(persona.clone(), &profile, sentiment);
+            assert!(result.like_prob >= 0.0 && result.like_prob <= 1.0);
+            assert!(result.retweet_prob >= 0.0 && result.retweet_prob <= 1.0);
+            assert!(result.quote_prob >= 0.0 && result.quote_prob <= 1.0);
+            assert!(result.follow_prob >= 0.0 && result.follow_prob <= 1.0);
+            assert!(result.reply_prob >= 0.0 && result.reply_prob <= 1.0);
+            assert!(result.bookmark_prob >= 0.0 && result.bookmark_prob <= 1.0);
+            assert!(result.thread_dive_prob >= 0.0 && result.thread_dive_prob <= 1.0);
+        }
+    }
+}

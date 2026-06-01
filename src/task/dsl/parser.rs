@@ -326,6 +326,315 @@ actions:
         assert!(errors[0].contains("cannot be empty"));
     }
 
+    #[test]
+    fn test_parse_task_yaml_rejects_invalid_yaml() {
+        let result = parse_task_yaml("!:bad");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Failed to parse YAML"));
+    }
+
+    #[test]
+    fn test_parse_task_toml_rejects_invalid_toml() {
+        let result = parse_task_toml("foo = [unterminated");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Failed to parse TOML"));
+    }
+
+    #[test]
+    fn test_format_task_definition_includes_task_name_and_action_order() {
+        let task_def = TaskDefinition {
+            name: "ordered".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![
+                Action::Navigate { url: "https://a".to_string() },
+                Action::Click { selector: "#b".to_string() },
+            ],
+        };
+
+        let formatted = format_task_definition(&task_def);
+        let mut action_lines = 0usize;
+        for line in formatted.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("1:") {
+                action_lines |= 1;
+            }
+            if trimmed.starts_with("2:") {
+                action_lines |= 2;
+            }
+        }
+        assert!(
+            formatted.starts_with("Task: ordered\n"),
+            "format output should start with task name"
+        );
+        assert_eq!(
+            action_lines,
+            3,
+            "format output should list both actions in order"
+        );
+    }
+
+    #[test]
+    fn test_validate_retry_with_nested_valid_actions() {
+        let task_def = TaskDefinition {
+            name: "retry_valid".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Retry {
+                actions: vec![Action::Click {
+                    selector: "#btn".to_string(),
+                }],
+                max_attempts: Some(3),
+                initial_delay_ms: Some(1000),
+                max_delay_ms: Some(5000),
+                backoff_multiplier: Some(2.0),
+                jitter: Some(true),
+                retry_on: None,
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(result.is_ok(), "Valid Retry block should pass: {:?}", result);
+    }
+
+    #[test]
+    fn test_validate_try_with_all_blocks() {
+        let task_def = TaskDefinition {
+            name: "try_valid".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Try {
+                try_actions: vec![Action::Click {
+                    selector: "#maybe".to_string(),
+                }],
+                catch_actions: Some(vec![Action::Log {
+                    message: "caught".to_string(),
+                    level: None,
+                }]),
+                error_variable: Some("err".to_string()),
+                finally_actions: Some(vec![Action::Log {
+                    message: "finally".to_string(),
+                    level: None,
+                }]),
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(result.is_ok(), "Valid Try block should pass: {:?}", result);
+    }
+
+    #[test]
+    fn test_validate_foreach_with_nested_actions() {
+        let task_def = TaskDefinition {
+            name: "foreach_valid".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Foreach {
+                variable: "item".to_string(),
+                collection: crate::task::dsl::ForeachCollection::Array {
+                    values: vec![serde_yml::Value::String("a".to_string())],
+                },
+                actions: vec![Action::Log {
+                    message: "${item}".to_string(),
+                    level: None,
+                }],
+                max_iterations: Some(50),
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(result.is_ok(), "Valid Foreach should pass: {:?}", result);
+    }
+
+    #[test]
+    fn test_validate_parallel_produces_error() {
+        let task_def = TaskDefinition {
+            name: "parallel_test".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Parallel {
+                actions: vec![Action::Wait { duration_ms: 100 }],
+                max_concurrency: Some(2),
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(
+            result.is_err(),
+            "Parallel blocks should produce a validation error (not yet implemented)"
+        );
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("parallel")),
+            "Error should mention 'parallel': {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_validate_while_with_valid_actions() {
+        let task_def = TaskDefinition {
+            name: "while_valid".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::While {
+                condition: crate::task::dsl::Condition::True,
+                actions: vec![Action::Wait { duration_ms: 100 }],
+                max_iterations: Some(10),
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(result.is_ok(), "Valid While should pass: {:?}", result);
+    }
+
+    #[test]
+    fn test_validate_nested_control_flow_errors() {
+        // Retry containing an If with empty then branch
+        let task_def = TaskDefinition {
+            name: "nested_invalid".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Retry {
+                actions: vec![Action::If {
+                    condition: crate::task::dsl::Condition::True,
+                    then: vec![],
+                    r#else: None,
+                }],
+                max_attempts: Some(2),
+                initial_delay_ms: None,
+                max_delay_ms: None,
+                backoff_multiplier: None,
+                jitter: None,
+                retry_on: None,
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(
+            result.is_err(),
+            "Nested invalid action should produce errors"
+        );
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("empty 'then'")),
+            "Should detect empty 'then' branch in nested If: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_validate_loop_without_count_or_condition() {
+        let task_def = TaskDefinition {
+            name: "loop_invalid".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Loop {
+                count: None,
+                condition: None,
+                actions: vec![Action::Wait { duration_ms: 100 }],
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("count")),
+            "Should mention missing count/condition: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_validate_if_empty_else() {
+        let task_def = TaskDefinition {
+            name: "if_empty_else".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::If {
+                condition: crate::task::dsl::Condition::True,
+                then: vec![Action::Wait { duration_ms: 10 }],
+                r#else: Some(vec![]),
+            }],
+        };
+
+        let result = validate_task_definition(&task_def);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("empty 'else'")),
+            "Should detect empty else branch: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_get_task_definition_not_found() {
+        let result = get_task_definition("definitely-nonexistent-task-name-xyz");
+        assert!(
+            result.is_none(),
+            "Should return None for unknown task name"
+        );
+    }
+
+    #[test]
+    fn test_parse_task_yaml_valid() {
+        let yaml = r##"
+name: yaml_test
+description: "From YAML"
+policy: default
+actions:
+  - action: navigate
+    url: "https://example.com"
+  - action: click
+    selector: "#btn"
+"##;
+        let result = parse_task_yaml(yaml);
+        assert!(result.is_ok());
+        let task = result.unwrap();
+        assert_eq!(task.name, "yaml_test");
+        assert_eq!(task.actions.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_task_toml_valid() {
+        let toml_str = r#"
+name = "toml_test"
+description = "From TOML"
+policy = "default"
+
+[[actions]]
+action = "wait"
+duration_ms = 200
+"#;
+        let result = parse_task_toml(toml_str);
+        assert!(result.is_ok());
+        let task = result.unwrap();
+        assert_eq!(task.name, "toml_test");
+        assert_eq!(task.actions.len(), 1);
+    }
+
     /// Proptest fuzz strategies for DSL parser round-trip.
     ///
     /// Generates random valid TaskDefinitions, serializes to YAML, parses back,

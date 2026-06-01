@@ -655,3 +655,97 @@ mod tdd_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+
+    // SimulationStopReason Display for SimulatedError variant
+    #[test]
+    fn simulated_error_display_includes_message() {
+        let reason = SimulationStopReason::SimulatedError("test error".to_string());
+        let display = format!("{reason}");
+        assert!(display.contains("simulated_error"));
+        assert!(display.contains("test error"));
+    }
+
+    // SimulationStopReason as_str for all variants
+    #[test]
+    fn stop_reason_as_str_all_variants() {
+        assert_eq!(SimulationStopReason::DurationExhausted.as_str(), "duration_exhausted");
+        assert_eq!(SimulationStopReason::LimitReached.as_str(), "limit_reached");
+        assert_eq!(
+            SimulationStopReason::CandidateBudgetExhausted.as_str(),
+            "candidate_budget_exhausted"
+        );
+        assert_eq!(
+            SimulationStopReason::NoMorePlannedActions.as_str(),
+            "no_more_planned_actions"
+        );
+        assert_eq!(
+            SimulationStopReason::SimulatedError("x".into()).as_str(),
+            "simulated_error"
+        );
+    }
+
+    // SimulationReport structure
+    #[test]
+    fn simulation_report_fields_accessible() {
+        let report = SimulationReport {
+            lines: vec!["line1".to_string(), "line2".to_string()],
+            stop_reason: SimulationStopReason::DurationExhausted,
+            total_actions: 5,
+            scans: 3,
+            remaining_ms: 100,
+        };
+        assert_eq!(report.lines.len(), 2);
+        assert_eq!(report.total_actions, 5);
+        assert_eq!(report.scans, 3);
+        assert_eq!(report.remaining_ms, 100);
+    }
+
+    // SimulationStopReason clone and equality
+    #[test]
+    fn stop_reason_clone_equality() {
+        let original = SimulationStopReason::LimitReached;
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+
+        let err = SimulationStopReason::SimulatedError("err".to_string());
+        let err_clone = err.clone();
+        assert_eq!(err, err_clone);
+    }
+
+    // Simulation produces deterministic results with same seed
+    #[test]
+    fn simulation_deterministic_with_same_seed() {
+        let config = simulation_config();
+        let task1 = simulation_task(42);
+        let task2 = simulation_task(42);
+
+        let report1 = simulate(&task1, &config);
+        let report2 = simulate(&task2, &config);
+
+        assert_eq!(report1.total_actions, report2.total_actions);
+        assert_eq!(report1.stop_reason, report2.stop_reason);
+        assert_eq!(report1.lines.len(), report2.lines.len());
+    }
+
+    // Different seeds produce different results
+    #[test]
+    fn simulation_different_seeds_differ() {
+        let config = simulation_config();
+        let task1 = simulation_task(42);
+        let task2 = simulation_task(999);
+
+        let report1 = simulate(&task1, &config);
+        let report2 = simulate(&task2, &config);
+
+        // Different seeds should produce different action counts (with high probability)
+        // or different stop reasons
+        let differs = report1.total_actions != report2.total_actions
+            || report1.stop_reason != report2.stop_reason
+            || report1.lines != report2.lines;
+        assert!(differs, "Different seeds should typically produce different results");
+    }
+}

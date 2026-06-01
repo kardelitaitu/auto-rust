@@ -2833,6 +2833,84 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_execute_foreach_variable_collection_splits_comma_separated_items() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.variables
+            .insert("items".to_string(), "alpha, beta ,gamma".to_string());
+
+        exec.execute_action(&Action::Foreach {
+            variable: "current".to_string(),
+            collection: ForeachCollection::Variable {
+                name: "items".to_string(),
+            },
+            actions: vec![Action::Click {
+                selector: "${current}".to_string(),
+            }],
+            max_iterations: None,
+        })
+        .await
+        .unwrap();
+
+        let calls = mock.get_calls();
+        assert_eq!(
+            calls.len(),
+            3,
+            "comma-separated collection must yield 3 items"
+        );
+        assert_eq!(
+            calls[0],
+            MockCall::Click {
+                selector: "alpha".to_string()
+            }
+        );
+        assert_eq!(
+            calls[1],
+            MockCall::Click {
+                selector: "beta".to_string()
+            }
+        );
+        assert_eq!(
+            calls[2],
+            MockCall::Click {
+                selector: "gamma".to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_foreach_variable_collection_uses_single_item_when_no_comma() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.variables
+            .insert("item".to_string(), "standalone".to_string());
+
+        exec.execute_action(&Action::Foreach {
+            variable: "current".to_string(),
+            collection: ForeachCollection::Variable {
+                name: "item".to_string(),
+            },
+            actions: vec![Action::Click {
+                selector: "${current}".to_string(),
+            }],
+            max_iterations: None,
+        })
+        .await
+        .unwrap();
+
+        let calls = mock.get_calls();
+        assert_eq!(calls.len(), 1, "single item should trigger 1 action");
+        assert_eq!(
+            calls[0],
+            MockCall::Click {
+                selector: "standalone".to_string()
+            }
+        );
+    }
+
     // ── While action ──────────────────────────────────────────────────────
 
     #[tokio::test]
@@ -3332,6 +3410,1325 @@ mod tests {
         assert!(
             exec.variables.contains_key("err"),
             "error variable should still be set"
+        );
+    }
+
+    // ── evaluate_condition — all condition types ─────────────────────────
+
+    #[tokio::test]
+    async fn test_evaluate_condition_element_exists_true() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#present", true);
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::ElementExists {
+                selector: "#present".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result, "ElementExists should be true when element exists");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_element_exists_false() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#absent", false);
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::ElementExists {
+                selector: "#absent".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(
+            !result,
+            "ElementExists should be false when element does not exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_element_exists_with_variable_substitution() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#dynamic", true);
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("sel".to_string(), "dynamic".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::ElementExists {
+                selector: "#${sel}".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result, "selector should be substituted before checking");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_element_visible_true() {
+        let mock = MockDslApi::new();
+        mock.set_visible_result("#visible", true);
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::ElementVisible {
+                selector: "#visible".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_element_visible_false() {
+        let mock = MockDslApi::new();
+        mock.set_visible_result("#hidden", false);
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::ElementVisible {
+                selector: "#hidden".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_text_equals_match() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#status", Some("Complete"));
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::TextEquals {
+                selector: "#status".to_string(),
+                value: "Complete".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result, "TextEquals should be true when text matches");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_text_equals_no_match() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#status", Some("Pending"));
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::TextEquals {
+                selector: "#status".to_string(),
+                value: "Complete".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(!result, "TextEquals should be false when text differs");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_text_equals_trims_whitespace() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#status", Some("  Complete  "));
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::TextEquals {
+                selector: "#status".to_string(),
+                value: "Complete".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result, "TextEquals should trim whitespace before comparing");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_text_matches_contains() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#msg", Some("Operation successful!"));
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::TextMatches {
+                selector: "#msg".to_string(),
+                pattern: "successful".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result, "TextMatches should use contains() matching");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_text_matches_no_match() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#msg", Some("Operation failed"));
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::TextMatches {
+                selector: "#msg".to_string(),
+                pattern: "successful".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_equals_string() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("status".to_string(), "ready".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableEquals {
+                name: "status".to_string(),
+                value: serde_yml::Value::String("ready".to_string()),
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_equals_number() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("count".to_string(), "42".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableEquals {
+                name: "count".to_string(),
+                value: serde_yml::Value::Number(serde_yml::Number::from(42)),
+            })
+            .await
+            .unwrap();
+        assert!(result, "number value should be compared as string");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_equals_bool() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("flag".to_string(), "true".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableEquals {
+                name: "flag".to_string(),
+                value: serde_yml::Value::Bool(true),
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_equals_undefined_var() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableEquals {
+                name: "missing".to_string(),
+                value: serde_yml::Value::String("anything".to_string()),
+            })
+            .await
+            .unwrap();
+        assert!(!result, "undefined variable should return false");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_matches() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("msg".to_string(), "hello world".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableMatches {
+                name: "msg".to_string(),
+                pattern: "world".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result, "VariableMatches uses contains()");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_matches_no_match() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("msg".to_string(), "hello world".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableMatches {
+                name: "msg".to_string(),
+                pattern: "universe".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_matches_undefined() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableMatches {
+                name: "missing".to_string(),
+                pattern: "anything".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_greater_than_true() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("score".to_string(), "15".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericGreaterThan {
+                name: "score".to_string(),
+                value: 10.0,
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_greater_than_false() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("score".to_string(), "5".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericGreaterThan {
+                name: "score".to_string(),
+                value: 10.0,
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_greater_than_non_numeric() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("score".to_string(), "not_a_number".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericGreaterThan {
+                name: "score".to_string(),
+                value: 10.0,
+            })
+            .await
+            .unwrap();
+        assert!(!result, "non-numeric variable should return false");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_less_than() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("count".to_string(), "3".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericLessThan {
+                name: "count".to_string(),
+                value: 5.0,
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_less_than_false() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("count".to_string(), "10".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericLessThan {
+                name: "count".to_string(),
+                value: 5.0,
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_range_in_range() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("val".to_string(), "50".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericRange {
+                name: "val".to_string(),
+                min: 0.0,
+                max: 100.0,
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_range_out_of_range() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("val".to_string(), "150".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericRange {
+                name: "val".to_string(),
+                min: 0.0,
+                max: 100.0,
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_numeric_range_boundary_inclusive() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("val".to_string(), "100".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::NumericRange {
+                name: "val".to_string(),
+                min: 0.0,
+                max: 100.0,
+            })
+            .await
+            .unwrap();
+        assert!(result, "range should be inclusive on both ends");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_array_contains_true() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("items".to_string(), "apple,banana,cherry".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::ArrayContains {
+                name: "items".to_string(),
+                value: serde_yml::Value::String("banana".to_string()),
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_array_contains_false() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("items".to_string(), "apple,banana".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::ArrayContains {
+                name: "items".to_string(),
+                value: serde_yml::Value::String("grape".to_string()),
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_array_length_exact() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("list".to_string(), "hello".to_string()); // len = 5
+
+        let result = exec
+            .evaluate_condition(&Condition::ArrayLength {
+                name: "list".to_string(),
+                min: None,
+                max: None,
+                exact: Some(5),
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_array_length_min_max() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("list".to_string(), "hello".to_string()); // len = 5
+
+        let result = exec
+            .evaluate_condition(&Condition::ArrayLength {
+                name: "list".to_string(),
+                min: Some(3),
+                max: Some(10),
+                exact: None,
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_array_length_undefined_var() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::ArrayLength {
+                name: "missing".to_string(),
+                min: Some(1),
+                max: None,
+                exact: None,
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_defined_true() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("x".to_string(), "1".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableDefined {
+                name: "x".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_defined_false() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableDefined {
+                name: "missing".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_not_defined() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableNotDefined {
+                name: "missing".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_variable_not_defined_when_defined() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables.insert("x".to_string(), "1".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::VariableNotDefined {
+                name: "x".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_not_negates() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::Not {
+                condition: Box::new(Condition::True),
+            })
+            .await
+            .unwrap();
+        assert!(!result, "Not(True) should be false");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_not_false() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::Not {
+                condition: Box::new(Condition::False),
+            })
+            .await
+            .unwrap();
+        assert!(result, "Not(False) should be true");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_and_all_true() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::And {
+                conditions: vec![Condition::True, Condition::True],
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_and_one_false() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::And {
+                conditions: vec![Condition::True, Condition::False],
+            })
+            .await
+            .unwrap();
+        assert!(!result, "And should short-circuit on first false");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_and_empty() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::And {
+                conditions: vec![],
+            })
+            .await
+            .unwrap();
+        assert!(result, "And with empty conditions should return true");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_or_one_true() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::Or {
+                conditions: vec![Condition::False, Condition::True],
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_or_all_false() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::Or {
+                conditions: vec![Condition::False, Condition::False],
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_or_empty() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::Or {
+                conditions: vec![],
+            })
+            .await
+            .unwrap();
+        assert!(!result, "Or with empty conditions should return false");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_date_before_true() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("date".to_string(), "2024-01-01".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::DateBefore {
+                name: "date".to_string(),
+                date: "2025-01-01".to_string(),
+                format: None,
+            })
+            .await
+            .unwrap();
+        assert!(result, "2024-01-01 should be before 2025-01-01");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_date_before_false() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("date".to_string(), "2026-01-01".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::DateBefore {
+                name: "date".to_string(),
+                date: "2025-01-01".to_string(),
+                format: None,
+            })
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_date_after_true() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("date".to_string(), "2026-06-01".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::DateAfter {
+                name: "date".to_string(),
+                date: "2025-01-01".to_string(),
+                format: None,
+            })
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_date_invalid_format() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("date".to_string(), "not-a-date".to_string());
+
+        let result = exec
+            .evaluate_condition(&Condition::DateBefore {
+                name: "date".to_string(),
+                date: "2025-01-01".to_string(),
+                format: None,
+            })
+            .await;
+        assert!(result.is_err(), "invalid date should return error");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_condition_date_undefined_variable() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .evaluate_condition(&Condition::DateBefore {
+                name: "missing".to_string(),
+                date: "2025-01-01".to_string(),
+                format: None,
+            })
+            .await
+            .unwrap();
+        assert!(!result, "undefined variable should return false");
+    }
+
+    // ── WaitFor action ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_execute_wait_for_succeeds_when_element_exists() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#loaded", true);
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_action(&Action::WaitFor {
+            selector: "#loaded".to_string(),
+            timeout_ms: Some(500),
+        })
+        .await
+        .unwrap();
+
+        let calls = mock.get_calls();
+        assert!(
+            !calls.is_empty(),
+            "WaitFor should make at least one exists() call"
+        );
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, MockCall::Exists { selector } if selector == "#loaded")),
+            "WaitFor should call exists with the correct selector"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_wait_for_timeout_when_element_missing() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#never", false);
+        let mut exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .execute_action(&Action::WaitFor {
+                selector: "#never".to_string(),
+                timeout_ms: Some(200),
+            })
+            .await;
+
+        assert!(result.is_err(), "WaitFor should timeout when element never appears");
+        assert!(
+            result.unwrap_err().to_string().contains("Timeout"),
+            "error should mention timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_wait_for_variable_substitution() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#dynamic", true);
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("target".to_string(), "dynamic".to_string());
+
+        exec.execute_action(&Action::WaitFor {
+            selector: "#${target}".to_string(),
+            timeout_ms: Some(500),
+        })
+        .await
+        .unwrap();
+
+        let calls = mock.get_calls();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, MockCall::Exists { selector } if selector == "#dynamic")),
+            "selector should be substituted before checking"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_wait_for_default_timeout() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#absent", false);
+        let mut exec = create_executor(&mock, vec![]);
+
+        // timeout_ms = None should default to 5000ms; use a short test with immediate failure
+        let start = std::time::Instant::now();
+        let result = exec
+            .execute_action(&Action::WaitFor {
+                selector: "#absent".to_string(),
+                timeout_ms: Some(150),
+            })
+            .await;
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err());
+        assert!(
+            elapsed.as_millis() >= 100,
+            "should wait at least close to the timeout duration"
+        );
+    }
+
+    // ── Log action ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_execute_log_succeeds() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_action(&Action::Log {
+            message: "Test message".to_string(),
+            level: Some(LogLevel::Info),
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            mock.get_calls().is_empty(),
+            "Log should not make any API calls"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_log_all_levels() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        for level in [
+            Some(LogLevel::Debug),
+            Some(LogLevel::Info),
+            Some(LogLevel::Warn),
+            Some(LogLevel::Error),
+            None,
+        ] {
+            exec.execute_action(&Action::Log {
+                message: "msg".to_string(),
+                level: level.clone(),
+            })
+            .await
+            .unwrap();
+        }
+
+        assert!(
+            mock.get_calls().is_empty(),
+            "Log at any level should not make API calls"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_log_variable_substitution() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("user".to_string(), "alice".to_string());
+
+        // Just verify it doesn't panic with variable substitution
+        exec.execute_action(&Action::Log {
+            message: "Hello ${user}".to_string(),
+            level: Some(LogLevel::Info),
+        })
+        .await
+        .unwrap();
+    }
+
+    // ── Extract action ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_execute_extract_stores_variable() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#title", Some("Page Title"));
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_action(&Action::Extract {
+            selector: "#title".to_string(),
+            variable: Some("page_title".to_string()),
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            exec.variables.get("page_title").unwrap(),
+            "Page Title",
+            "Extract should store the text in the variable"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_extract_without_variable() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#title", Some("text"));
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_action(&Action::Extract {
+            selector: "#title".to_string(),
+            variable: None,
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            exec.variables.is_empty(),
+            "Extract without variable should not store anything"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_extract_api_returns_none() {
+        let mock = MockDslApi::new();
+        // Don't set any text result — mock returns None by default
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_action(&Action::Extract {
+            selector: "#empty".to_string(),
+            variable: Some("result".to_string()),
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            exec.variables.get("result").unwrap(),
+            "",
+            "Extract should default to empty string when API returns None"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_extract_variable_substitution_in_selector() {
+        let mock = MockDslApi::new();
+        mock.set_text_result("#resolved", Some("found"));
+        let mut exec = create_executor(&mock, vec![]);
+        exec.variables
+            .insert("id".to_string(), "resolved".to_string());
+
+        exec.execute_action(&Action::Extract {
+            selector: "#${id}".to_string(),
+            variable: Some("data".to_string()),
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(exec.variables.get("data").unwrap(), "found");
+        let calls = mock.get_calls();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, MockCall::Text { selector } if selector == "#resolved")),
+            "selector should be substituted"
+        );
+    }
+
+    // ── with_parameters builder ─────────────────────────────────────────
+
+    #[test]
+    fn test_with_parameters_string_values() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let payload = serde_yml::Value::Mapping(
+            [
+                (
+                    serde_yml::Value::String("name".to_string()),
+                    serde_yml::Value::String("alice".to_string()),
+                ),
+                (
+                    serde_yml::Value::String("url".to_string()),
+                    serde_yml::Value::String("https://example.com".to_string()),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+
+        let exec = exec.with_parameters(&payload);
+        assert_eq!(exec.variables.get("name").unwrap(), "alice");
+        assert_eq!(exec.variables.get("url").unwrap(), "https://example.com");
+    }
+
+    #[test]
+    fn test_with_parameters_number_value() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let payload = serde_yml::Value::Mapping(
+            [(
+                serde_yml::Value::String("count".to_string()),
+                serde_yml::Value::Number(serde_yml::Number::from(42)),
+            )]
+            .into_iter()
+            .collect(),
+        );
+
+        let exec = exec.with_parameters(&payload);
+        assert_eq!(exec.variables.get("count").unwrap(), "42");
+    }
+
+    #[test]
+    fn test_with_parameters_bool_value() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let payload = serde_yml::Value::Mapping(
+            [(
+                serde_yml::Value::String("debug".to_string()),
+                serde_yml::Value::Bool(true),
+            )]
+            .into_iter()
+            .collect(),
+        );
+
+        let exec = exec.with_parameters(&payload);
+        assert_eq!(exec.variables.get("debug").unwrap(), "true");
+    }
+
+    #[test]
+    fn test_with_parameters_non_mapping_is_noop() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        let payload = serde_yml::Value::String("not a mapping".to_string());
+        let exec = exec.with_parameters(&payload);
+        assert!(
+            exec.variables.is_empty(),
+            "non-mapping payload should not set any variables"
+        );
+    }
+
+    // ── Cached API wrappers ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_cached_exists_hit() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#cached", true);
+        let mut exec = create_executor(&mock, vec![]);
+
+        // First call populates cache
+        let result1 = exec.cached_exists("#cached").await.unwrap();
+        assert!(result1);
+
+        // Second call should use cache (no additional API call)
+        let calls_before = mock.get_calls().len();
+        let result2 = exec.cached_exists("#cached").await.unwrap();
+        let calls_after = mock.get_calls().len();
+
+        assert!(result2);
+        assert_eq!(
+            calls_before, calls_after,
+            "cached_exists should not make API call on cache hit"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cached_exists_miss() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#new", false);
+        let mut exec = create_executor(&mock, vec![]);
+
+        let result = exec.cached_exists("#new").await.unwrap();
+        assert!(!result);
+
+        let calls = mock.get_calls();
+        assert!(
+            calls.iter().any(|c| matches!(c, MockCall::Exists { .. })),
+            "cache miss should call API"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cached_exists_disabled() {
+        let mock = MockDslApi::new();
+        mock.set_exists_result("#sel", true);
+        let mut exec = create_executor(&mock, vec![]);
+        exec.disable_caching();
+
+        // First call
+        exec.cached_exists("#sel").await.unwrap();
+        let calls1 = mock.get_calls().len();
+
+        // Second call — should still hit API because caching is disabled
+        exec.cached_exists("#sel").await.unwrap();
+        let calls2 = mock.get_calls().len();
+
+        assert!(
+            calls2 > calls1,
+            "with caching disabled, each call should hit the API"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_enable_disable_caching() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        assert!(exec.cache_enabled, "caching should be enabled by default");
+
+        exec.disable_caching();
+        assert!(!exec.cache_enabled, "disable_caching should set flag to false");
+
+        exec.enable_caching();
+        assert!(exec.cache_enabled, "enable_caching should set flag to true");
+    }
+
+    // ── Debug infrastructure ────────────────────────────────────────────
+
+    #[test]
+    fn test_check_breakpoints_empty_returns_false() {
+        let mock = MockDslApi::new();
+        let exec = create_executor(&mock, vec![]);
+
+        assert!(
+            !exec.check_breakpoints(0, "Click"),
+            "no breakpoints should return false"
+        );
+    }
+
+    #[test]
+    fn test_check_breakpoints_matches_action_index() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.breakpoints.push(Breakpoint::on_action(2));
+
+        assert!(!exec.check_breakpoints(0, "Click"));
+        assert!(!exec.check_breakpoints(1, "Click"));
+        assert!(exec.check_breakpoints(2, "Click"));
+    }
+
+    #[test]
+    fn test_check_breakpoints_matches_action_type() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.breakpoints
+            .push(Breakpoint::on_action_type("Navigate"));
+
+        assert!(exec.check_breakpoints(0, "Navigate"));
+        assert!(!exec.check_breakpoints(0, "Click"));
+    }
+
+    #[test]
+    fn test_record_debug_event_noop_when_not_debug() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        assert!(!exec.debug_mode);
+
+        exec.record_debug_event(
+            super::super::debug::DebugEventType::ActionStart,
+            Some(0),
+            Some("Click".to_string()),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert!(
+            exec.debug_events.is_empty(),
+            "debug events should not be recorded when debug_mode is off"
+        );
+    }
+
+    #[test]
+    fn test_record_debug_event_records_when_debug_mode() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        exec.debug_mode = true;
+
+        exec.record_debug_event(
+            super::super::debug::DebugEventType::ActionStart,
+            Some(0),
+            Some("Click".to_string()),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(exec.debug_events.len(), 1);
+    }
+
+    #[test]
+    fn test_watch_variable_only_in_debug_mode() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.watch_variable("x", "1");
+        assert!(
+            exec.watched_variables.is_empty(),
+            "watch_variable should be no-op when debug_mode is off"
+        );
+
+        exec.debug_mode = true;
+        exec.watch_variable("x", "1");
+        assert_eq!(exec.watched_variables.get("x").unwrap(), "1");
+
+        // Change value — should record a debug event
+        exec.watch_variable("x", "2");
+        assert_eq!(exec.watched_variables.get("x").unwrap(), "2");
+        assert!(
+            !exec.debug_events.is_empty(),
+            "variable change should record a debug event"
+        );
+    }
+
+    // ── Foreach: Variable collection edge case ──────────────────────────
+
+    #[tokio::test]
+    async fn test_execute_foreach_variable_collection_missing_variable() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+        // Don't set the "missing" variable
+
+        exec.execute_action(&Action::Foreach {
+            variable: "item".to_string(),
+            collection: ForeachCollection::Variable {
+                name: "missing".to_string(),
+            },
+            actions: vec![Action::Click {
+                selector: "#item".to_string(),
+            }],
+            max_iterations: None,
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            mock.get_calls().is_empty(),
+            "foreach over missing variable should produce 0 iterations"
+        );
+    }
+
+    // ── Execute (JavaScript) — error propagation ────────────────────────
+
+    #[tokio::test]
+    async fn test_execute_action_execute_js_propagates_error() {
+        let mock = MockDslApi::new();
+        mock.set_fail_all(true);
+        let mut exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .execute_action(&Action::Execute {
+                script: "bad script".to_string(),
+            })
+            .await;
+
+        assert!(result.is_err(), "execute_js should propagate API error");
+    }
+
+    // ── Log does NOT clear cache ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_execute_action_log_does_not_clear_cache() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.selector_cache.insert(
+            "#stale".to_string(),
+            crate::task::dsl::cache::SelectorCacheEntry::new(true, true, None, 0),
+        );
+        let cache_before = exec.cache_size();
+
+        exec.execute_action(&Action::Log {
+            message: "test".to_string(),
+            level: None,
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            exec.cache_size(),
+            cache_before,
+            "Log should NOT clear cache"
         );
     }
 }

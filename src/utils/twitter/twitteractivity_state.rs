@@ -895,6 +895,256 @@ mod read_u32_tests {
 }
 
 #[cfg(test)]
+mod gap_tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use serde_json::json;
+
+    // SentimentTemplates default structure
+    #[test]
+    fn sentiment_templates_default_has_non_empty_vectors() {
+        let t = SentimentTemplates::default();
+        assert!(t.reply_positive.len() >= 3, "reply_positive should have templates");
+        assert!(t.reply_neutral.len() >= 3, "reply_neutral should have templates");
+        assert!(t.reply_negative.len() >= 3, "reply_negative should have templates");
+        assert!(t.quote_positive.len() >= 3, "quote_positive should have templates");
+        assert!(t.quote_neutral.len() >= 3, "quote_neutral should have templates");
+        assert!(t.quote_negative.len() >= 3, "quote_negative should have templates");
+    }
+
+    #[test]
+    fn sentiment_templates_default_no_empty_strings() {
+        let t = SentimentTemplates::default();
+        for (name, vec) in [
+            ("reply_positive", &t.reply_positive),
+            ("reply_neutral", &t.reply_neutral),
+            ("reply_negative", &t.reply_negative),
+            ("quote_positive", &t.quote_positive),
+            ("quote_neutral", &t.quote_neutral),
+            ("quote_negative", &t.quote_negative),
+        ] {
+            for (i, s) in vec.iter().enumerate() {
+                assert!(!s.is_empty(), "{name}[{i}] should not be empty");
+            }
+        }
+    }
+
+    // is_action_allowed for all 7 action types
+    #[test]
+    fn is_action_allowed_checks_all_seven_types() {
+        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 100);
+        let mut session = SessionState::new(limits, 60_000, 100);
+
+        // All allowed initially
+        for action in &["like", "retweet", "follow", "reply", "bookmark", "quote", "dive"] {
+            assert!(session.is_action_allowed(action), "{action} should be allowed");
+        }
+
+        // Record one of each — all should be blocked
+        session.record_action("t1", "like");
+        assert!(!session.is_action_allowed("like"));
+        session.record_action("t2", "retweet");
+        assert!(!session.is_action_allowed("retweet"));
+        session.record_action("t3", "follow");
+        assert!(!session.is_action_allowed("follow"));
+        session.record_action("t4", "reply");
+        assert!(!session.is_action_allowed("reply"));
+        session.record_action("t5", "bookmark");
+        assert!(!session.is_action_allowed("bookmark"));
+        session.record_action("t6", "quote");
+        assert!(!session.is_action_allowed("quote"));
+        session.record_action("t7", "dive");
+        assert!(!session.is_action_allowed("dive"));
+    }
+
+    // read_u64/read_u32 reject zero
+    #[test]
+    fn read_u64_rejects_zero() {
+        let payload = json!({"duration_ms": 0});
+        let result = read_u64(&payload, "duration_ms", 300000);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("duration_ms"));
+        assert!(err.contains("must be positive"));
+    }
+
+    #[test]
+    fn read_u32_rejects_zero() {
+        let payload = json!({"candidate_count": 0});
+        let result = read_u32(&payload, "candidate_count", 5);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("candidate_count"));
+        assert!(err.contains("must be positive"));
+    }
+
+    // read_u64/read_u32 with non-number types
+    #[test]
+    fn read_u64_rejects_string_type() {
+        let payload = json!({"duration_ms": "fast"});
+        let result = read_u64(&payload, "duration_ms", 300000);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("string"));
+    }
+
+    #[test]
+    fn read_u32_rejects_bool_type() {
+        let payload = json!({"candidate_count": true});
+        let result = read_u32(&payload, "candidate_count", 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("bool"));
+    }
+
+    #[test]
+    fn read_u64_null_treated_as_missing_returns_default() {
+        let payload = json!({"duration_ms": null});
+        let result = read_u64(&payload, "duration_ms", 300000);
+        // null is treated as missing by payload_util, so default is returned
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 300000);
+    }
+
+    // TweetActionTracker record_action updates last_action
+    #[test]
+    fn tracker_record_action_updates_last_action_map() {
+        let mut tracker = TweetActionTracker::new(5000);
+        assert!(tracker.last_action.is_empty());
+
+        tracker.record_action("tweet_1".to_string(), "like");
+        assert_eq!(tracker.last_action.len(), 1);
+        assert!(tracker.last_action.contains_key("tweet_1"));
+
+        let (action_type, _) = tracker.last_action.get("tweet_1").unwrap();
+        assert_eq!(*action_type, "like");
+    }
+
+    #[test]
+    fn tracker_record_action_overwrites_previous() {
+        let mut tracker = TweetActionTracker::new(5000);
+
+        tracker.record_action("tweet_1".to_string(), "like");
+        tracker.record_action("tweet_1".to_string(), "retweet");
+
+        assert_eq!(tracker.last_action.len(), 1);
+        let (action_type, _) = tracker.last_action.get("tweet_1").unwrap();
+        assert_eq!(*action_type, "retweet");
+    }
+
+    #[test]
+    fn tracker_blocks_same_tweet_within_cooldown() {
+        let mut tracker = TweetActionTracker::new(60_000);
+
+        tracker.record_action("tweet_1".to_string(), "like");
+        assert!(!tracker.can_perform_action("tweet_1", "retweet"));
+        // Different tweet should be allowed
+        assert!(tracker.can_perform_action("tweet_2", "retweet"));
+    }
+
+    // RateLimitBackoff calculate_delay exponential behavior
+    #[test]
+    fn rate_limit_backoff_calculate_delay_zero_hits_returns_zero() {
+        let backoff = RateLimitBackoff::new(100, 5000);
+        // With 0 hits, calculate_delay should return 0
+        assert_eq!(backoff.calculate_delay(), 0);
+    }
+
+    #[test]
+    fn rate_limit_backoff_calculate_delay_exponential_growth() {
+        let mut backoff = RateLimitBackoff::new(100, 10000);
+
+        backoff.consecutive_hits = 1;
+        assert_eq!(backoff.calculate_delay(), 100); // 100 * 2^0
+
+        backoff.consecutive_hits = 2;
+        assert_eq!(backoff.calculate_delay(), 200); // 100 * 2^1
+
+        backoff.consecutive_hits = 3;
+        assert_eq!(backoff.calculate_delay(), 400); // 100 * 2^2
+
+        backoff.consecutive_hits = 4;
+        assert_eq!(backoff.calculate_delay(), 800); // 100 * 2^3
+    }
+
+    #[test]
+    fn rate_limit_backoff_calculate_delay_capped_at_max() {
+        let mut backoff = RateLimitBackoff::new(100, 500);
+
+        backoff.consecutive_hits = 10; // 100 * 2^9 = 51200, but max=500
+        assert_eq!(backoff.calculate_delay(), 500);
+    }
+
+    // SessionState action_summary
+    #[test]
+    fn session_action_summary_reflects_recorded_actions() {
+        let mut session = SessionState::new(
+            EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 20),
+            60_000,
+            100,
+        );
+
+        assert_eq!(session.action_summary(), (0, 20));
+
+        session.record_action("t1", "like");
+        session.record_action("t2", "like");
+        session.record_action("t3", "retweet");
+        assert_eq!(session.action_summary(), (3, 20));
+    }
+
+    #[test]
+    fn session_is_total_limit_reached() {
+        let mut session = SessionState::new(
+            EngagementLimits::with_limits(5, 5, 5, 5, 5, 5, 5, 3),
+            60_000,
+            100,
+        );
+
+        assert!(!session.is_total_limit_reached());
+        session.record_action("t1", "like");
+        session.record_action("t2", "retweet");
+        assert!(!session.is_total_limit_reached());
+        session.record_action("t3", "follow");
+        assert!(session.is_total_limit_reached());
+    }
+
+    // TaskConfig from_payload edge cases
+    #[test]
+    fn from_payload_max_actions_per_scan_minimum_is_one() {
+        // max_actions_per_scan defaults to engagement_candidate_count, then .max(1)
+        let payload = json!({});
+        let config = crate::config::TwitterActivityConfig::default();
+        let task_config = TaskConfig::from_payload(&payload, &config).unwrap();
+        assert!(task_config.max_actions_per_scan >= 1);
+    }
+
+    #[test]
+    fn from_payload_boolean_fields_default_correctly() {
+        let payload = json!({});
+        let config = crate::config::TwitterActivityConfig::default();
+        let task_config = TaskConfig::from_payload(&payload, &config).unwrap();
+        // simulate_only defaults to false
+        assert!(!task_config.simulate_only);
+        // dry_run_actions defaults to false
+        assert!(!task_config.dry_run_actions);
+        // smart_decision_enabled defaults to false
+        assert!(!task_config.smart_decision_enabled);
+    }
+
+    // TaskValidationError Display for InvalidFieldType
+    #[test]
+    fn task_validation_error_invalid_field_type_display() {
+        let err = TaskValidationError::InvalidFieldType {
+            field: "candidate_count".to_string(),
+            expected: "positive u32",
+            actual: "string",
+        };
+        let display = format!("{err}");
+        assert!(display.contains("candidate_count"));
+        assert!(display.contains("positive u32"));
+        assert!(display.contains("string"));
+    }
+}
+
+#[cfg(test)]
 mod payload_tests {
     use super::{test_support::*, TaskConfig};
     use serde_json::json;

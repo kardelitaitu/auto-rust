@@ -23,6 +23,8 @@ api.url() -> Result<String>
 api.title() -> Result<String>
 ```
 
+> **DSL equivalent:** [`navigate` action](TASKS/dsl.md#navigate) in declarative task files.
+
 ## Clicking
 
 ### api.click(selector)
@@ -61,6 +63,8 @@ api.nativeclick("button.submit").await?;
 - **Fallback:** `api.click()` when native input unavailable or page blocks native assumptions
 - **Never:** Silently switch between click types in the same step
 
+> **DSL equivalent actions:** [`click`](TASKS/dsl.md#click), [`double_click`](TASKS/dsl.md#doubleclick), [`right_click`](TASKS/dsl.md#rightclick) in declarative task files.
+
 ## Mouse Interactions
 
 ```rust
@@ -74,7 +78,13 @@ api.drag(from: &str, to: &str) -> Result<ClickOutcome>
 api.hover(selector: &str) -> Result<ClickOutcome>
 ```
 
+> **DSL equivalent:** [`hover` action](TASKS/dsl.md#hover). The other mouse methods (`nativeclick`, `click_and_wait`, `middle_click`, `drag`) are programmatic-only with no direct DSL equivalent.
+
+> **Tip:** To emulate `click_and_wait` in DSL, compose a [`click`](TASKS/dsl.md#click) action followed by a [`wait_for`](TASKS/dsl.md#waitfor).
+
 ## Native Cursor
+
+> **DSL equivalent:** No direct DSL equivalent — cursor positioning is a programmatic-only operation.
 
 ```rust
 api.nativecursor(x: i32, y: i32) -> Result<()>
@@ -85,6 +95,8 @@ api.randomcursor() -> Result<()>
 
 ## Keyboard Input
 
+> **DSL equivalent:** No direct DSL equivalent — `select_all()` is a programmatic-only helper.
+
 ```rust
 api.keyboard(selector: &str, text: &str) -> Result<()>
 api.clear(selector: &str) -> Result<()>
@@ -92,6 +104,8 @@ api.select_all(selector: &str) -> Result<()>
 ```
 
 Note: `api.r#type()` is available as the Rust-keyword-safe alias.
+
+> **DSL equivalent actions:** [`type`](TASKS/dsl.md#type), [`clear`](TASKS/dsl.md#clear), [`press`](TASKS/dsl.md#press) in declarative task files.
 
 ## Element Queries
 
@@ -103,6 +117,8 @@ api.html(selector: &str) -> Result<String>
 api.attr(selector: &str, attribute: &str) -> Result<String>
 ```
 
+> **DSL equivalent:** [`extract` action](TASKS/dsl.md#extract) reads element text using the browser API. The `element_exists` condition in [If/Else](TASKS/dsl.md#ifelse) and [While](TASKS/dsl.md#while) actions uses [`api.exists()`](#element-queries). The `visible` method is available in DSL as the [`element_visible` condition](TASKS/dsl.md#element-conditions). Queries `html()` and `attr()` are programmatic-only with no DSL equivalent.
+
 ## Waiting
 
 ```rust
@@ -110,6 +126,10 @@ api.wait_for(selector: &str) -> Result<()>
 api.wait_for_visible(selector: &str) -> Result<()>
 api.pause(base_ms: u64) -> ()
 ```
+
+> **DSL equivalent actions:** [`wait`](TASKS/dsl.md#wait) (timed pause) and [`wait_for`](TASKS/dsl.md#waitfor) (selector-based wait) in declarative task files.
+
+> **Note:** `wait_for_visible()` has no direct DSL equivalent — the DSL [`wait_for`](TASKS/dsl.md#waitfor) checks element existence only. For visibility checks, compose [`wait_for`](TASKS/dsl.md#waitfor) with an [`element_visible` condition](TASKS/dsl.md#element-conditions) in a [While](TASKS/dsl.md#while) loop.
 
 **Timing:** `api.pause()` uses uniform 20% deviation. High-level verbs include post-action settle pause automatically.
 
@@ -119,11 +139,15 @@ api.pause(base_ms: u64) -> ()
 api.scroll_to(selector: &str) -> Result<()>
 ```
 
+> **DSL equivalent:** [`scroll_to` action](TASKS/dsl.md#scrollto) in declarative task files.
+
 ## Focus
 
 ```rust
 api.focus(selector: &str) -> Result<()>
 ```
+
+> **DSL equivalent:** No direct DSL equivalent — `focus()` is a low-level DOM operation available only through the programmatic API. For clicking/interacting with elements in DSL, use [`click`](TASKS/dsl.md#click) or [`type`](TASKS/dsl.md#type), which focus the element automatically.
 
 ## Configuration
 
@@ -339,6 +363,8 @@ pub struct BrowserData {
 | DOM Inspection | `allow_dom_inspection` | - |
 | Browser Mgmt | `allow_browser_export` | `allow_browser_import` |
 
+> **Note:** All v0.1.1 APIs (Cookie, Session, Clipboard, Data, Network, DOM, Browser) are programmatic-only and have no DSL equivalents.
+
 ## DSL Executor APIs
 
 The `DslExecutor` provides programmatic control over declarative task execution.
@@ -478,9 +504,13 @@ pub struct ExecutionReport {
 }
 ```
 
+> **See also:** The [DSL Action Reference](TASKS/dsl.md#action-reference) documents all available action types, their fields, and behavior for declarative task files.
+
 ## Best Practices
 
 1. **Use high-level verbs** - Prefer `api.click()` over low-level mouse utilities
 2. **Prefer selectors** - Use CSS selectors over coordinates when possible
 3. **Let verbs handle pauses** - Don't duplicate settle pauses; use `api.pause()` only for explicit waits
 4. **Keep one interaction path** - Don't switch between `click` and `nativeclick` in the same task step
+
+> **See also:** The [DSL task tutorial](TASKS/dsl.md#tutorial-building-a-custom-task-from-scratch) walks through building a complete declarative task from scratch, and the [end-to-end example](TASKS/dsl.md#end-to-end-example-login-flow) shows a login flow combining multiple actions.

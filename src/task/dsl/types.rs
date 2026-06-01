@@ -130,16 +130,137 @@ mod tests {
                 path: Some("screenshot.png".to_string()),
                 selector: None,
             },
+            Action::Clear {
+                selector: "#field".to_string(),
+            },
+            Action::Hover {
+                selector: "#menu".to_string(),
+            },
+            Action::Select {
+                selector: "#dropdown".to_string(),
+                value: "option1".to_string(),
+                by_value: Some(false),
+            },
+            Action::RightClick {
+                selector: "#context".to_string(),
+            },
+            Action::DoubleClick {
+                selector: "#item".to_string(),
+            },
+            Action::Parallel {
+                actions: vec![Action::Wait { duration_ms: 100 }],
+                max_concurrency: Some(2),
+            },
+            Action::Retry {
+                actions: vec![Action::Click {
+                    selector: "#btn".to_string(),
+                }],
+                max_attempts: Some(3),
+                initial_delay_ms: Some(500),
+                max_delay_ms: Some(5000),
+                backoff_multiplier: Some(2.0),
+                jitter: Some(true),
+                retry_on: Some(vec!["timeout".to_string()]),
+            },
+            Action::Foreach {
+                variable: "item".to_string(),
+                collection: ForeachCollection::Array {
+                    values: vec![
+                        serde_yml::Value::String("a".to_string()),
+                        serde_yml::Value::String("b".to_string()),
+                    ],
+                },
+                actions: vec![Action::Log {
+                    message: "${item}".to_string(),
+                    level: None,
+                }],
+                max_iterations: Some(50),
+            },
+            Action::While {
+                condition: Condition::True,
+                actions: vec![Action::Wait { duration_ms: 100 }],
+                max_iterations: Some(10),
+            },
+            Action::Try {
+                try_actions: vec![Action::Click {
+                    selector: "#maybe".to_string(),
+                }],
+                catch_actions: Some(vec![Action::Log {
+                    message: "failed".to_string(),
+                    level: Some(LogLevel::Error),
+                }]),
+                error_variable: Some("err".to_string()),
+                finally_actions: Some(vec![Action::Log {
+                    message: "done".to_string(),
+                    level: None,
+                }]),
+            },
         ];
 
-        // Verify we have multiple distinct actions
-        assert!(actions.len() > 10);
+        // Verify we have all 23 action variants
+        assert_eq!(actions.len(), 23, "Expected all 23 Action variants");
 
         // Test serialization of each
-        for action in actions {
+        for action in &actions {
             let json = serde_json::to_string(&action).unwrap();
             let deserialized: Action = serde_json::from_str(&json).unwrap();
-            assert_eq!(action, deserialized);
+            assert_eq!(*action, deserialized, "Round-trip failed for {:?}", action);
+        }
+
+        // Verify YAML serialization works too
+        for action in &actions {
+            let yaml = serde_yml::to_string(&action).unwrap();
+            let deserialized: Action = serde_yml::from_str(&yaml).unwrap();
+            assert_eq!(*action, deserialized, "YAML round-trip failed for {:?}", action);
+        }
+    }
+
+    #[test]
+    fn test_action_select_by_value_variants() {
+        // Test Select with by_value = true (by value attribute)
+        let select_by_val = Action::Select {
+            selector: "#dd".to_string(),
+            value: "v1".to_string(),
+            by_value: Some(true),
+        };
+        let json = serde_json::to_string(&select_by_val).unwrap();
+        assert!(json.contains("\"select\""));
+        let back: Action = serde_json::from_str(&json).unwrap();
+        assert_eq!(select_by_val, back);
+
+        // Test Select with by_value = None (defaults to by text)
+        let select_by_text = Action::Select {
+            selector: "#dd".to_string(),
+            value: "Option Text".to_string(),
+            by_value: None,
+        };
+        let json = serde_json::to_string(&select_by_text).unwrap();
+        let back: Action = serde_json::from_str(&json).unwrap();
+        assert_eq!(select_by_text, back);
+    }
+
+    #[test]
+    fn test_foreach_collection_variants() {
+        let collections = vec![
+            ForeachCollection::Array {
+                values: vec![
+                    serde_yml::Value::String("x".to_string()),
+                    serde_yml::Value::Number(serde_yml::Number::from(42)),
+                ],
+            },
+            ForeachCollection::Range { start: 0, end: 5 },
+            ForeachCollection::Elements {
+                selector: ".item".to_string(),
+            },
+            ForeachCollection::Variable {
+                name: "my_list".to_string(),
+            },
+        ];
+
+        for collection in &collections {
+            let json = serde_json::to_string(&collection).unwrap();
+            let back: ForeachCollection = serde_json::from_str(&json).unwrap();
+            assert_eq!(*collection, back);
         }
     }
 
@@ -164,9 +285,32 @@ mod tests {
                 name: "status".to_string(),
                 value: serde_yml::Value::String("ok".to_string()),
             },
+            Condition::VariableMatches {
+                name: "output".to_string(),
+                pattern: r"^\d+$".to_string(),
+            },
             Condition::NumericGreaterThan {
                 name: "count".to_string(),
                 value: 5.0,
+            },
+            Condition::NumericLessThan {
+                name: "remaining".to_string(),
+                value: 100.0,
+            },
+            Condition::NumericRange {
+                name: "score".to_string(),
+                min: 0.0,
+                max: 100.0,
+            },
+            Condition::DateBefore {
+                name: "deadline".to_string(),
+                date: "2025-12-31".to_string(),
+                format: Some("%Y-%m-%d".to_string()),
+            },
+            Condition::DateAfter {
+                name: "start".to_string(),
+                date: "2024-01-01".to_string(),
+                format: None,
             },
             Condition::ArrayContains {
                 name: "items".to_string(),
@@ -198,13 +342,89 @@ mod tests {
                     },
                 ],
             },
+            Condition::Not {
+                condition: Box::new(Condition::ElementExists {
+                    selector: "#hidden".to_string(),
+                }),
+            },
+            Condition::True,
+            Condition::False,
+            Condition::VariableDefined {
+                name: "token".to_string(),
+            },
+            Condition::VariableNotDefined {
+                name: "missing_var".to_string(),
+            },
         ];
 
-        for condition in conditions {
+        // Verify we have all 19 condition variants (And/Or with sub-conditions,
+        // plus Not, True, False, VariableDefined, VariableNotDefined)
+        assert_eq!(
+            conditions.len(),
+            20,
+            "Expected all Condition variants represented"
+        );
+
+        for condition in &conditions {
             let json = serde_json::to_string(&condition).unwrap();
             let deserialized: Condition = serde_json::from_str(&json).unwrap();
-            assert_eq!(condition, deserialized);
+            assert_eq!(
+                *condition, deserialized,
+                "JSON round-trip failed for {:?}",
+                condition
+            );
         }
+
+        // Also test YAML round-trip for all
+        for condition in &conditions {
+            let yaml = serde_yml::to_string(&condition).unwrap();
+            let deserialized: Condition = serde_yml::from_str(&yaml).unwrap();
+            assert_eq!(
+                *condition, deserialized,
+                "YAML round-trip failed for {:?}",
+                condition
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_not_nested() {
+        // Test deeply nested Not
+        let nested = Condition::Not {
+            condition: Box::new(Condition::Not {
+                condition: Box::new(Condition::True),
+            }),
+        };
+        let json = serde_json::to_string(&nested).unwrap();
+        let back: Condition = serde_json::from_str(&json).unwrap();
+        assert_eq!(nested, back);
+    }
+
+    #[test]
+    fn test_condition_compound_nested() {
+        // And containing Or containing Not
+        let compound = Condition::And {
+            conditions: vec![
+                Condition::Or {
+                    conditions: vec![
+                        Condition::Not {
+                            condition: Box::new(Condition::False),
+                        },
+                        Condition::VariableDefined {
+                            name: "x".to_string(),
+                        },
+                    ],
+                },
+                Condition::NumericRange {
+                    name: "val".to_string(),
+                    min: 1.0,
+                    max: 100.0,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&compound).unwrap();
+        let back: Condition = serde_json::from_str(&json).unwrap();
+        assert_eq!(compound, back);
     }
 
     #[test]
@@ -370,6 +590,213 @@ include: []
             2,
             "Non-circular chain should merge exactly 2 actions"
         );
+    }
+
+    #[test]
+    fn test_resolve_includes_missing_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let task = TaskDefinition {
+            name: "task_missing".to_string(),
+            description: "Test".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "nonexistent.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 50 }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(
+            result.is_err(),
+            "resolve_includes should fail when included file is missing"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Failed to read file"),
+            "Error should mention file read failure, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_resolve_includes_conditional_skipped() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let included_yaml = r##"
+name: included_task
+description: "Included"
+policy: default
+actions:
+  - action: click
+    selector: "#should-not-appear"
+"##;
+        std::fs::write(dir_path.join("conditional.task"), included_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "main_task".to_string(),
+            description: "Main".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "conditional.task".to_string(),
+                condition: Some("env == 'production'".to_string()),
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(result.is_ok(), "Conditional includes should be skipped, not error");
+
+        let resolved = result.unwrap();
+        assert_eq!(
+            resolved.actions.len(),
+            1,
+            "Conditional include should be skipped, only original action should remain"
+        );
+        assert!(matches!(resolved.actions[0], Action::Wait { duration_ms: 100 }));
+    }
+
+    #[test]
+    fn test_resolve_includes_three_level_nesting() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let c_yaml = r#"
+name: task_c
+description: "Task C"
+policy: default
+actions:
+  - action: log
+    message: "from C"
+"#;
+        std::fs::write(dir_path.join("C.task"), c_yaml).unwrap();
+
+        let b_yaml = r#"
+name: task_b
+description: "Task B"
+policy: default
+actions:
+  - action: log
+    message: "from B"
+include:
+  - path: C.task
+"#;
+        std::fs::write(dir_path.join("B.task"), b_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "task_a".to_string(),
+            description: "Task A".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "B.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Log {
+                message: "from A".to_string(),
+                level: None,
+            }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(result.is_ok(), "3-level nesting should resolve: {:?}", result);
+
+        let resolved = result.unwrap();
+        assert_eq!(
+            resolved.actions.len(),
+            3,
+            "Expected 3 actions from A + B + C, got {}",
+            resolved.actions.len()
+        );
+
+        match &resolved.actions[0] {
+            Action::Log { message, .. } => assert_eq!(message, "from A"),
+            other => panic!("Expected Log from A, got {:?}", other),
+        }
+        match &resolved.actions[1] {
+            Action::Log { message, .. } => assert_eq!(message, "from B"),
+            other => panic!("Expected Log from B, got {:?}", other),
+        }
+        match &resolved.actions[2] {
+            Action::Log { message, .. } => assert_eq!(message, "from C"),
+            other => panic!("Expected Log from C, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resolve_includes_no_includes() {
+        let task = TaskDefinition {
+            name: "standalone".to_string(),
+            description: "No includes".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 1 }],
+        };
+
+        let result = task.resolve_includes(None);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.actions.len(), 1);
+    }
+
+    #[test]
+    fn test_resolve_includes_merges_parameters() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let included_yaml = r#"
+name: param_task
+description: "Has params"
+policy: default
+parameters:
+  api_key:
+    type: string
+    description: "API key"
+    required: true
+actions:
+  - action: wait
+    duration_ms: 10
+"#;
+        std::fs::write(dir_path.join("params.task"), included_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "main".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "url".to_string(),
+                    ParameterDef {
+                        r#type: ParameterType::Url,
+                        description: "Target URL".to_string(),
+                        default: None,
+                        required: true,
+                    },
+                );
+                m
+            },
+            include: vec![IncludeSpec {
+                path: "params.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Navigate {
+                url: "${url}".to_string(),
+            }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert!(resolved.parameters.contains_key("url"));
+        assert!(resolved.parameters.contains_key("api_key"));
+        assert_eq!(resolved.parameters.len(), 2);
     }
 }
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

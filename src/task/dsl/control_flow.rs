@@ -412,6 +412,98 @@ impl<T: super::DslApi> super::DslExecutor<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    // Mock executor for testing - tests would need full integration setup
-    // These are placeholder tests that would require a proper TaskContext
+    use super::*;
+
+    #[test]
+    fn test_retry_config_default() {
+        let config = RetryConfig::default();
+        assert_eq!(config.max_attempts, 3);
+        assert_eq!(config.initial_delay_ms, 1000);
+        assert_eq!(config.max_delay_ms, 30000);
+        assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
+        assert!(config.jitter);
+        assert!(config.retry_on.is_none());
+    }
+
+    #[test]
+    fn test_retry_config_from_retry_action() {
+        let action = crate::task::dsl::Action::Retry {
+            actions: vec![crate::task::dsl::Action::Wait { duration_ms: 100 }],
+            max_attempts: Some(5),
+            initial_delay_ms: Some(500),
+            max_delay_ms: Some(10000),
+            backoff_multiplier: Some(3.0),
+            jitter: Some(false),
+            retry_on: Some(vec!["timeout".to_string(), "connection".to_string()]),
+        };
+
+        let config = RetryConfig::from_action(&action);
+        assert_eq!(config.max_attempts, 5);
+        assert_eq!(config.initial_delay_ms, 500);
+        assert_eq!(config.max_delay_ms, 10000);
+        assert!((config.backoff_multiplier - 3.0).abs() < f64::EPSILON);
+        assert!(!config.jitter);
+        assert!(config.retry_on.is_some());
+        let patterns = config.retry_on.unwrap();
+        assert_eq!(patterns.len(), 2);
+        assert_eq!(patterns[0], "timeout");
+        assert_eq!(patterns[1], "connection");
+    }
+
+    #[test]
+    fn test_retry_config_from_retry_action_defaults() {
+        // Retry action with all None fields should use defaults
+        let action = crate::task::dsl::Action::Retry {
+            actions: vec![],
+            max_attempts: None,
+            initial_delay_ms: None,
+            max_delay_ms: None,
+            backoff_multiplier: None,
+            jitter: None,
+            retry_on: None,
+        };
+
+        let config = RetryConfig::from_action(&action);
+        assert_eq!(config.max_attempts, 3);
+        assert_eq!(config.initial_delay_ms, 1000);
+        assert_eq!(config.max_delay_ms, 30000);
+        assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
+        assert!(config.jitter);
+        assert!(config.retry_on.is_none());
+    }
+
+    #[test]
+    fn test_retry_config_from_non_retry_action() {
+        let action = crate::task::dsl::Action::Click {
+            selector: "#btn".to_string(),
+        };
+
+        let config = RetryConfig::from_action(&action);
+        // Non-Retry actions should produce default config
+        assert_eq!(config.max_attempts, 3);
+        assert_eq!(config.initial_delay_ms, 1000);
+        assert_eq!(config.max_delay_ms, 30000);
+        assert!((config.backoff_multiplier - 2.0).abs() < f64::EPSILON);
+        assert!(config.jitter);
+        assert!(config.retry_on.is_none());
+    }
+
+    #[test]
+    fn test_retry_config_from_action_partial_overrides() {
+        // Only override max_attempts, rest should default
+        let action = crate::task::dsl::Action::Retry {
+            actions: vec![crate::task::dsl::Action::Wait { duration_ms: 10 }],
+            max_attempts: Some(10),
+            initial_delay_ms: None,
+            max_delay_ms: None,
+            backoff_multiplier: None,
+            jitter: None,
+            retry_on: None,
+        };
+
+        let config = RetryConfig::from_action(&action);
+        assert_eq!(config.max_attempts, 10);
+        assert_eq!(config.initial_delay_ms, 1000); // default
+        assert_eq!(config.max_delay_ms, 30000); // default
+    }
 }

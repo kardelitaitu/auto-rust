@@ -13,10 +13,10 @@ use auto::utils::mouse::{
 use chromiumoxide::Browser;
 use std::env;
 use std::fs;
-use std::io;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};

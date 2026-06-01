@@ -250,3 +250,163 @@ mod detection_tests {
         assert!(!is_auth_error(&"network timeout"));
     }
 }
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+    use std::io;
+
+    // ErrorClass Display implementation
+    #[test]
+    fn error_class_display_all_variants() {
+        assert_eq!(format!("{}", ErrorClass::Transient), "transient");
+        assert_eq!(format!("{}", ErrorClass::Permanent), "permanent");
+        assert_eq!(format!("{}", ErrorClass::Fatal), "fatal");
+    }
+
+    // io::Error classification for each ErrorKind
+    #[test]
+    fn io_error_connection_refused_is_transient() {
+        let err = io::Error::new(io::ErrorKind::ConnectionRefused, "connection refused");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn io_error_connection_reset_is_transient() {
+        let err = io::Error::new(io::ErrorKind::ConnectionReset, "connection reset");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn io_error_connection_aborted_is_transient() {
+        let err = io::Error::new(io::ErrorKind::ConnectionAborted, "connection aborted");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn io_error_not_connected_is_transient() {
+        let err = io::Error::new(io::ErrorKind::NotConnected, "not connected");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn io_error_timed_out_is_transient() {
+        let err = io::Error::new(io::ErrorKind::TimedOut, "timed out");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn io_error_would_block_is_transient() {
+        let err = io::Error::new(io::ErrorKind::WouldBlock, "would block");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn io_error_out_of_memory_is_fatal() {
+        let err = io::Error::new(io::ErrorKind::OutOfMemory, "out of memory");
+        assert_eq!(err.classify(), ErrorClass::Fatal);
+    }
+
+    #[test]
+    fn io_error_not_found_is_permanent() {
+        let err = io::Error::new(io::ErrorKind::NotFound, "not found");
+        assert_eq!(err.classify(), ErrorClass::Permanent);
+    }
+
+    #[test]
+    fn io_error_permission_denied_is_permanent() {
+        let err = io::Error::new(io::ErrorKind::PermissionDenied, "permission denied");
+        assert_eq!(err.classify(), ErrorClass::Permanent);
+    }
+
+    #[test]
+    fn io_error_invalid_input_is_permanent() {
+        let err = io::Error::new(io::ErrorKind::InvalidInput, "invalid input");
+        assert_eq!(err.classify(), ErrorClass::Permanent);
+    }
+
+    // More anyhow error patterns
+    #[test]
+    fn anyhow_out_of_memory_is_fatal() {
+        let err = anyhow::anyhow!("out of memory allocating buffer");
+        assert_eq!(err.classify(), ErrorClass::Fatal);
+    }
+
+    #[test]
+    fn anyhow_unable_to_click_is_transient() {
+        let err = anyhow::anyhow!("unable to click element at position");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_node_detached_is_transient() {
+        let err = anyhow::anyhow!("node is detached from document");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_no_node_with_given_id_is_transient() {
+        let err = anyhow::anyhow!("no node with given id 12345");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_could_not_find_node_is_transient() {
+        let err = anyhow::anyhow!("could not find node in DOM tree");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_net_error_is_transient() {
+        let err = anyhow::anyhow!("net::ERR_CONNECTION_TIMED_OUT");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_network_error_is_transient() {
+        let err = anyhow::anyhow!("network error occurred during fetch");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_timed_out_is_transient() {
+        let err = anyhow::anyhow!("operation timed out after 30s");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_connection_refused_is_transient() {
+        let err = anyhow::anyhow!("connection refused by remote host");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_unknown_error_is_permanent() {
+        let err = anyhow::anyhow!("something completely unexpected happened");
+        assert_eq!(err.classify(), ErrorClass::Permanent);
+    }
+
+    // is_auth_error additional patterns
+    #[test]
+    fn is_auth_error_detects_403() {
+        assert!(is_auth_error(&"HTTP 403 Forbidden"));
+    }
+
+    #[test]
+    fn is_auth_error_detects_login_required() {
+        assert!(is_auth_error(&"login required to continue"));
+    }
+
+    #[test]
+    fn is_auth_error_case_insensitive() {
+        assert!(is_auth_error(&"UNAUTHORIZED ACCESS"));
+        assert!(is_auth_error(&"Authentication Failed"));
+    }
+
+    // is_rate_limit_error additional patterns
+    #[test]
+    fn is_rate_limit_error_case_insensitive() {
+        assert!(is_rate_limit_error(&"RATE LIMIT EXCEEDED"));
+        assert!(is_rate_limit_error(&"Too Many Requests"));
+    }
+}

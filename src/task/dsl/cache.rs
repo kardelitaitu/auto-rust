@@ -247,4 +247,125 @@ mod tests {
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.size, 1);
     }
+
+    #[test]
+    fn test_cache_entry_with_ttl() {
+        let ttl = Duration::from_millis(100);
+        let entry = SelectorCacheEntry::with_ttl(true, true, Some("hello".to_string()), 2, ttl);
+
+        assert!(entry.exists);
+        assert!(entry.visible);
+        assert_eq!(entry.text, Some("hello".to_string()));
+        assert_eq!(entry.count, 2);
+        assert!(entry.is_valid()); // Should be valid for 100ms
+    }
+
+    #[test]
+    fn test_cache_entry_ttl_expiry() {
+        let ttl = Duration::from_millis(10);
+        let entry = SelectorCacheEntry::with_ttl(true, false, None, 0, ttl);
+
+        assert!(entry.is_valid());
+
+        // Wait for TTL to expire
+        std::thread::sleep(Duration::from_millis(20));
+
+        assert!(!entry.is_valid(), "Entry should be expired after TTL");
+    }
+
+    #[test]
+    fn test_cache_invalidate() {
+        let mut cache = SelectorCache::new();
+        let entry = SelectorCacheEntry::new(true, true, Some("text".to_string()), 1);
+        cache.insert("my-selector".to_string(), entry);
+
+        // Verify it's in cache
+        assert!(cache.get("my-selector").is_some());
+        assert_eq!(cache.stats().size, 1);
+
+        // Invalidate
+        cache.invalidate("my-selector");
+
+        // Should be gone
+        assert!(cache.get("my-selector").is_none());
+        assert_eq!(cache.stats().size, 0);
+    }
+
+    #[test]
+    fn test_cache_invalidate_nonexistent() {
+        let mut cache = SelectorCache::new();
+        // Should not panic
+        cache.invalidate("does-not-exist");
+        assert_eq!(cache.stats().size, 0);
+    }
+
+    #[test]
+    fn test_cache_clear() {
+        let mut cache = SelectorCache::new();
+
+        // Add multiple entries
+        for i in 0..5 {
+            let entry = SelectorCacheEntry::new(true, false, None, i);
+            cache.insert(format!("sel-{}", i), entry);
+        }
+        assert_eq!(cache.stats().size, 5);
+
+        // Clear all
+        cache.clear();
+
+        assert_eq!(cache.stats().size, 0);
+
+        // All entries should be gone
+        for i in 0..5 {
+            assert!(cache.get(&format!("sel-{}", i)).is_none());
+        }
+    }
+
+    #[test]
+    fn test_cache_expired_entries_cleaned_on_get() {
+        let mut cache = SelectorCache::new();
+        let ttl = Duration::from_millis(10);
+
+        // Insert entries with very short TTL
+        let entry = SelectorCacheEntry::with_ttl(true, false, None, 0, ttl);
+        cache.insert("short-lived".to_string(), entry);
+
+        assert!(cache.get("short-lived").is_some());
+
+        // Wait for expiry
+        std::thread::sleep(Duration::from_millis(20));
+
+        // Should return None and clean up expired entry
+        assert!(cache.get("short-lived").is_none());
+    }
+
+    #[test]
+    fn test_cache_stats_hit_rate() {
+        let mut cache = SelectorCache::new();
+        let entry = SelectorCacheEntry::new(true, false, None, 0);
+        cache.insert("key".to_string(), entry);
+
+        // 3 hits
+        cache.get("key");
+        cache.get("key");
+        cache.get("key");
+        // 1 miss
+        cache.get("missing");
+
+        let stats = cache.stats();
+        assert_eq!(stats.hits, 3);
+        assert_eq!(stats.misses, 1);
+        assert!((stats.hit_rate - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_cache_stats_empty() {
+        let cache = SelectorCache::new();
+        let stats = cache.stats();
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+        assert_eq!(stats.size, 0);
+        assert_eq!(stats.evictions, 0);
+        assert!((stats.hit_rate - 0.0).abs() < f64::EPSILON);
+    }
 }

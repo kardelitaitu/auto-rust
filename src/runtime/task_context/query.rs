@@ -121,12 +121,64 @@ mod tests {
 
     #[test]
     fn delegation_paths_are_well_formed() {
+        let mut unique = std::collections::HashSet::new();
         for (path, name) in delegation_checks().iter() {
             assert!(
                 path.contains(name),
                 "{} missing expected identifier {}",
                 path,
                 name,
+            );
+            assert!(
+                unique.insert(*name),
+                "duplicate delegation target: {}",
+                name
+            );
+        }
+        assert_eq!(
+            unique.len(),
+            delegation_checks().len(),
+            "expected unique delegation targets"
+        );
+    }
+
+    #[test]
+    fn delegation_paths_are_complete() {
+        let expected = [
+            "selector_exists",
+            "selector_is_visible",
+            "selector_text",
+            "selector_html",
+            "selector_attr",
+            "selector_value",
+            "wait_for_selector",
+            "wait_for_visible_selector",
+            "wait_for_any_visible_selector",
+            "page_url",
+            "page_title",
+            "get_viewport",
+        ];
+        let names: std::collections::HashSet<_> =
+            delegation_checks().iter().map(|(_, name)| *name).collect();
+        for name in &expected {
+            assert!(
+                names.contains(*name),
+                "missing expected delegation target: {}",
+                name
+            );
+        }
+        assert_eq!(names.len(), expected.len());
+    }
+
+    #[test]
+    fn delegation_paths_are_either_dom_navigation_or_page_size() {
+        for (path, _) in delegation_checks() {
+            assert!(
+                path.starts_with("crate::capabilities::dom::")
+                    || path.starts_with("crate::capabilities::navigation::")
+                    || path.starts_with("crate::internal::page_size::"),
+                "unexpected delegation module: {}",
+                path
             );
         }
     }

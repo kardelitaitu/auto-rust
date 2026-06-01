@@ -107,6 +107,14 @@ fn effective_probability(base_probability: f64, persona: &PersonaWeights) -> f64
 /// Selects a `PersonaWeights` configuration based on the provided weights dictionary.
 /// The `weights` JSON may include any of: `like_prob`, `retweet_prob`, `quote_prob`, `follow_prob`, `reply_prob`, `thread_dive_prob`, `interest_multiplier`.
 /// Any missing weights default to the provided config probabilities.
+macro_rules! override_field {
+    ($w:expr, $persona:expr, $overrides:expr, $field:ident, $label:expr) => {
+        if let Some(v) = $w.get(stringify!($field)).and_then(|v: &Value| v.as_f64()) {
+            $persona.$field = v;
+            $overrides.push(format!("{}={v:.3}", $label));
+        }
+    };
+}
 #[instrument]
 pub fn select_persona_weights(
     weights: Option<&Value>,
@@ -128,41 +136,14 @@ pub fn select_persona_weights(
 
     if let Some(w) = weights {
         let mut overrides = Vec::new();
-        if let Some(v) = w.get("like_prob").and_then(|v: &Value| v.as_f64()) {
-            persona.like_prob = v;
-            overrides.push(format!("like={v:.3}"));
-        }
-        if let Some(v) = w.get("retweet_prob").and_then(|v: &Value| v.as_f64()) {
-            persona.retweet_prob = v;
-            overrides.push(format!("retweet={v:.3}"));
-        }
-        if let Some(v) = w.get("quote_prob").and_then(|v: &Value| v.as_f64()) {
-            persona.quote_prob = v;
-            overrides.push(format!("quote={v:.3}"));
-        }
-        if let Some(v) = w.get("follow_prob").and_then(|v: &Value| v.as_f64()) {
-            persona.follow_prob = v;
-            overrides.push(format!("follow={v:.3}"));
-        }
-        if let Some(v) = w.get("reply_prob").and_then(|v: &Value| v.as_f64()) {
-            persona.reply_prob = v;
-            overrides.push(format!("reply={v:.3}"));
-        }
-        if let Some(v) = w.get("bookmark_prob").and_then(|v: &Value| v.as_f64()) {
-            persona.bookmark_prob = v;
-            overrides.push(format!("bookmark={v:.3}"));
-        }
-        if let Some(v) = w.get("thread_dive_prob").and_then(|v: &Value| v.as_f64()) {
-            persona.thread_dive_prob = v;
-            overrides.push(format!("dive={v:.3}"));
-        }
-        if let Some(v) = w
-            .get("interest_multiplier")
-            .and_then(|v: &Value| v.as_f64())
-        {
-            persona.interest_multiplier = v;
-            overrides.push(format!("interest_multiplier={v:.3}"));
-        }
+        override_field!(w, persona, overrides, like_prob, "like");
+        override_field!(w, persona, overrides, retweet_prob, "retweet");
+        override_field!(w, persona, overrides, quote_prob, "quote");
+        override_field!(w, persona, overrides, follow_prob, "follow");
+        override_field!(w, persona, overrides, reply_prob, "reply");
+        override_field!(w, persona, overrides, bookmark_prob, "bookmark");
+        override_field!(w, persona, overrides, thread_dive_prob, "dive");
+        override_field!(w, persona, overrides, interest_multiplier, "interest_multiplier");
         if !overrides.is_empty() {
             log::info!("Persona overrides from payload: {}", overrides.join(", "));
         }

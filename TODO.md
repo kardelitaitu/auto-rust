@@ -34,22 +34,9 @@ Wired `interest_multiplier` into `effective_probability`. Sentiment modulation n
 
 This was the largest single module in the TwitterActivity system. Extracted action execution into `twitteractivity_actions.rs` and helpers into `twitteractivity_helpers.rs`. Engagement module reduced from ~1686 to ~1466 lines.
 
-### M2. `select_persona_weights` Has 8 Repetitive Override Blocks (persona.rs:132-168)
+### M2. `select_persona_weights` Has 8 Repetitive Override Blocks (persona.rs:132-168) ✅ FIXED
 
-The same pattern is repeated for each of 8 fields:
-```rust
-if let Some(v) = w.get("FIELD").and_then(|v: &Value| v.as_f64()) {
-    persona.FIELD = v;
-    overrides.push(format!("FIELD={v:.3}"));
-}
-```
-
-**Fix:** Use a macro:
-```rust
-macro_rules! override_field {
-    ($w:expr, $persona:expr, $overrides:expr, $field:ident) => { ... };
-}
-```
+Replaced 8 copy-pasted override blocks (3 lines each) with a single `override_field!` macro invocation per field.
 
 ### M3. Inline JS Inconsistency with Selectors Module ✅ FIXED
 

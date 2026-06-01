@@ -54,26 +54,17 @@ Changed to `anyhow::bail!()` — banned words now cause `validate_reply` to retu
 
 Added Supplemental Symbols (0x1F900-1F9FF), Symbols Extended-A (0x1FA00-1FAFF), skin tone modifiers (0x1F3FB-1F3FF), variation selectors (0xFE00-FE0F), and ZWJ (U+200D). Covers ~800 more codepoints than before.
 
-### M7. Like Verification JS Queries Wrong DOM Scope (engagement.rs:922-923)
+### M7. Like Verification JS Queries Wrong DOM Scope (engagement.rs:922-923) ✅ FIXED
 
-```javascript
-var tweetArticle = document.querySelector('article[data-testid="tweet"]');
-var root = tweetArticle || document;
-```
-
-This finds the **first** tweet article in the DOM, not the one being liked. If the like button is in the 5th tweet, the verification searches within the 1st tweet's scope. The fallback to `document` makes it work, but the scoping optimization is unreliable.
-
-**Fix:** Use `document.elementFromPoint(x, y)` to find the tweet article at the click coordinates.
+Replaced `document.querySelector('article[data-testid="tweet"]')` with `document.elementFromPoint(x, y).closest(...)` — now finds the tweet at the actual click coordinates instead of the first tweet in the DOM.
 
 ### M8. `UnifiedStrategy` Has 5s Timeout for LLM Calls (unified.rs:94) ✅ FIXED
 
 Default timeout increased from 5000ms to 15000ms.
 
-### M9. `extract_tweet_context` Duplicates Reply Extraction Logic (llm.rs:129-213)
+### M9. `extract_tweet_context` Duplicates Reply Extraction Logic (llm.rs:129-213) ✅ FIXED
 
-The JS in `extract_tweet_context()` extracts replies from the DOM using inline JS. The `identify_thread_replies()` function in `twitteractivity_dive.rs` does the same thing via the selectors module. Two independent code paths for the same data.
-
-**Fix:** Unify reply extraction into a single function used by both LLM context and dive engagement.
+Created unified `js_extract_all_tweets.js` returning a superset of all tweet data (author, text, replies with id/like_pos/visible/y_top). Both `extract_tweet_context()` (LLM) and `identify_thread_replies()` (dive) now call the same JS and filter in Rust. Removed `js_extract_tweet_context.js` and `js_identify_thread_replies.js`.
 
 ---
 
@@ -155,3 +146,4 @@ Verification checks if the composer still contains text. But the composer may be
 8. **M5** — banned words no-op ✅
 9. **M4** — hardcoded keywords (operational flexibility) ✅
 10. **M8** — LLM timeout too short ✅
+11. **M9** — reply extraction unification ✅

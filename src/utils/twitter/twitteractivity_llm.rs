@@ -146,20 +146,20 @@ pub async fn extract_tweet_context(
             .unwrap_or("")
             .to_string();
 
-        let mut replies = obj
+        let replies: Vec<(String, String)> = obj
             .get("replies")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| {
-                        item.as_array().and_then(|pair| {
-                            let author = pair
-                                .first()
+                        item.as_object().and_then(|reply_obj| {
+                            let author = reply_obj
+                                .get("author")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            let text = pair
-                                .get(1)
+                            let text = reply_obj
+                                .get("text")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
@@ -175,6 +175,7 @@ pub async fn extract_tweet_context(
             .unwrap_or_default();
 
         // Sort by text length descending and take top 10 longest replies
+        let mut replies = replies;
         replies.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
         replies.truncate(10);
 
@@ -190,31 +191,7 @@ mod tests {
 
     #[test]
     fn test_extract_tweet_context_js_has_author_selector() {
-        let js = r#"
-        (function() {
-            var authorEl = document.querySelector('article[data-testid="tweet"] [dir="auto"]');
-            var author = authorEl ? authorEl.textContent.trim() : 'unknown';
-            var tweetEl = document.querySelector('[data-testid="tweetText"]');
-            var text = tweetEl ? tweetEl.textContent.trim() : '';
-            var replies = [];
-            var replyEls = document.querySelectorAll('article[data-testid="tweet"]');
-            for (var i = 1; i < Math.min(replyEls.length, 21); i++) {
-                var reply = replyEls[i];
-                var replyAuthorEl = reply.querySelector('[dir="auto"]');
-                var replyTextEl = reply.querySelector('[data-testid="tweetText"]');
-                var replyAuthor = replyAuthorEl ? replyAuthorEl.textContent.trim() : 'unknown';
-                var replyText = replyTextEl ? replyTextEl.textContent.trim() : '';
-                if (replyText && replyText.length > 0) {
-                    replies.push({ author: replyAuthor, text: replyText });
-                }
-            }
-            return {
-                author: author,
-                text: text,
-                replies: replies.map(function(r) { return [r.author, r.text]; })
-            };
-        })()
-        "#;
+        let js = twitteractivity_selectors::js_extract_all_tweets();
         assert!(js.contains("data-testid=\"tweet\""));
         assert!(js.contains("data-testid=\"tweetText\""));
         assert!(js.contains("querySelectorAll"));
@@ -225,37 +202,31 @@ mod tests {
 
     #[test]
     fn test_extract_tweet_context_js_reply_limit() {
-        let js = r#"
-            for (var i = 1; i < Math.min(replyEls.length, 21); i++) {
-        "#;
+        let js = twitteractivity_selectors::js_extract_all_tweets();
         assert!(js.contains("Math.min"));
         assert!(js.contains("21"));
     }
 
     #[test]
-    fn test_extract_tweet_context_js_returns_array_of_pairs() {
-        let js = r#"
-            replies: replies.map(function(r) { return [r.author, r.text]; })
-        "#;
-        assert!(js.contains("replies.map"));
-        assert!(js.contains("r.author"));
-        assert!(js.contains("r.text"));
+    fn test_extract_tweet_context_js_returns_object_replies() {
+        let js = twitteractivity_selectors::js_extract_all_tweets();
+        assert!(js.contains("replies.push"));
+        assert!(js.contains("id: tweetId"));
+        assert!(js.contains("text: elText"));
+        assert!(js.contains("author: elAuthor"));
     }
 
     #[test]
     fn test_extract_tweet_context_js_fallback_unknown() {
-        let js = r#"
-            var author = authorEl ? authorEl.textContent.trim() : 'unknown';
-        "#;
+        let js = twitteractivity_selectors::js_extract_all_tweets();
         assert!(js.contains("'unknown'"));
     }
 
     #[test]
     fn test_extract_tweet_context_js_skips_first_article() {
-        let js = r#"
-            for (var i = 1; i < Math.min(replyEls.length, 21); i++) {
-        "#;
-        assert!(js.contains("i = 1"));
+        let js = twitteractivity_selectors::js_extract_all_tweets();
+        assert!(js.contains("i === 0"));
+        assert!(js.contains("continue"));
     }
 
     #[test]

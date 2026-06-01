@@ -48,9 +48,7 @@ use anyhow::{Context, Result};
 use log::info;
 use tracing::instrument;
 
-use super::twitteractivity_selectors::{
-    js_get_current_url, js_identify_thread_replies, selector_all_tweets,
-};
+use super::twitteractivity_selectors::{js_extract_all_tweets, js_get_current_url, selector_all_tweets};
 
 #[derive(Debug, Clone, Default)]
 pub struct DiveIntoThreadOutcome {
@@ -179,19 +177,35 @@ pub async fn dive_into_thread(
 
 /// Identifies engageable replies in the current thread view.
 /// Returns a list of reply candidates with metadata and coordinates.
+/// Delegates to the unified `js_extract_all_tweets()` and filters for
+/// visible replies with like buttons.
 #[instrument(skip(api))]
 pub async fn identify_thread_replies(api: &TaskContext) -> Result<Vec<serde_json::Value>> {
-    let js = js_identify_thread_replies();
+    let js = js_extract_all_tweets();
     let result = api.page().evaluate(js).await?;
     let value = result
         .value()
         .context("Failed to identify thread replies")?;
 
-    if let Some(arr) = value.as_array() {
-        Ok(arr.clone())
-    } else {
-        Ok(Vec::new())
-    }
+    let replies = value
+        .as_object()
+        .and_then(|obj| obj.get("replies"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // Filter to visible replies with like buttons (same as old js_identify_thread_replies)
+    let engageable: Vec<serde_json::Value> = replies
+        .into_iter()
+        .filter(|r| {
+            r.get("visible").and_then(|v| v.as_bool()).unwrap_or(false)
+                && r.get("like_pos").is_some()
+                && r.get("like_pos").and_then(|p| p.as_object()).is_some()
+        })
+        .take(8)
+        .collect();
+
+    Ok(engageable)
 }
 
 /// Returns the current thread depth (number of visible tweets in thread view).
@@ -220,6 +234,7 @@ pub async fn get_thread_depth(api: &TaskContext) -> Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::twitter::twitteractivity_selectors;
 
     #[test]
     fn test_status_id_from_relative_url() {
@@ -304,10 +319,12 @@ mod tests {
 
     #[test]
     fn test_identify_thread_replies_js_includes_function_wrapper() {
-        let js = js_identify_thread_replies();
+        let js = twitteractivity_selectors::js_extract_all_tweets();
         assert!(js.starts_with("(function()"));
-        assert!(js.ends_with("})()"));
+        assert!(js.trim().ends_with("})()"));
         assert!(js.contains("querySelectorAll"));
+        assert!(js.contains("like_pos"));
+        assert!(js.contains("visible"));
     }
 
     #[test]

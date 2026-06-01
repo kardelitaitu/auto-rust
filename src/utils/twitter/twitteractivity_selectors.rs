@@ -185,10 +185,11 @@ pub fn js_root_tweet_button_center(selector: &str) -> String {
 }
 
 /// Returns JS to identify reply candidates within a thread dive.
-/// Skips the root tweet and returns engageable replies with text and button positions.
+/// Delegates to the unified `js_extract_all_tweets()` — the dive consumer
+/// filters for visible replies with like buttons.
 #[must_use]
 pub fn js_identify_thread_replies() -> &'static str {
-    include_str!("js/js_identify_thread_replies.js")
+    js_extract_all_tweets()
 }
 
 /// Returns JS to identify engagement candidates in the current feed.
@@ -227,10 +228,18 @@ pub fn js_verify_like(x: f64, y: f64) -> String {
         .replace("{Y}", &y.to_string())
 }
 
-/// Returns JS to extract tweet context (author, text, replies) for LLM.
+/// Returns JS to extract all tweet data (author, text, replies with metadata).
+/// Unifies the previous js_extract_tweet_context and js_identify_thread_replies
+/// into a single superset function. Each consumer filters what it needs.
+#[must_use]
+pub fn js_extract_all_tweets() -> &'static str {
+    include_str!("js/js_extract_all_tweets.js")
+}
+
+/// Deprecated alias for js_extract_all_tweets.
 #[must_use]
 pub fn js_extract_tweet_context() -> &'static str {
-    include_str!("js/js_extract_tweet_context.js")
+    js_extract_all_tweets()
 }
 
 /// Returns JS to find the quote tweet button in the retweet menu.

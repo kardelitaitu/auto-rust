@@ -1,7 +1,8 @@
 (function() {
     var x = {X};
     var y = {Y};
-    var tweetArticle = document.querySelector('article[data-testid="tweet"]');
+    var clicked = document.elementFromPoint(x, y);
+    var tweetArticle = clicked ? clicked.closest('article[data-testid="tweet"]') : null;
     var root = tweetArticle || document;
     var controls = root.querySelectorAll('button[data-testid], a[data-testid]');
     var nearest = null;

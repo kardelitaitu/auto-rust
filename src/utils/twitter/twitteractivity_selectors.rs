@@ -149,7 +149,7 @@ pub const DIR_AUTO_SPAN_SELECTOR: &str = r#"[dir="auto"] span:first-child"#;
 pub const TWEET_BUTTON_SELECTOR: &str = r"button[data-testid], a[data-testid]";
 
 /// Retweet confirm button selector (in modal/dialog)
-pub const RETWEET_CONFIRM_BUTTON_SELECTOR: &str = "button[data-testid=\"retweetConfirm\"]";
+pub const RETWEET_CONFIRM_BUTTON_SELECTOR: &str = r#"button[data-testid="retweetConfirm"]"#;
 
 /// Tweet button inline selector (reply submit button in composer)
 pub const TWEET_BUTTON_INLINE_SELECTOR: &str = "button[data-testid=\"tweetButtonInline\"]";

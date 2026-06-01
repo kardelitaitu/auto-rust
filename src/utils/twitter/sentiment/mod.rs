@@ -3,7 +3,7 @@
 
 /// Trait for sentiment analysis strategies.
 /// Each strategy analyzes a specific aspect and returns a sentiment score contribution.
-pub trait SentimentStrategy: std::fmt::Debug {
+pub trait SentimentStrategy: std::fmt::Debug + Send + Sync {
     /// Analyze the given text and return a sentiment score contribution.
     /// Positive scores indicate positive sentiment, negative scores indicate negative sentiment.
     ///

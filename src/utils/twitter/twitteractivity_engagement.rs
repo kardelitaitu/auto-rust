@@ -14,6 +14,7 @@ use crate::metrics::{
     RUN_COUNTER_RETWEET_SUCCESS, RUN_COUNTER_TRANSIENT_ERROR,
 };
 use crate::prelude::TaskContext;
+use crate::utils::twitter::sentiment::SentimentAnalyzer;
 use crate::utils::twitter::{
     decision::{
         DecisionEngineFactory, DecisionStrategy, EngagementDecision, EngagementLevel,
@@ -127,6 +128,10 @@ pub async fn handle_engagement_decision(
     Some(engine.decide(&ctx).await)
 }
 
+/// Cached SentimentAnalyzer instance (created once and reused).
+static SENTIMENT_ANALYZER: std::sync::OnceLock<std::sync::Mutex<SentimentAnalyzer>> =
+    std::sync::OnceLock::new();
+
 /// Analyze tweet sentiment and modulate persona weights accordingly.
 #[allow(clippy::cast_precision_loss)]
 fn modulate_persona_by_sentiment(
@@ -134,7 +139,10 @@ fn modulate_persona_by_sentiment(
     task_config: &TaskConfig,
     persona: &PersonaWeights,
 ) -> (Sentiment, PersonaWeights) {
-    let analyzer = crate::utils::twitter::sentiment::SentimentAnalyzer::new();
+    let analyzer = SENTIMENT_ANALYZER
+        .get_or_init(|| std::sync::Mutex::new(SentimentAnalyzer::new()))
+        .lock()
+        .expect("SentimentAnalyzer lock poisoned");
     let tweet_text = extract_tweet_text(tweet);
     let sentiment_result = if task_config.enhanced_sentiment_enabled {
         let thread_context = crate::utils::twitter::sentiment::extract_thread_context(tweet);

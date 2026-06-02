@@ -41,6 +41,11 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize bacon-pipeline configuration
+    bacon_pipeline::config::init(bacon_pipeline::ProjectConfig::with_defaults(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    ));
+
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
     }
@@ -72,7 +77,7 @@ async fn main() -> Result<()> {
         max_attempts: None,
     };
 
-    let llm = auto::llm::Llm::new()?;
+    let llm = bacon_pipeline::llm::Llm::from_env()?;
     let mut ctx = PipelineCtx::new(String::new()).with_dry_run(cli.dry_run);
     ctx.spec_path = Some(spec_path.clone());
 

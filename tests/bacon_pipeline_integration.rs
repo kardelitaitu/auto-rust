@@ -6,6 +6,17 @@ use std::thread;
 use std::time::Duration;
 
 use auto::bacon_core;
+use std::sync::Once;
+
+static PIPELINE_INIT: Once = Once::new();
+
+fn ensure_pipeline_init() {
+    PIPELINE_INIT.call_once(|| {
+        bacon_pipeline::config::init(bacon_pipeline::ProjectConfig::with_defaults(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        ));
+    });
+}
 
 fn bin_path(name: &str) -> PathBuf {
     let var_name = format!("CARGO_BIN_EXE_{}", name);
@@ -235,11 +246,14 @@ fn coder_non_refusal_not_falsely_detected() {
 
 #[test]
 fn bacon_full_dry_run_exits_cleanly_with_local_fixture() {
+    ensure_pipeline_init();
+
     let bacon = bin_path("bacon");
     let codex = bin_path("codex");
     let worker_dir = codex.parent().expect("codex binary parent");
     let ollama_url = spawn_fake_ollama(
-        r##"{"message":{"role":"assistant","content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."},"done":true}"##,
+        // NVIDIA Chat Completions API response format
+        r##"{"choices":[{"message":{"content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."},"finish_reason":"stop"}]}"##,
         4,
     );
     let dir = tempfile::tempdir().expect("temp config dir");
@@ -495,6 +509,8 @@ fn count_spec_file_refs_ignores_non_src_paths() {
 
 #[test]
 fn validate_pipeline_config_warns_on_missing_agent_config() {
+    ensure_pipeline_init();
+
     let config = bacon_core::PipelineConfig {
         observer: "nonexistent_agent".to_string(),
         strategist: "nonexistent_agent".to_string(),

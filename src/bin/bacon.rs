@@ -4,6 +4,11 @@ use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize bacon-pipeline configuration
+    bacon_pipeline::config::init(bacon_pipeline::ProjectConfig::with_defaults(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    ));
+
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
     }

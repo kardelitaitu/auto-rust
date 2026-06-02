@@ -12,7 +12,9 @@ use crate::llm::models::{
 use crate::llm::models::Role;
 
 #[cfg(test)]
-use crate::llm::models::{ChatRequest, OllamaConfig, OpenRouterConfig, OpenRouterError};
+use crate::llm::models::{
+    ChatRequest, MaxTokens, OllamaConfig, OpenRouterConfig, OpenRouterError, Temperature,
+};
 #[cfg(test)]
 use serde_json;
 
@@ -608,11 +610,11 @@ mod tests {
         let request = ChatRequest {
             model: "llama3".to_string(),
             messages: vec![],
-            temperature: Some(0.7),
-            max_tokens: Some(2048),
+            temperature: Some(Temperature::new(0.7)),
+            max_tokens: Some(MaxTokens::new(2048).unwrap()),
         };
         assert_eq!(request.model, "llama3");
-        assert_eq!(request.temperature, Some(0.7));
+        assert_eq!(request.temperature, Some(Temperature::new(0.7)));
     }
 
     #[test]
@@ -723,8 +725,8 @@ mod tests {
         let request = ChatRequest {
             model: "llama3".to_string(),
             messages,
-            temperature: Some(0.5),
-            max_tokens: Some(1024),
+            temperature: Some(Temperature::new(0.5)),
+            max_tokens: Some(MaxTokens::new(1024).unwrap()),
         };
         assert_eq!(request.messages.len(), 1);
     }
@@ -767,8 +769,8 @@ mod tests {
             base_url: "http://custom:11434".to_string(),
             model: "custom-model".to_string(),
             timeout_ms: 60000,
-            temperature: 0.7,
-            max_tokens: 2048,
+            temperature: Temperature::new(0.7),
+            max_tokens: MaxTokens::new(2048).unwrap(),
         };
         assert_eq!(config.base_url, "http://custom:11434");
     }

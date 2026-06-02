@@ -34,7 +34,8 @@ fn spawn_fake_ollama(max_requests: usize) -> String {
             let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
             let _ = read_http_request(&mut stream);
 
-            let body = r##"{"message":{"role":"assistant","content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."},"done":true}"##;
+            // NVIDIA Chat Completions API response format
+            let body = r##"{"choices":[{"message":{"content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."},"finish_reason":"stop"}]}"##;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),

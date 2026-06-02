@@ -15,8 +15,9 @@ files:
   - docs/specs/_active/0011-refactor-unused-code-in-predictive-score/plan.md
   - docs/specs/_active/0011-refactor-unused-code-in-predictive-score/validation.md
 acceptance:
-- Generated spec package is complete and validated.
-- Implementation validates with check-fast.ps1 before completion.
+- The `#[allow(dead_code)]` attribute is removed from `src/adaptive/predictive_scorer.rs` and `cargo check --lib` compiles without dead-code warnings.
+- `cargo test` passes all existing tests with no regressions.
+- `cargo clippy` shows no new warnings related to this change.
 non_goals:
 - No unchecked auto-apply of generated patches.
 risks:

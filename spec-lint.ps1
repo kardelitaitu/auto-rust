@@ -10,7 +10,7 @@
     - REQUIRED_FILES: Every spec package must have spec.yaml, plan.md, validation.md
     - BUCKET_RULES:
       * _template/ — status must be "draft", implementer "pending", id "<initiative-id>"
-      * _active/  — status must be "approved", must reference _active/ paths
+      * _active/  — status must be "approved", "in-progress", "implemented", or "needs-human-approval", must reference _active/ paths
       * _done/    — status must be "done", implementer must not be "pending", must reference _done/ paths
     - ID_MATCH: Folder name must match spec.yaml id (non-template only)
     - PATH_SANITY: No stale path references (e.g. _done/ paths in _active/ specs)
@@ -241,8 +241,9 @@ foreach ($pkg in $packages) {
             }
         }
         "_active" {
-            if ($specStatus -and $specStatus -ne "approved") {
-                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec must be approved: $($pkg.Path) has status=$specStatus" "Set spec.yaml status to approved."))
+            $validActiveStatuses = @("approved", "in-progress", "implemented", "needs-human-approval")
+            if ($specStatus -and $specStatus -notin $validActiveStatuses) {
+                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec has invalid status: $($pkg.Path) has status=$specStatus (valid: approved, in-progress, implemented, needs-human-approval)" "Set spec.yaml status to a valid active status."))
             }
 
             foreach ($expectedRef in (Get-ExpectedDocsRefs $pkg.Path $pkg.Bucket)) {
@@ -254,6 +255,25 @@ foreach ($pkg in $packages) {
             $staleDonePrefix = "docs/specs/_done/$folderName/"
             if ($spec -match [regex]::Escape($staleDonePrefix)) {
                 $issues.Add((New-Issue $pkg.Path "DOC_REF_STALE" "spec.yaml still references done-path docs for an active package: $staleDonePrefix" "Rewrite every docs/specs/_done/$folderName/... entry to docs/specs/_active/$folderName/...."))
+            }
+
+            # Quality check: validation.md must not be a Coder Failure Report
+            $validationPath = Join-Path $pkg.Path "validation.md"
+            $validationContent = Read-Text $validationPath
+            if ($validationContent -and $validationContent.TrimStart().StartsWith("# Coder Failure Report")) {
+                $issues.Add((New-Issue $pkg.Path "VALIDATION_FAILURE_REPORT" "validation.md contains a Coder Failure Report instead of acceptance criteria" "Rewrite validation.md with real acceptance criteria, or archive/delete this stuck spec."))
+            }
+
+            # Quality check: acceptance criteria must not be boilerplate
+            $genericCriteria = @(
+                "Generated spec package is complete and validated",
+                "Implementation validates with check-fast.ps1 before completion"
+            )
+            foreach ($criterion in $genericCriteria) {
+                if ($spec.Contains($criterion)) {
+                    $issues.Add((New-Issue $pkg.Path "ACCEPTANCE_GENERIC" "spec.yaml contains boilerplate acceptance criterion: '$criterion'" "Replace with measurable, initiative-specific acceptance criteria."))
+                    break
+                }
             }
         }
         "_done" {

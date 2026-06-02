@@ -127,14 +127,14 @@ mod tests {
         let request = ChatRequest {
             model: "gpt-4".to_string(),
             messages,
-            temperature: Some(0.7),
-            max_tokens: Some(2048),
+            temperature: Some(Temperature::new(0.7)),
+            max_tokens: Some(MaxTokens::new(2048).unwrap()),
         };
 
         assert_eq!(request.model, "gpt-4");
         assert_eq!(request.messages.len(), 2);
-        assert_eq!(request.temperature, Some(0.7));
-        assert_eq!(request.max_tokens, Some(2048));
+        assert_eq!(request.temperature, Some(Temperature::new(0.7)));
+        assert_eq!(request.max_tokens, Some(MaxTokens::new(2048).unwrap()));
     }
 
     #[test]
@@ -256,8 +256,8 @@ mod tests {
         let request = ChatRequest {
             model: "test".to_string(),
             messages: vec![ChatMessage::user("Hello")],
-            temperature: Some(0.5),
-            max_tokens: Some(100),
+            temperature: Some(Temperature::new(0.5)),
+            max_tokens: Some(MaxTokens::new(100).unwrap()),
         };
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"model\":\"test\""));

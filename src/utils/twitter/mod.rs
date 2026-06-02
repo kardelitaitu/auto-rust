@@ -5,7 +5,10 @@
 //! for DOM queries and interactions.
 
 pub mod decision;
+pub mod reply_engine;
+pub mod reply_strategies;
 pub mod sentiment;
+pub mod unified_processor;
 pub mod twitteractivity_actions;
 pub mod twitteractivity_constants;
 pub mod twitteractivity_dive;
@@ -30,7 +33,13 @@ pub mod twitteractivity_state;
 #[allow(unused_imports)]
 pub use decision::*;
 #[allow(unused_imports)]
+pub use reply_engine::*;
+#[allow(unused_imports)]
+pub use reply_strategies::*;
+#[allow(unused_imports)]
 pub use sentiment::*;
+#[allow(unused_imports)]
+pub use unified_processor::*;
 #[allow(unused_imports)]
 pub use twitteractivity_constants::*;
 #[allow(unused_imports)]

@@ -74,26 +74,52 @@ Each spec lives in `docs/specs/_active/<NNNN>-<slug>/` and contains 3 files:
 
 ### bacon.toml
 
-The pipeline reads `.bacon/bacon.toml`. Only `[pipeline]` and `[agents.*]` have active code backing:
+The pipeline reads `.bacon/bacon.toml`. Each stage uses a dedicated agent name with its own `[agents.*]` section:
 
 ```toml
 [pipeline]
-observer = "nvidia"
-strategist = "nvidia"
-coder = "bacon"
-auditor = "bacon"
-stage_delay_ms = 500        # Pause in ms between stages
+observer = "nvidia_observer"
+strategist = "nvidia_strategist"
+coder = "nvidia_coder"
+auditor = "nvidia_auditor"
+stage_delay_ms = 1000        # Pause in ms between stages
+enable_auto_apply = false     # Whether to auto-apply Coder patches without confirmation
 
-[agents.nvidia]
-type = "external"
+[agents.nvidia_observer]
 provider = "nvidia"
-command_args = ["-p", "{prompt}", "--role", "{role}"]
+model = "meta/llama-3.3-70b-instruct"
 api_key = "{env:NVIDIA_API_KEY}"
 base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.4
+max_tokens = 8192
+timeout_ms = 90000
+
+[agents.nvidia_strategist]
+provider = "nvidia"
 model = "meta/llama-3.3-70b-instruct"
-temperature = 0.3
-top_p = 0.95
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.1
+max_tokens = 8192
+timeout_ms = 90000
+
+[agents.nvidia_coder]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.0
 max_tokens = 16384
+timeout_ms = 120000
+
+[agents.nvidia_auditor]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.1
+max_tokens = 16384
+timeout_ms = 90000
 ```
 
 ### CLI Reference
@@ -133,7 +159,7 @@ bacon test --fixture clippy    # run one fixture
 | `NVIDIA_MAX_TOKENS` | Overrides output token limit |
 | `RUST_LOG` | Log level (debug, info, warn, error) |
 
-Model precedence: `NVIDIA_MODEL` env > `.bacon/bacon.toml [agents.nvidia].model` > built-in `meta/llama-3.3-70b-instruct`.
+Model precedence: `NVIDIA_MODEL` env > `.bacon/bacon.toml [agents.nvidia_<stage>].model` > built-in `meta/llama-3.3-70b-instruct`.
 
 ## Error Recovery
 

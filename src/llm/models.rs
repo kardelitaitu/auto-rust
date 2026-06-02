@@ -1,4 +1,63 @@
+use std::num::NonZeroU32;
+
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Temperature(f64);
+
+impl Temperature {
+    pub const MIN: f64 = 0.0;
+    pub const MAX: f64 = 2.0;
+
+    pub fn new(value: f64) -> Self {
+        Self(value.clamp(Self::MIN, Self::MAX))
+    }
+
+    #[must_use]
+    pub fn get(&self) -> f64 {
+        self.0
+    }
+}
+
+impl Default for Temperature {
+    fn default() -> Self {
+        Self(0.7)
+    }
+}
+
+impl From<f64> for Temperature {
+    fn from(value: f64) -> Self {
+        Self::new(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct MaxTokens(NonZeroU32);
+
+impl MaxTokens {
+    pub fn new(value: u32) -> Option<Self> {
+        NonZeroU32::new(value).map(Self)
+    }
+
+    #[must_use]
+    pub fn get(&self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl Default for MaxTokens {
+    fn default() -> Self {
+        Self(NonZeroU32::new(2048).expect("2048 is non-zero"))
+    }
+}
+
+impl From<MaxTokens> for u32 {
+    fn from(value: MaxTokens) -> Self {
+        value.0.get()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -41,8 +100,8 @@ impl ChatMessage {
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
-    pub temperature: Option<f64>,
-    pub max_tokens: Option<u32>,
+    pub temperature: Option<Temperature>,
+    pub max_tokens: Option<MaxTokens>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,8 +173,8 @@ pub struct OllamaConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
-    pub temperature: f64,
-    pub max_tokens: u32,
+    pub temperature: Temperature,
+    pub max_tokens: MaxTokens,
 }
 
 impl Default for OllamaConfig {
@@ -124,8 +183,8 @@ impl Default for OllamaConfig {
             base_url: "http://localhost:11434".into(),
             model: "llama3.2:3b".into(),
             timeout_ms: 240000,
-            temperature: 0.7,
-            max_tokens: 2048,
+            temperature: Temperature::new(0.7),
+            max_tokens: MaxTokens::new(2048).unwrap(),
         }
     }
 }
@@ -137,8 +196,8 @@ pub struct OpenRouterConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
-    pub temperature: f64,
-    pub max_tokens: u32,
+    pub temperature: Temperature,
+    pub max_tokens: MaxTokens,
     /// Fallback models to try if primary fails (timeout or error)
     #[serde(default)]
     pub fallback_models: Vec<String>,
@@ -151,8 +210,8 @@ impl Default for OpenRouterConfig {
             base_url: "https://openrouter.ai/api/v1".into(),
             model: "anthropic/claude-3-haiku".into(),
             timeout_ms: 120000,
-            temperature: 0.7,
-            max_tokens: 4096,
+            temperature: Temperature::new(0.7),
+            max_tokens: MaxTokens::new(4096).unwrap(),
             fallback_models: Vec::new(),
         }
     }
@@ -165,9 +224,9 @@ pub struct NvidiaConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
-    pub temperature: f64,
+    pub temperature: Temperature,
     pub top_p: f64,
-    pub max_tokens: u32,
+    pub max_tokens: MaxTokens,
 }
 
 impl Default for NvidiaConfig {
@@ -177,9 +236,9 @@ impl Default for NvidiaConfig {
             base_url: "https://integrate.api.nvidia.com/v1".to_string(),
             model: "meta/llama-3.3-70b-instruct".to_string(),
             timeout_ms: 600000,
-            temperature: 1.0,
+            temperature: Temperature::new(1.0),
             top_p: 0.95,
-            max_tokens: 16384,
+            max_tokens: MaxTokens::new(16384).unwrap(),
         }
     }
 }
@@ -276,10 +335,10 @@ mod tests {
         let request = ChatRequest {
             model: "llama3".to_string(),
             messages: vec![],
-            temperature: Some(0.5),
+            temperature: Some(Temperature::new(0.5)),
             max_tokens: None,
         };
-        assert_eq!(request.temperature, Some(0.5));
+        assert_eq!(request.temperature, Some(Temperature::new(0.5)));
     }
 
     #[test]
@@ -288,9 +347,9 @@ mod tests {
             model: "llama3".to_string(),
             messages: vec![],
             temperature: None,
-            max_tokens: Some(1024),
+            max_tokens: Some(MaxTokens::new(1024).unwrap()),
         };
-        assert_eq!(request.max_tokens, Some(1024));
+        assert_eq!(request.max_tokens, Some(MaxTokens::new(1024).unwrap()));
     }
 
     #[test]

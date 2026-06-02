@@ -13,16 +13,21 @@ use auto::utils::mouse::{
 use chromiumoxide::Browser;
 use std::env;
 use std::fs;
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+
+#[cfg(feature = "accessibility-locator")]
+use std::io::Write;
+#[cfg(feature = "accessibility-locator")]
+use std::sync::Mutex;
+#[cfg(feature = "accessibility-locator")]
 use tracing::instrument::WithSubscriber;
+#[cfg(feature = "accessibility-locator")]
 use tracing::Level;
 
 struct TestServer {

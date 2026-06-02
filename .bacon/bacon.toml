@@ -101,7 +101,8 @@ temperature = 0.1
 max_tokens = 16384
 timeout_ms = 90000
 
-# Base NVIDIA agent — preserved for backward compatibility
+# Standalone NVIDIA agent binary config — used by `src/bin/nvidia.rs` / `cli.rs`.
+# The per-stage agents above (nvidia_observer, etc.) are used by the pipeline router.
 [agents.nvidia]
 type = "external"
 provider = "nvidia"

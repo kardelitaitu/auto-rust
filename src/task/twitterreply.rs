@@ -1,5 +1,5 @@
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::llm::unified_processor::UnifiedLLMProcessor;
+use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
 use crate::prelude::TaskContext;
 use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
@@ -53,7 +53,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         .map(|(a, t)| (a.as_str(), t.as_str()))
         .collect();
 
-    let reply_texts: Vec<crate::llm::unified_processor::UnifiedReplyResponse> = processor
+    let reply_texts: Vec<crate::utils::twitter::unified_processor::UnifiedReplyResponse> = processor
         .process_replies_batch(&tweet_text, &author, &reply_tuples)
         .await
         .map_err(|e| {

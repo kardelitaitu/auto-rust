@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "bacon-pipeline"]
+
 [package]
 name = "auto-rust"
 version = "0.2.0"
@@ -76,13 +79,6 @@ url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
-# OpenTelemetry Tracing
-opentelemetry = "0.23"
-opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] }
-opentelemetry-semantic-conventions = "0.16"
-tracing-opentelemetry = "0.24"
-
 # Error Handling
 anyhow = "1"
 thiserror = "1"
@@ -122,6 +118,7 @@ rustc-hash = "2"
 once_cell = "1"
 log = "0.4.29"
 do-over = "0.1.0"
+bacon-pipeline = { path = "bacon-pipeline" }
 
 [profile.dev]
 # Optimize dev builds for speed

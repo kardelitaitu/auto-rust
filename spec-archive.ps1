@@ -99,6 +99,12 @@ if ($implementer -eq "pending") {
     Set-Content -Path $targetDir\$packageName\spec.yaml -Value $specContent -NoNewline
 }
 
+# Rewrite docs paths from _active/ to _done/ in spec.yaml
+$specContent = $specContent `
+    -replace 'docs/specs/_active/', 'docs/specs/_done/' `
+    -replace 'docs\\specs\\_active\\', 'docs\\specs\\_done\\'
+Set-Content -Path $targetDir\$packageName\spec.yaml -Value $specContent -NoNewline
+
 # Update README.md (only if it existed in the original package)
 if ($hasReadme) {
     $updatedReadme = $readmeContent -replace "Status:.*", "Status: Done (Archived)"
@@ -108,4 +114,5 @@ if ($hasReadme) {
 Write-Host "✅ Package archived successfully!"
 Write-Host "Status updated to 'done'"
 Write-Host "Implementer normalized to 'archived-*'"
+Write-Host "Docs paths rewritten to _done/"
 Write-Host "Files moved to _done/$packageName"

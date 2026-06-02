@@ -520,6 +520,35 @@ pub fn validate_bacon_local_only() -> Result<()> {
     Ok(())
 }
 
+/// Run spec-lint on a spec package directory.
+///
+/// Uses the `spec_lint` config field if set (non-empty). Otherwise falls back
+/// to running `spec-lint.ps1` via pwsh with `-Directory <spec_path>`.
+/// Returns `(passed, output)`.
+pub fn run_spec_lint(spec_path: &Path) -> Result<(bool, String)> {
+    let spec_lint_cfg = &crate::config::project_config().validation.spec_lint;
+    if spec_lint_cfg.is_empty() {
+        // Default: run spec-lint.ps1 via pwsh
+        let spec_path_arg = spec_path.to_string_lossy().to_string();
+        run_powershell_with_args("spec-lint.ps1", &["-Directory", spec_path_arg.as_str()])
+    } else {
+        // Custom spec-lint command
+        let root = manifest_dir();
+        let output = std::process::Command::new(&spec_lint_cfg[0])
+            .args(&spec_lint_cfg[1..])
+            .current_dir(&root)
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let combined = if stderr.is_empty() {
+            stdout
+        } else {
+            format!("{stdout}\n{stderr}")
+        };
+        Ok((output.status.success(), combined))
+    }
+}
+
 /// Scan `docs/specs/_active/` for specs with `status: in-progress` and warn.
 pub fn check_stale_in_progress() -> Result<()> {
     let active_dir = crate::config::project_config().specs_dir.join("_active");

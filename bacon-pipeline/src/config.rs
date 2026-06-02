@@ -50,16 +50,19 @@ pub struct ProjectConfig {
 
 /// Cross-platform validation commands.
 ///
-/// Defaults use `cargo check` / `cargo test` which work on all platforms.
-/// Set `spec_lint` to empty to use the built-in Rust spec linter.
+/// Defaults run the `.ps1` scripts via `pwsh`. Override each field with a
+/// different command for environments without pwsh.
 #[derive(Debug, Clone)]
-pub struct ValidationCommands {    /// Quick validation gate — runs `check-fast.ps1` (rustfmt, cargo check, clippy).
+pub struct ValidationCommands {
+    /// Quick validation gate — runs `check-fast.ps1` (rustfmt, cargo check, clippy).
     /// Override by setting this field to `["cargo", "check", "--lib", "--bins"]`
     /// or any other command for environments without pwsh.
     pub check_fast: Vec<String>,
-    /// Full test suite (default: `["cargo", "test"]`).
+    /// Full validation suite — runs `check.ps1` (spec-lint, build, fmt, clippy, tests).
+    /// Override by setting this field to `["cargo", "test"]` or another command.
     pub check_full: Vec<String>,
-    /// Spec linter command (default: empty = use built-in Rust linter).
+    /// Spec linter command. Empty = uses hardcoded `spec-lint.ps1` script via pwsh.
+    /// Set to a custom command to override, or to disable by setting a no-op.
     pub spec_lint: Vec<String>,
 }
 
@@ -75,7 +78,15 @@ impl Default for ValidationCommands {
                 "-File".into(),
                 "check-fast.ps1".into(),
             ],
-            check_full: vec!["cargo".into(), "test".into()],
+            // check.ps1 runs spec-lint, cargo check, fmt, clippy, and tests;
+            // requires pwsh (PowerShell Core).
+            check_full: vec![
+                "pwsh".into(),
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-File".into(),
+                "check.ps1".into(),
+            ],
             spec_lint: Vec::new(),
         }
     }

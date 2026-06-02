@@ -139,7 +139,7 @@ bacon                          # auto-detect target
 bacon --dry-run                # sandbox mode (no writes)
 bacon --auto-apply             # apply verified patches without confirmation
 bacon --parallel               # process independent specs in parallel
-bacon --stage coder --spec 55  # resume from a stage
+bacon --stage coder               # resume pipeline from a stage
 bacon --max-attempts 8         # override max retry attempts per stage (default: 4)
 
 # Testing
@@ -176,12 +176,12 @@ When `check-fast.ps1` fails, the Coder feeds stderr/stdout back to the LLM and r
 
 ### Crash Recovery
 
-On startup, `check_stale_in_progress()` scans `_active/` for specs with `status: in-progress`. Specs stuck >30 minutes are auto-reset to `approved` and retried. Specs under the threshold are warned.
+On startup, `check_stale_in_progress()` scans `_active/` for specs with `status: in-progress`. Specs stuck >30 minutes are auto-reset to `approved` and retried. Specs under the threshold are logged as info (not auto-recovered).
 
 ### Manual Resume
 
 ```bash
-bacon --stage <role> --spec <NN>
+bacon --stage <role>               # resume pipeline from a stage (first FIFO-approved spec)
 ```
 
 ## CLI Worker Contract
@@ -206,7 +206,7 @@ External workers must print one JSON object to stdout; logs go to stderr.
 - Store API keys in `.env` file, not in `bacon.toml`
 - Use environment variable references: `{env:NVIDIA_API_KEY}`
 - Never commit `.env` files to version control
-- Security-sensitive paths (`src/crypto/`, `src/auth/`) require manual Auditor approval
+- (Planned) Security-sensitive paths (`src/crypto/`, `src/auth/`) will require manual Auditor approval
 - `provider = "cli"` is also supported for external command-line workers
 
 ## Development
@@ -216,7 +216,7 @@ External workers must print one JSON object to stdout; logs go to stderr.
 | Script | Purpose |
 |--------|---------|
 | `check-fast.ps1` | Quick validation: cargo check, clippy, fmt |
-| `check.ps1` | Full validation: slow tests, integration tests |
+| `check.ps1` | Full CI suite: spec-lint, cargo check, fmt, clippy, nextest tests |
 | `spec-lint.ps1` | Spec package quality check |
 | `spec-stash.ps1` | Checkpoint worktree before spec handoffs |
 | `spec-restore.ps1` | Restore from named checkpoint |

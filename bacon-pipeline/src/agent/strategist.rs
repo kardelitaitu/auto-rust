@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use super::spec_io;
 use super::types::PipelineCtx;
 use crate::core::cli_types::RunArgs;
-use crate::core::run_powershell_with_args;
 
 fn role_prompt() -> String {
     crate::core::read_role_prompt("strategist")
@@ -127,9 +126,7 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
 
         // Gate: run spec-lint on the new package
         info!("Running spec-lint validation...");
-        let spec_path_arg = spec_path.to_string_lossy().to_string();
-        let (passed, output) =
-            run_powershell_with_args("spec-lint.ps1", &["-Directory", spec_path_arg.as_str()])?;
+        let (passed, output) = crate::core::run_spec_lint(&spec_path)?;
         if !passed {
             warn!("spec-lint failed — stopping before Coder");
             anyhow::bail!("generated spec failed spec-lint:\n{output}");

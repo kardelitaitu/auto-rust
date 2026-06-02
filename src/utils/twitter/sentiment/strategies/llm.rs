@@ -32,10 +32,7 @@ Respond with this exact JSON format:
 pub async fn analyze_sentiment_llm(llm: &LlmClient, text: &str) -> Result<LlmSentimentResult> {
     let truncated: String = text.chars().take(400).collect();
     let prompt = SENTIMENT_PROMPT.replace("{tweet_text}", &truncated);
-    let messages = vec![ChatMessage {
-        role: "user".to_string(),
-        content: prompt,
-    }];
+    let messages = vec![ChatMessage::user(prompt)];
     let response_text = llm.chat(messages).await?;
     let json_start = response_text.find('{').unwrap_or(0);
     let json_end = response_text.rfind('}').unwrap_or(response_text.len());

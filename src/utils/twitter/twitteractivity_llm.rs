@@ -12,7 +12,8 @@ use log::info;
 use std::sync::OnceLock;
 use tracing::instrument;
 
-use crate::llm::{build_quote_messages, build_reply_messages, Llm};
+use crate::llm::Llm;
+use crate::utils::twitter::reply_engine::{build_quote_messages, build_reply_messages};
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_LONG_SECS;
 use crate::utils::twitter::twitteractivity_selectors;
@@ -188,6 +189,7 @@ pub async fn extract_tweet_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::Role;
 
     #[test]
     fn test_extract_tweet_context_js_has_author_selector() {
@@ -273,15 +275,15 @@ mod tests {
         // Verify the function is accessible from the crate
         let messages = build_reply_messages("author", "tweet", &[]);
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].role, "system");
-        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     }
 
     #[test]
     fn test_build_quote_messages_is_accessible() {
         let messages = build_quote_messages("author", "tweet", &[]);
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].role, "system");
-        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     }
 }

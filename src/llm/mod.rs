@@ -77,21 +77,21 @@ mod tests {
     #[test]
     fn test_chat_message_user_creation() {
         let msg = ChatMessage::user("Hello, world!");
-        assert_eq!(msg.role, "user");
+        assert_eq!(msg.role, Role::User);
         assert_eq!(msg.content, "Hello, world!");
     }
 
     #[test]
     fn test_chat_message_system_creation() {
         let msg = ChatMessage::system("You are a helpful assistant");
-        assert_eq!(msg.role, "system");
+        assert_eq!(msg.role, Role::System);
         assert_eq!(msg.content, "You are a helpful assistant");
     }
 
     #[test]
     fn test_chat_message_assistant_creation() {
         let msg = ChatMessage::assistant("Here's my response");
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
         assert_eq!(msg.content, "Here's my response");
     }
 
@@ -247,7 +247,7 @@ mod tests {
     fn test_chat_message_deserialization() {
         let json = r#"{"role":"assistant","content":"Hi there"}"#;
         let msg: ChatMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
         assert_eq!(msg.content, "Hi there");
     }
 
@@ -289,7 +289,7 @@ mod tests {
         };
         match choice {
             ChatChoice::WithMessage { message } => {
-                assert_eq!(message.role, "assistant");
+                assert_eq!(message.role, Role::Assistant);
             }
             _ => panic!("Expected WithMessage variant"),
         }

@@ -1,29 +1,37 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    User,
+    System,
+    Assistant,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
-    pub role: String,
+    pub role: Role,
     pub content: String,
 }
 
 impl ChatMessage {
     pub fn user(content: impl Into<String>) -> Self {
         Self {
-            role: "user".into(),
+            role: Role::User,
             content: content.into(),
         }
     }
 
     pub fn system(content: impl Into<String>) -> Self {
         Self {
-            role: "system".into(),
+            role: Role::System,
             content: content.into(),
         }
     }
 
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
-            role: "assistant".into(),
+            role: Role::Assistant,
             content: content.into(),
         }
     }
@@ -183,20 +191,20 @@ mod tests {
     #[test]
     fn test_chat_message_user() {
         let msg = ChatMessage::user("Hello");
-        assert_eq!(msg.role, "user");
+        assert_eq!(msg.role, Role::User);
         assert_eq!(msg.content, "Hello");
     }
 
     #[test]
     fn test_chat_message_system() {
         let msg = ChatMessage::system("You are helpful");
-        assert_eq!(msg.role, "system");
+        assert_eq!(msg.role, Role::System);
     }
 
     #[test]
     fn test_chat_message_assistant() {
         let msg = ChatMessage::assistant("Sure, I can help");
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
     }
 
     #[test]
@@ -364,7 +372,7 @@ mod tests {
             message: ChatMessage::user("test"),
         };
         if let ChatChoice::WithMessage { message } = choice {
-            assert_eq!(message.role, "user");
+            assert_eq!(message.role, Role::User);
         }
     }
 

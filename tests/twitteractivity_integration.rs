@@ -4,7 +4,7 @@
 //! without requiring a live browser.
 
 use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
-use auto::llm::{build_quote_messages, build_reply_messages};
+use auto::llm::{build_quote_messages, build_reply_messages, Role};
 use auto::task::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
 use auto::utils::twitter::{
     sentiment::{analyze_tweet_sentiment_sync, sentiment_score, Sentiment, SentimentAnalyzer},
@@ -727,8 +727,8 @@ fn twitteractivity_auth_error_detection() {
 fn twitteractivity_llm_build_reply_messages_structure() {
     let messages = build_reply_messages("author", "tweet text", &[]);
     assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].role, "system");
-    assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     assert!(messages[1].content.contains("author"));
     assert!(messages[1].content.contains("tweet text"));
 }
@@ -756,8 +756,8 @@ fn twitteractivity_llm_build_reply_messages_empty_replies() {
 fn twitteractivity_llm_build_quote_messages_structure() {
     let messages = build_quote_messages("author", "tweet text", &[]);
     assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].role, "system");
-    assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     assert!(messages[1].content.contains("author"));
 }
 

@@ -8,6 +8,8 @@ use toml;
 use crate::llm::models::{
     ChatChoice, ChatMessage, ChatResponse, LlmConfig, LlmProvider, OpenRouterResponse,
 };
+#[cfg(test)]
+use crate::llm::models::Role;
 
 #[cfg(test)]
 use crate::llm::models::{ChatRequest, OllamaConfig, OpenRouterConfig, OpenRouterError};
@@ -594,10 +596,10 @@ mod tests {
     #[test]
     fn test_chat_message_creation() {
         let message = ChatMessage {
-            role: "user".to_string(),
+            role: Role::User,
             content: "test".to_string(),
         };
-        assert_eq!(message.role, "user");
+        assert_eq!(message.role, Role::User);
         assert_eq!(message.content, "test");
     }
 
@@ -627,10 +629,10 @@ mod tests {
     #[test]
     fn test_chat_message_struct() {
         let message = ChatMessage {
-            role: "system".to_string(),
+            role: Role::System,
             content: "You are helpful".to_string(),
         };
-        assert_eq!(message.role, "system");
+        assert_eq!(message.role, Role::System);
     }
 
     #[test]
@@ -657,7 +659,7 @@ mod tests {
     fn test_chat_choice_with_message() {
         let choice = ChatChoice::WithMessage {
             message: ChatMessage {
-                role: "assistant".to_string(),
+                role: Role::Assistant,
                 content: "Hello".to_string(),
             },
         };
@@ -701,11 +703,11 @@ mod tests {
     fn test_multiple_chat_messages() {
         let messages = [
             ChatMessage {
-                role: "system".to_string(),
+                role: Role::System,
                 content: "System prompt".to_string(),
             },
             ChatMessage {
-                role: "user".to_string(),
+                role: Role::User,
                 content: "User message".to_string(),
             },
         ];
@@ -715,7 +717,7 @@ mod tests {
     #[test]
     fn test_chat_request_with_messages() {
         let messages = vec![ChatMessage {
-            role: "user".to_string(),
+            role: Role::User,
             content: "test".to_string(),
         }];
         let request = ChatRequest {
@@ -741,7 +743,7 @@ mod tests {
     fn test_chat_response_with_message() {
         let response = ChatResponse {
             message: Some(ChatMessage {
-                role: "assistant".to_string(),
+                role: Role::Assistant,
                 content: "Response".to_string(),
             }),
             done: None,

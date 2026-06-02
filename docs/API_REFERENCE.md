@@ -151,6 +151,24 @@ api.focus(selector: &str) -> Result<()>
 
 ## Configuration
 
+### LLM Configuration
+
+Environment variables for the LLM client (read from `config/llm.toml` with env overrides):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `ollama` | LLM provider to use (`ollama`, `nvidia`, or `openrouter`) |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
+| `OLLAMA_MODEL` | `llama3` | Ollama model name |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key (required for OpenRouter provider) |
+| `OPENROUTER_MODEL` | — | Primary OpenRouter model (e.g., `tencent/hy3-preview:free`) |
+| `OPENROUTER_MODEL_FALLBACK` | — | First fallback model |
+| `OPENROUTER_MODEL_FALLBACK_2` | — | Second fallback model |
+| `OPENROUTER_MODEL_FALLBACK_3` | — | Third fallback model |
+| `OPENROUTER_MODEL_FALLBACK_4` | — | Fourth fallback model |
+
+> **Note:** For NVIDIA env vars (`NVIDIA_API_KEY`, `NVIDIA_MODEL`, `NVIDIA_BASE_URL`, etc.), see [.bacon/workflow.md](.bacon/workflow.md).
+
 ### Native Interaction
 
 Environment variables for native interaction:

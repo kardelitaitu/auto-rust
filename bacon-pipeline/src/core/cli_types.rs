@@ -158,8 +158,7 @@ mod tests {
 
     #[test]
     fn parses_test_fixture_flag() {
-        let cli =
-            Cli::try_parse_from(["bacon", "test", "--fixture", "clippy"]).expect("valid cli");
+        let cli = Cli::try_parse_from(["bacon", "test", "--fixture", "clippy"]).expect("valid cli");
         let Some(Command::Test(args)) = cli.command else {
             panic!("expected test command");
         };

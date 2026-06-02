@@ -107,7 +107,10 @@ fn run_tests(args: &TestArgs) -> anyhow::Result<()> {
     let status = cmd.status()?;
 
     if !status.success() {
-        anyhow::bail!("bacon-pipeline tests failed (exit code: {:?})", status.code());
+        anyhow::bail!(
+            "bacon-pipeline tests failed (exit code: {:?})",
+            status.code()
+        );
     }
     Ok(())
 }

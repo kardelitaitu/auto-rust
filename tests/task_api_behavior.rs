@@ -22,7 +22,7 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "accessibility-locator")]
-use std::io::Write;
+use std::io::{self, Write};
 #[cfg(feature = "accessibility-locator")]
 use std::sync::Mutex;
 #[cfg(feature = "accessibility-locator")]

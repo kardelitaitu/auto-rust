@@ -77,7 +77,7 @@ cargo test -- --nocapture
 3. Register in `src/task/mod.rs`
 4. Add documentation in `docs/TASKS/my_task.md`
 
-See [Tutorial: Building First Task](TUTORIAL_BUILDING_FIRST_TASK.md) for full details.
+See [docs/TASKS/overview.md](TASKS/overview.md) for full details.
 
 ## Pull Request Template
 
@@ -131,13 +131,11 @@ src/
 ├── llm/             # LLM integration
 ├── metrics.rs       # Metrics collection and logging
 ├── orchestrator.rs  # Main runtime orchestrator
-├── plugin/          # Plugin system
 ├── runtime/         # Browser/session/page lifecycle
 ├── session/         # Session management
 ├── state/           # Session-scoped handles
 ├── task/            # Automation tasks
 ├── tests/           # Built-in test helpers
-├── tracing.rs       # Tracing/logging setup
 ├── utils/           # Low-level utilities
 ├── validation/      # Validation utilities
 └── ...
@@ -146,7 +144,7 @@ src/
 ## Getting Help
 
 - Check [README.md](../README.md) for usage
-- Review [Tutorial: Building First Task](TUTORIAL_BUILDING_FIRST_TASK.md) for task development
+- Review [docs/TASKS/overview.md](TASKS/overview.md) for task development
 - See [API Reference](API_REFERENCE.md) for API details
 - Open an issue for bugs or feature requests
 

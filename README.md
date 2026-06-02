@@ -885,7 +885,6 @@ export MAX_GLOBAL_CONCURRENCY=10
 | [docs/TASKS/pageview.md](docs/TASKS/pageview.md) | Page browsing task |
 | [docs/TASKS/twitteractivity.md](docs/TASKS/twitteractivity.md) | Twitter engagement task |
 | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Complete TaskContext API |
-| [docs/TUTORIAL_BUILDING_FIRST_TASK.md](docs/TUTORIAL_BUILDING_FIRST_TASK.md) | Build your own tasks |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | PR guidelines |
 | [Cargo docs](https://docs.rs) | `cargo doc --open` |
 

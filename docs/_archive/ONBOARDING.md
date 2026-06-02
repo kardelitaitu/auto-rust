@@ -89,7 +89,6 @@ auto-rust/
 │   ├── metrics.rs           # Metrics
 │   ├── orchestrator.rs      # Core orchestration logic
 │   ├── result.rs            # Task result types
-│   ├── tracing.rs           # Tracing
 │   │
 │   ├── bin/                 # CLI binaries
 │   ├── cli/                 # CLI argument parsing (mod.rs, parser.rs)
@@ -122,7 +121,6 @@ auto-rust/
 │   ├── llm/                 # LLM integration
 │   ├── bacon_core/          # Shared pipeline types
 │   ├── bacon_agent_*/       # Pipeline agents
-│   ├── plugin/              # Plugin infrastructure
 │   ├── state/               # State management
 │   │
 │   ├── utils/               # Shared utilities
@@ -134,7 +132,7 @@ auto-rust/
 │   └── validation/
 │
 ├── tests/                   # Integration tests
-├── examples/                # Usage examples (plugins/, tasks/)
+├── examples/                # Usage examples (tasks/)
 ├── docs/                    # Documentation
 │   ├── ARCHITECTURE.md
 │   ├── API_REFERENCE.md

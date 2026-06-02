@@ -17,7 +17,7 @@ Current dependencies: 39 total (see `Cargo.toml`)
 - Config: serde, serde_json, toml
 - HTTP: reqwest, url
 - Logging: tracing, tracing-subscriber
-- Observability: opentelemetry ecosystem (5 crates)
+- Observability: ~~opentelemetry ecosystem (5 crates)~~ (removed in cleanup)
 - Async: futures, async-trait
 - Random: rand, rand_distr
 - Image: image, webp
@@ -44,7 +44,7 @@ cargo outdated > docs/dependency_outdated.txt 2>/dev/null || echo "cargo-outdate
 |----------|-----------------|--------|
 | **Potentially Unused** | `do-over`, `webp`, `urlencoding`, `do_over` | Check if referenced in code |
 | **Duplicate Functionality** | `once_cell` + `lazy_static` | Migrate to `once_cell` only |
-| **Heavy/Large** | `opentelemetry-*` (5 crates), `image` | Evaluate feature flags |
+| **Heavy/Large** | ~~`opentelemetry-*` (5 crates)~~ (removed), `image` | Evaluate feature flags |
 | **Outdated** | All 39 deps | Check for security patches |
 
 **Investigation commands:**
@@ -87,7 +87,7 @@ Date: 2026-05-01
 - `reqwest`: 0.12.X → 0.12.Y
 
 ## Recommendations
-1. Consider removing opentelemetry if not using tracing
+1. ~~Consider removing opentelemetry if not using tracing~~ ✅ Done — removed in cleanup
 2. Evaluate if `enigo` is needed (only for native input)
 ```
 

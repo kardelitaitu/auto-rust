@@ -9,8 +9,9 @@
 
 [pipeline]
 # Agent routing for each pipeline stage.
-# Values: "nvidia" (built-in), "bacon" (built-in), or an agent name from [agents.<name>].
-# Built-in agents use the modern unified LLM client and localized logic.
+# Built-in agents ("bacon", "nvidia") and agents with provider="nvidia" or provider="ollama"
+# route through the internal NVIDIA LLM client. All other agents use `run_external_agent()`.
+# See [agents.<name>] sections below for per-agent LLM config.
 observer = "nvidia_observer"
 strategist = "nvidia_strategist"
 coder = "nvidia_coder"

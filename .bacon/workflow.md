@@ -140,6 +140,7 @@ bacon --dry-run                # sandbox mode (no writes)
 bacon --auto-apply             # apply verified patches without confirmation
 bacon --parallel               # process independent specs in parallel
 bacon --stage coder --spec 55  # resume from a stage
+bacon --max-attempts 8         # override max retry attempts per stage (default: 4)
 
 # Testing
 bacon test                     # run test harness
@@ -155,9 +156,9 @@ bacon test --fixture clippy    # run one fixture
 | `NVIDIA_MODEL` | Overrides the NVIDIA model name |
 | `NVIDIA_BASE_URL` | Overrides the NVIDIA API base URL |
 | `NVIDIA_TEMPERATURE` | Overrides generation temperature |
-| `NVIDIA_TOP_P` | Overrides nucleus sampling |
 | `NVIDIA_MAX_TOKENS` | Overrides output token limit |
 | `RUST_LOG` | Log level (debug, info, warn, error) |
+| `BACON_CONFIG` | Override path to `bacon.toml` for testing |
 
 Model precedence: `NVIDIA_MODEL` env > `.bacon/bacon.toml [agents.nvidia_<stage>].model` > built-in `meta/llama-3.3-70b-instruct`.
 
@@ -205,6 +206,7 @@ External workers must print one JSON object to stdout; logs go to stderr.
 - Use environment variable references: `{env:NVIDIA_API_KEY}`
 - Never commit `.env` files to version control
 - Security-sensitive paths (`src/crypto/`, `src/auth/`) require manual Auditor approval
+- `provider = "cli"` is also supported for external command-line workers
 
 ## Metrics
 

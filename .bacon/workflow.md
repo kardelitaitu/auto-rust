@@ -43,7 +43,7 @@ flowchart TD
 | Stage | Input | Output | Gate |
 |-------|-------|--------|------|
 | **Observer** | Prompt or `_active/` scan | Problem description or approved spec path | `find_approved_spec()` fast-paths to first FIFO-approved spec |
-| **Strategist** | Observer output | Spec package in `_active/` | `spec-lint.ps1` + `count_spec_file_refs()` (>3 repo file refs warns); plans must be grounded in verified source text |
+| **Strategist** | Observer output | Spec package in `_active/` | `spec-lint.ps1` + `count_spec_file_refs()` (>3 repo file refs → hard rejection via `validate_autonomous_plan()`); plans must be grounded in verified source text |
 | **Coder** | Spec in `_active/` | Code changes, status=`implemented` or `needs-human-approval` | `check-fast.ps1` on the working tree with GitSnapshot rollback (max 4 attempts, 2 refusals → abort) |
 | **Auditor** | Implemented spec + patch | `_done/` or `needs-human-approval` | Approved patch content vs spec criteria; spec-lint re-check before archive |
 
@@ -157,6 +157,7 @@ bacon test --fixture clippy    # run one fixture
 | `NVIDIA_BASE_URL` | Overrides the NVIDIA API base URL |
 | `NVIDIA_TEMPERATURE` | Overrides generation temperature |
 | `NVIDIA_MAX_TOKENS` | Overrides output token limit |
+| `NVIDIA_TOP_P` | Overrides nucleus sampling (0.0–1.0) |
 | `RUST_LOG` | Log level (debug, info, warn, error) |
 | `BACON_CONFIG` | Override path to `bacon.toml` for testing |
 
@@ -208,19 +209,6 @@ External workers must print one JSON object to stdout; logs go to stderr.
 - Security-sensitive paths (`src/crypto/`, `src/auth/`) require manual Auditor approval
 - `provider = "cli"` is also supported for external command-line workers
 
-## Metrics
-
-Aggregate pipeline metrics are logged through the `log` crate (info level) during execution and are visible in the terminal output:
-
-- Pipeline success rate
-- Stage duration
-- Retry count
-- LLM token usage
-- Code impact (lines changed, files modified)
-- Error rate per stage
-
-*Note: Detailed per-run metric persistence is tracked via the broader framework's metrics system in `src/metrics.rs`.*
-
 ## Development
 
 ### Validation Scripts
@@ -236,7 +224,8 @@ Aggregate pipeline metrics are logged through the `log` crate (info level) durin
 ### Tests
 
 ```bash
-cargo nextest run              # run all tests
-cargo nextest run <test_name>  # run specific test
-bacon test                     # run pipeline test harness
+cargo test -p bacon-pipeline              # run all pipeline tests
+cargo test -p bacon-pipeline <test_name>  # run specific test
+cargo nextest run                         # (optional) faster test runner if installed
+bacon test                                # run pipeline test harness
 ```

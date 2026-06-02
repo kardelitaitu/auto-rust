@@ -5,11 +5,11 @@ use std::time::Duration;
 use tokio::time::sleep;
 use toml;
 
+#[cfg(test)]
+use crate::llm::models::Role;
 use crate::llm::models::{
     ChatChoice, ChatMessage, ChatResponse, LlmConfig, LlmProvider, OpenRouterResponse,
 };
-#[cfg(test)]
-use crate::llm::models::Role;
 
 #[cfg(test)]
 use crate::llm::models::{

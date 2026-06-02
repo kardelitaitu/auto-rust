@@ -53,8 +53,9 @@ pub struct ProjectConfig {
 /// Defaults use `cargo check` / `cargo test` which work on all platforms.
 /// Set `spec_lint` to empty to use the built-in Rust spec linter.
 #[derive(Debug, Clone)]
-pub struct ValidationCommands {
-    /// Quick compilation check (default: `["cargo", "check", "--lib", "--bins"]`).
+pub struct ValidationCommands {    /// Quick validation gate — runs `check-fast.ps1` (rustfmt, cargo check, clippy).
+    /// Override by setting this field to `["cargo", "check", "--lib", "--bins"]`
+    /// or any other command for environments without pwsh.
     pub check_fast: Vec<String>,
     /// Full test suite (default: `["cargo", "test"]`).
     pub check_full: Vec<String>,
@@ -65,11 +66,14 @@ pub struct ValidationCommands {
 impl Default for ValidationCommands {
     fn default() -> Self {
         Self {
+            // check-fast.ps1 runs fmt + cargo check + clippy on changed paths;
+            // requires pwsh (PowerShell Core). Falls back gracefully if not found.
             check_fast: vec![
-                "cargo".into(),
-                "check".into(),
-                "--lib".into(),
-                "--bins".into(),
+                "pwsh".into(),
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-File".into(),
+                "check-fast.ps1".into(),
             ],
             check_full: vec!["cargo".into(), "test".into()],
             spec_lint: Vec::new(),

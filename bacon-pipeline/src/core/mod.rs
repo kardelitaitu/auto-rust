@@ -474,7 +474,9 @@ pub fn validate_bacon_local_only() -> Result<()> {
 
     if let Ok(provider) = std::env::var("LLM_PROVIDER") {
         if provider.eq_ignore_ascii_case("openrouter") {
-            anyhow::bail!("Bacon requires NVIDIA or Ollama LLM access; LLM_PROVIDER=openrouter is disabled");
+            anyhow::bail!(
+                "Bacon requires NVIDIA or Ollama LLM access; LLM_PROVIDER=openrouter is disabled"
+            );
         }
     }
 

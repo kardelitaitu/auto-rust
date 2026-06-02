@@ -2,11 +2,11 @@
 //! Quotes a tweet with LLM-generated commentary.
 
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
 use crate::prelude::TaskContext;
 use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
+use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;

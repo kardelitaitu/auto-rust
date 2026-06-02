@@ -49,6 +49,19 @@ pub struct Cli {
 pub enum Command {
     /// Run the pipeline
     Run(RunArgs),
+    /// Run bacon-pipeline test suite
+    Test(TestArgs),
+}
+
+#[derive(Debug, Default, Parser)]
+pub struct TestArgs {
+    /// List available test targets
+    #[arg(long)]
+    pub list: bool,
+
+    /// Run a specific test fixture (e.g. "clippy", "unit")
+    #[arg(long)]
+    pub fixture: Option<String>,
 }
 
 #[derive(Debug, Default, Parser)]
@@ -125,5 +138,31 @@ mod tests {
     fn max_attempts_omitted_is_none() {
         let cli = Cli::try_parse_from(["bacon"]).expect("valid cli");
         assert_eq!(cli.max_attempts, None);
+    }
+
+    #[test]
+    fn parses_test_subcommand() {
+        let cli = Cli::try_parse_from(["bacon", "test"]).expect("valid cli");
+        assert!(cli.command.is_some());
+        assert!(matches!(cli.command.unwrap(), Command::Test(_)));
+    }
+
+    #[test]
+    fn parses_test_list_flag() {
+        let cli = Cli::try_parse_from(["bacon", "test", "--list"]).expect("valid cli");
+        let Some(Command::Test(args)) = cli.command else {
+            panic!("expected test command");
+        };
+        assert!(args.list);
+    }
+
+    #[test]
+    fn parses_test_fixture_flag() {
+        let cli =
+            Cli::try_parse_from(["bacon", "test", "--fixture", "clippy"]).expect("valid cli");
+        let Some(Command::Test(args)) = cli.command else {
+            panic!("expected test command");
+        };
+        assert_eq!(args.fixture.as_deref(), Some("clippy"));
     }
 }

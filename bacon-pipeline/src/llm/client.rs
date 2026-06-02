@@ -130,9 +130,8 @@ impl LlmClient {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs())
                         .unwrap_or(0);
-                    let error_path =
-                        std::path::PathBuf::from("sessions/api_errors")
-                            .join(format!("nvidia_api_{ts}.json"));
+                    let error_path = std::path::PathBuf::from("sessions/api_errors")
+                        .join(format!("nvidia_api_{ts}.json"));
                     let _ = std::fs::create_dir_all("sessions/api_errors");
                     let _ = std::fs::write(&error_path, &body_text);
                     warn!(

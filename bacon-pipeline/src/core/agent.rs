@@ -217,9 +217,7 @@ pub trait PipelineAgent: Send + Sync {
                     }
                     if let Ok(mut meta) = crate::core::spec_io::read_spec_meta(spec_path) {
                         meta.status = "needs-human-approval".to_string();
-                        if let Err(e) =
-                            crate::core::spec_io::write_spec_meta(spec_path, &meta)
-                        {
+                        if let Err(e) = crate::core::spec_io::write_spec_meta(spec_path, &meta) {
                             warn!("Failed to persist needs-human-approval to spec.yaml: {e}");
                         }
                     }

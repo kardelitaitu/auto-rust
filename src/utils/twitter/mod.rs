@@ -8,7 +8,6 @@ pub mod decision;
 pub mod reply_engine;
 pub mod reply_strategies;
 pub mod sentiment;
-pub mod unified_processor;
 pub mod twitteractivity_actions;
 pub mod twitteractivity_constants;
 pub mod twitteractivity_dive;
@@ -29,6 +28,7 @@ pub mod twitteractivity_retry;
 pub mod twitteractivity_selectors;
 pub mod twitteractivity_simulation;
 pub mod twitteractivity_state;
+pub mod unified_processor;
 
 #[allow(unused_imports)]
 pub use decision::*;
@@ -38,8 +38,6 @@ pub use reply_engine::*;
 pub use reply_strategies::*;
 #[allow(unused_imports)]
 pub use sentiment::*;
-#[allow(unused_imports)]
-pub use unified_processor::*;
 #[allow(unused_imports)]
 pub use twitteractivity_constants::*;
 #[allow(unused_imports)]
@@ -70,6 +68,8 @@ pub use twitteractivity_retry::*;
 pub use twitteractivity_selectors::*;
 #[allow(unused_imports)]
 pub use twitteractivity_simulation::*;
+#[allow(unused_imports)]
+pub use unified_processor::*;
 
 #[allow(unused_imports)]
 pub use twitteractivity_state::*;

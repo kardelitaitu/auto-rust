@@ -72,7 +72,7 @@ pub fn nvidia_config_from_args(_args: &RunArgs) -> NvidiaConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-        use crate::core::cli_types::RunArgs;
+    use crate::core::cli_types::RunArgs;
 
     #[test]
     #[ignore = "requires host project filesystem (.bacon/bacon.toml) — run within the auto-rust project"]

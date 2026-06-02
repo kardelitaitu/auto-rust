@@ -1,12 +1,13 @@
 use auto::bacon_agent_nvidia::pipeline::Pipeline;
-use auto::bacon_core::cli_types::{Cli, Command, RunArgs};
+use auto::bacon_core::cli_types::{Cli, Command, RunArgs, TestArgs};
 use clap::Parser;
+use std::process::Command as ProcessCommand;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize bacon-pipeline configuration
     bacon_pipeline::config::init(bacon_pipeline::ProjectConfig::with_defaults(
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
     ));
 
     if std::env::var("RUST_LOG").is_err() {
@@ -26,6 +27,11 @@ async fn main() -> anyhow::Result<()> {
         parallel,
         max_attempts,
     } = Cli::parse();
+
+    // Handle test subcommand
+    if let Some(Command::Test(test_args)) = &command {
+        return run_tests(test_args);
+    }
 
     let run_args = match command {
         Some(Command::Run(run_args)) => RunArgs {
@@ -57,4 +63,51 @@ async fn main() -> anyhow::Result<()> {
 
     let pipeline = Pipeline::new(run_args, pipeline_dry_run, pipeline_auto)?;
     pipeline.run().await
+}
+
+/// Run the bacon-pipeline test suite.
+fn run_tests(args: &TestArgs) -> anyhow::Result<()> {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+    // Handle --fixture clippy as a special case
+    if let Some(ref fixture) = args.fixture {
+        if fixture.to_lowercase() == "clippy" {
+            eprintln!("Running clippy on bacon-pipeline...");
+            let mut clippy = ProcessCommand::new("cargo");
+            clippy.current_dir(&root);
+            clippy.args(["clippy", "-p", "bacon-pipeline"]);
+            let status = clippy.status()?;
+            if !status.success() {
+                anyhow::bail!("clippy found issues (exit code: {:?})", status.code());
+            }
+            return Ok(());
+        }
+    }
+
+    let mut cmd = ProcessCommand::new("cargo");
+    cmd.current_dir(&root);
+    cmd.arg("test");
+    cmd.arg("-p");
+    cmd.arg("bacon-pipeline");
+
+    if args.list {
+        cmd.arg("--list");
+    }
+
+    // Pass --fixture as a test name filter (e.g., "bacon test --fixture unit")
+    if let Some(ref fixture) = args.fixture {
+        if fixture.to_lowercase() != "unit" {
+            cmd.arg("--");
+            cmd.arg(fixture);
+        }
+    }
+
+    // Stream output directly to the user's terminal
+    eprintln!("Running bacon-pipeline tests...");
+    let status = cmd.status()?;
+
+    if !status.success() {
+        anyhow::bail!("bacon-pipeline tests failed (exit code: {:?})", status.code());
+    }
+    Ok(())
 }

@@ -1563,10 +1563,7 @@ priority: P1            files:
     - src/agent/
 "#,
         )?;
-        std::fs::write(
-            temp.path().join("plan.md"),
-            "Update src/agent/auditor.rs.",
-        )?;
+        std::fs::write(temp.path().join("plan.md"), "Update src/agent/auditor.rs.")?;
         std::fs::write(temp.path().join("validation.md"), "Run check-fast.ps1.")?;
 
         let mut ctx = PipelineCtx::new("test".to_string());
@@ -1601,10 +1598,7 @@ priority: P1            files:
     - src/agent/
 "#,
         )?;
-        std::fs::write(
-            temp.path().join("plan.md"),
-            "Update src/agent/auditor.rs.",
-        )?;
+        std::fs::write(temp.path().join("plan.md"), "Update src/agent/auditor.rs.")?;
         std::fs::write(temp.path().join("validation.md"), "Run check-fast.ps1.")?;
 
         let mut ctx = PipelineCtx::new("test".to_string());

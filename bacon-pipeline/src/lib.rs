@@ -16,15 +16,12 @@
 //! }
 //! ```
 
+pub mod agent;
 pub mod config;
 pub mod core;
 pub mod llm;
-pub mod agent;
 
 // Re-export key types for convenience
 pub use config::{init, ProjectConfig};
-pub use core::{
-    PipelineConfig, PipelineCtx, Stage, WorkerOutput,
-    PipelineAgent, GitSnapshot,
-};
+pub use core::{GitSnapshot, PipelineAgent, PipelineConfig, PipelineCtx, Stage, WorkerOutput};
 pub use llm::Llm;

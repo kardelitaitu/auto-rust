@@ -105,6 +105,11 @@ fn load_nvidia_config_from_env() -> NvidiaConfig {
             config.max_tokens = v;
         }
     }
+    if let Ok(top_p) = std::env::var("NVIDIA_TOP_P") {
+        if let Ok(v) = top_p.parse::<f64>() {
+            config.top_p = v;
+        }
+    }
 
     config
 }
@@ -166,5 +171,40 @@ mod tests {
     fn test_nvidia_config_default_has_placeholder() {
         let config = NvidiaConfig::default();
         assert!(config.base_url.contains("nvidia.com"));
+    }
+
+    /// Initialize ProjectConfig once for tests that call load_nvidia_config_from_env().
+    fn ensure_test_init() {
+        static INIT: std::sync::Once = std::sync::Once::new();
+        INIT.call_once(|| {
+            let temp = tempfile::tempdir().unwrap();
+            crate::config::init(crate::ProjectConfig::with_defaults(
+                temp.path().to_path_buf(),
+            ));
+        });
+    }
+
+    #[test]
+    fn test_load_nvidia_config_from_env_top_p() {
+        ensure_test_init();
+        // Valid float: parses and overrides default
+        std::env::set_var("NVIDIA_TOP_P", "0.75");
+        let config = load_nvidia_config_from_env();
+        assert!(
+            (config.top_p - 0.75).abs() < f64::EPSILON,
+            "expected 0.75, got {}",
+            config.top_p
+        );
+
+        // Invalid value: leaves default unchanged
+        std::env::set_var("NVIDIA_TOP_P", "not-a-float");
+        let config = load_nvidia_config_from_env();
+        assert!(
+            (config.top_p - 0.95).abs() < f64::EPSILON,
+            "expected default 0.95, got {}",
+            config.top_p
+        );
+
+        std::env::remove_var("NVIDIA_TOP_P");
     }
 }

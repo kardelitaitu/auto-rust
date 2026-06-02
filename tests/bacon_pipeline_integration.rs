@@ -13,7 +13,7 @@ static PIPELINE_INIT: Once = Once::new();
 fn ensure_pipeline_init() {
     PIPELINE_INIT.call_once(|| {
         bacon_pipeline::config::init(bacon_pipeline::ProjectConfig::with_defaults(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
         ));
     });
 }

@@ -13,9 +13,9 @@ use std::sync::OnceLock;
 use tracing::instrument;
 
 use crate::llm::Llm;
-use crate::utils::twitter::reply_engine::{build_quote_messages, build_reply_messages};
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_LONG_SECS;
+use crate::utils::twitter::reply_engine::{build_quote_messages, build_reply_messages};
 use crate::utils::twitter::twitteractivity_selectors;
 
 fn llm_instance() -> Result<&'static Llm> {

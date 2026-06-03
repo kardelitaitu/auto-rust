@@ -544,3 +544,109 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests_validation_types {
+    use crate::task::validation::{ValidationIssue, ValidationReport};
+
+    #[test]
+    fn validation_issue_message_accessor() {
+        let err = ValidationIssue::Error("bad".into());
+        assert_eq!(err.message(), "bad");
+
+        let warn = ValidationIssue::Warning("note".into());
+        assert_eq!(warn.message(), "note");
+    }
+
+    #[test]
+    fn validation_issue_classification() {
+        let err = ValidationIssue::Error(String::new());
+        assert!(err.is_error());
+        assert!(!ValidationIssue::Warning(String::new()).is_error());
+    }
+
+    #[test]
+    fn report_summary_clean() {
+        let report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 0,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        assert!(report.is_valid());
+        assert_eq!(report.error_count(), 0);
+        assert_eq!(report.warning_count(), 0);
+        assert_eq!(report.summary(), "Task 'foo' is valid (0 actions)");
+    }
+
+    #[test]
+    fn report_summary_errors_only() {
+        let mut report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 1,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        report.error("first");
+        report.error("second");
+        assert!(!report.is_valid());
+        assert_eq!(report.error_count(), 2);
+        assert_eq!(report.warning_count(), 0);
+        assert_eq!(
+            report.summary(),
+            "Task 'foo' has 2 error(s) and 0 warning(s) (1 actions)"
+        );
+    }
+
+    #[test]
+    fn report_summary_warnings_only() {
+        let mut report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 2,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        report.warning("check this");
+        assert!(report.is_valid());
+        assert_eq!(report.error_count(), 0);
+        assert_eq!(report.warning_count(), 1);
+        assert_eq!(
+            report.summary(),
+            "Task 'foo' has 1 warning(s) (2 actions)"
+        );
+    }
+
+    #[test]
+    fn report_summary_mixed() {
+        let mut report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 3,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        report.error("break");
+        report.warning("minor");
+        assert!(!report.is_valid());
+        assert_eq!(report.error_count(), 1);
+        assert_eq!(report.warning_count(), 1);
+        assert_eq!(
+            report.summary(),
+            "Task 'foo' has 1 error(s) and 1 warning(s) (3 actions)"
+        );
+    }
+
+    #[test]
+    fn report_new_uses_task_name() {
+        let report = ValidationReport::new("my-task".into());
+        assert_eq!(report.task_name, "my-task");
+
+        let mut report = ValidationReport::new("x".into());
+        report.error("boom");
+        report.warning("hmm");
+        assert_eq!(report.issues.len(), 2);
+    }
+}

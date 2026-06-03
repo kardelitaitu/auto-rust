@@ -259,6 +259,36 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_path_component_allows_alnum_hyphen_underscore() {
+        assert_eq!(sanitize_path_component("alpha-9"), "alpha-9");
+        assert_eq!(sanitize_path_component("user_01"), "user_01");
+        assert_eq!(sanitize_path_component("a-b_0"), "a-b_0");
+    }
+
+    #[test]
+    fn sanitize_path_component_reeplaces_weird_chars_with_underscore() {
+        assert!(
+            sanitize_path_component("user@email!").starts_with("user_email_")
+                || sanitize_path_component("user@email!").starts_with("user_email")
+        );
+        assert_eq!(
+            sanitize_path_component("simple"),
+            "simple"
+        );
+    }
+
+    #[test]
+    fn sanitize_path_component_trim_leading_trailing_underscores() {
+        assert_eq!(sanitize_path_component("__inner__"), "inner");
+        assert_eq!(sanitize_path_component("___"), "default");
+    }
+
+    #[test]
+    fn sanitize_path_component_defaults_empty_after_sanitize() {
+        assert_eq!(sanitize_path_component("!!!"), "default");
+    }
+
+    #[test]
     fn test_learning_engine_disabled() {
         let _profile = create_test_profile();
         let mut engine = LearningEngine::disabled();

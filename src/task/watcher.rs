@@ -298,11 +298,57 @@ mod tests {
         let renamed =
             FileEvent::Renamed("/path/old.task".to_string(), "/path/new.task".to_string());
 
-        // Just verify they can be created and debug formatted
         assert!(format!("{:?}", created).contains("Created"));
         assert!(format!("{:?}", modified).contains("Modified"));
         assert!(format!("{:?}", deleted).contains("Deleted"));
         assert!(format!("{:?}", renamed).contains("Renamed"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_notify_event_emits_multiple_created_paths() {
+        let (tx, mut rx) = mpsc::channel(8);
+
+        let mut event = notify::Event::new(EventKind::Create(CreateKind::File));
+        event.paths.push(PathBuf::from("C:/tmp/alpha.task"));
+        event.paths.push(PathBuf::from("C:/tmp/beta.task"));
+        TaskWatcher::handle_notify_event(&event, &tx).unwrap();
+
+        let first = rx.recv().await.unwrap();
+        let second = rx.recv().await.unwrap();
+        match (first, second) {
+            (FileEvent::Created(a), FileEvent::Created(b)) => {
+                assert!(a.ends_with("alpha.task") || a.ends_with("beta.task"));
+                assert!(b.ends_with("alpha.task") || b.ends_with("beta.task"));
+                assert_ne!(a, b);
+            }
+            _ => panic!("expected two Created events"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_notify_event_ignores_non_task_extension() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut event = notify::Event::new(EventKind::Create(CreateKind::File));
+        event.paths.push(PathBuf::from("C:/tmp/ignored.txt"));
+
+        TaskWatcher::handle_notify_event(&event, &tx).unwrap();
+
+        // Channel should remain empty even on poll
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_notify_event_ignores_non_task_extension_mixed() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut event = notify::Event::new(EventKind::Create(CreateKind::File));
+        event.paths.push(PathBuf::from("C:/tmp/ok.task"));
+        event.paths.push(PathBuf::from("C:/tmp/skip.md"));
+
+        TaskWatcher::handle_notify_event(&event, &tx).unwrap();
+
+        let received = rx.recv().await.unwrap();
+        assert!(matches!(received, FileEvent::Created(p) if p.ends_with("ok.task")));
+        assert!(rx.try_recv().is_err(), "skip.md should not emit");
     }
 
     #[test]

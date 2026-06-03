@@ -133,3 +133,88 @@ pub(crate) fn bacon_config_path() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| manifest_dir().join(".bacon/bacon.toml"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_with_defaults_derives_conventional_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-with_defaults",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+
+        let config = ProjectConfig::with_defaults(root.clone());
+
+        assert_eq!(config.project_root, root);
+        assert_eq!(config.specs_dir, root.join("docs/specs"));
+        assert_eq!(config.bacon_dir, root.join(".bacon"));
+        assert_eq!(config.roles_dir, root.join(".bacon/roles"));
+        assert_eq!(config.env_file, root.join(".env"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_validation_commands_defaults_use_pwsh() {
+        let commands = ValidationCommands::default();
+        assert_eq!(commands.check_fast[0], "pwsh");
+        assert_eq!(commands.check_fast[1], "-NoProfile");
+        assert_eq!(commands.check_fast[2], "-NonInteractive");
+        assert_eq!(commands.check_fast[3], "-File");
+        assert_eq!(commands.check_fast[4], "check-fast.ps1");
+
+        assert_eq!(commands.check_full[4], "check.ps1");
+        assert!(commands.spec_lint.is_empty());
+    }
+
+    #[test]
+    fn test_validation_commands_can_override() {
+        let mut commands = ValidationCommands::default();
+        commands.check_fast = vec!["cargo".into(), "check".into()];
+        commands.check_full = vec!["cargo".into(), "test".into()];
+        commands.spec_lint = vec!["echo".into()];
+
+        assert_eq!(commands.check_fast, vec!["cargo", "check"]);
+        assert_eq!(commands.check_full, vec!["cargo", "test"]);
+        assert_eq!(commands.spec_lint, vec!["echo"]);
+    }
+
+    #[test]
+    fn test_bacon_config_path_env_override() {
+        let root = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-bacon_config",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let explicit = root.join("custom-bacon.toml");
+
+        std::env::set_var("BACON_CONFIG", &explicit);
+        let resolved = bacon_config_path();
+        std::env::remove_var("BACON_CONFIG");
+
+        assert_eq!(resolved, explicit);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_project_config_clone() {
+        let root = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-clone",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+
+        let config = ProjectConfig::with_defaults(root.clone());
+        let cloned = config.clone();
+
+        assert_eq!(config.project_root, cloned.project_root);
+        assert_eq!(config.specs_dir, cloned.specs_dir);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+}

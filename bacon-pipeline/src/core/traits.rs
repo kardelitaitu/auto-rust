@@ -94,3 +94,105 @@ impl LlmClient for RealLlmClient {
         self.client.chat(messages).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_real_filesystem_write_and_read() {
+        let dir = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-traits",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+
+        let fs_impl = RealFileSystem;
+        let path = dir.join("hello.txt");
+        fs_impl.write(&path, "hello world").unwrap();
+
+        let content = fs_impl.read_to_string(&path).unwrap();
+        assert_eq!(content, "hello world");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_real_filesystem_exists() {
+        let fs_impl = RealFileSystem;
+        let missing = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-does-not-exist",
+            std::process::id()
+        ));
+        assert!(!fs_impl.exists(&missing));
+
+        let dir = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-exists-check",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        assert!(fs_impl.exists(&dir));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_real_filesystem_rename() {
+        let dir = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-rename",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+
+        let fs_impl = RealFileSystem;
+        let from = dir.join("old.txt");
+        let to = dir.join("new.txt");
+        fs_impl.write(&from, "data").unwrap();
+        fs_impl.rename(&from, &to).unwrap();
+
+        assert!(!fs_impl.exists(&from));
+        assert!(fs_impl.exists(&to));
+        assert_eq!(fs_impl.read_to_string(&to).unwrap(), "data");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_real_filesystem_copy() {
+        let dir = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-copy",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+
+        let fs_impl = RealFileSystem;
+        let src = dir.join("src.txt");
+        let dst = dir.join("dst.txt");
+        fs_impl.write(&src, "copy me").unwrap();
+        fs_impl.copy(&src, &dst).unwrap();
+
+        assert!(fs_impl.exists(&src));
+        assert!(fs_impl.exists(&dst));
+        assert_eq!(fs_impl.read_to_string(&dst).unwrap(), "copy me");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_real_filesystem_create_dir_all() {
+        let dir = std::env::temp_dir().join(format!(
+            "bacon-pipeline-test-{}-mkdir/nested/deep",
+            std::process::id()
+        ));
+        let fs_impl = RealFileSystem;
+        fs_impl.create_dir_all(&dir).unwrap();
+        assert!(dir.exists());
+
+        let _ = fs::remove_dir_all(
+            dir.parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .unwrap(),
+        );
+    }
+}

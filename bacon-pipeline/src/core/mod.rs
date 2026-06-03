@@ -38,6 +38,51 @@ pub enum Stage {
     Auditor,
 }
 
+/// Strongly typed pipeline stage name.
+///
+/// Catches invalid stage strings at the CLI/config boundary and
+/// preserves the current `Stage::from_name()` case-insensitive matching.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageName(String);
+
+impl StageName {
+    /// Parse a stage name from user input. Returns `None` for unknown values.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        if Stage::from_name(s).is_some() {
+            Some(Self(s.to_string()))
+        } else {
+            None
+        }
+    }
+
+    /// Canonical display form (original casing preserved from input).
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Convert back to the typed `Stage` enum.
+    #[must_use]
+    pub fn to_stage(&self) -> Option<Stage> {
+        Stage::from_name(self.as_str())
+    }
+}
+
+impl std::fmt::Display for StageName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for StageName {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(())
+    }
+}
+
 /// Pipeline stage confidence level, extracted from `Confidence: High/Medium/Low`
 /// lines in LLM responses. Used for metrics and observability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -359,6 +404,20 @@ pub struct PipelineCtx {
     pub needs_human_approval: bool,
 }
 
+/// Outcome of a Coder stage attempt.
+///
+/// Replaces ad-hoc combinations of `coder_refused`, `needs_human_approval`,
+/// `scope_reduction_needed`, and `patch_path` with one authoritative value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchStatus {
+    Applied(PathBuf),
+    Queued(PathBuf),
+    Refused,
+    NeedsHumanApproval,
+    RetriesExhausted,
+    DryRun,
+}
+
 impl std::fmt::Debug for PipelineCtx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PipelineCtx")
@@ -428,6 +487,24 @@ impl PipelineCtx {
             }
         }
         self
+    }
+
+    /// Preferred patch outcome for the Coder stage.
+    ///
+    /// Prefer this over setting `patch_path`, `coder_refused`, `needs_human_approval`,
+    /// and `scope_reduction_needed` independently.
+    pub fn patch_status(&self) -> PatchStatus {
+        if self.coder_refused {
+            PatchStatus::Refused
+        } else if self.needs_human_approval {
+            PatchStatus::NeedsHumanApproval
+        } else if self.scope_reduction_needed {
+            PatchStatus::RetriesExhausted
+        } else if let Some(ref path) = self.patch_path {
+            PatchStatus::Applied(path.clone())
+        } else {
+            PatchStatus::DryRun
+        }
     }
 }
 
@@ -1699,6 +1776,27 @@ mod tests {
         assert!(Stage::from_name("OBSERVER").is_some_and(|s| matches!(s, Stage::Observer)));
         assert!(Stage::from_name("coder").is_some_and(|s| matches!(s, Stage::Coder)));
         assert!(Stage::from_name("invalid").is_none());
+    }
+
+    #[test]
+    fn stage_name_parse_accepts_valid_case_variants() {
+        let name = StageName::parse("Auditor").expect("Capitol letters accepted");
+        assert_eq!(name.as_str(), "Auditor");
+        assert_eq!(name.to_stage(), Some(Stage::Auditor));
+    }
+
+    #[test]
+    fn stage_name_parse_rejects_invalid_input() {
+        assert!(StageName::parse("").is_none());
+        assert!(StageName::parse("observe").is_none());
+        assert!(StageName::parse("CODER_EXTRA").is_none());
+    }
+
+    #[test]
+    fn stage_name_from_str_matches_parse() {
+        let parsed = StageName::parse("strategist");
+        let from_str: Result<StageName, ()> = "strategist".parse();
+        assert_eq!(from_str.ok(), parsed);
     }
 
     #[test]

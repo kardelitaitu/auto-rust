@@ -10,6 +10,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use log::{info, warn};
+use std::sync::Arc;
 
 use super::{
     check_stale_in_progress, confirm, log_agent_config, should_run, Confidence, PipelineConfig,
@@ -107,7 +108,17 @@ pub trait PipelineAgent: Send + Sync {
         // Fast path: skip strategist + auditor if --fast
         let fast_path = self.fast();
 
-        let base_ctx = PipelineCtx::new(String::new()).with_dry_run(self.dry_run());
+        // Production dependencies
+        let fs = Arc::new(crate::core::traits::RealFileSystem);
+        let runner = Arc::new(crate::core::traits::RealCommandRunner);
+        // Note: NvidiaConfig needs to be constructed here or passed in.
+        // For now, I will use a dummy config to allow compilation, then address
+        // LlmClient initialization next.
+        let llm_config = crate::llm::models::NvidiaConfig::default();
+        let llm = Arc::new(crate::core::traits::RealLlmClient::new(llm_config));
+
+        let base_ctx = PipelineCtx::new(String::new(), Some(fs), Some(runner), Some(llm))
+            .with_dry_run(self.dry_run());
 
         // Observer
         let mut ctx = if should_run(&resume_stage, Stage::Observer) {

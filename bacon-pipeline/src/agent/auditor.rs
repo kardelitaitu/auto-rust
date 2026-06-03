@@ -113,9 +113,14 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
     println!("{response}");
     println!("=============================");
 
-    let mut output = PipelineCtx::new(response)
-        .with_confidence(confidence)
-        .with_dry_run(ctx.dry_run);
+    let mut output = PipelineCtx::new(
+        response,
+        ctx.fs.clone(),
+        ctx.runner.clone(),
+        ctx.llm.clone(),
+    )
+    .with_confidence(confidence)
+    .with_dry_run(ctx.dry_run);
     output.spec_path = ctx.spec_path.clone();
     output.patch_path = ctx.patch_path.clone();
 

@@ -23,8 +23,14 @@ fn build_source_context(seed_text: &str) -> String {
 fn build_prompt(ctx: &PipelineCtx) -> String {
     let seed_text = if ctx.scope_reduction_needed {
         format!(
-            "{}\n\n{}",
-            ctx.coder_errors.join("\n---\n"),
+            "{}
+
+{}",
+            ctx.coder_errors.join(
+                "
+---
+"
+            ),
             ctx.description
         )
     } else {
@@ -35,39 +41,81 @@ fn build_prompt(ctx: &PipelineCtx) -> String {
         "IMPORTANT: Treat the source excerpts below as the source of truth. Do not describe a symbol as unused if the excerpts show it being used.";
 
     if ctx.scope_reduction_needed {
-        let errors = ctx.coder_errors.join("\n---\n");
+        let errors = ctx.coder_errors.join(
+            "
+---
+",
+        );
         format!(
-            "Review this finding and design a REDUCED-SCOPE implementation plan.\n\n\
-             The previous implementation attempt failed with these errors:\n{}\n\n\
-             Original finding:\n{}\n\n\
-             {}\n\n\
-             {}\n\n\
-             IMPORTANT: Produce a simpler plan with fewer changes. \
-             Reduce the number of files touched, simplify the approach, or \
-             limit the scope to the most essential part.\n\n\
-             If you believe the original scope is already minimal, output:\n\
+            "Review this finding and design a REDUCED-SCOPE implementation plan.
+
+
+             The previous implementation attempt failed with these errors:
+{}
+
+
+             Original finding:
+{}
+
+
+             {}
+
+
+             {}
+
+
+             IMPORTANT: Produce a simpler plan with fewer changes. 
+             Reduce the number of files touched, simplify the approach, or 
+             limit the scope to the most essential part.
+
+
+             If you believe the original scope is already minimal, output:
+
              SCOPE_AT_MINIMUM: <explanation>",
             errors, ctx.description, source_context, evidence_guard
         )
     } else {
         format!(
-            "Review this finding and design an implementation plan:\n\n\
-             {}\n\n\
-             {}\n\n\
-             {}\n\n\
-             If the approach is sound and risks acceptable, output a plan with:\n\
-             1. A clear title (one line)\n\
-             2. Step-by-step implementation steps\n\
-             3. Current state description (baseline)\n\
-             4. Any API changes needed\n\
-             5. How to validate\n\
-             6. Design decisions and risks\n\n\
-             Hard constraints for autonomous Bacon runs:\n\
-             - Do not add dependencies or edit Cargo.toml.\n\
-             - Keep scope to 1-3 existing repo files.\n\
-             - Include check-fast.ps1 in the Validation section.\n\
-             - Reject performance tuning, dependency changes, rewrites, and speculative efficiency work.\n\
-             - Prefer concrete correctness, cleanup, or test-gap fixes over speculative performance work.\n\n\
+            "Review this finding and design an implementation plan:
+
+
+             {}
+
+
+             {}
+
+
+             {}
+
+
+             If the approach is sound and risks acceptable, output a plan with:
+
+             1. A clear title (one line)
+
+             2. Step-by-step implementation steps
+
+             3. Current state description (baseline)
+
+             4. Any API changes needed
+
+             5. How to validate
+
+             6. Design decisions and risks
+
+
+             Hard constraints for autonomous Bacon runs:
+
+             - Do not add dependencies or edit Cargo.toml.
+
+             - Keep scope to 1-3 existing repo files.
+
+             - Include check-fast.ps1 in the Validation section.
+
+             - Reject performance tuning, dependency changes, rewrites, and speculative efficiency work.
+
+             - Prefer concrete correctness, cleanup, or test-gap fixes over speculative performance work.
+
+
              If risks are too high, start your response with 'REJECTED:' and explain why.",
             ctx.description, source_context, evidence_guard
         )
@@ -91,11 +139,14 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
 
     if let Err(e) = validate_autonomous_plan(&response) {
         warn!("Strategist produced out-of-scope plan: {e}");
-        return Ok(
-            PipelineCtx::new(format!("No autonomous-safe plan produced: {e}"))
-                .with_dry_run(ctx.dry_run)
-                .with_confidence(crate::core::extract_confidence(&response)),
-        );
+        return Ok(PipelineCtx::new(
+            format!("No autonomous-safe plan produced: {e}"),
+            ctx.fs.clone(),
+            ctx.runner.clone(),
+            ctx.llm.clone(),
+        )
+        .with_dry_run(ctx.dry_run)
+        .with_confidence(crate::core::extract_confidence(&response)));
     }
 
     // Scope gate: count unique file paths referenced in the plan
@@ -129,7 +180,10 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
         let (passed, output) = crate::core::run_spec_lint(&spec_path)?;
         if !passed {
             warn!("spec-lint failed — stopping before Coder");
-            anyhow::bail!("generated spec failed spec-lint:\n{output}");
+            anyhow::bail!(
+                "generated spec failed spec-lint:
+{output}"
+            );
         }
         info!("spec-lint passed");
 
@@ -137,8 +191,13 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
         let missing = crate::core::validate_spec_file_refs(&spec_path);
         if !missing.is_empty() {
             let msg = format!(
-                "Strategist hallucination detected! The plan references non-existent files:\n- {}\nStopping before Coder.",
-                missing.join("\n- ")
+                "Strategist hallucination detected! The plan references non-existent files:
+- {}
+Stopping before Coder.",
+                missing.join(
+                    "
+- "
+                )
             );
             warn!("{msg}");
             anyhow::bail!("{msg}");
@@ -147,7 +206,13 @@ pub async fn run(llm: &crate::llm::Llm, _args: &RunArgs, ctx: &PipelineCtx) -> R
         Some(spec_path)
     };
 
-    let mut result = PipelineCtx::new(response).with_dry_run(ctx.dry_run);
+    let mut result = PipelineCtx::new(
+        response,
+        ctx.fs.clone(),
+        ctx.runner.clone(),
+        ctx.llm.clone(),
+    )
+    .with_dry_run(ctx.dry_run);
     result.spec_path = spec_path;
     result.confidence = confidence;
     Ok(result)
@@ -191,7 +256,7 @@ fn validate_autonomous_plan(plan: &str) -> Result<()> {
 
     if let Some(hit) = banned.iter().find(|needle| lower.contains(**needle)) {
         anyhow::bail!(
-            "Strategist plan is outside autonomous scope: mentions '{hit}'. \
+            "Strategist plan is outside autonomous scope: mentions '{hit}'. 
              Bacon auto plans must be grounded, low-risk maintenance work."
         );
     }
@@ -420,12 +485,15 @@ fn extract_area(plan: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    fn new_mock_ctx(desc: &str) -> PipelineCtx {
+        PipelineCtx::new(desc.to_string(), None, None, None)
+    }
+
     #[test]
     #[ignore = "requires host project filesystem — build_prompt calls collect_source_context which reads files"]
     fn build_prompt_includes_relevant_source_files() {
-        let ctx = PipelineCtx::new(
-            "Please review src/adaptive/predictive_scorer.rs for an unused field.".to_string(),
-        );
+        let ctx =
+            new_mock_ctx("Please review src/adaptive/predictive_scorer.rs for an unused field.");
         let prompt = build_prompt(&ctx);
 
         assert!(prompt.contains("Please review src/adaptive/predictive_scorer.rs"));
@@ -437,7 +505,7 @@ mod tests {
     #[test]
     #[ignore = "requires host project filesystem — build_prompt calls collect_source_context which reads files"]
     fn build_prompt_uses_coder_errors_for_scope_reduction_context() {
-        let mut ctx = PipelineCtx::new("Original finding".to_string());
+        let mut ctx = new_mock_ctx("Original finding");
         ctx.scope_reduction_needed = true;
         ctx.coder_errors =
             vec!["SEARCH text not found in src/adaptive/predictive_scorer.rs".to_string()];
@@ -459,13 +527,24 @@ mod tests {
 
     #[test]
     fn validate_autonomous_plan_rejects_speculative_performance_work() {
-        let plan = "# Improve Predictive Scorer Performance\n\n\
-            ## Baseline\n\
-            The Vec<f32> storage may not be efficient for large models.\n\n\
-            ## Implementation Steps\n\
-            Replace coefficients with an array or matrix from a linear algebra library.\n\n\
-            ## Validation\n\
-            Run check-fast.ps1.\n\n\
+        let plan = "# Improve Predictive Scorer Performance
+
+
+            ## Baseline
+
+            The Vec<f32> storage may not be efficient for large models.
+
+
+            ## Implementation Steps
+
+            Replace coefficients with an array or matrix from a linear algebra library.
+
+
+            ## Validation
+
+            Run check-fast.ps1.
+
+
             Confidence: Medium";
 
         let err = validate_autonomous_plan(plan).unwrap_err().to_string();
@@ -474,13 +553,24 @@ mod tests {
 
     #[test]
     fn validate_autonomous_plan_accepts_small_grounded_maintenance_work() -> Result<()> {
-        let plan = "# Add Spec Numbering Regression Test\n\n\
-            ## Baseline\n\
-            src/core/spec_io.rs allocates spec directories by scanning active specs.\n\n\
-            ## Implementation Steps\n\
-            Add one test case in src/core/spec_io.rs for active and done numbering.\n\n\
-            ## Validation\n\
-            Run check-fast.ps1.\n\n\
+        let plan = "# Add Spec Numbering Regression Test
+
+
+            ## Baseline
+
+            src/core/spec_io.rs allocates spec directories by scanning active specs.
+
+
+            ## Implementation Steps
+
+            Add one test case in src/core/spec_io.rs for active and done numbering.
+
+
+            ## Validation
+
+            Run check-fast.ps1.
+
+
             Confidence: High";
 
         validate_autonomous_plan(plan)
@@ -488,18 +578,33 @@ mod tests {
 
     #[test]
     fn test_extract_title_from_h1() {
-        assert_eq!(extract_title("# My Title\ncontent"), "My Title");
+        assert_eq!(
+            extract_title(
+                "# My Title
+content"
+            ),
+            "My Title"
+        );
     }
 
     #[test]
     fn test_extract_title_from_h2() {
-        assert_eq!(extract_title("## My Title\ncontent"), "My Title");
+        assert_eq!(
+            extract_title(
+                "## My Title
+content"
+            ),
+            "My Title"
+        );
     }
 
     #[test]
     fn test_extract_title_fallback_to_first_line() {
         assert_eq!(
-            extract_title("First non-empty line\nsecond"),
+            extract_title(
+                "First non-empty line
+second"
+            ),
             "First non-empty line"
         );
     }
@@ -530,7 +635,11 @@ mod tests {
 
     #[test]
     fn test_extract_section_found() {
-        let plan = "## Baseline\nCurrent state.\n\n## Validation\nRun check-fast.ps1.";
+        let plan = "## Baseline
+Current state.
+
+## Validation
+Run check-fast.ps1.";
         let result = extract_section(plan, &["Baseline"], "fallback");
         assert!(result.contains("## Baseline"));
         assert!(result.contains("Current state."));
@@ -539,14 +648,19 @@ mod tests {
 
     #[test]
     fn test_extract_section_fallback() {
-        let plan = "## Title\ncontent";
+        let plan = "## Title
+content";
         let result = extract_section(plan, &["Missing"], "fallback text");
         assert_eq!(result, "fallback text");
     }
 
     #[test]
     fn test_extract_section_exact_header_match() {
-        let plan = "## Validation\ncontent\n\n## Validate More\nother";
+        let plan = "## Validation
+content
+
+## Validate More
+other";
         let result = extract_section(plan, &["Validation"], "fallback");
         assert!(result.contains("Validation"));
         assert!(result.contains("content"));
@@ -561,7 +675,16 @@ mod tests {
         let spec_dir = active.join("0001-test-spec");
         std::fs::create_dir(&spec_dir)?;
 
-        let plan = "# Test Spec\n\n## Baseline\nCurrent state.\n\n## Validation\nRun check-fast.ps1.\n\n## Design Decisions and Risks\nKeep scope small.";
+        let plan = "# Test Spec
+
+## Baseline
+Current state.
+
+## Validation
+Run check-fast.ps1.
+
+## Design Decisions and Risks
+Keep scope small.";
         let spec_path = write_spec_package_in(&spec_dir, "0001-test-spec", "Test Spec", plan)?;
 
         // Verify streamlined file set (3 files)

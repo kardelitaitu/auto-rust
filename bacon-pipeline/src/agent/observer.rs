@@ -23,7 +23,12 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                 "Found approved spec — fast-tracking: {} ({})",
                 meta.title, name
             );
-            let mut result = PipelineCtx::new(format!("Implement spec: {} ({})", meta.title, name));
+            let mut result = PipelineCtx::new(
+                format!("Implement spec: {} ({})", meta.title, name),
+                ctx.fs.clone(),
+                ctx.runner.clone(),
+                ctx.llm.clone(),
+            );
             result.spec_path = Some(spec_path);
             result.dry_run = ctx.dry_run;
             return Ok(result);
@@ -70,7 +75,12 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         info!("NVIDIA Observer confidence: {}", conf.as_str());
     }
 
-    Ok(PipelineCtx::new(response)
-        .with_dry_run(ctx.dry_run)
-        .with_confidence(confidence))
+    Ok(PipelineCtx::new(
+        response,
+        ctx.fs.clone(),
+        ctx.runner.clone(),
+        ctx.llm.clone(),
+    )
+    .with_dry_run(ctx.dry_run)
+    .with_confidence(confidence))
 }

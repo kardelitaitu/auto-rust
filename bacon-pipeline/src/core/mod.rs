@@ -6,6 +6,9 @@
 pub mod agent;
 pub use agent::PipelineAgent;
 
+pub mod traits;
+pub use traits::{CommandRunner, FileSystem, LlmClient};
+
 pub mod git_snapshot;
 pub use git_snapshot::GitSnapshot;
 
@@ -19,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 // ---------------------------------------------------------------------------
@@ -148,7 +152,7 @@ impl WorkerOutput {
             .description
             .or(self.summary)
             .unwrap_or_else(|| format!("Worker completed with status: {status}"));
-        let mut ctx = PipelineCtx::new(description).with_dry_run(dry_run);
+        let mut ctx = PipelineCtx::new(description, None, None, None).with_dry_run(dry_run);
 
         if let Some(spec_path) = self.spec_path {
             ctx.spec_path = Some(if spec_path.is_absolute() {
@@ -338,37 +342,55 @@ impl PipelineConfig {
 }
 
 /// Mutable pipeline state passed between stages.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PipelineCtx {
     pub description: String,
     pub spec_path: Option<PathBuf>,
     pub dry_run: bool,
-    /// Set true by Coder when all retries exhausted — signals pipeline to
-    /// call Strategist for scope reduction instead of hard-failing.
+    pub fs: Option<Arc<dyn FileSystem>>,
+    pub runner: Option<Arc<dyn CommandRunner>>,
+    pub llm: Option<Arc<dyn LlmClient>>,
     pub scope_reduction_needed: bool,
-    /// Accumulated Coder error messages fed back for scope reduction context.
     pub coder_errors: Vec<String>,
-    /// How many scope reductions have been applied this pipeline run.
     pub scope_reduction_count: u32,
-    /// Confidence level extracted from the most recent pipeline stage response.
     pub confidence: Option<Confidence>,
-    /// Path to the approved patch file saved by the Coder, for Auditor review.
     pub patch_path: Option<PathBuf>,
-    /// Set true by Coder when the LLM refuses to implement (2+ consecutive refusals).
-    /// Tells the orchestrator to abort without scope reduction or audit.
     pub coder_refused: bool,
-    /// Set true by Coder when auto-apply fails — tells orchestrator to skip
-    /// the Auditor and abort with needs-human-approval status.
     pub needs_human_approval: bool,
+}
+
+impl std::fmt::Debug for PipelineCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PipelineCtx")
+            .field("description", &self.description)
+            .field("spec_path", &self.spec_path)
+            .field("dry_run", &self.dry_run)
+            .field("scope_reduction_needed", &self.scope_reduction_needed)
+            .field("coder_errors", &self.coder_errors)
+            .field("scope_reduction_count", &self.scope_reduction_count)
+            .field("confidence", &self.confidence)
+            .field("patch_path", &self.patch_path)
+            .field("coder_refused", &self.coder_refused)
+            .field("needs_human_approval", &self.needs_human_approval)
+            .finish()
+    }
 }
 
 impl PipelineCtx {
     #[must_use]
-    pub fn new(description: String) -> Self {
+    pub fn new(
+        description: String,
+        fs: Option<Arc<dyn FileSystem>>,
+        runner: Option<Arc<dyn CommandRunner>>,
+        llm: Option<Arc<dyn LlmClient>>,
+    ) -> Self {
         Self {
             description,
             spec_path: None,
             dry_run: false,
+            fs,
+            runner,
+            llm,
             scope_reduction_needed: false,
             coder_errors: Vec::new(),
             scope_reduction_count: 0,

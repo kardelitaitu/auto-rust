@@ -888,7 +888,12 @@ fn attach_live_source_context(error_text: &str) -> String {
 }
 
 fn signal_scope_reduction(ctx: &PipelineCtx, errors: Vec<String>) -> PipelineCtx {
-    let mut output = PipelineCtx::new(ctx.description.clone());
+    let mut output = PipelineCtx::new(
+        ctx.description.clone(),
+        ctx.fs.clone(),
+        ctx.runner.clone(),
+        ctx.llm.clone(),
+    );
     output.scope_reduction_needed = true;
     output.coder_errors = errors;
     output.scope_reduction_count = ctx.scope_reduction_count + 1;
@@ -1057,7 +1062,9 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                         }
                     }
                 }
-                let mut output = PipelineCtx::new(report).with_dry_run(ctx.dry_run);
+                let mut output =
+                    PipelineCtx::new(report, ctx.fs.clone(), ctx.runner.clone(), ctx.llm.clone())
+                        .with_dry_run(ctx.dry_run);
                 output.spec_path = ctx.spec_path.clone();
                 output.confidence = extracted_confidence;
                 output.coder_refused = true;
@@ -1191,7 +1198,13 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
         if ctx.dry_run {
             // Dry run — just return the patch response
             info!("Dry run: skipping patch verification and queue, returning patch directly");
-            let mut result = PipelineCtx::new(response).with_dry_run(true);
+            let mut result = PipelineCtx::new(
+                response,
+                ctx.fs.clone(),
+                ctx.runner.clone(),
+                ctx.llm.clone(),
+            )
+            .with_dry_run(true);
             result.spec_path = ctx.spec_path.clone();
             result.confidence = extracted_confidence;
             return Ok(result);
@@ -1231,8 +1244,13 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                         match auto_apply_queued_patch(root, &queued) {
                             Ok(report) => {
                                 info!("Auto-apply succeeded: {}", report.output);
-                                let mut result =
-                                    PipelineCtx::new(report.output).with_dry_run(ctx.dry_run);
+                                let mut result = PipelineCtx::new(
+                                    report.output,
+                                    ctx.fs.clone(),
+                                    ctx.runner.clone(),
+                                    ctx.llm.clone(),
+                                )
+                                .with_dry_run(ctx.dry_run);
                                 result.spec_path = ctx.spec_path.clone();
                                 result.confidence = extracted_confidence;
                                 result.patch_path = Some(saved_patch_path);
@@ -1259,9 +1277,13 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
                             "Patch queued (auto-apply disabled): {}",
                             saved_patch_path.display()
                         );
-                        let mut result =
-                            PipelineCtx::new("Patch queued; manual apply required".to_string())
-                                .with_dry_run(ctx.dry_run);
+                        let mut result = PipelineCtx::new(
+                            "Patch queued; manual apply required".to_string(),
+                            ctx.fs.clone(),
+                            ctx.runner.clone(),
+                            ctx.llm.clone(),
+                        )
+                        .with_dry_run(ctx.dry_run);
                         result.spec_path = ctx.spec_path.clone();
                         result.confidence = extracted_confidence;
                         result.patch_path = Some(saved_patch_path);
@@ -1301,11 +1323,63 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use std::path::PathBuf;
+
+    #[allow(dead_code)]
+    struct MockFileSystem;
+    #[async_trait]
+    impl crate::core::traits::FileSystem for MockFileSystem {
+        fn read_to_string(&self, _path: &Path) -> Result<String> {
+            Ok("".into())
+        }
+        fn write(&self, _path: &Path, _content: &str) -> Result<()> {
+            Ok(())
+        }
+        fn exists(&self, _path: &Path) -> bool {
+            true
+        }
+        fn create_dir_all(&self, _path: &Path) -> Result<()> {
+            Ok(())
+        }
+        fn rename(&self, _from: &Path, _to: &Path) -> Result<()> {
+            Ok(())
+        }
+        fn copy(&self, _from: &Path, _to: &Path) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[allow(dead_code)]
+    struct MockCommandRunner;
+    #[async_trait]
+    impl crate::core::traits::CommandRunner for MockCommandRunner {
+        fn run(
+            &self,
+            _command: &str,
+            _args: &[String],
+            _dir: Option<&Path>,
+        ) -> Result<(bool, String)> {
+            Ok((true, "".into()))
+        }
+    }
+
+    #[allow(dead_code)]
+    struct MockLlmClient;
+    #[async_trait]
+    impl crate::core::traits::LlmClient for MockLlmClient {
+        async fn chat(&self, _messages: Vec<crate::llm::models::ChatMessage>) -> Result<String> {
+            Ok("".into())
+        }
+    }
 
     // ========================================================================
     // is_refusal Tests
     // ========================================================================
+
+    fn new_mock_ctx(desc: &str) -> PipelineCtx {
+        PipelineCtx::new(desc.to_string(), None, None, None)
+    }
 
     #[test]
     fn test_refusal_cannot_implement() {
@@ -1393,7 +1467,7 @@ mod tests {
     #[test]
     fn test_save_coder_response_writes_raw_reply() -> Result<()> {
         let temp = tempfile::tempdir()?;
-        let ctx = PipelineCtx::new("test".to_string());
+        let ctx = new_mock_ctx("test");
 
         let path = save_coder_response(temp.path(), &ctx, 2, "raw coder reply")?;
 
@@ -1566,7 +1640,7 @@ priority: P1            files:
         std::fs::write(temp.path().join("plan.md"), "Update src/agent/auditor.rs.")?;
         std::fs::write(temp.path().join("validation.md"), "Run check-fast.ps1.")?;
 
-        let mut ctx = PipelineCtx::new("test".to_string());
+        let mut ctx = PipelineCtx::new("test".to_string(), None, None, None);
         ctx.spec_path = Some(temp.path().to_path_buf());
         let blocks = vec![(
             "src/adaptive/predictive_scorer.rs".to_string(),
@@ -1601,7 +1675,7 @@ priority: P1            files:
         std::fs::write(temp.path().join("plan.md"), "Update src/agent/auditor.rs.")?;
         std::fs::write(temp.path().join("validation.md"), "Run check-fast.ps1.")?;
 
-        let mut ctx = PipelineCtx::new("test".to_string());
+        let mut ctx = new_mock_ctx("test");
         ctx.spec_path = Some(temp.path().to_path_buf());
         let blocks = vec![(
             "src/agent/auditor.rs".to_string(),
@@ -1619,7 +1693,7 @@ priority: P1            files:
 
     #[test]
     fn test_signal_scope_reduction_sets_flags() {
-        let ctx = PipelineCtx::new("test".to_string());
+        let ctx = new_mock_ctx("test");
         let errors = vec!["error1".to_string(), "error2".to_string()];
         let result = signal_scope_reduction(&ctx, errors.clone());
         assert!(result.scope_reduction_needed);
@@ -1629,7 +1703,7 @@ priority: P1            files:
 
     #[test]
     fn test_signal_scope_reduction_increments_count() {
-        let mut ctx = PipelineCtx::new("test".to_string());
+        let mut ctx = new_mock_ctx("test");
         ctx.scope_reduction_count = 3;
         let result = signal_scope_reduction(&ctx, vec![]);
         assert_eq!(result.scope_reduction_count, 4);
@@ -1637,7 +1711,7 @@ priority: P1            files:
 
     #[test]
     fn test_signal_scope_reduction_preserves_fields() {
-        let mut ctx = PipelineCtx::new("desc".to_string());
+        let mut ctx = new_mock_ctx("desc");
         ctx.dry_run = true;
         ctx.spec_path = Some(PathBuf::from("/tmp/spec"));
         let result = signal_scope_reduction(&ctx, vec![]);
@@ -1647,7 +1721,7 @@ priority: P1            files:
 
     #[test]
     fn test_signal_scope_reduction_new_description() {
-        let ctx = PipelineCtx::new("original".to_string());
+        let ctx = new_mock_ctx("original");
         let result = signal_scope_reduction(&ctx, vec![]);
         assert_eq!(result.description, "original");
     }

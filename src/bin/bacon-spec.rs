@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
     };
 
     let llm = bacon_pipeline::llm::Llm::from_env()?;
-    let base_ctx = PipelineCtx::new(String::new()).with_dry_run(cli.dry_run);
+    let base_ctx = PipelineCtx::new(String::new(), None, None, None).with_dry_run(cli.dry_run);
 
     // Observer
     info!("=== Observer stage ===");

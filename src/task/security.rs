@@ -238,4 +238,50 @@ mod tests {
         // Single dot should be allowed
         assert!(is_safe_path("./config.txt"));
     }
+
+    #[test]
+    fn test_validate_defaults_new_path_to_config() {
+        // New files should resolve under config/ when the path doesn't exist yet
+        let result = validate_data_path("exports/new_report.json");
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.starts_with(Path::new("config")));
+        assert!(path.ends_with("exports/new_report.json"));
+    }
+
+    #[test]
+    fn test_validate_allows_both_allowed_dirs() {
+        let cfg = validate_data_path("config/personas/bot.json");
+        assert!(cfg.is_ok());
+        let data = validate_data_path("data/inputs/feed.json");
+        assert!(data.is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_dotdot_mixed() {
+        assert!(validate_data_path("config/../secret.txt").is_err());
+        assert!(validate_data_path("data/./foo/../../out").is_err());
+    }
+
+    #[test]
+    fn test_is_safe_path_rejects_dotdot_mixed() {
+        assert!(!is_safe_path("config/../../../etc/passwd"));
+    }
+
+    #[test]
+    fn test_is_safe_path_double_slash_is_ok() {
+        assert!(is_safe_path("config//file.json"));
+        assert!(is_safe_path("data///sub//file.txt"));
+    }
+
+    #[test]
+    fn test_contains_traversal_normalizes_backslash_and_slash() {
+        assert!(contains_traversal("foo\\..\\bar"));
+        assert!(contains_traversal("foo/../bar"));
+    }
+
+    #[test]
+    fn test_validate_rejects_path_starting_with_data_slash() {
+        assert!(validate_data_path("data/../../../etc/passwd").is_err());
+    }
 }

@@ -550,6 +550,48 @@ mod tests {
     }
 
     #[test]
+    fn test_substitute_variables_single_placeholder_only() {
+        let text = "${only}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("only".to_string(), "value".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "value");
+    }
+
+    #[test]
+    fn test_substitute_variables_empty_input_returns_empty() {
+        let text = "";
+        let variables = std::collections::HashMap::<String, String>::new();
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_substitute_variables_underscored_names() {
+        let text = "${user_name}-${session_id}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("user_name".to_string(), "alice".to_string());
+        variables.insert("session_id".to_string(), "abc".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "alice-abc");
+    }
+
+    #[test]
     fn test_task_definition_creation() {
         let def = TaskDefinition {
             name: "test".to_string(),

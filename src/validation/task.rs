@@ -613,10 +613,7 @@ mod tests_validation_types {
         assert!(report.is_valid());
         assert_eq!(report.error_count(), 0);
         assert_eq!(report.warning_count(), 1);
-        assert_eq!(
-            report.summary(),
-            "Task 'foo' has 1 warning(s) (2 actions)"
-        );
+        assert_eq!(report.summary(), "Task 'foo' has 1 warning(s) (2 actions)");
     }
 
     #[test]

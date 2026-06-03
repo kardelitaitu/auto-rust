@@ -271,10 +271,7 @@ mod tests {
             sanitize_path_component("user@email!").starts_with("user_email_")
                 || sanitize_path_component("user@email!").starts_with("user_email")
         );
-        assert_eq!(
-            sanitize_path_component("simple"),
-            "simple"
-        );
+        assert_eq!(sanitize_path_component("simple"), "simple");
     }
 
     #[test]

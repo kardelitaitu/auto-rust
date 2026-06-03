@@ -2014,10 +2014,10 @@ mod unit_tests {
             parameters: HashMap::new(),
         };
         let report = TaskValidator::new().validate(&def);
-        assert!(report
-            .issues
-            .iter()
-            .any(|i: &ValidationIssue| { i.message().contains("Loop must have either 'count' or 'condition'") }));
+        assert!(report.issues.iter().any(|i: &ValidationIssue| {
+            i.message()
+                .contains("Loop must have either 'count' or 'condition'")
+        }));
     }
 
     #[test]
@@ -2053,7 +2053,9 @@ mod unit_tests {
             include: Vec::new(),
             parameters: HashMap::new(),
         };
-        let report = TaskValidator::new().with_current_task("self").validate(&def);
+        let report = TaskValidator::new()
+            .with_current_task("self")
+            .validate(&def);
         assert!(report
             .issues
             .iter()
@@ -2111,7 +2113,10 @@ mod unit_tests {
             name: "t".into(),
             description: String::new(),
             policy: String::new(),
-            actions: vec![Action::Wait { duration_ms: 1 }, Action::Wait { duration_ms: 2 }],
+            actions: vec![
+                Action::Wait { duration_ms: 1 },
+                Action::Wait { duration_ms: 2 },
+            ],
             include: Vec::new(),
             parameters: HashMap::new(),
         };
@@ -2133,9 +2138,7 @@ mod unit_tests {
             include: Vec::new(),
             parameters: HashMap::new(),
         };
-        let report = TaskValidator::new()
-            .with_known_tasks(tasks)
-            .validate(&def);
+        let report = TaskValidator::new().with_known_tasks(tasks).validate(&def);
         assert!(report
             .issues
             .iter()

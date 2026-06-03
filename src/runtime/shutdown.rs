@@ -150,11 +150,7 @@ mod tests {
 
         // New subscriber arrives after the signal was sent — should NOT receive it
         let mut late_rx = manager.subscribe();
-        let late = timeout(
-            Duration::from_millis(50),
-            late_rx.recv(),
-        )
-        .await;
+        let late = timeout(Duration::from_millis(50), late_rx.recv()).await;
         assert!(late.is_err(), "late subscriber should time out");
     }
 

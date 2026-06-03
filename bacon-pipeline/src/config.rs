@@ -203,10 +203,8 @@ mod tests {
 
     #[test]
     fn test_project_config_clone() {
-        let root = std::env::temp_dir().join(format!(
-            "bacon-pipeline-test-{}-clone",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("bacon-pipeline-test-{}-clone", std::process::id()));
         fs::create_dir_all(&root).unwrap();
 
         let config = ProjectConfig::with_defaults(root.clone());

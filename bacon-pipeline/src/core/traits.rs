@@ -102,10 +102,8 @@ mod tests {
 
     #[test]
     fn test_real_filesystem_write_and_read() {
-        let dir = std::env::temp_dir().join(format!(
-            "bacon-pipeline-test-{}-traits",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("bacon-pipeline-test-{}-traits", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
 
         let fs_impl = RealFileSystem;
@@ -138,10 +136,8 @@ mod tests {
 
     #[test]
     fn test_real_filesystem_rename() {
-        let dir = std::env::temp_dir().join(format!(
-            "bacon-pipeline-test-{}-rename",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("bacon-pipeline-test-{}-rename", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
 
         let fs_impl = RealFileSystem;
@@ -159,10 +155,8 @@ mod tests {
 
     #[test]
     fn test_real_filesystem_copy() {
-        let dir = std::env::temp_dir().join(format!(
-            "bacon-pipeline-test-{}-copy",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("bacon-pipeline-test-{}-copy", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
 
         let fs_impl = RealFileSystem;

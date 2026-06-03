@@ -118,4 +118,56 @@ mod tests {
             .expect("shutdown signal should arrive")
             .expect("shutdown channel should be open");
     }
+
+    #[tokio::test]
+    async fn test_multiple_subscribers_receive_signal() {
+        let manager = ShutdownManager::new();
+        let mut rx1 = manager.subscribe();
+        let mut rx2 = manager.subscribe();
+
+        assert!(manager.request_shutdown());
+
+        timeout(Duration::from_millis(50), rx1.recv())
+            .await
+            .expect("subscriber 1 should receive")
+            .expect("channel should be open");
+        timeout(Duration::from_millis(50), rx2.recv())
+            .await
+            .expect("subscriber 2 should receive")
+            .expect("channel should be open");
+    }
+
+    #[tokio::test]
+    async fn test_late_subscriber_does_not_receive_prior_signal() {
+        let manager = ShutdownManager::new();
+        let mut rx = manager.subscribe();
+
+        assert!(manager.request_shutdown());
+        timeout(Duration::from_millis(50), rx.recv())
+            .await
+            .expect("first subscriber should receive")
+            .expect("channel should be open");
+
+        // New subscriber arrives after the signal was sent — should NOT receive it
+        let mut late_rx = manager.subscribe();
+        let late = timeout(
+            Duration::from_millis(50),
+            late_rx.recv(),
+        )
+        .await;
+        assert!(late.is_err(), "late subscriber should time out");
+    }
+
+    #[tokio::test]
+    async fn test_with_capacity_creates_channel() {
+        let manager = ShutdownManager::with_capacity(8);
+        let mut rx = manager.subscribe();
+
+        assert!(manager.request_shutdown());
+
+        timeout(Duration::from_millis(50), rx.recv())
+            .await
+            .expect("signal should arrive")
+            .expect("channel should be open");
+    }
 }

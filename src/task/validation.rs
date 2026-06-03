@@ -1869,4 +1869,276 @@ mod unit_tests {
         let r = ValidationReport::new("t".into());
         assert_eq!(r.warning_count(), 0);
     }
+
+    // ---- TaskValidator branch coverage ----
+    #[test]
+    fn validate_task_empty_name_errors() {
+        let def = TaskDefinition {
+            name: String::new(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report.has_errors());
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Task name cannot be empty") }));
+    }
+
+    #[test]
+    fn validate_task_name_with_spaces_errors() {
+        let def = TaskDefinition {
+            name: "bad name".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("cannot contain spaces") }));
+    }
+
+    #[test]
+    fn validate_task_empty_actions_and_includes_errors() {
+        let def = TaskDefinition {
+            name: "ok".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: Vec::new(),
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("at least one action or include") }));
+    }
+
+    #[test]
+    fn validate_parameter_redundant_required_default_warns() {
+        use crate::task::dsl::types::ParameterType;
+        let mut params = HashMap::new();
+        params.insert(
+            "p".into(),
+            ParameterDef {
+                required: true,
+                default: Some(serde_yml::Value::String("x".into())),
+                description: String::new(),
+                r#type: ParameterType::String,
+            },
+        );
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: params,
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("is required but has a default") }));
+    }
+
+    #[test]
+    fn validate_optional_parameter_without_default_warns() {
+        use crate::task::dsl::types::ParameterType;
+        let mut params = HashMap::new();
+        params.insert(
+            "p".into(),
+            ParameterDef {
+                required: false,
+                default: None,
+                description: String::new(),
+                r#type: ParameterType::String,
+            },
+        );
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: params,
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("optional but has no default") }));
+    }
+
+    #[test]
+    fn validate_extract_empty_variable_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Extract {
+                selector: "#x".into(),
+                variable: Some(String::new()),
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Variable name cannot be empty") }));
+    }
+
+    #[test]
+    fn validate_loop_no_count_or_condition_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Loop {
+                count: None,
+                condition: None,
+                actions: vec![],
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Loop must have either 'count' or 'condition'") }));
+    }
+
+    #[test]
+    fn validate_call_empty_task_name_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Call {
+                task: String::new(),
+                parameters: None,
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Task name cannot be empty") }));
+    }
+
+    #[test]
+    fn validate_call_self_circular_reference_errors() {
+        let def = TaskDefinition {
+            name: "self".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Call {
+                task: "self".into(),
+                parameters: None,
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().with_current_task("self").validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("circular reference") }));
+    }
+
+    #[test]
+    fn validate_parallel_zero_concurrency_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Parallel {
+                actions: vec![Action::Wait { duration_ms: 1 }],
+                max_concurrency: Some(0),
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("max_concurrency cannot be 0") }));
+    }
+
+    #[test]
+    fn validate_wait_zero_duration_warns() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 0 }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Wait duration is 0ms (no-op)") }));
+    }
+
+    #[test]
+    fn extract_variables_updates_report() {
+        let mut r = ValidationReport::new("t".into());
+        let validator = TaskValidator::new();
+        validator.extract_variables("hello ${name} world", &mut r);
+        assert!(r.variables_referenced.contains("name"));
+    }
+
+    #[test]
+    fn count_actions_returns_action_count() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }, Action::Wait { duration_ms: 2 }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert_eq!(report.action_count, 2);
+    }
+
+    #[test]
+    fn validator_unknown_task_warns() {
+        let tasks = vec!["known".to_string()];
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Call {
+                task: "unknown".into(),
+                parameters: None,
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new()
+            .with_known_tasks(tasks)
+            .validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("not in the known task list") }));
+    }
 }

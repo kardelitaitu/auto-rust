@@ -52,7 +52,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::adaptive::LearningEngine;
-use crate::capabilities::{dom, keyboard, mouse, navigation, scroll, timing};
+use crate::capabilities::{dom, keyboard, mouse, scroll, timing};
 use crate::config::{BrowserConfig, NativeInteractionConfig};
 use crate::internal::page_size::{self, Viewport};
 use crate::logger::scoped_log_context;
@@ -72,6 +72,7 @@ pub mod click_learning;
 pub mod clipboard;
 pub mod cookies;
 pub mod data_files;
+pub mod dom_verify;
 pub mod http;
 pub mod interaction;
 pub mod interaction_pipeline;
@@ -80,6 +81,7 @@ pub mod query;
 pub mod session_io;
 pub mod style;
 pub mod types;
+pub mod validation;
 
 // Re-export submodule contents for convenient access
 pub use click_learning::{
@@ -1797,12 +1799,12 @@ impl TaskContext {
 
     /// Set custom user agent string for subsequent navigations.
     pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {
-        navigation::set_user_agent(self.page(), user_agent).await
+        page_nav::set_user_agent(self, user_agent).await
     }
 
     /// Set extra HTTP headers for subsequent navigations.
     pub async fn set_extra_http_headers(&self, headers: &BTreeMap<String, String>) -> Result<()> {
-        navigation::set_extra_http_headers(self.page(), headers).await
+        page_nav::set_extra_http_headers(self, headers).await
     }
 
     /// Apply user agent and/or extra HTTP headers in one call.
@@ -1811,22 +1813,12 @@ impl TaskContext {
         user_agent: Option<&str>,
         headers: &BTreeMap<String, String>,
     ) -> Result<()> {
-        if let Some(user_agent) = user_agent {
-            self.set_user_agent(user_agent).await?;
-        }
-        if !headers.is_empty() {
-            self.set_extra_http_headers(headers).await?;
-        }
-        Ok(())
+        page_nav::apply_browser_context(self, user_agent, headers).await
     }
 
     /// Wait for 'load' event with timeout. Uses page load event.
     pub async fn wait_for_load(&self, timeout_ms: u64) -> Result<()> {
-        navigation::wait_for_load(self.page(), timeout_ms)
-            .await
-            .with_context(|| {
-                wrapper_timeout_context("wait_for_load", format!("timeout_ms={timeout_ms}"))
-            })
+        page_nav::wait_for_load(self, timeout_ms).await
     }
 
     /// Wait until any of the given selectors becomes visible. Returns first match or false.
@@ -1835,74 +1827,12 @@ impl TaskContext {
         selectors: &[&str],
         timeout_ms: u64,
     ) -> Result<bool> {
-        query::wait_for_any_visible(self.page(), selectors, timeout_ms)
-            .await
-            .with_context(|| {
-                wrapper_timeout_context(
-                    "wait_for_any_visible_selector",
-                    format!("selector_count={} timeout_ms={timeout_ms}", selectors.len()),
-                )
-            })
+        page_nav::wait_for_any_visible_selector(self, selectors, timeout_ms).await
     }
 
     /// Scrolls an element into view, focuses it, and returns the focus outcome.
-    ///
-    /// This method:
-    /// - Scrolls the element into view if needed
-    /// - Focuses the element
-    /// - Returns the center coordinates and focus status
-    ///
-    /// # Arguments
-    ///
-    /// * `selector` - CSS selector for the element to focus
-    ///
-    /// # Returns
-    ///
-    /// A `FocusOutcome` containing the focus status and element coordinates.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the element cannot be found or focused.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use auto::runtime::task_context::TaskContext;
-    /// # async fn example(api: &TaskContext) -> anyhow::Result<()> {
-    /// let outcome = api.focus("#input-field").await?;
-    /// println!("Focus status: {:?}", outcome.focus);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
-        if dom::selector_uses_accessibility_locator(selector) {
-            let (x, y) = dom::selector_action_point(self.page(), selector).await?;
-            dom::focus_at_point(self.page(), x, y).await?;
-            self.post_interaction_pause().await;
-            return Ok(FocusOutcome {
-                focus: FocusStatus::Success,
-                x,
-                y,
-            });
-        }
-
-        scroll::scroll_into_view(self.page(), selector).await?;
-
-        // Phase2: Verify element is in viewport after scroll
-        if !self.is_in_viewport(selector).await? {
-            return Err(anyhow::anyhow!(
-                "[task-api] focus: element '{selector}' not in viewport after scroll"
-            ));
-        }
-
-        let (x, y) = page_size::get_element_center(self.page(), selector).await?;
-        dom::focus(self.page(), selector).await?;
-        self.post_interaction_pause().await;
-        Ok(FocusOutcome {
-            focus: FocusStatus::Success,
-            x,
-            y,
-        })
+        page_nav::focus(self, selector).await
     }
 
     /// Performs a human-like hover over an element with configurable timing.
@@ -3102,7 +3032,7 @@ impl TaskContext {
     }
 
     async fn post_interaction_pause(&self) {
-        self.post_interaction_pause_with_budget(0).await;
+        dom_verify::post_interaction_pause(self).await;
     }
 
     async fn post_interaction_pause_with_budget(&self, min_budget_ms: u64) {
@@ -3226,37 +3156,7 @@ impl TaskContext {
 
 #[must_use]
 pub fn validate_session_data_impl(data: &crate::task::policy::SessionData) -> Vec<String> {
-    let mut warnings = Vec::new();
-
-    if data.cookies.is_empty() && data.local_storage.is_empty() {
-        warnings.push("SessionData has no cookies and no localStorage".to_string());
-    }
-
-    for (i, cookie) in data.cookies.iter().enumerate() {
-        if let Some(obj) = cookie.as_object() {
-            if !obj.contains_key("name") {
-                warnings.push(format!("Cookie[{i}] missing 'name' field"));
-            }
-            if !obj.contains_key("value") {
-                warnings.push(format!("Cookie[{i}] missing 'value' field"));
-            }
-        } else {
-            warnings.push(format!("Cookie[{i}] is not a JSON object"));
-        }
-    }
-
-    if data.local_storage.len() > 1000 {
-        warnings.push(format!(
-            "localStorage has {} items (very large)",
-            data.local_storage.len()
-        ));
-    }
-
-    if data.url.is_empty() {
-        warnings.push("SessionData url is empty".to_string());
-    }
-
-    warnings
+    validation::validate_session_data_impl(data)
 }
 
 #[cfg(test)]

@@ -121,13 +121,9 @@ pub async fn dive_into_thread(
     // Click the tweet link using the high-level API (handles scrolling, movement, clicking)
     let link_selector = format!("a[href='{status_url}']");
     info!("Clicking tweet link selector: {}", link_selector);
-    if let Err(e) = api.click(&link_selector).await {
-        info!("Dive failed: click on link failed: {e}");
-        return Ok(DiveIntoThreadOutcome {
-            opened: false,
-            used_fallback_target: false,
-        });
-    }
+    api.click(&link_selector)
+        .await
+        .context("Dive failed: click on link failed")?;
     info!("Clicked tweet link, waiting for thread view...");
 
     // Wait for thread/modal view to open (tweet detail or thread)

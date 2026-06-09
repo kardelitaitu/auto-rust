@@ -1,5 +1,5 @@
 version: 1
-id: dsl-control-flow-tests
+id: 0008-dsl-control-flow-tests
 title: Add Unit Tests for DSL Control Flow Execution Handlers
 status: done
 owner: spec-agent
@@ -14,11 +14,11 @@ files:
     - src/task/dsl/control_flow.rs
     - src/task/dsl/api.rs
   docs:
-    - docs/specs/_active/dsl-control-flow-tests/spec.yaml
-    - docs/specs/_active/dsl-control-flow-tests/README.md
-    - docs/specs/_active/dsl-control-flow-tests/baseline.md
-    - docs/specs/_active/dsl-control-flow-tests/plan.md
-    - docs/specs/_active/dsl-control-flow-tests/validation.md
+    - docs/specs/_done/0008-dsl-control-flow-tests/spec.yaml
+    - docs/specs/_done/0008-dsl-control-flow-tests/README.md
+    - docs/specs/_done/0008-dsl-control-flow-tests/baseline.md
+    - docs/specs/_done/0008-dsl-control-flow-tests/plan.md
+    - docs/specs/_done/0008-dsl-control-flow-tests/validation.md
 acceptance:
   - "control_flow.rs has 15+ new unit tests covering execute_if, execute_loop, execute_foreach, execute_retry, execute_parallel via MockDslApi"
   - "Tests cover at minimum: If(condition=true) runs then-branch, If(condition=false) runs else-branch, Loop(count=N) iterates N times, Foreach iterates over collection, Retry retries on failure up to max_attempts, Parallel dispatches all actions"

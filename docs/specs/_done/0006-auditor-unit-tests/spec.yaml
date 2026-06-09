@@ -1,5 +1,5 @@
 version: 1
-id: auditor-unit-tests
+id: 0006-auditor-unit-tests
 title: Auditor Agent Unit Tests via Dependency Injection
 status: done
 owner: spec-agent
@@ -12,9 +12,9 @@ files:
   code:
     - bacon-pipeline/src/agent/auditor.rs
   docs:
-    - docs/specs/_done/auditor-unit-tests/spec.yaml
-    - docs/specs/_done/auditor-unit-tests/plan.md
-    - docs/specs/_done/auditor-unit-tests/validation.md
+    - docs/specs/_done/0006-auditor-unit-tests/spec.yaml
+    - docs/specs/_done/0006-auditor-unit-tests/plan.md
+    - docs/specs/_done/0006-auditor-unit-tests/validation.md
 acceptance:
   - "auditor::run() signature changes from `&Llm` to `&dyn LlmClient` with zero functional change"
   - "Auditor has 5+ unit tests covering ad-hoc path: LLM call, PASS/FAIL branching, confidence extraction, error propagation, dry-run propagation"

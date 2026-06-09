@@ -136,7 +136,7 @@ fn modulate_persona_by_sentiment(
     let analyzer = SENTIMENT_ANALYZER
         .get_or_init(|| std::sync::Mutex::new(SentimentAnalyzer::new()))
         .lock()
-        .expect("SentimentAnalyzer lock poisoned");
+        .unwrap_or_else(|e| e.into_inner());
     let tweet_text = extract_tweet_text(tweet);
     let sentiment_result = if task_config.enhanced_sentiment_enabled {
         let thread_context = crate::utils::twitter::sentiment::extract_thread_context(tweet);

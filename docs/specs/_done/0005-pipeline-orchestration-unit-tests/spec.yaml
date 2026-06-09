@@ -1,5 +1,5 @@
 version: 1
-id: pipeline-orchestration-unit-tests
+id: 0005-pipeline-orchestration-unit-tests
 title: Pipeline orchestration unit tests
 status: done
 owner: spec-agent
@@ -13,9 +13,9 @@ files:
     - bacon-pipeline/src/core/agent.rs
     - bacon-pipeline/src/agent/pipeline.rs
   docs:
-    - docs/specs/_done/pipeline-orchestration-unit-tests/spec.yaml
-    - docs/specs/_done/pipeline-orchestration-unit-tests/plan.md
-    - docs/specs/_done/pipeline-orchestration-unit-tests/validation.md
+    - docs/specs/_done/0005-pipeline-orchestration-unit-tests/spec.yaml
+    - docs/specs/_done/0005-pipeline-orchestration-unit-tests/plan.md
+    - docs/specs/_done/0005-pipeline-orchestration-unit-tests/validation.md
 acceptance:
   - "PipelineAgent::run() default orchestration in core/agent.rs has ≥30 tests covering all 9 logical branches (happy path, resume, fast-path, confidence, observer-noop, missing-spec-refs, coder-refused, scope-reduction-exhausted, run-log-recording)"
   - "Pipeline::new() in agent/pipeline.rs has tests for validation pass/fail"

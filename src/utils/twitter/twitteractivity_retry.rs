@@ -190,7 +190,7 @@ fn calculate_delay(attempt: u32, config: &RetryConfig) -> u64 {
         0.0
     };
 
-    (delay + jitter) as u64
+    (delay + jitter).max(0.0) as u64
 }
 
 /// Core retry loop with a generic delay function.

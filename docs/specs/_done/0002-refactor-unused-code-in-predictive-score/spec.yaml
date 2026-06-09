@@ -1,5 +1,5 @@
 version: 1
-id: '0011-refactor-unused-code-in-predictive-score'
+id: '0002-refactor-unused-code-in-predictive-score'
 title: Refactor Unused Code in Predictive Scorer
 status: done
 owner: pipeline
@@ -12,8 +12,8 @@ files:
   - src/adaptive/predictive_scorer.rs
   - check-fast.ps1
   docs:
-  - docs/specs/_done/0011-refactor-unused-code-in-predictive-score/plan.md
-  - docs/specs/_done/0011-refactor-unused-code-in-predictive-score/validation.md
+  - docs/specs/_done/0002-refactor-unused-code-in-predictive-score/plan.md
+  - docs/specs/_done/0002-refactor-unused-code-in-predictive-score/validation.md
 acceptance:
 - The `#[allow(dead_code)]` attribute is removed from `src/adaptive/predictive_scorer.rs` and `cargo check --lib` compiles without dead-code warnings.
 - `cargo test` passes all existing tests with no regressions.

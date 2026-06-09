@@ -1,3 +1,9 @@
+/*
+last audited 09-06-26 by RSA-Agent
+crate: utils::twitter | status: SAFE | lint: CLEAN
+findings: 0 unsafe, all unwrap/expect in test code, clean clippy, 4 files >1kLoC | next: none | perf: OnceLock lazy static, no red flags
+*/
+
 //! Twitter activity task utilities.
 //! Provides helper functions for browser automation on Twitter/X.
 //!

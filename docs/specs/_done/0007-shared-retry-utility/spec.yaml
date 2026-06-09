@@ -1,5 +1,5 @@
 version: 1
-id: shared-retry-utility
+id: 0007-shared-retry-utility
 title: Consolidate Retry/Backoff Logic into a Shared Utility Module
 status: done
 owner: spec-agent
@@ -15,11 +15,11 @@ files:
     - src/llm/client.rs
     - src/api/client.rs
   docs:
-    - docs/specs/_done/shared-retry-utility/spec.yaml
-    - docs/specs/_done/shared-retry-utility/README.md
-    - docs/specs/_done/shared-retry-utility/baseline.md
-    - docs/specs/_done/shared-retry-utility/plan.md
-    - docs/specs/_done/shared-retry-utility/validation.md
+    - docs/specs/_done/0007-shared-retry-utility/spec.yaml
+    - docs/specs/_done/0007-shared-retry-utility/README.md
+    - docs/specs/_done/0007-shared-retry-utility/baseline.md
+    - docs/specs/_done/0007-shared-retry-utility/plan.md
+    - docs/specs/_done/0007-shared-retry-utility/validation.md
 acceptance:
   - "src/utils/retry.rs exists with RetryConfig, retry_with_backoff, ExponentialBackoff, and unit tests"
   - "RetryConfig supports: max_attempts, base_delay_ms, max_delay_ms, multiplier (exponential), jitter_factor (0.0-1.0)"

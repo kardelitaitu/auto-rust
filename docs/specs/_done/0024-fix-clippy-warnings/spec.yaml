@@ -1,0 +1,32 @@
+version: 1
+id: 0024-fix-clippy-warnings
+title: Fix Remaining Clippy Warnings
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P3
+area:
+  - clippy
+  - cleanup
+files:
+  code:
+    - src/config/mod.rs
+    - src/config/types.rs
+    - src/config/defaults.rs
+    - src/llm/client.rs
+  docs:
+    - docs/specs/_done/0024-fix-clippy-warnings/plan.md
+    - docs/specs/_done/0024-fix-clippy-warnings/validation.md
+acceptance:
+  - "Remove unused import: DurationMs from config/mod.rs (now imported via re-export)"
+  - "Remove unused import: NativeClickCalibrationMode from config/types.rs (used via re-export)"
+  - "Remove unused import: NativeInputBackend from config/types.rs (used via re-export)"
+  - "Remove unused import: TracingConfig from config/types.rs (used via re-export)"
+  - "Remove unused import: log::info from config/types.rs"
+  - "Remove unused import: TwitterLLMConfig from config/mod.rs"
+  - "Fix glob re-export visibility: env and defaults pub use not re-exporting anything visible"
+  - "cargo clippy --all-targets --all-features — 0 warnings"
+non_goals:
+  - Do not suppress warnings with #[allow(...)] — fix the root cause
+risks:
+  - "Trivial: removing unused imports has zero behavioral impact"

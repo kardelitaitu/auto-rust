@@ -10,8 +10,7 @@ use std::collections::BTreeMap;
 
 use super::types::{
     BrowserConfig, BrowserProfile, CircuitBreakerConfig, EngagementLimitsConfig,
-    NativeClickCalibrationMode, NativeInputBackend, NativeInteractionConfig,
-    OrchestratorConfig, RoxybrowserConfig, TracingConfig, TwitterActivityConfig,
+    NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, TwitterActivityConfig,
     TwitterLLMConfig, TwitterProbabilitiesConfig,
 };
 
@@ -23,7 +22,8 @@ impl Default for TwitterActivityConfig {
             engagement_candidate_count: super::types::default_engagement_candidate_count(),
             scroll_amount_pixels: super::types::default_twitter_scroll_amount(),
             candidate_scan_interval_ms: super::types::default_candidate_scan_interval_ms(),
-            max_consecutive_scroll_failures: super::types::default_max_consecutive_scroll_failures(),
+            max_consecutive_scroll_failures: super::types::default_max_consecutive_scroll_failures(
+            ),
             max_consecutive_empty_scans: super::types::default_max_consecutive_empty_scans(),
             persona_file_path: None,
             probabilities: TwitterProbabilitiesConfig::default(),

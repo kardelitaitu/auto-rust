@@ -1,9 +1,9 @@
 version: 1
 id: 0018-extract-config-submodules
 title: Extract Config Submodules
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: buffy
 priority: P2
 area:
   - config
@@ -17,8 +17,8 @@ files:
     - src/config/tests.rs
     - src/config/validation.rs
   docs:
-    - docs/specs/_active/0018-extract-config-submodules/plan.md
-    - docs/specs/_active/0018-extract-config-submodules/validation.md
+    - docs/specs/_done/0018-extract-config-submodules/plan.md
+    - docs/specs/_done/0018-extract-config-submodules/validation.md
 acceptance:
   - config/mod.rs reduced from 3631 to ≤200 lines (re-exports + load_config + ConfigValidationReport, excl. tests)
   - config/types.rs ≤800 (all 13 struct + 2 enum definitions)

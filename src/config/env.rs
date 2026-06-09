@@ -6,16 +6,15 @@
 
 use crate::error::Result;
 use crate::session::DurationMs;
-use log::info;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::Path;
 
 use super::types::{
-    BrowserConfig, CircuitBreakerConfig, Config, NativeClickCalibrationMode,
-    NativeInputBackend, NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig,
-    TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig, TwitterLLMConfig,
+    BrowserConfig, CircuitBreakerConfig, Config, NativeClickCalibrationMode, NativeInputBackend,
+    NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, TaskDiscoveryConfig,
+    TracingConfig, TwitterActivityConfig,
 };
 
 /// Load `.env` defaults into the environment (only for keys not already set).
@@ -256,7 +255,10 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
     parse_env_float(
         "TWITTER_THREAD_DIVE_PROBABILITY",
         0.25,
-        &mut config.twitter_activity.probabilities.thread_dive_probability,
+        &mut config
+            .twitter_activity
+            .probabilities
+            .thread_dive_probability,
     );
 
     // Twitter scroll/candidate scan interval overrides
@@ -308,9 +310,7 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
 
     // Task discovery overrides
     if let Ok(enabled) = env::var("TASK_DISCOVERY_ENABLED") {
-        config.task_discovery.enabled = enabled
-            .parse()
-            .unwrap_or(config.task_discovery.enabled);
+        config.task_discovery.enabled = enabled.parse().unwrap_or(config.task_discovery.enabled);
     }
     if let Ok(roots) = env::var("TASK_DISCOVERY_ROOTS") {
         config.task_discovery.roots = roots

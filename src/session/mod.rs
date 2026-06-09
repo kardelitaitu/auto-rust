@@ -12,108 +12,18 @@ findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependen
 //! - Health monitoring and failure tracking
 //! - Graceful shutdown and cleanup
 
+pub mod cleanup;
 pub mod connector;
 pub mod factory;
 pub mod pool;
 
-use std::num::NonZeroU64;
+mod duration;
+mod permits;
+mod state;
 
-/// A duration in milliseconds guaranteed to be non-zero.
-///
-/// Used for configuration values that require a positive duration.
-/// Wraps `NonZeroU64` for zero-cost validation at the type level.
-///
-/// # Serde
-///
-/// Serializes/deserializes transparently as a plain `u64` (via `#[serde(transparent)]`),
-/// making it compatible with TOML/JSON config files. Deserializing `0` will return an error.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DurationMs(NonZeroU64);
-
-impl DurationMs {
-    /// Creates a new `DurationMs` from a non-zero millisecond value.
-    ///
-    /// # Returns
-    /// * `Some(DurationMs)` if `value > 0`
-    /// * `None` if `value == 0`
-    #[must_use]
-    pub fn new(value: u64) -> Option<Self> {
-        Some(Self(NonZeroU64::new(value)?))
-    }
-
-    /// Creates a new `DurationMs` in a const context.
-    ///
-    /// # Panics
-    /// Panics if `value == 0`.
-    #[must_use]
-    pub const fn new_const(value: u64) -> Self {
-        assert!(value > 0, "DurationMs cannot be zero");
-        // SAFETY: We just asserted value > 0
-        Self(unsafe { NonZeroU64::new_unchecked(value) })
-    }
-
-    /// Returns the underlying millisecond value.
-    #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0.get()
-    }
-
-    /// Converts to seconds (integer division).
-    #[must_use]
-    pub const fn as_secs(self) -> u64 {
-        self.0.get() / 1000
-    }
-}
-
-impl std::fmt::Display for DurationMs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<DurationMs> for u64 {
-    fn from(d: DurationMs) -> Self {
-        d.0.get()
-    }
-}
-
-impl From<DurationMs> for std::time::Duration {
-    fn from(d: DurationMs) -> Self {
-        std::time::Duration::from_millis(d.0.get())
-    }
-}
-
-impl std::ops::Mul<u64> for DurationMs {
-    type Output = DurationMs;
-
-    fn mul(self, rhs: u64) -> Self::Output {
-        let result = self.0.get().saturating_mul(rhs);
-        // Both operands are non-zero, so result is non-zero (unless overflow saturates to 0
-        // which can't happen since saturating_mul of non-zero values returns at least 1)
-        debug_assert!(
-            result > 0,
-            "Multiplication of non-zero DurationMs by non-zero u64 should be > 0"
-        );
-        // SAFETY: result is guaranteed > 0 because both operands are > 0
-        Self(unsafe { NonZeroU64::new_unchecked(result) })
-    }
-}
-
-// serde support — transparent (serializes as plain u64)
-impl serde::Serialize for DurationMs {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.get().serialize(serializer)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for DurationMs {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = u64::deserialize(deserializer)?;
-        NonZeroU64::new(value)
-            .map(Self)
-            .ok_or_else(|| serde::de::Error::custom("DurationMs must be non-zero"))
-    }
-}
+pub use duration::DurationMs;
+pub use permits::WorkerPermit;
+pub use state::{is_circuit_breaker_open_pure, SessionState};
 
 use crate::internal::profile::{random_preset, randomize_profile, BrowserProfile, ProfileRuntime};
 use crate::state::{bind_page_overlay, unbind_page_overlay, SessionOverlayState};
@@ -127,34 +37,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
-use tokio::sync::SemaphorePermit;
-
-/// Represents the current operational state of a browser session.
-/// Used to track session health and availability for task assignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionState {
-    /// Session is available and ready to accept tasks
-    Idle,
-    /// Session is currently executing a task
-    Busy,
-    /// Session has failed and is not available for tasks
-    Failed,
-}
-
-/// Represents a browser session with connection management and health monitoring.
-/// A session encapsulates a browser instance and manages its lifecycle, worker allocation,
-/// and health status for reliable task execution.
-pub struct WorkerPermit<'a> {
-    _permit: SemaphorePermit<'a>,
-    active_workers: &'a std::sync::atomic::AtomicUsize,
-}
-
-impl Drop for WorkerPermit<'_> {
-    fn drop(&mut self) {
-        self.active_workers
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-    }
-}
 
 /// Represents a browser session with connection management and health monitoring.
 ///
@@ -520,7 +402,7 @@ impl Session {
 
     /// Check if circuit breaker is currently open (for testing)
     pub fn is_circuit_breaker_open(&self) -> bool {
-        let current_time = unix_timestamp_secs();
+        let current_time = state::unix_timestamp_secs();
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
 
@@ -549,34 +431,6 @@ impl Session {
     pub fn set_circuit_breaker_last_failure_time(&self, time: usize) {
         self.cb_last_failure_time.store(time, Ordering::SeqCst);
     }
-}
-
-/// Returns the current Unix timestamp in seconds, using a safe fallback.
-/// Uses `unwrap_or_default()` instead of `expect()` to avoid panicking
-/// if the system clock is set before UNIX epoch.
-fn unix_timestamp_secs() -> usize {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as usize
-}
-
-/// Pure function to determine if circuit breaker should be open.
-/// This logic is extracted for testability without requiring `SystemTime` calls.
-#[must_use]
-pub fn is_circuit_breaker_open_pure(
-    failure_count: usize,
-    failure_threshold: usize,
-    last_failure_time: usize,
-    current_time: usize,
-    timeout_secs: u64,
-) -> bool {
-    if failure_threshold == 0 {
-        return false; // No threshold means circuit never opens
-    }
-
-    failure_count >= failure_threshold
-        && current_time.saturating_sub(last_failure_time) < timeout_secs as usize
 }
 
 impl Session {
@@ -629,10 +483,7 @@ impl Session {
             Ok(Ok(permit)) => {
                 self.active_workers
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Some(WorkerPermit {
-                    _permit: permit,
-                    active_workers: &self.active_workers,
-                })
+                Some(WorkerPermit::new(permit, &self.active_workers))
             }
             Ok(Err(_)) => {
                 warn!("[{}] Semaphore closed, cannot acquire worker", self.id);
@@ -654,7 +505,7 @@ impl Session {
 
     /// Check circuit breaker state. Returns `current_time` if closed, bails if open.
     fn cb_check(&self) -> anyhow::Result<usize> {
-        let current_time = unix_timestamp_secs();
+        let current_time = state::unix_timestamp_secs();
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
 
@@ -733,7 +584,7 @@ impl Session {
                 page
             }
             Err(e) => {
-                self.cb_record_failure(unix_timestamp_secs());
+                self.cb_record_failure(state::unix_timestamp_secs());
                 return Err(e.into());
             }
         };
@@ -788,7 +639,7 @@ impl Session {
                 page
             }
             Err(e) => {
-                self.cb_record_failure(unix_timestamp_secs());
+                self.cb_record_failure(state::unix_timestamp_secs());
                 return Err(e.into());
             }
         };
@@ -957,9 +808,6 @@ impl Session {
         Ok(())
     }
 }
-
-/// Cleanup utilities for session management.
-pub mod cleanup;
 
 #[cfg(test)]
 mod tests {

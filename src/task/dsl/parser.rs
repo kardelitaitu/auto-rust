@@ -964,6 +964,160 @@ duration_ms = 200
             prop_oneof![leaf, recursive].boxed()
         }
 
+        // ── Unsafe character filter ────────────────────────────────────────
+
+        /// Recursively check whether any string field in the TaskDefinition tree
+        /// contains Unicode characters that cause `libyml` to panic:
+        /// \\u{2028} (LINE SEPARATOR) and \\u{2029} (PARAGRAPH SEPARATOR).
+        fn task_def_contains_unsafe_chars(td: &TaskDefinition) -> bool {
+            fn str_bad(s: &str) -> bool {
+                s.contains('\u{2028}') || s.contains('\u{2029}')
+            }
+            fn val_bad(v: &serde_yml::Value) -> bool {
+                match v {
+                    serde_yml::Value::String(s) => str_bad(s),
+                    _ => false,
+                }
+            }
+            fn cond_bad(c: &Condition) -> bool {
+                match c {
+                    Condition::ElementExists { selector }
+                    | Condition::ElementVisible { selector } => str_bad(selector),
+                    Condition::TextEquals { selector, value }
+                    | Condition::TextMatches {
+                        selector,
+                        pattern: value,
+                    } => str_bad(selector) || str_bad(value),
+                    Condition::VariableEquals { name, value } => str_bad(name) || val_bad(value),
+                    Condition::VariableMatches { name, pattern } => {
+                        str_bad(name) || str_bad(pattern)
+                    }
+                    Condition::NumericGreaterThan { name, .. }
+                    | Condition::NumericLessThan { name, .. } => str_bad(name),
+                    Condition::NumericRange { name, .. } => str_bad(name),
+                    Condition::DateBefore { name, date, format }
+                    | Condition::DateAfter { name, date, format } => {
+                        str_bad(name)
+                            || str_bad(date)
+                            || format.as_ref().is_some_and(|f| str_bad(f))
+                    }
+                    Condition::ArrayContains { name, value } => str_bad(name) || val_bad(value),
+                    Condition::ArrayLength { name, .. } => str_bad(name),
+                    Condition::And { conditions } | Condition::Or { conditions } => {
+                        conditions.iter().any(cond_bad)
+                    }
+                    Condition::Not { condition } => cond_bad(condition),
+                    Condition::True | Condition::False => false,
+                    Condition::VariableDefined { name }
+                    | Condition::VariableNotDefined { name } => str_bad(name),
+                }
+            }
+            fn act_bad(a: &Action) -> bool {
+                match a {
+                    Action::Navigate { url } => str_bad(url),
+                    Action::Click { selector }
+                    | Action::ScrollTo { selector }
+                    | Action::Clear { selector }
+                    | Action::Hover { selector }
+                    | Action::RightClick { selector }
+                    | Action::DoubleClick { selector } => str_bad(selector),
+                    Action::Type { selector, text } => str_bad(selector) || str_bad(text),
+                    Action::Wait { .. } => false,
+                    Action::WaitFor { selector, .. } => str_bad(selector),
+                    Action::Extract {
+                        selector, variable, ..
+                    } => str_bad(selector) || variable.as_ref().is_some_and(|v| str_bad(v)),
+                    Action::Execute { script } => str_bad(script),
+                    Action::If {
+                        condition,
+                        then,
+                        r#else,
+                    } => {
+                        cond_bad(condition)
+                            || then.iter().any(act_bad)
+                            || r#else.as_ref().is_some_and(|v| v.iter().any(act_bad))
+                    }
+                    Action::Loop {
+                        condition, actions, ..
+                    } => condition.as_ref().is_some_and(cond_bad) || actions.iter().any(act_bad),
+                    Action::Call { task, parameters } => {
+                        str_bad(task)
+                            || parameters.as_ref().is_some_and(|m| {
+                                m.keys().any(|k| str_bad(k)) || m.values().any(val_bad)
+                            })
+                    }
+                    Action::Log { message, .. } => str_bad(message),
+                    Action::Screenshot { path, selector } => {
+                        path.as_ref().is_some_and(|p| str_bad(p))
+                            || selector.as_ref().is_some_and(|s| str_bad(s))
+                    }
+                    Action::Select {
+                        selector, value, ..
+                    } => str_bad(selector) || str_bad(value),
+                    Action::Parallel { actions, .. } => actions.iter().any(act_bad),
+                    Action::Retry {
+                        actions, retry_on, ..
+                    } => {
+                        actions.iter().any(act_bad)
+                            || retry_on
+                                .as_ref()
+                                .is_some_and(|v| v.iter().any(|s| str_bad(s)))
+                    }
+                    Action::Foreach {
+                        variable,
+                        collection,
+                        actions,
+                        ..
+                    } => {
+                        str_bad(variable)
+                            || match collection {
+                                ForeachCollection::Array { values } => values.iter().any(val_bad),
+                                ForeachCollection::Range { .. } => false,
+                                ForeachCollection::Elements { selector } => str_bad(selector),
+                                ForeachCollection::Variable { name } => str_bad(name),
+                            }
+                            || actions.iter().any(act_bad)
+                    }
+                    Action::While {
+                        condition, actions, ..
+                    } => cond_bad(condition) || actions.iter().any(act_bad),
+                    Action::Try {
+                        try_actions,
+                        catch_actions,
+                        error_variable,
+                        finally_actions,
+                    } => {
+                        try_actions.iter().any(act_bad)
+                            || catch_actions
+                                .as_ref()
+                                .is_some_and(|v| v.iter().any(act_bad))
+                            || error_variable.as_ref().is_some_and(|v| str_bad(v))
+                            || finally_actions
+                                .as_ref()
+                                .is_some_and(|v| v.iter().any(act_bad))
+                    }
+                }
+            }
+
+            if str_bad(&td.name) || str_bad(&td.description) || str_bad(&td.policy) {
+                return true;
+            }
+            for (key, param) in &td.parameters {
+                if str_bad(key)
+                    || str_bad(&param.description)
+                    || param.default.as_ref().is_some_and(val_bad)
+                {
+                    return true;
+                }
+            }
+            for inc in &td.include {
+                if str_bad(&inc.path) || inc.condition.as_ref().is_some_and(|c| str_bad(c)) {
+                    return true;
+                }
+            }
+            td.actions.iter().any(act_bad)
+        }
+
         // ── Task definition strategy ────────────────────────────────────────
 
         fn arb_parameter_def() -> impl Strategy<Value = ParameterDef> {
@@ -1007,14 +1161,7 @@ duration_ms = 200
                 )
                 .prop_filter(
                     "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
-                    |td| {
-                        fn has_unsafe_chars(s: &str) -> bool {
-                            s.contains('\u{2028}') || s.contains('\u{2029}')
-                        }
-                        !has_unsafe_chars(&td.name)
-                            && !has_unsafe_chars(&td.description)
-                            && !has_unsafe_chars(&td.policy)
-                    },
+                    |td| !task_def_contains_unsafe_chars(td),
                 )
         }
 

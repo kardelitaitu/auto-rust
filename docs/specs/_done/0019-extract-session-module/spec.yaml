@@ -1,0 +1,37 @@
+version: 1
+id: 0019-extract-session-module
+title: Extract Session Module Types and Helpers
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P1
+area:
+  - session
+  - modularization
+files:
+  code:
+    - src/session/mod.rs
+    - src/session/connector.rs
+    - src/session/factory.rs
+    - src/session/pool.rs
+    - src/session/cleanup.rs
+  docs:
+    - docs/specs/_done/0019-extract-session-module/plan.md
+    - docs/specs/_done/0019-extract-session-module/validation.md
+acceptance:
+  - "Extract DurationMs struct + 5 impl blocks into session/duration.rs (≤150 lines)"
+  - "Extract WorkerPermit into session/permits.rs (≤100 lines)"
+  - "Extract Session struct + impl #1 (new, page tracking, health, state) into session/session_core.rs (≤400 lines)"
+  - "Extract impl Session #2 (acquire_worker, cb_*, acquire_page, release_page, cleanup_managed_pages, graceful_shutdown) into session/session_ops.rs (≤400 lines)"
+  - "Extract SessionState enum + is_circuit_breaker_open_pure + helpers into session/state.rs (≤200 lines)"
+  - "Shrink session/mod.rs to ≤200 lines (module decls + re-exports + unix_timestamp_secs)"
+  - "All existing tests preserved and passing"
+  - "Re-export chain preserved: crate::session::DurationMs remains accessible"
+  - "cargo check passes; cargo test --lib session passes; cargo clippy clean"
+non_goals:
+  - Do not refactor connector/factory/pool/cleanup internals
+  - Do not change DurationMs API or behavior
+  - Do not modify files outside src/session/
+risks:
+  - "DurationMs is imported by 11 files across the codebase — re-export must be seamless"
+  - "Session struct has complex initialization in factory.rs — must maintain tight coupling"

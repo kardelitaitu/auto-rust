@@ -1,0 +1,30 @@
+version: 1
+id: 0023-extract-result-types
+title: Extract Result Types into Submodules
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P2
+area:
+  - result
+  - modularization
+files:
+  code:
+    - src/result.rs
+  docs:
+    - docs/specs/_done/0023-extract-result-types/plan.md
+    - docs/specs/_done/0023-extract-result-types/validation.md
+acceptance:
+  - "Extract TaskStatus + TaskResult into result/types.rs (≤200 lines)"
+  - "Extract TaskErrorKind enum + impl + Display into result/errors.rs (≤200 lines)"
+  - "Extract RunSummary + Default + Display for TaskStatus into result/summary.rs (≤100 lines)"
+  - "Extract test modules (lines 307-1101, 1102-1400) into result/tests.rs (≤1000 lines)"
+  - "Shrink result.rs to ≤150 lines (module decls + re-exports + RunSummary::default)"
+  - "All existing tests preserved and passing"
+  - "cargo check passes; cargo test --lib result passes; cargo clippy clean"
+non_goals:
+  - Do not change TaskStatus, TaskResult, or TaskErrorKind behavior
+  - Do not modify files outside src/result.rs
+risks:
+  - "TaskResult is widely used across the codebase — re-export must preserve all paths"
+  - "Two test modules (307, 1102) must be carefully split"

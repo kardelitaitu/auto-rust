@@ -419,24 +419,24 @@ fn default_native_interaction_resolve_timeout_ms() -> DurationMs {
 fn default_native_interaction_settle_ms() -> u64 {
     0
 }
-fn default_feed_scan_duration() -> DurationMs {
+pub(crate) fn default_feed_scan_duration() -> DurationMs {
     DurationMs::new_const(60_000)
 }
-fn default_feed_scroll_count() -> u32 {
+pub(crate) fn default_feed_scroll_count() -> u32 {
     10
 }
-fn default_engagement_candidate_count() -> u32 {
+pub(crate) fn default_engagement_candidate_count() -> u32 {
     5
 }
-fn default_twitter_scroll_amount() -> i32 {
+pub(crate) fn default_twitter_scroll_amount() -> i32 {
     0
 }
-fn default_candidate_scan_interval_ms() -> u64 {
+pub(crate) fn default_candidate_scan_interval_ms() -> u64 {
     0
 }
-fn default_max_consecutive_scroll_failures() -> u32 {
+pub(crate) fn default_max_consecutive_scroll_failures() -> u32 {
     3
 }
-fn default_max_consecutive_empty_scans() -> u32 {
+pub(crate) fn default_max_consecutive_empty_scans() -> u32 {
     3
 }

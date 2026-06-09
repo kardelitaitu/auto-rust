@@ -1,474 +1,14 @@
-//! Unified sentiment analyzer using the Strategy Pattern.
-//! Provides configurable sentiment analysis with basic and enhanced modes.
+//! Core sentiment analyzer using the Strategy Pattern.
+//!
+//! Extracted from `sentiment/analyzer.rs` — spec 0020.
 
-use crate::internal::text::truncate_chars;
-use crate::llm::client::LlmClient;
-
-use super::strategies::{domain, emoji, llm as llm_strategy};
+use super::helpers::{extract_tweet_text, score_to_sentiment, sentiment_to_score};
+use super::strategies::llm as llm_strategy;
+use super::types::*;
 use super::SentimentStrategy;
+use crate::llm::client::LlmClient;
 use serde_json::Value;
 use tracing::instrument;
-
-// ============================================================================
-// Strategy Constants and Functions
-// ============================================================================
-
-/// Negation patterns that flip sentiment polarity.
-const NEGATION_PATTERNS: &[&str] = &[
-    "not",
-    "no",
-    "never",
-    "neither",
-    "nobody",
-    "nothing",
-    "nor",
-    "can't",
-    "cant",
-    "couldn't",
-    "couldnt",
-    "shouldn't",
-    "shouldnt",
-    "wouldn't",
-    "wouldnt",
-    "don't",
-    "dont",
-    "doesn't",
-    "doesnt",
-    "didn't",
-    "didnt",
-    "isn't",
-    "isnt",
-    "aren't",
-    "arent",
-    "wasn't",
-    "wasnt",
-    "weren't",
-    "werent",
-    "without",
-    "lack",
-    "lacking",
-    "absent",
-    "hardly",
-    "barely",
-    "scarcely",
-    "little",
-    "few",
-    "nowhere",
-    "nothing",
-];
-
-/// Intensifiers that amplify sentiment (multiplier > 1.0).
-const INTENSIFIERS: &[(&str, f32)] = &[
-    ("very", 1.5),
-    ("really", 1.5),
-    ("extremely", 2.0),
-    ("incredibly", 2.0),
-    ("absolutely", 2.0),
-    ("totally", 1.8),
-    ("completely", 1.8),
-    ("utterly", 2.0),
-    ("highly", 1.5),
-    ("super", 1.5),
-    ("so", 1.3),
-    ("quite", 1.2),
-    ("rather", 1.2),
-    ("pretty", 1.2),
-    ("damn", 1.8),
-    ("fucking", 2.0),
-    ("frigging", 1.8),
-    ("bloody", 1.8),
-    ("truly", 1.5),
-    ("genuinely", 1.3),
-    ("honestly", 1.3),
-    ("actually", 1.2),
-    ("especially", 1.5),
-    ("particularly", 1.4),
-    ("exceptionally", 2.0),
-    ("remarkably", 1.8),
-    ("extraordinarily", 2.0),
-];
-
-/// Sarcasm markers and patterns that indicate inverted meaning.
-const SARCASM_PATTERNS: &[&str] = &[
-    "oh great",
-    "oh wonderful",
-    "oh perfect",
-    "oh good",
-    "oh fantastic",
-    "sure, because",
-    "yeah right",
-    "as if",
-    "as though",
-    "thanks, i hate it",
-    "tanks, i hate it",
-    "thx i hate it",
-    "just what i needed",
-    "exactly what i wanted",
-    "because that's what i need",
-    "because that's what i wanted",
-    "thanks twitter",
-    "thx twitter",
-    "cool cool cool",
-    "sure sure",
-    "okay sure",
-    "what could go wrong",
-    "how hard could it be",
-    "famous last words",
-    "we'll see about that",
-];
-
-/// Calculate context-aware sentiment score for a word.
-fn calculate_contextual_score(text: &str, base_score: f32, target_word: &str) -> f32 {
-    let mut score = base_score;
-    let multiplier = get_intensifier_multiplier(text, target_word);
-    score *= multiplier;
-    if is_negated(text, target_word) {
-        score = -score;
-    }
-    score
-}
-
-fn is_negated(text: &str, target_word: &str) -> bool {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let target_lower = target_word.to_lowercase();
-    for (i, word) in words.iter().enumerate() {
-        if word.to_lowercase() == target_lower {
-            let start = i.saturating_sub(3);
-            if words
-                .iter()
-                .take(i)
-                .skip(start)
-                .any(|prev| NEGATION_PATTERNS.iter().any(|&n| prev.to_lowercase() == n))
-            {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn get_intensifier_multiplier(text: &str, target_word: &str) -> f32 {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let target_lower = target_word.to_lowercase();
-    for (i, word) in words.iter().enumerate() {
-        if word.to_lowercase() == target_lower {
-            let start = i.saturating_sub(2);
-            if let Some((_, multiplier)) = words.iter().take(i).skip(start).find_map(|prev| {
-                INTENSIFIERS
-                    .iter()
-                    .find(|(intensifier, _)| prev.to_lowercase() == *intensifier)
-            }) {
-                return *multiplier;
-            }
-        }
-    }
-    1.0
-}
-
-fn analyze_contextual_modifiers(text: &str) -> f32 {
-    let mut modifier = 0.0;
-    if has_sarcasm_markers(text) {
-        modifier -= 2.0;
-    }
-    if is_excessive_punctuation(text) {
-        modifier -= 0.5;
-    }
-    modifier
-}
-
-fn has_sarcasm_markers(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    SARCASM_PATTERNS
-        .iter()
-        .any(|&pattern| lower.contains(pattern))
-}
-
-fn is_excessive_punctuation(text: &str) -> bool {
-    let exclamation_count = text.matches('!').count();
-    let question_count = text.matches('?').count();
-    text.contains("?!") || text.contains("!?") || exclamation_count > 2 || question_count > 2
-}
-
-// ============================================================================
-// Strategy Structs and Impls
-// ============================================================================
-
-#[derive(Debug)]
-pub struct BasicKeywordStrategy;
-
-#[derive(Debug)]
-pub struct ContextStrategy;
-
-#[derive(Debug)]
-pub struct EmojiStrategy;
-
-#[derive(Debug)]
-pub struct DomainStrategy;
-
-impl SentimentStrategy for BasicKeywordStrategy {
-    fn analyze(&self, text: &str) -> f32 {
-        let mut score = 0.0;
-        let lower = text.to_lowercase();
-        for &word in POSITIVE_WORDS {
-            if crate::utils::twitter::sentiment::utils::contains_word(&lower, word) {
-                score += calculate_contextual_score(&lower, 1.0, word);
-            }
-        }
-        for &word in NEGATIVE_WORDS {
-            if crate::utils::twitter::sentiment::utils::contains_word(&lower, word) {
-                score += calculate_contextual_score(&lower, -1.0, word);
-            }
-        }
-        score
-    }
-}
-
-impl SentimentStrategy for ContextStrategy {
-    fn analyze(&self, text: &str) -> f32 {
-        analyze_contextual_modifiers(text)
-    }
-}
-
-impl SentimentStrategy for EmojiStrategy {
-    fn analyze(&self, text: &str) -> f32 {
-        emoji::analyze_emoji_sentiment(text)
-    }
-}
-
-impl SentimentStrategy for DomainStrategy {
-    #[allow(clippy::unused_self)]
-    fn analyze(&self, text: &str) -> f32 {
-        let d = domain::detect_domain(text);
-        domain::analyze_domain_sentiment(text, d)
-    }
-}
-
-// ============================================================================
-// Keyword Lists
-// ============================================================================
-
-const POSITIVE_WORDS: &[&str] = &[
-    "good",
-    "great",
-    "awesome",
-    "amazing",
-    "excellent",
-    "love",
-    "like",
-    "nice",
-    "wonderful",
-    "fantastic",
-    "best",
-    "happy",
-    "glad",
-    "joy",
-    "cool",
-    "brilliant",
-    "thank",
-    "thanks",
-    "appreciate",
-    "beautiful",
-    "perfect",
-    "ideal",
-    "superb",
-    "outstanding",
-    "impressive",
-    "enjoy",
-    "fun",
-    "yes",
-    "win",
-    "won",
-    "celebrate",
-    "congrats",
-    "congratulations",
-    "well done",
-    "welldone",
-    "spot on",
-    "correct",
-    "right",
-    "smart",
-    "wise",
-    "kind",
-    "friendly",
-    "helpful",
-    "support",
-    "bless",
-    "marvelous",
-    "pleasure",
-    "delighted",
-    "thrilled",
-    "excited",
-    "yay",
-    "😊",
-    "❤️",
-    "🔥",
-    "💯",
-    "👏",
-];
-
-const NEGATIVE_WORDS: &[&str] = &[
-    "bad",
-    "terrible",
-    "awful",
-    "worst",
-    "hate",
-    "dislike",
-    "horrible",
-    "disgusting",
-    "poor",
-    "sad",
-    "angry",
-    "mad",
-    "upset",
-    "annoyed",
-    "disappointed",
-    "fail",
-    "failed",
-    "failure",
-    "wrong",
-    "error",
-    "mistake",
-    "bug",
-    "broken",
-    "useless",
-    "waste",
-    "sucks",
-    "sucked",
-    "suck",
-    "hell",
-    "shit",
-    "damn",
-    "fuck",
-    "fucking",
-    "idiot",
-    "stupid",
-    "dumb",
-    "ridiculous",
-    "absurd",
-    "fake",
-    "scam",
-    "liar",
-    "lies",
-    "lying",
-    "toxic",
-    "abuse",
-    "abusive",
-    "harassment",
-    "harassing",
-    "block",
-    "report",
-    "spam",
-    "spammer",
-    "clown",
-    "joke",
-    "pathetic",
-    "disaster",
-    "mess",
-    "nightmare",
-    "regret",
-    "depressing",
-    "depressed",
-    "anxious",
-    "anxiety",
-    "cry",
-    "crying",
-    "😢",
-    "😡",
-    "💩",
-];
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Sentiment {
-    Positive,
-    Neutral,
-    Negative,
-}
-
-#[derive(Debug, Clone)]
-pub struct ThreadContext {
-    pub reply_count: u32,
-    pub avg_reply_sentiment: f32,
-    pub is_reply: bool,
-    pub is_quote: bool,
-    pub thread_depth: u32,
-    pub conversation_indicators: Vec<ConversationIndicator>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ConversationIndicator {
-    Agreement,
-    Disagreement,
-    Question,
-    Clarification,
-    Humor,
-    Sarcasm,
-    Support,
-    Criticism,
-}
-
-#[derive(Debug, Clone)]
-pub struct UserReputation {
-    pub follower_count: u32,
-    pub is_verified: bool,
-    pub account_age_days: u32,
-    pub engagement_rate: f32,
-    pub is_influential: bool,
-    pub trust_score: f32,
-}
-
-#[derive(Debug, Clone)]
-pub struct TemporalFactors {
-    pub hour_of_day: u8,
-    pub day_of_week: u8,
-    pub hours_since_post: f32,
-    pub is_peak_hour: bool,
-    pub trending_bias: f32,
-}
-
-#[derive(Debug, Clone)]
-pub struct EnhancedSentimentResult {
-    pub base_sentiment: Sentiment,
-    pub final_sentiment: Sentiment,
-    pub base_score: f32,
-    pub final_score: f32,
-    pub confidence: f32,
-    pub score_breakdown: ScoreBreakdown,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ScoreBreakdown {
-    pub text_score: f32,
-    pub emoji_score: f32,
-    pub domain_score: f32,
-    pub context_score: f32,
-    pub reputation_score: f32,
-    pub temporal_score: f32,
-}
-
-#[derive(Debug, Clone)]
-pub struct SentimentConfig {
-    pub use_basic_keywords: bool,
-    pub use_context: bool,
-    pub use_emoji: bool,
-    pub use_domain: bool,
-    pub use_llm: bool,
-    pub llm_min_confidence: f32,
-    pub llm_probability: f32,
-}
-
-impl Default for SentimentConfig {
-    fn default() -> Self {
-        Self {
-            use_basic_keywords: true,
-            use_context: true,
-            use_emoji: true,
-            use_domain: true,
-            use_llm: false,
-            llm_min_confidence: 0.7,
-            llm_probability: 0.5,
-        }
-    }
-}
 
 pub struct SentimentAnalyzer {
     config: SentimentConfig,
@@ -502,16 +42,16 @@ impl SentimentAnalyzer {
     pub fn with_config(config: SentimentConfig) -> Self {
         let mut strategies: Vec<Box<dyn SentimentStrategy>> = Vec::new();
         if config.use_basic_keywords {
-            strategies.push(Box::new(BasicKeywordStrategy));
+            strategies.push(Box::new(super::strategies::basic::BasicKeywordStrategy));
         }
         if config.use_context {
-            strategies.push(Box::new(ContextStrategy));
+            strategies.push(Box::new(super::strategies::context::ContextStrategy));
         }
         if config.use_emoji {
-            strategies.push(Box::new(EmojiStrategy));
+            strategies.push(Box::new(super::strategies::emoji::EmojiStrategy));
         }
         if config.use_domain {
-            strategies.push(Box::new(DomainStrategy));
+            strategies.push(Box::new(super::strategies::domain::DomainStrategy));
         }
         Self {
             config,
@@ -756,6 +296,8 @@ impl SentimentAnalyzer {
             modifier += 0.03;
         }
         modifier += temporal.trending_bias * 0.08;
+        // Recency contribution: fresh tweets get a boost, stale ones get a penalty
+        modifier += (temporal.recency - 0.5) * 0.1;
         modifier
     }
 
@@ -776,8 +318,9 @@ impl SentimentAnalyzer {
     #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn calculate_factor_agreement(&self, breakdown: &ScoreBreakdown) -> f32 {
-        // reputation_score and temporal_score are stub values (hardcoded), so exclude them
-        // from factor agreement to avoid false signals.
+        // reputation_score and temporal_score are computed from reputation/temporal
+        // analysis, but excluded from factor agreement since they rely on external
+        // context (not purely text-based sentiment signals).
         let factors = vec![
             breakdown.text_score,
             breakdown.emoji_score,
@@ -798,255 +341,36 @@ impl SentimentAnalyzer {
     }
 }
 
-#[must_use]
-pub fn sentiment_score(sentiment: Sentiment) -> i32 {
-    match sentiment {
-        Sentiment::Positive => 1,
-        Sentiment::Neutral => 0,
-        Sentiment::Negative => -1,
-    }
-}
-
+/// Analyzes a tweet JSON object asynchronously.
 pub async fn analyze_tweet_sentiment(analyzer: &SentimentAnalyzer, tweet_obj: &Value) -> Sentiment {
     let text = extract_tweet_text(tweet_obj);
     analyzer.analyze_sentiment(&text).await
 }
 
+/// Analyzes a tweet JSON object synchronously.
 #[must_use]
 pub fn analyze_tweet_sentiment_sync(analyzer: &SentimentAnalyzer, tweet_obj: &Value) -> Sentiment {
     let text = extract_tweet_text(tweet_obj);
     analyzer.analyze_sentiment_sync(&text)
 }
 
-fn extract_tweet_text(tweet_obj: &Value) -> String {
-    if let Some(text) = tweet_obj.get("text").and_then(|v| v.as_str()) {
-        return text.to_string();
-    }
-    if let Some(full) = tweet_obj.get("full_text").and_then(|v| v.as_str()) {
-        return full.to_string();
-    }
-    if let Some(obj) = tweet_obj.as_object() {
-        if let Some(rt) = obj.get("retweeted_status") {
-            return extract_tweet_text(rt);
-        }
-    }
-    truncate_chars(&tweet_obj.to_string(), 280)
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct SentimentStats {
-    pub positive: u32,
-    pub neutral: u32,
-    pub negative: u32,
-}
-
-impl SentimentStats {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn add(&mut self, s: Sentiment) {
-        match s {
-            Sentiment::Positive => self.positive += 1,
-            Sentiment::Neutral => self.neutral += 1,
-            Sentiment::Negative => self.negative += 1,
-        }
-    }
-    #[must_use]
-    pub fn dominant(&self) -> Sentiment {
-        if self.positive > self.neutral && self.positive > self.negative {
-            Sentiment::Positive
-        } else if self.negative > self.neutral && self.negative > self.positive {
-            Sentiment::Negative
-        } else {
-            Sentiment::Neutral
-        }
-    }
-    #[must_use]
-    pub fn total(&self) -> u32 {
-        self.positive + self.neutral + self.negative
-    }
-}
-
-#[must_use]
-pub fn feed_sentiment_score(stats: &SentimentStats) -> f64 {
-    let total = f64::from(stats.total());
-    if total == 0.0 {
-        return 0.0;
-    }
-    (f64::from(stats.positive) / total) - (f64::from(stats.negative) / total)
-}
-
-fn sentiment_to_score(s: Sentiment) -> f32 {
-    match s {
-        Sentiment::Positive => 1.0,
-        Sentiment::Neutral => 0.0,
-        Sentiment::Negative => -1.0,
-    }
-}
-
-fn score_to_sentiment(score: f32) -> Sentiment {
-    if score > 0.3 {
-        Sentiment::Positive
-    } else if score < -0.3 {
-        Sentiment::Negative
-    } else {
-        Sentiment::Neutral
-    }
-}
-
-#[must_use]
-pub fn analyze_sentiment_sync(text: &str) -> Sentiment {
-    SentimentAnalyzer::new().analyze_sentiment_sync(text)
-}
-
-#[must_use]
-#[allow(clippy::cast_precision_loss)]
-pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
-    let reply_count = tweet_obj
-        .get("replies")
-        .and_then(|v| v.as_array())
-        .map_or(0, |a| a.len() as u32);
-    let mut reply_scores = Vec::new();
-    if let Some(replies) = tweet_obj.get("replies").and_then(|v| v.as_array()) {
-        for reply in replies {
-            if let Some(text) = reply.get("text").and_then(|v| v.as_str()) {
-                reply_scores.push(sentiment_to_score(analyze_sentiment_sync(text)));
-            }
-        }
-    }
-    let avg_reply_sentiment = if reply_scores.is_empty() {
-        0.0
-    } else {
-        reply_scores.iter().sum::<f32>() / reply_scores.len() as f32
-    };
-    let tweet_text = extract_tweet_text(tweet_obj);
-    Some(ThreadContext {
-        reply_count,
-        avg_reply_sentiment,
-        is_reply: false,
-        is_quote: false,
-        thread_depth: 0,
-        conversation_indicators: detect_conversation_indicators(&tweet_text),
-    })
-}
-
-/// Extracts user reputation from a tweet object.
-///
-/// **NOTE: This is a stub.** It returns hardcoded default values regardless of input.
-/// TODO: Implement actual extraction using tweet author data (follower count, verification status, etc.).
-/// Currently excluded from `calculate_factor_agreement()` to avoid false signals.
-#[must_use]
-pub fn extract_user_reputation(_tweet_obj: &Value) -> Option<UserReputation> {
-    log::warn!(
-        "extract_user_reputation is a stub — returning hardcoded defaults (ignoring tweet data)"
-    );
-    Some(UserReputation {
-        follower_count: 1000,
-        is_verified: false,
-        account_age_days: 365,
-        engagement_rate: 0.05,
-        is_influential: false,
-        trust_score: 0.5,
-    })
-}
-
-/// Extracts temporal factors from a tweet object.
-///
-/// **NOTE: This is a stub.** It returns hardcoded default values regardless of input.
-/// TODO: Implement actual extraction using tweet timestamp and current time.
-/// Currently excluded from `calculate_factor_agreement()` to avoid false signals.
-#[must_use]
-pub fn extract_temporal_factors(_tweet_obj: &Value) -> Option<TemporalFactors> {
-    log::warn!(
-        "extract_temporal_factors is a stub — returning hardcoded defaults (ignoring tweet data)"
-    );
-    Some(TemporalFactors {
-        hour_of_day: 12,
-        day_of_week: 1,
-        hours_since_post: 24.0,
-        is_peak_hour: true,
-        trending_bias: 0.0,
-    })
-}
-
-#[must_use]
-pub fn detect_conversation_indicators(text: &str) -> Vec<ConversationIndicator> {
-    let lower = text.to_lowercase();
-    let mut indicators = Vec::new();
-    if AGREEMENT_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Agreement);
-    }
-    if DISAGREEMENT_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Disagreement);
-    }
-    if QUESTION_PATTERNS.iter().any(|&p| lower.contains(p)) || text.contains('?') {
-        indicators.push(ConversationIndicator::Question);
-    }
-    if CLARIFICATION_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Clarification);
-    }
-    if HUMOR_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Humor);
-    }
-    if SUPPORT_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Support);
-    }
-    if CRITICISM_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Criticism);
-    }
-    if SARCASM_INDICATORS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Sarcasm);
-    }
-    indicators
-}
-
-const AGREEMENT_PATTERNS: &[&str] = &[
-    "i agree",
-    "totally agree",
-    "absolutely",
-    "exactly",
-    "you're right",
-    "well said",
-];
-const DISAGREEMENT_PATTERNS: &[&str] = &[
-    "i disagree",
-    "totally disagree",
-    "you're wrong",
-    "not sure",
-    "doubt it",
-];
-const QUESTION_PATTERNS: &[&str] = &[
-    "what if",
-    "how come",
-    "why is",
-    "what do you",
-    "can you explain",
-];
-const CLARIFICATION_PATTERNS: &[&str] = &[
-    "to clarify",
-    "let me explain",
-    "what i mean",
-    "in other words",
-];
-const HUMOR_PATTERNS: &[&str] = &["lol", "haha", "😂", "🤣", "joke", "funny"];
-const SUPPORT_PATTERNS: &[&str] = &["i support", "good luck", "keep going", "you're doing great"];
-const CRITICISM_PATTERNS: &[&str] = &[
-    "that's bad",
-    "you shouldn't",
-    "that's wrong",
-    "disappointing",
-];
-const SARCASM_INDICATORS: &[&str] = &["oh sure", "yeah right", "as if", "oh please", "oh come on"];
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
+    use super::super::helpers::{
+        analyze_contextual_modifiers, calculate_contextual_score, feed_sentiment_score,
+        get_intensifier_multiplier, has_sarcasm_markers, is_excessive_punctuation, is_negated,
+        sentiment_score,
+    };
     use super::*;
     use serde_json::json;
 
-    // ============================================================================
+    // ========================================================================
     // is_negated Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_is_negated_simple_not() {
@@ -1065,13 +389,11 @@ mod tests {
 
     #[test]
     fn test_is_negated_no_without_comma() {
-        // Without comma, "No" is a separate token matching the negation pattern
         assert!(is_negated("No I hate this", "hate"));
     }
 
     #[test]
     fn test_is_negated_without_no_comma() {
-        // Without comma so "without" is a distinct token adjacent to "doubt"
         assert!(is_negated("without doubt this is bad", "doubt"));
     }
 
@@ -1087,14 +409,11 @@ mod tests {
 
     #[test]
     fn test_is_negated_without_adjacent_no_comma() {
-        // "without" adjacent to "doubt" without comma separator works
         assert!(is_negated("without doubt this is bad", "doubt"));
     }
 
     #[test]
     fn test_is_negated_punctuation_breaks_word_match() {
-        // Comma attached to target word prevents matching
-        // "doubt,".to_lowercase() != "doubt"
         assert!(!is_negated("without doubt, this is bad", "doubt"));
     }
 
@@ -1145,7 +464,6 @@ mod tests {
 
     #[test]
     fn test_is_negated_negation_too_far() {
-        // "not" is more than 3 words before "great"
         assert!(!is_negated("I do not think this is great", "great"));
     }
 
@@ -1154,9 +472,9 @@ mod tests {
         assert!(is_negated("This is not great", "great"));
     }
 
-    // ============================================================================
+    // ========================================================================
     // get_intensifier_multiplier Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_get_intensifier_multiplier_very() {
@@ -1201,7 +519,6 @@ mod tests {
 
     #[test]
     fn test_get_intensifier_multiplier_far_intensifier() {
-        // intensifier too far from target word (>2 words gap)
         assert_eq!(
             get_intensifier_multiplier("very something else good", "good"),
             1.0
@@ -1215,19 +532,17 @@ mod tests {
 
     #[test]
     fn test_get_intensifier_multiplier_never_is_not_intensifier() {
-        // "never" is a negation, not an intensifier
         assert_eq!(get_intensifier_multiplier("never good", "good"), 1.0);
     }
 
     #[test]
     fn test_get_intensifier_multiplier_multiple_intensifiers_uses_closest() {
-        // "very" is closest to "good"
         assert_eq!(get_intensifier_multiplier("really very good", "good"), 1.5);
     }
 
-    // ============================================================================
+    // ========================================================================
     // calculate_contextual_score Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_calculate_contextual_score_positive_no_modifiers() {
@@ -1269,9 +584,9 @@ mod tests {
         assert_eq!(score, -1.5);
     }
 
-    // ============================================================================
+    // ========================================================================
     // has_sarcasm_markers Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_has_sarcasm_markers_oh_great() {
@@ -1383,9 +698,9 @@ mod tests {
         assert!(has_sarcasm_markers("Okay sure, sounds great"));
     }
 
-    // ============================================================================
+    // ========================================================================
     // is_excessive_punctuation Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_is_excessive_punctuation_multiple_exclamation() {
@@ -1437,9 +752,9 @@ mod tests {
         assert!(is_excessive_punctuation("Wow!!!!"));
     }
 
-    // ============================================================================
+    // ========================================================================
     // analyze_contextual_modifiers Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_analyze_contextual_modifiers_no_sarcasm_no_punctuation() {
@@ -1464,9 +779,9 @@ mod tests {
         assert_eq!(modifier, -2.5);
     }
 
-    // ============================================================================
+    // ========================================================================
     // score_to_sentiment / sentiment_score Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_score_to_sentiment_positive_above_threshold() {
@@ -1524,9 +839,9 @@ mod tests {
         assert_eq!(sentiment_score(Sentiment::Negative), -1);
     }
 
-    // ============================================================================
+    // ========================================================================
     // SentimentStats Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_sentiment_stats_new() {
@@ -1626,14 +941,6 @@ mod tests {
     }
 
     #[test]
-    fn test_feed_sentiment_score_all_positive() {
-        let mut stats = SentimentStats::new();
-        stats.add(Sentiment::Positive);
-        stats.add(Sentiment::Positive);
-        assert!((feed_sentiment_score(&stats) - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
     fn test_feed_sentiment_score_mixed() {
         let mut stats = SentimentStats::new();
         stats.add(Sentiment::Positive);
@@ -1642,18 +949,25 @@ mod tests {
     }
 
     #[test]
+    fn test_feed_sentiment_score_all_positive() {
+        let mut stats = SentimentStats::new();
+        stats.add(Sentiment::Positive);
+        stats.add(Sentiment::Positive);
+        assert!((feed_sentiment_score(&stats) - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn test_feed_sentiment_score_two_positive_one_negative() {
         let mut stats = SentimentStats::new();
         stats.add(Sentiment::Positive);
         stats.add(Sentiment::Positive);
         stats.add(Sentiment::Negative);
-        // (2/3) - (1/3) = 1/3
         assert!((feed_sentiment_score(&stats) - 0.333333).abs() < 0.01);
     }
 
-    // ============================================================================
+    // ========================================================================
     // extract_tweet_text Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_extract_tweet_text_full_text_field() {
@@ -1674,6 +988,10 @@ mod tests {
         });
         assert_eq!(extract_tweet_text(&tweet), "Original tweet text");
     }
+
+    // ========================================================================
+    // SentimentAnalyzer Tests
+    // ========================================================================
 
     #[tokio::test]
     async fn test_analyze_sentiment_async_positive() {
@@ -1701,10 +1019,6 @@ mod tests {
         assert_eq!(analyzer.analyze_sentiment("").await, Sentiment::Neutral);
     }
 
-    // ============================================================================
-    // analyze_tweet_sentiment / analyze_tweet_sentiment_sync Tests
-    // ============================================================================
-
     #[test]
     fn test_analyze_tweet_sentiment_sync_positive() {
         let analyzer = SentimentAnalyzer::new();
@@ -1726,8 +1040,20 @@ mod tests {
     }
 
     #[test]
+    fn test_analyze_tweet_sentiment_sync_retweet_uses_outer_text() {
+        let analyzer = SentimentAnalyzer::new();
+        let tweet = json!({
+            "text": "RT",
+            "retweeted_status": { "text": "I love this!" }
+        });
+        assert_eq!(
+            analyze_tweet_sentiment_sync(&analyzer, &tweet),
+            Sentiment::Neutral
+        );
+    }
+
+    #[test]
     fn test_analyze_tweet_sentiment_sync_full_text_field() {
-        // When only full_text is present, it is used
         let analyzer = SentimentAnalyzer::new();
         let tweet = json!({ "full_text": "Full text tweet with love" });
         assert_eq!(
@@ -1737,23 +1063,7 @@ mod tests {
     }
 
     #[test]
-    fn test_analyze_tweet_sentiment_sync_retweet_uses_outer_text() {
-        // "text" field takes priority over retweeted_status
-        let analyzer = SentimentAnalyzer::new();
-        let tweet = json!({
-            "text": "RT",
-            "retweeted_status": { "text": "I love this!" }
-        });
-        // "RT" alone has no sentiment keywords => Neutral
-        assert_eq!(
-            analyze_tweet_sentiment_sync(&analyzer, &tweet),
-            Sentiment::Neutral
-        );
-    }
-
-    #[test]
     fn test_analyze_tweet_sentiment_sync_retweet_no_outer_text() {
-        // When outer has no text field, retweeted_status text is used
         let analyzer = SentimentAnalyzer::new();
         let tweet = json!({
             "retweeted_status": { "text": "I love this!" }
@@ -1764,9 +1074,9 @@ mod tests {
         );
     }
 
-    // ============================================================================
+    // ========================================================================
     // SentimentConfig Tests
-    // ============================================================================
+    // ========================================================================
 
     #[test]
     fn test_sentiment_config_default() {

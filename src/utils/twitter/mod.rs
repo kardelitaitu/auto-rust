@@ -36,9 +36,8 @@ pub mod twitteractivity_simulation;
 pub mod twitteractivity_state;
 pub mod unified_processor;
 
-#[allow(unused_imports)]
+#[allow(unused_imports, ambiguous_glob_reexports)]
 pub use decision::*;
-#[allow(unused_imports)]
 pub use reply_engine::*;
 #[allow(unused_imports)]
 pub use sentiment::*;

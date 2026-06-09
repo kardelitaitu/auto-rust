@@ -1,0 +1,34 @@
+version: 1
+id: 0021-extract-mouse-helpers
+title: Further Extract Mouse Helpers into Submodules
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P2
+area:
+  - mouse
+  - modularization
+files:
+  code:
+    - src/utils/mouse.rs
+    - src/utils/mouse/native.rs
+    - src/utils/mouse/trajectory.rs
+    - src/utils/mouse/types.rs
+  docs:
+    - docs/specs/_done/0021-extract-mouse-helpers/plan.md
+    - docs/specs/_done/0021-extract-mouse-helpers/validation.md
+acceptance:
+  - "Extract curve generators (bezier, arc, zigzag, overshoot, stopped, muscle) into mouse/curves.rs (≤300 lines)"
+  - "Extract CDP mapping helpers (map_cdp_button, mouse_button_mask, map_cdp_event_type) into mouse/cdp.rs (≤150 lines)"
+  - "Extract overlay logic (overlay_state_for_page, set_overlay_enabled, is_overlay_enabled) into mouse/overlay.rs (≤100 lines)"
+  - "Extract adaptive config (calculate_adaptive_cursor_config, detect_element_type) into mouse/adaptive.rs (≤350 lines)"
+  - "Shrink mouse.rs from 2,705 to ≤2100 lines (core orchestration + re-exports)"
+  - "All 63 existing mouse tests preserved and passing"
+  - "cargo check passes; cargo test --lib mouse passes; cargo clippy clean"
+non_goals:
+  - Do not change cursor movement algorithms or CDP protocol handling
+  - Do not refactor native.rs (758 lines) or trajectory.rs (611 lines) internals
+  - Do not modify files outside src/utils/mouse/
+risks:
+  - "Mouse functions are tightly coupled — curve generators depend on trajectory.rs, adaptive config depends on types.rs"
+  - "Many private helper functions; must use pub(crate) for cross-submodule access"

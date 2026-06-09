@@ -1,0 +1,34 @@
+version: 1
+id: 0020-extract-sentiment-analyzer
+title: Extract Sentiment Analyzer Types and Strategies
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P1
+area:
+  - sentiment
+  - modularization
+  - twitter
+files:
+  code:
+    - src/utils/twitter/sentiment/analyzer.rs
+    - src/utils/twitter/sentiment/strategies/
+  docs:
+    - docs/specs/_done/0020-extract-sentiment-analyzer/plan.md
+    - docs/specs/_done/0020-extract-sentiment-analyzer/validation.md
+acceptance:
+  - "Extract data types (Sentiment, ThreadContext, ConversationIndicator, UserReputation, TemporalFactors, EnhancedSentimentResult, ScoreBreakdown, SentimentConfig, SentimentStats) into sentiment/types.rs (≤400 lines)"
+  - "Extract 4 strategy structs + impls (BasicKeyword, Context, Emoji, Domain) into sentiment/strategies/ dir (≤200 each)"
+  - "Extract SentimentAnalyzer struct + impl into sentiment/analyzer_core.rs (≤500 lines)"
+  - "Extract helper functions (extract_tweet_text, sentiment_score, feed_sentiment_score, etc.) into sentiment/helpers.rs (≤400 lines)"
+  - "Shrink sentiment/analyzer.rs to module re-exports (≤50 lines)"
+  - "Fix 2 TODO stubs: author_prestige() and tweet_recency()"
+  - "All existing tests preserved and passing"
+  - "cargo check passes; cargo test --lib sentiment passes; cargo clippy clean"
+non_goals:
+  - Do not change sentiment scoring algorithm behavior
+  - Do not modify strategy implementations
+  - Do not modify files outside src/utils/twitter/sentiment/
+risks:
+  - "SentimentAnalyzer references all 4 strategies via Arc<RwLock<>> — cross-module imports must be correct"
+  - "Strategy trait is in strategies/ dir — maintaining trait coherence across submodules"

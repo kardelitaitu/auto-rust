@@ -1,6 +1,18 @@
 //! Domain-specific sentiment analysis strategy.
 
+use super::super::SentimentStrategy;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug)]
+pub struct DomainStrategy;
+
+impl SentimentStrategy for DomainStrategy {
+    #[allow(clippy::unused_self)]
+    fn analyze(&self, text: &str) -> f32 {
+        let d = detect_domain(text);
+        analyze_domain_sentiment(text, d)
+    }
+}
 
 /// Domain types for sentiment analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, Default)]

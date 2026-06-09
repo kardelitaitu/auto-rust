@@ -1641,3 +1641,65 @@ The Bacon gated-LLM pipeline is now fully implemented. The system is a **Config 
 | Spec line budgets | ✅ Updated |
 | Active specs | ✅ 0 remaining |
 | Repo gate | ✅ Pass |
+
+---
+
+## 2026-06-10 (continued) — Spec 0018 extract config submodules
+
+### Accomplished This Session
+
+#### Spec 0018 Review
+- Cross-referenced plan.md against actual 3637-line config/mod.rs
+- Found 6 inconsistencies:
+  1. `from_env_value()`/`as_str()` assigned to env.rs but are enum impl methods → moved to types.rs
+  2. `TwitterLLMConfig`/`TracingConfig` use `#[derive(Default)]` not manual impls
+  3. `ConfigValidationReport` missing from extraction mapping (~150 lines)
+  4. `load_code_config()`/`load_dotenv_defaults()` missing from env.rs mapping
+  5. mod.rs ≤200 impossible with inline tests → extracted tests.rs, mod.rs target clarified
+  6. `load_from_file()` doesn't exist → replaced with `load_config()` throughout
+- Fixed all 6 in plan.md, spec.yaml, baseline.md; spec-lint passes
+
+#### Spec 0018 — Extract Config Submodules (implemented)
+- **`config/mod.rs`**: 3637 → 632 lines — module decls + re-exports + `load_config()` + `validate_config()` + `ConfigValidationReport`
+- Created 4 new submodules:
+  - `types.rs` (442): 13 structs + 2 enums + `default_*()` helper fns + inline Default impls (`NativeInteractionConfig`, `TwitterProbabilitiesConfig`, `EngagementLimitsConfig`, `TaskDiscoveryConfig`)
+  - `defaults.rs` (104): 6 standalone Default impls (`TwitterActivityConfig`, `BrowserConfig`, `OrchestratorConfig`, `CircuitBreakerConfig`, `RoxybrowserConfig`, `BrowserProfile`)
+  - `env.rs` (331): `load_dotenv_defaults()`, `load_code_config()`, `apply_env_overrides()` with all env-var parsing
+  - `tests.rs` (2053): ~60 config test functions extracted verbatim
+
+#### Implementation Fixes
+- **Visibility bug**: 7 `default_*()` functions in `types.rs` were `fn` (private) but called from `defaults.rs` via `super::types::`. Changed to `pub(crate)`.
+- **Missing function**: `validate_config()` was between `apply_env_overrides` and `ConfigValidationReport` in original but missed during extraction. Added back to mod.rs.
+- Cleaned up backup file `mod_old_backup.rs` after verification.
+
+#### Spec Maintenance
+- Archived `0018-extract-config-submodules` from `_active/` to `_done/`
+- `docs/specs/_active/README.md`: Cleared (no active specs)
+
+#### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo check` | ✅ Pass (0 errors, 6 pre-existing warnings) |
+| `cargo test --lib config` | ✅ 170 passed, 0 failed, 1 ignored |
+| `cargo test --lib` | ✅ 3310 passed, 1 pre-existing flaky, 6 ignored |
+| `cargo clippy --all-targets --all-features` | ✅ 0 new warnings |
+| `spec-lint.ps1` | ✅ Pass |
+
+#### Files Changed
+
+**New:**
+- `src/config/types.rs`, `defaults.rs`, `env.rs`, `tests.rs`
+
+**Modified:**
+- `src/config/mod.rs` — 3637→632 lines
+- `docs/specs/_active/0018-extract-config-submodules/spec.yaml`, `plan.md`, `baseline.md`
+- `docs/specs/_active/README.md`
+- `JOURNAL.md` — this entry
+
+| Item | Status |
+|------|--------|
+| Spec 0018 review | ✅ 6 issues fixed |
+| Spec 0018 implementation | ✅ Done → archived |
+| Active specs | ✅ 0 remaining |
+| Repo gate | ✅ Pass |

@@ -3,6 +3,7 @@
 //! Provides the `TaskPolicy` and `TaskPermissions` structs for controlling
 //! what capabilities a task may use, plus a registry mapping task names to policies.
 
+use crate::session::DurationMs;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -16,7 +17,7 @@ use std::collections::HashMap;
 pub struct TaskPolicy {
     /// Maximum execution time in milliseconds (MANDATORY).
     /// Task will be killed after this duration.
-    pub max_duration_ms: u64,
+    pub max_duration_ms: DurationMs,
 
     /// Permission flags - what this task is allowed to do.
     pub permissions: TaskPermissions,
@@ -48,20 +49,14 @@ impl TaskPolicy {
 
     /// Validate that the policy is valid for use.
     ///
-    /// Checks:
-    /// - `max_duration_ms` must be > 0
+    /// Currently a no-op since `max_duration_ms` is type-guaranteed to be non-zero
+    /// by `DurationMs`. Future validations (permissions conflicts, timeout bounds)
+    /// can be added here.
     ///
     /// # Returns
     ///
     /// `Ok(())` if valid, `Err(String)` with error message if invalid.
     pub fn validate(&self) -> Result<(), String> {
-        if self.max_duration_ms == 0 {
-            return Err(format!(
-                "max_duration_ms must be > 0, got {}",
-                self.max_duration_ms
-            ));
-        }
-
         // Future validations can be added here:
         // - Permissions conflicts
         // - Timeout bounds (e.g., max 1 hour)
@@ -121,7 +116,7 @@ pub struct TaskPermissions {
 
 /// Default task policy – safe defaults (all permissions off, 60 s timeout).
 pub const DEFAULT_TASK_POLICY: TaskPolicy = TaskPolicy {
-    max_duration_ms: 60_000, // 1 minute – safe default
+    max_duration_ms: DurationMs::new_const(60_000), // 1 minute – safe default
     permissions: TaskPermissions {
         allow_screenshot: false,
         allow_export_cookies: false,
@@ -204,7 +199,9 @@ impl Default for BrowserData {
 /// `CookieBot` policy - handles cookie consent dialogs.
 pub static COOKIEBOT_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::cookiebot::DEFAULT_COOKIEBOT_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::cookiebot::DEFAULT_COOKIEBOT_TASK_DURATION_MS,
+        ),
         permissions: TaskPermissions {
             allow_export_cookies: true, // Export to verify consent state
             allow_screenshot: true,     // Capture consent dialog for debugging
@@ -216,14 +213,16 @@ pub static COOKIEBOT_POLICY: std::sync::LazyLock<TaskPolicy> =
 /// `PageView` policy - simple page loading with verification.
 pub static PAGEVIEW_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: 120_000, // Pageview runtime budget
+        max_duration_ms: DurationMs::new_const(120_000), // Pageview runtime budget
         permissions: TaskPermissions::default(),
     });
 
 /// `TwitterActivity` policy - complex social media automation.
 pub static TWITTERACTIVITY_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::utils::twitter::DEFAULT_TWITTERACTIVITY_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::utils::twitter::DEFAULT_TWITTERACTIVITY_DURATION_MS,
+        ),
         permissions: TaskPermissions {
             allow_export_cookies: true,    // Verify login session
             allow_session_clipboard: true, // Copy tweet text, paste replies
@@ -237,7 +236,7 @@ pub static TWITTERACTIVITY_POLICY: std::sync::LazyLock<TaskPolicy> =
 /// Base policy for most Twitter tasks.
 pub static TWITTER_BASE_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: 45_000, // 45 seconds default for Twitter tasks
+        max_duration_ms: DurationMs::new_const(45_000), // 45 seconds default for Twitter tasks
         permissions: TaskPermissions {
             allow_screenshot: true,        // Debug failures
             allow_export_cookies: true,    // Auth verification
@@ -249,7 +248,9 @@ pub static TWITTER_BASE_POLICY: std::sync::LazyLock<TaskPolicy> =
 /// `DemoKeyboard` policy - default policy.
 pub static DEMO_KEYBOARD_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::demo_keyboard::DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::demo_keyboard::DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS,
+        ),
         permissions: TaskPermissions {
             ..Default::default()
         },
@@ -258,7 +259,9 @@ pub static DEMO_KEYBOARD_POLICY: std::sync::LazyLock<TaskPolicy> =
 /// `DemoMouse` policy - default policy.
 pub static DEMO_MOUSE_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::demo_mouse::DEFAULT_DEMO_MOUSE_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::demo_mouse::DEFAULT_DEMO_MOUSE_TASK_DURATION_MS,
+        ),
         permissions: TaskPermissions {
             ..Default::default()
         },
@@ -267,7 +270,9 @@ pub static DEMO_MOUSE_POLICY: std::sync::LazyLock<TaskPolicy> =
 /// `DemoQA` policy - default policy.
 pub static DEMO_QA_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::demoqa::DEFAULT_DEMOQA_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::demoqa::DEFAULT_DEMOQA_TASK_DURATION_MS,
+        ),
         permissions: TaskPermissions {
             ..Default::default()
         },
@@ -276,7 +281,9 @@ pub static DEMO_QA_POLICY: std::sync::LazyLock<TaskPolicy> =
 /// `TaskExample` policy - default policy.
 pub static TASK_EXAMPLE_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::task_example::DEFAULT_TASK_EXAMPLE_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::task_example::DEFAULT_TASK_EXAMPLE_DURATION_MS,
+        ),
         permissions: TaskPermissions {
             ..Default::default()
         },
@@ -289,27 +296,35 @@ pub static TWITTERDIVE_POLICY: std::sync::LazyLock<TaskPolicy> =
             allow_read_data: true, // Read persona files
             ..TWITTER_BASE_POLICY.permissions.clone()
         },
-        max_duration_ms: crate::task::twitterdive::DEFAULT_TWITTERDIVE_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twitterdive::DEFAULT_TWITTERDIVE_DURATION_MS,
+        ),
     });
 
 /// `TwitterFollow` policy - same as Twitter base policy.
 pub static TWITTERFOLLOW_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::twitterfollow::DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twitterfollow::DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS,
+        ),
         permissions: TWITTER_BASE_POLICY.permissions.clone(),
     });
 
 /// `TwitterIntent` policy - same as Twitter base policy.
 pub static TWITTERINTENT_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::twitterintent::DEFAULT_TWITTERINTENT_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twitterintent::DEFAULT_TWITTERINTENT_TASK_DURATION_MS,
+        ),
         permissions: TWITTER_BASE_POLICY.permissions.clone(),
     });
 
 /// `TwitterLike` policy - extends Twitter base policy.
 pub static TWITTERLIKE_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::twitterlike::DEFAULT_TWITTERLIKE_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twitterlike::DEFAULT_TWITTERLIKE_TASK_DURATION_MS,
+        ),
         permissions: TWITTER_BASE_POLICY.permissions.clone(),
     });
 
@@ -320,7 +335,9 @@ pub static TWITTERQUOTE_POLICY: std::sync::LazyLock<TaskPolicy> =
             allow_read_data: true, // Read persona files
             ..TWITTER_BASE_POLICY.permissions.clone()
         },
-        max_duration_ms: crate::task::twitterquote::DEFAULT_TWITTERQUOTE_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twitterquote::DEFAULT_TWITTERQUOTE_TASK_DURATION_MS,
+        ),
     });
 
 /// `TwitterReply` policy - extends Twitter base policy.
@@ -330,20 +347,26 @@ pub static TWITTERREPLY_POLICY: std::sync::LazyLock<TaskPolicy> =
             allow_read_data: true, // Read persona files
             ..TWITTER_BASE_POLICY.permissions.clone()
         },
-        max_duration_ms: crate::task::twitterreply::DEFAULT_TWITTERREPLY_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twitterreply::DEFAULT_TWITTERREPLY_TASK_DURATION_MS,
+        ),
     });
 
 /// `TwitterRetweet` policy - same as Twitter base policy.
 pub static TWITTERRETWEET_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::twitterretweet::DEFAULT_TWITTERRETWEET_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twitterretweet::DEFAULT_TWITTERRETWEET_TASK_DURATION_MS,
+        ),
         permissions: TWITTER_BASE_POLICY.permissions.clone(),
     });
 
 /// `TwitterTest` policy - extends Twitter base policy (allows all read operations).
 pub static TWITTERTEST_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
-        max_duration_ms: crate::task::twittertest::DEFAULT_TWITTERTEST_TASK_DURATION_MS,
+        max_duration_ms: DurationMs::new_const(
+            crate::task::twittertest::DEFAULT_TWITTERTEST_TASK_DURATION_MS,
+        ),
         permissions: crate::task::policy::TaskPermissions {
             allow_screenshot: true,
             allow_export_cookies: true,
@@ -425,14 +448,14 @@ mod tests {
     #[test]
     fn test_default_policy_timeout() {
         let policy = DEFAULT_TASK_POLICY;
-        assert_eq!(policy.max_duration_ms, 60_000);
+        assert_eq!(policy.max_duration_ms.get(), 60_000);
     }
 
     #[test]
     fn test_cookiebot_uses_task_duration_constant() {
         let policy = get_policy("cookiebot");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::cookiebot::DEFAULT_COOKIEBOT_TASK_DURATION_MS
         );
     }
@@ -441,7 +464,7 @@ mod tests {
     fn test_demoqa_uses_task_duration_constant() {
         let policy = get_policy("demoqa");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::demoqa::DEFAULT_DEMOQA_TASK_DURATION_MS
         );
     }
@@ -450,7 +473,7 @@ mod tests {
     fn test_task_example_uses_task_duration_constant() {
         let policy = get_policy("task-example");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::task_example::DEFAULT_TASK_EXAMPLE_DURATION_MS
         );
     }
@@ -459,7 +482,7 @@ mod tests {
     fn test_demo_keyboard_uses_task_duration_constant() {
         let policy = get_policy("demo-keyboard");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::demo_keyboard::DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS
         );
     }
@@ -468,7 +491,7 @@ mod tests {
     fn test_demo_mouse_uses_task_duration_constant() {
         let policy = get_policy("demo-mouse");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::demo_mouse::DEFAULT_DEMO_MOUSE_TASK_DURATION_MS
         );
     }
@@ -489,7 +512,7 @@ mod tests {
     #[test]
     fn test_task_policy_default_impl() {
         let policy = TaskPolicy::default();
-        assert_eq!(policy.max_duration_ms, 60_000);
+        assert_eq!(policy.max_duration_ms.get(), 60_000);
     }
 
     #[test]
@@ -514,29 +537,30 @@ mod tests {
     #[test]
     fn test_get_policy_cookiebot() {
         let policy = get_policy("cookiebot");
-        assert_eq!(policy.max_duration_ms, 30_000);
+        assert_eq!(policy.max_duration_ms.get(), 30_000);
         assert!(policy.permissions.allow_export_cookies);
     }
 
     #[test]
     fn test_get_policy_unknown_task() {
         let policy = get_policy("unknown_task");
-        assert_eq!(policy.max_duration_ms, 60_000);
+        assert_eq!(policy.max_duration_ms.get(), 60_000);
     }
 
     #[test]
-    fn test_policy_validation_zero_timeout_fails() {
+    fn test_policy_validation_always_passes() {
+        // DurationMs type guarantees non-zero, so any constructable policy is valid
         let policy = TaskPolicy {
-            max_duration_ms: 0,
+            max_duration_ms: DurationMs::new_const(1),
             permissions: TaskPermissions::default(),
         };
-        assert!(policy.validate().is_err());
+        assert!(policy.validate().is_ok());
     }
 
     #[test]
     fn test_policy_validation_valid_timeout_passes() {
         let policy = TaskPolicy {
-            max_duration_ms: 60_000,
+            max_duration_ms: DurationMs::new_const(60_000),
             permissions: TaskPermissions::default(),
         };
         assert!(policy.validate().is_ok());
@@ -593,7 +617,7 @@ mod tests {
         for task_name in &task_names {
             let policy = get_policy(task_name);
             assert!(
-                policy.max_duration_ms > 0,
+                policy.max_duration_ms.get() > 0,
                 "Task '{}' has invalid timeout: {}",
                 task_name,
                 policy.max_duration_ms
@@ -646,7 +670,7 @@ mod tests {
         assert!(policy.permissions.allow_read_data);
         assert!(policy.permissions.allow_screenshot);
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::utils::twitter::DEFAULT_TWITTERACTIVITY_DURATION_MS
         );
     }
@@ -655,7 +679,7 @@ mod tests {
     fn test_twitterintent_uses_task_duration_constant() {
         let policy = get_policy("twitterintent");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twitterintent::DEFAULT_TWITTERINTENT_TASK_DURATION_MS
         );
     }
@@ -664,7 +688,7 @@ mod tests {
     fn test_twitterfollow_uses_task_duration_constant() {
         let policy = get_policy("twitterfollow");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twitterfollow::DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS
         );
     }
@@ -673,7 +697,7 @@ mod tests {
     fn test_twitterreply_uses_task_duration_constant() {
         let policy = get_policy("twitterreply");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twitterreply::DEFAULT_TWITTERREPLY_TASK_DURATION_MS
         );
     }
@@ -682,7 +706,7 @@ mod tests {
     fn test_twitterdive_uses_task_duration_constant() {
         let policy = get_policy("twitterdive");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twitterdive::DEFAULT_TWITTERDIVE_DURATION_MS
         );
     }
@@ -691,7 +715,7 @@ mod tests {
     fn test_twitterlike_uses_task_duration_constant() {
         let policy = get_policy("twitterlike");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twitterlike::DEFAULT_TWITTERLIKE_TASK_DURATION_MS
         );
     }
@@ -700,7 +724,7 @@ mod tests {
     fn test_twitterquote_uses_task_duration_constant() {
         let policy = get_policy("twitterquote");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twitterquote::DEFAULT_TWITTERQUOTE_TASK_DURATION_MS
         );
     }
@@ -709,7 +733,7 @@ mod tests {
     fn test_twitterretweet_uses_task_duration_constant() {
         let policy = get_policy("twitterretweet");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twitterretweet::DEFAULT_TWITTERRETWEET_TASK_DURATION_MS
         );
     }
@@ -718,7 +742,7 @@ mod tests {
     fn test_twittertest_uses_task_duration_constant() {
         let policy = get_policy("twittertest");
         assert_eq!(
-            policy.max_duration_ms,
+            policy.max_duration_ms.get(),
             crate::task::twittertest::DEFAULT_TWITTERTEST_TASK_DURATION_MS
         );
     }
@@ -728,7 +752,7 @@ mod tests {
         let policy = get_policy("pageview");
         let perms = &policy.permissions;
 
-        assert_eq!(policy.max_duration_ms, 120_000);
+        assert_eq!(policy.max_duration_ms.get(), 120_000);
         assert!(!perms.allow_screenshot);
         assert!(!perms.allow_export_cookies);
         assert!(!perms.allow_import_cookies);
@@ -792,7 +816,7 @@ mod tests {
     fn test_policy_implements_clone() {
         let policy = DEFAULT_TASK_POLICY.clone();
         let cloned = policy.clone();
-        assert_eq!(policy.max_duration_ms, cloned.max_duration_ms);
+        assert_eq!(policy.max_duration_ms.get(), cloned.max_duration_ms.get());
     }
 
     #[test]
@@ -822,7 +846,8 @@ mod tests {
             let registry_policy = get_policy_from_registry(task_name);
 
             assert_eq!(
-                direct_policy.max_duration_ms, registry_policy.max_duration_ms,
+                direct_policy.max_duration_ms.get(),
+                registry_policy.max_duration_ms.get(),
                 "Timeout mismatch for task '{}'",
                 task_name
             );
@@ -845,14 +870,20 @@ mod tests {
     fn test_registry_policy_lookup_with_js_suffix() {
         // Test that .js suffix is handled correctly
         let policy = get_policy_from_registry("cookiebot.js");
-        assert_eq!(policy.max_duration_ms, COOKIEBOT_POLICY.max_duration_ms);
+        assert_eq!(
+            policy.max_duration_ms.get(),
+            COOKIEBOT_POLICY.max_duration_ms.get()
+        );
     }
 
     #[test]
     fn test_registry_policy_lookup_unknown_task() {
         // Unknown tasks should get default policy
         let policy = get_policy_from_registry("nonexistent_task");
-        assert_eq!(policy.max_duration_ms, DEFAULT_TASK_POLICY.max_duration_ms);
+        assert_eq!(
+            policy.max_duration_ms.get(),
+            DEFAULT_TASK_POLICY.max_duration_ms.get()
+        );
     }
 
     #[test]
@@ -860,7 +891,10 @@ mod tests {
         let policy_hyphen = get_policy_from_registry("demo-keyboard");
         let policy_snake = get_policy_from_registry("demo_keyboard");
 
-        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.max_duration_ms.get(),
+            policy_snake.max_duration_ms.get()
+        );
         assert_eq!(
             policy_hyphen.permissions.allow_screenshot,
             policy_snake.permissions.allow_screenshot
@@ -876,7 +910,10 @@ mod tests {
         let policy_hyphen = get_policy_from_registry("demo-mouse");
         let policy_snake = get_policy_from_registry("demo_mouse");
 
-        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.max_duration_ms.get(),
+            policy_snake.max_duration_ms.get()
+        );
         assert_eq!(
             policy_hyphen.max_duration_ms,
             DEMO_MOUSE_POLICY.max_duration_ms
@@ -888,7 +925,10 @@ mod tests {
         let policy_hyphen = get_policy_from_registry("demoqa");
         let policy_snake = get_policy_from_registry("demo_qa");
 
-        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.max_duration_ms.get(),
+            policy_snake.max_duration_ms.get()
+        );
         assert_eq!(
             policy_hyphen.max_duration_ms,
             DEMO_QA_POLICY.max_duration_ms
@@ -900,7 +940,10 @@ mod tests {
         let policy_hyphen = get_policy_from_registry("task-example");
         let policy_snake = get_policy_from_registry("task_example");
 
-        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.max_duration_ms.get(),
+            policy_snake.max_duration_ms.get()
+        );
         assert_eq!(
             policy_hyphen.max_duration_ms,
             TASK_EXAMPLE_POLICY.max_duration_ms

@@ -65,7 +65,7 @@ function Has-Prefix([string[]]$Items, [string[]]$Prefixes) {
 }
 
 function Get-RustFiles([string[]]$Items) {
-    return @($Items | Where-Object { $_ -match '\.rs$' -and $_ -notmatch 'target/' })
+    return @($Items | Where-Object { $_ -match '\.rs$' -and $_ -notmatch 'target/' -and (Test-Path $_ -PathType Leaf) })
 }
 
 function Invoke-RustfmtCheck([string[]]$Files) {

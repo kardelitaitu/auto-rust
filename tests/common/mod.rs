@@ -12,6 +12,7 @@
 //! let temp = TempTestDir::new();
 //! ```
 
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -326,6 +327,52 @@ pub fn build_session_storage_data() -> HashMap<String, String> {
         ("temp_data", "cached_value"),
         ("form_state", r#"{"field": "value"}"#),
     ])
+}
+
+// ============================================================================
+// Browser Connection Helper
+// ============================================================================
+
+/// Connect to a browser via CDP WebSocket using `TASK_API_TEST_WS` env var.
+///
+/// Required: Start a browser with `--remote-debugging-port=<port>` and
+/// set `TASK_API_TEST_WS=ws://localhost:<port>`.
+///
+/// Returns a connected `chromiumoxide::Browser` instance with an event handler spawned.
+///
+/// # Panics
+/// Panics if `TASK_API_TEST_WS` is not set or the browser is unreachable.
+#[allow(dead_code)]
+pub async fn connect_test_browser() -> chromiumoxide::Browser {
+    let cdp_url =
+        std::env::var("TASK_API_TEST_WS").expect("TASK_API_TEST_WS environment variable not set");
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(format!(
+            "{}/json/version",
+            cdp_url.replace("ws://", "http://")
+        ))
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .expect("Failed to query CDP endpoint");
+
+    let version_data: serde_json::Value =
+        response.json().await.expect("Failed to parse CDP response");
+
+    let ws_url = version_data
+        .get("webSocketDebuggerUrl")
+        .and_then(|v| v.as_str())
+        .expect("No webSocketDebuggerUrl in CDP response");
+
+    let (browser, mut handler) = chromiumoxide::Browser::connect(ws_url)
+        .await
+        .expect("Failed to connect to browser WebSocket");
+
+    tokio::task::spawn(async move { while let Some(_event) = handler.next().await {} });
+
+    browser
 }
 
 // ============================================================================

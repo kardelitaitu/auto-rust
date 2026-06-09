@@ -28,11 +28,11 @@ fn twitteractivity_config_has_valid_defaults() {
     let ta = TwitterActivityConfig::default();
 
     assert!(
-        ta.feed_scan_duration_ms >= 10_000,
+        ta.feed_scan_duration_ms.get() >= 10_000,
         "scan duration must be >= 10s"
     );
     assert!(
-        ta.feed_scan_duration_ms <= 1_800_000,
+        ta.feed_scan_duration_ms.get() <= 1_800_000,
         "scan duration must be <= 30min"
     );
     assert!(ta.feed_scroll_count >= 1, "scroll count must be at least 1");

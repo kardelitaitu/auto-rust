@@ -841,7 +841,7 @@ mod tests {
 
         // Test with custom permissions
         let custom_policy = crate::task::policy::TaskPolicy {
-            max_duration_ms: 30_000,
+            max_duration_ms: crate::session::DurationMs::new_const(30_000),
             permissions: crate::task::policy::TaskPermissions {
                 allow_browser_export: true,
                 allow_browser_import: true,
@@ -1047,7 +1047,7 @@ mod tests {
     #[test]
     fn test_check_permission_cookie_export() {
         let policy = crate::task::policy::TaskPolicy {
-            max_duration_ms: 30_000,
+            max_duration_ms: crate::session::DurationMs::new_const(30_000),
             permissions: crate::task::policy::TaskPermissions {
                 allow_export_cookies: true,
                 ..Default::default()
@@ -1064,7 +1064,7 @@ mod tests {
     #[test]
     fn test_check_permission_session_import() {
         let policy = crate::task::policy::TaskPolicy {
-            max_duration_ms: 30_000,
+            max_duration_ms: crate::session::DurationMs::new_const(30_000),
             permissions: crate::task::policy::TaskPermissions {
                 allow_import_session: true,
                 ..Default::default()
@@ -1079,7 +1079,7 @@ mod tests {
     #[test]
     fn test_check_permission_data_read_write() {
         let policy = crate::task::policy::TaskPolicy {
-            max_duration_ms: 30_000,
+            max_duration_ms: crate::session::DurationMs::new_const(30_000),
             permissions: crate::task::policy::TaskPermissions {
                 allow_read_data: true,
                 allow_write_data: true,
@@ -1516,7 +1516,7 @@ mod tests {
     #[test]
     fn test_permission_combinations_full_access() {
         let policy = crate::task::policy::TaskPolicy {
-            max_duration_ms: 60_000,
+            max_duration_ms: crate::session::DurationMs::new_const(60_000),
             permissions: crate::task::policy::TaskPermissions {
                 allow_screenshot: true,
                 allow_export_cookies: true,
@@ -1541,7 +1541,7 @@ mod tests {
     #[test]
     fn test_permission_combinations_read_only() {
         let policy = crate::task::policy::TaskPolicy {
-            max_duration_ms: 30_000,
+            max_duration_ms: crate::session::DurationMs::new_const(30_000),
             permissions: crate::task::policy::TaskPermissions {
                 allow_read_data: true,
                 allow_export_cookies: true,
@@ -1568,7 +1568,7 @@ mod tests {
     #[test]
     fn test_permission_combinations_network_only() {
         let policy = crate::task::policy::TaskPolicy {
-            max_duration_ms: 30_000,
+            max_duration_ms: crate::session::DurationMs::new_const(30_000),
             permissions: crate::task::policy::TaskPermissions {
                 allow_http_requests: true,
                 allow_read_data: true, // For response caching
@@ -1793,445 +1793,7 @@ impl TaskContext {
     // [Moved to submodule: session_io.rs]
     // [Moved to submodule: session_io.rs]
 
-    pub async fn export_browser(&self, url: &str) -> Result<crate::task::policy::BrowserData> {
-        let perms = self.policy.effective_permissions();
-        if !perms.allow_browser_export {
-            return Err(anyhow::anyhow!(
-                "Permission denied: task '{}' lacks 'allow_browser_export' permission",
-                self.session_id
-            ));
-        }
-
-        // Export all cookies via CDP
-        let cookies_result = self
-            .page
-            .execute(chromiumoxide::cdp::browser_protocol::network::GetCookiesParams::default())
-            .await;
-        let cookies_json = match cookies_result {
-            Ok(cookies) => {
-                serde_json::to_value(&cookies.cookies).unwrap_or(serde_json::Value::Array(vec![]))
-            }
-            Err(e) => {
-                log::warn!("Failed to export cookies during browser export: {e}");
-                serde_json::Value::Array(vec![])
-            }
-        };
-        let cookies = cookies_json.as_array().unwrap_or(&vec![]).clone();
-
-        // Export localStorage from all frames via JavaScript
-        let local_storage_js = r"
-            (function() {
-                const data = {};
-                const hostname = window.location.hostname;
-                data[hostname] = {};
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    data[hostname][key] = localStorage.getItem(key);
-                }
-                return JSON.stringify(data);
-            })()
-        ";
-        let local_storage_str =
-            self.page.evaluate(local_storage_js).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage - {e}")
-            })?;
-        let local_storage_value = local_storage_str
-            .value()
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let local_storage: std::collections::HashMap<
-            String,
-            std::collections::HashMap<String, String>,
-        > = deserialize_evaluated_json(local_storage_value).unwrap_or_default();
-
-        // Export sessionStorage via JavaScript
-        let session_storage_js = r"
-            (function() {
-                const data = {};
-                const hostname = window.location.hostname;
-                data[hostname] = {};
-                for (let i = 0; i < sessionStorage.length; i++) {
-                    const key = sessionStorage.key(i);
-                    data[hostname][key] = sessionStorage.getItem(key);
-                }
-                return JSON.stringify(data);
-            })()
-        ";
-        let session_storage_str =
-            self.page.evaluate(session_storage_js).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage - {e}")
-            })?;
-        let session_storage_value = session_storage_str
-            .value()
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let session_storage: std::collections::HashMap<
-            String,
-            std::collections::HashMap<String, String>,
-        > = deserialize_evaluated_json(session_storage_value).unwrap_or_default();
-
-        // Get IndexedDB database names (simplified - just list databases)
-        let indexeddb_js = r"
-            (function() {
-                return new Promise((resolve) => {
-                    const hostname = window.location.hostname;
-                    const data = {};
-                    data[hostname] = [];
-                    
-                    if (!window.indexedDB) {
-                        resolve(JSON.stringify(data));
-                        return;
-                    }
-                    
-                    // Try to get database names if supported
-                    if (window.indexedDB.databases) {
-                        window.indexedDB.databases().then(dbs => {
-                            data[hostname] = dbs.map(db => db.name);
-                            resolve(JSON.stringify(data));
-                        }).catch(() => {
-                            resolve(JSON.stringify(data));
-                        });
-                    } else {
-                        resolve(JSON.stringify(data));
-                    }
-                });
-            })()
-        ";
-        let indexeddb_result = self.page.evaluate(indexeddb_js).await;
-        let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match indexeddb_result
-        {
-            Ok(result) => result
-                .value()
-                .cloned()
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
-            Err(e) => {
-                log::warn!("Failed to export IndexedDB names: {e}");
-                std::collections::HashMap::new()
-            }
-        };
-
-        let browser_data = crate::task::policy::BrowserData {
-            cookies,
-            local_storage,
-            session_storage,
-            indexeddb_names,
-            exported_at: chrono::Utc::now(),
-            source: url.to_string(),
-            browser_version: None,
-        };
-
-        log::warn!(
-            "task_policy_audit: task={} permission={} url={} cookies={} origins={}",
-            self.session_id,
-            "allow_browser_export",
-            url,
-            browser_data.cookies.len(),
-            browser_data.local_storage.len()
-        );
-
-        Ok(browser_data)
-    }
-
-    /// Import complete browser data including cookies, localStorage, sessionStorage.
-    ///
-    /// # Arguments
-    /// * `browser_data` - Complete `BrowserData` to import
-    ///
-    /// # Errors
-    /// Returns error if `allow_browser_import` permission not granted
-    ///
-    /// # Permission
-    /// Requires `allow_browser_import` permission
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use anyhow::Result;
-    /// # use auto::TaskContext;
-    /// # async fn example(ctx: &TaskContext) -> Result<()> {
-    /// // Load previously saved browser state
-    /// let json = std::fs::read_to_string("backup/session.json")?;
-    /// let browser_data: auto::task::policy::BrowserData = serde_json::from_str(&json)?;
-    ///
-    /// // Restore browser state (cookies, localStorage, etc.)
-    /// ctx.import_browser(&browser_data).await?;
-    /// println!("Browser state restored from backup");
-    ///
-    /// // Session is now active - navigate to authenticated page
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn import_browser(
-        &self,
-        browser_data: &crate::task::policy::BrowserData,
-    ) -> Result<()> {
-        let perms = self.policy.effective_permissions();
-        if !perms.allow_browser_import {
-            return Err(anyhow::anyhow!(
-                "Permission denied: task '{}' lacks 'allow_browser_import' permission",
-                self.session_id
-            ));
-        }
-
-        // Import cookies
-        self.import_cookies(&browser_data.cookies).await?;
-
-        // Import localStorage for each origin
-        for (origin, data) in &browser_data.local_storage {
-            let local_storage_json = serde_json::to_string(data).map_err(|e| {
-                anyhow::anyhow!("Failed to serialize localStorage for {origin}: {e}")
-            })?;
-            let js_code = format!(
-                r"
-                (function() {{
-                    const data = {local_storage_json};
-                    let count = 0;
-                    Object.entries(data).forEach(([k, v]) => {{
-                        try {{
-                            localStorage.setItem(k, v);
-                            count++;
-                        }} catch (e) {{
-                            console.warn('Failed to set localStorage item:', k, e);
-                        }}
-                    }});
-                    return 'localStorage imported: ' + count + ' items for origin';
-                }})()
-                "
-            );
-            self.page.evaluate(js_code).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage import - {e}")
-            })?;
-        }
-
-        // Import sessionStorage for each origin
-        for (origin, data) in &browser_data.session_storage {
-            let session_storage_json = serde_json::to_string(data).map_err(|e| {
-                anyhow::anyhow!("Failed to serialize sessionStorage for {origin}: {e}")
-            })?;
-            let js_code = format!(
-                r"
-                (function() {{
-                    const data = {session_storage_json};
-                    let count = 0;
-                    Object.entries(data).forEach(([k, v]) => {{
-                        try {{
-                            sessionStorage.setItem(k, v);
-                            count++;
-                        }} catch (e) {{
-                            console.warn('Failed to set sessionStorage item:', k, e);
-                        }}
-                    }});
-                    return 'sessionStorage imported: ' + count + ' items for origin';
-                }})()
-                "
-            );
-            self.page.evaluate(js_code).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage import - {e}")
-            })?;
-        }
-
-        log::warn!(
-            "task_policy_audit: task={} permission={} source={} cookies={} origins={}",
-            self.session_id,
-            "allow_browser_import",
-            browser_data.source,
-            browser_data.cookies.len(),
-            browser_data.local_storage.len()
-        );
-
-        Ok(())
-    }
-
-    /// Export localStorage data from the current page.
-    ///
-    /// # Arguments
-    /// * `_url` - URL context (for consistency with other methods)
-    ///
-    /// # Returns
-    /// `HashMap` of localStorage key-value pairs
-    ///
-    /// # Errors
-    /// Returns error if `allow_export_session` permission is not granted
-    ///
-    /// # Permission
-    /// Requires `allow_export_session` permission
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use anyhow::Result;
-    /// # use auto::TaskContext;
-    /// # async fn example(ctx: &TaskContext) -> Result<()> {
-    /// // Export localStorage data
-    /// let storage = ctx.export_local_storage("").await?;
-    ///
-    /// // Check for user preferences
-    /// if let Some(theme) = storage.get("theme") {
-    ///     println!("User prefers {} theme", theme);
-    /// }
-    ///
-    /// // Get all keys
-    /// let keys: Vec<_> = storage.keys().collect();
-    /// println!("localStorage has {} entries", keys.len());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn export_local_storage(
-        &self,
-        _url: &str,
-    ) -> Result<std::collections::HashMap<String, String>> {
-        let perms = self.policy.effective_permissions();
-        if !perms.allow_export_session {
-            return Err(anyhow::anyhow!(
-                "Permission denied: task '{}' lacks 'allow_export_session' permission",
-                self.session_id
-            ));
-        }
-
-        // Export localStorage via JavaScript
-        let local_storage_js = r"
-            (function() {
-                const data = {};
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    data[key] = localStorage.getItem(key);
-                }
-                return JSON.stringify(data);
-            })()
-        ";
-        let local_storage_str = self
-            .page
-            .evaluate(local_storage_js)
-            .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
-        let local_storage_value = local_storage_str
-            .value()
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let local_storage: std::collections::HashMap<String, String> =
-            deserialize_evaluated_json(local_storage_value).unwrap_or_default();
-
-        log::warn!(
-            "task_policy_audit: task={} permission={} url={} count={}",
-            self.session_id,
-            "allow_export_session",
-            _url,
-            local_storage.len()
-        );
-
-        Ok(local_storage)
-    }
-
-    /// Import localStorage data to the current page.
-    ///
-    /// # Arguments
-    /// * `_url` - URL context (for consistency with other methods)
-    /// * `data` - `HashMap` of key-value pairs to set in localStorage
-    ///
-    /// # Errors
-    /// Returns error if `allow_import_session` permission is not granted
-    ///
-    /// # Permission
-    /// Requires `allow_import_session` permission
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use anyhow::Result;
-    /// # use auto::TaskContext;
-    /// # use std::collections::HashMap;
-    /// # async fn example(ctx: &TaskContext) -> Result<()> {
-    /// // Prepare localStorage data to import
-    /// let mut storage_data = HashMap::new();
-    /// storage_data.insert("theme".to_string(), "dark".to_string());
-    /// storage_data.insert("language".to_string(), "en".to_string());
-    ///
-    /// // Import into browser
-    /// ctx.import_local_storage("", &storage_data).await?;
-    /// println!("localStorage imported successfully");
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn import_local_storage(
-        &self,
-        _url: &str,
-        data: &std::collections::HashMap<String, String>,
-    ) -> Result<()> {
-        let perms = self.policy.effective_permissions();
-        if !perms.allow_import_session {
-            return Err(anyhow::anyhow!(
-                "Permission denied: task '{}' lacks 'allow_import_session' permission",
-                self.session_id
-            ));
-        }
-
-        // Import localStorage via JavaScript
-        let local_storage_json = serde_json::to_string(data)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage: {e}"))?;
-        let js_code = format!(
-            r"
-            (function() {{
-                const data = {local_storage_json};
-                Object.entries(data).forEach(([k, v]) => {{
-                    localStorage.setItem(k, v);
-                }});
-                return 'localStorage imported: ' + Object.keys(data).length + ' items';
-            }})()
-            "
-        );
-        self.page
-            .evaluate(js_code)
-            .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
-
-        log::warn!(
-            "task_policy_audit: task={} permission={} url={} count={}",
-            self.session_id,
-            "allow_import_session",
-            _url,
-            data.len()
-        );
-
-        Ok(())
-    }
-
-    /// Validate `SessionData` structure without importing.
-    ///
-    /// # Arguments
-    /// * `data` - `SessionData` to validate
-    ///
-    /// # Returns
-    /// Vec of validation warnings (empty if valid)
-    ///
-    /// # Errors
-    /// Returns error if data structure is fundamentally invalid
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use std::collections::HashMap;
-    /// // Create session data to validate
-    /// let session = auto::task::policy::SessionData {
-    ///     cookies: vec![],
-    ///     local_storage: HashMap::new(),
-    ///     exported_at: chrono::Utc::now(),
-    ///     url: "https://example.com".to_string(),
-    /// };
-    ///
-    /// // Validate the session data
-    /// let warnings = auto::runtime::task_context::validate_session_data_impl(&session);
-    ///
-    /// if warnings.is_empty() {
-    ///     println!("Session data is valid");
-    /// } else {
-    ///     println!("Warnings: {:?}", warnings);
-    /// }
-    /// ```
-    #[must_use]
-    pub fn validate_session_data_for_tests(data: &crate::task::policy::SessionData) -> Vec<String> {
-        validate_session_data_impl(data)
-    }
+    // [Moved to submodule: session_io.rs]
 
     /// Set custom user agent string for subsequent navigations.
     pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {

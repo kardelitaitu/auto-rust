@@ -23,16 +23,18 @@ mod config_tests {
 
     #[test]
     fn test_validate_config_valid() {
+        use crate::session::DurationMs;
+
         let config = Config {
             browser: BrowserConfig {
-                connection_timeout_ms: 10000,
+                connection_timeout_ms: DurationMs::new_const(10000),
                 max_discovery_retries: 3,
-                discovery_retry_delay_ms: 5000,
+                discovery_retry_delay_ms: DurationMs::new_const(5000),
                 circuit_breaker: CircuitBreakerConfig {
                     enabled: true,
                     failure_threshold: 5,
                     success_threshold: 3,
-                    half_open_time_ms: 30000,
+                    half_open_time_ms: DurationMs::new_const(30000),
                 },
                 profiles: vec![],
                 roxybrowser: RoxybrowserConfig {
@@ -50,12 +52,12 @@ mod config_tests {
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 5,
-                task_timeout_ms: 60_000,
-                group_timeout_ms: 120_000,
-                worker_wait_timeout_ms: 10000,
+                task_timeout_ms: DurationMs::new_const(60_000),
+                group_timeout_ms: DurationMs::new_const(120_000),
+                worker_wait_timeout_ms: DurationMs::new_const(10000),
                 task_stagger_delay_ms: 1000,
                 max_retries: 2,
-                retry_delay_ms: 500,
+                retry_delay_ms: DurationMs::new_const(500),
             },
             twitter_activity: TwitterActivityConfig::default(),
             tracing: TracingConfig::default(),
@@ -67,16 +69,18 @@ mod config_tests {
 
     #[test]
     fn test_validate_config_invalid_concurrency() {
+        use crate::session::DurationMs;
+
         let config = Config {
             browser: BrowserConfig {
-                connection_timeout_ms: 10000,
+                connection_timeout_ms: DurationMs::new_const(10000),
                 max_discovery_retries: 3,
-                discovery_retry_delay_ms: 5000,
+                discovery_retry_delay_ms: DurationMs::new_const(5000),
                 circuit_breaker: CircuitBreakerConfig {
                     enabled: true,
                     failure_threshold: 5,
                     success_threshold: 3,
-                    half_open_time_ms: 30000,
+                    half_open_time_ms: DurationMs::new_const(30000),
                 },
                 profiles: vec![],
                 roxybrowser: RoxybrowserConfig {
@@ -94,12 +98,12 @@ mod config_tests {
             },
             orchestrator: OrchestratorConfig {
                 max_global_concurrency: 0,
-                task_timeout_ms: 60_000,
-                group_timeout_ms: 120_000,
-                worker_wait_timeout_ms: 10000,
+                task_timeout_ms: DurationMs::new_const(60_000),
+                group_timeout_ms: DurationMs::new_const(120_000),
+                worker_wait_timeout_ms: DurationMs::new_const(10000),
                 task_stagger_delay_ms: 1000,
                 max_retries: 2,
-                retry_delay_ms: 500,
+                retry_delay_ms: DurationMs::new_const(500),
             },
             twitter_activity: TwitterActivityConfig::default(),
             tracing: TracingConfig::default(),

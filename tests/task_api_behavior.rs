@@ -407,7 +407,7 @@ async fn session_export_import_roundtrip_restores_cookie_and_local_storage() -> 
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_export_session: true,
             allow_import_session: true,
@@ -477,7 +477,7 @@ async fn browser_export_import_roundtrip_restores_storage_and_cookie() -> Result
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_browser_export: true,
             allow_browser_import: true,
@@ -576,7 +576,7 @@ async fn clipboard_session_state_roundtrip_uses_session_scope() -> Result<()> {
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_session_clipboard: true,
             ..Default::default()
@@ -616,7 +616,7 @@ async fn data_file_operations_roundtrip_and_cleanup() -> Result<()> {
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_read_data: true,
             allow_write_data: true,
@@ -677,7 +677,7 @@ async fn http_get_returns_status_body_and_headers() -> Result<()> {
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_http_requests: true,
             ..Default::default()
@@ -711,7 +711,7 @@ async fn download_file_saves_response_bytes_and_cleans_up() -> Result<()> {
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_http_requests: true,
             allow_write_data: true,
@@ -760,7 +760,7 @@ async fn dom_inspection_helpers_report_live_page_state() -> Result<()> {
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_dom_inspection: true,
             ..Default::default()
@@ -829,7 +829,7 @@ async fn browser_runtime_css_compatibility_matrix_under_feature_flag() -> Result
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_dom_inspection: true,
             ..Default::default()
@@ -898,7 +898,7 @@ async fn browser_runtime_accessibility_locator_integration_semantics() -> Result
 
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
     let policy = Box::leak(Box::new(TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: TaskPermissions {
             allow_dom_inspection: true,
             ..Default::default()
@@ -1523,7 +1523,7 @@ async fn check_permission_respects_effective_policy() -> Result<()> {
     .await?;
 
     let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
-        max_duration_ms: 30_000,
+        max_duration_ms: auto::session::DurationMs::new_const(30_000),
         permissions: auto::task::policy::TaskPermissions {
             allow_screenshot: true,
             allow_session_clipboard: true,
@@ -2292,7 +2292,7 @@ async fn screenshot_auto_saves_webp_with_correct_filename() -> Result<()> {
 
     // Create custom policy with screenshot permission and leak it for static lifetime
     let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
-        max_duration_ms: 60_000,
+        max_duration_ms: auto::session::DurationMs::new_const(60_000),
         permissions: auto::task::policy::TaskPermissions {
             allow_screenshot: true,
             ..Default::default()
@@ -2412,7 +2412,7 @@ async fn screenshot_creates_directory_if_not_exists() -> Result<()> {
 
     // Create custom policy with screenshot permission and leak it for static lifetime
     let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
-        max_duration_ms: 60_000,
+        max_duration_ms: auto::session::DurationMs::new_const(60_000),
         permissions: auto::task::policy::TaskPermissions {
             allow_screenshot: true,
             ..Default::default()
@@ -2464,7 +2464,7 @@ async fn screenshot_with_quality_clamps_and_writes_webp() -> Result<()> {
     let page: Arc<chromiumoxide::Page> = session.acquire_page_at(server.url()).await?;
 
     let policy = Box::leak(Box::new(auto::task::policy::TaskPolicy {
-        max_duration_ms: 60_000,
+        max_duration_ms: auto::session::DurationMs::new_const(60_000),
         permissions: auto::task::policy::TaskPermissions {
             allow_screenshot: true,
             ..Default::default()

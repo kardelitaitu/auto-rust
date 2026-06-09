@@ -4,6 +4,7 @@
 //! Supports TOML configuration files with environment variable overrides.
 
 use crate::error::{ConfigError, OrchestratorError, Result};
+use crate::session::DurationMs;
 use log::{info, warn};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -36,11 +37,11 @@ pub struct Config {
 #[derive(Debug, Deserialize, Clone)]
 pub struct BrowserConfig {
     /// Timeout for establishing browser connections in milliseconds
-    pub connection_timeout_ms: u64,
+    pub connection_timeout_ms: DurationMs,
     /// Maximum number of attempts to discover available browsers
     pub max_discovery_retries: u32,
     /// Delay between browser discovery attempts in milliseconds
-    pub discovery_retry_delay_ms: u64,
+    pub discovery_retry_delay_ms: DurationMs,
     /// Circuit breaker configuration for fault tolerance.
     /// Note: Validated but not yet wired to `ApiClient`. Future use for API fault tolerance.
     #[allow(dead_code)]
@@ -148,9 +149,9 @@ pub struct NativeInteractionConfig {
     #[serde(default)]
     pub native_input_backend: NativeInputBackend,
     #[serde(default = "default_native_interaction_stability_wait_ms")]
-    pub stability_wait_ms: u64,
+    pub stability_wait_ms: DurationMs,
     #[serde(default = "default_native_interaction_resolve_timeout_ms")]
-    pub resolve_timeout_ms: u64,
+    pub resolve_timeout_ms: DurationMs,
     #[serde(default = "default_native_interaction_settle_ms")]
     pub settle_ms: u64,
 }
@@ -179,7 +180,7 @@ pub struct CircuitBreakerConfig {
     /// Number of consecutive successes needed to close the circuit
     pub success_threshold: u32,
     /// Time to wait before trying to close the circuit again (in milliseconds)
-    pub half_open_time_ms: u64,
+    pub half_open_time_ms: DurationMs,
 }
 
 /// Defines a browser profile for task execution.
@@ -213,17 +214,17 @@ pub struct OrchestratorConfig {
     /// Maximum number of tasks that can run concurrently across all sessions
     pub max_global_concurrency: usize,
     /// Timeout for individual task execution in milliseconds
-    pub task_timeout_ms: u64,
+    pub task_timeout_ms: DurationMs,
     /// Timeout for task groups (sequential tasks) in milliseconds
-    pub group_timeout_ms: u64,
+    pub group_timeout_ms: DurationMs,
     /// Timeout for acquiring a worker/session for task execution
-    pub worker_wait_timeout_ms: u64,
+    pub worker_wait_timeout_ms: DurationMs,
     /// Delay between starting consecutive tasks in milliseconds
     pub task_stagger_delay_ms: u64,
     /// Maximum number of retry attempts for failed tasks
     pub max_retries: u32,
     /// Delay between retry attempts in milliseconds
-    pub retry_delay_ms: u64,
+    pub retry_delay_ms: DurationMs,
 }
 
 /// Configuration for the Twitter/X activity task.
@@ -231,7 +232,7 @@ pub struct OrchestratorConfig {
 pub struct TwitterActivityConfig {
     /// Duration of feed scanning phase in milliseconds (default: 60s)
     #[serde(default = "default_feed_scan_duration")]
-    pub feed_scan_duration_ms: u64,
+    pub feed_scan_duration_ms: DurationMs,
     /// Number of scroll actions during feed scanning (default: 10)
     #[serde(default = "default_feed_scroll_count")]
     pub feed_scroll_count: u32,
@@ -498,20 +499,20 @@ fn default_learning_ttl_days() -> u32 {
     30
 }
 
-fn default_native_interaction_stability_wait_ms() -> u64 {
-    5_000
+fn default_native_interaction_stability_wait_ms() -> DurationMs {
+    DurationMs::new_const(5_000)
 }
 
-fn default_native_interaction_resolve_timeout_ms() -> u64 {
-    2_000
+fn default_native_interaction_resolve_timeout_ms() -> DurationMs {
+    DurationMs::new_const(2_000)
 }
 
 fn default_native_interaction_settle_ms() -> u64 {
     0
 }
 
-fn default_feed_scan_duration() -> u64 {
-    60_000
+fn default_feed_scan_duration() -> DurationMs {
+    DurationMs::new_const(60_000)
 }
 fn default_feed_scroll_count() -> u32 {
     10
@@ -554,9 +555,9 @@ impl Default for TwitterActivityConfig {
 impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
-            connection_timeout_ms: 30000,
+            connection_timeout_ms: DurationMs::new_const(30000),
             max_discovery_retries: 3,
-            discovery_retry_delay_ms: 500,
+            discovery_retry_delay_ms: DurationMs::new_const(500),
             circuit_breaker: CircuitBreakerConfig::default(),
             profiles: vec![],
             roxybrowser: RoxybrowserConfig::default(),
@@ -576,12 +577,12 @@ impl Default for OrchestratorConfig {
     fn default() -> Self {
         Self {
             max_global_concurrency: 5,
-            task_timeout_ms: 60000,
-            group_timeout_ms: 300000,
-            worker_wait_timeout_ms: 10000,
+            task_timeout_ms: DurationMs::new_const(60000),
+            group_timeout_ms: DurationMs::new_const(300000),
+            worker_wait_timeout_ms: DurationMs::new_const(10000),
             task_stagger_delay_ms: 500,
             max_retries: 3,
-            retry_delay_ms: 2000,
+            retry_delay_ms: DurationMs::new_const(2000),
         }
     }
 }
@@ -593,7 +594,7 @@ impl Default for CircuitBreakerConfig {
             enabled: true,
             failure_threshold: 5,
             success_threshold: 3,
-            half_open_time_ms: 30000,
+            half_open_time_ms: DurationMs::new_const(30000),
         }
     }
 }
@@ -638,7 +639,7 @@ mod tests {
     fn test_browser_config_defaults() {
         let config = BrowserConfig::default();
         assert_eq!(config.max_discovery_retries, 3);
-        assert_eq!(config.discovery_retry_delay_ms, 500);
+        assert_eq!(config.discovery_retry_delay_ms.get(), 500);
         assert!(config.profiles.is_empty());
         assert_eq!(
             config.native_interaction.calibration_mode,
@@ -648,8 +649,8 @@ mod tests {
             config.native_interaction.native_input_backend,
             NativeInputBackend::Enigo
         );
-        assert_eq!(config.native_interaction.stability_wait_ms, 5000);
-        assert_eq!(config.native_interaction.resolve_timeout_ms, 2000);
+        assert_eq!(config.native_interaction.stability_wait_ms.get(), 5000);
+        assert_eq!(config.native_interaction.resolve_timeout_ms.get(), 2000);
         assert_eq!(config.native_interaction.settle_ms, 0);
     }
 
@@ -657,14 +658,14 @@ mod tests {
     fn test_orchestrator_config_defaults() {
         let config = OrchestratorConfig::default();
         assert_eq!(config.max_global_concurrency, 5);
-        assert_eq!(config.task_timeout_ms, 60000);
+        assert_eq!(config.task_timeout_ms.get(), 60000);
         assert_eq!(config.max_retries, 3);
     }
 
     #[test]
     fn test_twitter_activity_config_defaults() {
         let config = TwitterActivityConfig::default();
-        assert_eq!(config.feed_scan_duration_ms, 60000);
+        assert_eq!(config.feed_scan_duration_ms.get(), 60000);
         assert_eq!(config.feed_scroll_count, 10);
         assert_eq!(config.engagement_candidate_count, 5);
         assert_eq!(config.engagement_limits.max_likes, 5);
@@ -678,7 +679,7 @@ mod tests {
         let config = CircuitBreakerConfig::default();
         assert_eq!(config.failure_threshold, 5);
         assert_eq!(config.success_threshold, 3);
-        assert_eq!(config.half_open_time_ms, 30000);
+        assert_eq!(config.half_open_time_ms.get(), 30000);
     }
 
     #[test]
@@ -966,8 +967,8 @@ extensions = ["task"]
         let config = NativeInteractionConfig::default();
         assert_eq!(config.calibration_mode, NativeClickCalibrationMode::Windows);
         assert_eq!(config.native_input_backend, NativeInputBackend::Enigo);
-        assert_eq!(config.stability_wait_ms, 5000);
-        assert_eq!(config.resolve_timeout_ms, 2000);
+        assert_eq!(config.stability_wait_ms.get(), 5000);
+        assert_eq!(config.resolve_timeout_ms.get(), 2000);
         assert_eq!(config.settle_ms, 0);
     }
 
@@ -1259,27 +1260,27 @@ extensions = ["task"]
             enabled: true,
             failure_threshold: 10,
             success_threshold: 5,
-            half_open_time_ms: 60000,
+            half_open_time_ms: DurationMs::new_const(60000),
         };
         assert!(config.enabled);
         assert_eq!(config.failure_threshold, 10);
         assert_eq!(config.success_threshold, 5);
-        assert_eq!(config.half_open_time_ms, 60000);
+        assert_eq!(config.half_open_time_ms.get(), 60000);
     }
 
     #[test]
     fn test_orchestrator_config_custom_values() {
         let config = OrchestratorConfig {
             max_global_concurrency: 10,
-            task_timeout_ms: 120000,
-            group_timeout_ms: 600000,
-            worker_wait_timeout_ms: 20000,
+            task_timeout_ms: DurationMs::new_const(120000),
+            group_timeout_ms: DurationMs::new_const(600000),
+            worker_wait_timeout_ms: DurationMs::new_const(20000),
             task_stagger_delay_ms: 1000,
             max_retries: 5,
-            retry_delay_ms: 5000,
+            retry_delay_ms: DurationMs::new_const(5000),
         };
         assert_eq!(config.max_global_concurrency, 10);
-        assert_eq!(config.task_timeout_ms, 120000);
+        assert_eq!(config.task_timeout_ms.get(), 120000);
         assert_eq!(config.max_retries, 5);
     }
 
@@ -2390,7 +2391,8 @@ max_total_actions = 10
 
         // Orchestrator overrides (u64 parse)
         assert_eq!(
-            config.orchestrator.task_timeout_ms, 120000,
+            config.orchestrator.task_timeout_ms.get(),
+            120000,
             "TASK_TIMEOUT_MS should override TOML value (60000 -> 120000)"
         );
         // Orchestrator overrides (u32 parse)
@@ -2412,11 +2414,13 @@ max_total_actions = 10
 
         // Native interaction overrides (u64 parse)
         assert_eq!(
-            config.browser.native_interaction.stability_wait_ms, 3000,
+            config.browser.native_interaction.stability_wait_ms.get(),
+            3000,
             "NATIVE_INTERACTION_STABILITY_WAIT_MS should override (5000 -> 3000)"
         );
         assert_eq!(
-            config.browser.native_interaction.resolve_timeout_ms, 1500,
+            config.browser.native_interaction.resolve_timeout_ms.get(),
+            1500,
             "NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS should override (2000 -> 1500)"
         );
         assert_eq!(
@@ -2591,7 +2595,8 @@ max_total_actions = 10
 
         // Orchestrator numeric fields fall back to TOML values
         assert_eq!(
-            config.orchestrator.task_timeout_ms, 99999,
+            config.orchestrator.task_timeout_ms.get(),
+            99999,
             "Invalid TASK_TIMEOUT_MS should fall back to TOML value (99999)"
         );
         assert_eq!(
@@ -2607,11 +2612,13 @@ max_total_actions = 10
 
         // Native interaction fields fall back to TOML values
         assert_eq!(
-            config.browser.native_interaction.stability_wait_ms, 9999,
+            config.browser.native_interaction.stability_wait_ms.get(),
+            9999,
             "Invalid NATIVE_INTERACTION_STABILITY_WAIT_MS should fall back to TOML (9999)"
         );
         assert_eq!(
-            config.browser.native_interaction.resolve_timeout_ms, 8888,
+            config.browser.native_interaction.resolve_timeout_ms.get(),
+            8888,
             "Invalid NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS should fall back to TOML (8888)"
         );
         assert_eq!(
@@ -2745,14 +2752,14 @@ fn load_code_config() -> Result<Config> {
 
     Ok(Config {
         browser: BrowserConfig {
-            connection_timeout_ms: 10000,
+            connection_timeout_ms: DurationMs::new_const(10000),
             max_discovery_retries: 3,
-            discovery_retry_delay_ms: 5000,
+            discovery_retry_delay_ms: DurationMs::new_const(5000),
             circuit_breaker: CircuitBreakerConfig {
                 enabled: true,
                 failure_threshold: 5,
                 success_threshold: 3,
-                half_open_time_ms: 30000,
+                half_open_time_ms: DurationMs::new_const(30000),
             },
             profiles: vec![],
             roxybrowser: RoxybrowserConfig {
@@ -2770,12 +2777,12 @@ fn load_code_config() -> Result<Config> {
         },
         orchestrator: OrchestratorConfig {
             max_global_concurrency: 20,
-            task_timeout_ms: 600_000,
-            group_timeout_ms: 600_000,
-            worker_wait_timeout_ms: 10000,
+            task_timeout_ms: DurationMs::new_const(600_000),
+            group_timeout_ms: DurationMs::new_const(600_000),
+            worker_wait_timeout_ms: DurationMs::new_const(10000),
             task_stagger_delay_ms: 2000,
             max_retries: 2,
-            retry_delay_ms: 500,
+            retry_delay_ms: DurationMs::new_const(500),
         },
         twitter_activity: TwitterActivityConfig::default(),
         tracing: TracingConfig::default(),
@@ -2801,7 +2808,9 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
     if let Ok(timeout) = env::var("TASK_TIMEOUT_MS") {
         config.orchestrator.task_timeout_ms = timeout
-            .parse()
+            .parse::<u64>()
+            .ok()
+            .and_then(DurationMs::new)
             .unwrap_or(config.orchestrator.task_timeout_ms);
     }
     if let Ok(retries) = env::var("MAX_RETRIES") {
@@ -2829,12 +2838,16 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
     if let Ok(stability_wait_ms) = env::var("NATIVE_INTERACTION_STABILITY_WAIT_MS") {
         config.browser.native_interaction.stability_wait_ms = stability_wait_ms
-            .parse()
+            .parse::<u64>()
+            .ok()
+            .and_then(DurationMs::new)
             .unwrap_or(config.browser.native_interaction.stability_wait_ms);
     }
     if let Ok(resolve_timeout_ms) = env::var("NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS") {
         config.browser.native_interaction.resolve_timeout_ms = resolve_timeout_ms
-            .parse()
+            .parse::<u64>()
+            .ok()
+            .and_then(DurationMs::new)
             .unwrap_or(config.browser.native_interaction.resolve_timeout_ms);
     }
     if let Ok(settle_ms) = env::var("NATIVE_INTERACTION_SETTLE_MS") {
@@ -3117,34 +3130,34 @@ impl ConfigValidationReport {
         }
 
         // Timeout validations
-        if config.task_timeout_ms == 0 {
+        if config.task_timeout_ms.get() == 0 {
             return Err(OrchestratorError::Config(ConfigError::InvalidValue {
                 field: "task_timeout_ms".to_string(),
                 value: config.task_timeout_ms.to_string(),
                 reason: "must be > 0".to_string(),
             }));
         }
-        if config.task_timeout_ms < 5_000 {
+        if config.task_timeout_ms.get() < 5_000 {
             warn!(
                 "task_timeout_ms ({}) is very low. Tasks may timeout before completing.",
                 config.task_timeout_ms
             );
         }
-        if config.task_timeout_ms > 3_600_000 {
+        if config.task_timeout_ms.get() > 3_600_000 {
             warn!(
                 "task_timeout_ms ({}) is very high (>1 hour). Consider breaking tasks into smaller units.",
                 config.task_timeout_ms
             );
         }
 
-        if config.group_timeout_ms == 0 {
+        if config.group_timeout_ms.get() == 0 {
             return Err(OrchestratorError::Config(ConfigError::InvalidValue {
                 field: "group_timeout_ms".to_string(),
                 value: config.group_timeout_ms.to_string(),
                 reason: "must be > 0".to_string(),
             }));
         }
-        if config.group_timeout_ms < config.task_timeout_ms {
+        if config.group_timeout_ms.get() < config.task_timeout_ms.get() {
             warn!(
                 "group_timeout_ms ({}) is less than task_timeout_ms ({}). \
                  This may cause group timeouts before individual tasks complete.",
@@ -3153,14 +3166,14 @@ impl ConfigValidationReport {
         }
 
         // Worker timeout validation
-        if config.worker_wait_timeout_ms == 0 {
+        if config.worker_wait_timeout_ms.get() == 0 {
             return Err(OrchestratorError::Config(ConfigError::InvalidValue {
                 field: "worker_wait_timeout_ms".to_string(),
                 value: config.worker_wait_timeout_ms.to_string(),
                 reason: "must be > 0".to_string(),
             }));
         }
-        if config.worker_wait_timeout_ms < 1_000 {
+        if config.worker_wait_timeout_ms.get() < 1_000 {
             warn!(
                 "worker_wait_timeout_ms ({}) is very low. Workers may timeout before acquiring resources.",
                 config.worker_wait_timeout_ms
@@ -3175,10 +3188,10 @@ impl ConfigValidationReport {
                 config.max_retries
             );
         }
-        if config.retry_delay_ms == 0 {
+        if config.retry_delay_ms.get() == 0 {
             warn!("retry_delay_ms is 0. Consider adding a delay to avoid tight retry loops.");
         }
-        if config.retry_delay_ms > 30_000 {
+        if config.retry_delay_ms.get() > 30_000 {
             warn!(
                 "retry_delay_ms ({}) is very high. This may cause long delays between retries.",
                 config.retry_delay_ms
@@ -3223,10 +3236,7 @@ impl ConfigValidationReport {
             );
         }
 
-        if config.discovery_retry_delay_ms == 0 {
-            warn!("discovery_retry_delay_ms is 0. Consider adding a delay between retries.");
-        }
-        if config.discovery_retry_delay_ms > 60_000 {
+        if config.discovery_retry_delay_ms.get() > 60_000 {
             warn!(
                 "discovery_retry_delay_ms ({}) is very high. This may cause long startup delays.",
                 config.discovery_retry_delay_ms
@@ -3334,13 +3344,13 @@ impl ConfigValidationReport {
             );
         }
 
-        if config.half_open_time_ms < 5_000 {
+        if config.half_open_time_ms.get() < 5_000 {
             warn!(
                 "circuit_breaker.half_open_time_ms ({}) is very low. Circuit may close prematurely.",
                 config.half_open_time_ms
             );
         }
-        if config.half_open_time_ms > 300_000 {
+        if config.half_open_time_ms.get() > 300_000 {
             warn!(
                 "circuit_breaker.half_open_time_ms ({}) is very high. Recovery may take too long.",
                 config.half_open_time_ms
@@ -3353,17 +3363,17 @@ impl ConfigValidationReport {
     /// Validate Twitter Activity configuration
     pub fn validate_twitter_activity_config(&self, config: &TwitterActivityConfig) -> Result<()> {
         // Feed scan duration validation (10s - 30min range)
-        if config.feed_scan_duration_ms < 10_000 {
+        if config.feed_scan_duration_ms.get() < 10_000 {
             warn!(
                 "twitter_activity.feed_scan_duration_ms ({}) is very low (<10s). \
                  Feed scan may not capture enough content.",
-                config.feed_scan_duration_ms
+                config.feed_scan_duration_ms.get()
             );
         }
-        if config.feed_scan_duration_ms > 1_800_000 {
+        if config.feed_scan_duration_ms.get() > 1_800_000 {
             return Err(OrchestratorError::Config(ConfigError::InvalidValue {
                 field: "twitter_activity.feed_scan_duration_ms".to_string(),
-                value: config.feed_scan_duration_ms.to_string(),
+                value: config.feed_scan_duration_ms.get().to_string(),
                 reason: "exceeds maximum (30min). Consider breaking into multiple shorter scans."
                     .to_string(),
             }));

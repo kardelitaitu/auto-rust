@@ -269,24 +269,18 @@ impl Default for CursorMovementConfig {
 }
 
 impl CursorMovementConfig {
-    #[allow(dead_code)]
-    #[must_use]
     pub fn with_speed(mut self, speed: Speed) -> Self {
         self.speed = speed;
         self
     }
 
-    #[allow(dead_code)]
-    #[must_use]
     pub fn with_precision(mut self, precision: Precision) -> Self {
         self.precision = precision;
         self
     }
 
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn with_path_style(mut self, style: PathStyle) -> Self {
-        self.path_style = style;
+    pub fn with_path_style(mut self, path_style: PathStyle) -> Self {
+        self.path_style = path_style;
         self
     }
 
@@ -383,7 +377,6 @@ pub async fn cursor_move_to_with_config(
     Ok(())
 }
 
-#[allow(clippy::cast_precision_loss)]
 pub async fn cursor_move_to_immediate(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
     dispatch_mousemove(page, target_x, target_y).await?;
     sync_cursor_overlay_force(page).await.ok();
@@ -584,72 +577,18 @@ pub async fn right_click_at_without_move(page: &Page, x: f64, y: f64) -> Result<
     dispatch_click(page, x, y, MouseButton::Right).await
 }
 
-#[allow(dead_code)]
-#[allow(clippy::cast_precision_loss)]
-pub async fn click_at_with_options(
-    page: &Page,
-    x: f64,
-    y: f64,
-    button: MouseButton,
-    move_to_first: bool,
-    precision: Precision,
-    hover_ms: u64,
-) -> Result<()> {
-    let viewport = get_viewport(page).await?;
-
-    if x < 0.0 || x > viewport.width || y < 0.0 || y > viewport.height {
-        anyhow::bail!(
-            "Coordinates ({}, {}) outside viewport ({}x{})",
-            x,
-            y,
-            viewport.width,
-            viewport.height
-        );
-    }
-
-    let mut target_x = x;
-    let mut target_y = y;
-
-    match precision {
-        Precision::Rough => {
-            target_x = x + random_in_range(0, 20) as f64 - 10.0;
-            target_y = y + random_in_range(0, 20) as f64 - 10.0;
-        }
-        Precision::Safe => {
-            target_x = x + random_in_range(0, 6) as f64 - 3.0;
-            target_y = y + random_in_range(0, 6) as f64 - 3.0;
-        }
-        Precision::Exact => {}
-    }
-
-    if move_to_first {
-        cursor_move_to(page, target_x, target_y).await?;
-    } else {
-        dispatch_mousemove(page, target_x, target_y).await?;
-    }
-
-    if hover_ms > 0 {
-        human_pause(hover_ms, 20).await;
-    }
-
-    dispatch_click(page, target_x, target_y, button).await
-}
-
-#[allow(clippy::cast_precision_loss)]
 pub async fn left_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     cursor_move_to(page, x, y).await?;
     human_pause(50, 50).await;
     dispatch_click(page, x, y, MouseButton::Left).await
 }
 
-#[allow(dead_code)]
 pub async fn middle_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     cursor_move_to(page, x, y).await?;
     human_pause(50, 50).await;
     dispatch_click(page, x, y, MouseButton::Middle).await
 }
 
-#[allow(dead_code)]
 pub async fn right_click_at(page: &Page, x: f64, y: f64) -> Result<()> {
     cursor_move_to(page, x, y).await?;
     human_pause(50, 50).await;
@@ -884,13 +823,6 @@ async fn dispatch_mouse_event_cdp(
         .await
         .map_err(|_| anyhow::anyhow!("dispatch_mouse_event_cdp timed out"))??;
     Ok(())
-}
-
-#[allow(dead_code)]
-pub async fn click_selector(page: &Page, selector: &str) -> Result<()> {
-    click_selector_human(page, selector, 60, 25, 6)
-        .await
-        .map(|_| ())
 }
 
 pub async fn hover_selector_human(
@@ -1399,43 +1331,6 @@ fn generate_collision_free_path(
     safe_points
 }
 
-/// Moves cursor along a series of points with human-like timing and attention simulation
-#[allow(dead_code)]
-#[allow(clippy::cast_precision_loss)]
-async fn move_along_points(
-    page: &Page,
-    points: &[Point],
-    config: &CursorMovementConfig,
-) -> Result<()> {
-    for (i, point) in points.iter().enumerate() {
-        dispatch_mousemove(page, point.x, point.y).await?;
-
-        if config.add_micro_pauses {
-            let delay = (config.min_step_delay_ms as f64 / config.speed_multiplier) as u64;
-            let variance =
-                (config.max_step_delay_variance_ms as f64 / config.speed_multiplier) as u32;
-            human_pause(delay, variance).await;
-
-            // Phase 2: Attention simulation - occasional drift and micro-breaks
-            if random_in_range(0, 100) < 8 {
-                // 8% chance of attention drift
-                simulate_attention_drift(page, point.x, point.y).await?;
-            } else if random_in_range(0, 100) < 12 {
-                // 12% chance of micro-pause
-                human_pause(random_in_range(50, 200), 20).await;
-            }
-
-            // Phase 2: Fatigue effects - occasional longer pauses when "tired"
-            if i > points.len() / 2 && random_in_range(0, 100) < 5 {
-                // 5% chance in second half
-                human_pause(random_in_range(300, 800), 30).await; // Fatigue pause
-            }
-        }
-    }
-
-    Ok(())
-}
-
 /// Simulates human attention drift - cursor briefly moves away then corrects back
 #[allow(clippy::cast_precision_loss)]
 async fn simulate_attention_drift(page: &Page, target_x: f64, target_y: f64) -> Result<()> {
@@ -1462,7 +1357,6 @@ async fn simulate_attention_drift(page: &Page, target_x: f64, target_y: f64) -> 
 }
 
 /// Checks if element is visually clickable (not obscured, enabled, etc.)
-#[allow(clippy::cast_precision_loss)]
 async fn is_element_clickable(page: &Page, selector: &str) -> Result<bool> {
     let js = format!(
         r"(() => {{
@@ -1589,7 +1483,10 @@ pub async fn native_click_selector_human(
     native_interaction: &NativeInteractionConfig,
 ) -> Result<ClickOutcome> {
     let trace_id = next_nativeclick_trace_id();
-    let stability_wait_ms = native_interaction.stability_wait_ms.clamp(1_000, 30_000);
+    let stability_wait_ms = native_interaction
+        .stability_wait_ms
+        .get()
+        .clamp(1_000, 30_000);
     if !wait_for_element_stability(page, selector, stability_wait_ms).await? {
         return Err(anyhow::anyhow!(
             "trace={trace_id} nativeclick element '{selector}' not stable within {stability_wait_ms}ms"
@@ -1626,7 +1523,12 @@ pub async fn native_click_selector_human(
     }
 
     let bbox = timeout(
-        Duration::from_millis(native_interaction.resolve_timeout_ms.clamp(250, 30_000)),
+        Duration::from_millis(
+            native_interaction
+                .resolve_timeout_ms
+                .get()
+                .clamp(250, 30_000),
+        ),
         resolve_selector_bbox_with_retry(page, selector, 3),
     )
     .await
@@ -2010,7 +1912,12 @@ async fn resolve_native_cursor_candidate(
     );
 
     let result = timeout(
-        Duration::from_millis(native_interaction.resolve_timeout_ms.clamp(250, 30_000)),
+        Duration::from_millis(
+            native_interaction
+                .resolve_timeout_ms
+                .get()
+                .clamp(250, 30_000),
+        ),
         page.evaluate(js),
     )
     .await
@@ -2234,94 +2141,6 @@ async fn verify_click_target(page: &Page, selector: &str, x: f64, y: f64) -> Res
         .unwrap_or(false))
 }
 
-#[allow(dead_code)]
-async fn native_click_probe_point(page: &Page) -> Result<Option<(f64, f64)>> {
-    let js = format!(
-        r"(function() {{
-            const value = window.{probe_point_flag};
-            if (!value) return null;
-            return {{ x: value.x ?? null, y: value.y ?? null }};
-        }})()",
-        probe_point_flag = "__auto_rust_nativeclick_probe_point",
-    );
-    let result = timeout(Duration::from_millis(400), page.evaluate(js))
-        .await
-        .map_err(|_| anyhow::anyhow!("nativeclick probe point read timed out"))??;
-    let value = result.value().cloned();
-    let Some(obj) = value.and_then(|v| v.as_object().cloned()) else {
-        return Ok(None);
-    };
-    let x = obj.get("x").and_then(serde_json::Value::as_f64);
-    let y = obj.get("y").and_then(serde_json::Value::as_f64);
-    Ok(match (x, y) {
-        (Some(x), Some(y)) => Some((x, y)),
-        _ => None,
-    })
-}
-
-#[allow(dead_code)]
-async fn inject_native_click_probe(page: &Page) -> Result<()> {
-    inject_native_click_probe_at(page, 64.0, 64.0).await
-}
-
-#[allow(dead_code)]
-async fn inject_native_click_probe_at(page: &Page, left: f64, top: f64) -> Result<()> {
-    let js = format!(
-        r"(function() {{
-            window.{hit_flag} = false;
-            window.__auto_rust_nativeclick_probe_point = null;
-            let probe = document.getElementById({probe_id});
-            if (!probe) {{
-                probe = document.createElement('button');
-                probe.id = {probe_id};
-                probe.type = 'button';
-                probe.textContent = '';
-                probe.style.position = 'fixed';
-                probe.style.left = '{left}px';
-                probe.style.top = '{top}px';
-                probe.style.width = '48px';
-                probe.style.height = '48px';
-                probe.style.margin = '0';
-                probe.style.padding = '0';
-                probe.style.border = '0';
-                probe.style.opacity = '0.01';
-                probe.style.background = 'transparent';
-                probe.style.zIndex = '2147483647';
-                probe.style.pointerEvents = 'auto';
-                probe.style.cursor = 'default';
-                probe.onclick = (evt) => {{
-                    window.{hit_flag} = true;
-                    window.__auto_rust_nativeclick_probe_point = {{ x: evt.clientX, y: evt.clientY }};
-                }};
-                (document.body || document.documentElement).appendChild(probe);
-            }} else {{
-                probe.style.left = '{left}px';
-                probe.style.top = '{top}px';
-                probe.style.width = '48px';
-                probe.style.height = '48px';
-                probe.style.opacity = '0.01';
-                probe.style.pointerEvents = 'auto';
-                probe.style.zIndex = '2147483647';
-                probe.onclick = (evt) => {{
-                    window.{hit_flag} = true;
-                    window.__auto_rust_nativeclick_probe_point = {{ x: evt.clientX, y: evt.clientY }};
-                }};
-            }}
-            return true;
-        }})()",
-        probe_id = serde_json::to_string(NATIVE_CLICK_PROBE_ID)?,
-        hit_flag = NATIVE_CLICK_PROBE_HIT_FLAG,
-        left = left,
-        top = top,
-    );
-
-    let _result = timeout(Duration::from_secs(2), page.evaluate(js))
-        .await
-        .map_err(|_| anyhow::anyhow!("nativeclick probe injection timeout"))??;
-
-    Ok(())
-}
-
 async fn browser_window_metrics(page: &Page) -> Result<BrowserWindowMetrics> {
     let js = r"(() => ({
         screen_x: window.screenX ?? window.screenLeft ?? 0,
@@ -2427,13 +2246,6 @@ async fn native_move_to_point(
     })
     .await
     .map_err(|err| anyhow::anyhow!("trace={trace_id} nativecursor join error: {err}"))?
-}
-
-#[allow(dead_code)]
-#[must_use]
-pub fn fitts_law_optimal_size(distance: f64, time: f64) -> f64 {
-    let id = time / 100.0;
-    2.0 * distance / (2.0_f64.powf(id))
 }
 
 #[cfg(test)]
@@ -2566,6 +2378,11 @@ mod tests {
         let end = Point::new(100.0, 100.0);
         let points = generate_muscle_path(&start, &end);
         assert!(!points.is_empty());
+    }
+
+    fn fitts_law_optimal_size(distance: f64, time: f64) -> f64 {
+        let id = time / 100.0;
+        2.0 * distance / (2.0_f64.powf(id))
     }
 
     #[test]

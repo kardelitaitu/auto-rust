@@ -1,0 +1,42 @@
+version: 1
+id: 0016-extract-orchestrator-concerns
+title: Extract Orchestrator Concerns
+status: done
+owner: spec-agent
+implementer: buffy
+priority: P2
+area:
+  - orchestrator
+  - core-architecture
+files:
+  code:
+    - src/orchestrator.rs (replaced by src/orchestrator/mod.rs)
+    - src/orchestrator/mod.rs
+    - src/orchestrator/execution.rs
+    - src/orchestrator/guards.rs
+    - src/orchestrator/retry.rs
+    - src/orchestrator/health.rs
+    - src/orchestrator/test_utils.rs
+  docs:
+    - docs/specs/_done/0016-extract-orchestrator-concerns/plan.md
+    - docs/specs/_done/0016-extract-orchestrator-concerns/validation.md
+acceptance:
+  - mod.rs ≤100 lines (Orchestrator struct, new(), public re-exports)
+  - execution.rs ≤400 lines (execute_group, execute_group_with_cancel, execute_task_on_session)
+  - guards.rs ≤250 lines (GlobalExecutionSlot, SessionExecutionGuard, acquire_global_execution_slot + tests)
+  - retry.rs ≤250 lines (execute_task_with_retry, TaskAttemptFailure + tests)
+  - health.rs ≤150 lines (should_mark_session_unhealthy, format_duration, broadcast_execution_count + tests)
+  - test_utils.rs (shared by submodule tests) — create_test_config, connect_test_session
+  - All submodules compile (cargo check -p auto-rust)
+  - All existing orchestrator tests pass (cargo test --lib orchestrator)
+  - No public API breakage — Orchestrator::new(), execute_group() unchanged
+  - cargo clippy --all-targets --all-features passes with 0 warnings
+non_goals:
+  - No behavioral changes to task execution, retry logic, or concurrency control
+  - No changes to public types or signatures
+  - No new features or optimizations
+  - No changes to how orchestration integrates with session management or metrics
+risks:
+  - Moving async functions requires careful import management (tokio, parking_lot)
+  - SessionExecutionGuard uses Drop impl — must preserve drop semantics during extraction
+  - GlobalExecutionSlot uses Arc<AtomicUsize> + OwnedSemaphorePermit for concurrency — must preserve

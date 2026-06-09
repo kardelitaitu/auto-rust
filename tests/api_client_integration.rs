@@ -180,7 +180,8 @@ async fn test_circuit_breaker_blocks_requests_when_open() {
         .mount(&mock_server)
         .await;
 
-    let cb = auto::api::client::CircuitBreaker::new(2, 2, 1000);
+    let cb =
+        auto::api::client::CircuitBreaker::new(2, 2, auto::session::DurationMs::new_const(1000));
     let client = create_test_client_with_circuit_breaker(&mock_server, cb);
 
     // First request - circuit closed, should attempt

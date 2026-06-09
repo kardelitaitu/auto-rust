@@ -7,6 +7,7 @@
 //! - Exponential backoff with jitter for retries
 //! - JSON serialization/deserialization support
 
+use crate::session::DurationMs;
 use anyhow::{anyhow, bail, Result};
 use log::{info, warn};
 use parking_lot::Mutex;
@@ -316,7 +317,7 @@ pub struct CircuitBreaker {
     success_threshold: u32,
     /// Time to wait before trying to close the circuit again (milliseconds)
     #[allow(dead_code)]
-    half_open_timeout_ms: u64,
+    half_open_timeout_ms: DurationMs,
     /// Current count of consecutive failures
     failures: u32,
     /// Current count of consecutive successes (in half-open state)
@@ -340,7 +341,7 @@ impl CircuitBreaker {
     pub const fn new(
         failure_threshold: u32,
         success_threshold: u32,
-        half_open_timeout_ms: u64,
+        half_open_timeout_ms: DurationMs,
     ) -> Self {
         Self {
             failure_threshold,
@@ -415,7 +416,7 @@ impl CircuitBreaker {
 
 impl Default for CircuitBreaker {
     fn default() -> Self {
-        Self::new(5, 3, 30000)
+        Self::new(5, 3, DurationMs::new_const(30000))
     }
 }
 
@@ -479,13 +480,13 @@ mod tests {
         let cb = CircuitBreaker::default();
         assert_eq!(cb.failure_threshold, 5);
         assert_eq!(cb.success_threshold, 3);
-        assert_eq!(cb.half_open_timeout_ms, 30000);
+        assert_eq!(cb.half_open_timeout_ms.get(), 30000);
         assert!(cb.is_closed());
     }
 
     #[test]
     fn test_circuit_breaker_opens_on_failures() {
-        let mut cb = CircuitBreaker::new(3, 2, 30000);
+        let mut cb = CircuitBreaker::new(3, 2, DurationMs::new_const(30000));
 
         assert!(cb.can_execute());
         assert!(cb.is_closed());
@@ -505,7 +506,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_closes_on_successes() {
-        let mut cb = CircuitBreaker::new(2, 2, 30000);
+        let mut cb = CircuitBreaker::new(2, 2, DurationMs::new_const(30000));
 
         // Open the circuit
         cb.record_failure();
@@ -527,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_reset() {
-        let mut cb = CircuitBreaker::new(2, 2, 30000);
+        let mut cb = CircuitBreaker::new(2, 2, DurationMs::new_const(30000));
 
         cb.record_failure();
         cb.record_failure();
@@ -627,21 +628,21 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_half_open_allows_execution() {
-        let mut cb = CircuitBreaker::new(3, 2, 30000);
+        let mut cb = CircuitBreaker::new(3, 2, DurationMs::new_const(30000));
         cb.state = CircuitState::HalfOpen;
         assert!(cb.can_execute());
     }
 
     #[test]
     fn test_circuit_breaker_open_blocks_execution() {
-        let mut cb = CircuitBreaker::new(3, 2, 30000);
+        let mut cb = CircuitBreaker::new(3, 2, DurationMs::new_const(30000));
         cb.state = CircuitState::Open;
         assert!(!cb.can_execute());
     }
 
     #[test]
     fn test_circuit_breaker_failure_in_half_open_opens() {
-        let mut cb = CircuitBreaker::new(2, 2, 30000);
+        let mut cb = CircuitBreaker::new(2, 2, DurationMs::new_const(30000));
         cb.state = CircuitState::HalfOpen;
         cb.record_failure();
         assert!(cb.is_open());
@@ -650,15 +651,15 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_custom_thresholds() {
-        let cb = CircuitBreaker::new(10, 5, 60000);
+        let cb = CircuitBreaker::new(10, 5, DurationMs::new_const(60000));
         assert_eq!(cb.failure_threshold, 10);
         assert_eq!(cb.success_threshold, 5);
-        assert_eq!(cb.half_open_timeout_ms, 60000);
+        assert_eq!(cb.half_open_timeout_ms.get(), 60000);
     }
 
     #[test]
     fn test_circuit_breaker_state_accessor() {
-        let cb = CircuitBreaker::new(5, 3, 30000);
+        let cb = CircuitBreaker::new(5, 3, DurationMs::new_const(30000));
         assert_eq!(cb.state(), CircuitState::Closed);
     }
 
@@ -671,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_api_client_with_circuit_breaker() {
-        let cb = CircuitBreaker::new(5, 3, 30000);
+        let cb = CircuitBreaker::new(5, 3, DurationMs::new_const(30000));
         let client = ApiClient::with_circuit_breaker("https://api.example.com".to_string(), cb);
         assert!(client.circuit_breaker.is_some());
     }
@@ -691,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_single_failure_does_not_open() {
-        let mut cb = CircuitBreaker::new(5, 3, 30000);
+        let mut cb = CircuitBreaker::new(5, 3, DurationMs::new_const(30000));
         cb.record_failure();
         assert!(cb.is_closed());
         assert!(cb.can_execute());
@@ -699,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_success_in_closed_state() {
-        let mut cb = CircuitBreaker::new(5, 3, 30000);
+        let mut cb = CircuitBreaker::new(5, 3, DurationMs::new_const(30000));
         cb.record_success();
         assert!(cb.is_closed());
         assert!(cb.can_execute());
@@ -707,7 +708,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_multiple_successes_in_closed() {
-        let mut cb = CircuitBreaker::new(5, 3, 30000);
+        let mut cb = CircuitBreaker::new(5, 3, DurationMs::new_const(30000));
         for _ in 0..10 {
             cb.record_success();
         }
@@ -717,7 +718,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_zero_failure_threshold() {
-        let mut cb = CircuitBreaker::new(0, 3, 30000);
+        let mut cb = CircuitBreaker::new(0, 3, DurationMs::new_const(30000));
         // With 0 threshold, first failure should open
         cb.record_failure();
         assert!(cb.is_open());
@@ -725,7 +726,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_zero_success_threshold() {
-        let mut cb = CircuitBreaker::new(5, 0, 30000);
+        let mut cb = CircuitBreaker::new(5, 0, DurationMs::new_const(30000));
         cb.state = CircuitState::HalfOpen;
         // With 0 threshold, first success should close
         cb.record_success();
@@ -820,7 +821,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_very_large_thresholds() {
-        let cb = CircuitBreaker::new(1000, 500, 60000);
+        let cb = CircuitBreaker::new(1000, 500, DurationMs::new_const(60000));
         assert_eq!(cb.failure_threshold, 1000);
         assert_eq!(cb.success_threshold, 500);
     }
@@ -833,14 +834,14 @@ mod tests {
 
     #[test]
     fn test_api_client_can_execute_with_closed_circuit() {
-        let cb = CircuitBreaker::new(5, 3, 30000);
+        let cb = CircuitBreaker::new(5, 3, DurationMs::new_const(30000));
         let client = ApiClient::with_circuit_breaker("https://api.example.com".to_string(), cb);
         assert!(client.can_execute());
     }
 
     #[test]
     fn test_api_client_can_execute_with_open_circuit() {
-        let mut cb = CircuitBreaker::new(1, 3, 30000);
+        let mut cb = CircuitBreaker::new(1, 3, DurationMs::new_const(30000));
         cb.record_failure();
         let client = ApiClient::with_circuit_breaker("https://api.example.com".to_string(), cb);
         assert!(!client.can_execute());

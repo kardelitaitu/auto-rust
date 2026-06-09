@@ -33,7 +33,7 @@ impl Validate for OrchestratorConfig {
             });
         }
 
-        if self.task_timeout_ms < 1000 {
+        if self.task_timeout_ms.get() < 1000 {
             return Err(ConfigError::InvalidValue {
                 field: "task_timeout_ms".to_string(),
                 value: self.task_timeout_ms.to_string(),
@@ -41,7 +41,7 @@ impl Validate for OrchestratorConfig {
             });
         }
 
-        if self.group_timeout_ms < 1000 {
+        if self.group_timeout_ms.get() < 1000 {
             return Err(ConfigError::InvalidValue {
                 field: "group_timeout_ms".to_string(),
                 value: self.group_timeout_ms.to_string(),
@@ -49,7 +49,7 @@ impl Validate for OrchestratorConfig {
             });
         }
 
-        if self.worker_wait_timeout_ms < 1000 {
+        if self.worker_wait_timeout_ms.get() < 1000 {
             return Err(ConfigError::InvalidValue {
                 field: "worker_wait_timeout_ms".to_string(),
                 value: self.worker_wait_timeout_ms.to_string(),
@@ -65,7 +65,7 @@ impl Validate for OrchestratorConfig {
             });
         }
 
-        if self.retry_delay_ms < 100 {
+        if self.retry_delay_ms.get() < 100 {
             return Err(ConfigError::InvalidValue {
                 field: "retry_delay_ms".to_string(),
                 value: self.retry_delay_ms.to_string(),
@@ -87,7 +87,7 @@ impl Validate for OrchestratorConfig {
 
 impl Validate for BrowserConfig {
     fn validate(&self) -> Result<(), ConfigError> {
-        if self.connection_timeout_ms < 5000 {
+        if self.connection_timeout_ms.get() < 5000 {
             return Err(ConfigError::InvalidValue {
                 field: "connection_timeout_ms".to_string(),
                 value: self.connection_timeout_ms.to_string(),
@@ -103,7 +103,7 @@ impl Validate for BrowserConfig {
             });
         }
 
-        if self.discovery_retry_delay_ms < 100 {
+        if self.discovery_retry_delay_ms.get() < 100 {
             return Err(ConfigError::InvalidValue {
                 field: "discovery_retry_delay_ms".to_string(),
                 value: self.discovery_retry_delay_ms.to_string(),
@@ -142,24 +142,25 @@ impl Validate for BrowserConfig {
 mod tests {
     use super::*;
     use crate::config::{BrowserConfig, BrowserProfile, OrchestratorConfig};
+    use crate::session::DurationMs;
 
     fn create_valid_orchestrator_config() -> OrchestratorConfig {
         OrchestratorConfig {
             max_global_concurrency: 5,
-            task_timeout_ms: 60000,
-            group_timeout_ms: 300000,
-            worker_wait_timeout_ms: 10000,
+            task_timeout_ms: DurationMs::new_const(60000),
+            group_timeout_ms: DurationMs::new_const(300000),
+            worker_wait_timeout_ms: DurationMs::new_const(10000),
             task_stagger_delay_ms: 500,
             max_retries: 3,
-            retry_delay_ms: 2000,
+            retry_delay_ms: DurationMs::new_const(2000),
         }
     }
 
     fn create_valid_browser_config() -> BrowserConfig {
         BrowserConfig {
-            connection_timeout_ms: 30000,
+            connection_timeout_ms: DurationMs::new_const(30000),
             max_discovery_retries: 3,
-            discovery_retry_delay_ms: 500,
+            discovery_retry_delay_ms: DurationMs::new_const(500),
             circuit_breaker: crate::config::CircuitBreakerConfig::default(),
             profiles: vec![BrowserProfile {
                 name: "test".to_string(),
@@ -196,7 +197,7 @@ mod tests {
     #[test]
     fn test_validate_orchestrator_task_timeout_too_low() {
         let mut config = create_valid_orchestrator_config();
-        config.task_timeout_ms = 500;
+        config.task_timeout_ms = DurationMs::new_const(500);
         let err = config.validate().unwrap_err();
         assert!(
             matches!(err, ConfigError::InvalidValue { field, .. } if field == "task_timeout_ms")
@@ -214,7 +215,7 @@ mod tests {
     #[test]
     fn test_validate_orchestrator_retry_delay_too_low() {
         let mut config = create_valid_orchestrator_config();
-        config.retry_delay_ms = 50;
+        config.retry_delay_ms = DurationMs::new_const(50);
         let err = config.validate().unwrap_err();
         assert!(
             matches!(err, ConfigError::InvalidValue { field, .. } if field == "retry_delay_ms")
@@ -240,7 +241,7 @@ mod tests {
     #[test]
     fn test_validate_browser_connection_timeout_too_low() {
         let mut config = create_valid_browser_config();
-        config.connection_timeout_ms = 1000;
+        config.connection_timeout_ms = DurationMs::new_const(1000);
         let err = config.validate().unwrap_err();
         assert!(
             matches!(err, ConfigError::InvalidValue { field, .. } if field == "connection_timeout_ms")
@@ -334,7 +335,7 @@ mod tests {
     #[test]
     fn test_validate_browser_invalid_timeout() {
         let mut browser = create_valid_browser_config();
-        browser.connection_timeout_ms = 4999; // Invalid
+        browser.connection_timeout_ms = DurationMs::new_const(4999); // Invalid
 
         let config = Config {
             browser,
@@ -381,7 +382,7 @@ mod tests {
     #[test]
     fn test_validate_orchestrator_invalid_timeout() {
         let mut orchestrator = create_valid_orchestrator_config();
-        orchestrator.task_timeout_ms = 0; // Invalid
+        orchestrator.task_timeout_ms = DurationMs::new_const(500); // < 1000ms, fails validation
 
         let config = Config {
             browser: create_valid_browser_config(),

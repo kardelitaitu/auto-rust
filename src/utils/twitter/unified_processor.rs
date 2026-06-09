@@ -2,7 +2,7 @@
 //! Processes up to 20 tweet replies in a single LLM request.
 
 use crate::llm::models::ChatMessage;
-use crate::utils::twitter::reply_strategies;
+use crate::llm::reply_strategies;
 use crate::utils::twitter::sentiment::Sentiment;
 use serde_json::Value;
 

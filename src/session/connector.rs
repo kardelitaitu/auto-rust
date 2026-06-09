@@ -129,7 +129,8 @@ impl BrowserConnector for ConfiguredProfileConnector {
             )));
         }
 
-        let connect_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+        let connect_timeout =
+            Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
 
         match tokio::time::timeout(
             connect_timeout,
@@ -270,7 +271,8 @@ impl BrowserConnector for RoxyBrowserConnector {
     }
 
     async fn connect(&self, capability: &BrowserCapabilities, config: &Config) -> Result<Session> {
-        let connect_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+        let connect_timeout =
+            Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
 
         match tokio::time::timeout(
             connect_timeout,
@@ -458,7 +460,8 @@ impl BrowserConnector for LocalBrowserConnector {
     }
 
     async fn connect(&self, capability: &BrowserCapabilities, config: &Config) -> Result<Session> {
-        let connect_timeout = Duration::from_millis(config.browser.connection_timeout_ms.max(5000));
+        let connect_timeout =
+            Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
 
         match tokio::time::timeout(
             connect_timeout,

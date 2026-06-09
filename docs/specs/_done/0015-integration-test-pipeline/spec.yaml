@@ -1,0 +1,32 @@
+version: 1
+id: 0015-integration-test-pipeline
+title: Integration Test Pipeline with Browser WebSocket Support
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P1
+area:
+  - testing
+files:
+  code:
+    - tests/common/mod.rs
+    - tests/navigation_integration.rs
+    - tests/task_context_integration.rs
+    - tests/orchestrator_integration.rs
+    - scripts/run-integration-tests.ps1
+  docs:
+    - docs/specs/_done/0015-integration-test-pipeline/plan.md
+    - docs/specs/_done/0015-integration-test-pipeline/validation.md
+acceptance:
+  - "Duplicated `connect_test_browser()` extracted into `tests/common/mod.rs`"
+  - "`scripts/run-integration-tests.ps1` launches headless browser, runs all 25+ ignored tests, cleans up"
+  - "All 3 integration test files compile and pass with the shared helper"
+  - "`cargo test --test navigation_integration -- --ignored --test-threads=1` passes with TASK_API_TEST_WS set"
+  - "Documentation added to CONTRIBUTING.md for running integration tests"
+non_goals:
+  - No changes to the production code (only test files and scripts)
+  - No CI-specific configuration (GitHub Actions, etc.)
+  - No mocking of CDP protocol — tests run against a real browser
+risks:
+  - Browser download/launch may fail on systems without Chrome/Brave
+  - The script is Windows-first (PowerShell); macOS/Linux users need manual setup

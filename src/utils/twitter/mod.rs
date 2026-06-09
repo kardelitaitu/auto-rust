@@ -12,8 +12,8 @@ findings: 0 unsafe, all unwrap/expect in test code, clean clippy, 4 files >1kLoC
 
 pub mod decision;
 pub mod reply_engine;
-pub mod reply_strategies;
 pub mod sentiment;
+pub mod state;
 pub mod twitteractivity_actions;
 pub mod twitteractivity_constants;
 pub mod twitteractivity_dive;
@@ -40,8 +40,6 @@ pub mod unified_processor;
 pub use decision::*;
 #[allow(unused_imports)]
 pub use reply_engine::*;
-#[allow(unused_imports)]
-pub use reply_strategies::*;
 #[allow(unused_imports)]
 pub use sentiment::*;
 #[allow(unused_imports)]

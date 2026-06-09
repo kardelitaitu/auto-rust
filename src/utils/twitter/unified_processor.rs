@@ -343,23 +343,20 @@ impl UnifiedLLMProcessor {
     }
 
     /// Clean and sanitize reply content.
+    ///
+    /// Preserves emoji, Unicode text, and common punctuation. Only strips
+    /// ASCII control characters (0x00-0x1F). This is intentionally permissive
+    /// because the content is sent to Twitter via CDP, not rendered as HTML.
     #[must_use]
     pub fn clean_reply_content(text: &str) -> String {
         text.trim()
             .chars()
             .filter(|c| {
-                c.is_alphanumeric()
-                    || c.is_whitespace()
-                    || *c == '!'
-                    || *c == '?'
-                    || *c == '.'
-                    || *c == ','
-                    || *c == '\''
-                    || *c == '-'
-                    || *c == '@'
-                    || *c == '#'
-                    || *c == ':'
-                    || *c == ';'
+                // Keep all printable characters including emoji, Unicode text,
+                // punctuation, hashtags, mentions, and common symbols.
+                // Only strip ASCII control chars (0x00-0x1F except tab/newline)
+                // and zero-width/invisible Unicode characters.
+                matches!(*c, '\t' | '\n') || *c >= ' '
             })
             .collect::<String>()
             .trim()
@@ -610,8 +607,11 @@ mod tests {
     fn test_clean_reply_content_unicode() {
         let result = UnifiedLLMProcessor::clean_reply_content("Great post! 😊");
         assert!(result.contains("Great"));
-        // Emojis are filtered out by the character filter
-        assert!(!result.contains("😊"));
+        // Emoji are preserved by the updated character filter
+        assert!(
+            result.contains("😊"),
+            "Emoji should be preserved, got: '{result}'"
+        );
     }
 
     #[test]

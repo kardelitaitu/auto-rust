@@ -4,7 +4,8 @@ Place only approved initiative folders here.
 
 ## Currently Active
 
-(empty — all previously active specs moved to `_done/`)
+- `0025-modularize-engagement` — approved
+- `0026-modularize-task-context` — approved
 
 ## Archived (stuck/cleanup)
 

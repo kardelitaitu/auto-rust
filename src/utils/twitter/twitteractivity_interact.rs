@@ -577,7 +577,9 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     // Check if already following (scoped to the tweet detail article).
     let following_js = r#"
         (function() {
-            var container = document.querySelector('main') || document.body;
+            // Scope to the first visible tweet article on the detail page
+            var container = document.querySelector('article[data-testid="tweet"]');
+            if (!container) return false;
             var buttons = container.querySelectorAll('button, [role="button"]');
             for (var i = 0; i < buttons.length; i++) {
                 var btn = buttons[i];

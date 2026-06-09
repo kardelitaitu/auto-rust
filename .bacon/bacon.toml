@@ -1,12 +1,31 @@
-# .bacon/bacon.toml - Enhanced configuration for autonomous coding
-# Supports environment variable overrides and expanded job definitions
+# .bacon/bacon.toml — Autonomous coding pipeline configuration
+#
+# Used sections:
+#   [pipeline]   — Agent routing for each pipeline stage
+#   [agents.*]   — LLM configuration per agent (local or external)
+#
+# The [jobs.*] sections below serve the `bacon` CI watcher tool (third-party),
+# not the autonomous pipeline. Preserved for CI usage.
 
-[global]
-# Global settings for all jobs
-log_level = "info"
-max_concurrent_jobs = 3
-timeout_seconds = 300
-retry_attempts = 2
+[pipeline]
+# Agent routing for each pipeline stage.
+# Built-in agents ("bacon", "nvidia") and agents with provider="nvidia" or provider="ollama"
+# route through the internal NVIDIA LLM client. All other agents use `run_external_agent()`.
+# See [agents.<name>] sections below for per-agent LLM config.
+observer = "nvidia_observer"
+strategist = "nvidia_strategist"
+coder = "nvidia_coder"
+auditor = "nvidia_auditor"
+# Delay (ms) between pipeline stages to avoid LLM API rate limiting.
+stage_delay_ms = 1000
+
+# Whether to auto-apply Coder patches without user confirmation.
+enable_auto_apply = false
+
+# ── CI watcher jobs (bacon CLI) ──────────────────────────────────
+# These job definitions are consumed by the external `bacon` CI
+# watcher tool, not by the autonomous pipeline. Preserved here
+# for workspace-aware CI workflows.
 
 [jobs.ai_obs]
 command = ["cargo", "clippy", "--message-format=json", "--", "-D", "warnings"]
@@ -17,7 +36,7 @@ description = "Observer: Extract compiler warnings and errors"
 command = ["cargo", "check", "--features", "deadlock_detection"]
 need_stdout = true
 description = "Deadlock detection in concurrent code"
-timeout_seconds = 120
+timeout_seconds = 180
 
 [jobs.ai_audit]
 command = ["cargo", "test", "--all-features", "--", "--nocapture"]
@@ -41,61 +60,58 @@ timeout_seconds = 180
 command = ["cargo", "fmt", "--", "--check"]
 need_stdout = true
 description = "Code formatting verification"
-timeout_seconds = 60
+timeout_seconds = 120
 
-[monitoring]
-# Metrics and monitoring configuration
-enable_metrics = true
-metrics_file = ".bacon/sessions/metrics.json"
-log_file = ".bacon/sessions/bacon.log"
-max_log_size_mb = 100
+# ── Agent LLM configuration ─────────────────────────────────────
+# Each [agents.<name>] section is read by PipelineConfig::agent_llm_config()
+# and used to initialize the stage-specific LLM client.
 
-[safety]
-# Safety and rollback configuration
-enable_shadow_testing = true
-shadow_workspace_dir = "/tmp/norino_shadow_"
-max_shadow_age_hours = 24
-enable_rollback = true
-rollback_depth = 10
-enable_auto_apply = false
-require_full_check_for_auto_apply = true
+[agents.nvidia_observer]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.4
+max_tokens = 8192
+timeout_ms = 90000
 
-[pipeline]
-# Which agent tool handles each pipeline role.
-# Available: pi, codex, opencode, kilocode, gemini
-observer = "pi"
-strategist = "pi"
-coder = "pi"
-auditor = "pi"
-
-[agents]
-# Per-agent LLM configuration (provider + model)
-[agents.pi]
-provider = "openrouter"
-model = "anthropic/claude-sonnet-4"
-temperature = 0.2
-
-[agents.codex]
-provider = "openrouter"
-model = "anthropic/claude-sonnet-4"
+[agents.nvidia_strategist]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
 temperature = 0.1
+max_tokens = 8192
+timeout_ms = 90000
 
-[agents.opencode]
-provider = "openrouter"
-model = "google/gemini-2.5-flash"
-temperature = 0.3
-
-[agents.kilo]
-provider = "ollama"
-model = "llama3.2:3b"
+[agents.nvidia_coder]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
 temperature = 0.0
+max_tokens = 16384
+timeout_ms = 120000
 
-[agents.bacon-ollama]
-provider = "ollama"
-model = "llama3.2:3b"
-temperature = 0.2
+[agents.nvidia_auditor]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.1
+max_tokens = 16384
+timeout_ms = 90000
 
-[agents.gemini]
-provider = "openrouter"
-model = "google/gemini-2.5-flash"
-temperature = 0.2
+# Standalone NVIDIA agent binary config — used by `src/bin/nvidia.rs` / `cli.rs`.
+# The per-stage agents above (nvidia_observer, etc.) are used by the pipeline router.
+[agents.nvidia]
+type = "external"
+provider = "nvidia"
+command_args = ["-p", "{prompt}", "--role", "{role}"]
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+model = "meta/llama-3.3-70b-instruct"
+temperature = 0.3
+top_p = 0.95
+max_tokens = 16384
+timeout_ms = 90000

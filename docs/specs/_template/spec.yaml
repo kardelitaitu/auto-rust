@@ -11,10 +11,8 @@ files:
   code:
     - <file-or-folder>
   docs:
-    - README.md
     - plan.md
     - validation.md
-    - notes.md
 acceptance:
   - <measurable condition 1>
   - <measurable condition 2>

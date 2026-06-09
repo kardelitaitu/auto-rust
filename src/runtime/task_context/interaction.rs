@@ -1,8 +1,8 @@
 //! Interaction methods for browser automation.
 //!
 //! This module provides standalone interaction functions that can be used
-//! independently or through TaskContext. Complex methods requiring TaskContext
-//! state remain in the main TaskContext impl.
+//! independently or through `TaskContext`. Complex methods requiring `TaskContext`
+//! state remain in the main `TaskContext` impl.
 
 use anyhow::Result;
 use chromiumoxide::Page;

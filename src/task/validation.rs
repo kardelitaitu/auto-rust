@@ -18,6 +18,7 @@ pub enum ValidationIssue {
 
 impl ValidationIssue {
     /// Get the message content.
+    #[must_use]
     pub fn message(&self) -> &str {
         match self {
             ValidationIssue::Error(msg) | ValidationIssue::Warning(msg) => msg,
@@ -25,6 +26,7 @@ impl ValidationIssue {
     }
 
     /// Check if this is an error.
+    #[must_use]
     pub fn is_error(&self) -> bool {
         matches!(self, ValidationIssue::Error(_))
     }
@@ -47,6 +49,7 @@ pub struct ValidationReport {
 
 impl ValidationReport {
     /// Create a new validation report.
+    #[must_use]
     pub fn new(task_name: String) -> Self {
         Self {
             task_name,
@@ -68,26 +71,31 @@ impl ValidationReport {
     }
 
     /// Check if validation passed (no errors, warnings allowed).
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         !self.has_errors()
     }
 
     /// Check if there are any errors.
+    #[must_use]
     pub fn has_errors(&self) -> bool {
-        self.issues.iter().any(|i| i.is_error())
+        self.issues.iter().any(ValidationIssue::is_error)
     }
 
     /// Get error count.
+    #[must_use]
     pub fn error_count(&self) -> usize {
         self.issues.iter().filter(|i| i.is_error()).count()
     }
 
     /// Get warning count.
+    #[must_use]
     pub fn warning_count(&self) -> usize {
         self.issues.iter().filter(|i| !i.is_error()).count()
     }
 
     /// Get a human-readable summary.
+    #[must_use]
     pub fn summary(&self) -> String {
         let errors = self.error_count();
         let warnings = self.warning_count();
@@ -125,6 +133,7 @@ pub struct TaskValidator {
 
 impl TaskValidator {
     /// Create a new task validator.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             max_nesting_depth: 10,
@@ -141,6 +150,7 @@ impl TaskValidator {
     }
 
     /// Set the maximum nesting depth.
+    #[must_use]
     pub fn with_max_nesting_depth(mut self, depth: usize) -> Self {
         self.max_nesting_depth = depth;
         self
@@ -148,7 +158,7 @@ impl TaskValidator {
 
     /// Register known tasks for validating Call actions.
     pub fn with_known_tasks(mut self, tasks: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.known_tasks = tasks.into_iter().map(|t| t.into()).collect();
+        self.known_tasks = tasks.into_iter().map(std::convert::Into::into).collect();
         self
     }
 
@@ -161,6 +171,7 @@ impl TaskValidator {
     /// Validate a complete task definition.
     ///
     /// Automatically sets the current task name for circular reference detection.
+    #[must_use]
     pub fn validate(&self, def: &TaskDefinition) -> ValidationReport {
         let mut report = ValidationReport::new(def.name.clone());
 
@@ -186,7 +197,7 @@ impl TaskValidator {
 
         // Validate all actions
         for (idx, action) in def.actions.iter().enumerate() {
-            let path = format!("actions[{}]", idx);
+            let path = format!("actions[{idx}]");
             validator.validate_action(action, &path, 0, &mut report);
         }
 
@@ -226,7 +237,7 @@ impl TaskValidator {
         // Validate includes
         for (idx, include) in def.include.iter().enumerate() {
             if include.path.is_empty() {
-                report.error(format!("include[{}]: Path cannot be empty", idx));
+                report.error(format!("include[{idx}]: Path cannot be empty"));
             }
         }
     }
@@ -244,26 +255,25 @@ impl TaskValidator {
         }
 
         if name.contains(' ') {
-            report.error(format!("Parameter '{}' name cannot contain spaces", name));
+            report.error(format!("Parameter '{name}' name cannot contain spaces"));
         }
 
         // Check for reasonable defaults
         if param.required && param.default.is_some() {
             report.warning(format!(
-                "Parameter '{}' is required but has a default value (redundant)",
-                name
+                "Parameter '{name}' is required but has a default value (redundant)"
             ));
         }
 
         if !param.required && param.default.is_none() {
             report.warning(format!(
-                "Parameter '{}' is optional but has no default (may cause issues)",
-                name
+                "Parameter '{name}' is optional but has no default (may cause issues)"
             ));
         }
     }
 
     /// Validate an action recursively.
+    #[allow(clippy::unused_self)]
     fn validate_action(
         &self,
         action: &Action,
@@ -273,7 +283,7 @@ impl TaskValidator {
     ) {
         // Check nesting depth
         if depth > self.max_nesting_depth {
-            report.error(format!("{}: Maximum nesting depth exceeded", path));
+            report.error(format!("{path}: Maximum nesting depth exceeded"));
             return;
         }
 
@@ -290,11 +300,10 @@ impl TaskValidator {
             }
             Action::Wait { duration_ms } => {
                 if *duration_ms == 0 {
-                    report.warning(format!("{}: Wait duration is 0ms (no-op)", path));
+                    report.warning(format!("{path}: Wait duration is 0ms (no-op)"));
                 } else if *duration_ms > 60000 {
                     report.warning(format!(
-                        "{}: Wait duration is {}ms (> 60s), consider using a different approach",
-                        path, duration_ms
+                        "{path}: Wait duration is {duration_ms}ms (> 60s), consider using a different approach"
                     ));
                 }
             }
@@ -305,11 +314,10 @@ impl TaskValidator {
                 self.validate_selector(selector, path, report);
                 if let Some(timeout) = timeout_ms {
                     if *timeout == 0 {
-                        report.error(format!("{}: Timeout cannot be 0ms", path));
+                        report.error(format!("{path}: Timeout cannot be 0ms"));
                     } else if *timeout > 300000 {
                         report.warning(format!(
-                            "{}: Timeout is {}ms (> 5min), consider a shorter timeout",
-                            path, timeout
+                            "{path}: Timeout is {timeout}ms (> 5min), consider a shorter timeout"
                         ));
                     }
                 }
@@ -321,7 +329,7 @@ impl TaskValidator {
                 self.validate_selector(selector, path, report);
                 if let Some(var) = variable {
                     if var.is_empty() {
-                        report.error(format!("{}: Variable name cannot be empty", path));
+                        report.error(format!("{path}: Variable name cannot be empty"));
                     } else {
                         report.variables_referenced.insert(var.clone());
                     }
@@ -329,12 +337,12 @@ impl TaskValidator {
             }
             Action::Execute { script } => {
                 if script.is_empty() {
-                    report.warning(format!("{}: Script is empty", path));
+                    report.warning(format!("{path}: Script is empty"));
                 }
             }
             Action::Log { message, level: _ } => {
                 if message.is_empty() {
-                    report.warning(format!("{}: Log message is empty", path));
+                    report.warning(format!("{path}: Log message is empty"));
                 }
                 self.extract_variables(message, report);
             }
@@ -346,25 +354,20 @@ impl TaskValidator {
                 self.validate_condition(condition, path, report);
 
                 if then.is_empty() {
-                    report.warning(format!("{}: 'then' block has no actions", path));
+                    report.warning(format!("{path}: 'then' block has no actions"));
                 }
                 for (idx, action) in then.iter().enumerate() {
-                    self.validate_action(
-                        action,
-                        &format!("{}.then[{}]", path, idx),
-                        depth + 1,
-                        report,
-                    );
+                    self.validate_action(action, &format!("{path}.then[{idx}]"), depth + 1, report);
                 }
 
                 if let Some(else_actions) = r#else {
                     if else_actions.is_empty() {
-                        report.warning(format!("{}: 'else' block has no actions", path));
+                        report.warning(format!("{path}: 'else' block has no actions"));
                     }
                     for (idx, action) in else_actions.iter().enumerate() {
                         self.validate_action(
                             action,
-                            &format!("{}.else[{}]", path, idx),
+                            &format!("{path}.else[{idx}]"),
                             depth + 1,
                             report,
                         );
@@ -378,11 +381,10 @@ impl TaskValidator {
             } => {
                 if let Some(c) = count {
                     if *c == 0 {
-                        report.warning(format!("{}: Loop count is 0 (no-op)", path));
+                        report.warning(format!("{path}: Loop count is 0 (no-op)"));
                     } else if *c > 10000 {
                         report.warning(format!(
-                            "{}: Loop count is {} (> 10000), consider using a While loop",
-                            path, c
+                            "{path}: Loop count is {c} (> 10000), consider using a While loop"
                         ));
                     }
                 }
@@ -393,15 +395,14 @@ impl TaskValidator {
 
                 if count.is_none() && condition.is_none() {
                     report.error(format!(
-                        "{}: Loop must have either 'count' or 'condition'",
-                        path
+                        "{path}: Loop must have either 'count' or 'condition'"
                     ));
                 }
 
                 for (idx, action) in loop_actions.iter().enumerate() {
                     self.validate_action(
                         action,
-                        &format!("{}.actions[{}]", path, idx),
+                        &format!("{path}.actions[{idx}]"),
                         depth + 1,
                         report,
                     );
@@ -409,14 +410,13 @@ impl TaskValidator {
             }
             Action::Call { task, parameters } => {
                 if task.is_empty() {
-                    report.error(format!("{}: Task name cannot be empty", path));
+                    report.error(format!("{path}: Task name cannot be empty"));
                 } else {
                     // Check for direct circular reference (task calls itself)
                     if let Some(ref current) = self.current_task {
                         if task == current {
                             report.error(format!(
-                                "{}: Task '{}' calls itself (circular reference)",
-                                path, task
+                                "{path}: Task '{task}' calls itself (circular reference)"
                             ));
                         }
                     }
@@ -424,8 +424,7 @@ impl TaskValidator {
                     // Check if task is in known list (if provided)
                     if !self.known_tasks.is_empty() && !self.known_tasks.contains(task) {
                         report.warning(format!(
-                            "{}: Task '{}' is not in the known task list",
-                            path, task
+                            "{path}: Task '{task}' is not in the known task list"
                         ));
                     }
                 }
@@ -433,7 +432,7 @@ impl TaskValidator {
                 // Extract variables from parameter values
                 if let Some(params) = parameters {
                     for value in params.values() {
-                        // Convert serde_yaml::Value to string for variable extraction
+                        // Convert serde_yml::Value to string for variable extraction
                         if let Some(s) = value.as_str() {
                             self.extract_variables(s, report);
                         }
@@ -449,8 +448,7 @@ impl TaskValidator {
                 if let Some(p) = screenshot_path {
                     if p.is_empty() {
                         report.warning(format!(
-                            "{}: Screenshot path is empty (will use auto-generated)",
-                            path
+                            "{path}: Screenshot path is empty (will use auto-generated)"
                         ));
                     }
                     self.extract_variables(p, report);
@@ -484,12 +482,12 @@ impl TaskValidator {
                 max_concurrency,
             } => {
                 if parallel_actions.is_empty() {
-                    report.warning(format!("{}: Parallel block has no actions", path));
+                    report.warning(format!("{path}: Parallel block has no actions"));
                 }
 
                 if let Some(concurrency) = max_concurrency {
                     if *concurrency == 0 {
-                        report.error(format!("{}: max_concurrency cannot be 0", path));
+                        report.error(format!("{path}: max_concurrency cannot be 0"));
                     } else if *concurrency > parallel_actions.len() {
                         report.warning(format!(
                             "{}: max_concurrency ({}) > action count ({})",
@@ -503,7 +501,7 @@ impl TaskValidator {
                 for (idx, action) in parallel_actions.iter().enumerate() {
                     self.validate_action(
                         action,
-                        &format!("{}.actions[{}]", path, idx),
+                        &format!("{path}.actions[{idx}]"),
                         depth + 1,
                         report,
                     );
@@ -520,11 +518,10 @@ impl TaskValidator {
             } => {
                 if let Some(attempts) = max_attempts {
                     if *attempts == 0 {
-                        report.error(format!("{}: max_attempts cannot be 0", path));
+                        report.error(format!("{path}: max_attempts cannot be 0"));
                     } else if *attempts > 100 {
                         report.warning(format!(
-                            "{}: max_attempts is {} (> 100), consider if this is necessary",
-                            path, attempts
+                            "{path}: max_attempts is {attempts} (> 100), consider if this is necessary"
                         ));
                     }
                 }
@@ -532,8 +529,7 @@ impl TaskValidator {
                 if let Some(delay) = initial_delay_ms {
                     if *delay == 0 {
                         report.warning(format!(
-                            "{}: initial_delay_ms is 0 (no delay between retries)",
-                            path
+                            "{path}: initial_delay_ms is 0 (no delay between retries)"
                         ));
                     }
                 }
@@ -541,8 +537,7 @@ impl TaskValidator {
                 if let (Some(initial), Some(max)) = (initial_delay_ms, max_delay_ms) {
                     if *initial > *max {
                         report.error(format!(
-                            "{}: initial_delay_ms ({}) > max_delay_ms ({})",
-                            path, initial, max
+                            "{path}: initial_delay_ms ({initial}) > max_delay_ms ({max})"
                         ));
                     }
                 }
@@ -550,8 +545,7 @@ impl TaskValidator {
                 if let Some(multiplier) = backoff_multiplier {
                     if *multiplier < 1.0 {
                         report.error(format!(
-                            "{}: backoff_multiplier ({}) < 1.0 (would decrease delay)",
-                            path, multiplier
+                            "{path}: backoff_multiplier ({multiplier}) < 1.0 (would decrease delay)"
                         ));
                     }
                 }
@@ -559,20 +553,19 @@ impl TaskValidator {
                 if let Some(patterns) = retry_on {
                     if patterns.is_empty() {
                         report.warning(format!(
-                            "{}: retry_on patterns are empty (will retry on all errors)",
-                            path
+                            "{path}: retry_on patterns are empty (will retry on all errors)"
                         ));
                     }
                 }
 
                 if retry_actions.is_empty() {
-                    report.warning(format!("{}: Retry block has no actions", path));
+                    report.warning(format!("{path}: Retry block has no actions"));
                 }
 
                 for (idx, action) in retry_actions.iter().enumerate() {
                     self.validate_action(
                         action,
-                        &format!("{}.actions[{}]", path, idx),
+                        &format!("{path}.actions[{idx}]"),
                         depth + 1,
                         report,
                     );
@@ -585,7 +578,7 @@ impl TaskValidator {
                 max_iterations,
             } => {
                 if variable.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(variable.clone());
                 }
@@ -594,20 +587,20 @@ impl TaskValidator {
 
                 if let Some(max) = max_iterations {
                     if *max == 0 {
-                        report.error(format!("{}: max_iterations cannot be 0", path));
+                        report.error(format!("{path}: max_iterations cannot be 0"));
                     } else if *max > 10000 {
-                        report.warning(format!("{}: max_iterations is {} (> 10000)", path, max));
+                        report.warning(format!("{path}: max_iterations is {max} (> 10000)"));
                     }
                 }
 
                 if foreach_actions.is_empty() {
-                    report.warning(format!("{}: Foreach block has no actions", path));
+                    report.warning(format!("{path}: Foreach block has no actions"));
                 }
 
                 for (idx, action) in foreach_actions.iter().enumerate() {
                     self.validate_action(
                         action,
-                        &format!("{}.actions[{}]", path, idx),
+                        &format!("{path}.actions[{idx}]"),
                         depth + 1,
                         report,
                     );
@@ -622,23 +615,22 @@ impl TaskValidator {
 
                 if let Some(max) = max_iterations {
                     if *max == 0 {
-                        report.error(format!("{}: max_iterations cannot be 0", path));
+                        report.error(format!("{path}: max_iterations cannot be 0"));
                     } else if *max > 100000 {
                         report.warning(format!(
-                            "{}: max_iterations is {} (> 100000), this may run for a long time",
-                            path, max
+                            "{path}: max_iterations is {max} (> 100000), this may run for a long time"
                         ));
                     }
                 }
 
                 if while_actions.is_empty() {
-                    report.warning(format!("{}: While block has no actions", path));
+                    report.warning(format!("{path}: While block has no actions"));
                 }
 
                 for (idx, action) in while_actions.iter().enumerate() {
                     self.validate_action(
                         action,
-                        &format!("{}.actions[{}]", path, idx),
+                        &format!("{path}.actions[{idx}]"),
                         depth + 1,
                         report,
                     );
@@ -651,26 +643,21 @@ impl TaskValidator {
                 finally_actions,
             } => {
                 if try_actions.is_empty() {
-                    report.warning(format!("{}: Try block has no actions", path));
+                    report.warning(format!("{path}: Try block has no actions"));
                 }
 
                 for (idx, action) in try_actions.iter().enumerate() {
-                    self.validate_action(
-                        action,
-                        &format!("{}.try[{}]", path, idx),
-                        depth + 1,
-                        report,
-                    );
+                    self.validate_action(action, &format!("{path}.try[{idx}]"), depth + 1, report);
                 }
 
                 if let Some(catch) = catch_actions {
                     if catch.is_empty() {
-                        report.warning(format!("{}: Catch block has no actions", path));
+                        report.warning(format!("{path}: Catch block has no actions"));
                     }
                     for (idx, action) in catch.iter().enumerate() {
                         self.validate_action(
                             action,
-                            &format!("{}.catch[{}]", path, idx),
+                            &format!("{path}.catch[{idx}]"),
                             depth + 1,
                             report,
                         );
@@ -679,7 +666,7 @@ impl TaskValidator {
 
                 if let Some(var) = error_variable {
                     if var.is_empty() {
-                        report.error(format!("{}: Error variable name cannot be empty", path));
+                        report.error(format!("{path}: Error variable name cannot be empty"));
                     } else {
                         report.variables_referenced.insert(var.clone());
                     }
@@ -687,12 +674,12 @@ impl TaskValidator {
 
                 if let Some(finally) = finally_actions {
                     if finally.is_empty() {
-                        report.warning(format!("{}: Finally block has no actions", path));
+                        report.warning(format!("{path}: Finally block has no actions"));
                     }
                     for (idx, action) in finally.iter().enumerate() {
                         self.validate_action(
                             action,
-                            &format!("{}.finally[{}]", path, idx),
+                            &format!("{path}.finally[{idx}]"),
                             depth + 1,
                             report,
                         );
@@ -711,16 +698,16 @@ impl TaskValidator {
             Condition::TextEquals { selector, value } => {
                 self.validate_selector(selector, path, report);
                 if value.is_empty() {
-                    report.warning(format!("{}: TextEquals condition has empty value", path));
+                    report.warning(format!("{path}: TextEquals condition has empty value"));
                 }
             }
             Condition::VariableEquals { name, value } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
-                // Convert serde_yaml::Value to string for variable extraction
+                // Convert serde_yml::Value to string for variable extraction
                 if let Some(s) = value.as_str() {
                     self.extract_variables(s, report);
                 }
@@ -728,67 +715,62 @@ impl TaskValidator {
             Condition::TextMatches { selector, pattern } => {
                 self.validate_selector(selector, path, report);
                 if pattern.is_empty() {
-                    report.warning(format!("{}: TextMatches pattern is empty", path));
+                    report.warning(format!("{path}: TextMatches pattern is empty"));
                 } else if regex::Regex::new(pattern).is_err() {
-                    report.error(format!("{}: TextMatches pattern is invalid regex", path));
+                    report.error(format!("{path}: TextMatches pattern is invalid regex"));
                 }
             }
             Condition::VariableMatches { name, pattern } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
                 if pattern.is_empty() {
-                    report.warning(format!("{}: VariableMatches pattern is empty", path));
+                    report.warning(format!("{path}: VariableMatches pattern is empty"));
                 } else if regex::Regex::new(pattern).is_err() {
-                    report.error(format!(
-                        "{}: VariableMatches pattern is invalid regex",
-                        path
-                    ));
+                    report.error(format!("{path}: VariableMatches pattern is invalid regex"));
                 }
             }
             Condition::NumericGreaterThan { name, value: _ }
             | Condition::NumericLessThan { name, value: _ } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
             }
             Condition::NumericRange { name, min, max } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
                 if min > max {
                     report.warning(format!(
-                        "{}: NumericRange min ({}) is greater than max ({})",
-                        path, min, max
+                        "{path}: NumericRange min ({min}) is greater than max ({max})"
                     ));
                 }
             }
             Condition::DateBefore { name, date, format }
             | Condition::DateAfter { name, date, format } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
                 if date.is_empty() {
-                    report.warning(format!("{}: Date comparison date is empty", path));
+                    report.warning(format!("{path}: Date comparison date is empty"));
                 }
                 if let Some(fmt) = format {
                     if fmt.is_empty() {
-                        report
-                            .warning(format!("{}: Date format is empty (will use default)", path));
+                        report.warning(format!("{path}: Date format is empty (will use default)"));
                     }
                 }
             }
             Condition::ArrayContains { name, value } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
@@ -803,33 +785,31 @@ impl TaskValidator {
                 exact,
             } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
                 // Validate that at least one constraint is provided
                 if min.is_none() && max.is_none() && exact.is_none() {
                     report.warning(format!(
-                        "{}: ArrayLength has no constraints (min/max/exact)",
-                        path
+                        "{path}: ArrayLength has no constraints (min/max/exact)"
                     ));
                 }
                 // Validate range consistency
                 if let (Some(min_val), Some(max_val)) = (min, max) {
                     if min_val > max_val {
                         report.warning(format!(
-                            "{}: ArrayLength min ({}) is greater than max ({})",
-                            path, min_val, max_val
+                            "{path}: ArrayLength min ({min_val}) is greater than max ({max_val})"
                         ));
                     }
                 }
             }
             Condition::Not { condition: inner } => {
-                self.validate_condition(inner, &format!("{}[not]", path), report);
+                self.validate_condition(inner, &format!("{path}[not]"), report);
             }
             Condition::And { conditions } | Condition::Or { conditions } => {
                 for (idx, cond) in conditions.iter().enumerate() {
-                    self.validate_condition(cond, &format!("{}[{}]", path, idx), report);
+                    self.validate_condition(cond, &format!("{path}[{idx}]"), report);
                 }
             }
             Condition::True | Condition::False => {
@@ -837,7 +817,7 @@ impl TaskValidator {
             }
             Condition::VariableDefined { name } | Condition::VariableNotDefined { name } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
@@ -855,18 +835,12 @@ impl TaskValidator {
         match collection {
             ForeachCollection::Array { values } => {
                 if values.is_empty() {
-                    report.warning(format!(
-                        "{}: Array collection is empty (no iterations)",
-                        path
-                    ));
+                    report.warning(format!("{path}: Array collection is empty (no iterations)"));
                 }
             }
             ForeachCollection::Range { start, end } => {
                 if start >= end {
-                    report.error(format!(
-                        "{}: Range start ({}) >= end ({})",
-                        path, start, end
-                    ));
+                    report.error(format!("{path}: Range start ({start}) >= end ({end})"));
                 }
                 if *end - *start > 10000 {
                     report.warning(format!(
@@ -881,7 +855,7 @@ impl TaskValidator {
             }
             ForeachCollection::Variable { name } => {
                 if name.is_empty() {
-                    report.error(format!("{}: Variable name cannot be empty", path));
+                    report.error(format!("{path}: Variable name cannot be empty"));
                 } else {
                     report.variables_referenced.insert(name.clone());
                 }
@@ -892,7 +866,7 @@ impl TaskValidator {
     /// Validate a URL string (with variable support).
     fn validate_url(&self, url: &str, path: &str, report: &mut ValidationReport) {
         if url.is_empty() {
-            report.error(format!("{}: URL cannot be empty", path));
+            report.error(format!("{path}: URL cannot be empty"));
             return;
         }
 
@@ -901,8 +875,7 @@ impl TaskValidator {
         // If no variables, try to validate URL format
         if !url.contains("${") && !url.starts_with("http://") && !url.starts_with("https://") {
             report.warning(format!(
-                "{}: URL '{}' does not start with http:// or https://",
-                path, url
+                "{path}: URL '{url}' does not start with http:// or https://"
             ));
         }
     }
@@ -910,7 +883,7 @@ impl TaskValidator {
     /// Validate a CSS selector (with variable support).
     fn validate_selector(&self, selector: &str, path: &str, report: &mut ValidationReport) {
         if selector.is_empty() {
-            report.error(format!("{}: Selector cannot be empty", path));
+            report.error(format!("{path}: Selector cannot be empty"));
             return;
         }
 
@@ -921,8 +894,7 @@ impl TaskValidator {
             // Check for common CSS selector issues
             if selector.contains("  ") {
                 report.warning(format!(
-                    "{}: Selector contains multiple consecutive spaces",
-                    path
+                    "{path}: Selector contains multiple consecutive spaces"
                 ));
             }
 
@@ -931,8 +903,7 @@ impl TaskValidator {
             let close_brackets = selector.matches(']').count();
             if open_brackets != close_brackets {
                 report.error(format!(
-                    "{}: Selector has unbalanced brackets: '{}'",
-                    path, selector
+                    "{path}: Selector has unbalanced brackets: '{selector}'"
                 ));
             }
 
@@ -941,8 +912,7 @@ impl TaskValidator {
             let close_parens = selector.matches(')').count();
             if open_parens != close_parens {
                 report.error(format!(
-                    "{}: Selector has unbalanced parentheses: '{}'",
-                    path, selector
+                    "{path}: Selector has unbalanced parentheses: '{selector}'"
                 ));
             }
 
@@ -951,14 +921,12 @@ impl TaskValidator {
             let double_quotes = selector.matches('"').count();
             if !single_quotes.is_multiple_of(2) {
                 report.error(format!(
-                    "{}: Selector has unbalanced single quotes: '{}'",
-                    path, selector
+                    "{path}: Selector has unbalanced single quotes: '{selector}'"
                 ));
             }
             if !double_quotes.is_multiple_of(2) {
                 report.error(format!(
-                    "{}: Selector has unbalanced double quotes: '{}'",
-                    path, selector
+                    "{path}: Selector has unbalanced double quotes: '{selector}'"
                 ));
             }
         }
@@ -969,7 +937,7 @@ impl TaskValidator {
         self.extract_variables(text, report);
 
         if text.is_empty() {
-            report.warning(format!("{}: {} is empty", path, context));
+            report.warning(format!("{path}: {context} is empty"));
         }
     }
 
@@ -992,6 +960,7 @@ impl TaskValidator {
     }
 
     /// Count total actions recursively.
+    #[allow(clippy::unused_self)]
     fn count_actions(&self, actions: &[Action]) -> usize {
         let mut count = actions.len();
 
@@ -1065,6 +1034,7 @@ impl Default for TaskValidator {
 }
 
 /// Quick validation function for convenience.
+#[must_use]
 pub fn validate_task(def: &TaskDefinition) -> ValidationReport {
     TaskValidator::new().validate(def)
 }
@@ -1465,5 +1435,713 @@ mod tests {
         assert!(report.tasks_called.contains("task_b"));
         assert!(report.tasks_called.contains("task_c"));
         assert_eq!(report.tasks_called.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test]
+    fn issue_error_message() {
+        let e = ValidationIssue::Error("x".into());
+        assert_eq!(e.message(), "x");
+        assert!(e.is_error());
+    }
+    #[test]
+    fn issue_warning_message() {
+        let w = ValidationIssue::Warning("y".into());
+        assert_eq!(w.message(), "y");
+        assert!(!w.is_error());
+    }
+    #[test]
+    fn report_new_empty() {
+        let r = ValidationReport::new("t".into());
+        assert!(r.is_valid());
+        assert_eq!(r.error_count(), 0);
+        assert_eq!(r.warning_count(), 0);
+    }
+    #[test]
+    fn report_add_error() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        assert!(!r.is_valid());
+        assert!(r.has_errors());
+        assert_eq!(r.error_count(), 1);
+    }
+    #[test]
+    fn report_add_warning() {
+        let mut r = ValidationReport::new("t".into());
+        r.warning("w");
+        assert!(r.is_valid());
+        assert_eq!(r.warning_count(), 1);
+    }
+    #[test]
+    fn report_mixed_counts() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e1");
+        r.error("e2");
+        r.warning("w");
+        assert_eq!(r.error_count(), 2);
+        assert_eq!(r.warning_count(), 1);
+    }
+    #[test]
+    fn report_summary_valid() {
+        let r = ValidationReport::new("t".into());
+        assert!(r.summary().contains("is valid"));
+    }
+    #[test]
+    fn report_summary_warnings() {
+        let mut r = ValidationReport::new("t".into());
+        r.warning("w");
+        assert!(r.summary().contains("warning(s)"));
+    }
+    #[test]
+    fn report_summary_errors() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        assert!(r.summary().contains("error(s)"));
+    }
+    #[test]
+    fn report_summary_mixed() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        r.warning("w");
+        assert!(r.summary().contains("error(s)"));
+        assert!(r.summary().contains("warning(s)"));
+    }
+    #[test]
+    fn report_action_count_default() {
+        let r = ValidationReport::new("t".into());
+        assert_eq!(r.action_count, 0);
+    }
+    #[test]
+    fn report_variables_empty() {
+        let r = ValidationReport::new("t".into());
+        assert!(r.variables_referenced.is_empty());
+    }
+    #[test]
+    fn report_tasks_called_empty() {
+        let r = ValidationReport::new("t".into());
+        assert!(r.tasks_called.is_empty());
+    }
+    #[test]
+    fn issue_partial_eq_error() {
+        let a = ValidationIssue::Error("z".into());
+        let b = ValidationIssue::Error("z".into());
+        assert_eq!(a, b);
+    }
+    #[test]
+    fn issue_partial_eq_warning() {
+        let a = ValidationIssue::Warning("z".into());
+        let b = ValidationIssue::Warning("z".into());
+        assert_eq!(a, b);
+    }
+    #[test]
+    fn report_clone() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        let c = r.clone();
+        assert_eq!(c.error_count(), 1);
+    }
+    #[test]
+    fn report_debug() {
+        let r = ValidationReport::new("t".into());
+        let _ = format!("{:?}", r);
+    }
+    #[test]
+    fn issue_debug() {
+        let e = ValidationIssue::Error("d".into());
+        let _ = format!("{:?}", e);
+    }
+    #[test]
+    fn report_multiple_warnings() {
+        let mut r = ValidationReport::new("t".into());
+        for i in 0..3 {
+            r.warning(i.to_string());
+        }
+        assert_eq!(r.warning_count(), 3);
+    }
+    #[test]
+    fn report_set_action_count_direct() {
+        let mut r = ValidationReport::new("t".into());
+        r.action_count = 42;
+        assert_eq!(r.action_count, 42);
+    }
+    #[test]
+    fn report_insert_variable() {
+        let mut r = ValidationReport::new("t".into());
+        r.variables_referenced.insert("v1".into());
+        assert_eq!(r.variables_referenced.len(), 1);
+    }
+    #[test]
+    fn report_insert_task_call() {
+        let mut r = ValidationReport::new("t".into());
+        r.tasks_called.insert("sub".into());
+        assert!(r.tasks_called.contains("sub"));
+    }
+    #[test]
+    fn issue_error_vs_warning_ne() {
+        let e = ValidationIssue::Error("x".into());
+        let w = ValidationIssue::Warning("x".into());
+        assert_ne!(e, w);
+    }
+    #[test]
+    fn report_name_preserved() {
+        let r = ValidationReport::new("my_task".into());
+        assert_eq!(r.task_name, "my_task");
+    }
+    #[test]
+    fn report_error_twice() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        r.error("e2");
+        assert_eq!(r.error_count(), 2);
+    }
+    #[test]
+    fn report_warning_twice() {
+        let mut r = ValidationReport::new("t".into());
+        r.warning("w1");
+        r.warning("w2");
+        assert_eq!(r.warning_count(), 2);
+    }
+    #[test]
+    fn report_zero_actions_summary() {
+        let r = ValidationReport::new("t".into());
+        assert!(r.summary().contains("0 actions"));
+    }
+    #[test]
+    fn report_one_action_summary() {
+        let mut r = ValidationReport::new("t".into());
+        r.action_count = 1;
+        assert!(r.summary().contains("1 actions"));
+    }
+    #[test]
+    fn report_large_error_count() {
+        let mut r = ValidationReport::new("t".into());
+        for _ in 0..10 {
+            r.error("e");
+        }
+        assert_eq!(r.error_count(), 10);
+    }
+    #[test]
+    fn report_large_warning_count() {
+        let mut r = ValidationReport::new("t".into());
+        for _ in 0..10 {
+            r.warning("w");
+        }
+        assert_eq!(r.warning_count(), 10);
+    }
+    #[test]
+    fn issue_message_long() {
+        let e = ValidationIssue::Error("a".repeat(100));
+        assert_eq!(e.message().len(), 100);
+    }
+    #[test]
+    fn report_clone_independent() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        let mut c = r.clone();
+        c.warning("w");
+        assert_eq!(r.warning_count(), 0);
+        assert_eq!(c.warning_count(), 1);
+    }
+    #[test]
+    fn report_debug_contains_name() {
+        let r = ValidationReport::new("debug_t".into());
+        assert!(format!("{:?}", r).contains("debug_t"));
+    }
+    #[test]
+    fn issue_partial_eq_diff_msg() {
+        let a = ValidationIssue::Error("1".into());
+        let b = ValidationIssue::Error("2".into());
+        assert_ne!(a, b);
+    }
+    #[test]
+    fn report_empty_issues_vec() {
+        let r = ValidationReport::new("t".into());
+        assert!(r.issues.is_empty());
+    }
+    #[test]
+    fn report_issues_len_after_add() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        r.warning("w");
+        assert_eq!(r.issues.len(), 2);
+    }
+    #[test]
+    fn report_is_valid_after_only_warnings() {
+        let mut r = ValidationReport::new("t".into());
+        r.warning("w");
+        assert!(r.is_valid());
+    }
+    #[test]
+    fn report_has_errors_false_initial() {
+        let r = ValidationReport::new("t".into());
+        assert!(!r.has_errors());
+    }
+    #[test]
+    fn report_has_errors_true() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        assert!(r.has_errors());
+    }
+    #[test]
+    fn report_variables_len() {
+        let mut r = ValidationReport::new("t".into());
+        r.variables_referenced.insert("x".into());
+        r.variables_referenced.insert("y".into());
+        assert_eq!(r.variables_referenced.len(), 2);
+    }
+    #[test]
+    fn report_tasks_len() {
+        let mut r = ValidationReport::new("t".into());
+        r.tasks_called.insert("a".into());
+        r.tasks_called.insert("b".into());
+        assert_eq!(r.tasks_called.len(), 2);
+    }
+    #[test]
+    fn issue_message_empty() {
+        let e = ValidationIssue::Error("".into());
+        assert_eq!(e.message(), "");
+    }
+    #[test]
+    fn report_name_change() {
+        let mut r = ValidationReport::new("old".into());
+        r.task_name = "new".into();
+        assert_eq!(r.task_name, "new");
+    }
+    #[test]
+    fn report_summary_contains_task_name() {
+        let r = ValidationReport::new("special".into());
+        assert!(r.summary().contains("special"));
+    }
+    #[test]
+    fn report_multiple_errors_summary() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e1");
+        r.error("e2");
+        assert!(r.summary().contains("2 error(s)"));
+    }
+    #[test]
+    fn report_action_and_error_mix() {
+        let mut r = ValidationReport::new("t".into());
+        r.action_count = 5;
+        r.error("e");
+        assert!(r.summary().contains("5 actions"));
+    }
+    #[test]
+    fn issue_clone() {
+        let e = ValidationIssue::Error("c".into());
+        let c = e.clone();
+        assert_eq!(e, c);
+    }
+    #[test]
+    fn report_default_action_zero() {
+        let r = ValidationReport::new("t".into());
+        assert_eq!(r.action_count, 0);
+    }
+    #[test]
+    fn report_issues_push_direct() {
+        let mut r = ValidationReport::new("t".into());
+        r.issues.push(ValidationIssue::Error("p".into()));
+        assert_eq!(r.issues.len(), 1);
+    }
+    #[test]
+    fn report_variables_clear() {
+        let mut r = ValidationReport::new("t".into());
+        r.variables_referenced.insert("v".into());
+        r.variables_referenced.clear();
+        assert!(r.variables_referenced.is_empty());
+    }
+    #[test]
+    fn report_tasks_clear() {
+        let mut r = ValidationReport::new("t".into());
+        r.tasks_called.insert("t".into());
+        r.tasks_called.clear();
+        assert!(r.tasks_called.is_empty());
+    }
+    #[test]
+    fn issue_eq_self() {
+        let e = ValidationIssue::Error("s".into());
+        assert_eq!(e, e);
+    }
+    #[test]
+    fn report_eq_name_only() {
+        let r1 = ValidationReport::new("same".into());
+        let r2 = ValidationReport::new("same".into());
+        assert_eq!(r1.task_name, r2.task_name);
+    }
+    #[test]
+    fn report_summary_no_warnings_errors() {
+        let r = ValidationReport::new("t".into());
+        let s = r.summary();
+        assert!(!s.contains("error"));
+        assert!(!s.contains("warning"));
+    }
+    #[test]
+    fn report_error_count_zero() {
+        let r = ValidationReport::new("t".into());
+        assert_eq!(r.error_count(), 0);
+    }
+    #[test]
+    fn report_warning_count_zero() {
+        let r = ValidationReport::new("t".into());
+        assert_eq!(r.warning_count(), 0);
+    }
+    #[test]
+    fn report_issues_retain_errors() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e");
+        r.warning("w");
+        r.issues.retain(|i| i.is_error());
+        assert_eq!(r.issues.len(), 1);
+    }
+    #[test]
+    fn issue_message_unicode() {
+        let e = ValidationIssue::Error(" café ".into());
+        assert!(e.message().contains("café"));
+    }
+    #[test]
+    fn report_tasks_contains_after_insert() {
+        let mut r = ValidationReport::new("t".into());
+        r.tasks_called.insert("subtask".into());
+        assert!(r.tasks_called.contains("subtask"));
+    }
+    #[test]
+    fn report_variables_contains() {
+        let mut r = ValidationReport::new("t".into());
+        r.variables_referenced.insert("varX".into());
+        assert!(r.variables_referenced.contains("varX"));
+    }
+    #[test]
+    fn report_summary_format_check() {
+        let mut r = ValidationReport::new("fmt".into());
+        r.error("e");
+        let s = r.summary();
+        assert!(s.starts_with("Task 'fmt'"));
+    }
+    #[test]
+    fn report_new_with_special_chars() {
+        let r = ValidationReport::new("t@#$".into());
+        assert_eq!(r.task_name, "t@#$");
+    }
+    #[test]
+    fn issue_warning_eq() {
+        let w1 = ValidationIssue::Warning("w".into());
+        let w2 = ValidationIssue::Warning("w".into());
+        assert_eq!(w1, w2);
+    }
+    #[test]
+    fn report_issues_iter_errors() {
+        let mut r = ValidationReport::new("t".into());
+        r.error("e1");
+        r.error("e2");
+        let errs: Vec<_> = r.issues.iter().filter(|i| i.is_error()).collect();
+        assert_eq!(errs.len(), 2);
+    }
+    #[test]
+    fn report_action_increment() {
+        let mut r = ValidationReport::new("t".into());
+        r.action_count += 1;
+        assert_eq!(r.action_count, 1);
+    }
+    #[test]
+    fn report_variables_insert_many() {
+        let mut r = ValidationReport::new("t".into());
+        ["a", "b", "c"].iter().for_each(|v| {
+            r.variables_referenced.insert(v.to_string());
+        });
+        assert_eq!(r.variables_referenced.len(), 3);
+    }
+    #[test]
+    fn report_debug_not_empty() {
+        let r = ValidationReport::new("d".into());
+        assert!(!format!("{:?}", r).is_empty());
+    }
+    #[test]
+    fn issue_debug_not_empty() {
+        let e = ValidationIssue::Error("d".into());
+        assert!(!format!("{:?}", e).is_empty());
+    }
+    #[test]
+    fn report_has_no_warnings_initial() {
+        let r = ValidationReport::new("t".into());
+        assert_eq!(r.warning_count(), 0);
+    }
+
+    // ---- TaskValidator branch coverage ----
+    #[test]
+    fn validate_task_empty_name_errors() {
+        let def = TaskDefinition {
+            name: String::new(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report.has_errors());
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Task name cannot be empty") }));
+    }
+
+    #[test]
+    fn validate_task_name_with_spaces_errors() {
+        let def = TaskDefinition {
+            name: "bad name".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("cannot contain spaces") }));
+    }
+
+    #[test]
+    fn validate_task_empty_actions_and_includes_errors() {
+        let def = TaskDefinition {
+            name: "ok".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: Vec::new(),
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("at least one action or include") }));
+    }
+
+    #[test]
+    fn validate_parameter_redundant_required_default_warns() {
+        use crate::task::dsl::types::ParameterType;
+        let mut params = HashMap::new();
+        params.insert(
+            "p".into(),
+            ParameterDef {
+                required: true,
+                default: Some(serde_yml::Value::String("x".into())),
+                description: String::new(),
+                r#type: ParameterType::String,
+            },
+        );
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: params,
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("is required but has a default") }));
+    }
+
+    #[test]
+    fn validate_optional_parameter_without_default_warns() {
+        use crate::task::dsl::types::ParameterType;
+        let mut params = HashMap::new();
+        params.insert(
+            "p".into(),
+            ParameterDef {
+                required: false,
+                default: None,
+                description: String::new(),
+                r#type: ParameterType::String,
+            },
+        );
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            include: Vec::new(),
+            parameters: params,
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("optional but has no default") }));
+    }
+
+    #[test]
+    fn validate_extract_empty_variable_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Extract {
+                selector: "#x".into(),
+                variable: Some(String::new()),
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Variable name cannot be empty") }));
+    }
+
+    #[test]
+    fn validate_loop_no_count_or_condition_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Loop {
+                count: None,
+                condition: None,
+                actions: vec![],
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report.issues.iter().any(|i: &ValidationIssue| {
+            i.message()
+                .contains("Loop must have either 'count' or 'condition'")
+        }));
+    }
+
+    #[test]
+    fn validate_call_empty_task_name_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Call {
+                task: String::new(),
+                parameters: None,
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Task name cannot be empty") }));
+    }
+
+    #[test]
+    fn validate_call_self_circular_reference_errors() {
+        let def = TaskDefinition {
+            name: "self".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Call {
+                task: "self".into(),
+                parameters: None,
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new()
+            .with_current_task("self")
+            .validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("circular reference") }));
+    }
+
+    #[test]
+    fn validate_parallel_zero_concurrency_errors() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Parallel {
+                actions: vec![Action::Wait { duration_ms: 1 }],
+                max_concurrency: Some(0),
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("max_concurrency cannot be 0") }));
+    }
+
+    #[test]
+    fn validate_wait_zero_duration_warns() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Wait { duration_ms: 0 }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("Wait duration is 0ms (no-op)") }));
+    }
+
+    #[test]
+    fn extract_variables_updates_report() {
+        let mut r = ValidationReport::new("t".into());
+        let validator = TaskValidator::new();
+        validator.extract_variables("hello ${name} world", &mut r);
+        assert!(r.variables_referenced.contains("name"));
+    }
+
+    #[test]
+    fn count_actions_returns_action_count() {
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![
+                Action::Wait { duration_ms: 1 },
+                Action::Wait { duration_ms: 2 },
+            ],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().validate(&def);
+        assert_eq!(report.action_count, 2);
+    }
+
+    #[test]
+    fn validator_unknown_task_warns() {
+        let tasks = vec!["known".to_string()];
+        let def = TaskDefinition {
+            name: "t".into(),
+            description: String::new(),
+            policy: String::new(),
+            actions: vec![Action::Call {
+                task: "unknown".into(),
+                parameters: None,
+            }],
+            include: Vec::new(),
+            parameters: HashMap::new(),
+        };
+        let report = TaskValidator::new().with_known_tasks(tasks).validate(&def);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i: &ValidationIssue| { i.message().contains("not in the known task list") }));
     }
 }

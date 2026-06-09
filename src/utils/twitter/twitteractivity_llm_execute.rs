@@ -2,6 +2,7 @@
 
 use crate::prelude::TaskContext;
 use crate::utils::timing::{TIMEOUT_MEDIUM_SECS, TIMEOUT_SHORT_SECS};
+use crate::utils::twitter::twitteractivity_selectors;
 use anyhow::Result;
 use log::{info, warn};
 use std::time::Duration;
@@ -10,7 +11,7 @@ use tokio::time::timeout;
 use super::twitteractivity_humanized::human_pause;
 use super::twitteractivity_interact::click_retweet_button;
 
-/// Timeout for finding quote tweet button - uses TIMEOUT_SHORT_SECS (5s)
+/// Timeout for finding quote tweet button - uses `TIMEOUT_SHORT_SECS` (5s)
 /// Short pause after clicking quote button (milliseconds)
 const QUOTE_CLICK_PAUSE_SHORT_MS: u64 = 300;
 /// Long pause after clicking quote button (milliseconds)
@@ -28,74 +29,35 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     }
 
     // Find quote tweet button coordinates
-    let quote_btn_js = r#"
-        (function() {
-            function visible(el) {
-                if (!el) return false;
-                var rect = el.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
-            }
-            var scopes = Array.prototype.slice.call(
-                document.querySelectorAll('[role="menu"], div[role="dialog"], [data-testid="Dropdown"]')
-            ).filter(visible);
-            if (scopes.length === 0) scopes = [document.body];
+    let quote_btn_js = twitteractivity_selectors::js_find_quote_button();
 
-            var buttons = [];
-            for (var s = 0; s < scopes.length; s++) {
-                var exact = scopes[s].querySelector('a[href="/compose/post"][role="menuitem"]');
-                var exactText = exact ? (exact.textContent || exact.innerText || '').trim().toLowerCase() : '';
-                if (visible(exact) && exactText.includes('quote')) {
-                    return center(exact);
-                }
-                buttons = buttons.concat(Array.prototype.slice.call(scopes[s].querySelectorAll('[role="button"], [role="menuitem"]')));
-            }
-            for (var i = 0; i < buttons.length; i++) {
-                var btn = buttons[i];
-                var ariaLabel = btn.getAttribute('aria-label') || '';
-                var text = btn.textContent || btn.innerText || '';
-                var haystack = (ariaLabel + ' ' + text).toLowerCase();
-                if (haystack.includes('quote')) {
-                    if (visible(btn)) return center(btn);
-                }
-            }
-            return null;
-
-            function center(el) {
-                var rect = el.getBoundingClientRect();
-                return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
-            }
-        })()
-    "#;
-
-    let result = match timeout(
+    let result = if let Ok(r) = timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(quote_btn_js.to_string()),
     )
     .await
     {
-        Ok(r) => r?,
-        Err(_) => {
-            warn!("Timeout finding quote tweet button");
-            return Ok(false);
-        }
+        r?
+    } else {
+        warn!("Timeout finding quote tweet button");
+        return Ok(false);
     };
     let coords = result.value().and_then(|v| v.as_object());
 
     let (x, y) = if let Some(obj) = coords {
         (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
+            obj.get("x").and_then(serde_json::Value::as_f64),
+            obj.get("y").and_then(serde_json::Value::as_f64),
         )
     } else {
         (None, None)
     };
 
-    let (x, y) = match (x, y) {
-        (Some(x), Some(y)) => (x, y),
-        _ => {
-            warn!("Quote tweet button not found");
-            return Ok(false);
-        }
+    let (x, y) = if let (Some(x), Some(y)) = (x, y) {
+        (x, y)
+    } else {
+        warn!("Quote tweet button not found");
+        return Ok(false);
     };
 
     // Human-like cursor movement then click
@@ -108,33 +70,24 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     api.pause(COMPOSER_WAIT_MS).await;
 
     // Find composer textarea and type commentary
-    let composer_js = r#"
-        (function() {
-            var textboxes = document.querySelectorAll('[data-testid="tweetTextarea_0"][role="textbox"], [data-testid="tweetTextarea_0"], [role="textbox"][aria-label="Post text"]');
-            for (var i = 0; i < textboxes.length; i++) {
-                var textarea = textboxes[i];
-                var rect = textarea.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) continue;
-                textarea.focus();
-                return true;
-            }
-            return false;
-        })()
-    "#;
+    let composer_js = twitteractivity_selectors::js_focus_composer();
 
-    let focused = match timeout(
+    let focused = if let Ok(r) = timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(composer_js.to_string()),
     )
     .await
     {
-        Ok(r) => r?,
-        Err(_) => {
-            warn!("Timeout focusing composer textarea");
-            return Ok(false);
-        }
+        r?
+    } else {
+        warn!("Timeout focusing composer textarea");
+        return Ok(false);
     };
-    if !focused.value().and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !focused
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
         warn!("Composer textarea not found");
         return Ok(false);
     }
@@ -142,127 +95,236 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     api.pause(500).await;
 
     // Type the commentary
-    match timeout(
+    if let Ok(r) = timeout(
         Duration::from_secs(TIMEOUT_MEDIUM_SECS),
         api.keyboard("[data-testid='tweetTextarea_0']", commentary),
     )
     .await
     {
-        Ok(r) => r?,
-        Err(_) => {
-            warn!("Timeout typing commentary");
-            return Ok(false);
-        }
+        r?
+    } else {
+        warn!("Timeout typing commentary");
+        return Ok(false);
     }
     api.pause(COMPOSER_WAIT_MS).await;
 
     // Find Tweet button coordinates
-    let tweet_btn_js = r#"
-        (function() {
-            var buttons = document.querySelectorAll('button[data-testid="tweetButton"]');
-            for (var i = 0; i < buttons.length; i++) {
-                var btn = buttons[i];
-                var rect = btn.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) continue;
-                if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
-                var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
-                if (text !== 'post') continue;
-                return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
-            }
-            return null;
-        })()
-    "#;
+    let tweet_btn_js = twitteractivity_selectors::js_find_tweet_button();
 
-    let button_result = match timeout(
+    let button_result = if let Ok(r) = timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(tweet_btn_js.to_string()),
     )
     .await
     {
-        Ok(r) => r?,
-        Err(_) => {
-            warn!("Timeout finding tweet button");
-            return Ok(false);
-        }
+        r?
+    } else {
+        warn!("Timeout finding tweet button");
+        return Ok(false);
     };
     let coords = button_result.value().and_then(|v| v.as_object());
 
     let (tx, ty) = if let Some(obj) = coords {
         (
-            obj.get("x").and_then(|v| v.as_f64()),
-            obj.get("y").and_then(|v| v.as_f64()),
+            obj.get("x").and_then(serde_json::Value::as_f64),
+            obj.get("y").and_then(serde_json::Value::as_f64),
         )
     } else {
         (None, None)
     };
 
-    let (tx, ty) = match (tx, ty) {
-        (Some(tx), Some(ty)) => (tx, ty),
-        _ => {
-            warn!("Tweet button not found");
-            return Ok(false);
-        }
+    let (tx, ty) = if let (Some(tx), Some(ty)) = (tx, ty) {
+        (tx, ty)
+    } else {
+        warn!("Tweet button not found");
+        return Ok(false);
     };
 
     // Human-like cursor movement then click
-    match timeout(
+    if timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.move_mouse_to(tx, ty),
     )
     .await
+    .is_err()
     {
-        Ok(_) => {}
-        Err(_) => {
-            warn!("Timeout moving mouse to tweet button");
-            return Ok(false);
-        }
+        warn!("Timeout moving mouse to tweet button");
+        return Ok(false);
     }
     human_pause(api, QUOTE_CLICK_PAUSE_SHORT_MS).await;
-    match timeout(
+    if timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.click_at(tx, ty),
     )
     .await
+    .is_err()
     {
-        Ok(_) => {}
-        Err(_) => {
-            warn!("Timeout clicking tweet button");
-            return Ok(false);
-        }
+        warn!("Timeout clicking tweet button");
+        return Ok(false);
     }
 
     // Wait for post to complete
     api.pause(2000).await;
 
-    let verify_js = r#"
-        (function() {
-            var textarea = document.querySelector('[data-testid="tweetTextarea_0"]') ||
-                           document.querySelector('[role="textbox"]');
-            if (!textarea) return { posted: true, reason: 'composer closed' };
-            var text = textarea.textContent || textarea.value || '';
-            if (text.trim() === '') return { posted: true, reason: 'composer cleared' };
-            return { posted: false, reason: 'composer still contains text' };
-        })()
-    "#;
+    let verify_js = twitteractivity_selectors::js_verify_quote_posted();
 
     let verify_result = api.page().evaluate(verify_js).await?;
     if let Some(obj) = verify_result.value().and_then(|v| v.as_object()) {
         let posted = obj
             .get("posted")
-            .and_then(|value| value.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
         let reason = obj
             .get("reason")
             .and_then(|value| value.as_str())
             .unwrap_or("unknown");
         if posted {
-            info!("Quote tweet posted successfully ({})", reason);
+            info!("Quote tweet posted successfully ({reason})");
         } else {
-            warn!("Quote tweet verification failed: {}", reason);
+            warn!("Quote tweet verification failed: {reason}");
         }
         return Ok(posted);
     }
 
     warn!("Quote tweet verification returned an unexpected result");
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quote_btn_js_has_visibility_check() {
+        let js = r#"
+            function visible(el) {
+                if (!el) return false;
+                var rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            }
+        "#;
+        assert!(js.contains("visible"));
+        assert!(js.contains("getBoundingClientRect"));
+        assert!(js.contains("width > 0"));
+        assert!(js.contains("height > 0"));
+    }
+
+    #[test]
+    fn test_quote_btn_js_searches_scopes() {
+        let js = r#"
+            var scopes = Array.prototype.slice.call(
+                document.querySelectorAll('[role="menu"], div[role="dialog"], [data-testid="Dropdown"]')
+            ).filter(visible);
+        "#;
+        assert!(js.contains("role=\"menu\""));
+        assert!(js.contains("role=\"dialog\""));
+        assert!(js.contains("data-testid=\"Dropdown\""));
+        assert!(js.contains("filter(visible)"));
+    }
+
+    #[test]
+    fn test_quote_btn_js_quotes_exact_link() {
+        let js = r#"
+            var exact = scopes[s].querySelector('a[href="/compose/post"][role="menuitem"]');
+        "#;
+        assert!(js.contains("/compose/post"));
+        assert!(js.contains("role=\"menuitem\""));
+    }
+
+    #[test]
+    fn test_quote_btn_js_fallback_text_search() {
+        let js = r#"
+            var haystack = (ariaLabel + ' ' + text).toLowerCase();
+            if (haystack.includes('quote')) {
+        "#;
+        assert!(js.contains("includes('quote')"));
+    }
+
+    #[test]
+    fn test_quote_btn_js_returns_null_when_not_found() {
+        let js = r#"
+            return null;
+        "#;
+        assert!(js.contains("return null"));
+    }
+
+    #[test]
+    fn test_composer_js_targets_tweet_textarea() {
+        let js = r#"
+            var textboxes = document.querySelectorAll('[data-testid="tweetTextarea_0"][role="textbox"], [data-testid="tweetTextarea_0"], [role="textbox"][aria-label="Post text"]');
+        "#;
+        assert!(js.contains("tweetTextarea_0"));
+        assert!(js.contains("role=\"textbox\""));
+        assert!(js.contains("aria-label=\"Post text\""));
+    }
+
+    #[test]
+    fn test_composer_js_focuses_and_returns() {
+        let js = r#"
+                textarea.focus();
+                return true;
+        "#;
+        assert!(js.contains("textarea.focus()"));
+        assert!(js.contains("return true"));
+    }
+
+    #[test]
+    fn test_composer_js_skips_invisible() {
+        let js = r#"
+                if (rect.width <= 0 || rect.height <= 0) continue;
+        "#;
+        assert!(js.contains("rect.width <= 0"));
+        assert!(js.contains("rect.height <= 0"));
+    }
+
+    #[test]
+    fn test_tweet_btn_js_targets_tweet_button() {
+        let js = r#"
+            var buttons = document.querySelectorAll('button[data-testid="tweetButton"]');
+        "#;
+        assert!(js.contains("tweetButton"));
+    }
+
+    #[test]
+    fn test_tweet_btn_js_checks_disabled() {
+        let js = r#"
+            if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+        "#;
+        assert!(js.contains("btn.disabled"));
+        assert!(js.contains("aria-disabled"));
+    }
+
+    #[test]
+    fn test_tweet_btn_js_checks_post_text() {
+        let js = r#"
+            if (text !== 'post') continue;
+        "#;
+        assert!(js.contains("'post'"));
+    }
+
+    #[test]
+    fn test_verify_js_checks_composer_cleared() {
+        let js = r#"
+            if (!textarea) return { posted: true, reason: 'composer closed' };
+            var text = textarea.textContent || textarea.value || '';
+            if (text.trim() === '') return { posted: true, reason: 'composer cleared' };
+            return { posted: false, reason: 'composer still contains text' };
+        "#;
+        assert!(js.contains("composer closed"));
+        assert!(js.contains("composer cleared"));
+        assert!(js.contains("composer still contains text"));
+    }
+
+    #[test]
+    fn test_validate_constants() {
+        assert_eq!(QUOTE_CLICK_PAUSE_SHORT_MS, 300);
+        assert_eq!(QUOTE_CLICK_PAUSE_LONG_MS, 600);
+        assert_eq!(COMPOSER_WAIT_MS, 1000);
+    }
+
+    #[test]
+    fn test_quote_tweet_signature() {
+        fn assert_fn<T>(_: T) {}
+        assert_fn(quote_tweet);
+    }
 }

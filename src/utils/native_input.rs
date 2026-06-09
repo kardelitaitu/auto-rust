@@ -1,6 +1,6 @@
 //! Native OS-level input simulation via enigo library.
 //!
-//! Provides fallback input methods when CDP (Chrome DevTools Protocol)
+//! Provides fallback input methods when CDP (Chrome `DevTools` Protocol)
 //! input is unavailable or insufficient. Supports mouse and keyboard
 //! actions at the OS level for native application automation.
 //!
@@ -166,6 +166,7 @@ impl NativeMouseBackend for EnigoNativeMouseBackend {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn native_move_to_point_blocking_with_enigo(
     enigo: &mut Enigo,
     target_x: i32,
@@ -178,7 +179,7 @@ fn native_move_to_point_blocking_with_enigo(
     let (start_x, start_y) = enigo.location().unwrap_or((target_x, target_y));
     let dx = target_x - start_x;
     let dy = target_y - start_y;
-    let distance = ((dx as f64).powi(2) + (dy as f64).powi(2)).sqrt();
+    let distance = (f64::from(dx).powi(2) + f64::from(dy).powi(2)).sqrt();
     let steps = ((distance / 85.0).ceil() as usize).clamp(6, 16);
     let mut rng = rand::thread_rng();
 
@@ -192,11 +193,11 @@ fn native_move_to_point_blocking_with_enigo(
             let t = step as f64 / steps as f64;
             let eased = 1.0 - (1.0 - t).powi(3);
             let jitter = (distance / 600.0).clamp(0.0, 1.4);
-            let x = start_x as f64
-                + (target_x - start_x) as f64 * eased
+            let x = f64::from(start_x)
+                + f64::from(target_x - start_x) * eased
                 + rng.gen_range(-jitter..=jitter);
-            let y = start_y as f64
-                + (target_y - start_y) as f64 * eased
+            let y = f64::from(start_y)
+                + f64::from(target_y - start_y) * eased
                 + rng.gen_range(-jitter..=jitter);
             enigo
                 .move_mouse(x.round() as i32, y.round() as i32, NativeCoordinate::Abs)
@@ -217,13 +218,14 @@ fn native_move_to_point_blocking_with_enigo(
     Ok(())
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn jittered_delay_ms(base_ms: u64, variance_pct: u32) -> u64 {
     if base_ms == 0 {
         return 0;
     }
 
     let mut rng = rand::thread_rng();
-    let variance = ((base_ms as f64) * (variance_pct as f64 / 100.0)).round() as u64;
+    let variance = ((base_ms as f64) * (f64::from(variance_pct) / 100.0)).round() as u64;
     if variance == 0 {
         return base_ms;
     }

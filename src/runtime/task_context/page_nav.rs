@@ -1,4 +1,4 @@
-//! Navigation and page management methods for TaskContext.
+//! Navigation and page management methods for `TaskContext`.
 
 use anyhow::{Context, Result};
 
@@ -11,10 +11,7 @@ impl TaskContext {
         navigation::goto(self.page(), url, navigate_timeout_ms)
             .await
             .with_context(|| {
-                format!(
-                    "navigate_timeout | stage=goto url={} timeout_ms={}",
-                    url, navigate_timeout_ms
-                )
+                format!("navigate_timeout | stage=goto url={url} timeout_ms={navigate_timeout_ms}")
             })?;
         let action_delay = &self.behavior_runtime.action_delay;
         timing::human_pause(
@@ -30,10 +27,7 @@ impl TaskContext {
         timing::human_pause(settle_base, settle_variance).await;
         let settle_ms = navigate_timeout_ms.min(3_000);
         self.wait_for_load(settle_ms).await.with_context(|| {
-            format!(
-                "navigate_timeout | stage=settle_load url={} timeout_ms={}",
-                url, settle_ms
-            )
+            format!("navigate_timeout | stage=settle_load url={url} timeout_ms={settle_ms}")
         })?;
         self.post_interaction_pause().await;
         Ok(())
@@ -55,7 +49,7 @@ impl TaskContext {
             "allow_browser_export" => perms.allow_browser_export,
             "allow_browser_import" => perms.allow_browser_import,
             _ => {
-                log::warn!("Unknown permission '{}' requested", permission);
+                log::warn!("Unknown permission '{permission}' requested");
                 false
             }
         };
@@ -75,7 +69,7 @@ impl TaskContext {
             Ok(_) => Ok(()),
             Err(e) => Err(crate::error::TaskError::CdpError {
                 operation: "Page.connection_check".to_string(),
-                reason: format!("Page not responding to CDP: {}", e),
+                reason: format!("Page not responding to CDP: {e}"),
             }
             .into()),
         }
@@ -100,13 +94,13 @@ impl TaskContext {
                 chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotParams::default(),
             )
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Page.captureScreenshot - {}", e))?;
+            .map_err(|e| anyhow::anyhow!("CDP error: Page.captureScreenshot - {e}"))?;
         let img = image::load_from_memory(&png_bytes)
-            .map_err(|e| anyhow::anyhow!("Failed to load PNG image: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to load PNG image: {e}"))?;
         let rgb_img = img.to_rgb8();
         let (width, height) = (rgb_img.width(), rgb_img.height());
         let encoder = webp::Encoder::new(rgb_img.as_raw(), webp::PixelLayout::Rgb, width, height);
-        let webp_data = encoder.encode(quality as f32);
+        let webp_data = encoder.encode(f32::from(quality));
         let now = chrono::Utc::now();
         let filename = format!(
             "{}-{}-{}.webp",
@@ -116,13 +110,13 @@ impl TaskContext {
         );
         let screenshot_dir = std::path::Path::new("data/screenshot");
         std::fs::create_dir_all(screenshot_dir)
-            .map_err(|e| anyhow::anyhow!("Failed to create screenshot directory: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create screenshot directory: {e}"))?;
         let file_path = screenshot_dir.join(&filename);
         std::fs::write(&file_path, &*webp_data)
-            .map_err(|e| anyhow::anyhow!("Failed to write screenshot: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to write screenshot: {e}"))?;
         file_path
             .to_str()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .ok_or_else(|| anyhow::anyhow!("Invalid screenshot path"))
     }
 }

@@ -8,7 +8,7 @@
 //! This module handles task name validation, while `task.rs`
 //! handles task payload validation.
 
-use crate::cli::TaskDefinition;
+use crate::cli::CliTaskDefinition;
 use crate::error::{ConfigError, Result};
 use crate::task::registry::{RegistryError, TaskRegistry};
 use log::warn;
@@ -25,6 +25,7 @@ pub struct TaskValidationResult {
 }
 
 /// Check if a task name is known (exists in registry)
+#[must_use]
 pub fn is_known_task(task_name: &str) -> bool {
     let registry = TaskRegistry::with_built_in_tasks();
     registry.is_known(task_name)
@@ -39,6 +40,7 @@ pub fn get_task_descriptor(
 }
 
 /// Validate a task name and return validation result
+#[must_use]
 pub fn validate_task(task_name: &str) -> TaskValidationResult {
     let registry = TaskRegistry::with_built_in_tasks();
     validate_task_with_registry(task_name, &registry)
@@ -59,8 +61,7 @@ fn validate_task_with_registry(task_name: &str, registry: &TaskRegistry) -> Task
         Err(RegistryError::UnknownTask { .. }) => {
             let known_tasks = registry.task_names().join(", ");
             warnings.push(format!(
-                "Unknown task name '{}'. Known tasks: {}",
-                clean_name, known_tasks
+                "Unknown task name '{clean_name}'. Known tasks: {known_tasks}"
             ));
 
             TaskValidationResult {
@@ -86,7 +87,8 @@ fn validate_task_with_registry(task_name: &str, registry: &TaskRegistry) -> Task
 }
 
 /// Validate all tasks in a group and log warnings for unknown tasks
-pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidationResult> {
+#[must_use]
+pub fn validate_task_groups(groups: &[Vec<CliTaskDefinition>]) -> Vec<TaskValidationResult> {
     let mut results = Vec::new();
     let mut seen_tasks: HashSet<String> = HashSet::new();
 
@@ -98,7 +100,7 @@ pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidatio
 
                 // Log warnings for unknown tasks
                 for warning in &result.warnings {
-                    warn!("{}", warning);
+                    warn!("{warning}");
                 }
 
                 results.push(result);
@@ -111,7 +113,7 @@ pub fn validate_task_groups(groups: &[Vec<TaskDefinition>]) -> Vec<TaskValidatio
 }
 
 /// Validate task groups and fail fast on any warning.
-pub fn validate_task_groups_strict(groups: &[Vec<TaskDefinition>]) -> Result<()> {
+pub fn validate_task_groups_strict(groups: &[Vec<CliTaskDefinition>]) -> Result<()> {
     let results = validate_task_groups(groups);
     let mut errors = Vec::new();
 
@@ -129,7 +131,7 @@ pub fn validate_task_groups_strict(groups: &[Vec<TaskDefinition>]) -> Result<()>
 }
 
 fn format_conflict_warning(name: &str, sources: &[crate::task::registry::TaskSource]) -> String {
-    format!("Task '{}' exists in multiple sources: {:?}", name, sources)
+    format!("Task '{name}' exists in multiple sources: {sources:?}")
 }
 
 #[cfg(test)]
@@ -198,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_validate_task_groups_strict_known_tasks() {
-        let groups = vec![vec![TaskDefinition {
+        let groups = vec![vec![CliTaskDefinition {
             name: "cookiebot".to_string(),
             payload: HashMap::new(),
         }]];
@@ -208,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_validate_task_groups_strict_unknown_task() {
-        let groups = vec![vec![TaskDefinition {
+        let groups = vec![vec![CliTaskDefinition {
             name: "unknown_task".to_string(),
             payload: HashMap::new(),
         }]];
@@ -219,11 +221,11 @@ mod tests {
     #[test]
     fn test_validate_task_groups_logs_warnings() {
         let groups = vec![vec![
-            TaskDefinition {
+            CliTaskDefinition {
                 name: "cookiebot".to_string(),
                 payload: HashMap::new(),
             },
-            TaskDefinition {
+            CliTaskDefinition {
                 name: "unknown_task".to_string(),
                 payload: HashMap::new(),
             },

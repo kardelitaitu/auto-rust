@@ -1,5 +1,6 @@
 use crate::internal::profile::{CursorBehavior, ScrollBehavior};
 use crate::prelude::TaskContext;
+use crate::utils::payload as payload_util;
 use crate::utils::timing::duration_with_variance;
 use crate::validation::task::resolve_pageview_target;
 use anyhow::Result;
@@ -85,42 +86,62 @@ impl PageviewConfig {
             (base_scroll_pause.saturating_mul(6) / 5).max(scroll_interval_min_ms);
 
         let mut config = Self::default();
-        config.duration_ms = read_u64(payload, "duration_ms", config.duration_ms)?;
-        config.initial_pause_ms = read_u64(payload, "initial_pause_ms", config.initial_pause_ms)?;
-        config.selector_wait_ms = read_u64(payload, "selector_wait_ms", config.selector_wait_ms)?;
-        config.cursor_interval_min_ms = read_u64(
+        config.duration_ms = payload_util::read_u64_or(payload, "duration_ms", config.duration_ms)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        config.initial_pause_ms =
+            payload_util::read_u64_or(payload, "initial_pause_ms", config.initial_pause_ms)
+                .map_err(|e| anyhow::anyhow!(e))?;
+        config.selector_wait_ms =
+            payload_util::read_u64_or(payload, "selector_wait_ms", config.selector_wait_ms)
+                .map_err(|e| anyhow::anyhow!(e))?;
+        config.cursor_interval_min_ms = payload_util::read_u64_or(
             payload,
             "cursor_interval_min_ms",
             cursor_behavior.interval_min_ms,
-        )?;
-        config.cursor_interval_max_ms = read_u64(
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+        config.cursor_interval_max_ms = payload_util::read_u64_or(
             payload,
             "cursor_interval_max_ms",
             cursor_behavior.interval_max_ms,
-        )?;
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
         config.scroll_interval_min_ms =
-            read_u64(payload, "scroll_interval_min_ms", scroll_interval_min_ms)?;
+            payload_util::read_u64_or(payload, "scroll_interval_min_ms", scroll_interval_min_ms)
+                .map_err(|e| anyhow::anyhow!(e))?;
         config.scroll_interval_max_ms =
-            read_u64(payload, "scroll_interval_max_ms", scroll_interval_max_ms)?;
-        config.overlay_sync_ms = read_u64(payload, "overlay_sync_ms", config.overlay_sync_ms)?;
+            payload_util::read_u64_or(payload, "scroll_interval_max_ms", scroll_interval_max_ms)
+                .map_err(|e| anyhow::anyhow!(e))?;
+        config.overlay_sync_ms =
+            payload_util::read_u64_or(payload, "overlay_sync_ms", config.overlay_sync_ms)
+                .map_err(|e| anyhow::anyhow!(e))?;
         config.scroll_read_pauses =
-            read_u32(payload, "scroll_read_pauses", config.scroll_read_pauses)?;
+            payload_util::read_u32_or(payload, "scroll_read_pauses", config.scroll_read_pauses)
+                .map_err(|e| anyhow::anyhow!(e))?;
         config.scroll_read_amount =
-            read_i32(payload, "scroll_read_amount", scroll_behavior.amount)?;
-        config.scroll_read_variable_speed = read_bool(
+            payload_util::read_i32_or(payload, "scroll_read_amount", scroll_behavior.amount)
+                .map_err(|e| anyhow::anyhow!(e))?;
+        config.scroll_read_variable_speed = payload_util::read_bool_or(
             payload,
             "scroll_read_variable_speed",
             scroll_behavior.smooth,
-        )?;
-        config.scroll_read_back_scroll = read_bool(
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+        config.scroll_read_back_scroll = payload_util::read_bool_or(
             payload,
             "scroll_read_back_scroll",
             scroll_behavior.back_scroll,
-        )?;
-        config.enable_cursor = read_bool(payload, "enable_cursor", config.enable_cursor)?;
-        config.enable_scroll = read_bool(payload, "enable_scroll", config.enable_scroll)?;
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+        config.enable_cursor =
+            payload_util::read_bool_or(payload, "enable_cursor", config.enable_cursor)
+                .map_err(|e| anyhow::anyhow!(e))?;
+        config.enable_scroll =
+            payload_util::read_bool_or(payload, "enable_scroll", config.enable_scroll)
+                .map_err(|e| anyhow::anyhow!(e))?;
         config.overlay_test_mode =
-            read_bool(payload, "overlay_test_mode", config.overlay_test_mode)?;
+            payload_util::read_bool_or(payload, "overlay_test_mode", config.overlay_test_mode)
+                .map_err(|e| anyhow::anyhow!(e))?;
         config.overlay_test_mode =
             read_env_bool("PAGEVIEW_OVERLAY_TEST_MODE").unwrap_or(config.overlay_test_mode);
         if config.overlay_test_mode {
@@ -172,7 +193,7 @@ async fn run_inner(
     duration: Duration,
 ) -> Result<()> {
     info!("Task started");
-    info!("Visiting URL: {}", url);
+    info!("Visiting URL: {url}");
     if config.overlay_test_mode {
         crate::utils::mouse::set_overlay_enabled(true);
         info!("overlay_test_mode enabled: forcing session overlay on");
@@ -194,12 +215,12 @@ async fn run_inner(
     {
         Ok(true) => info!("Visible content detected"),
         Ok(false) => info!("No target selector visible yet, continuing"),
-        Err(e) => info!("Selector readiness check skipped: {}", e),
+        Err(e) => info!("Selector readiness check skipped: {e}"),
     }
 
     perform_pageview_behavior(api, &config, duration).await?;
 
-    info!("Task completed successfully for: {}", url);
+    info!("Task completed successfully for: {url}");
     Ok(())
 }
 
@@ -282,67 +303,6 @@ fn random_interval(min_ms: u64, max_ms: u64) -> Duration {
     Duration::from_millis(ms)
 }
 
-fn read_u64(payload: &Value, key: &str, default: u64) -> Result<u64> {
-    read_numeric(payload, key).map_or_else(
-        |missing| match missing {
-            NumericReadError::Missing => Ok(default),
-            NumericReadError::Invalid(message) => Err(anyhow::anyhow!(message)),
-        },
-        Ok,
-    )
-}
-
-fn read_u32(payload: &Value, key: &str, default: u32) -> Result<u32> {
-    read_numeric(payload, key).map_or_else(
-        |missing| match missing {
-            NumericReadError::Missing => Ok(default),
-            NumericReadError::Invalid(message) => Err(anyhow::anyhow!(message)),
-        },
-        |value| u32::try_from(value).map_err(|_| anyhow::anyhow!("{key} must fit within a u32")),
-    )
-}
-
-fn read_i32(payload: &Value, key: &str, default: i32) -> Result<i32> {
-    match payload.get(key) {
-        None | Some(Value::Null) => Ok(default),
-        Some(value) => {
-            if let Some(number) = value.as_i64() {
-                return i32::try_from(number)
-                    .map_err(|_| anyhow::anyhow!("{key} must fit within an i32"));
-            }
-
-            if let Some(text) = value.as_str() {
-                return text
-                    .parse::<i32>()
-                    .map_err(|_| anyhow::anyhow!("{key} must be an integer"));
-            }
-
-            Err(anyhow::anyhow!("{key} must be an integer"))
-        }
-    }
-}
-
-fn read_bool(payload: &Value, key: &str, default: bool) -> Result<bool> {
-    match payload.get(key) {
-        None | Some(Value::Null) => Ok(default),
-        Some(value) => {
-            if let Some(flag) = value.as_bool() {
-                return Ok(flag);
-            }
-
-            if let Some(text) = value.as_str() {
-                return match text.to_ascii_lowercase().as_str() {
-                    "true" | "1" | "yes" | "on" => Ok(true),
-                    "false" | "0" | "no" | "off" => Ok(false),
-                    _ => Err(anyhow::anyhow!("{key} must be a boolean")),
-                };
-            }
-
-            Err(anyhow::anyhow!("{key} must be a boolean"))
-        }
-    }
-}
-
 fn read_env_bool(key: &str) -> Option<bool> {
     let raw = env::var(key).ok()?;
     match raw.trim().to_ascii_lowercase().as_str() {
@@ -350,35 +310,6 @@ fn read_env_bool(key: &str) -> Option<bool> {
         "false" | "0" | "no" | "off" => Some(false),
         _ => None,
     }
-}
-
-fn read_numeric(payload: &Value, key: &str) -> Result<u64, NumericReadError> {
-    let Some(value) = payload.get(key) else {
-        return Err(NumericReadError::Missing);
-    };
-
-    if value.is_null() {
-        return Err(NumericReadError::Missing);
-    }
-
-    if let Some(number) = value.as_u64() {
-        return Ok(number);
-    }
-
-    if let Some(text) = value.as_str() {
-        return text.parse::<u64>().map_err(|_| {
-            NumericReadError::Invalid(format!("{key} must be a non-negative integer"))
-        });
-    }
-
-    Err(NumericReadError::Invalid(format!(
-        "{key} must be a non-negative integer"
-    )))
-}
-
-enum NumericReadError {
-    Missing,
-    Invalid(String),
 }
 
 #[cfg(test)]

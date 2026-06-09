@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use log::{debug, info, warn};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -45,6 +45,7 @@ impl Default for RetryConfig {
 
 impl RetryConfig {
     /// Conservative config for critical operations (more retries, longer delays).
+    #[must_use]
     pub fn conservative() -> Self {
         Self {
             max_attempts: 5,
@@ -56,6 +57,7 @@ impl RetryConfig {
     }
 
     /// Aggressive config for fast operations (fewer retries, shorter delays).
+    #[must_use]
     pub fn aggressive() -> Self {
         Self {
             max_attempts: 2,
@@ -67,60 +69,71 @@ impl RetryConfig {
     }
 }
 
-/// Statistics for retry operations.
-#[derive(Debug, Default, Clone)]
-pub struct RetryStats {
-    pub total_attempts: u32,
-    pub transient_errors: u32,
-    pub permanent_errors: u32,
-    pub success_after_retry: u32,
-}
+/// Circuit breaker state constants for AtomicU8.
+const CLOSED: u8 = 0;
+const HALF_OPEN: u8 = 1;
+const OPEN: u8 = 2;
 
 /// Circuit breaker for preventing cascade failures.
+///
+/// Uses an `AtomicU8` state machine with compare-and-swap to ensure
+/// only one concurrent caller transitions from OPEN to HALF_OPEN,
+/// eliminating the TOCTOU race in the previous `RwLock<bool>` design.
 #[derive(Debug, Clone)]
 pub struct CircuitBreaker {
     threshold: u32,
     reset_timeout: Duration,
     failures: Arc<AtomicU32>,
     last_failure: Arc<RwLock<Option<Instant>>>,
-    is_open: Arc<RwLock<bool>>,
+    state: Arc<AtomicU8>,
 }
 
 impl CircuitBreaker {
+    #[must_use]
     pub fn new(threshold: u32, reset_timeout_ms: u64) -> Self {
         Self {
             threshold,
             reset_timeout: Duration::from_millis(reset_timeout_ms),
             failures: Arc::new(AtomicU32::new(0)),
             last_failure: Arc::new(RwLock::new(None)),
-            is_open: Arc::new(RwLock::new(false)),
+            state: Arc::new(AtomicU8::new(CLOSED)),
         }
     }
 
+    /// Returns `true` if the circuit is open (calls should be rejected).
+    ///
+    /// When the reset timeout expires, only one caller atomically transitions
+    /// the state from OPEN to HALF_OPEN via CAS. All other callers see `true`.
+    #[must_use]
     pub async fn is_open(&self) -> bool {
-        let is_open = *self.is_open.read().await;
-        if is_open {
-            let last_failure_lock = self.last_failure.read().await;
-            if let Some(last_time) = *last_failure_lock {
-                if last_time.elapsed() > self.reset_timeout {
-                    drop(last_failure_lock);
-                    let mut is_open_write = self.is_open.write().await;
-                    *is_open_write = false;
-                    self.failures.store(0, Ordering::SeqCst);
-                    return false;
+        let s = self.state.load(Ordering::Acquire);
+        if s == CLOSED {
+            return false;
+        }
+        if s == OPEN {
+            let elapsed = self.last_failure.read().await.map(|t| t.elapsed());
+            if elapsed.is_some_and(|e| e > self.reset_timeout) {
+                // CAS: only one caller transitions to HALF_OPEN
+                if self
+                    .state
+                    .compare_exchange(OPEN, HALF_OPEN, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    self.failures.store(0, Ordering::Release);
+                    return false; // this caller gets the probe
                 }
             }
-            return true;
+            return true; // still open for everyone else
         }
-        false
+        // HALF_OPEN — only one caller gets through; reject others
+        true
     }
 
     pub async fn record_success(&self) {
-        self.failures.store(0, Ordering::SeqCst);
+        self.state.store(CLOSED, Ordering::Release);
+        self.failures.store(0, Ordering::Release);
         let mut last_failure = self.last_failure.write().await;
         *last_failure = None;
-        let mut is_open = self.is_open.write().await;
-        *is_open = false;
     }
 
     pub async fn record_failure(&self) {
@@ -129,12 +142,8 @@ impl CircuitBreaker {
         *last_failure = Some(Instant::now());
 
         if failures >= self.threshold {
-            let mut is_open = self.is_open.write().await;
-            *is_open = true;
-            warn!(
-                "Circuit breaker opened after {} consecutive failures",
-                failures
-            );
+            self.state.store(OPEN, Ordering::Release);
+            warn!("Circuit breaker opened after {failures} consecutive failures");
         }
     }
 
@@ -167,6 +176,7 @@ impl Default for CircuitBreaker {
 }
 
 /// Calculate delay with exponential backoff and jitter.
+#[allow(clippy::cast_precision_loss)]
 fn calculate_delay(attempt: u32, config: &RetryConfig) -> u64 {
     let base = config.base_delay_ms as f64 * config.backoff_multiplier.powi(attempt as i32 - 1);
     let delay = base.min(config.max_delay_ms as f64);
@@ -183,29 +193,20 @@ fn calculate_delay(attempt: u32, config: &RetryConfig) -> u64 {
     (delay + jitter) as u64
 }
 
-/// Retry an async operation with exponential backoff.
+/// Core retry loop with a generic delay function.
 ///
-/// Only retries transient errors. Permanent and fatal errors fail immediately.
-///
-/// # Arguments
-///
-/// * `operation` - The async operation to retry (FnMut allows captured vars)
-/// * `config` - Retry configuration
-/// * `api` - Task context for humanized pauses
-/// * `operation_name` - Name for logging
-///
-/// # Returns
-///
-/// Returns `Ok(T)` on success, or the last error after all retries exhausted.
-pub async fn retry_with_backoff<T, F, Fut>(
+/// Extracted from `retry_with_backoff` to allow testing without a real `TaskContext`.
+pub(crate) async fn retry_with_backoff_inner<T, F, Fut, D, DFut>(
     mut operation: F,
     config: &RetryConfig,
-    api: &TaskContext,
+    mut delay_fn: D,
     operation_name: &str,
 ) -> Result<T>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
+    D: FnMut(u64) -> DFut,
+    DFut: std::future::Future<Output = ()>,
 {
     let mut last_error = None;
 
@@ -213,16 +214,13 @@ where
         match operation().await {
             Ok(result) => {
                 if attempt > 1 {
-                    info!("{} succeeded after {} attempts", operation_name, attempt);
+                    info!("{operation_name} succeeded after {attempt} attempts");
                 }
                 return Ok(result);
             }
             Err(e) => {
                 let error_class = e.classify();
-                debug!(
-                    "{} attempt {} failed: {} (class: {})",
-                    operation_name, attempt, e, error_class
-                );
+                debug!("{operation_name} attempt {attempt} failed: {e} (class: {error_class})");
 
                 match error_class {
                     ErrorClass::Transient => {
@@ -232,22 +230,19 @@ where
                                 "{} transient error (attempt {}/{}): {}. Retrying in {}ms...",
                                 operation_name, attempt, config.max_attempts, e, delay_ms
                             );
-                            human_pause(api, delay_ms).await;
+                            delay_fn(delay_ms).await;
                             last_error = Some(e);
                         } else {
-                            warn!(
-                                "{} failed after {} attempts: {}",
-                                operation_name, attempt, e
-                            );
+                            warn!("{operation_name} failed after {attempt} attempts: {e}");
                             return Err(e);
                         }
                     }
                     ErrorClass::Permanent => {
-                        debug!("{} permanent error, not retrying: {}", operation_name, e);
+                        debug!("{operation_name} permanent error, not retrying: {e}");
                         return Err(e);
                     }
                     ErrorClass::Fatal => {
-                        warn!("{} fatal error, aborting: {}", operation_name, e);
+                        warn!("{operation_name} fatal error, aborting: {e}");
                         return Err(e);
                     }
                 }
@@ -259,6 +254,39 @@ where
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Retry exhausted")))
 }
 
+/// Retry an async operation with exponential backoff.
+///
+/// Only retries transient errors. Permanent and fatal errors fail immediately.
+///
+/// # Arguments
+///
+/// * `operation` - The async operation to retry (`FnMut` allows captured vars)
+/// * `config` - Retry configuration
+/// * `api` - Task context for humanized pauses
+/// * `operation_name` - Name for logging
+///
+/// # Returns
+///
+/// Returns `Ok(T)` on success, or the last error after all retries exhausted.
+pub async fn retry_with_backoff<T, F, Fut>(
+    operation: F,
+    config: &RetryConfig,
+    api: &TaskContext,
+    operation_name: &str,
+) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    retry_with_backoff_inner(
+        operation,
+        config,
+        |delay_ms| human_pause(api, delay_ms),
+        operation_name,
+    )
+    .await
+}
+
 #[cfg(test)]
 mod config_tests {
     use super::RetryConfig;
@@ -268,6 +296,39 @@ mod config_tests {
         let config = RetryConfig::default();
         assert_eq!(config.max_attempts, 3);
         assert_eq!(config.base_delay_ms, 500);
+        assert_eq!(config.max_delay_ms, 5000);
+        assert_eq!(config.backoff_multiplier, 2.0);
+        assert!((config.jitter_factor - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn retry_config_conservative_values() {
+        let config = RetryConfig::conservative();
+        assert_eq!(config.max_attempts, 5);
+        assert_eq!(config.base_delay_ms, 1000);
+        assert_eq!(config.max_delay_ms, 10000);
+        assert_eq!(config.backoff_multiplier, 1.5);
+        assert!((config.jitter_factor - 0.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn retry_config_aggressive_values() {
+        let config = RetryConfig::aggressive();
+        assert_eq!(config.max_attempts, 2);
+        assert_eq!(config.base_delay_ms, 250);
+        assert_eq!(config.max_delay_ms, 2000);
+        assert_eq!(config.backoff_multiplier, 2.0);
+        assert!((config.jitter_factor - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn conservative_has_more_retries_than_default() {
+        assert!(RetryConfig::conservative().max_attempts > RetryConfig::default().max_attempts);
+    }
+
+    #[test]
+    fn aggressive_has_fewer_retries_than_default() {
+        assert!(RetryConfig::aggressive().max_attempts < RetryConfig::default().max_attempts);
     }
 }
 
@@ -286,6 +347,324 @@ mod delay_tests {
         // Second attempt: 2x base
         let d2 = calculate_delay(2, &config);
         assert!((900..=1100).contains(&d2));
+    }
+
+    #[test]
+    fn calculate_delay_capped_at_max_delay() {
+        let config = RetryConfig {
+            max_attempts: 10,
+            base_delay_ms: 100,
+            max_delay_ms: 500,
+            backoff_multiplier: 10.0,
+            jitter_factor: 0.0,
+        };
+
+        // attempt 3: 100 * 10^2 = 10000, but capped at 500
+        let d = calculate_delay(3, &config);
+        assert_eq!(d, 500);
+    }
+
+    #[test]
+    fn calculate_delay_no_jitter_is_deterministic() {
+        let config = RetryConfig {
+            max_attempts: 5,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            backoff_multiplier: 2.0,
+            jitter_factor: 0.0,
+        };
+
+        // attempt 1: 100 * 2^0 = 100
+        assert_eq!(calculate_delay(1, &config), 100);
+        // attempt 2: 100 * 2^1 = 200
+        assert_eq!(calculate_delay(2, &config), 200);
+        // attempt 3: 100 * 2^2 = 400
+        assert_eq!(calculate_delay(3, &config), 400);
+    }
+
+    #[test]
+    fn calculate_delay_with_jitter_stays_bounded() {
+        let config = RetryConfig {
+            max_attempts: 5,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            backoff_multiplier: 2.0,
+            jitter_factor: 0.5, // 50% jitter
+        };
+
+        for _ in 0..100 {
+            let d = calculate_delay(1, &config);
+            // Base = 100, jitter_range = 50, so delay in [75, 125]
+            assert!((50..=150).contains(&d), "delay {d} out of bounds");
+        }
+    }
+}
+
+#[cfg(test)]
+mod retry_inner_tests {
+    use super::{retry_with_backoff_inner, RetryConfig};
+    use std::sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    };
+
+    use std::pin::Pin;
+
+    /// A no-op delay function that records calls.
+    fn make_recording_delay(
+        call_count: Arc<AtomicU32>,
+    ) -> impl FnMut(u64) -> Pin<Box<dyn std::future::Future<Output = ()>>> {
+        move |_ms| {
+            call_count.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {})
+        }
+    }
+
+    #[tokio::test]
+    async fn immediate_success_no_retry_needed() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result = retry_with_backoff_inner(
+            || async { Ok::<_, anyhow::Error>(42) },
+            &RetryConfig::default(),
+            delay,
+            "immediate_test",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn transient_then_success_retries_once() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt == 1 {
+                        Err(anyhow::anyhow!("stale element reference"))
+                    } else {
+                        Ok::<_, anyhow::Error>(99)
+                    }
+                }
+            },
+            &RetryConfig::default(),
+            delay,
+            "transient_then_success",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 99);
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn transient_exhaustion_returns_last_error() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &RetryConfig::default(),
+            delay,
+            "exhaustion_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("stale element reference"));
+        // Default max_attempts = 3, so 2 delays (attempts 1 and 2)
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn permanent_error_stops_immediately() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("invalid selector syntax")) },
+            &RetryConfig::default(),
+            delay,
+            "permanent_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("invalid selector syntax"));
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn fatal_error_stops_immediately() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("browser disconnected")) },
+            &RetryConfig::default(),
+            delay,
+            "fatal_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("browser disconnected"));
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn aggressive_config_retries_less() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let config = RetryConfig::aggressive();
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay,
+            "aggressive_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        // Aggressive: max_attempts=2, so 1 delay
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn conservative_config_retries_more() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let config = RetryConfig::conservative();
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay,
+            "conservative_test",
+        )
+        .await;
+
+        assert!(result.is_err());
+        // Conservative: max_attempts=5, so 4 delays
+        assert_eq!(call_count.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn single_attempt_config_does_not_retry() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let config = RetryConfig {
+            max_attempts: 1,
+            ..RetryConfig::default()
+        };
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay,
+            "single_attempt",
+        )
+        .await;
+
+        assert!(result.is_err());
+        // max_attempts=1, no retries possible
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn delay_fn_receives_increasing_delays() {
+        let delays = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let d = delays.clone();
+
+        let delay_fn = move |ms| {
+            d.lock().unwrap().push(ms);
+            Box::pin(async {}) as Pin<Box<dyn std::future::Future<Output = ()>>>
+        };
+
+        let config = RetryConfig {
+            max_attempts: 3,
+            base_delay_ms: 100,
+            max_delay_ms: 10000,
+            backoff_multiplier: 2.0,
+            jitter_factor: 0.0, // No jitter for deterministic test
+        };
+
+        let _result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &config,
+            delay_fn,
+            "delay_tracking",
+        )
+        .await;
+
+        let recorded = delays.lock().unwrap();
+        // Attempt 1: delay = 100 * 2^0 = 100
+        // Attempt 2: delay = 100 * 2^1 = 200
+        assert_eq!(recorded.len(), 2);
+        assert_eq!(recorded[0], 100);
+        assert_eq!(recorded[1], 200);
+    }
+
+    #[tokio::test]
+    async fn operation_name_appears_in_errors() {
+        let delay = |_ms| Box::pin(async {}) as Pin<Box<dyn std::future::Future<Output = ()>>>;
+
+        let result: Result<u32, anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("stale element reference")) },
+            &RetryConfig {
+                max_attempts: 1,
+                ..RetryConfig::default()
+            },
+            delay,
+            "my_custom_operation",
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn multiple_transient_then_success_after_retries() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let config = RetryConfig {
+            max_attempts: 5,
+            ..RetryConfig::default()
+        };
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt <= 3 {
+                        Err(anyhow::anyhow!("stale element reference"))
+                    } else {
+                        Ok::<_, anyhow::Error>(attempt)
+                    }
+                }
+            },
+            &config,
+            delay,
+            "multi_retry_success",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 4);
+        // 3 failures → 3 delay calls
+        assert_eq!(call_count.load(Ordering::SeqCst), 3);
     }
 }
 
@@ -308,6 +687,101 @@ mod circuit_breaker_tests {
 
         // After success, should be closed
         cb.record_success().await;
+        assert!(!cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_execute_success_path() {
+        let cb = CircuitBreaker::new(3, 1000);
+
+        let result = cb.execute(|| async { Ok::<_, anyhow::Error>(42) }).await;
+        assert_eq!(result.unwrap(), 42);
+        // Should remain closed after success
+        assert!(!cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_execute_failure_records_failure() {
+        let cb = CircuitBreaker::new(2, 1000);
+
+        let result: Result<(), anyhow::Error> =
+            cb.execute(|| async { Err(anyhow::anyhow!("fail")) }).await;
+        assert!(result.is_err());
+        // One failure recorded, still below threshold
+        assert!(!cb.is_open().await);
+
+        // Second failure hits threshold
+        let _: Result<(), anyhow::Error> = cb
+            .execute(|| async { Err(anyhow::anyhow!("fail again")) })
+            .await;
+        assert!(cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_execute_rejects_when_open() {
+        let cb = CircuitBreaker::new(1, 10_000);
+
+        // Trip the breaker
+        cb.record_failure().await;
+        assert!(cb.is_open().await);
+
+        // Execute should be rejected
+        let result: Result<u32, anyhow::Error> = cb.execute(|| async { Ok(42) }).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circuit breaker is open"));
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_half_open_to_closed_on_success() {
+        let cb = CircuitBreaker::new(2, 50); // 50ms reset timeout
+
+        // Trip the breaker
+        cb.record_failure().await;
+        cb.record_failure().await;
+        assert!(cb.is_open().await);
+
+        // Wait for reset timeout
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+
+        // One caller gets through (HALF_OPEN probe)
+        assert!(!cb.is_open().await);
+
+        // Record success → should close
+        cb.record_success().await;
+        assert!(!cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_default_config() {
+        let cb = CircuitBreaker::default();
+        assert!(!cb.is_open().await);
+        // Default: threshold=5, timeout=30s
+        // 4 failures should not open
+        for _ in 0..4 {
+            cb.record_failure().await;
+        }
+        assert!(!cb.is_open().await);
+        // 5th failure opens
+        cb.record_failure().await;
+        assert!(cb.is_open().await);
+    }
+
+    #[tokio::test]
+    async fn circuit_breaker_success_resets_failure_counter() {
+        let cb = CircuitBreaker::new(3, 10_000);
+
+        cb.record_failure().await;
+        cb.record_failure().await;
+        // 2 failures, below threshold
+        cb.record_success().await;
+        // Success resets counter to 0
+
+        cb.record_failure().await;
+        cb.record_failure().await;
+        // Only 2 failures again (not 4), still closed
         assert!(!cb.is_open().await);
     }
 }

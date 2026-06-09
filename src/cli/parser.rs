@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 
 /// Represents a single task with its name and payload
 #[derive(Debug, Clone)]
-pub struct TaskDefinition {
+pub struct CliTaskDefinition {
     pub name: String,
     pub payload: HashMap<String, Value>,
 }
@@ -42,6 +42,7 @@ pub struct TaskDefinition {
 /// let all = parse_browser_filters(None);
 /// assert!(all.is_empty());
 /// ```
+#[must_use]
 pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
     let mut seen = HashSet::new();
 
@@ -89,9 +90,10 @@ pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
 /// let groups = parse_task_groups(&["pageview=www.example.com".to_string()]);
 /// assert_eq!(groups[0][0].name, "pageview");
 /// ```
-pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
-    let mut groups: Vec<Vec<TaskDefinition>> = Vec::new();
-    let mut current_group: Vec<TaskDefinition> = Vec::new();
+#[must_use]
+pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<CliTaskDefinition>> {
+    let mut groups: Vec<Vec<CliTaskDefinition>> = Vec::new();
+    let mut current_group: Vec<CliTaskDefinition> = Vec::new();
     let mut current_task: Option<String> = None;
     let mut current_payload: HashMap<String, Value> = HashMap::new();
 
@@ -108,7 +110,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
 
         if normalized == "then" {
             if let Some(task_name) = current_task.take() {
-                current_group.push(TaskDefinition {
+                current_group.push(CliTaskDefinition {
                     name: task_name,
                     payload: std::mem::take(&mut current_payload),
                 });
@@ -154,9 +156,9 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     } else {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     }
-                } else if key == current_task.as_ref().expect("current_task should be Some") {
+                } else if current_task.as_ref().is_some_and(|ct| key == ct.as_str()) {
                     if let Some(task_name) = current_task.take() {
-                        current_group.push(TaskDefinition {
+                        current_group.push(CliTaskDefinition {
                             name: task_name,
                             payload: std::mem::take(&mut current_payload),
                         });
@@ -182,17 +184,15 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
                     } else {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
                     }
+                } else if key == "url" {
+                    current_payload.insert(key.to_string(), Value::String(format_url(value)));
                 } else {
-                    if key == "url" {
-                        current_payload.insert(key.to_string(), Value::String(format_url(value)));
-                    } else {
-                        current_payload.insert(key.to_string(), parse_scalar_value(value));
-                    }
+                    current_payload.insert(key.to_string(), parse_scalar_value(value));
                 }
             }
         } else {
             if let Some(task_name) = current_task.take() {
-                current_group.push(TaskDefinition {
+                current_group.push(CliTaskDefinition {
                     name: task_name,
                     payload: std::mem::take(&mut current_payload),
                 });
@@ -203,7 +203,7 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<TaskDefinition>> {
     }
 
     if let Some(task_name) = current_task.take() {
-        current_group.push(TaskDefinition {
+        current_group.push(CliTaskDefinition {
             name: task_name,
             payload: std::mem::take(&mut current_payload),
         });
@@ -269,18 +269,18 @@ fn parse_scalar_value(value: &str) -> Value {
 ///
 /// # Examples
 /// ```
-/// # use auto::cli::parser::{format_task_groups, TaskDefinition};
+/// # use auto::cli::parser::{format_task_groups, CliTaskDefinition};
 /// # use std::collections::HashMap;
 /// let groups = vec![
-///     vec![TaskDefinition { name: "cookiebot".to_string(), payload: HashMap::new() }],
+///     vec![CliTaskDefinition { name: "cookiebot".to_string(), payload: HashMap::new() }],
 ///     vec![
-///         TaskDefinition { name: "pageview".to_string(), payload: HashMap::new() },
-///         TaskDefinition { name: "pageview".to_string(), payload: HashMap::new() }
+///         CliTaskDefinition { name: "pageview".to_string(), payload: HashMap::new() },
+///         CliTaskDefinition { name: "pageview".to_string(), payload: HashMap::new() }
 ///     ]
 /// ];
 /// assert_eq!(format_task_groups(&groups), "3 task(s) [Group 1: cookiebot | Group 2: pageview, pageview]");
 /// ```
-pub fn format_task_groups(groups: &[Vec<TaskDefinition>]) -> String {
+pub fn format_task_groups(groups: &[Vec<CliTaskDefinition>]) -> String {
     let total: usize = groups.iter().map(Vec::len).sum();
 
     if total == 0 {
@@ -449,16 +449,16 @@ mod tests {
     fn test_format_task_groups() {
         let groups = vec![
             vec![
-                TaskDefinition {
+                CliTaskDefinition {
                     name: "cookiebot".to_string(),
                     payload: std::collections::HashMap::new(),
                 },
-                TaskDefinition {
+                CliTaskDefinition {
                     name: "pageview".to_string(),
                     payload: [("url".to_string(), json!("https://reddit.com"))].into(),
                 },
             ],
-            vec![TaskDefinition {
+            vec![CliTaskDefinition {
                 name: "cookiebot".to_string(),
                 payload: std::collections::HashMap::new(),
             }],
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_format_task_groups_empty() {
-        let groups: Vec<Vec<TaskDefinition>> = vec![];
+        let groups: Vec<Vec<CliTaskDefinition>> = vec![];
         let formatted = format_task_groups(&groups);
         assert_eq!(formatted, "No tasks");
     }
@@ -508,11 +508,11 @@ mod tests {
     #[test]
     fn test_format_task_groups_single_group() {
         let groups = vec![vec![
-            TaskDefinition {
+            CliTaskDefinition {
                 name: "cookiebot".to_string(),
                 payload: std::collections::HashMap::new(),
             },
-            TaskDefinition {
+            CliTaskDefinition {
                 name: "pageview".to_string(),
                 payload: std::collections::HashMap::new(),
             },

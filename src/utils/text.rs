@@ -1,16 +1,19 @@
 //! UTF-8 safe text helpers used by task and utility code.
 
 /// Returns a preview limited to the requested number of characters.
+#[must_use]
 pub fn preview_chars(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
 /// Truncates text to the requested number of characters.
+#[must_use]
 pub fn truncate_chars(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
 /// Truncates text and appends an ellipsis when truncation occurs.
+#[must_use]
 pub fn truncate_with_ellipsis(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
@@ -21,6 +24,19 @@ pub fn truncate_with_ellipsis(text: &str, max_chars: usize) -> String {
     let mut result = text.chars().take(keep).collect::<String>();
     result.push_str(ellipsis);
     result
+}
+
+/// Normalizes a browser token for filter matching.
+///
+/// Removes non-alphanumeric characters and converts to lowercase
+/// for consistent case-insensitive comparison.
+#[must_use]
+pub fn normalize_browser_token(value: &str) -> String {
+    value
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 #[cfg(test)]
@@ -268,5 +284,98 @@ mod tests {
     fn test_preview_chars_surrogate_pair() {
         let text = "\u{10400}"; // Deseret letter (4-byte UTF-8)
         assert_eq!(preview_chars(text, 1).len(), 4); // 4 bytes
+    }
+
+    #[test]
+    fn test_truncate_chars_multibyte_chars() {
+        let text = "αβγδε"; // Greek letters, each 2 bytes
+        assert_eq!(truncate_chars(text, 3), "αβγ");
+        assert_eq!(truncate_chars(text, 3).chars().count(), 3);
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_very_short_limit() {
+        let text = "hello world";
+        let result = truncate_with_ellipsis(text, 3);
+        // Should be "..." since 3 chars, and ellipsis is "..."
+        assert_eq!(result, "...");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_no_truncation_needed() {
+        let text = "hi";
+        let result = truncate_with_ellipsis(text, 10);
+        assert_eq!(result, "hi");
+    }
+
+    #[test]
+    fn test_preview_chars_combining_characters() {
+        let text = "e\u{0301}"; // e with acute accent (combining character)
+        assert_eq!(preview_chars(text, 1), "e");
+        assert_eq!(preview_chars(text, 2), "e\u{0301}");
+    }
+
+    #[test]
+    fn test_truncate_chars_zero_width_joiner() {
+        let text = "👨‍👩‍👧‍👦"; // Family emoji with ZWJ sequences (7 chars)
+                         // truncate_chars works at char level, so truncating to 1 gives first char
+        assert_eq!(truncate_chars(text, 1), "👨");
+        assert_eq!(truncate_chars(text, 7), "👨‍👩‍👧‍👦");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_unicode_ellipsis() {
+        let text = "This is a very long text that should be truncated";
+        let result = truncate_with_ellipsis(text, 15);
+        assert!(result.ends_with("..."));
+        assert!(result.chars().count() <= 15);
+    }
+
+    #[test]
+    fn test_preview_chars_with_zero_width_characters() {
+        // U+200B is zero-width space
+        let text = "a\u{200B}b\u{200B}c";
+        // preview_chars works at char level, so 3 chars = "a\u{200B}b"
+        assert_eq!(preview_chars(text, 3), "a\u{200B}b");
+        assert_eq!(preview_chars(text, 2), "a\u{200B}");
+    }
+
+    #[test]
+    fn test_truncate_chars_with_zero_width_characters() {
+        let text = "a\u{200B}b\u{200B}c\u{200B}d";
+        // truncate_chars works at char level
+        assert_eq!(truncate_chars(text, 3), "a\u{200B}b");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_preserves_zero_width() {
+        let text = "long\u{200B}text\u{200B}here";
+        let result = truncate_with_ellipsis(text, 8);
+        assert!(result.ends_with("..."));
+        assert!(result.chars().count() <= 8);
+    }
+
+    #[test]
+    fn test_preview_chars_with_variation_selectors() {
+        // U+FE0F is variation selector for emoji
+        let text = "a\u{FE0F}b\u{FE0F}c";
+        // Variation selectors are individual chars
+        assert_eq!(preview_chars(text, 3), "a\u{FE0F}b");
+        assert_eq!(preview_chars(text, 2), "a\u{FE0F}");
+    }
+
+    #[test]
+    fn test_truncate_chars_with_emoji_zwj() {
+        let text = "👨‍👩‍👧‍👦"; // Family emoji, 7 chars total
+        assert_eq!(truncate_chars(text, 1), "👨");
+        assert_eq!(truncate_chars(text, 7), "👨‍👩‍👧‍👦");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis_with_emoji() {
+        let text = "This is a 😀 very long text with emoji that should be truncated";
+        let result = truncate_with_ellipsis(text, 20);
+        assert!(result.ends_with("..."));
+        assert!(result.chars().count() <= 20);
     }
 }

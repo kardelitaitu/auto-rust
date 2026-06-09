@@ -1,0 +1,35 @@
+version: 1
+id: pipeline-orchestration-unit-tests
+title: Pipeline orchestration unit tests
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P1
+area:
+  - bacon-pipeline
+  - testing
+files:
+  code:
+    - bacon-pipeline/src/core/agent.rs
+    - bacon-pipeline/src/agent/pipeline.rs
+  docs:
+    - docs/specs/_done/pipeline-orchestration-unit-tests/spec.yaml
+    - docs/specs/_done/pipeline-orchestration-unit-tests/plan.md
+    - docs/specs/_done/pipeline-orchestration-unit-tests/validation.md
+acceptance:
+  - "PipelineAgent::run() default orchestration in core/agent.rs has ≥30 tests covering all 9 logical branches (happy path, resume, fast-path, confidence, observer-noop, missing-spec-refs, coder-refused, scope-reduction-exhausted, run-log-recording)"
+  - "Pipeline::new() in agent/pipeline.rs has tests for validation pass/fail"
+  - "Pipeline::run_parallel() has tests for no-spec, no-approved-specs, and multi-spec paths"
+  - "Pipeline::run_single_spec() has tests for coder-pass/auditor-pass flow and coder-fail bail"
+  - "All tests pass `cargo nextest run --all-features -p bacon-pipeline --lib` without network access or external agents"
+  - "`check-fast.ps1` passes (spec-lint, build, fmt, clippy)"
+non_goals:
+  - "Integration tests for the full CLI binary (already covered in tests/)"
+  - "Tests for individual agent modules (observer, strategist, coder, auditor) beyond their interaction through orchestration"
+  - "Modifying the production code's orchestration logic or adding new abstractions"
+  - "Tests for Pipeline::run_parallel with actual tokio concurrency (spawn behavior covered by integration tests)"
+risks:
+  - "Mock must accurately reflect real PipelineAgent behavior to avoid false confidence"
+  - "confirm() in check_confidence reads stdin — mock by extracting into injectable trait or testing only the auto-mode path"
+  - "run_parallel spawns tokio tasks — test the sequential mock path; concurrency is verified by integration tests"
+  - "run_log uses real filesystem — test run() outcome assignments; run_log persistence tests are in a separate proposal bucket"

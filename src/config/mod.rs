@@ -42,12 +42,12 @@ pub struct BrowserConfig {
     /// Delay between browser discovery attempts in milliseconds
     pub discovery_retry_delay_ms: u64,
     /// Circuit breaker configuration for fault tolerance.
-    /// Note: Validated but not yet wired to ApiClient. Future use for API fault tolerance.
+    /// Note: Validated but not yet wired to `ApiClient`. Future use for API fault tolerance.
     #[allow(dead_code)]
     pub circuit_breaker: CircuitBreakerConfig,
     /// List of browser profiles available for task execution
     pub profiles: Vec<BrowserProfile>,
-    /// RoxyBrowser API integration settings
+    /// `RoxyBrowser` API integration settings
     pub roxybrowser: RoxybrowserConfig,
     /// Optional browser user-agent override applied to new pages
     #[serde(default)]
@@ -83,21 +83,20 @@ pub enum NativeClickCalibrationMode {
 }
 
 impl NativeClickCalibrationMode {
+    #[must_use]
     pub fn from_env_value(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "mac" | "darwin" | "osx" => Self::Mac,
             "linux" => Self::Linux,
             "windows" => Self::Windows,
             other => {
-                warn!(
-                    "Invalid native click calibration mode '{}', falling back to windows",
-                    other
-                );
+                warn!("Invalid native click calibration mode '{other}', falling back to windows");
                 Self::Windows
             }
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Windows => "windows",
@@ -118,21 +117,20 @@ pub enum NativeInputBackend {
 }
 
 impl NativeInputBackend {
+    #[must_use]
     pub fn from_env_value(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "enigo" => Self::Enigo,
             "sendinput" | "send_input" | "win32" => Self::Sendinput,
             "rdev" => Self::Rdev,
             other => {
-                warn!(
-                    "Invalid native input backend '{}', falling back to enigo",
-                    other
-                );
+                warn!("Invalid native input backend '{other}', falling back to enigo");
                 Self::Enigo
             }
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Enigo => "enigo",
@@ -196,15 +194,15 @@ pub struct BrowserProfile {
     pub ws_endpoint: String,
 }
 
-/// Configuration for RoxyBrowser API integration.
-/// RoxyBrowser provides cloud-hosted browser instances for automation tasks.
+/// Configuration for `RoxyBrowser` API integration.
+/// `RoxyBrowser` provides cloud-hosted browser instances for automation tasks.
 #[derive(Debug, Deserialize, Clone)]
 pub struct RoxybrowserConfig {
-    /// Whether RoxyBrowser integration is enabled
+    /// Whether `RoxyBrowser` integration is enabled
     pub enabled: bool,
-    /// Base URL for the RoxyBrowser API
+    /// Base URL for the `RoxyBrowser` API
     pub api_url: String,
-    /// API authentication key for RoxyBrowser
+    /// API authentication key for `RoxyBrowser`
     pub api_key: String,
 }
 
@@ -246,6 +244,12 @@ pub struct TwitterActivityConfig {
     /// Candidate scan interval override (ms, 0 = use default 2500ms)
     #[serde(default = "default_candidate_scan_interval_ms")]
     pub candidate_scan_interval_ms: u64,
+    /// Maximum consecutive scroll failures before stopping the feed loop (default: 3)
+    #[serde(default = "default_max_consecutive_scroll_failures")]
+    pub max_consecutive_scroll_failures: u32,
+    /// Maximum consecutive empty candidate scans before stopping the feed loop (default: 3)
+    #[serde(default = "default_max_consecutive_empty_scans")]
+    pub max_consecutive_empty_scans: u32,
     /// Path to persona file (optional)
     #[serde(default)]
     pub persona_file_path: Option<String>,
@@ -360,7 +364,7 @@ pub struct TracingConfig {
     /// Whether OpenTelemetry tracing is enabled
     #[serde(default)]
     pub enabled: bool,
-    /// OTLP endpoint URL (e.g., "http://localhost:4317")
+    /// OTLP endpoint URL (e.g., "<http://localhost:4317>")
     #[serde(default = "default_otlp_endpoint")]
     pub otlp_endpoint: String,
     /// Service name for tracing
@@ -521,6 +525,12 @@ fn default_twitter_scroll_amount() -> i32 {
 fn default_candidate_scan_interval_ms() -> u64 {
     0 // 0 means use default 2500ms
 }
+fn default_max_consecutive_scroll_failures() -> u32 {
+    3
+}
+fn default_max_consecutive_empty_scans() -> u32 {
+    3
+}
 
 impl Default for TwitterActivityConfig {
     fn default() -> Self {
@@ -530,6 +540,8 @@ impl Default for TwitterActivityConfig {
             engagement_candidate_count: default_engagement_candidate_count(),
             scroll_amount_pixels: default_twitter_scroll_amount(),
             candidate_scan_interval_ms: default_candidate_scan_interval_ms(),
+            max_consecutive_scroll_failures: default_max_consecutive_scroll_failures(),
+            max_consecutive_empty_scans: default_max_consecutive_empty_scans(),
             persona_file_path: None,
             probabilities: TwitterProbabilitiesConfig::default(),
             engagement_limits: EngagementLimitsConfig::default(),
@@ -686,7 +698,7 @@ mod tests {
 
     #[test]
     fn test_load_config_defaults_task_discovery_when_omitted_in_toml() {
-        let _guard = config_test_lock().lock().unwrap();
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = TempDir::new().unwrap();
         let config_dir = temp_dir.path().join("config");
         fs::create_dir_all(&config_dir).unwrap();
@@ -731,7 +743,7 @@ retry_delay_ms = 2000
 
     #[test]
     fn test_load_config_applies_task_discovery_env_overrides_from_dotenv() {
-        let _guard = config_test_lock().lock().unwrap();
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = TempDir::new().unwrap();
         let config_dir = temp_dir.path().join("config");
         fs::create_dir_all(&config_dir).unwrap();
@@ -808,7 +820,7 @@ extensions = ["task"]
 
     #[test]
     fn test_load_config_prefers_explicit_env_over_dotenv_for_task_discovery() {
-        let _guard = config_test_lock().lock().unwrap();
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = TempDir::new().unwrap();
         let config_dir = temp_dir.path().join("config");
         fs::create_dir_all(&config_dir).unwrap();
@@ -1132,8 +1144,12 @@ extensions = ["task"]
             persona_file_path: Some("/path/to/persona.json".to_string()),
             ..Default::default()
         };
-        assert!(config.persona_file_path.is_some());
-        assert_eq!(config.persona_file_path.unwrap(), "/path/to/persona.json");
+        assert_eq!(
+            config
+                .persona_file_path
+                .expect("persona_file_path should be set"),
+            "/path/to/persona.json"
+        );
     }
 
     #[test]
@@ -1191,8 +1207,10 @@ extensions = ["task"]
             user_agent: Some("CustomAgent/1.0".to_string()),
             ..Default::default()
         };
-        assert!(config.user_agent.is_some());
-        assert_eq!(config.user_agent.unwrap(), "CustomAgent/1.0");
+        assert_eq!(
+            config.user_agent.expect("user_agent should be set"),
+            "CustomAgent/1.0"
+        );
     }
 
     #[test]
@@ -1294,6 +1312,1350 @@ extensions = ["task"]
     }
 
     #[test]
+    fn test_twitter_consecutive_threshold_env_overrides() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let keys = [
+            "TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES",
+            "TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        env::set_var("TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES", "10");
+        env::set_var("TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS", "7");
+
+        let config = apply_env_overrides(Config::default()).unwrap();
+
+        assert_eq!(
+            config.twitter_activity.max_consecutive_scroll_failures, 10,
+            "TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES env var should override default (3) to 10"
+        );
+        assert_eq!(
+            config.twitter_activity.max_consecutive_empty_scans, 7,
+            "TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS env var should override default (3) to 7"
+        );
+
+        env::remove_var("TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES");
+        env::remove_var("TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS");
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+    }
+
+    #[test]
+    fn test_twitter_consecutive_threshold_env_overrides_invalid_parse_falls_back() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let keys = [
+            "TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES",
+            "TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        env::set_var("TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES", "not-a-number");
+        env::set_var("TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS", "also-invalid");
+
+        let config = apply_env_overrides(Config::default()).unwrap();
+
+        // Invalid parse should fall back to the default value (3)
+        assert_eq!(
+            config.twitter_activity.max_consecutive_scroll_failures, 3,
+            "Invalid env var value should fall back to default (3)"
+        );
+        assert_eq!(
+            config.twitter_activity.max_consecutive_empty_scans, 3,
+            "Invalid env var value should fall back to default (3)"
+        );
+
+        env::remove_var("TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES");
+        env::remove_var("TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS");
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+    }
+
+    #[test]
+    fn test_load_config_applies_twitter_consecutive_threshold_env_overrides() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        // Create a temp dir with a config/default.toml that has explicit threshold values
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[twitter_activity]
+max_consecutive_scroll_failures = 10
+max_consecutive_empty_scans = 5
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 0
+candidate_scan_interval_ms = 0
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        // Save and clear env vars that could interfere
+        let keys = [
+            "TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES",
+            "TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set env vars that should override the TOML values
+        env::set_var("TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES", "15");
+        env::set_var("TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS", "8");
+
+        // Change to temp dir so load_config() finds config/default.toml
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        // Restore cwd and env vars
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // Env vars should override TOML values (15 > 10, 8 > 5)
+        assert_eq!(
+            config.twitter_activity.max_consecutive_scroll_failures, 15,
+            "Env var should override TOML value (10 -> 15)"
+        );
+        assert_eq!(
+            config.twitter_activity.max_consecutive_empty_scans, 8,
+            "Env var should override TOML value (5 -> 8)"
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_twitter_consecutive_threshold_invalid_env_falls_back_to_toml() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        // Create a temp dir with a config/default.toml that has explicit threshold values
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[twitter_activity]
+max_consecutive_scroll_failures = 10
+max_consecutive_empty_scans = 5
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 0
+candidate_scan_interval_ms = 0
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        // Save and clear env vars that could interfere
+        let keys = [
+            "TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES",
+            "TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set invalid env vars that cannot be parsed as u32
+        env::set_var("TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES", "not-a-number");
+        env::set_var("TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS", "also-invalid");
+
+        // Change to temp dir so load_config() finds config/default.toml
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        // Restore cwd and env vars
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // Invalid env vars should fall back to TOML file values (10, 5), not hardcoded defaults (3)
+        assert_eq!(
+            config.twitter_activity.max_consecutive_scroll_failures, 10,
+            "Invalid env var should fall back to TOML value (10), not hardcoded default (3)"
+        );
+        assert_eq!(
+            config.twitter_activity.max_consecutive_empty_scans, 5,
+            "Invalid env var should fall back to TOML value (5), not hardcoded default (3)"
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_twitter_engagement_limit_env_overrides() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[twitter_activity]
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 0
+candidate_scan_interval_ms = 0
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        let keys = [
+            "TWITTER_MAX_LIKES",
+            "TWITTER_MAX_RETWEETS",
+            "TWITTER_MAX_FOLLOWS",
+            "TWITTER_MAX_REPLIES",
+            "TWITTER_MAX_TOTAL_ACTIONS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set env vars that should override TOML values
+        env::set_var("TWITTER_MAX_LIKES", "12");
+        env::set_var("TWITTER_MAX_RETWEETS", "7");
+        env::set_var("TWITTER_MAX_FOLLOWS", "5");
+        env::set_var("TWITTER_MAX_REPLIES", "3");
+        env::set_var("TWITTER_MAX_TOTAL_ACTIONS", "25");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        let limits = &config.twitter_activity.engagement_limits;
+        assert_eq!(
+            limits.max_likes, 12,
+            "Env var should override TOML (5 -> 12)"
+        );
+        assert_eq!(
+            limits.max_retweets, 7,
+            "Env var should override TOML (3 -> 7)"
+        );
+        assert_eq!(
+            limits.max_follows, 5,
+            "Env var should override TOML (2 -> 5)"
+        );
+        assert_eq!(
+            limits.max_replies, 3,
+            "Env var should override TOML (1 -> 3)"
+        );
+        assert_eq!(
+            limits.max_total_actions, 25,
+            "Env var should override TOML (10 -> 25)"
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_twitter_engagement_limit_invalid_env_falls_back_to_toml() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[twitter_activity]
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 0
+candidate_scan_interval_ms = 0
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        let keys = [
+            "TWITTER_MAX_LIKES",
+            "TWITTER_MAX_RETWEETS",
+            "TWITTER_MAX_FOLLOWS",
+            "TWITTER_MAX_REPLIES",
+            "TWITTER_MAX_TOTAL_ACTIONS",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set invalid env vars that cannot be parsed as u32
+        env::set_var("TWITTER_MAX_LIKES", "not-a-number");
+        env::set_var("TWITTER_MAX_RETWEETS", "");
+        env::set_var("TWITTER_MAX_FOLLOWS", "abc");
+        env::set_var("TWITTER_MAX_REPLIES", "-5");
+        env::set_var("TWITTER_MAX_TOTAL_ACTIONS", "invalid!");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // Invalid env vars should fall back to TOML file values, not hardcoded defaults
+        let limits = &config.twitter_activity.engagement_limits;
+        assert_eq!(
+            limits.max_likes, 5,
+            "Invalid env var should fall back to TOML value (5)"
+        );
+        assert_eq!(
+            limits.max_retweets, 3,
+            "Invalid env var should fall back to TOML value (3)"
+        );
+        assert_eq!(
+            limits.max_follows, 2,
+            "Invalid env var should fall back to TOML value (2)"
+        );
+        assert_eq!(
+            limits.max_replies, 1,
+            "Invalid env var should fall back to TOML value (1)"
+        );
+        assert_eq!(
+            limits.max_total_actions, 10,
+            "Invalid env var should fall back to TOML value (10)"
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_twitter_probability_env_overrides() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[twitter_activity]
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 0
+candidate_scan_interval_ms = 0
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+
+[twitter_activity.probabilities]
+like_probability = 0.4
+retweet_probability = 0.15
+quote_probability = 0.15
+follow_probability = 0.05
+reply_probability = 0.05
+bookmark_probability = 0.02
+thread_dive_probability = 0.25
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        let keys = [
+            "TWITTER_LIKE_PROBABILITY",
+            "TWITTER_RETWEET_PROBABILITY",
+            "TWITTER_QUOTE_PROBABILITY",
+            "TWITTER_FOLLOW_PROBABILITY",
+            "TWITTER_REPLY_PROBABILITY",
+            "TWITTER_BOOKMARK_PROBABILITY",
+            "TWITTER_THREAD_DIVE_PROBABILITY",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set probability env vars that override TOML values
+        env::set_var("TWITTER_LIKE_PROBABILITY", "0.6");
+        env::set_var("TWITTER_RETWEET_PROBABILITY", "0.25");
+        env::set_var("TWITTER_QUOTE_PROBABILITY", "0.10");
+        env::set_var("TWITTER_FOLLOW_PROBABILITY", "0.08");
+        env::set_var("TWITTER_REPLY_PROBABILITY", "0.12");
+        env::set_var("TWITTER_BOOKMARK_PROBABILITY", "0.04");
+        env::set_var("TWITTER_THREAD_DIVE_PROBABILITY", "0.30");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        let probs = &config.twitter_activity.probabilities;
+        assert!(
+            (probs.like_probability - 0.6).abs() < 1e-9,
+            "Like prob should be 0.6 (was {})",
+            probs.like_probability
+        );
+        assert!(
+            (probs.retweet_probability - 0.25).abs() < 1e-9,
+            "Retweet prob should be 0.25 (was {})",
+            probs.retweet_probability
+        );
+        assert!(
+            (probs.quote_probability - 0.10).abs() < 1e-9,
+            "Quote prob should be 0.10 (was {})",
+            probs.quote_probability
+        );
+        assert!(
+            (probs.follow_probability - 0.08).abs() < 1e-9,
+            "Follow prob should be 0.08 (was {})",
+            probs.follow_probability
+        );
+        assert!(
+            (probs.reply_probability - 0.12).abs() < 1e-9,
+            "Reply prob should be 0.12 (was {})",
+            probs.reply_probability
+        );
+        assert!(
+            (probs.bookmark_probability - 0.04).abs() < 1e-9,
+            "Bookmark prob should be 0.04 (was {})",
+            probs.bookmark_probability
+        );
+        assert!(
+            (probs.thread_dive_probability - 0.30).abs() < 1e-9,
+            "Thread dive prob should be 0.30 (was {})",
+            probs.thread_dive_probability
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_twitter_probability_invalid_env_falls_back_to_toml() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[twitter_activity]
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 0
+candidate_scan_interval_ms = 0
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+
+[twitter_activity.probabilities]
+like_probability = 0.4
+retweet_probability = 0.15
+quote_probability = 0.15
+follow_probability = 0.05
+reply_probability = 0.05
+bookmark_probability = 0.02
+thread_dive_probability = 0.25
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        let keys = [
+            "TWITTER_LIKE_PROBABILITY",
+            "TWITTER_RETWEET_PROBABILITY",
+            "TWITTER_QUOTE_PROBABILITY",
+            "TWITTER_FOLLOW_PROBABILITY",
+            "TWITTER_REPLY_PROBABILITY",
+            "TWITTER_BOOKMARK_PROBABILITY",
+            "TWITTER_THREAD_DIVE_PROBABILITY",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set invalid probability env vars that cannot be parsed as f64
+        env::set_var("TWITTER_LIKE_PROBABILITY", "not-a-float");
+        env::set_var("TWITTER_RETWEET_PROBABILITY", "");
+        env::set_var("TWITTER_QUOTE_PROBABILITY", "nope");
+        env::set_var("TWITTER_FOLLOW_PROBABILITY", "garbage");
+        env::set_var("TWITTER_REPLY_PROBABILITY", "0.5.3");
+        env::set_var("TWITTER_BOOKMARK_PROBABILITY", "#commented-out");
+        env::set_var("TWITTER_THREAD_DIVE_PROBABILITY", "foo#bar");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // Invalid env vars should fall back to TOML file values
+        let probs = &config.twitter_activity.probabilities;
+        assert!(
+            (probs.like_probability - 0.4).abs() < 1e-9,
+            "Like prob should fall back to TOML value 0.4 (was {})",
+            probs.like_probability
+        );
+        assert!(
+            (probs.retweet_probability - 0.15).abs() < 1e-9,
+            "Retweet prob should fall back to TOML value 0.15 (was {})",
+            probs.retweet_probability
+        );
+        assert!(
+            (probs.quote_probability - 0.15).abs() < 1e-9,
+            "Quote prob should fall back to TOML value 0.15 (was {})",
+            probs.quote_probability
+        );
+        assert!(
+            (probs.follow_probability - 0.05).abs() < 1e-9,
+            "Follow prob should fall back to TOML value 0.05 (was {})",
+            probs.follow_probability
+        );
+        assert!(
+            (probs.reply_probability - 0.05).abs() < 1e-9,
+            "Reply prob should fall back to TOML value 0.05 (was {})",
+            probs.reply_probability
+        );
+        assert!(
+            (probs.bookmark_probability - 0.02).abs() < 1e-9,
+            "Bookmark prob should fall back to TOML value 0.02 (was {})",
+            probs.bookmark_probability
+        );
+        assert!(
+            (probs.thread_dive_probability - 0.25).abs() < 1e-9,
+            "Thread dive prob should fall back to TOML value 0.25 (was {})",
+            probs.thread_dive_probability
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_browser_orchestrator_env_overrides() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        let keys = [
+            "BROWSER_USER_AGENT",
+            "MAX_GLOBAL_CONCURRENCY",
+            "CURSOR_OVERLAY_MS",
+            "NATIVE_CLICK_CALIBRATION",
+            "NATIVE_INPUT_BACKEND",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set env vars that should override TOML values
+        env::set_var("BROWSER_USER_AGENT", "TestAgent/1.0");
+        env::set_var("MAX_GLOBAL_CONCURRENCY", "15");
+        env::set_var("CURSOR_OVERLAY_MS", "250");
+        env::set_var("NATIVE_CLICK_CALIBRATION", "mac");
+        env::set_var("NATIVE_INPUT_BACKEND", "sendinput");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // String env var (wraps in Some)
+        assert_eq!(
+            config.browser.user_agent.as_deref(),
+            Some("TestAgent/1.0"),
+            "BROWSER_USER_AGENT should override to TestAgent/1.0"
+        );
+        // u32 parse
+        assert_eq!(
+            config.orchestrator.max_global_concurrency, 15,
+            "MAX_GLOBAL_CONCURRENCY should override to 15"
+        );
+        // u64 parse
+        assert_eq!(
+            config.browser.cursor_overlay_ms, 250,
+            "CURSOR_OVERLAY_MS should override to 250"
+        );
+        // enum from_env_value
+        assert_eq!(
+            config.browser.native_interaction.calibration_mode,
+            NativeClickCalibrationMode::Mac,
+            "NATIVE_CLICK_CALIBRATION should override to Mac"
+        );
+        assert_eq!(
+            config.browser.native_interaction.native_input_backend,
+            NativeInputBackend::Sendinput,
+            "NATIVE_INPUT_BACKEND should override to Sendinput"
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_browser_orchestrator_invalid_env_falls_back() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 100
+native_interaction = { calibration_mode = "linux", native_input_backend = "rdev", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        let keys = [
+            "MAX_GLOBAL_CONCURRENCY",
+            "CURSOR_OVERLAY_MS",
+            "NATIVE_CLICK_CALIBRATION",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set invalid env vars
+        env::set_var("MAX_GLOBAL_CONCURRENCY", "not-a-number");
+        env::set_var("CURSOR_OVERLAY_MS", "");
+        // Invalid enum falls back via from_env_value ("linux" is valid, so use a bogus value)
+        env::set_var("NATIVE_CLICK_CALIBRATION", "bogus");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // Invalid parse falls back to TOML value
+        assert_eq!(
+            config.orchestrator.max_global_concurrency, 5,
+            "Invalid MAX_GLOBAL_CONCURRENCY should fall back to TOML value (5)"
+        );
+        // Empty string parse fails, falls back to TOML value
+        assert_eq!(
+            config.browser.cursor_overlay_ms, 100,
+            "Invalid CURSOR_OVERLAY_MS should fall back to TOML value (100)"
+        );
+        // Invalid enum falls back via from_env_value (to Windows default)
+        assert_eq!(
+            config.browser.native_interaction.calibration_mode,
+            NativeClickCalibrationMode::Windows,
+            "Invalid NATIVE_CLICK_CALIBRATION should fall back to Windows default"
+        );
+    }
+
+    #[test]
+    fn test_load_config_applies_remaining_env_overrides() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        // TOML with explicit values for all fields that env vars can override
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+
+[twitter_activity]
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 0
+candidate_scan_interval_ms = 0
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        // Save and clear env vars
+        let keys = [
+            "ROXYBROWSER_API_URL",
+            "ROXYBROWSER_API_KEY",
+            "TASK_TIMEOUT_MS",
+            "MAX_RETRIES",
+            "BROWSER_EXTRA_HTTP_HEADERS",
+            "NATIVE_INTERACTION_STABILITY_WAIT_MS",
+            "NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS",
+            "NATIVE_INTERACTION_SETTLE_MS",
+            "TWITTER_SCROLL_AMOUNT_PIXELS",
+            "TWITTER_CANDIDATE_SCAN_INTERVAL_MS",
+            "TWITTER_LLM_ENABLED",
+            "TWITTER_LLM_PROVIDER",
+            "TWITTER_LLM_MODEL",
+            "TWITTER_LLM_REPLY_PROBABILITY",
+            "TWITTER_LLM_QUOTE_PROBABILITY",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set env vars that should override TOML values
+        env::set_var("ROXYBROWSER_API_URL", "https://custom.roxybrowser.com/");
+        env::set_var("ROXYBROWSER_API_KEY", "custom-key-456");
+        env::set_var("TASK_TIMEOUT_MS", "120000");
+        env::set_var("MAX_RETRIES", "7");
+        env::set_var(
+            "BROWSER_EXTRA_HTTP_HEADERS",
+            "X-Custom=value1; X-Debug=true",
+        );
+        env::set_var("NATIVE_INTERACTION_STABILITY_WAIT_MS", "3000");
+        env::set_var("NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS", "1500");
+        env::set_var("NATIVE_INTERACTION_SETTLE_MS", "500");
+        env::set_var("TWITTER_SCROLL_AMOUNT_PIXELS", "800");
+        env::set_var("TWITTER_CANDIDATE_SCAN_INTERVAL_MS", "5000");
+        // Twitter LLM env vars
+        env::set_var("TWITTER_LLM_ENABLED", "true");
+        env::set_var("TWITTER_LLM_PROVIDER", "openrouter");
+        env::set_var("TWITTER_LLM_MODEL", "gpt-4");
+        env::set_var("TWITTER_LLM_REPLY_PROBABILITY", "0.10");
+        env::set_var("TWITTER_LLM_QUOTE_PROBABILITY", "0.08");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        assert!(
+            config_dir.join("default.toml").exists(),
+            "TOML file must exist before load_config()"
+        );
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // Roxybrowser overrides (String)
+        assert_eq!(
+            config.browser.roxybrowser.api_url, "https://custom.roxybrowser.com/",
+            "ROXYBROWSER_API_URL should override TOML value"
+        );
+        assert_eq!(
+            config.browser.roxybrowser.api_key, "custom-key-456",
+            "ROXYBROWSER_API_KEY should override TOML value"
+        );
+
+        // Orchestrator overrides (u64 parse)
+        assert_eq!(
+            config.orchestrator.task_timeout_ms, 120000,
+            "TASK_TIMEOUT_MS should override TOML value (60000 -> 120000)"
+        );
+        // Orchestrator overrides (u32 parse)
+        assert_eq!(
+            config.orchestrator.max_retries, 7,
+            "MAX_RETRIES should override TOML value (3 -> 7)"
+        );
+
+        // Browser extra headers (semicolon-separated key=value pairs)
+        assert_eq!(config.browser.extra_http_headers.len(), 2);
+        assert_eq!(
+            config.browser.extra_http_headers.get("X-Custom"),
+            Some(&"value1".to_string())
+        );
+        assert_eq!(
+            config.browser.extra_http_headers.get("X-Debug"),
+            Some(&"true".to_string())
+        );
+
+        // Native interaction overrides (u64 parse)
+        assert_eq!(
+            config.browser.native_interaction.stability_wait_ms, 3000,
+            "NATIVE_INTERACTION_STABILITY_WAIT_MS should override (5000 -> 3000)"
+        );
+        assert_eq!(
+            config.browser.native_interaction.resolve_timeout_ms, 1500,
+            "NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS should override (2000 -> 1500)"
+        );
+        assert_eq!(
+            config.browser.native_interaction.settle_ms, 500,
+            "NATIVE_INTERACTION_SETTLE_MS should override (0 -> 500)"
+        );
+
+        // Twitter scroll/scan overrides (i32/u64 parse)
+        assert_eq!(
+            config.twitter_activity.scroll_amount_pixels, 800,
+            "TWITTER_SCROLL_AMOUNT_PIXELS should override (0 -> 800)"
+        );
+        assert_eq!(
+            config.twitter_activity.candidate_scan_interval_ms, 5000,
+            "TWITTER_CANDIDATE_SCAN_INTERVAL_MS should override (0 -> 5000)"
+        );
+
+        // Twitter LLM overrides
+        assert!(
+            config.twitter_activity.llm.enabled,
+            "TWITTER_LLM_ENABLED should override to true"
+        );
+        assert_eq!(
+            config.twitter_activity.llm.provider, "openrouter",
+            "TWITTER_LLM_PROVIDER should override to openrouter"
+        );
+        assert_eq!(
+            config.twitter_activity.llm.model, "gpt-4",
+            "TWITTER_LLM_MODEL should override to gpt-4"
+        );
+        assert!(
+            (config.twitter_activity.llm.reply_probability - 0.10).abs() < 1e-9,
+            "TWITTER_LLM_REPLY_PROBABILITY should override to 0.10 (was {})",
+            config.twitter_activity.llm.reply_probability
+        );
+        assert!(
+            (config.twitter_activity.llm.quote_tweet_probability - 0.08).abs() < 1e-9,
+            "TWITTER_LLM_QUOTE_PROBABILITY should override to 0.08 (was {})",
+            config.twitter_activity.llm.quote_tweet_probability
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn test_load_config_applies_remaining_env_invalid_falls_back() {
+        let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        // TOML with explicit non-default values to verify fallback goes to TOML (not default)
+        let toml = r#"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://fallback.roxybrowser.com", api_key = "fallback-key" }
+cursor_overlay_ms = 0
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 9999, resolve_timeout_ms = 8888, settle_ms = 777 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 99999
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 99
+retry_delay_ms = 2000
+
+[twitter_activity]
+feed_scan_duration_ms = 60000
+feed_scroll_count = 10
+engagement_candidate_count = 5
+scroll_amount_pixels = 9999
+candidate_scan_interval_ms = 8888
+
+[twitter_activity.llm]
+enabled = true
+provider = "fallback-provider"
+model = "fallback-model"
+reply_probability = 0.77
+quote_tweet_probability = 0.66
+
+[twitter_activity.engagement_limits]
+max_likes = 5
+max_retweets = 3
+max_follows = 2
+max_replies = 1
+max_thread_dives = 3
+max_bookmarks = 2
+max_quote_tweets = 2
+max_total_actions = 10
+"#;
+
+        fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+        // Save and clear env vars that could interfere
+        // Note: TWITTER_LLM_PROVIDER and TWITTER_LLM_MODEL are included
+        // even though we don't set them as env vars — this prevents env
+        // leakage from prior tests that may have set them.
+        let keys = [
+            "TASK_TIMEOUT_MS",
+            "MAX_RETRIES",
+            "BROWSER_EXTRA_HTTP_HEADERS",
+            "NATIVE_INTERACTION_STABILITY_WAIT_MS",
+            "NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS",
+            "NATIVE_INTERACTION_SETTLE_MS",
+            "TWITTER_SCROLL_AMOUNT_PIXELS",
+            "TWITTER_CANDIDATE_SCAN_INTERVAL_MS",
+            "ROXYBROWSER_API_URL",
+            "ROXYBROWSER_API_KEY",
+            "TWITTER_LLM_ENABLED",
+            "TWITTER_LLM_PROVIDER",
+            "TWITTER_LLM_MODEL",
+            "TWITTER_LLM_REPLY_PROBABILITY",
+            "TWITTER_LLM_QUOTE_PROBABILITY",
+        ];
+        let saved_env: Vec<(String, Option<OsString>)> = keys
+            .iter()
+            .map(|key| ((*key).to_string(), env::var_os(key)))
+            .collect();
+        for (key, _) in &saved_env {
+            env::remove_var(key);
+        }
+
+        // Set invalid env vars (unparseable values for numeric fields)
+        env::set_var("TASK_TIMEOUT_MS", "not-a-number");
+        env::set_var("MAX_RETRIES", "");
+        env::set_var("BROWSER_EXTRA_HTTP_HEADERS", "");
+        env::set_var("NATIVE_INTERACTION_STABILITY_WAIT_MS", "bogus");
+        env::set_var("NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS", "");
+        env::set_var("NATIVE_INTERACTION_SETTLE_MS", "invalid-u64");
+        env::set_var("TWITTER_SCROLL_AMOUNT_PIXELS", "nope");
+        env::set_var("TWITTER_CANDIDATE_SCAN_INTERVAL_MS", "xyz");
+        // Invalid Twitter LLM env vars
+        env::set_var("TWITTER_LLM_ENABLED", "not-boolean");
+        env::set_var("TWITTER_LLM_REPLY_PROBABILITY", "not-a-float");
+        env::set_var("TWITTER_LLM_QUOTE_PROBABILITY", "0.5.3");
+
+        let cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        assert!(
+            config_dir.join("default.toml").exists(),
+            "TOML file must exist before load_config()"
+        );
+        let config = load_config().unwrap();
+
+        env::set_current_dir(cwd).unwrap();
+        for (key, value) in saved_env {
+            match value {
+                Some(val) => env::set_var(key, val),
+                None => env::remove_var(key),
+            }
+        }
+
+        // Roxybrowser strings — should retain TOML values since no invalid env vars set for them
+        assert_eq!(
+            config.browser.roxybrowser.api_url, "http://fallback.roxybrowser.com",
+            "ROXYBROWSER_API_URL not set, should retain TOML value"
+        );
+        assert_eq!(
+            config.browser.roxybrowser.api_key, "fallback-key",
+            "ROXYBROWSER_API_KEY not set, should retain TOML value"
+        );
+
+        // Orchestrator numeric fields fall back to TOML values
+        assert_eq!(
+            config.orchestrator.task_timeout_ms, 99999,
+            "Invalid TASK_TIMEOUT_MS should fall back to TOML value (99999)"
+        );
+        assert_eq!(
+            config.orchestrator.max_retries, 99,
+            "Invalid MAX_RETRIES should fall back to TOML value (99)"
+        );
+
+        // Empty BROWSER_EXTRA_HTTP_HEADERS — split gives empty map
+        assert!(
+            config.browser.extra_http_headers.is_empty(),
+            "Empty BROWSER_EXTRA_HTTP_HEADERS should clear headers map"
+        );
+
+        // Native interaction fields fall back to TOML values
+        assert_eq!(
+            config.browser.native_interaction.stability_wait_ms, 9999,
+            "Invalid NATIVE_INTERACTION_STABILITY_WAIT_MS should fall back to TOML (9999)"
+        );
+        assert_eq!(
+            config.browser.native_interaction.resolve_timeout_ms, 8888,
+            "Invalid NATIVE_INTERACTION_RESOLVE_TIMEOUT_MS should fall back to TOML (8888)"
+        );
+        assert_eq!(
+            config.browser.native_interaction.settle_ms, 777,
+            "Invalid NATIVE_INTERACTION_SETTLE_MS should fall back to TOML (777)"
+        );
+
+        // Twitter scroll/scan fields fall back to TOML values
+        assert_eq!(
+            config.twitter_activity.scroll_amount_pixels, 9999,
+            "Invalid TWITTER_SCROLL_AMOUNT_PIXELS should fall back to TOML (9999)"
+        );
+        assert_eq!(
+            config.twitter_activity.candidate_scan_interval_ms, 8888,
+            "Invalid TWITTER_CANDIDATE_SCAN_INTERVAL_MS should fall back to TOML (8888)"
+        );
+
+        // Twitter LLM: string fields not set via env vars, retain TOML values
+        assert!(
+            config.twitter_activity.llm.enabled,
+            "TWITTER_LLM_ENABLED not set as invalid val (parse fails), should retain TOML value (true)"
+        );
+        assert_eq!(
+            config.twitter_activity.llm.provider, "fallback-provider",
+            "TWITTER_LLM_PROVIDER not set as env var, should retain TOML value"
+        );
+        assert_eq!(
+            config.twitter_activity.llm.model, "fallback-model",
+            "TWITTER_LLM_MODEL not set as env var, should retain TOML value"
+        );
+        // Parse-dependent LLM fields fall back to TOML values
+        assert!(
+            (config.twitter_activity.llm.reply_probability - 0.77).abs() < 1e-9,
+            "Invalid TWITTER_LLM_REPLY_PROBABILITY should fall back to TOML (0.77, was {})",
+            config.twitter_activity.llm.reply_probability
+        );
+        assert!(
+            (config.twitter_activity.llm.quote_tweet_probability - 0.66).abs() < 1e-9,
+            "Invalid TWITTER_LLM_QUOTE_PROBABILITY should fall back to TOML (0.66, was {})",
+            config.twitter_activity.llm.quote_tweet_probability
+        );
+    }
+
+    #[test]
     fn test_twitter_probabilities_config_custom_values() {
         let config = TwitterProbabilitiesConfig {
             like_probability: 0.5,
@@ -1314,8 +2676,8 @@ extensions = ["task"]
 /// variable overrides. Falls back to hardcoded defaults if no config file exists.
 ///
 /// # Environment Variables
-/// - `ROXYBROWSER_API_URL`: Override the RoxyBrowser API URL
-/// - `ROXYBROWSER_API_KEY`: Override the RoxyBrowser API key
+/// - `ROXYBROWSER_API_URL`: Override the `RoxyBrowser` API URL
+/// - `ROXYBROWSER_API_KEY`: Override the `RoxyBrowser` API key
 ///
 /// # Returns
 /// A complete Config struct with all settings resolved
@@ -1519,19 +2881,15 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             let clean_prob = prob_str.split('#').next().unwrap_or(&prob_str).trim();
             match clean_prob.parse::<f64>() {
                 Ok(val) => {
-                    log::info!("Loaded {} from env: '{}' -> {:.3}", var_name, prob_str, val);
+                    log::info!("Loaded {var_name} from env: '{prob_str}' -> {val:.3}");
                     *config = val;
                 }
                 Err(e) => log::warn!(
-                    "Failed to parse {} '{}' (cleaned: '{}'): {}",
-                    var_name,
-                    prob_str,
-                    clean_prob,
-                    e
+                    "Failed to parse {var_name} '{prob_str}' (cleaned: '{clean_prob}'): {e}"
                 ),
             }
         } else {
-            log::debug!("{} not set in environment", var_name);
+            log::debug!("{var_name} not set in environment");
         }
     }
 
@@ -1588,6 +2946,18 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.twitter_activity.candidate_scan_interval_ms = interval
             .parse()
             .unwrap_or(config.twitter_activity.candidate_scan_interval_ms);
+    }
+
+    // Twitter consecutive failure threshold overrides
+    if let Ok(val) = env::var("TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES") {
+        config.twitter_activity.max_consecutive_scroll_failures = val
+            .parse()
+            .unwrap_or(config.twitter_activity.max_consecutive_scroll_failures);
+    }
+    if let Ok(val) = env::var("TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS") {
+        config.twitter_activity.max_consecutive_empty_scans = val
+            .parse()
+            .unwrap_or(config.twitter_activity.max_consecutive_empty_scans);
     }
 
     // Twitter LLM config overrides (V2)
@@ -1713,6 +3083,7 @@ pub struct ConfigValidationReport {
 }
 
 impl ConfigValidationReport {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             errors: Vec::new(),
@@ -1815,7 +3186,7 @@ impl ConfigValidationReport {
         }
 
         // Cross-field validation: total retry time should not exceed task timeout
-        let total_retry_time = config.retry_delay_ms * config.max_retries as u64;
+        let total_retry_time = config.retry_delay_ms * u64::from(config.max_retries);
         if total_retry_time > config.task_timeout_ms {
             warn!(
                 "Total retry time ({}ms) exceeds task_timeout_ms ({}ms). \
@@ -1916,8 +3287,7 @@ impl ConfigValidationReport {
             }
             if !url.ends_with('/') {
                 warn!(
-                    "RoxyBrowser API URL does not end with '/'. This may cause incorrect API paths. Got: {}",
-                    url
+                    "RoxyBrowser API URL does not end with '/'. This may cause incorrect API paths. Got: {url}"
                 );
             }
         }
@@ -2032,11 +3402,32 @@ impl ConfigValidationReport {
         // Persona file path validation (if provided)
         if let Some(path) = &config.persona_file_path {
             if !std::path::Path::new(path).exists() {
-                warn!(
-                    "twitter_activity.persona_file_path does not exist: {}",
-                    path
-                );
+                warn!("twitter_activity.persona_file_path does not exist: {path}");
             }
+        }
+
+        // Consecutive failure threshold validation
+        if config.max_consecutive_scroll_failures == 0 {
+            warn!(
+                "twitter_activity.max_consecutive_scroll_failures is 0. The feed loop will stop on the first scroll failure. Consider setting >= 1."
+            );
+        }
+        if config.max_consecutive_scroll_failures > 20 {
+            warn!(
+                "twitter_activity.max_consecutive_scroll_failures ({}) is very high. This may cause excessive retries on persistent scroll failures.",
+                config.max_consecutive_scroll_failures
+            );
+        }
+        if config.max_consecutive_empty_scans == 0 {
+            warn!(
+                "twitter_activity.max_consecutive_empty_scans is 0. The feed loop will stop on the first empty scan. Consider setting >= 1."
+            );
+        }
+        if config.max_consecutive_empty_scans > 20 {
+            warn!(
+                "twitter_activity.max_consecutive_empty_scans ({}) is very high. This may cause extended loops when no candidates are found.",
+                config.max_consecutive_empty_scans
+            );
         }
 
         // Engagement limits validation

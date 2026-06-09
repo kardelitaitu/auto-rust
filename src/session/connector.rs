@@ -2,7 +2,7 @@
 //!
 //! Provides a trait-based interface for connecting to different browser sources:
 //! - Configured browser profiles
-//! - RoxyBrowser cloud instances
+//! - `RoxyBrowser` cloud instances
 //! - Local browser discovery (Brave, Chrome on common ports)
 
 use crate::config::Config;
@@ -35,7 +35,7 @@ pub struct BrowserCapabilities {
 pub enum BrowserSource {
     /// From configured browser profiles
     Configured,
-    /// From RoxyBrowser API
+    /// From `RoxyBrowser` API
     RoxyBrowser,
     /// Auto-discovered local browser
     Local,
@@ -84,6 +84,7 @@ pub struct ConfiguredProfileConnector;
 
 impl ConfiguredProfileConnector {
     /// Creates a new configured profile connector.
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -163,11 +164,12 @@ impl BrowserConnector for ConfiguredProfileConnector {
     }
 }
 
-/// Connector for RoxyBrowser cloud instances.
+/// Connector for `RoxyBrowser` cloud instances.
 pub struct RoxyBrowserConnector;
 
 impl RoxyBrowserConnector {
-    /// Creates a new RoxyBrowser connector.
+    /// Creates a new `RoxyBrowser` connector.
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -244,15 +246,16 @@ impl BrowserConnector for RoxyBrowserConnector {
             let profile_id = profile
                 .get("windowName")
                 .and_then(|w| w.as_str())
-                .map(|s| format!("roxy-{s}"))
-                .unwrap_or_else(|| format!("roxy-{i}"));
+                .map_or_else(|| format!("roxy-{i}"), |s| format!("roxy-{s}"));
 
             let profile_name = profile
                 .get("name")
                 .or_else(|| profile.get("windowName"))
                 .and_then(|n| n.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("RoxyBrowser-{i}"));
+                .map_or_else(
+                    || format!("RoxyBrowser-{i}"),
+                    std::string::ToString::to_string,
+                );
 
             capabilities.push(BrowserCapabilities {
                 id: profile_id,
@@ -323,6 +326,7 @@ const MAX_PORT: u16 = 65535;
 
 impl LocalBrowserConnector {
     /// Creates a new local browser connector with default port ranges.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             brave_port_start: DEFAULT_BRAVE_PORT_START,
@@ -333,6 +337,7 @@ impl LocalBrowserConnector {
     }
 
     /// Creates a connector with custom port ranges from environment variables.
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             brave_port_start: Self::parse_port_env("BRAVE_PORT_START", DEFAULT_BRAVE_PORT_START),
@@ -344,16 +349,16 @@ impl LocalBrowserConnector {
 
     fn parse_port_env(var_name: &str, default: u16) -> u16 {
         match std::env::var(var_name) {
-            Ok(val) => match val.parse::<u16>() {
-                Ok(port) => port,
-                Err(_) => {
+            Ok(val) => {
+                if let Ok(port) = val.parse::<u16>() {
+                    port
+                } else {
                     warn!(
-                        "[browser] Invalid port value in {}: '{}'. Using default: {}",
-                        var_name, val, default
-                    );
+                    "[browser] Invalid port value in {var_name}: '{val}'. Using default: {default}"
+                );
                     default
                 }
-            },
+            }
             Err(_) => default,
         }
     }
@@ -383,7 +388,7 @@ impl LocalBrowserConnector {
                             info!("Found {browser_type} browser on port {port}");
                             return Some(BrowserCapabilities {
                                 id: format!("{browser_type}-{port}"),
-                                name: format!("{} on port {}", browser_type, port),
+                                name: format!("{browser_type} on port {port}"),
                                 browser_type: format!("local{browser_type}"),
                                 ws_url: ws_str.to_string(),
                                 source: BrowserSource::Local,
@@ -495,6 +500,7 @@ pub struct ConnectorRegistry {
 
 impl ConnectorRegistry {
     /// Creates a new connector registry with all standard connectors.
+    #[must_use]
     pub fn standard() -> Self {
         Self {
             connectors: vec![
@@ -506,6 +512,7 @@ impl ConnectorRegistry {
     }
 
     /// Creates a new empty registry.
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             connectors: Vec::new(),
@@ -518,17 +525,22 @@ impl ConnectorRegistry {
     }
 
     /// Returns connectors that are available for the given config.
+    #[must_use]
     pub fn available(&self, config: &Config) -> Vec<&dyn BrowserConnector> {
         self.connectors
             .iter()
             .filter(|c| c.is_available(config))
-            .map(|c| c.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .collect()
     }
 
     /// Returns all connectors regardless of availability.
+    #[must_use]
     pub fn all(&self) -> Vec<&dyn BrowserConnector> {
-        self.connectors.iter().map(|c| c.as_ref()).collect()
+        self.connectors
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect()
     }
 }
 

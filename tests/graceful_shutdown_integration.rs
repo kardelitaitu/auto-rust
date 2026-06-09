@@ -126,7 +126,7 @@ async fn test_orchestrator_empty_group() {
         let metrics = Arc::new(MetricsCollector::new(100));
 
         // Create empty group
-        let empty_group: Vec<cli::TaskDefinition> = vec![];
+        let empty_group: Vec<cli::CliTaskDefinition> = vec![];
 
         // Sessions will be empty in test environment
         let sessions: Vec<Session> = vec![];
@@ -173,7 +173,7 @@ impl TaskGroupRunner for BlockingGroupRunner {
     async fn run_group(
         &mut self,
         _index: usize,
-        _group: &[cli::TaskDefinition],
+        _group: &[cli::CliTaskDefinition],
         cancel_token: CancellationToken,
     ) {
         if let Some(started) = self.started.take() {
@@ -200,7 +200,7 @@ async fn test_shutdown_cancels_active_group_deterministically() {
         started: Some(started_tx),
         finished: finished.clone(),
     };
-    let groups = vec![vec![cli::TaskDefinition {
+    let groups = vec![vec![cli::CliTaskDefinition {
         name: "cookiebot".to_string(),
         payload: Default::default(),
     }]];

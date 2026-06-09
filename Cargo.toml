@@ -1,8 +1,12 @@
+[workspace]
+members = [".", "bacon-pipeline"]
+
 [package]
 name = "auto-rust"
 version = "0.2.0"
 edition = "2021"
 autobins = false
+default-run = "nvidia"
 authors = ["Ganteng Maksimal"]
 description = "High-performance multi-browser automation framework built in Rust"
 license = "MIT"
@@ -26,6 +30,26 @@ path = "src/main.rs"
 name = "bacon-test"
 path = "src/bin/bacon-test.rs"
 
+[[bin]]
+name = "bacon"
+path = "src/bin/bacon.rs"
+
+[[bin]]
+name = "nvidia"
+path = "src/bin/nvidia_simple.rs"
+
+[[bin]]
+name = "bacon-spec"
+path = "src/bin/bacon-spec.rs"
+
+[[bin]]
+name = "bacon-coder"
+path = "src/bin/bacon-coder.rs"
+
+[[bin]]
+name = "bacon-review"
+path = "src/bin/bacon-review.rs"
+
 [dependencies]
 # CDP Browser Automation
 chromiumoxide = { version = "0.6", features = ["tokio-runtime"] }
@@ -38,8 +62,10 @@ clap = { version = "4", features = ["derive"] }
 # Configuration
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+serde_yml = "0.0.12"
 toml = "0.8"
+tempfile = "3"
+env_logger = "0.11"
 
 # HTTP & Networking
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
@@ -48,13 +74,6 @@ url = "2"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-
-# OpenTelemetry Tracing
-opentelemetry = "0.23"
-opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] }
-opentelemetry-semantic-conventions = "0.16"
-tracing-opentelemetry = "0.24"
 
 # Error Handling
 anyhow = "1"
@@ -70,9 +89,8 @@ rand = "0.8"
 rand_distr = "0.4"
 
 # File & Path Utilities
-tokio-stream = "0.1"
 glob = "0.3"
-notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
+notify = "6"
 
 # Image Processing
 image = { version = "0.24", features = ["webp"] }
@@ -96,18 +114,25 @@ rustc-hash = "2"
 once_cell = "1"
 log = "0.4.29"
 do-over = "0.1.0"
+bacon-pipeline = { path = "bacon-pipeline" }
 
-[profile.production]
-inherits = "release"
-opt-level = 3
-lto = true                    # Full LTO for maximum optimization
-codegen-units = 1             # Single codegen unit for best optimization
-strip = true                  # Strip all symbols (smaller binary)
-panic = "abort"               # Abort on panic (smaller, faster)
-overflow-checks = false       # Disable overflow checks in release
+[profile.dev]
+# Optimize dev builds for speed
+incremental = true
+codegen-units = 256           # More parallel codegen units for faster builds
+opt-level = 0                 # No optimizations for fast compiles
+debug = "line-tables-only"    # Minimal debug info for faster linking
+overflow-checks = false       # Disable overflow checks for speed
+lto = false                   # Disable LTO for dev
+
+
+# Custom profile for TDD: maximum compile speed, readable backtraces
+[profile.tdd]
+inherits = "dev"
+strip = "debuginfo"
+
 
 [dev-dependencies]
-env_logger = "0.11"
 tempfile = "3"
 wiremock = "0.6"
 proptest = "1.5"

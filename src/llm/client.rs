@@ -1,11 +1,20 @@
 use anyhow::Result;
-use log::{error, info, warn};
-use reqwest::Client;
+use log::{debug, error, info, warn};
+use reqwest::{Client, StatusCode};
 use std::time::Duration;
+use tokio::time::sleep;
 use toml;
 
-use crate::llm::models::*;
+#[cfg(test)]
+use crate::llm::models::Role;
+use crate::llm::models::{
+    ChatChoice, ChatMessage, ChatResponse, LlmConfig, LlmProvider, OpenRouterResponse,
+};
 
+#[cfg(test)]
+use crate::llm::models::{
+    ChatRequest, MaxTokens, OllamaConfig, OpenRouterConfig, OpenRouterError, Temperature,
+};
 #[cfg(test)]
 use serde_json;
 
@@ -15,10 +24,66 @@ pub struct LlmClient {
     fallback_config: Option<LlmConfig>,
 }
 
+fn is_retryable_nvidia_status(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS
+        || status == StatusCode::REQUEST_TIMEOUT
+        || status.is_server_error()
+}
+
+fn is_retryable_nvidia_request_error(err: &reqwest::Error) -> bool {
+    err.is_timeout() || err.is_connect()
+}
+
+/// Retry delay with exponential backoff and deterministic jitter.
+///
+/// Base = 1s, multiplier = 2x per attempt, capped at 60s.
+/// Jitter (±25%) uses golden-angle pseudo-random from attempt number
+/// to avoid thundering-herd when multiple clients retry together.
+#[cfg(not(test))]
+fn nvidia_retry_delay(attempt: usize) -> Duration {
+    const BASE_MS: u64 = 1_000;
+    const MULTIPLIER: f64 = 2.0;
+    const MAX_DELAY_MS: u64 = 60_000;
+    const JITTER_FRACTION: f64 = 0.25;
+
+    let base = (BASE_MS as f64) * MULTIPLIER.powi(attempt as i32 - 1);
+    let clamped = base.min(MAX_DELAY_MS as f64);
+    let jitter = (attempt as f64 * 137.508).fract() * (clamped * JITTER_FRACTION)
+        - (clamped * JITTER_FRACTION / 2.0);
+    Duration::from_millis((clamped + jitter) as u64)
+}
+
+#[cfg(test)]
+fn nvidia_retry_delay(_attempt: usize) -> Duration {
+    Duration::from_millis(1)
+}
+
+/// Extract `Retry-After` header value in seconds, if present.
+fn parse_retry_after(response: &reqwest::Response) -> Option<Duration> {
+    let value = response.headers().get("retry-after")?.to_str().ok()?;
+    let seconds = value.parse::<u64>().ok()?;
+    Some(Duration::from_secs(seconds))
+}
+
+/// Brief computed delay before an OpenRouter fallback attempt.
+/// Uses the same exponential backoff as NVIDIA (attempt 1 ~1s) to space out
+/// fallback requests and avoid consecutive rate-limit rejections.
+fn openrouter_fallback_delay() -> Duration {
+    #[cfg(not(test))]
+    {
+        nvidia_retry_delay(1)
+    }
+    #[cfg(test)]
+    {
+        Duration::from_millis(1)
+    }
+}
+
 impl LlmClient {
+    #[must_use]
     pub fn new(config: LlmConfig) -> Self {
         let http = Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(600))
             // Enable HTTP/2 for better throughput with LLM APIs (negotiated)
             .http2_adaptive_window(true)
             // Connection pool settings for concurrent requests
@@ -34,10 +99,12 @@ impl LlmClient {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)]
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
         match self.config.provider {
             LlmProvider::Ollama => self.ollama_chat(messages).await,
             LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
+            LlmProvider::Nvidia => self.nvidia_chat(messages).await,
         }
     }
 
@@ -46,7 +113,7 @@ impl LlmClient {
             LlmProvider::Ollama => match self.ollama_chat(messages.clone()).await {
                 Ok(response) => Ok(response),
                 Err(e) => {
-                    warn!("Ollama failed: {}, trying fallback...", e);
+                    warn!("Ollama failed: {e}, trying fallback...");
                     if let Some(ref fallback) = self.fallback_config {
                         if fallback.provider == LlmProvider::OpenRouter {
                             let fallback_client = LlmClient::new(fallback.clone());
@@ -57,18 +124,147 @@ impl LlmClient {
                 }
             },
             LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
+            LlmProvider::Nvidia => self.nvidia_chat(messages).await,
         }
+    }
+
+    async fn nvidia_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
+        let url = format!("{}/chat/completions", self.config.nvidia.base_url);
+
+        let request = serde_json::json!({
+            "model": self.config.nvidia.model,
+            "messages": messages,
+            "temperature": self.config.nvidia.temperature,
+            "top_p": self.config.nvidia.top_p,
+            "max_tokens": self.config.nvidia.max_tokens,
+            "stream": false,
+            "chat_template_kwargs": {
+                "thinking": true,
+                "reasoning_effort": "high"
+            }
+        });
+
+        info!(
+            "Calling NVIDIA API (High Thinking): {}...",
+            self.config.nvidia.model
+        );
+
+        const MAX_ATTEMPTS: usize = 3;
+        for attempt in 1..=MAX_ATTEMPTS {
+            let result = self
+                .http
+                .post(&url)
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", self.config.nvidia.api_key),
+                )
+                .json(&request)
+                .timeout(Duration::from_millis(self.config.nvidia.timeout_ms))
+                .send()
+                .await;
+
+            let response = match result {
+                Ok(response) => response,
+                Err(err) => {
+                    if attempt < MAX_ATTEMPTS && is_retryable_nvidia_request_error(&err) {
+                        let delay = nvidia_retry_delay(attempt);
+                        warn!(
+                            "NVIDIA request failed on attempt {}/{}: {}. Retrying in {}s.",
+                            attempt,
+                            MAX_ATTEMPTS,
+                            err,
+                            delay.as_secs()
+                        );
+                        sleep(delay).await;
+                        continue;
+                    }
+                    return Err(err.into());
+                }
+            };
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let server_delay = parse_retry_after(&response);
+                let text = response.text().await.unwrap_or_default();
+                if attempt < MAX_ATTEMPTS && is_retryable_nvidia_status(status) {
+                    let computed = nvidia_retry_delay(attempt);
+                    let delay = server_delay.unwrap_or(computed);
+                    if let Some(sd) = server_delay {
+                        warn!(
+                            "NVIDIA API transient error on attempt {}/{}: {} - {}. Server requested {}s, using max({}s, {}s).",
+                            attempt, MAX_ATTEMPTS, status, text,
+                            sd.as_secs(), computed.as_secs(), sd.as_secs()
+                        );
+                    } else {
+                        warn!(
+                            "NVIDIA API transient error on attempt {}/{}: {} - {}. Retrying in {}s.",
+                            attempt, MAX_ATTEMPTS, status, text, delay.as_secs()
+                        );
+                    }
+                    sleep(delay).await;
+                    continue;
+                }
+                error!("NVIDIA API error: {status} - {text}");
+                anyhow::bail!("NVIDIA API error: {status} - {text}");
+            }
+
+            let body_text = response.text().await.unwrap_or_default();
+            let body: serde_json::Value = match serde_json::from_str(&body_text) {
+                Ok(v) => v,
+                Err(e) => {
+                    // Persist raw body for debugging
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let error_path = std::path::PathBuf::from("sessions/api_errors")
+                        .join(format!("nvidia_api_{ts}.json"));
+                    let _ = std::fs::create_dir_all("sessions/api_errors");
+                    let _ = std::fs::write(&error_path, &body_text);
+                    warn!(
+                        "Failed to parse NVIDIA JSON (saved to {}): {}",
+                        error_path.display(),
+                        e
+                    );
+                    return Err(e.into());
+                }
+            };
+
+            let message = &body["choices"][0]["message"];
+
+            // Log reasoning if present
+            if let Some(reasoning) = message["reasoning"]
+                .as_str()
+                .or(message["reasoning_content"].as_str())
+            {
+                debug!("NVIDIA Reasoning: {reasoning}");
+            }
+
+            let content = message["content"].as_str().unwrap_or_default().to_string();
+
+            if content.is_empty() {
+                let reason = body["choices"][0]["finish_reason"]
+                    .as_str()
+                    .unwrap_or("unknown");
+                anyhow::bail!("Empty response from NVIDIA API (finish_reason: {reason})");
+            }
+
+            return Ok(content);
+        }
+
+        anyhow::bail!("NVIDIA API failed after {MAX_ATTEMPTS} attempts")
     }
 
     async fn ollama_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
         let url = format!("{}/api/chat", self.config.ollama.base_url);
 
-        let request = ChatRequest {
-            model: self.config.ollama.model.clone(),
-            messages,
-            temperature: Some(0.7),
-            max_tokens: Some(2048),
-        };
+        let request = serde_json::json!({
+            "model": self.config.ollama.model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 2048,
+            "stream": false,
+        });
 
         info!("Calling Ollama: {}...", self.config.ollama.model);
 
@@ -83,14 +279,14 @@ impl LlmClient {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            error!("Ollama error: {} - {}", status, text);
-            anyhow::bail!("Ollama error: {} - {}", status, text);
+            error!("Ollama error: {status} - {text}");
+            anyhow::bail!("Ollama error: {status} - {text}");
         }
 
         let chat_response: ChatResponse = response.json().await?;
 
         if let Some(err) = chat_response.error {
-            anyhow::bail!("Ollama error: {}", err);
+            anyhow::bail!("Ollama error: {err}");
         }
 
         let content = chat_response.message.map(|m| m.content).unwrap_or_default();
@@ -119,7 +315,7 @@ impl LlmClient {
                     model
                 );
             } else {
-                info!("Calling OpenRouter: {}", model);
+                info!("Calling OpenRouter: {model}");
             }
 
             let request = serde_json::json!({
@@ -160,6 +356,8 @@ impl LlmClient {
                                             "OpenRouter API error: {}",
                                             err.message
                                         ));
+                                        let fd = openrouter_fallback_delay();
+                                        sleep(fd).await;
                                         continue; // Try next fallback
                                     }
 
@@ -173,29 +371,24 @@ impl LlmClient {
                                         })
                                         .unwrap_or_default();
 
-                                    if !content.is_empty() {
-                                        if is_fallback {
-                                            info!("OpenRouter fallback model {} succeeded", model);
-                                        }
-                                        return Ok(content);
-                                    } else {
+                                    if content.is_empty() {
                                         warn!(
-                                            "OpenRouter empty response on attempt {} with model {}",
-                                            attempt, model
+                                            "OpenRouter empty response on attempt {attempt} with model {model}"
                                         );
                                         last_error = Some(anyhow::anyhow!(
-                                            "Empty response from model: {}",
-                                            model
+                                            "Empty response from model: {model}"
                                         ));
                                         continue; // Try next fallback
                                     }
+                                    if is_fallback {
+                                        info!("OpenRouter fallback model {model} succeeded");
+                                    }
+                                    return Ok(content);
                                 }
                                 Err(parse_err) => {
-                                    warn!("OpenRouter JSON parse error on attempt {} with model {}: {}", attempt, model, parse_err);
+                                    warn!("OpenRouter JSON parse error on attempt {attempt} with model {model}: {parse_err}");
                                     last_error = Some(anyhow::anyhow!(
-                                        "JSON parse error: {} - Body: {}",
-                                        parse_err,
-                                        body_text
+                                        "JSON parse error: {parse_err} - Body: {body_text}"
                                     ));
                                     continue; // Try next fallback
                                 }
@@ -203,13 +396,10 @@ impl LlmClient {
                         }
                         Err(body_err) => {
                             warn!(
-                                "OpenRouter body read error on attempt {} with model {}: {}",
-                                attempt, model, body_err
+                                "OpenRouter body read error on attempt {attempt} with model {model}: {body_err}"
                             );
-                            last_error = Some(anyhow::anyhow!(
-                                "Failed to read response body: {}",
-                                body_err
-                            ));
+                            last_error =
+                                Some(anyhow::anyhow!("Failed to read response body: {body_err}"));
                             continue; // Try next fallback
                         }
                     }
@@ -223,15 +413,14 @@ impl LlmClient {
                         );
                     } else {
                         warn!(
-                            "OpenRouter request error on attempt {} with model {}: {}",
-                            attempt, model, req_err
+                            "OpenRouter request error on attempt {attempt} with model {model}: {req_err}"
                         );
                     }
                     last_error = Some(anyhow::anyhow!(
-                        "Request failed for model {}: {}",
-                        model,
-                        req_err
+                        "Request failed for model {model}: {req_err}"
                     ));
+                    let fd = openrouter_fallback_delay();
+                    sleep(fd).await;
                     continue; // Try next fallback
                 }
             }
@@ -247,11 +436,47 @@ impl LlmClient {
     }
 
     pub async fn health_check(&self) -> bool {
+        self.health_check_result().await.unwrap_or(false)
+    }
+
+    pub async fn health_check_result(&self) -> Result<bool> {
         match self.config.provider {
             LlmProvider::Ollama => self.ollama_health().await,
             LlmProvider::OpenRouter => self.openrouter_health().await,
+            LlmProvider::Nvidia => self.nvidia_health().await,
         }
-        .unwrap_or(false)
+    }
+
+    async fn nvidia_health(&self) -> Result<bool> {
+        let url = format!("{}/chat/completions", self.config.nvidia.base_url);
+
+        // Simple check: send a request with 1 token max to verify connectivity
+        let request = serde_json::json!({
+            "model": self.config.nvidia.model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+        });
+
+        let response = self
+            .http
+            .post(&url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.nvidia.api_key),
+            )
+            .json(&request)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            warn!("NVIDIA health check failed ({status}): {text}");
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 
     async fn ollama_health(&self) -> Result<bool> {
@@ -285,7 +510,28 @@ impl LlmClient {
     }
 }
 
+fn load_env_file() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let env_path = root.join(".env");
+    if let Ok(content) = std::fs::read_to_string(&env_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((key, value)) = line.split_once('=') {
+                let key = key.trim();
+                let value = value.trim().trim_matches('"').trim_matches('\'');
+                if std::env::var(key).is_err() {
+                    std::env::set_var(key, value);
+                }
+            }
+        }
+    }
+}
+
 pub fn create_llm_client_from_config() -> Result<LlmConfig> {
+    load_env_file();
     let config_path = std::path::Path::new("config/llm.toml");
 
     let mut config = if config_path.exists() {
@@ -297,10 +543,10 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
 
     // Apply environment variable overrides
     if let Ok(provider) = std::env::var("LLM_PROVIDER") {
-        if provider == "openrouter" {
-            config.provider = LlmProvider::OpenRouter;
-        } else {
-            config.provider = LlmProvider::Ollama;
+        match provider.to_lowercase().as_str() {
+            "openrouter" => config.provider = LlmProvider::OpenRouter,
+            "nvidia" => config.provider = LlmProvider::Nvidia,
+            _ => config.provider = LlmProvider::Ollama,
         }
     }
 
@@ -318,6 +564,18 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
 
     if let Ok(model) = std::env::var("OPENROUTER_MODEL") {
         config.openrouter.model = model;
+    }
+
+    if let Ok(api_key) = std::env::var("NVIDIA_API_KEY") {
+        config.nvidia.api_key = api_key;
+    }
+
+    if let Ok(model) = std::env::var("NVIDIA_MODEL") {
+        config.nvidia.model = model;
+    }
+
+    if let Ok(base_url) = std::env::var("NVIDIA_BASE_URL") {
+        config.nvidia.base_url = base_url;
     }
 
     // Load fallback models from env vars
@@ -381,10 +639,10 @@ mod tests {
     #[test]
     fn test_chat_message_creation() {
         let message = ChatMessage {
-            role: "user".to_string(),
+            role: Role::User,
             content: "test".to_string(),
         };
-        assert_eq!(message.role, "user");
+        assert_eq!(message.role, Role::User);
         assert_eq!(message.content, "test");
     }
 
@@ -393,11 +651,11 @@ mod tests {
         let request = ChatRequest {
             model: "llama3".to_string(),
             messages: vec![],
-            temperature: Some(0.7),
-            max_tokens: Some(2048),
+            temperature: Some(Temperature::new(0.7)),
+            max_tokens: Some(MaxTokens::new(2048).unwrap()),
         };
         assert_eq!(request.model, "llama3");
-        assert_eq!(request.temperature, Some(0.7));
+        assert_eq!(request.temperature, Some(Temperature::new(0.7)));
     }
 
     #[test]
@@ -414,10 +672,10 @@ mod tests {
     #[test]
     fn test_chat_message_struct() {
         let message = ChatMessage {
-            role: "system".to_string(),
+            role: Role::System,
             content: "You are helpful".to_string(),
         };
-        assert_eq!(message.role, "system");
+        assert_eq!(message.role, Role::System);
     }
 
     #[test]
@@ -444,7 +702,7 @@ mod tests {
     fn test_chat_choice_with_message() {
         let choice = ChatChoice::WithMessage {
             message: ChatMessage {
-                role: "assistant".to_string(),
+                role: Role::Assistant,
                 content: "Hello".to_string(),
             },
         };
@@ -488,11 +746,11 @@ mod tests {
     fn test_multiple_chat_messages() {
         let messages = [
             ChatMessage {
-                role: "system".to_string(),
+                role: Role::System,
                 content: "System prompt".to_string(),
             },
             ChatMessage {
-                role: "user".to_string(),
+                role: Role::User,
                 content: "User message".to_string(),
             },
         ];
@@ -502,14 +760,14 @@ mod tests {
     #[test]
     fn test_chat_request_with_messages() {
         let messages = vec![ChatMessage {
-            role: "user".to_string(),
+            role: Role::User,
             content: "test".to_string(),
         }];
         let request = ChatRequest {
             model: "llama3".to_string(),
             messages,
-            temperature: Some(0.5),
-            max_tokens: Some(1024),
+            temperature: Some(Temperature::new(0.5)),
+            max_tokens: Some(MaxTokens::new(1024).unwrap()),
         };
         assert_eq!(request.messages.len(), 1);
     }
@@ -528,7 +786,7 @@ mod tests {
     fn test_chat_response_with_message() {
         let response = ChatResponse {
             message: Some(ChatMessage {
-                role: "assistant".to_string(),
+                role: Role::Assistant,
                 content: "Response".to_string(),
             }),
             done: None,
@@ -538,11 +796,22 @@ mod tests {
     }
 
     #[test]
+    fn test_nvidia_retryable_statuses() {
+        assert!(is_retryable_nvidia_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable_nvidia_status(StatusCode::REQUEST_TIMEOUT));
+        assert!(is_retryable_nvidia_status(StatusCode::SERVICE_UNAVAILABLE));
+        assert!(!is_retryable_nvidia_status(StatusCode::UNAUTHORIZED));
+        assert!(!is_retryable_nvidia_status(StatusCode::BAD_REQUEST));
+    }
+
+    #[test]
     fn test_ollama_config_custom() {
         let config = OllamaConfig {
             base_url: "http://custom:11434".to_string(),
             model: "custom-model".to_string(),
             timeout_ms: 60000,
+            temperature: Temperature::new(0.7),
+            max_tokens: MaxTokens::new(2048).unwrap(),
         };
         assert_eq!(config.base_url, "http://custom:11434");
     }
@@ -555,6 +824,7 @@ mod tests {
             api_key: "key123".to_string(),
             timeout_ms: 90000,
             fallback_models: vec!["fallback-model".to_string()],
+            ..OpenRouterConfig::default()
         };
         assert_eq!(config.api_key, "key123");
         assert_eq!(config.fallback_models.len(), 1);
@@ -572,6 +842,7 @@ mod tests {
                 "fallback-2".to_string(),
                 "fallback-3".to_string(),
             ],
+            ..OpenRouterConfig::default()
         };
         assert_eq!(config.fallback_models.len(), 3);
         assert_eq!(config.fallback_models[0], "fallback-1");
@@ -591,6 +862,7 @@ mod tests {
             provider: LlmProvider::OpenRouter,
             ollama: OllamaConfig::default(),
             openrouter: OpenRouterConfig::default(),
+            ..LlmConfig::default()
         };
         assert_eq!(config.provider, LlmProvider::OpenRouter);
     }
@@ -609,6 +881,13 @@ mod tests {
                 fallback_config: Some(config),
             }
         }
+    }
+
+    fn test_http_client() -> Client {
+        Client::builder()
+            .no_proxy()
+            .build()
+            .expect("Failed to build test HTTP client")
     }
 
     #[tokio::test]
@@ -643,10 +922,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string(), "fallback-2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
@@ -693,10 +974,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
@@ -754,10 +1037,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string(), "fallback-2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
@@ -806,10 +1091,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
@@ -856,10 +1143,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
@@ -893,10 +1182,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-1".to_string(), "fallback-2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_err());
@@ -944,10 +1235,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["specific-fallback".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let _ = client.chat(vec![ChatMessage::user("test")]).await;
 
         // Mock expectations verify correct models were used
@@ -994,10 +1287,12 @@ mod tests {
                     "nvidia/nemotron-3-super-120b-a12b:free".to_string(),
                     "minimax/minimax-m2.5:free".to_string(),
                 ],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok());
@@ -1029,10 +1324,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec![], // No fallbacks
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_err());
@@ -1070,11 +1367,13 @@ mod tests {
                 base_url: mock_server.uri(),
                 model: "test-model".to_string(),
                 timeout_ms: 100, // 100ms timeout (shorter than delay)
+                ..OllamaConfig::default()
             },
             openrouter: OpenRouterConfig::default(),
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let start = std::time::Instant::now();
         let result = client.chat(vec![ChatMessage::user("test")]).await;
         let elapsed = start.elapsed();
@@ -1154,10 +1453,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 100, // 100ms timeout (shorter than primary delay)
                 fallback_models: vec!["fast-fallback".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let start = std::time::Instant::now();
         let result = client.chat(vec![ChatMessage::user("test")]).await;
         let elapsed = start.elapsed();
@@ -1224,10 +1525,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-model".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok(), "Should fallback after 429 rate limit");
@@ -1276,10 +1579,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec!["fallback-model".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_ok(), "Should fallback after 503 server error");
@@ -1315,10 +1620,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec![], // No fallbacks
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(result.is_err(), "Should fail with 401 auth error");
@@ -1356,10 +1663,12 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 5000,
                 fallback_models: vec![], // No fallbacks
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
 
-        let client = LlmClient::with_http_client(config, Client::new());
+        let client = LlmClient::with_http_client(config, test_http_client());
         let result = client.chat(vec![ChatMessage::user("test")]).await;
 
         assert!(

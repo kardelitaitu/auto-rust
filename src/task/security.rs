@@ -44,8 +44,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
         || (relative_path.len() > 1 && relative_path.as_bytes()[1] == b':')
     {
         return Err(crate::error::TaskError::InvalidPath(format!(
-            "Absolute paths not allowed: {}",
-            relative_path
+            "Absolute paths not allowed: {relative_path}"
         ))
         .into());
     }
@@ -58,8 +57,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
     for component in &components {
         if *component == ".." {
             return Err(crate::error::TaskError::InvalidPath(format!(
-                "Directory traversal not allowed: {}",
-                relative_path
+                "Directory traversal not allowed: {relative_path}"
             ))
             .into());
         }
@@ -84,8 +82,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
                 Ok(p) => p,
                 Err(e) => {
                     return Err(crate::error::TaskError::InvalidPath(format!(
-                        "Failed to resolve path: {}",
-                        e
+                        "Failed to resolve path: {e}"
                     ))
                     .into());
                 }
@@ -93,8 +90,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
 
             if !canonical_path.starts_with(&canonical_base) {
                 return Err(crate::error::TaskError::InvalidPath(format!(
-                    "Path escapes allowed directory: {}",
-                    relative_path
+                    "Path escapes allowed directory: {relative_path}"
                 ))
                 .into());
             }
@@ -112,6 +108,7 @@ pub fn validate_data_path(relative_path: &str) -> crate::error::Result<PathBuf> 
 /// Check if a path string contains directory traversal patterns.
 ///
 /// This is a lightweight check that doesn't require file system access.
+#[must_use]
 pub fn contains_traversal(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     normalized.split('/').any(|c| c == "..")
@@ -121,6 +118,7 @@ pub fn contains_traversal(path: &str) -> bool {
 ///
 /// This performs only syntactic checks (no traversal, not absolute).
 /// Useful for write operations where the file doesn't exist yet.
+#[must_use]
 pub fn is_safe_path(relative_path: &str) -> bool {
     if relative_path.is_empty() {
         return false;
@@ -239,5 +237,51 @@ mod tests {
     fn test_validate_allows_single_dot() {
         // Single dot should be allowed
         assert!(is_safe_path("./config.txt"));
+    }
+
+    #[test]
+    fn test_validate_defaults_new_path_to_config() {
+        // New files should resolve under config/ when the path doesn't exist yet
+        let result = validate_data_path("exports/new_report.json");
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.starts_with(Path::new("config")));
+        assert!(path.ends_with("exports/new_report.json"));
+    }
+
+    #[test]
+    fn test_validate_allows_both_allowed_dirs() {
+        let cfg = validate_data_path("config/personas/bot.json");
+        assert!(cfg.is_ok());
+        let data = validate_data_path("data/inputs/feed.json");
+        assert!(data.is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_dotdot_mixed() {
+        assert!(validate_data_path("config/../secret.txt").is_err());
+        assert!(validate_data_path("data/./foo/../../out").is_err());
+    }
+
+    #[test]
+    fn test_is_safe_path_rejects_dotdot_mixed() {
+        assert!(!is_safe_path("config/../../../etc/passwd"));
+    }
+
+    #[test]
+    fn test_is_safe_path_double_slash_is_ok() {
+        assert!(is_safe_path("config//file.json"));
+        assert!(is_safe_path("data///sub//file.txt"));
+    }
+
+    #[test]
+    fn test_contains_traversal_normalizes_backslash_and_slash() {
+        assert!(contains_traversal("foo\\..\\bar"));
+        assert!(contains_traversal("foo/../bar"));
+    }
+
+    #[test]
+    fn test_validate_rejects_path_starting_with_data_slash() {
+        assert!(validate_data_path("data/../../../etc/passwd").is_err());
     }
 }

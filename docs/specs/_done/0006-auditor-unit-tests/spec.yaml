@@ -1,0 +1,30 @@
+version: 1
+id: auditor-unit-tests
+title: Auditor Agent Unit Tests via Dependency Injection
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P1
+area:
+  - bacon-pipeline
+  - testing
+files:
+  code:
+    - bacon-pipeline/src/agent/auditor.rs
+  docs:
+    - docs/specs/_done/auditor-unit-tests/spec.yaml
+    - docs/specs/_done/auditor-unit-tests/plan.md
+    - docs/specs/_done/auditor-unit-tests/validation.md
+acceptance:
+  - "auditor::run() signature changes from `&Llm` to `&dyn LlmClient` with zero functional change"
+  - "Auditor has 5+ unit tests covering ad-hoc path: LLM call, PASS/FAIL branching, confidence extraction, error propagation, dry-run propagation"
+  - "All tests pass `cargo nextest run --all-features -p bacon-pipeline --lib` without network or external agents"
+  - "`check-fast.ps1` passes (spec-lint, build, fmt, clippy)"
+non_goals:
+  - "Auditor's full spec-path tests (requires spec-lint binary, git diff, promote_to_done) — follow-up"
+  - "Strategist or Coder `&dyn LlmClient` refactoring — follow-up"
+  - "Removing `scope_reduction_needed` field from PipelineCtx"
+  - "Modifying auditor.rs production logic beyond the type signature change"
+risks:
+  - "MockLlmClient must accurately reflect real LLM response format (confidence tags, PASS/FAIL prefix) to avoid false confidence"
+  - "If auditor.rs production logic changes significantly, tests may need updating"

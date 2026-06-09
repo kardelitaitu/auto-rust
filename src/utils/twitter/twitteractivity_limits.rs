@@ -1,6 +1,7 @@
 //! Engagement limits and counters for Twitter automation.
 //! Enforces rate limits to prevent bans and realistic behavior.
 
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::instrument;
@@ -23,6 +24,8 @@ pub struct EngagementCounters {
     pub bookmarks: u32,
     /// Number of quote tweets performed in current session (V2)
     pub quote_tweets: u32,
+    /// Cached total (avoids recomputing sum on every `can_*` call)
+    cached_total_actions: u32,
 }
 
 impl EngagementCounters {
@@ -35,59 +38,60 @@ impl EngagementCounters {
     /// Returns total number of engagement actions taken.
     #[instrument]
     pub fn total_actions(&self) -> u32 {
-        self.likes
-            + self.retweets
-            + self.follows
-            + self.replies
-            + self.thread_dives
-            + self.bookmarks
-            + self.quote_tweets
+        self.cached_total_actions
     }
 
     /// Increments the like counter.
     #[instrument]
     pub fn increment_like(&mut self) {
         self.likes += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the retweet counter.
     #[instrument]
     pub fn increment_retweet(&mut self) {
         self.retweets += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the follow counter.
     #[instrument]
     pub fn increment_follow(&mut self) {
         self.follows += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the reply counter.
     #[instrument]
     pub fn increment_reply(&mut self) {
         self.replies += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the thread dive counter.
     #[instrument]
     pub fn increment_thread_dive(&mut self) {
         self.thread_dives += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the bookmark counter.
     #[instrument]
     pub fn increment_bookmark(&mut self) {
         self.bookmarks += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments the quote tweet counter.
     #[instrument]
     pub fn increment_quote_tweet(&mut self) {
         self.quote_tweets += 1;
+        self.cached_total_actions += 1;
     }
 
     /// Increments counter by action type string.
-    /// Used by SessionState for unified action recording.
+    /// Used by `SessionState` for unified action recording.
     #[instrument]
     pub fn increment(&mut self, action: &str) {
         match action {
@@ -98,11 +102,11 @@ impl EngagementCounters {
             "bookmark" => self.increment_bookmark(),
             "quote" => self.increment_quote_tweet(),
             "dive" => self.increment_thread_dive(),
-            _ => {}
+            _ => warn!("Unknown action type: {action}"),
         }
     }
 
-    /// Returns a summary of all counters as a HashMap.
+    /// Returns a summary of all counters as a `HashMap`.
     #[instrument]
     pub fn to_summary(&self) -> HashMap<String, u32> {
         let mut summary = HashMap::new();
@@ -278,6 +282,7 @@ impl EngagementLimits {
     }
 
     /// Returns which actions are still available given current counters.
+    #[must_use]
     pub fn available_actions(&self, counters: &EngagementCounters) -> Vec<&'static str> {
         let mut actions = Vec::new();
 
@@ -294,19 +299,20 @@ impl EngagementLimits {
             actions.push("reply");
         }
         if self.can_dive(counters) {
-            actions.push("thread_dive");
+            actions.push("dive");
         }
         if self.can_bookmark(counters) {
             actions.push("bookmark");
         }
         if self.can_quote_tweet(counters) {
-            actions.push("quote_tweet");
+            actions.push("quote");
         }
 
         actions
     }
 
-    /// Returns a summary of remaining actions as a HashMap.
+    /// Returns a summary of remaining actions as a `HashMap`.
+    #[must_use]
     pub fn remaining(&self, counters: &EngagementCounters) -> HashMap<String, u32> {
         let mut remaining = HashMap::new();
         remaining.insert(
@@ -343,6 +349,130 @@ impl EngagementLimits {
                 .saturating_sub(counters.total_actions()),
         );
         remaining
+    }
+}
+
+#[cfg(test)]
+mod tdd_tests {
+    use super::*;
+    use crate::tests::twitter_helpers::*;
+
+    // ====================================================================
+    // RED Tests — describe desired behavior (expected to fail on first run)
+    // ====================================================================
+
+    #[test]
+    fn tdd_red_engagement_limit_can_bookmark_checks_max_bookmarks() {
+        // RED: Verify can_bookmark respects max_bookmarks limit
+        let limits = EngagementLimits {
+            max_bookmarks: 1,
+            ..Default::default()
+        };
+        let mut counters = EngagementCounters::new();
+
+        // First bookmark should be allowed
+        assert!(limits.can_bookmark(&counters));
+        counters.increment_bookmark();
+
+        // Second bookmark should be blocked
+        assert!(
+            !limits.can_bookmark(&counters),
+            "can_bookmark should return false when bookmarks >= max_bookmarks"
+        );
+    }
+
+    // ====================================================================
+    // GREEN Tests — validate working behavior
+    // ====================================================================
+
+    #[test]
+    fn tdd_green_limits_available_actions_excludes_exhausted() {
+        // GREEN: available_actions should not include exhausted actions
+        let limits = EngagementLimits::new();
+        let counters = test_counters_with_actions(5, 0, 0, 0);
+
+        let available = limits.available_actions(&counters);
+        assert!(!available.contains(&"like"), "Like should not be available");
+        assert!(
+            available.contains(&"retweet"),
+            "Other actions should be available"
+        );
+    }
+
+    #[test]
+    fn tdd_green_limits_counters_increment_method_unified() {
+        // GREEN: Unified increment() dispatches to correct method
+        let mut counters = EngagementCounters::new();
+
+        counters.increment("like");
+        counters.increment("retweet");
+        counters.increment("follow");
+        counters.increment("reply");
+        counters.increment("bookmark");
+        counters.increment("quote");
+        counters.increment("dive");
+
+        assert_eq!(counters.likes, 1);
+        assert_eq!(counters.retweets, 1);
+        assert_eq!(counters.follows, 1);
+        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.bookmarks, 1);
+        assert_eq!(counters.quote_tweets, 1);
+        assert_eq!(counters.thread_dives, 1);
+    }
+
+    #[test]
+    fn tdd_green_limits_increment_unknown_action_noop() {
+        // GREEN: Unknown action type should not change counters
+        let mut counters = EngagementCounters::new();
+        counters.increment("unknown_action");
+        assert_eq!(counters.total_actions(), 0);
+    }
+
+    #[test]
+    fn tdd_green_limits_total_actions_bounded_by_individual() {
+        // GREEN: total_actions should be sum of individual counters
+        let counters = test_counters_with_actions(3, 1, 1, 0);
+        assert_eq!(counters.total_actions(), 5);
+    }
+
+    // ====================================================================
+    // EDGE Case Tests
+    // ====================================================================
+
+    #[test]
+    fn tdd_edge_counters_overflow_does_not_panic() {
+        // EDGE: Large counts should not panic
+        let mut counters = EngagementCounters::new();
+        for _ in 0..10_000 {
+            counters.increment_like();
+        }
+        assert_eq!(counters.likes, 10_000);
+    }
+
+    #[test]
+    fn tdd_edge_limits_remaining_saturates_at_zero() {
+        // EDGE: remaining() should not underflow when counters exceed limits
+        let limits = EngagementLimits::new();
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..100 {
+            counters.increment_like();
+        }
+
+        let remaining = limits.remaining(&counters);
+        assert_eq!(remaining.get("likes").copied().unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn tdd_edge_limits_remaining_total_actions() {
+        // EDGE: remaining total_actions must be present
+        let limits = EngagementLimits::new();
+        let counters = EngagementCounters::new();
+
+        let remaining = limits.remaining(&counters);
+        assert!(remaining.contains_key("total_actions"));
+        assert_eq!(remaining.get("total_actions").copied().unwrap_or(0), 10);
     }
 }
 
@@ -598,7 +728,7 @@ mod tests {
         let counters = EngagementCounters::new();
         let available = limits.available_actions(&counters);
         assert!(available.contains(&"bookmark"));
-        assert!(available.contains(&"quote_tweet"));
+        assert!(available.contains(&"quote"));
     }
 
     #[test]
@@ -627,5 +757,554 @@ mod tests {
         assert!(remaining.contains_key("bookmarks"));
         assert!(remaining.contains_key("quote_tweets"));
         assert!(remaining.contains_key("total_actions"));
+    }
+}
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+
+    // Serde round-trip for EngagementLimits
+    #[test]
+    fn engagement_limits_serde_round_trip() {
+        let limits = EngagementLimits::with_limits(10, 8, 6, 4, 5, 3, 3, 50);
+        let json = serde_json::to_string(&limits).unwrap();
+        let deserialized: EngagementLimits = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.max_likes, limits.max_likes);
+        assert_eq!(deserialized.max_retweets, limits.max_retweets);
+        assert_eq!(deserialized.max_follows, limits.max_follows);
+        assert_eq!(deserialized.max_replies, limits.max_replies);
+        assert_eq!(deserialized.max_thread_dives, limits.max_thread_dives);
+        assert_eq!(deserialized.max_bookmarks, limits.max_bookmarks);
+        assert_eq!(deserialized.max_quote_tweets, limits.max_quote_tweets);
+        assert_eq!(deserialized.max_total_actions, limits.max_total_actions);
+    }
+
+    #[test]
+    fn engagement_limits_serde_defaults_for_missing_fields() {
+        let json = r#"{"max_likes": 20}"#;
+        let limits: EngagementLimits = serde_json::from_str(json).unwrap();
+        assert_eq!(limits.max_likes, 20);
+        assert_eq!(limits.max_retweets, 3); // default
+        assert_eq!(limits.max_follows, 2); // default
+        assert_eq!(limits.max_replies, 1); // default
+        assert_eq!(limits.max_total_actions, 10); // default
+    }
+
+    #[test]
+    fn engagement_limits_serde_empty_object() {
+        let json = "{}";
+        let limits: EngagementLimits = serde_json::from_str(json).unwrap();
+        assert_eq!(limits.max_likes, 5);
+        assert_eq!(limits.max_total_actions, 10);
+    }
+
+    // can_* methods at exact boundary (count == max → blocked)
+    #[test]
+    fn can_like_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(5, 10, 10, 10, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        // 4 likes → allowed (count < max)
+        for _ in 0..4 {
+            counters.increment_like();
+        }
+        assert!(limits.can_like(&counters));
+
+        // 5th like → blocked (count == max)
+        counters.increment_like();
+        assert!(!limits.can_like(&counters));
+    }
+
+    #[test]
+    fn can_retweet_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 3, 10, 10, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..3 {
+            counters.increment_retweet();
+        }
+        assert!(!limits.can_retweet(&counters));
+    }
+
+    #[test]
+    fn can_follow_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 2, 10, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..2 {
+            counters.increment_follow();
+        }
+        assert!(!limits.can_follow(&counters));
+    }
+
+    #[test]
+    fn can_reply_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 1, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        counters.increment_reply();
+        assert!(!limits.can_reply(&counters));
+    }
+
+    #[test]
+    fn can_dive_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 2, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..2 {
+            counters.increment_thread_dive();
+        }
+        assert!(!limits.can_dive(&counters));
+    }
+
+    #[test]
+    fn can_bookmark_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 3, 10, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..3 {
+            counters.increment_bookmark();
+        }
+        assert!(!limits.can_bookmark(&counters));
+    }
+
+    #[test]
+    fn can_quote_tweet_at_exact_boundary() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 2, 100);
+        let mut counters = EngagementCounters::new();
+
+        for _ in 0..2 {
+            counters.increment_quote_tweet();
+        }
+        assert!(!limits.can_quote_tweet(&counters));
+    }
+
+    // Total limit blocks all can_* methods even when individual limits not reached
+    #[test]
+    fn total_limit_blocks_all_when_reached() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 10, 3);
+        let mut counters = EngagementCounters::new();
+
+        counters.increment_like();
+        counters.increment_retweet();
+        counters.increment_follow();
+
+        // Total = 3 == max_total_actions → all blocked
+        assert!(!limits.can_like(&counters));
+        assert!(!limits.can_retweet(&counters));
+        assert!(!limits.can_follow(&counters));
+        assert!(!limits.can_reply(&counters));
+        assert!(!limits.can_dive(&counters));
+        assert!(!limits.can_bookmark(&counters));
+        assert!(!limits.can_quote_tweet(&counters));
+    }
+
+    // increment("dive") path
+    #[test]
+    fn increment_dive_dispatches_correctly() {
+        let mut counters = EngagementCounters::new();
+        counters.increment("dive");
+        assert_eq!(counters.thread_dives, 1);
+    }
+
+    // to_summary reflects all counter values
+    #[test]
+    fn to_summary_reflects_all_values() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_like();
+        counters.increment_retweet();
+        counters.increment_follow();
+        counters.increment_reply();
+        counters.increment_thread_dive();
+        counters.increment_bookmark();
+        counters.increment_quote_tweet();
+
+        let summary = counters.to_summary();
+        assert_eq!(summary["likes"], 2);
+        assert_eq!(summary["retweets"], 1);
+        assert_eq!(summary["follows"], 1);
+        assert_eq!(summary["replies"], 1);
+        assert_eq!(summary["thread_dives"], 1);
+        assert_eq!(summary["bookmarks"], 1);
+        assert_eq!(summary["quote_tweets"], 1);
+    }
+}
+
+#[cfg(test)]
+mod mutation_tests {
+    //! Mutation-sensitivity tests for EngagementCounters and EngagementLimits.
+    //! Each test is designed to catch a specific class of mutation (operator swap,
+    //! constant change, collection return, etc.) that cargo-mutants would introduce.
+    use super::*;
+
+    // ── Operator swap: && → || ────────────────────────────────────────────
+    // If `&&` were swapped to `||`, then meeting only ONE condition would return
+    // true. These tests verify BOTH conditions are enforced.
+
+    #[test]
+    fn mutation_can_like_checks_both_conditions() {
+        // Individual limit not hit, but total limit hit → should be blocked
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 10, 1);
+        let mut counters = EngagementCounters::new();
+        counters.increment_like(); // total = 1 == max_total_actions
+        assert!(
+            !limits.can_like(&counters),
+            "can_like must check total_actions limit (catches && → || swap)"
+        );
+    }
+
+    #[test]
+    fn mutation_can_retweet_checks_both_conditions() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 10, 1);
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        assert!(
+            !limits.can_retweet(&counters),
+            "can_retweet must check total_actions limit"
+        );
+    }
+
+    #[test]
+    fn mutation_can_follow_checks_both_conditions() {
+        let limits = EngagementLimits::with_limits(10, 10, 2, 10, 10, 10, 10, 1);
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        assert!(
+            !limits.can_follow(&counters),
+            "can_follow must check total_actions limit"
+        );
+    }
+
+    #[test]
+    fn mutation_can_reply_checks_both_conditions() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 1, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+        counters.increment_reply(); // reply == max_replies
+                                    // Individual limit hit → blocked even though total is fine
+        assert!(
+            !limits.can_reply(&counters),
+            "can_reply must check individual limit"
+        );
+        // But total limit should also be checked: counters exhausted, but
+        // individual still has room
+        let limits2 = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 10, 0);
+        assert!(
+            !limits2.can_reply(&counters),
+            "can_reply must check total_actions limit even when individual OK"
+        );
+    }
+
+    #[test]
+    fn mutation_can_dive_checks_both_conditions() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 2, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+        counters.increment_thread_dive();
+        counters.increment_thread_dive(); // dive == max_thread_dives
+        assert!(
+            !limits.can_dive(&counters),
+            "can_dive must check individual limit"
+        );
+
+        // Total exhausted but individual OK
+        let limits2 = EngagementLimits::with_limits(10, 10, 10, 10, 5, 10, 10, 0);
+        assert!(
+            !limits2.can_dive(&counters),
+            "can_dive must check total_actions limit"
+        );
+    }
+
+    #[test]
+    fn mutation_can_bookmark_checks_both_conditions() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 3, 10, 100);
+        let mut counters = EngagementCounters::new();
+        counters.increment_bookmark();
+        counters.increment_bookmark();
+        counters.increment_bookmark(); // bookmark == max_bookmarks
+        assert!(
+            !limits.can_bookmark(&counters),
+            "can_bookmark must check individual limit"
+        );
+
+        let limits2 = EngagementLimits::with_limits(10, 10, 10, 10, 10, 5, 10, 0);
+        assert!(
+            !limits2.can_bookmark(&counters),
+            "can_bookmark must check total_actions limit"
+        );
+    }
+
+    #[test]
+    fn mutation_can_quote_tweet_checks_both_conditions() {
+        let limits = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 2, 100);
+        let mut counters = EngagementCounters::new();
+        counters.increment_quote_tweet();
+        counters.increment_quote_tweet(); // quote == max_quote_tweets
+        assert!(
+            !limits.can_quote_tweet(&counters),
+            "can_quote_tweet must check individual limit"
+        );
+
+        let limits2 = EngagementLimits::with_limits(10, 10, 10, 10, 10, 10, 5, 0);
+        assert!(
+            !limits2.can_quote_tweet(&counters),
+            "can_quote_tweet must check total_actions limit"
+        );
+    }
+
+    // ── Relational operator swap: < → ==, < → <= ─────────────────────────
+
+    #[test]
+    fn mutation_can_like_uses_strict_less_than() {
+        // 0 < 5 is true; if swapped to ==, 0 == 5 is false
+        let limits = EngagementLimits::with_limits(5, 10, 10, 10, 10, 10, 10, 100);
+        let counters = EngagementCounters::new();
+        assert!(
+            limits.can_like(&counters),
+            "can_like(0, max=5) must be true (catches < → == swap)"
+        );
+    }
+
+    #[test]
+    fn mutation_can_like_at_boundary_uses_strict_less_than() {
+        // 5 < 5 is false; if swapped to <=, 5 <= 5 is true
+        let limits = EngagementLimits::with_limits(5, 10, 10, 10, 10, 10, 10, 100);
+        let mut counters = EngagementCounters::new();
+        for _ in 0..5 {
+            counters.increment_like();
+        }
+        assert!(
+            !limits.can_like(&counters),
+            "can_like(5, max=5) must be false (catches < → <= swap)"
+        );
+    }
+
+    // ── Default constant changes ──────────────────────────────────────────
+    // If any default_max_* function returns 0 or 1 instead of its expected
+    // value, these tests fail.
+
+    #[test]
+    fn mutation_default_limits_have_correct_values() {
+        let limits = EngagementLimits::default();
+        assert_eq!(limits.max_likes, 5);
+        assert_eq!(limits.max_retweets, 3);
+        assert_eq!(limits.max_follows, 2);
+        assert_eq!(limits.max_replies, 1);
+        assert_eq!(limits.max_thread_dives, 3);
+        assert_eq!(limits.max_bookmarks, 2);
+        assert_eq!(limits.max_quote_tweets, 2);
+        assert_eq!(limits.max_total_actions, 10);
+    }
+
+    // ── Increment operator swap: += → -= ──────────────────────────────────
+
+    #[test]
+    fn mutation_increment_uses_addition_not_subtraction_or_multiplication() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        assert_eq!(
+            counters.likes, 1,
+            "increment_like must add (catches += → -= swap: 0+1=1 vs 0-1=MAX)"
+        );
+        assert_eq!(counters.total_actions(), 1);
+
+        // Increment from non-zero to catch += → *= mutation (2+1=3 vs 2*1=2)
+        counters.likes = 2;
+        counters.cached_total_actions = 5;
+        counters.increment_like();
+        assert_eq!(
+            counters.likes, 3,
+            "increment from 2 must produce 3 (catches += → *= swap: 2+1=3 vs 2*1=2)"
+        );
+        assert_eq!(
+            counters.total_actions(),
+            6,
+            "cached_total_actions must also use addition"
+        );
+    }
+
+    #[test]
+    fn mutation_increment_all_types_preserve_total() {
+        let mut counters = EngagementCounters::new();
+        counters.increment_like();
+        counters.increment_retweet();
+        counters.increment_follow();
+        counters.increment_reply();
+        counters.increment_thread_dive();
+        counters.increment_bookmark();
+        counters.increment_quote_tweet();
+        assert_eq!(
+            counters.total_actions(),
+            7,
+            "cached_total_actions should match 7 increments"
+        );
+        assert_eq!(counters.likes, 1);
+        assert_eq!(counters.retweets, 1);
+        assert_eq!(counters.follows, 1);
+        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.thread_dives, 1);
+        assert_eq!(counters.bookmarks, 1);
+        assert_eq!(counters.quote_tweets, 1);
+    }
+
+    // ── available_actions: empty vec mutation ─────────────────────────────
+
+    #[test]
+    fn mutation_available_actions_returns_all_when_none_exhausted() {
+        let limits = EngagementLimits::new();
+        let counters = EngagementCounters::new();
+        let available = limits.available_actions(&counters);
+        assert_eq!(
+            available.len(),
+            7,
+            "with no actions taken, all 7 should be available (catches empty-vec mutation)"
+        );
+        assert!(available.contains(&"like"));
+        assert!(available.contains(&"retweet"));
+        assert!(available.contains(&"follow"));
+        assert!(available.contains(&"reply"));
+        assert!(available.contains(&"dive"));
+        assert!(available.contains(&"bookmark"));
+        assert!(available.contains(&"quote"));
+    }
+
+    // ── remaining: empty map mutation ─────────────────────────────────────
+
+    #[test]
+    fn mutation_remaining_returns_all_keys() {
+        let limits = EngagementLimits::new();
+        let counters = EngagementCounters::new();
+        let remaining = limits.remaining(&counters);
+        assert_eq!(
+            remaining.len(),
+            8,
+            "remaining must have 8 entries (catches empty-map mutation)"
+        );
+        assert_eq!(remaining.get("likes").copied().unwrap_or(0), 5);
+        assert_eq!(remaining.get("retweets").copied().unwrap_or(0), 3);
+        assert_eq!(remaining.get("follows").copied().unwrap_or(0), 2);
+        assert_eq!(remaining.get("replies").copied().unwrap_or(0), 1);
+        assert_eq!(remaining.get("thread_dives").copied().unwrap_or(0), 3);
+        assert_eq!(remaining.get("bookmarks").copied().unwrap_or(0), 2);
+        assert_eq!(remaining.get("quote_tweets").copied().unwrap_or(0), 2);
+        assert_eq!(remaining.get("total_actions").copied().unwrap_or(0), 10);
+    }
+
+    // ── saturating_sub correctness ────────────────────────────────────────
+
+    #[test]
+    fn mutation_remaining_uses_saturating_sub() {
+        // When counters exceed limits, remaining should be 0, not underflow
+        let limits = EngagementLimits::new();
+        let mut counters = EngagementCounters::new();
+        for _ in 0..100 {
+            counters.increment_like();
+        }
+        let remaining = limits.remaining(&counters);
+        assert_eq!(
+            remaining.get("likes").copied().unwrap_or(0),
+            0,
+            "remaining should saturate at 0 (catches underflow mutation)"
+        );
+        assert_eq!(
+            remaining.get("total_actions").copied().unwrap_or(0),
+            0,
+            "total_actions remaining should saturate at 0"
+        );
+    }
+
+    // ── cached_total_actions sync ─────────────────────────────────────────
+    // If cached_total_actions is not updated, all can_* methods fail silently.
+
+    #[test]
+    fn mutation_cached_total_stays_in_sync_with_increments() {
+        let mut counters = EngagementCounters::new();
+        assert_eq!(counters.total_actions(), 0);
+
+        counters.increment_like();
+        assert_eq!(counters.total_actions(), 1);
+
+        counters.increment_retweet();
+        assert_eq!(counters.total_actions(), 2);
+
+        counters.increment_follow();
+        assert_eq!(counters.total_actions(), 3);
+
+        counters.increment_reply();
+        assert_eq!(counters.total_actions(), 4);
+
+        counters.increment_thread_dive();
+        assert_eq!(counters.total_actions(), 5);
+
+        counters.increment_bookmark();
+        assert_eq!(counters.total_actions(), 6);
+
+        counters.increment_quote_tweet();
+        assert_eq!(
+            counters.total_actions(),
+            7,
+            "cached_total_actions must track all 7 increment types"
+        );
+    }
+
+    // ── Match-arm deletion in increment() dispatch ────────────────────────
+
+    #[test]
+    fn mutation_increment_dispatch_all_arms() {
+        let mut counters = EngagementCounters::new();
+        counters.increment("like");
+        assert_eq!(counters.likes, 1);
+
+        let mut counters = EngagementCounters::new();
+        counters.increment("retweet");
+        assert_eq!(counters.retweets, 1);
+
+        let mut counters = EngagementCounters::new();
+        counters.increment("follow");
+        assert_eq!(counters.follows, 1);
+
+        let mut counters = EngagementCounters::new();
+        counters.increment("reply");
+        assert_eq!(counters.replies, 1);
+
+        let mut counters = EngagementCounters::new();
+        counters.increment("bookmark");
+        assert_eq!(counters.bookmarks, 1);
+
+        let mut counters = EngagementCounters::new();
+        counters.increment("quote");
+        assert_eq!(counters.quote_tweets, 1);
+
+        let mut counters = EngagementCounters::new();
+        counters.increment("dive");
+        assert_eq!(counters.thread_dives, 1);
+    }
+
+    // ── to_summary: missing key mutation ──────────────────────────────────
+
+    #[test]
+    fn mutation_to_summary_has_exactly_7_keys() {
+        let counters = EngagementCounters::new();
+        let summary = counters.to_summary();
+        assert_eq!(
+            summary.len(),
+            7,
+            "to_summary must have exactly 7 entries (catches missing-key mutation)"
+        );
+    }
+
+    // ── zero-max and zero-total edge coverage ────────────────────────────
+
+    #[test]
+    fn mutation_all_can_methods_respect_zero_limits() {
+        let limits = EngagementLimits::with_limits(0, 0, 0, 0, 0, 0, 0, 0);
+        let counters = EngagementCounters::new();
+        assert!(!limits.can_like(&counters));
+        assert!(!limits.can_retweet(&counters));
+        assert!(!limits.can_follow(&counters));
+        assert!(!limits.can_reply(&counters));
+        assert!(!limits.can_dive(&counters));
+        assert!(!limits.can_bookmark(&counters));
+        assert!(!limits.can_quote_tweet(&counters));
     }
 }

@@ -1,3 +1,9 @@
+/*
+last audited 08-05-25 by RSA-Agent
+crate: auto-rust | status: SAFE | lint: CLEAN
+findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
+*/
+
 use anyhow::Result;
 use auto::runtime::execution::{execute_task_groups_with_shutdown, RuntimeGroupRunner};
 use auto::runtime::shutdown::ShutdownManager;
@@ -35,7 +41,10 @@ fn render_list_tasks_output() -> String {
     format_task_list()
 }
 
-fn render_dry_run_output(groups: &[Vec<cli::TaskDefinition>], config: &config::Config) -> String {
+fn render_dry_run_output(
+    groups: &[Vec<cli::CliTaskDefinition>],
+    config: &config::Config,
+) -> String {
     use auto::task::registry::{TaskRegistry, TaskSource};
     use std::fmt::Write;
 
@@ -49,7 +58,7 @@ fn render_dry_run_output(groups: &[Vec<cli::TaskDefinition>], config: &config::C
     let mut registry = TaskRegistry::with_built_in_tasks();
     let external_loaded = registry.load_external_tasks(&config.task_discovery);
     if external_loaded > 0 {
-        let _ = writeln!(output, "External tasks loaded: {}", external_loaded);
+        let _ = writeln!(output, "External tasks loaded: {external_loaded}");
     }
 
     let diag = registry.diagnostics();
@@ -102,10 +111,10 @@ fn render_dry_run_output(groups: &[Vec<cli::TaskDefinition>], config: &config::C
                         let payload_str = task_def
                             .payload
                             .iter()
-                            .map(|(k, v)| format!("{}={}", k, v))
+                            .map(|(k, v)| format!("{k}={v}"))
                             .collect::<Vec<_>>()
                             .join(", ");
-                        let _ = writeln!(output, "       payload: {}", payload_str);
+                        let _ = writeln!(output, "       payload: {payload_str}");
                     }
                 }
                 Err(e) => {
@@ -121,12 +130,12 @@ fn render_dry_run_output(groups: &[Vec<cli::TaskDefinition>], config: &config::C
         }
     }
 
-    let total_tasks: usize = groups.iter().map(|g| g.len()).sum();
+    let total_tasks: usize = groups.iter().map(std::vec::Vec::len).sum();
     let total_groups = groups.len();
 
     let _ = writeln!(output, "\n=== SUMMARY ===");
-    let _ = writeln!(output, "Task groups: {}", total_groups);
-    let _ = writeln!(output, "Total task executions: {}", total_tasks);
+    let _ = writeln!(output, "Task groups: {total_groups}");
+    let _ = writeln!(output, "Total task executions: {total_tasks}");
     let _ = writeln!(output, "\nDry run complete. No tasks were executed.");
 
     output
@@ -155,6 +164,7 @@ pub fn setup_working_directory() -> Result<(), std::io::Error> {
 
 /// Calculate whether session health is degraded based on healthy vs total sessions.
 /// Returns true if less than 80% of sessions are healthy.
+#[must_use]
 pub fn is_session_health_degraded(healthy: usize, total: usize) -> bool {
     if total == 0 {
         return false;
@@ -163,11 +173,9 @@ pub fn is_session_health_degraded(healthy: usize, total: usize) -> bool {
 }
 
 /// Format a health warning message for degraded sessions.
+#[must_use]
 pub fn format_health_warning(healthy: usize, total: usize) -> String {
-    format!(
-        "Session health degraded: {}/{} healthy sessions remaining",
-        healthy, total
-    )
+    format!("Session health degraded: {healthy}/{total} healthy sessions remaining")
 }
 
 fn main() {
@@ -189,7 +197,10 @@ fn run() -> Result<()> {
 /// Run in dry-run mode: show what would be executed without actually running.
 ///
 /// Validates all tasks and prints execution plan without connecting to browsers.
-async fn run_dry_run(groups: &[Vec<cli::TaskDefinition>], config: &config::Config) -> Result<()> {
+async fn run_dry_run(
+    groups: &[Vec<cli::CliTaskDefinition>],
+    config: &config::Config,
+) -> Result<()> {
     print!("{}", render_dry_run_output(groups, config));
     Ok(())
 }
@@ -205,7 +216,7 @@ async fn run_validate_tasks(config: &config::Config) -> Result<()> {
     let mut registry = TaskRegistry::with_built_in_tasks();
     let external_loaded = registry.load_external_tasks(&config.task_discovery);
 
-    println!("External tasks loaded: {}", external_loaded);
+    println!("External tasks loaded: {external_loaded}");
 
     let report = registry.validate_all_tasks();
     let total = report.total();
@@ -222,7 +233,7 @@ async fn run_validate_tasks(config: &config::Config) -> Result<()> {
     if !report.valid.is_empty() {
         println!("Valid tasks ({}):", report.valid.len());
         for name in &report.valid {
-            println!("  [PASS] {}", name);
+            println!("  [PASS] {name}");
         }
         println!();
     }
@@ -230,13 +241,13 @@ async fn run_validate_tasks(config: &config::Config) -> Result<()> {
     if !report.invalid.is_empty() {
         println!("Invalid tasks ({}):", report.invalid.len());
         for (name, error) in &report.invalid {
-            println!("  [FAIL] {}: {}", name, error);
+            println!("  [FAIL] {name}: {error}");
         }
         println!();
     }
 
     println!("=== SUMMARY ===");
-    println!("Total external tasks: {}", total);
+    println!("Total external tasks: {total}");
     println!("Valid: {}", report.valid.len());
     println!("Invalid: {}", report.invalid.len());
 
@@ -317,7 +328,7 @@ async fn run_async() -> Result<()> {
             let root_path = std::path::Path::new(root);
             if root_path.exists() {
                 if let Err(e) = watcher.watch(root_path, &config.task_discovery).await {
-                    warn!("Failed to watch directory '{}': {}", root, e);
+                    warn!("Failed to watch directory '{root}': {e}");
                 }
             }
         }
@@ -364,7 +375,7 @@ async fn run_async() -> Result<()> {
     // Calculate fan-out metrics for Phase 4
     let planned_groups = groups.len();
     let completed_groups = group_outcome.completed_groups;
-    let planned_executions = groups.iter().map(|g| g.len()).sum::<usize>() * sessions.len();
+    let planned_executions = groups.iter().map(std::vec::Vec::len).sum::<usize>() * sessions.len();
     let actual_executions = metrics.get_stats().total_tasks;
 
     if let Err(e) = metrics.export_summary_to(

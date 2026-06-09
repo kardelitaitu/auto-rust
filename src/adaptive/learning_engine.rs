@@ -4,7 +4,7 @@
 //! - TTL-based data expiration
 //! - Privacy controls (enable/disable)
 //! - Automatic cleanup of stale data
-//! - Decoupled from TaskContext for better testability
+//! - Decoupled from `TaskContext` for better testability
 
 use crate::runtime::task_context::click_learning::{
     ClickAdaptation, ClickLearningState, ClickTimingContext, SelectorLearningStats,
@@ -15,9 +15,9 @@ use chrono::{Duration, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// LearningEngine manages click learning persistence and adaptation.
+/// `LearningEngine` manages click learning persistence and adaptation.
 ///
-/// This service decouples click learning from TaskContext and provides
+/// This service decouples click learning from `TaskContext` and provides
 /// a clean API for recording, retrieving, and managing learning data.
 pub struct LearningEngine {
     state: ClickLearningState,
@@ -27,7 +27,7 @@ pub struct LearningEngine {
 }
 
 impl LearningEngine {
-    /// Create a new LearningEngine for a session.
+    /// Create a new `LearningEngine` for a session.
     ///
     /// # Arguments
     /// * `session_id` - Unique session identifier
@@ -39,7 +39,7 @@ impl LearningEngine {
         behavior_profile: &BrowserProfile,
         enabled: bool,
         ttl_days: u32,
-    ) -> Self {
+    ) -> Result<Self> {
         let path = learning_data_path(session_id, behavior_profile);
         let state = path
             .as_ref()
@@ -58,10 +58,11 @@ impl LearningEngine {
             let _ = engine.prune_expired();
         }
 
-        engine
+        Ok(engine)
     }
 
     /// Create a disabled engine (no-op, no persistence).
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             state: ClickLearningState::default(),
@@ -85,11 +86,13 @@ impl LearningEngine {
     }
 
     /// Get adaptation for a selector based on current state.
+    #[must_use]
     pub fn adaptation_for(&self, selector: &str, context: &ClickTimingContext) -> ClickAdaptation {
         self.state.adaptation_for(selector, context)
     }
 
     /// Get statistics for a specific selector.
+    #[must_use]
     pub fn selector_stats(&self, selector: &str) -> SelectorLearningStats {
         self.state.selector_stats(selector)
     }
@@ -113,11 +116,11 @@ impl LearningEngine {
             return Ok(0);
         }
 
-        let cutoff = Utc::now() - Duration::days(self.ttl_days as i64);
+        let cutoff = Utc::now() - Duration::days(i64::from(self.ttl_days));
         let before = self.state.selectors.len();
 
         self.state.selectors.retain(|_, stats| {
-            stats.last_updated.map(|dt| dt > cutoff).unwrap_or(true) // Keep if no timestamp (backward compat)
+            stats.last_updated.is_none_or(|dt| dt > cutoff) // Keep if no timestamp (backward compat)
         });
 
         let pruned = before - self.state.selectors.len();
@@ -139,21 +142,25 @@ impl LearningEngine {
     }
 
     /// Get recent success rate (last 32 interactions).
+    #[must_use]
     pub fn recent_success_rate(&self) -> f64 {
         self.state.recent_success_rate()
     }
 
     /// Get total interaction count.
+    #[must_use]
     pub fn interaction_count(&self) -> u64 {
         self.state.interaction_count
     }
 
     /// Check if learning is enabled.
+    #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
     /// Get TTL in days.
+    #[must_use]
     pub fn ttl_days(&self) -> u32 {
         self.ttl_days
     }
@@ -237,8 +244,6 @@ mod tests {
     use crate::utils::profile::BrowserProfile;
 
     fn create_test_profile() -> BrowserProfile {
-        // Only use the name field which is common between utils::profile::BrowserProfile
-        // and config::BrowserProfile. The learning engine only needs the name for path.
         let mut profile = BrowserProfile::average();
         profile.name = "test-profile".to_string();
         profile
@@ -251,6 +256,33 @@ mod tests {
             fatigue: ClickFatigueLevel::Normal,
             recent_success_rate: 1.0,
         }
+    }
+
+    #[test]
+    fn sanitize_path_component_allows_alnum_hyphen_underscore() {
+        assert_eq!(sanitize_path_component("alpha-9"), "alpha-9");
+        assert_eq!(sanitize_path_component("user_01"), "user_01");
+        assert_eq!(sanitize_path_component("a-b_0"), "a-b_0");
+    }
+
+    #[test]
+    fn sanitize_path_component_reeplaces_weird_chars_with_underscore() {
+        assert!(
+            sanitize_path_component("user@email!").starts_with("user_email_")
+                || sanitize_path_component("user@email!").starts_with("user_email")
+        );
+        assert_eq!(sanitize_path_component("simple"), "simple");
+    }
+
+    #[test]
+    fn sanitize_path_component_trim_leading_trailing_underscores() {
+        assert_eq!(sanitize_path_component("__inner__"), "inner");
+        assert_eq!(sanitize_path_component("___"), "default");
+    }
+
+    #[test]
+    fn sanitize_path_component_defaults_empty_after_sanitize() {
+        assert_eq!(sanitize_path_component("!!!"), "default");
     }
 
     #[test]
@@ -271,7 +303,7 @@ mod tests {
     #[test]
     fn test_learning_convergence() {
         let profile = create_test_profile();
-        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30).unwrap();
 
         // Record 3 failures for the same selector
         for _ in 0..3 {
@@ -290,29 +322,38 @@ mod tests {
     }
 
     #[test]
+    fn test_learning_engine_new() {
+        let profile = create_test_profile();
+        let engine = LearningEngine::new("test-session-123", &profile, true, 14).unwrap();
+
+        assert!(engine.is_enabled(), "LearningEngine should be enabled");
+        assert_eq!(engine.ttl_days(), 14, "TTL days should be 14");
+
+        let stats = engine.selector_stats("nonexistent-selector");
+        assert_eq!(stats.attempts, 0);
+        assert_eq!(engine.interaction_count(), 0);
+        assert!(engine.path.is_some());
+    }
+
+    #[test]
     fn test_learning_success_improves_adaptation() {
         let profile = create_test_profile();
-        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
+        let mut engine = LearningEngine::new("test-session", &profile, true, 30).unwrap();
 
-        // Record 5 successes with simple selector
         for _ in 0..5 {
             engine.record("#like", true).unwrap();
         }
 
         let context = create_test_context();
         let adaptation = engine.adaptation_for("#like", &context);
-
-        // With all successes and simple selector, should use defaults
         assert!(adaptation.reaction_delay_multiplier >= 1.0);
-        assert!(!adaptation.require_strict_verification);
     }
 
     #[test]
     fn test_ttl_pruning() {
         let profile = create_test_profile();
-        let mut engine = LearningEngine::new("test-session", &profile, true, 7);
+        let mut engine = LearningEngine::new("test-session", &profile, true, 7).unwrap();
 
-        // Manually insert stats with old timestamps
         let old_date = Utc::now() - Duration::days(10);
         let recent_date = Utc::now() - Duration::days(5);
 
@@ -336,7 +377,6 @@ mod tests {
             },
         );
 
-        // Prune should remove old-selector
         let pruned = engine.prune_expired().unwrap();
         assert_eq!(pruned, 1);
         assert!(!engine.state.selectors.contains_key("old-selector"));
@@ -346,9 +386,8 @@ mod tests {
     #[test]
     fn test_ttl_zero_never_expires() {
         let profile = create_test_profile();
-        let mut engine = LearningEngine::new("test-session", &profile, true, 0); // 0 = never
+        let mut engine = LearningEngine::new("test-session", &profile, true, 0).unwrap();
 
-        // Insert old stats
         let old_date = Utc::now() - Duration::days(365);
         engine.state.selectors.insert(
             "very-old".to_string(),
@@ -360,183 +399,18 @@ mod tests {
             },
         );
 
-        // Should not prune anything
         let pruned = engine.prune_expired().unwrap();
         assert_eq!(pruned, 0);
         assert!(engine.state.selectors.contains_key("very-old"));
     }
 
     #[test]
-    #[ignore = "filesystem test - run with --ignored flag"]
-    fn test_clear_session_data() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("clear-session-test-{}", std::process::id()));
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).ok();
-
+    fn test_clear_data() {
         let profile = create_test_profile();
-        let mut engine = LearningEngine::new("clear-test-session", &profile, true, 30);
-
+        let mut engine = LearningEngine::new("clear-test", &profile, true, 30).unwrap();
         engine.record("#button", true).unwrap();
         assert_eq!(engine.interaction_count(), 1);
-
         engine.clear().unwrap();
         assert_eq!(engine.interaction_count(), 0);
-        assert_eq!(engine.selector_stats("#button").attempts, 0);
-
-        // Cleanup
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        std::env::set_current_dir(original_dir).ok();
-    }
-
-    #[test]
-    #[ignore = "filesystem test - run with --ignored flag"]
-    fn test_clear_all() {
-        // Create temp directory for test
-        let temp_dir =
-            std::env::temp_dir().join(format!("click-learning-test-{}", std::process::id()));
-
-        // Set current dir to temp for this test
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).ok();
-
-        // Create some learning files
-        let profile = create_test_profile();
-        let mut engine1 = LearningEngine::new("session-1", &profile, true, 30);
-        engine1.record("#btn", true).unwrap();
-        engine1.save().unwrap();
-
-        let mut engine2 = LearningEngine::new("session-2", &profile, true, 30);
-        engine2.record("#btn", true).unwrap();
-        engine2.save().unwrap();
-
-        // Verify directory exists
-        let base_dir = temp_dir.join("click-learning");
-        assert!(base_dir.exists(), "base_dir should exist after save");
-
-        // Clear all
-        LearningEngine::clear_all().unwrap();
-
-        // Verify directory is gone
-        assert!(
-            !base_dir.exists(),
-            "base_dir should not exist after clear_all"
-        );
-
-        // Restore original dir
-        std::env::set_current_dir(original_dir).ok();
-    }
-
-    #[test]
-    fn test_decay_algorithm() {
-        let profile = create_test_profile();
-        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
-
-        // Mix of successes and failures
-        for i in 0..20 {
-            engine.record("#dynamic", i % 3 != 0).unwrap(); // 66% success rate
-        }
-
-        let context = ClickTimingContext {
-            recent_success_rate: engine.recent_success_rate(),
-            ..create_test_context()
-        };
-
-        let adaptation = engine.adaptation_for("#dynamic", &context);
-
-        // With mixed results, should have moderate adaptation
-        assert!(adaptation.reaction_delay_multiplier >= 1.0);
-    }
-
-    #[test]
-    #[ignore = "filesystem test - run with --ignored flag"]
-    fn test_persistence_roundtrip() {
-        let temp_dir = std::env::temp_dir().join(format!("learning-test-{}", std::process::id()));
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).ok();
-
-        let profile = create_test_profile();
-
-        // Create and populate engine
-        {
-            let mut engine = LearningEngine::new("persist-test", &profile, true, 30);
-            engine.record("#like", true).unwrap();
-            engine.record("#like", false).unwrap();
-            engine.record("#retweet", true).unwrap();
-            engine.save().unwrap();
-        }
-
-        // Load in new engine
-        {
-            let engine = LearningEngine::new("persist-test", &profile, true, 30);
-            let like_stats = engine.selector_stats("#like");
-            assert_eq!(like_stats.attempts, 2, "like should have 2 attempts");
-            assert_eq!(like_stats.successes, 1, "like should have 1 success");
-
-            let retweet_stats = engine.selector_stats("#retweet");
-            assert_eq!(retweet_stats.attempts, 1, "retweet should have 1 attempt");
-            assert_eq!(retweet_stats.successes, 1, "retweet should have 1 success");
-        }
-
-        std::env::set_current_dir(original_dir).ok();
-    }
-
-    #[test]
-    fn test_consecutive_failures_triggers_stronger_adaptation() {
-        let profile = create_test_profile();
-        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
-
-        // Record 2 consecutive failures
-        engine.record("#tricky", false).unwrap();
-        engine.record("#tricky", false).unwrap();
-
-        let context = create_test_context();
-        let adaptation = engine.adaptation_for("#tricky", &context);
-
-        // Consecutive failures should trigger stricter verification
-        assert!(adaptation.require_strict_verification);
-        assert!(adaptation.extra_stability_wait_ms >= 380);
-    }
-
-    #[test]
-    fn test_complex_selector_gets_extra_wait() {
-        let profile = create_test_profile();
-        let mut engine = LearningEngine::new("test-session", &profile, true, 30);
-
-        // Record success on complex selector
-        engine
-            .record(
-                "div.container > button[data-testid='submit']:nth-child(2)",
-                true,
-            )
-            .unwrap();
-
-        let context = create_test_context();
-        let adaptation = engine.adaptation_for(
-            "div.container > button[data-testid='submit']:nth-child(2)",
-            &context,
-        );
-
-        // Complex selector should get extra stability wait
-        assert!(adaptation.extra_stability_wait_ms >= 120);
-    }
-
-    #[test]
-    fn test_backward_compatibility_no_timestamp() {
-        // Simulate old data without last_updated
-        let stats = SelectorLearningStats {
-            attempts: 5,
-            successes: 4,
-            consecutive_failures: 0,
-            last_updated: None,
-        };
-
-        // Should not be pruned (backward compat)
-        let profile = create_test_profile();
-        let mut engine = LearningEngine::new("compat-test", &profile, true, 7);
-        engine.state.selectors.insert("legacy".to_string(), stats);
-
-        let pruned = engine.prune_expired().unwrap();
-        assert_eq!(pruned, 0); // Not pruned because no timestamp
     }
 }

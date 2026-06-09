@@ -1,14 +1,13 @@
 use crate::utils::page_size::Viewport;
 use chromiumoxide::Page;
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-static PAGE_OVERLAY_REGISTRY: Lazy<DashMap<String, Arc<SessionOverlayState>>> =
-    Lazy::new(DashMap::new);
+static PAGE_OVERLAY_REGISTRY: std::sync::LazyLock<DashMap<String, Arc<SessionOverlayState>>> =
+    std::sync::LazyLock::new(DashMap::new);
 
 #[derive(Debug)]
 pub struct SessionOverlayState {
@@ -21,6 +20,7 @@ pub struct SessionOverlayState {
 }
 
 impl SessionOverlayState {
+    #[must_use]
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled: AtomicBool::new(enabled),
@@ -98,8 +98,7 @@ impl SessionOverlayState {
         let mut active = self.active_page.lock();
         if active
             .as_ref()
-            .map(|page| page.target_id().as_ref() == page_id)
-            .unwrap_or(false)
+            .is_some_and(|page| page.target_id().as_ref() == page_id)
         {
             *active = None;
         }
@@ -191,7 +190,6 @@ mod tests {
 
         // Should return the set position
         let pos = state.cursor_position_snapshot();
-        assert!(pos.is_some());
         let (x, y) = pos.expect("Cursor position should be set");
         assert_eq!(x, 100.5);
         assert_eq!(y, 200.75);
@@ -335,7 +333,6 @@ mod tests {
 
         // Retrieve overlay
         let retrieved = overlay_for_page(&page_id);
-        assert!(retrieved.is_some());
         assert!(retrieved.expect("Overlay should exist").is_enabled());
 
         // Unbind overlay
@@ -392,8 +389,8 @@ mod tests {
         // Check that our specific overlays are enabled
         let entry1 = PAGE_OVERLAY_REGISTRY.get(&page_id1);
         let entry2 = PAGE_OVERLAY_REGISTRY.get(&page_id2);
-        assert!(entry1.is_some() && entry1.expect("Overlay 1 should exist").is_enabled());
-        assert!(entry2.is_some() && entry2.expect("Overlay 2 should exist").is_enabled());
+        assert!(entry1.expect("Overlay 1 should exist").is_enabled());
+        assert!(entry2.expect("Overlay 2 should exist").is_enabled());
 
         // Cleanup
         unbind_page_overlay(&page_id1);
@@ -418,7 +415,6 @@ mod tests {
 
         // Check that the specific overlay we just added (disabled) causes false
         let entry = PAGE_OVERLAY_REGISTRY.get(&page_id2);
-        assert!(entry.is_some());
         assert!(!entry.expect("Overlay should exist").is_enabled());
 
         // Cleanup
@@ -681,9 +677,6 @@ mod tests {
         let retrieved1 = overlay_for_page(&page_id1);
         let retrieved2 = overlay_for_page(&page_id2);
 
-        assert!(retrieved1.is_some());
-        assert!(retrieved2.is_some());
-
         // Check they're the same Arc by comparing pointer
         let ptr1 = Arc::as_ptr(&retrieved1.expect("Overlay 1 should exist"));
         let ptr2 = Arc::as_ptr(&retrieved2.expect("Overlay 2 should exist"));
@@ -715,7 +708,6 @@ mod tests {
         // Test high precision values
         state.set_cursor_position(123.456789, 987.654321);
         let pos = state.cursor_position_snapshot();
-        assert!(pos.is_some());
         let (x, y) = pos.expect("Cursor position should be set");
         assert_eq!(x, 123.456789);
         assert_eq!(y, 987.654321);
@@ -808,5 +800,68 @@ mod tests {
 
         // First claim should succeed (100 - 0 = 100 >= 50)
         assert!(state.claim_sync_slot(now_ms, false, min_interval_ms));
+    }
+
+    #[test]
+    fn test_overlay_bind_unbind_cycle() {
+        let state = Arc::new(SessionOverlayState::new(true));
+        let page_id = "test-page-cycle";
+
+        // Initially no overlay
+        assert!(overlay_for_page(page_id).is_none());
+
+        // Bind overlay
+        bind_page_overlay(page_id.to_string(), state.clone());
+        assert!(overlay_for_page(page_id).is_some());
+
+        // Unbind overlay
+        unbind_page_overlay(page_id);
+        assert!(overlay_for_page(page_id).is_none());
+    }
+
+    #[test]
+    fn test_overlay_enable_disable_all() {
+        let state1 = Arc::new(SessionOverlayState::new(true));
+        let state2 = Arc::new(SessionOverlayState::new(false));
+
+        bind_page_overlay("page1-enable".to_string(), state1.clone());
+        bind_page_overlay("page2-enable".to_string(), state2.clone());
+
+        // Initially mixed
+        assert!(!are_all_overlays_enabled());
+
+        // Enable all
+        set_overlay_enabled_for_all(true);
+        assert!(are_all_overlays_enabled());
+
+        // Cleanup
+        unbind_page_overlay("page1-enable");
+        unbind_page_overlay("page2-enable");
+    }
+
+    #[test]
+    fn test_cursor_position_update() {
+        let state = SessionOverlayState::new(true);
+
+        // Initially no position
+        assert!(state.cursor_position_snapshot().is_none());
+
+        // Set position
+        state.set_cursor_position(100.0, 200.0);
+        assert_eq!(state.cursor_position_snapshot(), Some((100.0, 200.0)));
+    }
+
+    #[test]
+    fn test_cursor_start_position_center() {
+        let state = SessionOverlayState::new(true);
+        let viewport = Viewport {
+            width: 1920.0,
+            height: 1080.0,
+        };
+
+        // Without stored position, should return center
+        let (x, y) = state.cursor_start_position(&viewport);
+        assert_eq!(x, 960.0);
+        assert_eq!(y, 540.0);
     }
 }

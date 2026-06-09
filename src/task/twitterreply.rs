@@ -1,13 +1,13 @@
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::llm::unified_processor::UnifiedLLMProcessor;
 use crate::prelude::TaskContext;
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
+use crate::utils::timing::{
+    duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
+};
+use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
 use anyhow::Result;
 use log::{info, warn};
 use rand::Rng;
 use serde_json::Value;
-use std::time::Duration;
-use tokio::time::timeout;
 
 const CONTEXT_REPLIES: u32 = 5;
 const POST_WAIT_MS: u64 = 5000;
@@ -19,19 +19,12 @@ fn task_duration_ms() -> u64 {
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[twitterreply] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "twitterreply", run_inner(api, payload)).await
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
-    info!("Task started - target: {}", tweet_url);
+    info!("Task started - target: {tweet_url}");
 
     info!("Trampoline navigation...");
     api.navigate(&tweet_url, DEFAULT_NAVIGATION_TIMEOUT_MS)
@@ -60,13 +53,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         .map(|(a, t)| (a.as_str(), t.as_str()))
         .collect();
 
-    let reply_texts: Vec<crate::llm::unified_processor::UnifiedReplyResponse> = processor
-        .process_replies_batch(&tweet_text, &author, &reply_tuples)
-        .await
-        .map_err(|e| {
-            warn!("Unified processor failed: {}, using fallback", e);
-            e
-        })?;
+    let reply_texts: Vec<crate::utils::twitter::unified_processor::UnifiedReplyResponse> =
+        processor
+            .process_replies_batch(&tweet_text, &author, &reply_tuples)
+            .await
+            .map_err(|e| {
+                warn!("Unified processor failed: {e}, using fallback");
+                e
+            })?;
 
     // Use first reply (most relevant to the tweet)
     let reply_text = if let Some(first_reply) = reply_texts.first() {
@@ -76,7 +70,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         "Interesting perspective! Thanks for sharing.".to_string()
     };
 
-    info!("AI Reply: {}", reply_text);
+    info!("AI Reply: {reply_text}");
 
     info!("Clicking reply button...");
     click_reply_button(api).await?;
@@ -103,35 +97,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    for (key, val) in payload
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
-    {
-        if key != "url" && key != "value" && key != "default_url" {
-            if let Some(v) = val.as_str() {
-                if !v.is_empty() && v.contains("x.com") {
-                    return Ok(v.to_string());
-                }
-            }
-        }
-    }
-    Err(anyhow::anyhow!("No URL found in payload"))
+    crate::utils::url::extract_url_from_payload(payload)
 }
 
 async fn extract_main_tweet(api: &TaskContext) -> Result<(String, String)> {
@@ -261,11 +227,11 @@ async fn post_reply_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
         match post_reply(api).await {
             Ok(true) => return Ok(true),
             Ok(false) => {
-                warn!("Post failed (attempt {}/{})", attempt, max_retries);
+                warn!("Post failed (attempt {attempt}/{max_retries})");
                 last_error = Some(anyhow::anyhow!("Post returned false"));
             }
             Err(e) => {
-                warn!("Post error (attempt {}/{}): {}", attempt, max_retries, e);
+                warn!("Post error (attempt {attempt}/{max_retries}): {e}");
                 last_error = Some(e);
             }
         }
@@ -273,7 +239,7 @@ async fn post_reply_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
             api.pause(2000).await;
         }
     }
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {} retries", max_retries)))
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {max_retries} retries")))
 }
 
 fn sanitize_reply(text: &str) -> String {
@@ -298,7 +264,7 @@ async fn scroll_down_random(api: &TaskContext) -> Result<()> {
 
     while start.elapsed().as_millis() < duration_ms {
         let scroll_amount = rand::thread_rng().gen_range(200..=500);
-        let js = format!("window.scrollBy(0, {})", scroll_amount);
+        let js = format!("window.scrollBy(0, {scroll_amount})");
         page.evaluate(js).await?;
         api.pause(200).await;
     }
@@ -313,7 +279,7 @@ async fn scroll_up_faster(api: &TaskContext) -> Result<()> {
 
     while start.elapsed().as_millis() < duration_ms {
         let scroll_amount = rand::thread_rng().gen_range(400..=800);
-        let js = format!("window.scrollBy(0, -{})", scroll_amount);
+        let js = format!("window.scrollBy(0, -{scroll_amount})");
         page.evaluate(js).await?;
         api.pause(100).await;
     }

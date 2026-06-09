@@ -1,0 +1,40 @@
+version: 1
+id: shared-retry-utility
+title: Consolidate Retry/Backoff Logic into a Shared Utility Module
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P2
+area:
+  - auto-rust-core
+  - maintainability
+files:
+  code:
+    - src/utils/retry.rs
+    - src/session/pool.rs
+    - src/llm/client.rs
+    - src/api/client.rs
+  docs:
+    - docs/specs/_done/shared-retry-utility/spec.yaml
+    - docs/specs/_done/shared-retry-utility/README.md
+    - docs/specs/_done/shared-retry-utility/baseline.md
+    - docs/specs/_done/shared-retry-utility/plan.md
+    - docs/specs/_done/shared-retry-utility/validation.md
+acceptance:
+  - "src/utils/retry.rs exists with RetryConfig, retry_with_backoff, ExponentialBackoff, and unit tests"
+  - "RetryConfig supports: max_attempts, base_delay_ms, max_delay_ms, multiplier (exponential), jitter_factor (0.0-1.0)"
+  - "ExponentialBackoff iterator yields delays: base * multiplier^n, clamped to max_delay_ms, with uniform jitter"
+  - "retry_with_backoff(fn, config) retries on error up to max_attempts, respects Retry-After header when available"
+  - "session/pool.rs discover_and_connect uses the shared retry (replacing linear backoff)"
+  - "All existing tests continue to pass: cargo test --lib"
+  - "cargo clippy --all-targets --all-features is clean"
+  - "check-fast.ps1 passes"
+non_goals:
+  - "Migrating bacon-pipeline retry logic (already has exponential backoff + jitter per 0014)"
+  - "Migrating Twitter utils/twitter retry (twitteractivity_retry has domain-specific concerns)"
+  - "Adding circuit-breaker or rate-limiter patterns (separate follow-up)"
+  - "Changing public API of session/pool.rs or llm/client.rs — only internal retry call changes"
+risks:
+  - "Retry-After header parsing may encounter unexpected formats — fall back to computed delay"
+  - "Twitter retry has special Aggressive/Default config presets — shared utility must generalize enough to replace session pool use case first"
+  - "If session pool retry behavior changes observably (timing), integration tests may need tolerance adjustment"

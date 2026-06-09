@@ -2,14 +2,14 @@
 //! Quotes a tweet with LLM-generated commentary.
 
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
-use crate::llm::unified_processor::UnifiedLLMProcessor;
 use crate::prelude::TaskContext;
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
+use crate::utils::timing::{
+    duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
+};
+use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
-use std::time::Duration;
-use tokio::time::timeout;
 
 const POST_WAIT_MS: u64 = 5000;
 pub const DEFAULT_TWITTERQUOTE_TASK_DURATION_MS: u64 = 45_000;
@@ -20,14 +20,7 @@ fn task_duration_ms() -> u64 {
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[twitterquote] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "twitterquote", run_inner(api, payload)).await
 }
 
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
@@ -35,9 +28,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let custom_quote = payload
         .get("quote_text")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
-    info!("[twitterquote] Task started - target: {}", tweet_url);
+    info!("[twitterquote] Task started - target: {tweet_url}");
 
     // Navigate to tweet
     info!("[twitterquote] Navigating to tweet...");
@@ -72,14 +65,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .map(|(a, t)| (a.as_str(), t.as_str()))
             .collect();
 
-        let reply_texts: crate::llm::unified_processor::UnifiedQuoteResponse = processor
+        let reply_texts: crate::utils::twitter::unified_processor::UnifiedQuoteResponse = processor
             .process_quote_with_sentiment(&tweet_text, &reply_tuples)
             .await
             .map_err(|e| {
-                warn!(
-                    "[twitterquote] Unified processor failed: {}, using fallback",
-                    e
-                );
+                warn!("[twitterquote] Unified processor failed: {e}, using fallback");
                 e
             })?;
 
@@ -121,35 +111,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    for (key, val) in payload
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
-    {
-        if key != "url" && key != "value" && key != "default_url" {
-            if let Some(v) = val.as_str() {
-                if !v.is_empty() && v.contains("x.com") {
-                    return Ok(v.to_string());
-                }
-            }
-        }
-    }
-    Err(anyhow::anyhow!("No URL found in payload"))
+    crate::utils::url::extract_url_from_payload(payload)
 }
 
 async fn extract_tweet_context(
@@ -205,10 +167,10 @@ async fn extract_tweet_context(
                             item.as_array().and_then(|pair| {
                                 let u = pair.first().and_then(|v| v.as_str()).unwrap_or("unknown");
                                 let t = pair.get(1).and_then(|v| v.as_str()).unwrap_or("");
-                                if !t.is_empty() {
-                                    Some((u.to_string(), t.to_string()))
-                                } else {
+                                if t.is_empty() {
                                     None
+                                } else {
+                                    Some((u.to_string(), t.to_string()))
                                 }
                             })
                         })
@@ -225,7 +187,7 @@ async fn extract_tweet_context(
 
 async fn click_quote_button(api: &TaskContext) -> Result<()> {
     // Quote button - try multiple selectors
-    let js = r#"
+    let js = r"
         (function() {
             var buttons = document.querySelectorAll('button[data-testid]');
             for (var i = 0; i < buttons.length; i++) {
@@ -241,12 +203,12 @@ async fn click_quote_button(api: &TaskContext) -> Result<()> {
             }
             return { success: false };
         })()
-    "#;
+    ";
     let result = api.page().evaluate(js).await?;
     let value = result.value();
     if let Some(v) = value {
         if let Some(obj) = v.as_object() {
-            if let Some(true) = obj.get("success").and_then(|v| v.as_bool()) {
+            if let Some(true) = obj.get("success").and_then(serde_json::Value::as_bool) {
                 return Ok(());
             }
         }
@@ -298,17 +260,11 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
         match post_quote(api).await {
             Ok(true) => return Ok(true),
             Ok(false) => {
-                warn!(
-                    "[twitterquote] Post failed (attempt {}/{})",
-                    attempt, max_retries
-                );
+                warn!("[twitterquote] Post failed (attempt {attempt}/{max_retries})");
                 last_error = Some(anyhow::anyhow!("Post returned false"));
             }
             Err(e) => {
-                warn!(
-                    "[twitterquote] Post error (attempt {}/{}): {}",
-                    attempt, max_retries, e
-                );
+                warn!("[twitterquote] Post error (attempt {attempt}/{max_retries}): {e}");
                 last_error = Some(e);
             }
         }
@@ -316,7 +272,7 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bo
             api.pause(2000).await;
         }
     }
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {} retries", max_retries)))
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {max_retries} retries")))
 }
 
 #[cfg(test)]

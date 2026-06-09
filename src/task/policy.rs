@@ -4,7 +4,6 @@
 //! what capabilities a task may use, plus a registry mapping task names to policies.
 
 use chrono::{DateTime, Utc};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -25,6 +24,7 @@ pub struct TaskPolicy {
 
 impl TaskPolicy {
     /// Get effective permissions, including implied permissions.
+    #[must_use]
     pub fn effective_permissions(&self) -> TaskPermissions {
         let mut perms = self.permissions.clone();
 
@@ -170,7 +170,7 @@ pub struct BrowserData {
     /// sessionStorage data keyed by origin (hostname -> key/value pairs).
     pub session_storage: HashMap<String, HashMap<String, String>>,
 
-    /// IndexedDB database names by origin (simplified - just names for now).
+    /// `IndexedDB` database names by origin (simplified - just names for now).
     pub indexeddb_names: HashMap<String, Vec<String>>,
 
     /// Export timestamp for versioning.
@@ -201,146 +201,163 @@ impl Default for BrowserData {
 // Task-specific Policies
 // ============================================================================
 
-/// CookieBot policy - handles cookie consent dialogs.
-pub static COOKIEBOT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::cookiebot::DEFAULT_COOKIEBOT_TASK_DURATION_MS,
-    permissions: TaskPermissions {
-        allow_export_cookies: true, // Export to verify consent state
-        allow_screenshot: true,     // Capture consent dialog for debugging
-        // allow_write_data implied by allow_screenshot
-        ..Default::default()
-    },
-});
+/// `CookieBot` policy - handles cookie consent dialogs.
+pub static COOKIEBOT_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::cookiebot::DEFAULT_COOKIEBOT_TASK_DURATION_MS,
+        permissions: TaskPermissions {
+            allow_export_cookies: true, // Export to verify consent state
+            allow_screenshot: true,     // Capture consent dialog for debugging
+            // allow_write_data implied by allow_screenshot
+            ..Default::default()
+        },
+    });
 
-/// PageView policy - simple page loading with verification.
-pub static PAGEVIEW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 120_000, // Pageview runtime budget
-    permissions: TaskPermissions::default(),
-});
+/// `PageView` policy - simple page loading with verification.
+pub static PAGEVIEW_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: 120_000, // Pageview runtime budget
+        permissions: TaskPermissions::default(),
+    });
 
-/// TwitterActivity policy - complex social media automation.
-pub static TWITTERACTIVITY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::utils::twitter::DEFAULT_TWITTERACTIVITY_DURATION_MS,
-    permissions: TaskPermissions {
-        allow_export_cookies: true,    // Verify login session
-        allow_session_clipboard: true, // Copy tweet text, paste replies
-        allow_read_data: true,         // Read persona files from config/
-        allow_screenshot: true,        // Debug screenshots
-        // allow_write_data implied by allow_screenshot
-        ..Default::default()
-    },
-});
+/// `TwitterActivity` policy - complex social media automation.
+pub static TWITTERACTIVITY_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::utils::twitter::DEFAULT_TWITTERACTIVITY_DURATION_MS,
+        permissions: TaskPermissions {
+            allow_export_cookies: true,    // Verify login session
+            allow_session_clipboard: true, // Copy tweet text, paste replies
+            allow_read_data: true,         // Read persona files from config/
+            allow_screenshot: true,        // Debug screenshots
+            // allow_write_data implied by allow_screenshot
+            ..Default::default()
+        },
+    });
 
 /// Base policy for most Twitter tasks.
-pub static TWITTER_BASE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: 45_000, // 45 seconds default for Twitter tasks
-    permissions: TaskPermissions {
-        allow_screenshot: true,        // Debug failures
-        allow_export_cookies: true,    // Auth verification
-        allow_session_clipboard: true, // Copy/paste tweets
-        ..Default::default()
-    },
-});
+pub static TWITTER_BASE_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: 45_000, // 45 seconds default for Twitter tasks
+        permissions: TaskPermissions {
+            allow_screenshot: true,        // Debug failures
+            allow_export_cookies: true,    // Auth verification
+            allow_session_clipboard: true, // Copy/paste tweets
+            ..Default::default()
+        },
+    });
 
-/// DemoKeyboard policy - default policy.
-pub static DEMO_KEYBOARD_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::demo_keyboard::DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS,
-    permissions: TaskPermissions {
-        ..Default::default()
-    },
-});
+/// `DemoKeyboard` policy - default policy.
+pub static DEMO_KEYBOARD_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::demo_keyboard::DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS,
+        permissions: TaskPermissions {
+            ..Default::default()
+        },
+    });
 
-/// DemoMouse policy - default policy.
-pub static DEMO_MOUSE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::demo_mouse::DEFAULT_DEMO_MOUSE_TASK_DURATION_MS,
-    permissions: TaskPermissions {
-        ..Default::default()
-    },
-});
+/// `DemoMouse` policy - default policy.
+pub static DEMO_MOUSE_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::demo_mouse::DEFAULT_DEMO_MOUSE_TASK_DURATION_MS,
+        permissions: TaskPermissions {
+            ..Default::default()
+        },
+    });
 
-/// DemoQA policy - default policy.
-pub static DEMO_QA_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::demoqa::DEFAULT_DEMOQA_TASK_DURATION_MS,
-    permissions: TaskPermissions {
-        ..Default::default()
-    },
-});
+/// `DemoQA` policy - default policy.
+pub static DEMO_QA_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::demoqa::DEFAULT_DEMOQA_TASK_DURATION_MS,
+        permissions: TaskPermissions {
+            ..Default::default()
+        },
+    });
 
-/// TaskExample policy - default policy.
-pub static TASK_EXAMPLE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::task_example::DEFAULT_TASK_EXAMPLE_DURATION_MS,
-    permissions: TaskPermissions {
-        ..Default::default()
-    },
-});
+/// `TaskExample` policy - default policy.
+pub static TASK_EXAMPLE_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::task_example::DEFAULT_TASK_EXAMPLE_DURATION_MS,
+        permissions: TaskPermissions {
+            ..Default::default()
+        },
+    });
 
-/// TwitterDive policy - extends Twitter base policy.
-pub static TWITTERDIVE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    permissions: crate::task::policy::TaskPermissions {
-        allow_read_data: true, // Read persona files
-        ..TWITTER_BASE_POLICY.permissions.clone()
-    },
-    max_duration_ms: crate::task::twitterdive::DEFAULT_TWITTERDIVE_DURATION_MS,
-});
+/// `TwitterDive` policy - extends Twitter base policy.
+pub static TWITTERDIVE_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        permissions: crate::task::policy::TaskPermissions {
+            allow_read_data: true, // Read persona files
+            ..TWITTER_BASE_POLICY.permissions.clone()
+        },
+        max_duration_ms: crate::task::twitterdive::DEFAULT_TWITTERDIVE_DURATION_MS,
+    });
 
-/// TwitterFollow policy - same as Twitter base policy.
-pub static TWITTERFOLLOW_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::twitterfollow::DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS,
-    permissions: TWITTER_BASE_POLICY.permissions.clone(),
-});
+/// `TwitterFollow` policy - same as Twitter base policy.
+pub static TWITTERFOLLOW_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::twitterfollow::DEFAULT_TWITTERFOLLOW_TASK_DURATION_MS,
+        permissions: TWITTER_BASE_POLICY.permissions.clone(),
+    });
 
-/// TwitterIntent policy - same as Twitter base policy.
-pub static TWITTERINTENT_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::twitterintent::DEFAULT_TWITTERINTENT_TASK_DURATION_MS,
-    permissions: TWITTER_BASE_POLICY.permissions.clone(),
-});
+/// `TwitterIntent` policy - same as Twitter base policy.
+pub static TWITTERINTENT_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::twitterintent::DEFAULT_TWITTERINTENT_TASK_DURATION_MS,
+        permissions: TWITTER_BASE_POLICY.permissions.clone(),
+    });
 
-/// TwitterLike policy - extends Twitter base policy.
-pub static TWITTERLIKE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::twitterlike::DEFAULT_TWITTERLIKE_TASK_DURATION_MS,
-    permissions: TWITTER_BASE_POLICY.permissions.clone(),
-});
+/// `TwitterLike` policy - extends Twitter base policy.
+pub static TWITTERLIKE_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::twitterlike::DEFAULT_TWITTERLIKE_TASK_DURATION_MS,
+        permissions: TWITTER_BASE_POLICY.permissions.clone(),
+    });
 
-/// TwitterQuote policy - extends Twitter base policy.
-pub static TWITTERQUOTE_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    permissions: crate::task::policy::TaskPermissions {
-        allow_read_data: true, // Read persona files
-        ..TWITTER_BASE_POLICY.permissions.clone()
-    },
-    max_duration_ms: crate::task::twitterquote::DEFAULT_TWITTERQUOTE_TASK_DURATION_MS,
-});
+/// `TwitterQuote` policy - extends Twitter base policy.
+pub static TWITTERQUOTE_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        permissions: crate::task::policy::TaskPermissions {
+            allow_read_data: true, // Read persona files
+            ..TWITTER_BASE_POLICY.permissions.clone()
+        },
+        max_duration_ms: crate::task::twitterquote::DEFAULT_TWITTERQUOTE_TASK_DURATION_MS,
+    });
 
-/// TwitterReply policy - extends Twitter base policy.
-pub static TWITTERREPLY_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    permissions: crate::task::policy::TaskPermissions {
-        allow_read_data: true, // Read persona files
-        ..TWITTER_BASE_POLICY.permissions.clone()
-    },
-    max_duration_ms: crate::task::twitterreply::DEFAULT_TWITTERREPLY_TASK_DURATION_MS,
-});
+/// `TwitterReply` policy - extends Twitter base policy.
+pub static TWITTERREPLY_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        permissions: crate::task::policy::TaskPermissions {
+            allow_read_data: true, // Read persona files
+            ..TWITTER_BASE_POLICY.permissions.clone()
+        },
+        max_duration_ms: crate::task::twitterreply::DEFAULT_TWITTERREPLY_TASK_DURATION_MS,
+    });
 
-/// TwitterRetweet policy - same as Twitter base policy.
-pub static TWITTERRETWEET_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::twitterretweet::DEFAULT_TWITTERRETWEET_TASK_DURATION_MS,
-    permissions: TWITTER_BASE_POLICY.permissions.clone(),
-});
+/// `TwitterRetweet` policy - same as Twitter base policy.
+pub static TWITTERRETWEET_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::twitterretweet::DEFAULT_TWITTERRETWEET_TASK_DURATION_MS,
+        permissions: TWITTER_BASE_POLICY.permissions.clone(),
+    });
 
-/// TwitterTest policy - extends Twitter base policy (allows all read operations).
-pub static TWITTERTEST_POLICY: Lazy<TaskPolicy> = Lazy::new(|| TaskPolicy {
-    max_duration_ms: crate::task::twittertest::DEFAULT_TWITTERTEST_TASK_DURATION_MS,
-    permissions: crate::task::policy::TaskPermissions {
-        allow_screenshot: true,
-        allow_export_cookies: true,
-        allow_session_clipboard: true,
-        allow_read_data: true,
-        ..Default::default()
-    },
-});
+/// `TwitterTest` policy - extends Twitter base policy (allows all read operations).
+pub static TWITTERTEST_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: crate::task::twittertest::DEFAULT_TWITTERTEST_TASK_DURATION_MS,
+        permissions: crate::task::policy::TaskPermissions {
+            allow_screenshot: true,
+            allow_export_cookies: true,
+            allow_session_clipboard: true,
+            allow_read_data: true,
+            ..Default::default()
+        },
+    });
 
 /// Return the policy for a given task name.
 ///
 /// Looks up a task‑specific policy if one is registered,
 /// otherwise falls back to `DEFAULT_TASK_POLICY`.
+#[must_use]
 pub fn get_policy(task_name: &str) -> &'static TaskPolicy {
     get_policy_from_registry(task_name)
 }
@@ -363,6 +380,7 @@ pub fn get_policy(task_name: &str) -> &'static TaskPolicy {
 /// let policy = get_policy_from_registry("cookiebot");
 /// assert!(policy.permissions.allow_export_cookies);
 /// ```
+#[must_use]
 pub fn get_policy_from_registry(task_name: &str) -> &'static TaskPolicy {
     use crate::task::normalize_task_name;
     use crate::task::registry::TaskRegistry;

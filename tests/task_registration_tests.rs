@@ -127,9 +127,9 @@ fn task_descriptor_lookup_unknown_tasks() {
 /// Test validate_task_groups with valid groups
 #[test]
 fn validate_task_groups_valid() {
-    use auto::cli::TaskDefinition;
+    use auto::cli::CliTaskDefinition;
 
-    let groups = vec![vec![TaskDefinition {
+    let groups = vec![vec![CliTaskDefinition {
         name: "cookiebot".to_string(),
         payload: std::collections::HashMap::new(),
     }]];
@@ -144,9 +144,9 @@ fn validate_task_groups_valid() {
 /// Test validate_task_groups with invalid task
 #[test]
 fn validate_task_groups_invalid_task() {
-    use auto::cli::TaskDefinition;
+    use auto::cli::CliTaskDefinition;
 
-    let groups = vec![vec![TaskDefinition {
+    let groups = vec![vec![CliTaskDefinition {
         name: "unknown_task".to_string(),
         payload: std::collections::HashMap::new(),
     }]];
@@ -161,14 +161,14 @@ fn validate_task_groups_invalid_task() {
 /// Test validate_task_groups_strict with valid groups
 #[test]
 fn validate_task_groups_strict_valid() {
-    use auto::cli::TaskDefinition;
+    use auto::cli::CliTaskDefinition;
 
     let groups = vec![vec![
-        TaskDefinition {
+        CliTaskDefinition {
             name: "cookiebot".to_string(),
             payload: std::collections::HashMap::new(),
         },
-        TaskDefinition {
+        CliTaskDefinition {
             name: "pageview".to_string(),
             payload: std::collections::HashMap::new(),
         },
@@ -181,9 +181,9 @@ fn validate_task_groups_strict_valid() {
 /// Test validate_task_groups_strict with invalid task
 #[test]
 fn validate_task_groups_strict_invalid() {
-    use auto::cli::TaskDefinition;
+    use auto::cli::CliTaskDefinition;
 
-    let groups = vec![vec![TaskDefinition {
+    let groups = vec![vec![CliTaskDefinition {
         name: "unknown_task".to_string(),
         payload: std::collections::HashMap::new(),
     }]];
@@ -195,7 +195,7 @@ fn validate_task_groups_strict_invalid() {
 /// Test validate_task_groups_strict with empty groups
 #[test]
 fn validate_task_groups_strict_empty_groups() {
-    let groups: Vec<Vec<auto::cli::TaskDefinition>> = vec![];
+    let groups: Vec<Vec<auto::cli::CliTaskDefinition>> = vec![];
 
     let result = validate_task_groups_strict(&groups);
     assert!(result.is_ok());
@@ -238,7 +238,7 @@ fn is_known_task_with_whitespace() {
 /// Test validate_task_groups with empty task definition
 #[test]
 fn validate_task_groups_empty_task() {
-    let groups = vec![vec![auto::cli::TaskDefinition {
+    let groups = vec![vec![auto::cli::CliTaskDefinition {
         name: "".to_string(),
         payload: std::collections::HashMap::new(),
     }]];

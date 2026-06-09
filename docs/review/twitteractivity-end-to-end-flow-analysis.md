@@ -13,45 +13,56 @@
 <a name="critical-bugs"></a>
 ## 🔴 Critical (3)
 
-### C1 — LLM API key never reaches the decision engine
-**Files:** `engagement.rs:88`, `engine.rs:49-90`
-**Flow:** `run_inner()` → `process_candidate()` → `handle_engagement_decision()` → `DecisionEngineFactory::create(strategy, None)`
+### C1 — LLM API key never reaches the decision engine *(RESOLVED)*
+**Status:** ✅ **RESOLVED** — The API key is now correctly threaded through to `DecisionEngineFactory::create()`.
+**Fix:** `engagement.rs:293-297` passes `task_config.llm_api_key.clone()` to `handle_engagement_decision()`, which passes it to `DecisionEngineFactory::create(strategy, llm_api_key)` at line 109.
 
-The second argument `llm_api_key` is hardcoded to `None`. Every strategy that requires LLM (`Llm`, `Hybrid`, `Unified`, `Auto`) silently falls back to `PersonaStrategy`. Users who set `llm_enabled: true` believe LLM engagement decisions are active, but they're always using rule-based heuristics.
+**Original finding (kept for regression awareness):**
+**Files:** `engagement.rs:88`, `engine.rs:49-90` (original line numbers — code has since changed)
+The second argument `llm_api_key` was hardcoded to `None`. Every strategy that requires LLM silently fell back to `PersonaStrategy`.
 
-**Impact:** `llm_enabled` flag is effectively a no-op for engagement decisions. The only place LLM actually works is `generate_reply()` / `generate_quote_commentary()` in `llm.rs`, which creates its own `Llm::new()` client — a completely separate code path with no connection to the decision engine.
+**Impact (original):** `llm_enabled` flag was a no-op for engagement decisions.
 
-**Fix:** Thread the API key from config through to `DecisionEngineFactory::create()`. Or remove the `llm_enabled` flag for decisions if LLM decision support isn't ready.
-
----
-
-### C2 — `extract_tweet_context()` JS returns wrong authors for replies
-**File:** `llm.rs:116-143`
-**Flow:** `process_candidate()` → quote/reply text generation → `extract_tweet_context()` → JS evaluation
-
-The JavaScript has two bugs:
-
-1. **Author extraction (line 119):** `document.querySelector('[data-testid="tweet"] [dir="auto"]')` — the space between `[data-testid="tweet"]` and `[dir="auto"]` makes it look for a descendant, but the correct selector should be `article[data-testid="tweet"] [dir="auto"]`. However, it always gets the *first* tweet's author on the page, not the current tweet's author.
-
-2. **Reply extraction (line 128):** `document.querySelectorAll('article [data-testid="tweet"] [dir="auto"]')` — the space before `[data-testid="tweet"]` treats it as a descendant of `article`, but the actual DOM has `article[data-testid="tweet"]` (attribute ON the article). This likely returns zero results because no element `[data-testid="tweet"]` exists as a *child* of an `article`. Compare with `selector_all_tweets.js` which correctly uses `article[data-testid="tweet"]`.
-
-3. **Author mismatch (line 133):** `replies.push({ author: author, text: replyText })` — every reply gets the root tweet's `author` variable instead of its own author.
-
-**Impact:** All LLM-generated replies and quotes receive incorrect author context. The generated content may address the wrong person.
-
-**Fix:** Restructure the JS to properly scope per-reply author extraction using `article[data-testid="tweet"]` and `el.querySelector('[dir="auto"]')` within each reply element.
+**Resolution:** API key now threaded from config through `process_candidate()` → `handle_engagement_decision()` → `DecisionEngineFactory::create()`.
 
 ---
 
-### C3 — Popup interference with login detection
-**File:** `navigation.rs:327-354`
+### C2 — `extract_tweet_context()` JS returns wrong authors for replies *(RESOLVED)*
+**Status:** ✅ **RESOLVED** — The JavaScript has been fixed.
+**Fix:** Current code at `llm.rs:126-159` uses:
+- `article[data-testid="tweet"]` (correct attribute selector on article)
+- Per-reply author via `reply.querySelector('[dir="auto"]')` (proper scoping)
+- Loop starts at `i=1` (skips root tweet, iterates replies)
+- Each reply gets its own author variable
+
+**Original finding (kept for regression awareness):**
+**File:** `llm.rs:116-143` (original line numbers — code has since changed)
+
+The JavaScript had three bugs:
+
+1. Author extraction used `document.querySelector('[data-testid="tweet"] [dir="auto"]')` — always got the first tweet's author, not per-reply authors.
+2. Reply extraction used `'article [data-testid="tweet"] [dir="auto"]'` — space before `[data-testid="tweet"]` treated it as a descendant, likely returning zero results.
+3. `replies.push({ author: author, text: replyText })` — every reply got the root tweet's `author` instead of its own.
+
+**Impact (original):** All LLM-generated replies and quotes received incorrect author context.
+
+**Resolution:** JS restructured to properly scope per-reply author extraction.
+
+---
+
+### C3 — Popup interference with login detection *(RESOLVED)*
+**Status:** ✅ **RESOLVED** — Popups are now dismissed before login verification.
+**Fix:** `phase1_navigation()` (navigation.rs:172-190) dismisses cookie banners and active popups *before* calling `verify_login()`, with an explicit comment explaining the ordering.
+
+**Original finding (kept for regression awareness):**
+**File:** `navigation.rs:327-354` (original line numbers — code has since changed)
 **Flow:** `run_inner()` → `phase1_navigation()` → (1) navigate → (2) `verify_login()` → (3) dismiss popups
 
-Dismissal order is wrong. `verify_login()` checks `is_feed_visible()` which depends on the feed being unobstructed. If a cookie banner, signup nag, or overlay is covering the feed, `is_feed_visible()` returns `false` even when the user IS logged in. Then `verify_login()` returns `false`, and the code logs "User appears not logged in; task may fail". Popups are dismissed *after* this check.
+Dismissal order was wrong. `verify_login()` checks `is_feed_visible()` which depends on the feed being unobstructed. If a cookie banner, signup nag, or overlay is covering the feed, `is_feed_visible()` returns `false` even when the user IS logged in. Then `verify_login()` returns `false`, and the code logs "User appears not logged in; task may fail". Popups were dismissed *after* this check.
 
-**Impact:** Every task logs a false-positive "not logged in" warning when popups are present. The task continues anyway but starts with a degraded state.
+**Impact (original):** Every task logged a false-positive "not logged in" warning when popups were present.
 
-**Fix:** Move popup dismissal before login verification, or make `is_feed_visible()` check against overlays.
+**Resolution:** Popup dismissal moved before `verify_login()` call.
 
 ---
 
@@ -458,7 +469,7 @@ All 1000+ lines of tests are unit tests (verifying JS strings, data structures, 
 
 | Category | Count |
 |---|---|
-| 🔴 Critical | 3 |
+| 🔴 Critical | 0 (3 original — C1, C2, C3 resolved) |
 | 🟠 High | 8 |
 | 🟡 Medium | 10 |
 | 🔵 Low/Quality | 12 |
@@ -466,9 +477,9 @@ All 1000+ lines of tests are unit tests (verifying JS strings, data structures, 
 
 ### Top 5 most impactful fixes (by effort/impact ratio)
 
-1. **C1** — Thread LLM API key to decision engine: ~5 lines changed, unblocks a major feature
-2. **C3** — Swap popup dismissal before login check: ~3 lines changed, eliminates false warnings
-3. **C2** — Fix `extract_tweet_context()` JS: ~15 lines changed, fixes reply author attribution
+1. **C1** — Thread LLM API key to decision engine *(RESOLVED)*: ~5 lines changed, unblocks a major feature
+2. **C2** — Fix `extract_tweet_context()` JS *(RESOLVED)*: ~15 lines changed, fixes reply author attribution
+3. **C3** — Swap popup dismissal before login check *(RESOLVED)*: ~3 lines changed, eliminates false warnings
 4. **H1** — Reset `next_candidate_scan` after dive return: ~2 lines changed, prevents duplicate scans
 5. **H2** — Interruptible sleep in main loop: ~3 lines changed, respects deadline during idle
 
@@ -476,8 +487,8 @@ All 1000+ lines of tests are unit tests (verifying JS strings, data structures, 
 
 | File | Issues |
 |---|---|
-| `engagement.rs` | C1, H1, H3, H5, M3, L2, L10 |
+| `engagement.rs` | C1 (❗resolved), H1, H3, H5, M3, L2, L10 |
 | `analyzer.rs` | H4, M9 |
-| `llm.rs` | C2, M4 |
+| `llm.rs` | C2 (❗resolved), M4 |
 | `navigation.rs` | C3, M1 |
 | `persona.rs` | H6 |

@@ -4,7 +4,7 @@
 max_discovery_retries = 3
 discovery_retry_delay_ms = 5000
 connectors = []
-connection_timeout_ms = 30000
+connection_timeout_ms = 60000
 
 [browser.circuit_breaker]
 enabled = true
@@ -24,8 +24,8 @@ api_key = "c6ae203adfe0327a63ccc9174c178dec"
 
 [orchestrator]
 max_global_concurrency = 20
-task_timeout_ms = 600000
-group_timeout_ms = 600000
+task_timeout_ms = 1200000
+group_timeout_ms = 1200000
 worker_wait_timeout_ms = 10000
 stuck_worker_threshold_ms = 120000
 task_stagger_delay_ms = 2000
@@ -40,6 +40,10 @@ retry_delay_ms = 500
 feed_scan_duration_ms = 120000      # 2 minutes
 feed_scroll_count = 12               # Number of scroll actions per scan
 engagement_candidate_count = 5       # Number of tweets to consider for engagement
+
+# Guard thresholds (stop conditions for feed loop)
+max_consecutive_scroll_failures = 3  # Max scroll failures before aborting
+max_consecutive_empty_scans = 3      # Max empty candidate scans before aborting
 
 # Engagement limits (prevent rate limits and account restrictions)
 [twitter_activity.engagement_limits]
@@ -68,6 +72,10 @@ quote_tweet_probability = 0.15       # 15% of retweets become quote tweets
 # TWITTER_MAX_FOLLOWS=2
 # TWITTER_MAX_REPLIES=1
 # TWITTER_MAX_TOTAL_ACTIONS=10
+# Max consecutive scroll failures before stopping the feed loop (default: 3, 0 = stop on first)
+# TWITTER_MAX_CONSECUTIVE_SCROLL_FAILURES=3
+# Max consecutive empty candidate scans before stopping the feed loop (default: 3, 0 = stop on first)
+# TWITTER_MAX_CONSECUTIVE_EMPTY_SCANS=3
 # TWITTER_LLM_ENABLED=true
 # TWITTER_LLM_PROVIDER=ollama
 # TWITTER_LLM_MODEL=llama3.2:latest

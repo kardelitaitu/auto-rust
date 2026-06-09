@@ -1,13 +1,13 @@
 //! DSL module.
 //!
 //! Contains the DSL types and executor implementation.
-//! - `types`: DSL type definitions (TaskDefinition, Action, Condition, etc.)
-//! - `cache`: SelectorCache with LRU eviction
-//! - `debug`: DebugEvent, Breakpoint, debug infrastructure
-//! - `profiling`: ActionProfiler, ActionMetrics, ExecutionReport
+//! - `types`: DSL type definitions (`TaskDefinition`, Action, Condition, etc.)
+//! - `cache`: `SelectorCache` with LRU eviction
+//! - `debug`: `DebugEvent`, Breakpoint, debug infrastructure
+//! - `profiling`: `ActionProfiler`, `ActionMetrics`, `ExecutionReport`
 //! - `evaluator`: Variable substitution, condition evaluation
 //! - `control_flow`: Control flow action handlers (If, Loop, Foreach, etc.)
-//! - `executor`: DslExecutor struct and main execution methods
+//! - `executor`: `DslExecutor` struct and main execution methods
 //! - `parser`: Parser functions for DSL task files
 
 // DSL types (moved from dsl.rs)
@@ -17,6 +17,7 @@ pub mod types;
 pub mod parser;
 
 // Executor submodules
+pub mod api;
 pub mod cache;
 pub mod control_flow;
 pub mod debug;
@@ -24,10 +25,8 @@ pub mod evaluator;
 pub mod executor;
 pub mod profiling;
 
-// Compatibility module for code that expects `dsl_executor` as separate module
-pub mod dsl_executor;
-
-// Re-exports for backward compatibility
+// Re-exports
+pub use api::DslApi;
 pub use cache::{CacheStats, SelectorCache, SelectorCacheEntry};
 pub use debug::{Breakpoint, DebugEvent, DebugEventType};
 pub use executor::{DslExecutionStats, DslExecutor, DEFAULT_CACHE_ENABLED, MAX_CALL_DEPTH};

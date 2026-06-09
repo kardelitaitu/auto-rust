@@ -20,14 +20,15 @@ pub struct TaskPayload {
 }
 
 impl TaskPayload {
-    /// Creates a new TaskPayload with the given name and JSON payload.
+    /// Creates a new `TaskPayload` with the given name and JSON payload.
     ///
     /// # Arguments
     /// * `name` - Name of the task (must match a known task type)
     /// * `payload` - JSON parameters for the task
     ///
     /// # Returns
-    /// A new TaskPayload instance ready for validation
+    /// A new `TaskPayload` instance ready for validation
+    #[must_use]
     pub fn new(name: String, payload: Value) -> Self {
         Self { name, payload }
     }
@@ -41,6 +42,7 @@ impl TaskPayload {
     /// # Details
     /// For unknown task types, logs an informational message and returns Ok
     /// (allowing execution to proceed but noting the lack of validation).
+    #[allow(clippy::cast_precision_loss)]
     pub fn validate(&self) -> Result<()> {
         match self.name.as_str() {
             "cookiebot" => self.validate_cookiebot(),
@@ -102,20 +104,17 @@ impl TaskPayload {
             .payload
             .get("username")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_url = self
             .payload
             .get("url")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_value = self
             .payload
             .get("value")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
 
         if !(has_username || has_url || has_value) {
             return Err(OrchestratorError::Task(TaskError::ValidationFailed {
@@ -139,20 +138,17 @@ impl TaskPayload {
             .payload
             .get("url")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_value = self
             .payload
             .get("value")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_quote_text = self
             .payload
             .get("quote_text")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
 
         if !(has_url || has_value) {
             return Err(OrchestratorError::Task(TaskError::ValidationFailed {
@@ -186,14 +182,12 @@ impl TaskPayload {
             .payload
             .get("url")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
         let has_value = self
             .payload
             .get("value")
             .and_then(|v| v.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|s| !s.trim().is_empty());
 
         if !(has_url || has_value) {
             return Err(OrchestratorError::Task(TaskError::ValidationFailed {
@@ -254,6 +248,7 @@ pub struct TaskValidationInfo {
 ///
 /// # Returns
 /// Option containing validation info if the task is known
+#[must_use]
 pub fn get_task_validation_info(task_name: &str) -> Option<TaskValidationInfo> {
     match task_name {
         "cookiebot" => Some(TaskValidationInfo {
@@ -547,5 +542,108 @@ mod tests {
                 task
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_validation_types {
+    use crate::task::validation::{ValidationIssue, ValidationReport};
+
+    #[test]
+    fn validation_issue_message_accessor() {
+        let err = ValidationIssue::Error("bad".into());
+        assert_eq!(err.message(), "bad");
+
+        let warn = ValidationIssue::Warning("note".into());
+        assert_eq!(warn.message(), "note");
+    }
+
+    #[test]
+    fn validation_issue_classification() {
+        let err = ValidationIssue::Error(String::new());
+        assert!(err.is_error());
+        assert!(!ValidationIssue::Warning(String::new()).is_error());
+    }
+
+    #[test]
+    fn report_summary_clean() {
+        let report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 0,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        assert!(report.is_valid());
+        assert_eq!(report.error_count(), 0);
+        assert_eq!(report.warning_count(), 0);
+        assert_eq!(report.summary(), "Task 'foo' is valid (0 actions)");
+    }
+
+    #[test]
+    fn report_summary_errors_only() {
+        let mut report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 1,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        report.error("first");
+        report.error("second");
+        assert!(!report.is_valid());
+        assert_eq!(report.error_count(), 2);
+        assert_eq!(report.warning_count(), 0);
+        assert_eq!(
+            report.summary(),
+            "Task 'foo' has 2 error(s) and 0 warning(s) (1 actions)"
+        );
+    }
+
+    #[test]
+    fn report_summary_warnings_only() {
+        let mut report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 2,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        report.warning("check this");
+        assert!(report.is_valid());
+        assert_eq!(report.error_count(), 0);
+        assert_eq!(report.warning_count(), 1);
+        assert_eq!(report.summary(), "Task 'foo' has 1 warning(s) (2 actions)");
+    }
+
+    #[test]
+    fn report_summary_mixed() {
+        let mut report = ValidationReport {
+            task_name: "foo".into(),
+            issues: Vec::new(),
+            action_count: 3,
+            variables_referenced: std::collections::HashSet::new(),
+            tasks_called: std::collections::HashSet::new(),
+        };
+        report.error("break");
+        report.warning("minor");
+        assert!(!report.is_valid());
+        assert_eq!(report.error_count(), 1);
+        assert_eq!(report.warning_count(), 1);
+        assert_eq!(
+            report.summary(),
+            "Task 'foo' has 1 error(s) and 1 warning(s) (3 actions)"
+        );
+    }
+
+    #[test]
+    fn report_new_uses_task_name() {
+        let report = ValidationReport::new("my-task".into());
+        assert_eq!(report.task_name, "my-task");
+
+        let mut report = ValidationReport::new("x".into());
+        report.error("boom");
+        report.warning("hmm");
+        assert_eq!(report.issues.len(), 2);
     }
 }

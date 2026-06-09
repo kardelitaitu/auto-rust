@@ -1,6 +1,7 @@
 use crate::llm::models::ChatMessage;
 use crate::llm::reply_strategies::{build_reply_prompt, StrategyContext};
 
+#[must_use]
 pub fn reply_engine_system_prompt() -> String {
     r#"You are a deeply opinionated, extremely online Twitter power user.
 React to the tweet and replies naturally but assertively.
@@ -32,6 +33,7 @@ If image provided: analyze visuals, comment on a specific visual detail (e.g., "
 Reply ONLY with your raw response text. DO NOT wrap it in JSON. DO NOT output conversational filler. Output immediately — no labels."#.into()
 }
 
+#[must_use]
 pub fn quote_engine_system_prompt() -> String {
     r#"You are a real Twitter user crafting an authentic quote tweet.
 Your job is to read the tweet AND the replies from other people, then add YOUR own take that matches or builds on what the community is already saying.
@@ -102,6 +104,7 @@ IMPORTANT: Return ONLY the final quote tweet text. Do NOT include:
 Just output the quote tweet itself."#.into()
 }
 
+#[must_use]
 pub fn reply_engine_user_prompt(
     tweet_author: &str,
     tweet_text: &str,
@@ -120,6 +123,7 @@ pub fn reply_engine_user_prompt(
     prompt
 }
 
+#[must_use]
 pub fn quote_engine_user_prompt(
     tweet_author: &str,
     tweet_text: &str,
@@ -142,6 +146,7 @@ pub fn quote_engine_user_prompt(
     prompt
 }
 
+#[must_use]
 pub fn build_reply_messages(
     tweet_author: &str,
     tweet_text: &str,
@@ -162,6 +167,7 @@ pub fn build_reply_messages(
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
 
+#[must_use]
 pub fn build_quote_messages(
     tweet_author: &str,
     tweet_text: &str,
@@ -185,6 +191,7 @@ pub fn build_quote_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::models::Role;
 
     #[test]
     fn test_system_prompt_contains_rules() {
@@ -209,8 +216,8 @@ mod tests {
         let messages = build_reply_messages("author", "tweet text", &replies);
 
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].role, "system");
-        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     }
 
     #[test]
@@ -265,8 +272,8 @@ mod tests {
         let messages = build_quote_messages("author", "tweet text", &replies);
 
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].role, "system");
-        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     }
 
     #[test]
@@ -352,8 +359,8 @@ mod tests {
         let replies = vec![("user1", "reply")];
         let messages = build_reply_messages("author", "tweet text", &replies);
 
-        assert_eq!(messages[0].role, "system");
-        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     }
 
     #[test]
@@ -361,8 +368,8 @@ mod tests {
         let replies = vec![("user1", "reply")];
         let messages = build_quote_messages("author", "tweet text", &replies);
 
-        assert_eq!(messages[0].role, "system");
-        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[0].role, Role::System);
+        assert_eq!(messages[1].role, Role::User);
     }
 
     #[test]

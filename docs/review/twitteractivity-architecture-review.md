@@ -2,7 +2,7 @@
 
 ## Overview
 
-`src/task/twitteractivity.rs` is the orchestrator (~430 lines) for an automated Twitter/X engagement task. It delegates all implementation to 18 utility modules under `src/utils/twitter/`.
+`src/task/twitteractivity.rs` is the orchestrator (~690 lines, including tests) for an automated Twitter/X engagement task. It delegates all implementation to 31 utility modules under `src/utils/twitter/` (19 top-level files + 12 in decision/ and sentiment/ subdirectories).
 
 ---
 
@@ -24,26 +24,33 @@ run() → run_inner() → Phase 1 (navigation) → Phase 2 (feed scan loop)
 
 | Module | File | SLOC | Role |
 |---|---|---|---|
-| `twitteractivity.rs` | `src/task/twitteractivity.rs` | 433 | Orchestrator (this file) |
+| `twitteractivity.rs` | `src/task/twitteractivity.rs` | 690 | Orchestrator (this file — incl. ~300 lines of tests) |
 | `twitteractivity_state.rs` | `src/utils/twitter/` | 630 | `TaskConfig`, `SessionState`, `CandidateContext`, `CandidateResult`, `TweetActionTracker` |
 | `twitteractivity_navigation.rs` | `src/utils/twitter/` | 680 | Entry points, login verify, popup detection, home nav |
 | `twitteractivity_feed.rs` | `src/utils/twitter/` | 503 | Feed scrolling, candidate identification, scroll progress |
-| `twitteractivity_engagement.rs` | `src/utils/twitter/` | ~1400 | `process_candidate()`, sentiment modulation, action execution |
-| `twitteractivity_limits.rs` | `src/utils/twitter/` | 691 | `EngagementCounters`, `EngagementLimits`, rate limiting |
-| `twitteractivity_persona.rs` | `src/utils/twitter/` | 589 | `PersonaWeights`, probability-based decision functions |
+| `twitteractivity_engagement.rs` | `src/utils/twitter/` | 1,591 | `process_candidate()`, sentiment modulation, action execution |
+| `twitteractivity_limits.rs` | `src/utils/twitter/` | 757 | `EngagementCounters`, `EngagementLimits`, rate limiting |
+| `twitteractivity_persona.rs` | `src/utils/twitter/` | 697 | `PersonaWeights`, behavior profiles, `select_persona_weights()` |
 | `twitteractivity_simulation.rs` | `src/utils/twitter/` | 422 | Deterministic simulation engine (no browser) |
 | `twitteractivity_constants.rs` | `src/utils/twitter/` | 11 | Timing constants |
 | `twitteractivity_errors.rs` | `src/utils/twitter/` | 166 | Error classification (transient/permanent/fatal) |
 | `twitteractivity_humanized.rs` | `src/utils/twitter/` | 343 | Human-like pauses, micro-movements, reading simulation |
 | `twitteractivity_interact.rs` | `src/utils/twitter/` | 809 | DOM interaction: like, retweet, reply, follow, bookmark |
-| `twitteractivity_dive.rs` | `src/utils/twitter/` | 625 | Thread diving, reply extraction, `ThreadCache` |
-| `twitteractivity_popup.rs` | `src/utils/twitter/` | 498 | Cookie banner, signup nag, overlay dismissal |
+| `twitteractivity_dive.rs` | `src/utils/twitter/` | 361 | Thread diving (`dive_into_thread()`), reply extraction |
+| `twitteractivity_popup.rs` | `src/utils/twitter/` | 366 | Cookie banner, signup nag, overlay dismissal |
 | `twitteractivity_selectors.rs` | `src/utils/twitter/` | 311 | Centralized JS selector snippets (embedded `.js` files) |
-| `twitteractivity_retry.rs` | `src/utils/twitter/` | 348 | Exponential backoff retry, circuit breaker |
+| `twitteractivity_retry.rs` | `src/utils/twitter/` | 609 | Exponential backoff retry, circuit breaker |
 | `twitteractivity_llm.rs` | `src/utils/twitter/` | 198 | LLM-powered reply/quote generation |
-| `twitteractivity_llm_validation.rs` | `src/utils/twitter/` | 255 | LLM output sanitization, banned words filter |
+| `twitteractivity_llm_validation.rs` | `src/utils/twitter/` | 263 | LLM output sanitization, banned words filter |
 | `twitteractivity_llm_execute.rs` | `src/utils/twitter/` | 268 | Quote tweet DOM interaction flow |
-| **Total** | **19 files** | **~8200** | |
+| `twitteractivity_cookiebot.rs` | `src/utils/twitter/` | — | Cookie consent automation |
+| `decision/engine.rs` | `src/utils/twitter/decision/` | — | `UnifiedEngine`, `DecisionEngineFactory` |
+| `decision/types.rs` | `src/utils/twitter/decision/` | — | `TweetContext`, `EngagementDecision`, `EngagementLevel` |
+| `decision/strategies/*.rs` (5) | `src/utils/twitter/decision/strategies/` | — | legacy, persona, llm, hybrid, unified strategies |
+| `sentiment/analyzer.rs` | `src/utils/twitter/sentiment/` | — | `SentimentAnalyzer` |
+| `sentiment/utils.rs` | `src/utils/twitter/sentiment/` | — | Helper functions |
+| `sentiment/strategies/*.rs` (3) | `src/utils/twitter/sentiment/strategies/` | — | emoji, domain, llm strategies |
+| **Total** | **31 files** | **~10,000** | (19 top-level + 7 decision/ + 5 sentiment/) |
 
 ---
 
@@ -61,7 +68,7 @@ run() → run_inner() → Phase 1 (navigation) → Phase 2 (feed scan loop)
 | `PersonaWeights` | `persona.rs` | Probability weights for each action type |
 | `SentimentTemplates` | `state.rs` | Reply/quote text templates by sentiment |
 | `SimulationReport` | `simulation.rs` | Deterministic simulation output |
-| `ThreadCache` | `dive.rs` | Cached thread data for LLM processing |
+| `ThreadCache` | `dive.rs` | Cached thread data (not actively used — dive starts fresh per tweet) |
 | `RetryConfig` | `retry.rs` | Retry parameters (attempts, backoff, jitter) |
 | `CircuitBreaker` | `retry.rs` | Prevents cascade failures (protocol/interaction lvl) |
 
@@ -107,10 +114,9 @@ while !session.is_expired():
 
 ---
 
-## Key Architectural Decisions
-
-### ✅ Thin orchestrator pattern
-`twitteractivity.rs` is ~430 lines of orchestration. All logic is in utility modules. This keeps the task entry point readable.
+## Key Architectural Decisions### ✅ Thin orchestrator pattern
+`twitteractivity.rs` is ~390 lines of orchestration (~690 total with tests). All logic is in utility modules.
+This keeps the task entry point readable.
 
 ### ✅ Timeout boundary in `run()`
 `run_with_timeout()` wraps `run_inner()` so timeout enforcement is at the outermost layer. No timeout logic leaks into business logic.

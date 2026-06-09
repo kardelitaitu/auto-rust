@@ -1,3 +1,9 @@
+/*
+last audited 08-05-25 by RSA-Agent
+crate: auto-rust | status: SAFE | lint: CLEAN
+findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
+*/
+
 //! Browser session lifecycle management module.
 //!
 //! Manages individual browser sessions including:
@@ -44,7 +50,7 @@ pub struct WorkerPermit<'a> {
     active_workers: &'a std::sync::atomic::AtomicUsize,
 }
 
-impl<'a> Drop for WorkerPermit<'a> {
+impl Drop for WorkerPermit<'_> {
     fn drop(&mut self) {
         self.active_workers
             .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
@@ -121,6 +127,11 @@ pub struct Session {
     is_healthy: std::sync::atomic::AtomicBool,
 
     /// Current operational state of the session
+    ///
+    /// # Sync-mutex in async context
+    /// This is a synchronous `parking_lot::Mutex`, NOT `tokio::sync::Mutex`.
+    /// Do NOT hold the lock across `.await` points — the lock is only used for
+    /// quick state-field reads/writes that complete instantly.
     state: parking_lot::Mutex<SessionState>,
 
     /// Registry of active page IDs
@@ -183,6 +194,8 @@ impl Session {
     /// );
     /// ```
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    #[allow(clippy::unused_self)]
     pub fn new(
         id: String,
         name: String,
@@ -199,7 +212,7 @@ impl Session {
             let mut handler = handler;
             loop {
                 match tokio::time::timeout(Duration::from_secs(5), handler.next()).await {
-                    Ok(Some(Ok(_))) => {}
+                    Ok(Some(Ok(()))) => {}
                     Ok(Some(Err(_))) => {}
                     Ok(None) => {
                         // Handler stream ended
@@ -273,7 +286,7 @@ impl Session {
     ///
     /// # Arguments
     ///
-    /// * `page_id` - The TargetId of the page to register
+    /// * `page_id` - The `TargetId` of the page to register
     pub fn register_page(&self, page_id: TargetId) {
         self.active_pages.insert(page_id);
     }
@@ -408,10 +421,7 @@ impl Session {
 
     /// Check if circuit breaker is currently open (for testing)
     pub fn is_circuit_breaker_open(&self) -> bool {
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = unix_timestamp_secs();
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
 
@@ -442,8 +452,19 @@ impl Session {
     }
 }
 
+/// Returns the current Unix timestamp in seconds, using a safe fallback.
+/// Uses `unwrap_or_default()` instead of `expect()` to avoid panicking
+/// if the system clock is set before UNIX epoch.
+fn unix_timestamp_secs() -> usize {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as usize
+}
+
 /// Pure function to determine if circuit breaker should be open.
-/// This logic is extracted for testability without requiring SystemTime calls.
+/// This logic is extracted for testability without requiring `SystemTime` calls.
+#[must_use]
 pub fn is_circuit_breaker_open_pure(
     failure_count: usize,
     failure_threshold: usize,
@@ -532,6 +553,42 @@ impl Session {
         // Worker released via guard drop
     }
 
+    /// Check circuit breaker state. Returns `current_time` if closed, bails if open.
+    fn cb_check(&self) -> anyhow::Result<usize> {
+        let current_time = unix_timestamp_secs();
+        let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
+        let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
+
+        if failure_count >= self.cb_failure_threshold
+            && current_time.saturating_sub(last_failure) < self.cb_timeout_secs as usize
+        {
+            self.mark_unhealthy();
+            anyhow::bail!(
+                "Circuit breaker open ({} failures, {}s timeout), rejecting page acquisition for session {}",
+                failure_count,
+                self.cb_timeout_secs,
+                self.id
+            );
+        }
+        Ok(current_time)
+    }
+
+    /// Record a circuit breaker success (reset counters).
+    fn cb_record_success(&self) {
+        self.cb_failure_count.store(0, Ordering::SeqCst);
+    }
+
+    /// Record a circuit breaker failure — atomically increments and checks threshold.
+    fn cb_record_failure(&self, current_time: usize) {
+        let new_count = self.cb_failure_count.fetch_add(1, Ordering::SeqCst) + 1;
+        self.cb_last_failure_time
+            .store(current_time, Ordering::SeqCst);
+        warn!(
+            "[{}] Circuit breaker failure count: {}/{}",
+            self.id, new_count, self.cb_failure_threshold
+        );
+    }
+
     /// Acquires a new browser page for task execution with circuit breaker protection.
     ///
     /// This method creates a new browser page from the underlying browser instance,
@@ -569,45 +626,15 @@ impl Session {
     /// # }
     /// ```
     pub async fn acquire_page(&self) -> anyhow::Result<Arc<chromiumoxide::Page>> {
-        // Check circuit breaker state
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
-        let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
-        let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
+        self.cb_check()?;
 
-        // If circuit is open and timeout hasn't elapsed, reject
-        if failure_count >= self.cb_failure_threshold
-            && current_time.saturating_sub(last_failure) < self.cb_timeout_secs as usize
-        {
-            self.mark_unhealthy();
-            anyhow::bail!(
-                "Circuit breaker open ({} failures, {}s timeout), rejecting page acquisition for session {}",
-                failure_count,
-                self.cb_timeout_secs,
-                self.id
-            );
-        }
-
-        // Try to create page
         let page = match self.browser.new_page("about:blank").await {
             Ok(page) => {
-                // Success: reset circuit breaker
-                self.cb_failure_count.store(0, Ordering::SeqCst);
+                self.cb_record_success();
                 page
             }
             Err(e) => {
-                // Failure: increment counter and record time
-                self.cb_failure_count.fetch_add(1, Ordering::SeqCst);
-                self.cb_last_failure_time
-                    .store(current_time, Ordering::SeqCst);
-                warn!(
-                    "[{}] Circuit breaker failure count: {}/{}",
-                    self.id,
-                    self.cb_failure_count.load(Ordering::SeqCst),
-                    self.cb_failure_threshold
-                );
+                self.cb_record_failure(unix_timestamp_secs());
                 return Err(e.into());
             }
         };
@@ -654,45 +681,15 @@ impl Session {
     /// # }
     /// ```
     pub async fn acquire_page_at(&self, url: &str) -> anyhow::Result<Arc<chromiumoxide::Page>> {
-        // Check circuit breaker state
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
-        let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
-        let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
+        self.cb_check()?;
 
-        // If circuit is open and timeout hasn't elapsed, reject
-        if failure_count >= self.cb_failure_threshold
-            && current_time.saturating_sub(last_failure) < self.cb_timeout_secs as usize
-        {
-            self.mark_unhealthy();
-            anyhow::bail!(
-                "Circuit breaker open ({} failures, {}s timeout), rejecting page acquisition for session {}",
-                failure_count,
-                self.cb_timeout_secs,
-                self.id
-            );
-        }
-
-        // Try to create page
         let page = match self.browser.new_page(url).await {
             Ok(page) => {
-                // Success: reset circuit breaker
-                self.cb_failure_count.store(0, Ordering::SeqCst);
+                self.cb_record_success();
                 page
             }
             Err(e) => {
-                // Failure: increment counter and record time
-                self.cb_failure_count.fetch_add(1, Ordering::SeqCst);
-                self.cb_last_failure_time
-                    .store(current_time, Ordering::SeqCst);
-                warn!(
-                    "[{}] Circuit breaker failure count: {}/{}",
-                    self.id,
-                    self.cb_failure_count.load(Ordering::SeqCst),
-                    self.cb_failure_threshold
-                );
+                self.cb_record_failure(unix_timestamp_secs());
                 return Err(e.into());
             }
         };
@@ -778,9 +775,9 @@ impl Session {
             } else {
                 closed += 1;
             }
-            self.unregister_page(page_id.as_ref());
         }
 
+        // Single cleanup pass: unregister all tracked pages (idempotent)
         for page_id in tracked_ids {
             self.unregister_page(&page_id);
         }
@@ -1071,10 +1068,7 @@ mod tests {
         let failure_threshold = 5;
         let timeout_secs = 30;
 
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         // Simulate circuit breaker state: failures at threshold, old failure time (beyond timeout)
         let failure_count = failure_threshold; // At threshold
@@ -1150,10 +1144,7 @@ mod tests {
 
         // Simulate the state after threshold failures
         let failure_count = failure_threshold;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
         let last_failure = current_time;
 
         // Check if circuit is open (this is what acquire_page checks)
@@ -1232,10 +1223,7 @@ mod tests {
 
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         // Test various failure patterns
         let test_cases = vec![
@@ -1307,10 +1295,7 @@ mod tests {
 
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         // Simulate high failure rates (100 consecutive failures)
         let high_failure_count = 100;
@@ -1365,10 +1350,7 @@ mod tests {
         // Test circuit breaker behavior with zero timeout (immediate recovery)
         let failure_threshold = 5;
         let timeout_secs = 0;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = failure_threshold;
         let last_failure = current_time;
@@ -1387,10 +1369,7 @@ mod tests {
         // Test circuit breaker behavior with zero threshold (always open)
         let failure_threshold = 0;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = 1;
         let last_failure = current_time;
@@ -1409,10 +1388,7 @@ mod tests {
         // Test circuit breaker behavior with large timeout (long recovery)
         let failure_threshold = 5;
         let timeout_secs = 86400; // 24 hours
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = failure_threshold;
         let last_failure = current_time;
@@ -1430,10 +1406,7 @@ mod tests {
         let timeout_secs = 30;
 
         // Test with very old failure time (before Unix epoch would be negative, but saturating_sub handles it)
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
         let last_failure = 0; // Unix epoch
 
         let is_open = failure_threshold >= failure_threshold
@@ -1447,10 +1420,7 @@ mod tests {
         // Test circuit breaker with maximum values
         let failure_threshold = usize::MAX;
         let timeout_secs = usize::MAX;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = usize::MAX;
         let last_failure = current_time;
@@ -1465,10 +1435,7 @@ mod tests {
         // Test that negative time offsets are handled correctly via saturating_sub
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         // Simulate last_failure being in the future (shouldn't happen in practice but test safety)
         let last_failure = current_time + 100;
@@ -1490,10 +1457,7 @@ mod tests {
         // Test circuit breaker at exact timeout boundary
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         // Exactly at timeout boundary
         let last_failure = current_time - timeout_secs as usize;
@@ -1540,10 +1504,7 @@ mod tests {
     fn test_circuit_breaker_threshold_one() {
         let failure_threshold = 1;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = 1;
         let last_failure = current_time;
@@ -1560,10 +1521,7 @@ mod tests {
     fn test_circuit_breaker_recovery_after_single_failure() {
         let failure_threshold = 1;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = 1;
         let last_failure = current_time - 31; // Beyond timeout
@@ -1580,10 +1538,7 @@ mod tests {
     fn test_circuit_breaker_no_failures() {
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = 0;
         let last_failure = current_time;
@@ -1597,10 +1552,7 @@ mod tests {
     fn test_circuit_breaker_threshold_very_large() {
         let failure_threshold = 1000;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = 999; // Just below threshold
         let last_failure = current_time;
@@ -1617,10 +1569,7 @@ mod tests {
     fn test_circuit_breaker_timeout_very_short() {
         let failure_threshold = 5;
         let timeout_secs = 1;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = failure_threshold;
         let last_failure = current_time;
@@ -1634,10 +1583,7 @@ mod tests {
     fn test_circuit_breaker_timeout_very_long() {
         let failure_threshold = 5;
         let timeout_secs = 31536000; // 1 year
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = failure_threshold;
         let last_failure = current_time;
@@ -1652,10 +1598,7 @@ mod tests {
         // Test various threshold values
         let thresholds = [1, 2, 5, 10, 50, 100];
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         for threshold in thresholds {
             let failure_count = threshold;
@@ -1672,10 +1615,7 @@ mod tests {
         // Test that failure count doesn't cause issues with large values
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = usize::MAX;
         let last_failure = current_time;
@@ -1703,10 +1643,7 @@ mod tests {
         // Test that time calculations are precise enough
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         // Test with 1 second difference
         let last_failure = current_time - 1;
@@ -1722,10 +1659,7 @@ mod tests {
         // Test behavior when failures happen at the same time
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let failure_count = 5;
         let last_failure = current_time;
@@ -1743,10 +1677,7 @@ mod tests {
         // Test gradual recovery after failures
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         // Start with high failure count
         let failure_count = 10;
@@ -1765,10 +1696,7 @@ mod tests {
         // Test just beyond timeout boundary
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let last_failure = current_time - (timeout_secs as usize + 1);
         let failure_count = failure_threshold;
@@ -1786,10 +1714,7 @@ mod tests {
         // Test just before timeout boundary
         let failure_threshold = 5;
         let timeout_secs = 30;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_secs() as usize;
+        let current_time = 1_700_000_000usize;
 
         let last_failure = current_time - (timeout_secs as usize - 1);
         let failure_count = failure_threshold;

@@ -2,4 +2,4 @@
 
 Place only done initiative folders here.
 
-`minimal-spec-example/` is the smallest reference package.
+See `_template/` for the spec package starter template.

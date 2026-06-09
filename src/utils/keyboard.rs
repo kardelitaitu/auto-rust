@@ -98,7 +98,10 @@ pub async fn press_with_options(page: &Page, key: &str, options: &PressOptions) 
 }
 
 pub async fn press_with_modifiers(page: &Page, key: &str, modifiers: &[&str]) -> Result<()> {
-    let mod_strings: Vec<String> = modifiers.iter().map(|s| s.to_string()).collect();
+    let mod_strings: Vec<String> = modifiers
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     let options = PressOptions {
         modifiers: mod_strings,
         ..Default::default()
@@ -114,6 +117,7 @@ pub async fn type_text_profiled(page: &Page, text: &str, behavior: &TypingBehavi
     type_text_with_options(page, text, behavior.keystroke_mean_ms).await
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn type_text_with_options(page: &Page, text: &str, base_delay_ms: u64) -> Result<()> {
     for ch in text.chars() {
         dispatch_input_event(page, ch).await?;
@@ -134,6 +138,7 @@ pub async fn type_text_with_options(page: &Page, text: &str, base_delay_ms: u64)
     Ok(())
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn hold(page: &Page, key: &str, duration_ms: u64) -> Result<()> {
     dispatch_key_event(page, "keydown", key).await?;
     human_pause(duration_ms, 10).await;
@@ -162,6 +167,7 @@ pub async fn natural_typing(page: &Page, selector: &str, text: &str, typo_rate: 
     natural_typing_profiled(page, selector, text, &behavior).await
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub async fn natural_typing_profiled(
     page: &Page,
     selector: &str,
@@ -253,6 +259,7 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::cast_precision_loss)]
 async fn type_character(page: &Page, ch: char) -> Result<()> {
     let key_delay = gaussian(120.0, 40.0, 50.0, 300.0) as u64;
     dispatch_input_event(page, ch).await?;
@@ -260,6 +267,7 @@ async fn type_character(page: &Page, ch: char) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::cast_precision_loss)]
 async fn type_character_profiled(page: &Page, ch: char, behavior: &TypingBehavior) -> Result<()> {
     let key_delay = gaussian(
         behavior.keystroke_mean_ms as f64,
@@ -300,6 +308,7 @@ async fn typo_correction_profiled(
 }
 
 #[allow(dead_code)]
+#[allow(clippy::cast_precision_loss)]
 fn get_similar_char(ch: char) -> char {
     match ch.to_ascii_lowercase() {
         'a' => 's',

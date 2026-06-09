@@ -1,0 +1,243 @@
+# Bacon Pipeline — Technical Reference
+
+*last audited 18-05-26 by Codex*
+
+## Pipeline Overview
+
+Bacon runs a 4-stage gated LLM pipeline that turns prompts into verified code changes. Each stage validates the previous stage before proceeding. The spec filesystem is the source of truth — no global pipeline state.
+
+```mermaid
+flowchart TD
+    START([bacon]) --> OBS{Observer}
+    OBS -->|_active/ has approved spec| READ[Fast-path to approved spec]
+    OBS -->|no approved spec| LLM[Scan codebase<br/>via LLM]
+    OBS -->|--prompt given| LLM
+    READ --> STRAT{Strategist}
+    LLM --> STRAT
+    STRAT -->|accept| LINT[spec-lint.ps1]
+    STRAT -->|reject| EXIT([Exit])
+    LINT -->|pass| GATE1{Approve plan?}
+    LINT -->|fail| EXIT
+    GATE1 -->|yes| CODER{Coder}
+    GATE1 -->|no| EXIT
+    GATE1 -->|--auto| CODER
+    CODER -->|attempt 1-4| VALIDATE{check-fast.ps1}
+    VALIDATE -->|pass| DIFF[Show diff]
+    VALIDATE -->|fail, retry < 4| CODER
+    VALIDATE -->|fail ×4| H1[needs-human-approval]
+    VALIDATE -->|2 refusals| H1
+    DIFF --> GATE2{Approve diff?}
+    GATE2 -->|yes| AUDITOR{Auditor}
+    GATE2 -->|no| EXIT
+    GATE2 -->|--auto| AUDITOR
+    AUDITOR -->|PASS| LINT2[spec-lint re-check]
+    AUDITOR -->|FAIL| H1
+    LINT2 -->|pass| DONE[Move to _done/]
+    LINT2 -->|fail| H1
+    DONE --> END([Done])
+    H1 --> END
+```
+
+## Pipeline Stages
+
+| Stage | Input | Output | Gate |
+|-------|-------|--------|------|
+| **Observer** | Prompt or `_active/` scan | Problem description or approved spec path | `find_approved_spec()` fast-paths to first FIFO-approved spec |
+| **Strategist** | Observer output | Spec package in `_active/` | `spec-lint.ps1` + `count_spec_file_refs()` (>3 repo file refs → hard rejection via `validate_autonomous_plan()`); plans must be grounded in verified source text |
+| **Coder** | Spec in `_active/` | Code changes, status=`implemented` or `needs-human-approval` | `check-fast.ps1` on the working tree with GitSnapshot rollback (max 4 attempts, 2 refusals → abort) |
+| **Auditor** | Implemented spec + patch | `_done/` or `needs-human-approval` | Approved patch content vs spec criteria; spec-lint re-check before archive |
+
+## Interactive Gates
+
+Pipeline pauses for user confirmation at two points. Skipped with `--auto` / `-y`.
+
+| Gate | Prompt | Default | Auto |
+|------|--------|---------|------|
+| After Strategist | "Implement this plan? [Y/n]" | yes | skip |
+| After Coder diff | "Apply this diff? [y/N]" | no | skip |
+
+## Spec Package
+
+Each spec lives in `docs/specs/_active/<NNNN>-<slug>/` and contains 3 files:
+
+| File | Contents | Written by |
+|------|----------|-----------|
+| `spec.yaml` | Metadata (status, implementer, timestamp, doc refs) | Strategist / Coder / Auditor |
+| `plan.md` | Step-by-step implementation plan | Strategist |
+| `validation.md` | Acceptance criteria and verification steps | Strategist |
+
+**Status lifecycle:** `approved` → `in-progress` → `implemented` → (move to `_done/`)
+
+**Special status:** `needs-human-approval` — set when Coder retries exhausted or Auditor rejects.
+
+## Configuration
+
+### bacon.toml
+
+The pipeline reads `.bacon/bacon.toml`. Each stage uses a dedicated agent name with its own `[agents.*]` section:
+
+```toml
+[pipeline]
+observer = "nvidia_observer"
+strategist = "nvidia_strategist"
+coder = "nvidia_coder"
+auditor = "nvidia_auditor"
+stage_delay_ms = 1000        # Pause in ms between stages
+enable_auto_apply = false     # Whether to auto-apply Coder patches without confirmation
+
+[agents.nvidia_observer]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.4
+max_tokens = 8192
+timeout_ms = 90000
+
+[agents.nvidia_strategist]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.1
+max_tokens = 8192
+timeout_ms = 90000
+
+[agents.nvidia_coder]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.0
+max_tokens = 16384
+timeout_ms = 120000
+
+[agents.nvidia_auditor]
+provider = "nvidia"
+model = "meta/llama-3.3-70b-instruct"
+api_key = "{env:NVIDIA_API_KEY}"
+base_url = "https://integrate.api.nvidia.com/v1"
+temperature = 0.1
+max_tokens = 16384
+timeout_ms = 90000
+```
+
+### CLI Reference
+
+```bash
+# Mode 1 — Spec creation (interactive, recommended)
+bacon -p "refactor error handling"
+
+# Mode 2 — Full automation (unattended)
+bacon --auto -p "fix clippy warnings"
+
+# Fast path — skip Strategist + Auditor
+bacon --fast -p "remove unused import"
+
+# Other flags
+bacon                          # auto-detect target
+bacon --dry-run                # sandbox mode (no writes)
+bacon --auto-apply             # apply verified patches without confirmation
+bacon --parallel               # process independent specs in parallel
+bacon --ci                      # GitHub Actions-compatible annotation output
+bacon --stage coder               # resume pipeline from a stage
+bacon --max-attempts 8         # override max retry attempts per stage (default: 4)
+
+# Testing
+bacon test                     # run test harness
+bacon test --list              # list test fixtures
+bacon test --fixture clippy    # run one fixture
+```
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `NVIDIA_API_KEY` | NVIDIA AI API key (required for nvidia agent) |
+| `NVIDIA_MODEL` | Overrides the NVIDIA model name |
+| `NVIDIA_BASE_URL` | Overrides the NVIDIA API base URL |
+| `NVIDIA_TEMPERATURE` | Overrides generation temperature |
+| `NVIDIA_MAX_TOKENS` | Overrides output token limit |
+| `NVIDIA_TOP_P` | Overrides nucleus sampling top-p threshold (0.0–1.0) |
+| `BACON_DRY_RUN` | Enables dry-run mode (set to `true`; used by parallel executor) |
+| `LLM_PROVIDER` | Validates LLM provider is nvidia or ollama |
+| `RUST_LOG` | Log level (debug, info, warn, error) |
+| `BACON_CONFIG` | Override path to `bacon.toml` for testing |
+
+Model precedence: `NVIDIA_MODEL` env > `.bacon/bacon.toml [agents.nvidia_<stage>].model` > built-in `meta/llama-3.3-70b-instruct`.
+
+## Error Recovery
+
+### LLM API Retry
+
+The LLM client retries API calls up to 3 times on transient errors (timeouts, HTTP 429, 5xx):
+
+- **Exponential backoff**: 1s base × 2^(attempt−1), capped at 60s
+- **Jitter**: ±25% golden-angle jitter prevents thundering-herd when multiple specs retry simultaneously
+- **Retry-After**: If the API returns a `Retry-After` header, the longer of (server request, computed delay) is used
+- **OpenRouter fallback**: Brief computed delay between primary and fallback models to avoid consecutive 429s
+
+### Retry with Error Feedback
+
+When `check-fast.ps1` fails, the Coder feeds stderr/stdout back to the LLM and retries (up to 4 attempts):
+
+- **Repeated errors**: Same error on consecutive attempts → short-circuit to `needs-human-approval`
+- **Refusals**: 2 consecutive LLM refusals → abort, mark `needs-human-approval`
+- **All 4 attempts fail**: Mark `needs-human-approval`
+- **Worst-case cost**: 1 Observer + 1 Strategist + 4 Coder = 6 LLM calls per failed spec
+
+### Crash Recovery
+
+On startup, `check_stale_in_progress()` scans `_active/` for specs with `status: in-progress`. Specs stuck >30 minutes are auto-reset to `approved` and retried. Specs under the threshold are logged as info (not auto-recovered).
+
+### Manual Resume
+
+```bash
+bacon --stage <role>               # resume pipeline from a stage (first FIFO-approved spec)
+```
+
+## CLI Worker Contract
+
+External workers must print one JSON object to stdout; logs go to stderr.
+
+```json
+{
+  "status": "ok",
+  "description": "short handoff text for next stage",
+  "summary": "optional fallback handoff text",
+  "spec_path": "docs/specs/_active/0001-example"
+}
+```
+
+- stdout must contain a `WorkerOutput` JSON object; the runtime extracts the first balanced JSON object, so log prefixes are tolerated but plain text still fails.
+- `status` values `error`, `fail`, `failed`, `reject`, `rejected` stop the pipeline.
+- `spec_path` is optional; Strategist must provide it when creating a spec for Coder.
+
+## Security Guidelines
+
+- Store API keys in `.env` file, not in `bacon.toml`
+- Use environment variable references: `{env:NVIDIA_API_KEY}`
+- Never commit `.env` files to version control
+- (Planned) Security-sensitive paths (`src/crypto/`, `src/auth/`) will require manual Auditor approval
+- `provider = "cli"` is also supported for external command-line workers
+
+## Development
+
+### Validation Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `check-fast.ps1` | Quick validation: cargo check, clippy, fmt |
+| `check.ps1` | Full CI suite: spec-lint, cargo check, fmt, clippy, nextest tests |
+| `spec-lint.ps1` | Spec package quality check |
+| `spec-stash.ps1` | Checkpoint worktree before spec handoffs |
+| `spec-restore.ps1` | Restore from named checkpoint |
+
+### Tests
+
+```bash
+cargo test -p bacon-pipeline              # run all pipeline tests
+cargo test -p bacon-pipeline <test_name>  # run specific test
+cargo nextest run                         # (optional) faster test runner if installed
+bacon test                                # run pipeline test harness
+```

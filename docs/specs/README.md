@@ -1,6 +1,6 @@
 # Spec Workspace
 
-last audited 08-05-26 by Kilo
+last audited 14-05-26 by Buffy
 
 This is the contract between spec planning and implementation.
 
@@ -12,20 +12,23 @@ This is the contract between spec planning and implementation.
 - `spec-lint.ps1` is system-owned, read-only, and regular feature specs must not target it.
 - Before a risky handoff, checkpoint the worktree with `.\spec-stash.ps1` and keep the ref.
 - If a handoff breaks the tree, restore with `.\spec-restore.ps1`.
-- Keep `implementation-notes.md` append-only.
+- Spec packages are streamlined to 3 files: `spec.yaml`, `plan.md`, `validation.md`. The strategist generates these automatically.
+- Old boilerplate files (`implementation-notes.md`, `internal-api-outline.md`, `ci-commands.md`, `quality-rules.md`, `baseline.md`, `notes.md`, etc.) are no longer generated.
 
 ## Lifecycle
 
 | Status | Folder |
 |---|---|
 | `draft` | `_template/` working copy |
-| `approved` | `_active/<initiative>/` |
+| `approved` / `in-progress` / `implemented` | `_active/<initiative>/` |
+| `needs-human-approval` | `_active/<initiative>/` (stuck, needs review) |
 | `done` | `_done/<initiative>/` |
 
 ## Enforcement
 
-- `_active/` may contain only `approved` specs.
+- `_active/` may contain `approved`, `in-progress`, `implemented`, or `needs-human-approval` specs.
 - `_done/` may contain only `done` specs.
+- `_done/` folders use sequential numeric prefixes (`0001-`, `0002-`, … `0007-`). When archiving a spec, increment to the next number (`0008-`, `0009-`, …).
 - `spec-lint.ps1` prints package-level fix hints and can target one package with `-Directory`.
 - Use `.\check-fast.ps1` during implementation.
 - Move a spec to `_done/` only after `.\check.ps1` passes.
@@ -38,12 +41,12 @@ When a spec package is complete and ready for archival:
 
 1. **Use the archive helper**: `.\spec-archive.ps1 <package-name>`
 2. **The archive helper will**:
-   - Validate the package has required files (spec.yaml, README.md)
-   - Confirm the package is in an archiveable state (approved)
-   - Rewrite both `README.md` and `spec.yaml` status fields to `done`
+   - Run `spec-lint.ps1` as a pre-flight gate
+   - Confirm the package is in an archiveable state (`approved` or `implemented`)
+   - Update `spec.yaml` status to `done`
    - Normalize the implementer field to `archived-*` convention
    - Move the folder from `_active/` to `_done/`
-3. **Status synchronization**: Both status fields must be `done` after archival
+3. **Status synchronization**: `spec.yaml` status must be `done` after archival
 4. **Validation**: Run `spec-lint.ps1` after archival to ensure no status mismatches
 
 **Note**: The archive helper is the normal handoff step. Do not manually move packages without using the archive helper, as this can cause status field mismatches that will fail linting.

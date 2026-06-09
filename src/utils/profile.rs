@@ -58,6 +58,8 @@ pub struct CursorBehavior {
 
 impl CursorBehavior {
     /// Converts cursor cadence into a concrete movement config.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn to_movement_config(&self) -> CursorMovementConfig {
         let interval_min_ms = self.interval_min_ms.max(1);
         let interval_max_ms = self.interval_max_ms.max(interval_min_ms);
@@ -133,6 +135,7 @@ pub struct ProfileRuntime {
 
 impl ProfileParam {
     /// Creates a new profile parameter.
+    #[must_use]
     pub fn new(base: f64, deviation_pct: f64) -> Self {
         Self {
             base,
@@ -141,8 +144,9 @@ impl ProfileParam {
     }
 
     /// Returns randomized value within deviation range.
-    /// Uses uniform distribution: base * (1 ± deviation_pct/100)
+    /// Uses uniform distribution: base * (1 ± `deviation_pct/100`)
     #[allow(dead_code)]
+    #[must_use]
     pub fn random(&self) -> f64 {
         if self.deviation_pct == 0.0 {
             return self.base;
@@ -154,18 +158,22 @@ impl ProfileParam {
 
     /// Returns randomized value as u64.
     #[allow(dead_code)]
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn random_u64(&self) -> u64 {
         self.random() as u64
     }
 
     /// Returns randomized value as u32.
     #[allow(dead_code)]
+    #[must_use]
     pub fn random_u32(&self) -> u32 {
         self.random() as u32
     }
 
     /// Returns randomized value clamped to range.
     #[allow(dead_code)]
+    #[must_use]
     pub fn random_clamped(&self, min: f64, max: f64) -> f64 {
         self.random().clamp(min, max)
     }
@@ -240,10 +248,24 @@ pub struct BrowserProfile {
     /// Maximum delay variance as percentage of min
     pub action_delay_variance_pct: ProfileParam,
 
+    // === Behavioral Variance ===
+    /// Variance applied to engagement probability weights (e.g., 40.0 = ±40%).
+    /// Separate from action_delay_variance_pct which controls timing jitter.
+    /// Higher values = more unpredictable engagement behavior.
+    #[serde(default = "default_behavior_variance")]
+    pub behavior_variance_pct: ProfileParam,
+
     // === Twitter-specific ===
     /// Probability of diving into a thread when viewing a tweet (0-100%)
     #[serde(default = "default_dive_probability")]
     pub dive_probability: ProfileParam,
+}
+
+fn default_behavior_variance() -> ProfileParam {
+    ProfileParam {
+        base: 40.0,
+        deviation_pct: 20.0,
+    }
 }
 
 fn default_dive_probability() -> ProfileParam {
@@ -255,6 +277,7 @@ fn default_dive_probability() -> ProfileParam {
 
 impl BrowserProfile {
     /// Creates a profile from a preset.
+    #[must_use]
     pub fn from_preset(preset: &ProfilePreset) -> Self {
         match preset {
             ProfilePreset::Average => Self::average(),
@@ -282,6 +305,7 @@ impl BrowserProfile {
     }
 
     /// Derives scroll behavior from the profile.
+    #[must_use]
     pub fn scroll_behavior(&self) -> ScrollBehavior {
         let amount = self.scroll_amount.random_clamped(120.0, 2_000.0).round() as i32;
         let pause_ms = self.scroll_pause.random_clamped(80.0, 3_000.0).round() as u64;
@@ -296,6 +320,8 @@ impl BrowserProfile {
     }
 
     /// Derives cursor behavior from the profile.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn cursor_behavior(&self) -> CursorBehavior {
         let speed = self.cursor_speed.random_clamped(0.25, 3.0);
         let step_delay = self.cursor_step_delay.random_clamped(1.0, 60.0);
@@ -317,12 +343,15 @@ impl BrowserProfile {
     }
 
     /// Converts cursor behavior into a concrete movement config.
+    #[must_use]
     pub fn cursor_movement_config(&self) -> CursorMovementConfig {
         let cursor = self.cursor_behavior();
         cursor.to_movement_config()
     }
 
     /// Derives typing behavior from the profile.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn typing_behavior(&self) -> TypingBehavior {
         TypingBehavior {
             keystroke_mean_ms: self.typing_speed_mean.random_clamped(20.0, 500.0).round() as u64,
@@ -337,6 +366,7 @@ impl BrowserProfile {
     }
 
     /// Derives click behavior from the profile.
+    #[must_use]
     pub fn click_behavior(&self) -> ClickBehavior {
         ClickBehavior {
             reaction_delay_ms: self
@@ -349,6 +379,7 @@ impl BrowserProfile {
     }
 
     /// Derives general action delay behavior from the profile.
+    #[must_use]
     pub fn action_delay_behavior(&self) -> ActionDelayBehavior {
         ActionDelayBehavior {
             min_ms: self.action_delay_min.random_clamped(0.0, 5_000.0).round() as u64,
@@ -358,6 +389,7 @@ impl BrowserProfile {
 
     /// Derives safe edge ratio for random cursor moves.
     /// Larger values keep movement farther from viewport edges.
+    #[must_use]
     pub fn random_cursor_safe_edge_ratio(&self) -> f64 {
         let precision = self.cursor_precision.base.clamp(60.0, 100.0);
         let extra = ((100.0 - precision) / 40.0) * 0.08;
@@ -365,6 +397,7 @@ impl BrowserProfile {
     }
 
     /// Builds a stable runtime snapshot for a session.
+    #[must_use]
     pub fn runtime(&self) -> ProfileRuntime {
         ProfileRuntime {
             cursor: self.cursor_behavior(),
@@ -430,6 +463,7 @@ pub enum ProfilePreset {
 
 impl BrowserProfile {
     /// Average user - typical everyday browsing
+    #[must_use]
     pub fn average() -> Self {
         Self {
             name: "Average".into(),
@@ -454,11 +488,13 @@ impl BrowserProfile {
             scroll_pause: p(500.0, 30.0),
             action_delay_min: p(500.0, 30.0),
             action_delay_variance_pct: p(50.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Teen - fast, less precise
+    #[must_use]
     pub fn teen() -> Self {
         Self {
             name: "Teen".into(),
@@ -483,11 +519,13 @@ impl BrowserProfile {
             scroll_pause: p(200.0, 40.0),
             action_delay_min: p(300.0, 40.0),
             action_delay_variance_pct: p(60.0, 30.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Senior - slower, more deliberate
+    #[must_use]
     pub fn senior() -> Self {
         Self {
             name: "Senior".into(),
@@ -512,11 +550,13 @@ impl BrowserProfile {
             scroll_pause: p(800.0, 20.0),
             action_delay_min: p(800.0, 20.0),
             action_delay_variance_pct: p(30.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Enthusiast - precise, researched
+    #[must_use]
     pub fn enthusiast() -> Self {
         Self {
             name: "Enthusiast".into(),
@@ -541,11 +581,13 @@ impl BrowserProfile {
             scroll_pause: p(600.0, 25.0),
             action_delay_min: p(600.0, 25.0),
             action_delay_variance_pct: p(40.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Power user - fast, efficient
+    #[must_use]
     pub fn power_user() -> Self {
         Self {
             name: "PowerUser".into(),
@@ -570,11 +612,13 @@ impl BrowserProfile {
             scroll_pause: p(150.0, 30.0),
             action_delay_min: p(200.0, 30.0),
             action_delay_variance_pct: p(30.0, 30.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Cautious - careful, lots of pauses
+    #[must_use]
     pub fn cautious() -> Self {
         Self {
             name: "Cautious".into(),
@@ -599,11 +643,13 @@ impl BrowserProfile {
             scroll_pause: p(1000.0, 15.0),
             action_delay_min: p(1000.0, 20.0),
             action_delay_variance_pct: p(25.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Impatient - quick, minimal pauses
+    #[must_use]
     pub fn impatient() -> Self {
         Self {
             name: "Impatient".into(),
@@ -628,11 +674,13 @@ impl BrowserProfile {
             scroll_pause: p(100.0, 40.0),
             action_delay_min: p(100.0, 40.0),
             action_delay_variance_pct: p(20.0, 40.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Erratic - inconsistent timing
+    #[must_use]
     pub fn erratic() -> Self {
         Self {
             name: "Erratic".into(),
@@ -657,11 +705,13 @@ impl BrowserProfile {
             scroll_pause: p(400.0, 60.0),
             action_delay_min: p(400.0, 60.0),
             action_delay_variance_pct: p(70.0, 40.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Researcher - slow, thorough
+    #[must_use]
     pub fn researcher() -> Self {
         Self {
             name: "Researcher".into(),
@@ -686,11 +736,13 @@ impl BrowserProfile {
             scroll_pause: p(1500.0, 15.0),
             action_delay_min: p(1500.0, 15.0),
             action_delay_variance_pct: p(20.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Casual - relaxed browsing
+    #[must_use]
     pub fn casual() -> Self {
         Self {
             name: "Casual".into(),
@@ -715,11 +767,13 @@ impl BrowserProfile {
             scroll_pause: p(700.0, 25.0),
             action_delay_min: p(700.0, 25.0),
             action_delay_variance_pct: p(45.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Professional - efficient, minimal waste
+    #[must_use]
     pub fn professional() -> Self {
         Self {
             name: "Professional".into(),
@@ -744,11 +798,13 @@ impl BrowserProfile {
             scroll_pause: p(300.0, 20.0),
             action_delay_min: p(400.0, 20.0),
             action_delay_variance_pct: p(30.0, 20.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Novice - slow learning curve
+    #[must_use]
     pub fn novice() -> Self {
         Self {
             name: "Novice".into(),
@@ -773,11 +829,13 @@ impl BrowserProfile {
             scroll_pause: p(1200.0, 20.0),
             action_delay_min: p(1200.0, 20.0),
             action_delay_variance_pct: p(30.0, 25.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Expert - fast, precise
+    #[must_use]
     pub fn expert() -> Self {
         Self {
             name: "Expert".into(),
@@ -802,11 +860,13 @@ impl BrowserProfile {
             scroll_pause: p(100.0, 25.0),
             action_delay_min: p(150.0, 25.0),
             action_delay_variance_pct: p(25.0, 25.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Distracted - frequent random pauses
+    #[must_use]
     pub fn distracted() -> Self {
         Self {
             name: "Distracted".into(),
@@ -831,11 +891,13 @@ impl BrowserProfile {
             scroll_pause: p(600.0, 50.0),
             action_delay_min: p(600.0, 50.0),
             action_delay_variance_pct: p(80.0, 30.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Focused - consistent, few pauses
+    #[must_use]
     pub fn focused() -> Self {
         Self {
             name: "Focused".into(),
@@ -860,11 +922,13 @@ impl BrowserProfile {
             scroll_pause: p(250.0, 15.0),
             action_delay_min: p(300.0, 15.0),
             action_delay_variance_pct: p(20.0, 15.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Analytical - methodical scrolling
+    #[must_use]
     pub fn analytical() -> Self {
         Self {
             name: "Analytical".into(),
@@ -889,11 +953,13 @@ impl BrowserProfile {
             scroll_pause: p(1800.0, 10.0),
             action_delay_min: p(1800.0, 10.0),
             action_delay_variance_pct: p(15.0, 12.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Quick scanner - fast scroll, quick clicks
+    #[must_use]
     pub fn quick_scanner() -> Self {
         Self {
             name: "QuickScanner".into(),
@@ -918,11 +984,13 @@ impl BrowserProfile {
             scroll_pause: p(80.0, 50.0),
             action_delay_min: p(80.0, 50.0),
             action_delay_variance_pct: p(15.0, 50.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Thorough - slow, complete coverage
+    #[must_use]
     pub fn thorough() -> Self {
         Self {
             name: "Thorough".into(),
@@ -947,11 +1015,13 @@ impl BrowserProfile {
             scroll_pause: p(2000.0, 10.0),
             action_delay_min: p(2000.0, 10.0),
             action_delay_variance_pct: p(12.0, 12.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Adaptive - adjusts based on content
+    #[must_use]
     pub fn adaptive() -> Self {
         Self {
             name: "Adaptive".into(),
@@ -976,11 +1046,13 @@ impl BrowserProfile {
             scroll_pause: p(550.0, 50.0),
             action_delay_min: p(550.0, 50.0),
             action_delay_variance_pct: p(55.0, 40.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Stressed - fast, less accurate
+    #[must_use]
     pub fn stressed() -> Self {
         Self {
             name: "Stressed".into(),
@@ -1005,11 +1077,13 @@ impl BrowserProfile {
             scroll_pause: p(130.0, 45.0),
             action_delay_min: p(130.0, 45.0),
             action_delay_variance_pct: p(25.0, 45.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 
     /// Leisure - slow, exploratory
+    #[must_use]
     pub fn leisure() -> Self {
         Self {
             name: "Leisure".into(),
@@ -1034,18 +1108,20 @@ impl BrowserProfile {
             scroll_pause: p(1000.0, 18.0),
             action_delay_min: p(1000.0, 18.0),
             action_delay_variance_pct: p(35.0, 18.0),
+            behavior_variance_pct: p(40.0, 20.0),
             dive_probability: p(0.35, 20.0),
         }
     }
 }
 
-/// Helper to create ProfileParam with base and deviation.
+/// Helper to create `ProfileParam` with base and deviation.
 fn p(base: f64, deviation_pct: f64) -> ProfileParam {
     ProfileParam::new(base, deviation_pct)
 }
 
 /// Creates a randomized profile from a preset for this session.
 /// Applies random variation to all parameters based on their deviation percentages.
+#[must_use]
 pub fn randomize_profile(preset: &ProfilePreset) -> BrowserProfile {
     // Note: The ProfileParam::random() is called when using the profile,
     // so the profile itself stores the base values and deviation.
@@ -1055,6 +1131,7 @@ pub fn randomize_profile(preset: &ProfilePreset) -> BrowserProfile {
 }
 
 /// Returns a random profile preset.
+#[must_use]
 pub fn random_preset() -> ProfilePreset {
     let presets = [
         ProfilePreset::Average,
@@ -1603,5 +1680,71 @@ mod tests {
         let preset = ProfilePreset::Leisure;
         let profile = BrowserProfile::from_preset(&preset);
         assert_eq!(profile.name, "Leisure");
+    }
+
+    #[test]
+    fn test_randomize_profile_produces_variation() {
+        // ProfileParam::random() should produce varied values within deviation range
+        let param1 = ProfileParam::new(100.0, 10.0);
+        let mut found_variation = false;
+        let first = param1.random();
+        for _ in 0..20 {
+            let val = param1.random();
+            if val != first {
+                found_variation = true;
+                break;
+            }
+        }
+        assert!(
+            found_variation,
+            "ProfileParam::random() should produce variation across calls"
+        );
+    }
+
+    #[test]
+    fn test_randomize_profile_preserves_preset_name() {
+        let preset = ProfilePreset::Teen;
+        let profile = randomize_profile(&preset);
+        assert_eq!(profile.name, "Teen");
+    }
+
+    #[test]
+    fn test_random_preset_returns_valid_preset() {
+        let preset = random_preset();
+        // Should be one of the valid presets
+        match preset {
+            ProfilePreset::Average
+            | ProfilePreset::Teen
+            | ProfilePreset::Senior
+            | ProfilePreset::Enthusiast
+            | ProfilePreset::PowerUser
+            | ProfilePreset::Cautious
+            | ProfilePreset::Impatient
+            | ProfilePreset::Erratic
+            | ProfilePreset::Researcher
+            | ProfilePreset::Casual
+            | ProfilePreset::Professional
+            | ProfilePreset::Novice
+            | ProfilePreset::Expert
+            | ProfilePreset::Distracted
+            | ProfilePreset::Focused
+            | ProfilePreset::Analytical
+            | ProfilePreset::QuickScanner
+            | ProfilePreset::Thorough
+            | ProfilePreset::Adaptive
+            | ProfilePreset::Stressed
+            | ProfilePreset::Leisure => {}
+        }
+    }
+
+    #[test]
+    fn test_random_preset_distribution() {
+        // Test that random_preset produces different results over multiple calls
+        let mut presets = std::collections::HashSet::new();
+        for _ in 0..100 {
+            presets.insert(random_preset());
+        }
+        // Should get at least a few different presets
+        assert!(presets.len() >= 5);
     }
 }

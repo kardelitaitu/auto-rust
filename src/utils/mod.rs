@@ -10,11 +10,14 @@ pub mod mouse;
 pub(crate) mod native_input;
 pub mod navigation;
 pub mod page_size;
+pub mod payload;
 pub mod profile;
+pub mod retry;
 pub mod scroll;
 pub mod text;
 pub mod timing;
 pub mod twitter;
+pub mod url;
 pub mod zoom;
 
 // Internal implementation module; tasks should import `crate::prelude::*` instead.
@@ -40,13 +43,17 @@ pub use navigation::*;
 #[allow(unused_imports)]
 pub use page_size::*;
 #[allow(unused_imports)]
+pub use payload::*;
+#[allow(unused_imports)]
 pub use profile::*;
 #[allow(unused_imports)]
 pub use scroll::*;
 #[allow(unused_imports)]
-pub use text::*;
+pub use text::{normalize_browser_token, *};
 #[allow(unused_imports)]
 pub use timing::*;
+#[allow(unused_imports)]
+pub use url::*;
 #[allow(unused_imports)]
 pub use zoom::*;
 

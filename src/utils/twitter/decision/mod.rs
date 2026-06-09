@@ -5,8 +5,8 @@
 //!
 //! # Architecture
 //!
-//! - `types`: Shared types (TweetContext, EngagementDecision, etc.)
-//! - `engine`: UnifiedEngine implementation
+//! - `types`: Shared types (`TweetContext`, `EngagementDecision`, etc.)
+//! - `engine`: `UnifiedEngine` implementation
 //! - `strategies`: Individual strategy implementations
 //!
 //! # Usage

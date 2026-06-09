@@ -26,6 +26,7 @@ impl SessionFactory {
     ///
     /// # Arguments
     /// * `config` - The orchestrator configuration
+    #[must_use]
     pub fn from_config(config: &Config) -> Self {
         Self {
             connection_timeout_ms: config.browser.connection_timeout_ms.max(5000),
@@ -42,6 +43,7 @@ impl SessionFactory {
     /// * `max_workers` - Maximum concurrent workers per session
     /// * `cursor_overlay_ms` - Cursor overlay sync interval (0 = disabled)
     /// * `circuit_breaker_config` - Circuit breaker configuration
+    #[must_use]
     pub fn new(
         connection_timeout_ms: u64,
         max_workers: usize,
@@ -144,16 +146,19 @@ impl SessionFactory {
     }
 
     /// Returns the connection timeout in milliseconds.
+    #[must_use]
     pub fn connection_timeout_ms(&self) -> u64 {
         self.connection_timeout_ms
     }
 
     /// Returns the maximum workers per session.
+    #[must_use]
     pub fn max_workers(&self) -> usize {
         self.max_workers
     }
 
     /// Returns the cursor overlay interval in milliseconds.
+    #[must_use]
     pub fn cursor_overlay_ms(&self) -> u64 {
         self.cursor_overlay_ms
     }
@@ -181,35 +186,41 @@ pub struct SessionFactoryBuilder {
 
 impl SessionFactoryBuilder {
     /// Creates a new builder with default settings.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Sets the connection timeout.
+    #[must_use]
     pub fn connection_timeout_ms(mut self, ms: u64) -> Self {
         self.connection_timeout_ms = ms.max(5000);
         self
     }
 
     /// Sets the maximum workers per session.
+    #[must_use]
     pub fn max_workers(mut self, workers: usize) -> Self {
         self.max_workers = workers;
         self
     }
 
     /// Sets the cursor overlay sync interval.
+    #[must_use]
     pub fn cursor_overlay_ms(mut self, ms: u64) -> Self {
         self.cursor_overlay_ms = ms;
         self
     }
 
     /// Sets the circuit breaker configuration.
+    #[must_use]
     pub fn circuit_breaker_config(mut self, config: crate::config::CircuitBreakerConfig) -> Self {
         self.circuit_breaker_config = config;
         self
     }
 
     /// Builds the session factory.
+    #[must_use]
     pub fn build(self) -> SessionFactory {
         SessionFactory::new(
             self.connection_timeout_ms,

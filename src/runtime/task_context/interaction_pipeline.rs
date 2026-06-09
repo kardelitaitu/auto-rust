@@ -1,8 +1,8 @@
-//! Shared interaction pipeline for TaskContext.
+//! Shared interaction pipeline for `TaskContext`.
 //!
 //! This module provides a unified pipeline for browser interactions, ensuring
 //! consistent preflight, execution, verification, and postflight behavior
-//! across all TaskContext verbs (click, type, focus, select_all, clear).
+//! across all `TaskContext` verbs (click, type, focus, `select_all`, clear).
 
 use crate::runtime::task_context::types::{InteractionKind, InteractionRequest, InteractionResult};
 use crate::runtime::task_context::TaskContext;
@@ -19,7 +19,7 @@ use log::{debug, warn};
 /// 4. Postflight: pause and cleanup
 ///
 /// The pipeline ensures consistent behavior across click, type, focus,
-/// select_all, and clear operations.
+/// `select_all`, and clear operations.
 pub async fn execute_interaction(
     ctx: &TaskContext,
     request: InteractionRequest,
@@ -168,13 +168,12 @@ async fn execute_focus_pipeline(ctx: &TaskContext, selector: &str) -> Result<Int
     match outcome.focus {
         FocusStatus::Success => Ok(InteractionResult::success_at(outcome.x, outcome.y)),
         _ => Ok(InteractionResult::failed(format!(
-            "Failed to focus element '{}'",
-            selector
+            "Failed to focus element '{selector}'"
         ))),
     }
 }
 
-/// Execute select_all through the pipeline
+/// Execute `select_all` through the pipeline
 async fn execute_select_all_pipeline(
     ctx: &TaskContext,
     selector: &str,
@@ -206,8 +205,7 @@ async fn execute_hover_pipeline(ctx: &TaskContext, selector: &str) -> Result<Int
     match outcome.hover {
         HoverStatus::Success => Ok(InteractionResult::success_at(outcome.x, outcome.y)),
         _ => Ok(InteractionResult::failed(format!(
-            "Failed to hover over element '{}'",
-            selector
+            "Failed to hover over element '{selector}'"
         ))),
     }
 }

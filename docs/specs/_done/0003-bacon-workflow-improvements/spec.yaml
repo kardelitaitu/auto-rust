@@ -1,0 +1,48 @@
+version: 1
+id: 0013-bacon-workflow-improvements
+title: Bacon Pipeline — Workflow Hardening & Provider Extensibility
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P1
+area:
+  - bacon
+  - pipeline
+  - infrastructure
+files:
+  code:
+    - bacon-pipeline/src/llm/mod.rs
+    - bacon-pipeline/src/llm/client.rs
+    - bacon-pipeline/src/llm/models.rs
+    - bacon-pipeline/src/core/agent.rs
+    - bacon-pipeline/src/core/mod.rs
+    - bacon-pipeline/src/core/cli_types.rs
+    - bacon-pipeline/src/agent/pipeline.rs
+    - bacon-pipeline/src/agent/coder.rs
+    - bacon-pipeline/src/agent/auditor.rs
+    - src/bin/bacon.rs
+    - bacon-pipeline/src/config.rs
+    - bacon-pipeline/src/core/spec_io.rs
+  docs:
+    - docs/specs/_done/0013-bacon-workflow-improvements/plan.md
+    - docs/specs/_done/0013-bacon-workflow-improvements/validation.md
+    - docs/specs/_done/0013-bacon-workflow-improvements/spec.yaml
+acceptance:
+  - NVIDIA_TOP_P env var is read by load_nvidia_config_from_env() and applied as config override
+  - `bacon test` subcommand executes cargo test -p bacon-pipeline and reports results
+  - Stage timing metrics (duration per stage) are logged and available in PipelineCtx
+  - --parallel flag spawns independent specs in concurrent tokio tasks (2+ speedup)
+  - Ollama-compatible response parsing is supported in the LLM client via provider switch
+  - An end-to-end pipeline integration test exists (not #[ignore])
+  - A persistent run log (.bacon/sessions/run-log.yaml) tracks spec outcomes across runs
+  - --ci flag emits GitHub Actions-compatible JSON annotations on stdout
+  - Env var table in .bacon/workflow.md matches all env vars actually read by code
+non_goals:
+  - Full OpenRouter provider support (out of scope; restricted by validate_bacon_local_only())
+  - Web UI or dashboard for pipeline monitoring
+  - Migration away from GPT-4o or specific model tuning
+  - Pipeline auto-scaling across multiple machines
+risks:
+  - Parallel execution may cause git conflicts if specs touch overlapping files
+  - Ollama support may diverge from NVIDIA format if Ollama API changes
+  - Adding new subcommands increases CLI surface area and maintenance burden

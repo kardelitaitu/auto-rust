@@ -51,6 +51,7 @@ impl ActionProfiler {
     }
 
     /// Get average execution duration.
+    #[must_use]
     pub fn average_duration(&self) -> Option<Duration> {
         if self.total_executions > 0 {
             Some(self.total_duration / self.total_executions as u32)
@@ -81,6 +82,7 @@ pub struct ActionMetrics {
 
 impl ActionMetrics {
     /// Create a new action metrics tracker.
+    #[must_use]
     pub fn new(index: usize, action_type: &str) -> Self {
         Self {
             index,
@@ -94,17 +96,21 @@ impl ActionMetrics {
     }
 
     /// Mark the action as completed successfully.
+    #[must_use]
     pub fn complete(mut self) -> Self {
-        self.end_time = Some(Instant::now());
-        self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
+        let end_time = Instant::now();
+        self.end_time = Some(end_time);
+        self.duration = Some(end_time.duration_since(self.start_time));
         self.success = true;
         self
     }
 
     /// Mark the action as failed.
+    #[must_use]
     pub fn fail(mut self, error: &str) -> Self {
-        self.end_time = Some(Instant::now());
-        self.duration = Some(self.end_time.unwrap().duration_since(self.start_time));
+        let end_time = Instant::now();
+        self.end_time = Some(end_time);
+        self.duration = Some(end_time.duration_since(self.start_time));
         self.success = false;
         self.error = Some(error.to_string());
         self
@@ -142,11 +148,11 @@ pub struct ExecutionReport {
 
 impl ExecutionReport {
     /// Generate a human-readable summary of the execution.
+    #[must_use]
     pub fn summary(&self) -> String {
         let duration = self
             .total_duration
-            .map(|d| format!("{:?}", d))
-            .unwrap_or_else(|| "N/A".to_string());
+            .map_or_else(|| "N/A".to_string(), |d| format!("{d:?}"));
 
         format!(
             "Task '{}' executed {} actions in {} ({} successful, {} failed)",
@@ -159,6 +165,7 @@ impl ExecutionReport {
     }
 
     /// Export the report as JSON.
+    #[must_use]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "task_name": self.task_name,
@@ -262,5 +269,87 @@ mod tests {
         let json = report.to_json();
         assert_eq!(json["task_name"], "test-task");
         assert_eq!(json["actions_succeeded"], 5);
+    }
+
+    #[test]
+    fn test_action_profiler_average_duration_none_when_empty() {
+        let profiler = ActionProfiler::default();
+        assert!(profiler.average_duration().is_none());
+    }
+
+    #[test]
+    fn test_action_profiler_record_same_duration_keeps_track() {
+        let mut profiler = ActionProfiler {
+            action_type: "Click".to_string(),
+            ..Default::default()
+        };
+
+        let d = Duration::from_millis(50);
+        profiler.record(d, true);
+        profiler.record(d, true);
+        profiler.record(d, true);
+
+        assert_eq!(profiler.total_executions, 3);
+        assert_eq!(profiler.total_duration, d * 3);
+        assert_eq!(profiler.min_duration, Some(d));
+        assert_eq!(profiler.max_duration, Some(d));
+    }
+
+    #[test]
+    fn test_execution_report_summary_uses_na_when_no_duration() {
+        let report = ExecutionReport {
+            task_name: "summary-test".to_string(),
+            start_time: Instant::now(),
+            end_time: None,
+            total_duration: None,
+            total_actions: 3,
+            actions_executed: 3,
+            actions_succeeded: 2,
+            actions_failed: 1,
+            max_call_depth: 1,
+            variables_defined: 0,
+            action_metrics: vec![],
+            success: true,
+        };
+
+        let summary = report.summary();
+        assert!(summary.contains("N/A"), "summary: {summary}");
+        assert!(summary.contains("summary-test"));
+        assert!(summary.contains("2 successful"));
+        assert!(summary.contains("1 failed"));
+    }
+
+    #[test]
+    fn test_execution_report_to_json_includes_action_metrics() {
+        let metrics = ActionMetrics {
+            index: 0,
+            action_type: "Click".to_string(),
+            start_time: Instant::now(),
+            end_time: Some(Instant::now()),
+            duration: Some(Duration::from_millis(120)),
+            success: true,
+            error: None,
+        };
+
+        let report = ExecutionReport {
+            task_name: "metrics-test".to_string(),
+            start_time: Instant::now(),
+            end_time: Some(Instant::now()),
+            total_duration: Some(Duration::from_millis(120)),
+            total_actions: 1,
+            actions_executed: 1,
+            actions_succeeded: 1,
+            actions_failed: 0,
+            max_call_depth: 1,
+            variables_defined: 1,
+            action_metrics: vec![metrics],
+            success: true,
+        };
+
+        let json = report.to_json();
+        let metrics_json = json["action_metrics"].as_array().unwrap();
+        assert_eq!(metrics_json.len(), 1);
+        assert_eq!(metrics_json[0]["success"], true);
+        assert_eq!(metrics_json[0]["duration_ms"], 120);
     }
 }

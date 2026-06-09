@@ -1,7 +1,21 @@
 # rust-orchestrator operating notes
-*Last updated: May 8, 2026*
+*Last updated: May 14, 2026*
 
 AGENTS.md is the router. Keep it short, stable, and direct readers to the right doc when a topic needs more depth.
+
+## Project state
+
+All **15 roadmap items (Phases 0–3)** are complete. The Bacon gated-LLM pipeline is production-ready:
+
+- **Shared core** (`src/bacon_core/`) — canonical types (`Stage`, `PipelineConfig`, `PipelineCtx`, `WorkerOutput`), `PipelineAgent` trait, `GitSnapshot` rollback, `spec_io` module
+- **Single agent pipeline** (`nvidia`) — implements `PipelineAgent` for all 4 roles
+- **Spec-lint** ensures spec quality; `check-fast.ps1`/`check.ps1` verify code changes
+- **All 4 roles** (Observer, Strategist, Coder, Auditor) tested in contract tests
+- **Spec packages streamlined** to 3 files (`spec.yaml`, `plan.md`, `validation.md`)
+- **Coder retry loop** — internal MAX_ATTEMPTS=4 with error feedback, then writes failure report to `validation.md` and marks `needs-human-approval` (no scope-reduction fallback to Strategist)
+- **Confidence scoring** standardized across all agents with metrics tracking
+
+See [docs/_archive/BACON_IMPROVEMENT_ROADMAP.md](docs/_archive/BACON_IMPROVEMENT_ROADMAP.md) for the full itemized completion status.
 
 ## Read first
 
@@ -14,6 +28,7 @@ AGENTS.md is the router. Keep it short, stable, and direct readers to the right 
 | DSL task execution or validation | [docs/TASKS/dsl.md](docs/TASKS/dsl.md) |
 | specs, handoff rules, or checkpoint/restore flow | [docs/specs/README.md](docs/specs/README.md) |
 | overall repo orientation | [README.md](README.md) |
+| Bacon pipeline usage | [.bacon/README.md](.bacon/README.md), [.bacon/workflow.md](.bacon/workflow.md) |
 
 ## Operating rules
 
@@ -52,19 +67,20 @@ Use for commands that produce output, or when indexing docs.
 ### Spec agent
 
 - Write the spec package from `docs/specs/_template/` before code changes.
-- Own planning docs only: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`.
+- Own planning docs only: `spec.yaml`, `plan.md`, `validation.md`.
+- The strategist generates these 3 files automatically; handwritten specs should match.
 - Keep specs short, measurable, and easy to review.
 - `spec-lint.ps1` is system-owned. Only touch it for spec-system or tooling work.
-- Before handing a package to another agent, checkpoint the worktree with `.\\spec-stash.ps1`.
+- For manual handoffs between agents, use `.\spec-stash.ps1` to checkpoint the worktree and `.\spec-restore.ps1` to restore.
 
 ### Implementer agent
 
 - Edit code, tests, docs updates, and `implementation-notes.md` after spec approval.
-- Use `.\\check-fast.ps1` for scoped iteration.
-- Move the spec folder to `_done/` only after `.\\check.ps1` passes.
+- Use `.\check-fast.ps1` for scoped iteration.
+- After the Coder stage completes and the Auditor returns PASS, the pipeline moves the spec folder to `_done/`. For manual workflows, run `spec-lint.ps1` and `.\check-fast.ps1` before archiving.
 - Update the spec first if scope changes.
 - Do not edit `spec-lint.ps1` unless the task explicitly targets the spec system.
-- If a handoff breaks the worktree, restore from a named checkpoint with `.\\spec-restore.ps1`.
+- If a handoff breaks the worktree, restore from a named checkpoint with `.\spec-restore.ps1`.
 
 ## Change workflow
 

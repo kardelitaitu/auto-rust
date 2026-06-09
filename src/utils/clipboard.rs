@@ -7,10 +7,10 @@
 use anyhow::Result;
 use chromiumoxide::Page;
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use serde_json::Value;
 
-static SESSION_CLIPBOARD: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
+static SESSION_CLIPBOARD: std::sync::LazyLock<DashMap<String, String>> =
+    std::sync::LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
 pub struct ClipboardState {
@@ -24,6 +24,7 @@ impl ClipboardState {
         }
     }
 
+    #[must_use]
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
@@ -32,6 +33,7 @@ impl ClipboardState {
         set_clipboard(&self.session_id, text);
     }
 
+    #[must_use]
     pub fn get(&self) -> Option<String> {
         get_clipboard(&self.session_id)
     }
@@ -69,6 +71,7 @@ pub fn set_clipboard(session_id: &str, text: impl Into<String>) {
     set_session_clipboard(session_id, text);
 }
 
+#[must_use]
 pub fn get_clipboard(session_id: &str) -> Option<String> {
     get_session_clipboard(session_id)
 }
@@ -147,7 +150,7 @@ async fn read_selection_text(page: &Page) -> Result<String> {
 async fn replace_selection(page: &Page, replacement: &str) -> Result<()> {
     let replacement_json = serde_json::to_string(replacement)?;
     page.evaluate(format!(
-        r#"
+        r"
         (function() {{
             const el = document.activeElement;
             if (!el) return;
@@ -165,7 +168,7 @@ async fn replace_selection(page: &Page, replacement: &str) -> Result<()> {
                 document.execCommand('insertText', false, text);
             }}
         }})();
-        "#
+        "
     ))
     .await?;
     Ok(())
@@ -174,7 +177,7 @@ async fn replace_selection(page: &Page, replacement: &str) -> Result<()> {
 async fn insert_text(page: &Page, text: &str) -> Result<()> {
     let text_json = serde_json::to_string(text)?;
     page.evaluate(format!(
-        r#"
+        r"
         (function() {{
             const el = document.activeElement;
             if (!el) return;
@@ -192,7 +195,7 @@ async fn insert_text(page: &Page, text: &str) -> Result<()> {
                 document.execCommand('insertText', false, text);
             }}
         }})();
-        "#
+        "
     ))
     .await?;
     Ok(())

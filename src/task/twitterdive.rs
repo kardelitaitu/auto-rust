@@ -3,14 +3,15 @@
 
 use crate::prelude::*;
 use crate::utils::math::random_in_range;
-use crate::utils::timing::{duration_with_variance, DEFAULT_NAVIGATION_TIMEOUT_MS};
+use crate::utils::timing::{
+    duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
+};
 use crate::utils::twitter::twitteractivity_navigation::goto_home;
 use anyhow::Result;
 use log::info;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
-use tokio::time::timeout;
 
 const DEFAULT_MAX_SCROLLS: u32 = 5;
 pub const DEFAULT_TWITTERDIVE_DURATION_MS: u64 = 60_000;
@@ -21,32 +22,23 @@ fn task_duration_ms() -> u64 {
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[twitterdive] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "twitterdive", run_inner(api, payload)).await
 }
 
+#[allow(clippy::cast_precision_loss)]
 async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     let tweet_url = extract_url_from_payload(&payload)?;
     let max_scrolls = payload
         .get("max_scrolls")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_MAX_SCROLLS as u64) as u32;
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(u64::from(DEFAULT_MAX_SCROLLS)) as u32;
     let duration_ms = payload
         .get("duration_ms")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(DEFAULT_TWITTERDIVE_DURATION_MS);
 
     info!("[twitterdive] Task started");
-    info!(
-        "[twitterdive] Max scrolls: {}, Duration: {}ms",
-        max_scrolls, duration_ms
-    );
+    info!("[twitterdive] Max scrolls: {max_scrolls}, Duration: {duration_ms}ms");
 
     // Navigate to tweet
     info!("[twitterdive] Navigating to tweet...");
@@ -125,7 +117,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         "[twitterdive] Scrolls: {}, Unique tweets read: {}, Duration: {:.1}s",
         scrolls_done,
         unique_tweets.len(),
-        (Instant::now() - deadline).as_secs_f64() + (duration_ms as f64 / 1000.0)
+        deadline.elapsed().as_secs_f64() + (duration_ms as f64 / 1000.0)
     );
 
     // Navigate back to home
@@ -138,35 +130,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(value) = payload.get("url") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    if let Some(value) = payload.get("value") {
-        if let Some(url_str) = value.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-    for (key, val) in payload
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("payload not an object"))?
-    {
-        if key != "url" && key != "value" && key != "default_url" {
-            if let Some(v) = val.as_str() {
-                if !v.is_empty() && v.contains("x.com") {
-                    return Ok(v.to_string());
-                }
-            }
-        }
-    }
-    Err(anyhow::anyhow!("No URL found in payload"))
+    crate::utils::url::extract_url_from_payload(payload)
 }
 
 async fn extract_tweet_info(api: &TaskContext) -> Result<(String, String)> {
@@ -237,7 +201,7 @@ async fn extract_visible_tweet_ids(api: &TaskContext) -> Result<Vec<String>> {
     if let Some(arr) = value {
         Ok(arr
             .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
             .collect())
     } else {
         Ok(Vec::new())
@@ -262,7 +226,10 @@ async fn check_end_of_thread(api: &TaskContext) -> Result<bool> {
         )
         .await?;
 
-    let at_end = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+    let at_end = result
+        .value()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     Ok(at_end)
 }
 

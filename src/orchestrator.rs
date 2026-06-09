@@ -1,3 +1,9 @@
+/*
+last audited 08-05-25 by RSA-Agent
+crate: auto-rust | status: SAFE | lint: CLEAN
+findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
+*/
+
 //! Task orchestration and execution coordination module.
 //!
 //! The orchestrator manages:
@@ -8,13 +14,14 @@
 //! - Resource allocation and distribution
 
 use crate::api::RetryPolicy;
-use crate::cli::TaskDefinition;
+use crate::cli::CliTaskDefinition;
 use crate::config::Config;
 use crate::error::{OrchestratorError, Result, SessionError, TaskError};
 use crate::logger::{scoped_log_context, LogContext};
 use crate::metrics::MetricsCollector;
 use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 use crate::session::{Session, SessionState};
+use crate::utils::duration_ms;
 use futures::stream::{FuturesUnordered, StreamExt};
 use log::{info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -50,25 +57,25 @@ use tokio_util::sync::CancellationToken;
 /// ```
 fn format_duration(ms: u64) -> String {
     if ms < 1000 {
-        format!("{}ms", ms)
+        format!("{ms}ms")
     } else if ms < 60000 {
         let secs = ms / 1000;
-        format!("{}s", secs)
+        format!("{secs}s")
     } else if ms < 3600000 {
         let mins = ms / 60000;
         let secs = (ms % 60000) / 1000;
         if secs == 0 {
-            format!("{}min", mins)
+            format!("{mins}min")
         } else {
-            format!("{}min {}s", mins, secs)
+            format!("{mins}min {secs}s")
         }
     } else {
         let hours = ms / 3600000;
         let mins = (ms % 3600000) / 60000;
         if mins == 0 {
-            format!("{}h", hours)
+            format!("{hours}h")
         } else {
-            format!("{}h {}min", hours, mins)
+            format!("{hours}h {mins}min")
         }
     }
 }
@@ -166,9 +173,9 @@ async fn acquire_global_execution_slot(
 ) -> std::result::Result<GlobalExecutionSlot, TaskResult> {
     let permit = tokio::select! {
         permit = global_semaphore.acquire_owned() => permit,
-        _ = cancel_token.cancelled() => {
+        () = cancel_token.cancelled() => {
             return Err(TaskResult::cancelled(
-                queue_start.elapsed().as_millis() as u64,
+                duration_ms(queue_start.elapsed()),
                 format!(
                     "Task {task_name} cancelled before acquiring global execution slot for session {session_id}"
                 ),
@@ -180,7 +187,7 @@ async fn acquire_global_execution_slot(
     match permit {
         Ok(permit) => Ok(GlobalExecutionSlot::new(global_active_tasks, permit)),
         Err(_) => Err(TaskResult::failure(
-            queue_start.elapsed().as_millis() as u64,
+            duration_ms(queue_start.elapsed()),
             format!(
                 "Task {task_name} failed to acquire global execution slot for session {session_id}"
             ),
@@ -240,6 +247,7 @@ impl Orchestrator {
     /// # let config: Config = todo!();
     /// let orchestrator = Orchestrator::new(config);
     /// ```
+    #[must_use]
     pub fn new(config: Config) -> Self {
         Self {
             global_active_tasks: Arc::new(AtomicUsize::new(0)),
@@ -273,7 +281,7 @@ impl Orchestrator {
     /// `Err(OrchestratorError)` if all sessions fail for all tasks
     pub async fn execute_group(
         &mut self,
-        group: &[TaskDefinition],
+        group: &[CliTaskDefinition],
         sessions: &[Session],
         metrics: Arc<MetricsCollector>,
     ) -> Result<()> {
@@ -284,7 +292,7 @@ impl Orchestrator {
     /// Executes a group of tasks with an external cancellation token.
     pub async fn execute_group_with_cancel(
         &mut self,
-        group: &[TaskDefinition],
+        group: &[CliTaskDefinition],
         sessions: &[Session],
         metrics: Arc<MetricsCollector>,
         cancel_token: CancellationToken,
@@ -328,10 +336,10 @@ impl Orchestrator {
 
                     // Stagger task starts to prevent network spikes
                     tokio::select! {
-                        _ = cancel_token.cancelled() => {
+                        () = cancel_token.cancelled() => {
                             return Ok(());
                         }
-                        _ = tokio::time::sleep(Duration::from_millis(
+                        () = tokio::time::sleep(Duration::from_millis(
                             config.orchestrator.task_stagger_delay_ms,
                         )) => {}
                     }
@@ -360,7 +368,7 @@ impl Orchestrator {
 
         while !task_futures.is_empty() {
             tokio::select! {
-                _ = &mut group_deadline, if !timed_out => {
+                () = &mut group_deadline, if !timed_out => {
                     timed_out = true;
                     warn!(
                         "Group timeout exceeded ({}ms), cancelling outstanding tasks",
@@ -368,7 +376,7 @@ impl Orchestrator {
                     );
                     group_cancel.cancel();
                 }
-                _ = group_cancel.cancelled(), if !timed_out && !cancelled => {
+                () = group_cancel.cancelled(), if !timed_out && !cancelled => {
                     cancelled = true;
                     warn!("Group cancelled, waiting for outstanding tasks to stop");
                 }
@@ -430,7 +438,7 @@ impl Orchestrator {
 /// `Ok(())` if at least one session succeeds
 /// `Err(OrchestratorError)` if all sessions fail
 async fn execute_task_on_session(
-    task_def: &TaskDefinition,
+    task_def: &CliTaskDefinition,
     sessions: &[Session],
     config: &Config,
     metrics: Arc<MetricsCollector>,
@@ -533,7 +541,7 @@ async fn execute_task_on_session(
 
 /// Execute a task with timeout and retry logic using exponential backoff
 async fn execute_task_with_retry(
-    task_def: &TaskDefinition,
+    task_def: &CliTaskDefinition,
     session: &Session,
     config: &Config,
     metrics: Arc<MetricsCollector>,
@@ -568,7 +576,7 @@ async fn execute_task_with_retry(
 
     if let Err(e) = crate::validation::validate_task(&task_def.name, payload_json.clone()) {
         return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!("Task {} validation failed: {}", task_def.name, e),
             TaskErrorKind::Validation,
         );
@@ -578,7 +586,7 @@ async fn execute_task_with_retry(
         session.mark_unhealthy();
         session.set_state(crate::session::SessionState::Failed);
         return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!("Session {} is unhealthy, skipping task", session.id),
             TaskErrorKind::Session,
         );
@@ -591,7 +599,7 @@ async fn execute_task_with_retry(
     // See: https://github.com/your-org/rust-orchestrator/docs/ARCHITECTURE.md#session-concurrency
     if !session.is_idle() {
         return TaskResult::failure(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!(
                 "Session {} is not idle (state: {:?}), skipping task",
                 session.id,
@@ -607,13 +615,13 @@ async fn execute_task_with_retry(
 
     let permit = match tokio::select! {
         permit = session.acquire_worker(config.orchestrator.worker_wait_timeout_ms) => permit,
-        _ = cancel_token.cancelled() => {
+        () = cancel_token.cancelled() => {
             warn!(
                 "task_cancel | task={} session={} stage=worker_acquisition",
                 task_def.name, session.id
             );
             return TaskResult::cancelled(
-                start.elapsed().as_millis() as u64,
+                duration_ms(start.elapsed()),
                 format!("Task {} cancelled before worker acquisition", task_def.name),
                 TaskErrorKind::Timeout,
             );
@@ -622,7 +630,7 @@ async fn execute_task_with_retry(
         Some(permit) => permit,
         None => {
             return TaskResult::failure(
-                start.elapsed().as_millis() as u64,
+                duration_ms(start.elapsed()),
                 "Failed to acquire worker".to_string(),
                 TaskErrorKind::Session,
             );
@@ -634,7 +642,7 @@ async fn execute_task_with_retry(
         Err(e) => {
             drop(permit);
             return TaskResult::failure(
-                start.elapsed().as_millis() as u64,
+                duration_ms(start.elapsed()),
                 e.to_string(),
                 TaskErrorKind::Browser,
             );
@@ -687,7 +695,7 @@ async fn execute_task_with_retry(
         );
 
         let task_result = tokio::select! {
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 drop(task_ctx);
                 warn!(
                     "task_cancel | task={} session={} stage=execution attempt={}",
@@ -764,8 +772,7 @@ async fn execute_task_with_retry(
 
         if !last_failure
             .as_ref()
-            .map(|failure| failure.kind.is_retryable())
-            .unwrap_or(false)
+            .is_some_and(|failure| failure.kind.is_retryable())
         {
             break;
         }
@@ -779,11 +786,10 @@ async fn execute_task_with_retry(
             delay.as_millis(),
             last_failure
                 .as_ref()
-                .map(|failure| failure.kind)
-                .unwrap_or(TaskErrorKind::Unknown)
+                .map_or(TaskErrorKind::Unknown, |failure| failure.kind)
         );
         tokio::select! {
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 warn!(
                     "task_cancel | task={} session={} stage=backoff attempt={}",
                     task_def.name, session.id, current_attempt
@@ -794,7 +800,7 @@ async fn execute_task_with_retry(
                 ));
                 break;
             }
-            _ = tokio::time::sleep(delay) => {}
+            () = tokio::time::sleep(delay) => {}
         }
     }
 
@@ -803,8 +809,7 @@ async fn execute_task_with_retry(
 
     let was_cancelled = last_failure
         .as_ref()
-        .map(|failure| failure.cancelled)
-        .unwrap_or(false);
+        .is_some_and(|failure| failure.cancelled);
     if !was_cancelled {
         session.increment_failure();
     }
@@ -832,7 +837,7 @@ async fn execute_task_with_retry(
 
     if was_cancelled {
         return TaskResult::cancelled(
-            start.elapsed().as_millis() as u64,
+            duration_ms(start.elapsed()),
             format!("Task {} cancelled after retries: {}", task_def.name, msg),
             kind,
         )
@@ -840,7 +845,7 @@ async fn execute_task_with_retry(
     }
 
     TaskResult::failure(
-        start.elapsed().as_millis() as u64,
+        duration_ms(start.elapsed()),
         format!("Task {} failed after retries: {}", task_def.name, msg),
         kind,
     )
@@ -1236,7 +1241,7 @@ mod tests {
         let mut orchestrator = Orchestrator::new(config);
         let sessions: Vec<Session> = vec![];
         let metrics = Arc::new(crate::metrics::MetricsCollector::new(100));
-        let task_def = TaskDefinition {
+        let task_def = CliTaskDefinition {
             name: "test_task".to_string(),
             payload: Default::default(),
         };
@@ -1256,7 +1261,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_group_with_empty_task_group_returns_ok() {
-        let tasks: Vec<TaskDefinition> = vec![];
+        let tasks: Vec<CliTaskDefinition> = vec![];
         assert!(tasks.is_empty());
     }
 
@@ -1275,7 +1280,7 @@ mod tests {
         let metrics = Arc::new(crate::metrics::MetricsCollector::new(100));
 
         // Create a task that would normally take time
-        let task_def = TaskDefinition {
+        let task_def = CliTaskDefinition {
             name: "slow_task".to_string(),
             payload: Default::default(),
         };
@@ -1519,7 +1524,7 @@ mod tests {
 
         let mut orchestrator = Orchestrator::new(config.clone());
         let metrics = Arc::new(MetricsCollector::new(10));
-        let tasks = vec![TaskDefinition {
+        let tasks = vec![CliTaskDefinition {
             name: "pageview".to_string(),
             payload: Default::default(),
         }];
@@ -1555,7 +1560,7 @@ mod tests {
 
         let mut orchestrator = Orchestrator::new(config.clone());
         let metrics = Arc::new(MetricsCollector::new(10));
-        let tasks = vec![TaskDefinition {
+        let tasks = vec![CliTaskDefinition {
             name: "pageview".to_string(),
             payload: Default::default(),
         }];
@@ -1586,7 +1591,7 @@ mod tests {
 
         let config = create_test_config();
         let metrics = Arc::new(MetricsCollector::new(10));
-        let task_def = TaskDefinition {
+        let task_def = CliTaskDefinition {
             name: "pageview".to_string(),
             payload: Default::default(),
         };

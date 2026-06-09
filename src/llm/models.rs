@@ -1,29 +1,96 @@
+use std::num::NonZeroU32;
+
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Temperature(f64);
+
+impl Temperature {
+    pub const MIN: f64 = 0.0;
+    pub const MAX: f64 = 2.0;
+
+    pub fn new(value: f64) -> Self {
+        Self(value.clamp(Self::MIN, Self::MAX))
+    }
+
+    #[must_use]
+    pub fn get(&self) -> f64 {
+        self.0
+    }
+}
+
+impl Default for Temperature {
+    fn default() -> Self {
+        Self(0.7)
+    }
+}
+
+impl From<f64> for Temperature {
+    fn from(value: f64) -> Self {
+        Self::new(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct MaxTokens(NonZeroU32);
+
+impl MaxTokens {
+    pub fn new(value: u32) -> Option<Self> {
+        NonZeroU32::new(value).map(Self)
+    }
+
+    #[must_use]
+    pub fn get(&self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl Default for MaxTokens {
+    fn default() -> Self {
+        Self(NonZeroU32::new(2048).expect("2048 is non-zero"))
+    }
+}
+
+impl From<MaxTokens> for u32 {
+    fn from(value: MaxTokens) -> Self {
+        value.0.get()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    User,
+    System,
+    Assistant,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
-    pub role: String,
+    pub role: Role,
     pub content: String,
 }
 
 impl ChatMessage {
     pub fn user(content: impl Into<String>) -> Self {
         Self {
-            role: "user".into(),
+            role: Role::User,
             content: content.into(),
         }
     }
 
     pub fn system(content: impl Into<String>) -> Self {
         Self {
-            role: "system".into(),
+            role: Role::System,
             content: content.into(),
         }
     }
 
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
-            role: "assistant".into(),
+            role: Role::Assistant,
             content: content.into(),
         }
     }
@@ -33,8 +100,8 @@ impl ChatMessage {
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
-    pub temperature: Option<f64>,
-    pub max_tokens: Option<u32>,
+    pub temperature: Option<Temperature>,
+    pub max_tokens: Option<MaxTokens>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,26 +146,35 @@ pub enum LlmProvider {
     #[default]
     Ollama,
     OpenRouter,
+    Nvidia,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LlmConfig {
     pub provider: LlmProvider,
+    #[serde(default)]
     pub ollama: OllamaConfig,
+    #[serde(default)]
     pub openrouter: OpenRouterConfig,
+    #[serde(default)]
+    pub nvidia: NvidiaConfig,
 }
 
 impl LlmConfig {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OllamaConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
+    pub temperature: Temperature,
+    pub max_tokens: MaxTokens,
 }
 
 impl Default for OllamaConfig {
@@ -106,17 +182,22 @@ impl Default for OllamaConfig {
         Self {
             base_url: "http://localhost:11434".into(),
             model: "llama3.2:3b".into(),
-            timeout_ms: 120000,
+            timeout_ms: 240000,
+            temperature: Temperature::new(0.7),
+            max_tokens: MaxTokens::new(2048).unwrap(),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OpenRouterConfig {
     pub api_key: String,
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
+    pub temperature: Temperature,
+    pub max_tokens: MaxTokens,
     /// Fallback models to try if primary fails (timeout or error)
     #[serde(default)]
     pub fallback_models: Vec<String>,
@@ -128,8 +209,36 @@ impl Default for OpenRouterConfig {
             api_key: String::new(),
             base_url: "https://openrouter.ai/api/v1".into(),
             model: "anthropic/claude-3-haiku".into(),
-            timeout_ms: 60000,
+            timeout_ms: 120000,
+            temperature: Temperature::new(0.7),
+            max_tokens: MaxTokens::new(4096).unwrap(),
             fallback_models: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NvidiaConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+    pub timeout_ms: u64,
+    pub temperature: Temperature,
+    pub top_p: f64,
+    pub max_tokens: MaxTokens,
+}
+
+impl Default for NvidiaConfig {
+    fn default() -> Self {
+        Self {
+            api_key: "nvapi-placeholder-key".to_string(),
+            base_url: "https://integrate.api.nvidia.com/v1".to_string(),
+            model: "meta/llama-3.3-70b-instruct".to_string(),
+            timeout_ms: 600000,
+            temperature: Temperature::new(1.0),
+            top_p: 0.95,
+            max_tokens: MaxTokens::new(16384).unwrap(),
         }
     }
 }
@@ -141,20 +250,20 @@ mod tests {
     #[test]
     fn test_chat_message_user() {
         let msg = ChatMessage::user("Hello");
-        assert_eq!(msg.role, "user");
+        assert_eq!(msg.role, Role::User);
         assert_eq!(msg.content, "Hello");
     }
 
     #[test]
     fn test_chat_message_system() {
         let msg = ChatMessage::system("You are helpful");
-        assert_eq!(msg.role, "system");
+        assert_eq!(msg.role, Role::System);
     }
 
     #[test]
     fn test_chat_message_assistant() {
         let msg = ChatMessage::assistant("Sure, I can help");
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
     }
 
     #[test]
@@ -180,7 +289,7 @@ mod tests {
         let config = OllamaConfig::default();
         assert_eq!(config.base_url, "http://localhost:11434");
         assert_eq!(config.model, "llama3.2:3b");
-        assert_eq!(config.timeout_ms, 120000);
+        assert_eq!(config.timeout_ms, 240000);
     }
 
     #[test]
@@ -226,10 +335,10 @@ mod tests {
         let request = ChatRequest {
             model: "llama3".to_string(),
             messages: vec![],
-            temperature: Some(0.5),
+            temperature: Some(Temperature::new(0.5)),
             max_tokens: None,
         };
-        assert_eq!(request.temperature, Some(0.5));
+        assert_eq!(request.temperature, Some(Temperature::new(0.5)));
     }
 
     #[test]
@@ -238,9 +347,9 @@ mod tests {
             model: "llama3".to_string(),
             messages: vec![],
             temperature: None,
-            max_tokens: Some(1024),
+            max_tokens: Some(MaxTokens::new(1024).unwrap()),
         };
-        assert_eq!(request.max_tokens, Some(1024));
+        assert_eq!(request.max_tokens, Some(MaxTokens::new(1024).unwrap()));
     }
 
     #[test]
@@ -322,7 +431,7 @@ mod tests {
             message: ChatMessage::user("test"),
         };
         if let ChatChoice::WithMessage { message } = choice {
-            assert_eq!(message.role, "user");
+            assert_eq!(message.role, Role::User);
         }
     }
 
@@ -346,8 +455,7 @@ mod tests {
     fn test_llm_config_custom() {
         let config = LlmConfig {
             provider: LlmProvider::OpenRouter,
-            ollama: OllamaConfig::default(),
-            openrouter: OpenRouterConfig::default(),
+            ..LlmConfig::default()
         };
         assert_eq!(config.provider, LlmProvider::OpenRouter);
     }
@@ -358,6 +466,7 @@ mod tests {
             base_url: "http://custom:11434".to_string(),
             model: "custom-model".to_string(),
             timeout_ms: 60000,
+            ..OllamaConfig::default()
         };
         assert_eq!(config.base_url, "http://custom:11434");
     }
@@ -370,6 +479,7 @@ mod tests {
             model: "gpt-4".to_string(),
             timeout_ms: 90000,
             fallback_models: vec!["gpt-3.5-turbo".to_string()],
+            ..OpenRouterConfig::default()
         };
         assert_eq!(config.api_key, "key");
         assert_eq!(config.fallback_models.len(), 1);
@@ -395,6 +505,7 @@ mod tests {
             model: "tencent/hy3-preview:free".to_string(),
             timeout_ms: 60000,
             fallback_models: fallbacks.clone(),
+            ..OpenRouterConfig::default()
         };
         assert_eq!(config.fallback_models.len(), 4);
         assert_eq!(config.fallback_models, fallbacks);
@@ -411,7 +522,9 @@ mod tests {
                 model: "primary-model".to_string(),
                 timeout_ms: 60000,
                 fallback_models: vec!["fb1".to_string(), "fb2".to_string()],
+                ..OpenRouterConfig::default()
             },
+            ..LlmConfig::default()
         };
         assert_eq!(config.openrouter.fallback_models.len(), 2);
     }

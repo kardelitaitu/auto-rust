@@ -8,7 +8,7 @@ use log::{info, warn};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use crate::cli::TaskDefinition;
+use crate::cli::CliTaskDefinition;
 use crate::metrics::MetricsCollector;
 use crate::orchestrator::Orchestrator;
 use crate::session::Session;
@@ -21,7 +21,7 @@ pub trait TaskGroupRunner {
     async fn run_group(
         &mut self,
         index: usize,
-        group: &[TaskDefinition],
+        group: &[CliTaskDefinition],
         cancel_token: CancellationToken,
     );
 }
@@ -43,7 +43,7 @@ impl TaskGroupRunner for RuntimeGroupRunner<'_> {
     async fn run_group(
         &mut self,
         index: usize,
-        group: &[TaskDefinition],
+        group: &[CliTaskDefinition],
         cancel_token: CancellationToken,
     ) {
         use crate::cli::format_task_groups;
@@ -79,7 +79,7 @@ pub struct GroupExecutionOutcome {
 /// This function runs each task group sequentially, checking for shutdown
 /// signals before and during each group's execution.
 pub async fn execute_task_groups_with_shutdown<R>(
-    groups: &[Vec<TaskDefinition>],
+    groups: &[Vec<CliTaskDefinition>],
     shutdown_rx: &mut broadcast::Receiver<()>,
     runner: &mut R,
 ) -> GroupExecutionOutcome
@@ -107,7 +107,7 @@ where
                 run_group.await;
                 break;
             }
-            _ = &mut run_group => {
+            () = &mut run_group => {
                 completed_groups += 1;
             }
         }
@@ -137,7 +137,7 @@ mod tests {
         async fn run_group(
             &mut self,
             _index: usize,
-            _group: &[TaskDefinition],
+            _group: &[CliTaskDefinition],
             cancel_token: CancellationToken,
         ) {
             if let Some(started) = self.started.take() {
@@ -154,11 +154,11 @@ mod tests {
     #[tokio::test]
     async fn test_execute_task_groups_with_shutdown_normal_completion() {
         let groups = vec![
-            vec![TaskDefinition {
+            vec![CliTaskDefinition {
                 name: "cookiebot".to_string(),
                 payload: Default::default(),
             }],
-            vec![TaskDefinition {
+            vec![CliTaskDefinition {
                 name: "pageview".to_string(),
                 payload: Default::default(),
             }],
@@ -181,11 +181,11 @@ mod tests {
     #[tokio::test]
     async fn test_execute_task_groups_with_shutdown_ctrl_c_during_group() {
         let groups = vec![
-            vec![TaskDefinition {
+            vec![CliTaskDefinition {
                 name: "cookiebot".to_string(),
                 payload: Default::default(),
             }],
-            vec![TaskDefinition {
+            vec![CliTaskDefinition {
                 name: "pageview".to_string(),
                 payload: Default::default(),
             }],
@@ -215,7 +215,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_task_groups_with_shutdown_before_first_group() {
-        let groups = vec![vec![TaskDefinition {
+        let groups = vec![vec![CliTaskDefinition {
             name: "cookiebot".to_string(),
             payload: Default::default(),
         }]];
@@ -239,7 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_task_groups_with_shutdown_empty_groups() {
-        let groups: Vec<Vec<TaskDefinition>> = vec![];
+        let groups: Vec<Vec<CliTaskDefinition>> = vec![];
 
         let (_tx, mut rx) = broadcast::channel::<()>(1);
         let finished = Arc::new(AtomicUsize::new(0));

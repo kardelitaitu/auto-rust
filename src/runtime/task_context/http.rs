@@ -1,4 +1,4 @@
-//! HTTP request methods for TaskContext.
+//! HTTP request methods for `TaskContext`.
 
 use anyhow::Result;
 
@@ -16,12 +16,12 @@ impl TaskContext {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {e}"))?;
         let response = client
             .get(url)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("HTTP request failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("HTTP request failed: {e}"))?;
         let status = response.status().as_u16();
         let headers: std::collections::HashMap<String, String> = response
             .headers()
@@ -31,7 +31,7 @@ impl TaskContext {
         let body = response
             .text()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read response body: {e}"))?;
         Ok(HttpResponse {
             status: status as u16,
             body,
@@ -54,13 +54,13 @@ impl TaskContext {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {e}"))?;
         let response = client
             .post(url)
             .json(body)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("HTTP POST request failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("HTTP POST request failed: {e}"))?;
         let status = response.status().as_u16();
         let headers: std::collections::HashMap<String, String> = response
             .headers()
@@ -70,7 +70,7 @@ impl TaskContext {
         let body = response
             .text()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read response body: {e}"))?;
         Ok(HttpResponse {
             status: status as u16,
             body,
@@ -89,15 +89,15 @@ impl TaskContext {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {e}"))?;
         let bytes = client
             .get(url)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("Download request failed: {}", e))?
+            .map_err(|e| anyhow::anyhow!("Download request failed: {e}"))?
             .bytes()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to read download bytes: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read download bytes: {e}"))?;
         let size = bytes.len() as u64;
         self.write_data_file(relative_path, &bytes)?;
         Ok(size)

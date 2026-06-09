@@ -41,7 +41,8 @@ pub struct HealthLogger {
 }
 
 impl HealthLogger {
-    /// Creates a new HealthLogger.
+    /// Creates a new `HealthLogger`.
+    #[must_use]
     pub fn new(config: HealthLoggerConfig, metrics: Arc<MetricsCollector>) -> Self {
         Self {
             config,
@@ -51,6 +52,8 @@ impl HealthLogger {
     }
 
     /// Starts the background monitoring loop.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn start(&self) -> tokio::task::JoinHandle<()> {
         let config = self.config.clone();
         let metrics = self.metrics.clone();
@@ -62,7 +65,7 @@ impl HealthLogger {
 
             loop {
                 tokio::select! {
-                _ = tokio::time::sleep(config.interval) => {
+                () = tokio::time::sleep(config.interval) => {
                     let stats = metrics.get_stats();
 
                     // Memory info
@@ -141,7 +144,7 @@ impl HealthLogger {
                         }
                     }
                 }
-                    _ = shutdown.notified() => {
+                    () = shutdown.notified() => {
                         info!("[health] Monitor shutting down");
                         break;
                     }

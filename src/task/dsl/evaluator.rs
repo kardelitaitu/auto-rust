@@ -1,16 +1,16 @@
 //! Variable substitution and condition evaluation for DSL tasks.
 //!
-//! Contains helper methods for the DslExecutor that handle
+//! Contains helper methods for the `DslExecutor` that handle
 //! variable substitution in action parameters and evaluation of
 //! conditional expressions (if/else, while loops, etc.).
 
 use crate::task::dsl::Condition;
 use anyhow::Result;
 
-impl super::DslExecutor<'_> {
+impl<T: super::DslApi> super::DslExecutor<'_, T> {
     /// Substitute ${variable} placeholders with values from the variables map.
     ///
-    /// Replaces occurrences of ${variable_name} in the input text with
+    /// Replaces occurrences of ${`variable_name`} in the input text with
     /// the corresponding value from the executor's variables map.
     ///
     /// # Arguments
@@ -18,12 +18,13 @@ impl super::DslExecutor<'_> {
     ///
     /// # Returns
     /// Text with all placeholders replaced
+    #[must_use]
     pub fn substitute_variables(&self, text: &str) -> String {
         let mut result = text.to_string();
 
         // Replace ${variable} syntax
         for (key, value) in &self.variables {
-            let placeholder = format!("${{{}}}", key);
+            let placeholder = format!("${{{key}}}");
             result = result.replace(&placeholder, value);
         }
 
@@ -67,10 +68,10 @@ impl super::DslExecutor<'_> {
             Condition::VariableEquals { name, value } => {
                 if let Some(var_value) = self.variables.get(name) {
                     let expected = match value {
-                        serde_yaml::Value::String(s) => s.clone(),
-                        serde_yaml::Value::Number(n) => n.to_string(),
-                        serde_yaml::Value::Bool(b) => b.to_string(),
-                        _ => format!("{:?}", value),
+                        serde_yml::Value::String(s) => s.clone(),
+                        serde_yml::Value::Number(n) => n.to_string(),
+                        serde_yml::Value::Bool(b) => b.to_string(),
+                        _ => format!("{value:?}"),
                     };
                     Ok(var_value == &expected)
                 } else {
@@ -147,8 +148,8 @@ impl super::DslExecutor<'_> {
                 if let Some(var_value) = self.variables.get(name) {
                     // Simplified: check if value is in a comma-separated string
                     let search = match value {
-                        serde_yaml::Value::String(s) => s.clone(),
-                        _ => format!("{:?}", value),
+                        serde_yml::Value::String(s) => s.clone(),
+                        _ => format!("{value:?}"),
                     };
                     Ok(var_value.contains(&search))
                 } else {
@@ -243,23 +244,28 @@ impl super::DslExecutor<'_> {
             let ref_date = chrono::NaiveDate::parse_from_str(date, date_format);
             let ref_datetime = chrono::NaiveDateTime::parse_from_str(date, date_format);
 
-            match (var_date, ref_date, var_datetime, ref_datetime) {
+            let comparison_result = match (var_date, ref_date, var_datetime, ref_datetime) {
                 (Ok(v), Ok(r), _, _) => {
                     if is_before {
-                        Ok(v < r)
+                        v < r
                     } else {
-                        Ok(v > r)
+                        v > r
                     }
                 }
                 (_, _, Ok(v), Ok(r)) => {
                     if is_before {
-                        Ok(v < r)
+                        v < r
                     } else {
-                        Ok(v > r)
+                        v > r
                     }
                 }
-                _ => Ok(false),
-            }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Failed to parse date for variable '{name}': value='{var_value}', format='{date_format}'"
+                    ));
+                }
+            };
+            Ok(comparison_result)
         } else {
             Ok(false)
         }
@@ -299,6 +305,290 @@ mod tests {
             result = result.replace(&placeholder, value);
         }
         assert_eq!(result, "No variables here");
+    }
+
+    #[test]
+    fn test_substitute_variables_overlapping_placeholders_are_replaced_in_order() {
+        let text = "${a}-${b}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("a".to_string(), "1".to_string());
+        variables.insert("b".to_string(), "2".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "1-2");
+    }
+
+    #[test]
+    fn test_substitute_variables_preserves_literals_around_placeholders() {
+        let text = "literal ${name}!";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("name".to_string(), "world".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "literal world!");
+    }
+
+    #[test]
+    fn test_substitute_variables_empty_value_produces_empty_replacement() {
+        let text = "start-${suffix}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("suffix".to_string(), String::new());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "start-");
+    }
+
+    #[test]
+    fn test_substitute_variables_duplicate_placeholders_are_all_replaced() {
+        let text = "${token}-${token}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("token".to_string(), "abc".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "abc-abc");
+    }
+
+    #[test]
+    fn test_substitute_variables_value_special_chars_preserved() {
+        let text = "value=${path}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("path".to_string(), "C:\\Users\\Dika".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "value=C:\\Users\\Dika");
+    }
+
+    #[test]
+    fn test_substitute_variables_noop_when_placeholder_has_no_match() {
+        let text = "${missing}-end";
+        let variables: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "${missing}-end");
+    }
+
+    #[test]
+    fn test_substitute_variables_unicode_value_replaces_correctly() {
+        let text = "msg=${greeting}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("greeting".to_string(), "你好".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "msg=你好");
+    }
+
+    #[test]
+    fn test_substitute_variables_preserves_text_between_placeholders() {
+        let text = "${a}:middle:${b}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("a".to_string(), "X".to_string());
+        variables.insert("b".to_string(), "Y".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "X:middle:Y");
+    }
+
+    #[test]
+    fn test_substitute_variables_no_match_with_empty_map_returns_input() {
+        let text = "${x} ${y} ${z}";
+        let variables = std::collections::HashMap::<String, String>::new();
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "${x} ${y} ${z}");
+    }
+
+    #[test]
+    fn test_substitute_variables_whitespace_around_value_is_preserved() {
+        let text = "${value} ";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("value".to_string(), "A".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "A ");
+    }
+
+    #[test]
+    fn test_substitute_variables_whitespace_around_placeholder_is_preserved() {
+        let text = "${value} \t ${value2}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("value".to_string(), "A".to_string());
+        variables.insert("value2".to_string(), "B".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "A \t B");
+    }
+
+    #[test]
+    fn test_substitute_variables_leading_and_trailing_whitespace_preserved() {
+        let text = "  ${value}  ";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("value".to_string(), "X".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "  X  ");
+    }
+
+    #[test]
+    fn test_substitute_variables_consecutive_placeholders_merge_correctly() {
+        let text = "${a}${b}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("a".to_string(), "A".to_string());
+        variables.insert("b".to_string(), "B".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "AB");
+    }
+
+    #[test]
+    fn test_substitute_variables_preserves_literals_with_reserved_chars() {
+        let text = "${user}@example.com";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("user".to_string(), "john.doe".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "john.doe@example.com");
+    }
+
+    #[test]
+    fn test_substitute_variables_preserves_literals_with_punctuation() {
+        let text = "Hello, ${name}!";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("name".to_string(), "World".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "Hello, World!");
+    }
+
+    #[test]
+    fn test_substitute_variables_newline_separated_placeholders() {
+        let text = "line1=${a}\nline2=${b}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("a".to_string(), "first".to_string());
+        variables.insert("b".to_string(), "second".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "line1=first\nline2=second");
+    }
+
+    #[test]
+    fn test_substitute_variables_tab_separated_placeholders() {
+        let text = "col1=${a}\tcol2=${b}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("a".to_string(), "A".to_string());
+        variables.insert("b".to_string(), "B".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "col1=A\tcol2=B");
+    }
+
+    #[test]
+    fn test_substitute_variables_single_placeholder_only() {
+        let text = "${only}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("only".to_string(), "value".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "value");
+    }
+
+    #[test]
+    fn test_substitute_variables_empty_input_returns_empty() {
+        let text = "";
+        let variables = std::collections::HashMap::<String, String>::new();
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_substitute_variables_underscored_names() {
+        let text = "${user_name}-${session_id}";
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("user_name".to_string(), "alice".to_string());
+        variables.insert("session_id".to_string(), "abc".to_string());
+
+        let mut result = text.to_string();
+        for (key, value) in &variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+        assert_eq!(result, "alice-abc");
     }
 
     #[test]

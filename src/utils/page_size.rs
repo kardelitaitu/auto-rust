@@ -70,6 +70,7 @@ pub async fn get_document_size(page: &Page) -> Result<DocumentSize> {
 /// # Returns
 /// (x, y) tuple representing the center coordinates
 #[allow(dead_code)]
+#[must_use]
 pub fn center_position(viewport: &Viewport) -> (f64, f64) {
     (viewport.width / 2.0, viewport.height / 2.0)
 }
@@ -84,6 +85,8 @@ pub fn center_position(viewport: &Viewport) -> (f64, f64) {
 /// # Returns
 /// (x, y) tuple representing random coordinates within bounds
 #[allow(dead_code)]
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
     use crate::utils::math::random_in_range;
     let safe_margin_x = margin.max(1.0).min((viewport.width / 4.0).max(1.0));
@@ -98,6 +101,8 @@ pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
 /// Generates a random viewport position while avoiding the outer edge band.
 /// `edge_ratio` is clamped to [0.0, 0.45], where 0.10 means avoid outer 10% on each side.
 #[allow(dead_code)]
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn random_position_with_edge_ratio(viewport: &Viewport, edge_ratio: f64) -> (f64, f64) {
     use crate::utils::math::random_in_range;
 
@@ -114,7 +119,7 @@ pub fn random_position_with_edge_ratio(viewport: &Viewport, edge_ratio: f64) -> 
 }
 
 /// Gets the center position of a target element.
-/// Uses element.getBoundingClientRect() to find the element's position.
+/// Uses `element.getBoundingClientRect()` to find the element's position.
 ///
 /// # Arguments
 /// * `page` - The browser page
@@ -127,7 +132,7 @@ pub async fn get_element_center(page: &Page, selector: &str) -> Result<(f64, f64
     let js = format!(
         "
         (() => {{
-            const el = document.querySelector({});
+            const el = document.querySelector({selector_js});
             if (!el) return null;
             const rect = el.getBoundingClientRect();
             return {{
@@ -137,8 +142,7 @@ pub async fn get_element_center(page: &Page, selector: &str) -> Result<(f64, f64
                 height: rect.height
             }};
         }})()
-    ",
-        selector_js
+    "
     );
 
     let result = page.evaluate(js).await?;
@@ -148,7 +152,7 @@ pub async fn get_element_center(page: &Page, selector: &str) -> Result<(f64, f64
     let coords: ElementCoords = serde_json::from_value(value.clone())?;
 
     if !coords.is_valid() {
-        anyhow::bail!("Element not found: {}", selector);
+        anyhow::bail!("Element not found: {selector}");
     }
 
     Ok((coords.x, coords.y))
@@ -169,21 +173,21 @@ impl ElementCoords {
 }
 
 /// Gets the bounds of a target element for cursor placement.
-/// Returns (min_x, min_y, max_x, max_y) tuple.
+/// Returns (`min_x`, `min_y`, `max_x`, `max_y`) tuple.
 ///
 /// # Arguments
 /// * `page` - The browser page
 /// * `selector` - CSS selector for the target element
 ///
 /// # Returns
-/// Ok((min_x, min_y, max_x, max_y)) with element bounds, Err if element not found
+/// `Ok((min_x`, `min_y`, `max_x`, `max_y`)) with element bounds, Err if element not found
 #[allow(dead_code)]
 pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64, f64, f64)> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(
         "
         (() => {{
-            const el = document.querySelector({});
+            const el = document.querySelector({selector_js});
             if (!el) return null;
             const rect = el.getBoundingClientRect();
             return {{
@@ -193,8 +197,7 @@ pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64
                 height: rect.height
             }};
         }})()
-    ",
-        selector_js
+    "
     );
 
     let result = page.evaluate(js).await?;
@@ -204,7 +207,7 @@ pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64
     let coords: ElementCoords = serde_json::from_value(value.clone())?;
 
     if !coords.is_valid() {
-        anyhow::bail!("Element not found: {}", selector);
+        anyhow::bail!("Element not found: {selector}");
     }
 
     Ok((

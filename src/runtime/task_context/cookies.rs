@@ -1,4 +1,4 @@
-//! Cookie management methods for TaskContext.
+//! Cookie management methods for `TaskContext`.
 
 use anyhow::Result;
 use serde_json::Value;
@@ -18,9 +18,9 @@ impl TaskContext {
             .page
             .execute(chromiumoxide::cdp::browser_protocol::network::GetCookiesParams::default())
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Network.getCookies - {}", e))?;
+            .map_err(|e| anyhow::anyhow!("CDP error: Network.getCookies - {e}"))?;
         let json = serde_json::to_value(&cookies.cookies)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize cookies: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to serialize cookies: {e}"))?;
         Ok(json.as_array().unwrap_or(&vec![]).clone())
     }
 
@@ -39,8 +39,7 @@ impl TaskContext {
                 cookie
                     .get("domain")
                     .and_then(|d| d.as_str())
-                    .map(|d| d == domain || d == format!(".{}", domain).as_str())
-                    .unwrap_or(false)
+                    .is_some_and(|d| d == domain || d == format!(".{domain}").as_str())
             })
             .collect();
         log::warn!(
@@ -67,13 +66,12 @@ impl TaskContext {
             .filter(|cookie| {
                 cookie
                     .get("session")
-                    .and_then(|s| s.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false)
                     || cookie.get("expires").is_none()
-                    || cookie
-                        .get("expires")
-                        .map(|e| e.is_null() || e.as_f64() == Some(0.0) || e.as_f64() == Some(-1.0))
-                        .unwrap_or(true)
+                    || cookie.get("expires").is_none_or(|e| {
+                        e.is_null() || e.as_f64() == Some(0.0) || e.as_f64() == Some(-1.0)
+                    })
             })
             .collect();
         log::warn!(
@@ -103,8 +101,7 @@ impl TaskContext {
             cookie
                 .get("name")
                 .and_then(|n| n.as_str())
-                .map(|n| n == name)
-                .unwrap_or(false)
+                .is_some_and(|n| n == name)
         });
         Ok(exists)
     }
@@ -137,11 +134,11 @@ impl TaskContext {
             }
             let params = params
                 .build()
-                .map_err(|e| anyhow::anyhow!("Failed to build SetCookieParams: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to build SetCookieParams: {e}"))?;
             self.page
                 .execute(params)
                 .await
-                .map_err(|e| anyhow::anyhow!("CDP error: Network.setCookie - {}", e))?;
+                .map_err(|e| anyhow::anyhow!("CDP error: Network.setCookie - {e}"))?;
         }
         log::warn!(
             "task_policy_audit: task={} permission={} count={}",

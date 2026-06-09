@@ -1,6 +1,6 @@
 # Contributing Guide
 
-last audited 08-05-26 by Kilo
+last audited 13-05-26 by Buffy
 
 Thank you for contributing to the Rust Orchestrator!
 
@@ -31,13 +31,24 @@ cargo clippy --all-targets --all-features
 
 ## Making Changes
 
-### Two-Agent Workflow
+### Bacon Pipeline (Recommended)
 
-For non-trivial work, create a spec package in `docs/specs/_active/<initiative>/` before changing code.
+The Bacon gated-LLM pipeline automates code changes through 4 stages:
+1. **Observer** — scans for approved specs or generates improvement ideas
+2. **Strategist** — creates a spec package with plan and validation criteria
+3. **Coder** — applies SEARCH/REPLACE blocks and verifies with `check-fast.ps1`
+4. **Auditor** — reviews semantic correctness and compliance
 
-- Spec agent writes: `README.md`, `spec.yaml`, `baseline.md`, `internal-api-outline.md`, `plan.md`, `validation-checklist.md`, `ci-commands.md`, `decisions.md`, `quality-rules.md`
-- Implementer agent updates code, tests, docs, and `implementation-notes.md`
-- Move the folder to `_done/` only after `./check.ps1` passes
+Spec packages use a streamlined **3-file format**:
+- `spec.yaml` — metadata (title, status, owner, acceptance criteria)
+- `plan.md` — implementation steps and scope
+- `validation.md` — acceptance criteria and audit results
+
+Manual spec creation for non-trivial work:
+1. Create a spec directory in `docs/specs/_active/<initiative>/`
+2. Write `spec.yaml`, `plan.md`, and (optionally) `validation.md`
+3. Run the pipeline with `bacon --spec <number>` or the full 4-stage flow
+4. Move the folder to `_done/` only after `./check-fast.ps1` passes
 
 ### Code Style
 
@@ -66,7 +77,7 @@ cargo test -- --nocapture
 3. Register in `src/task/mod.rs`
 4. Add documentation in `docs/TASKS/my_task.md`
 
-See [Tutorial: Building First Task](TUTORIAL_BUILDING_FIRST_TASK.md) for full details.
+See [docs/TASKS/overview.md](TASKS/overview.md) for full details.
 
 ## Pull Request Template
 
@@ -107,28 +118,33 @@ test: add integration test for graceful shutdown
 
 ```
 src/
-├── adaptive/     # Adaptive learning module
-├── api/          # API client
-├── benchmarks/   # Performance benchmarks
-├── capabilities/ # Task-facing actions (mouse, keyboard, scroll)
-├── cli/          # Command line interface
-├── config/       # Configuration loader
-├── internal/     # Framework helpers
-├── llm/          # LLM integration
-├── plugin/       # Plugin system
-├── runtime/      # Browser/session/page lifecycle
-├── session/      # Session management
-├── state/        # Session-scoped handles
-├── task/         # Automation tasks
-├── utils/        # Low-level utilities
-├── validation/   # Validation utilities
+├── adaptive/        # Adaptive learning module
+├── api/             # API client
+├── bacon_agent_*/   # LLM agent implementations (codex, gemini, kilocode, nvidia, ollama, opencode, pi)
+├── bacon_core/      # Shared pipeline types (Stage, Confidence, extract_confidence)
+├── benchmarks/      # Performance benchmarks
+├── bin/             # CLI binary entry points
+├── capabilities/    # Task-facing actions (mouse, keyboard, scroll)
+├── cli/             # Command line interface
+├── config/          # Configuration loader
+├── internal/        # Framework helpers
+├── llm/             # LLM integration
+├── metrics.rs       # Metrics collection and logging
+├── orchestrator.rs  # Main runtime orchestrator
+├── runtime/         # Browser/session/page lifecycle
+├── session/         # Session management
+├── state/           # Session-scoped handles
+├── task/            # Automation tasks
+├── tests/           # Built-in test helpers
+├── utils/           # Low-level utilities
+├── validation/      # Validation utilities
 └── ...
 ```
 
 ## Getting Help
 
 - Check [README.md](../README.md) for usage
-- Review [Tutorial: Building First Task](TUTORIAL_BUILDING_FIRST_TASK.md) for task development
+- Review [docs/TASKS/overview.md](TASKS/overview.md) for task development
 - See [API Reference](API_REFERENCE.md) for API details
 - Open an issue for bugs or feature requests
 

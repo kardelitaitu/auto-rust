@@ -8,6 +8,7 @@ use crate::error::{BrowserError, OrchestratorError, Result};
 use crate::session::connector::{BrowserCapabilities, ConnectorRegistry};
 use crate::session::factory::SessionFactory;
 use crate::session::Session;
+use crate::utils::retry::{ExponentialBackoff, RetryConfig};
 use log::{debug, info, warn};
 
 /// Manages a pool of browser sessions with discovery and retry logic.
@@ -25,6 +26,7 @@ impl SessionPoolManager {
     ///
     /// # Arguments
     /// * `config` - The orchestrator configuration
+    #[must_use]
     pub fn from_config(config: &Config) -> Self {
         Self {
             registry: ConnectorRegistry::standard(),
@@ -39,6 +41,7 @@ impl SessionPoolManager {
     /// * `registry` - The connector registry to use
     /// * `factory` - The session factory to use
     /// * `max_retries` - Maximum discovery retry attempts
+    #[must_use]
     pub fn new(registry: ConnectorRegistry, factory: SessionFactory, max_retries: u32) -> Self {
         Self {
             registry,
@@ -67,7 +70,7 @@ impl SessionPoolManager {
                     all_capabilities.extend(caps);
                 }
                 Err(e) => {
-                    warn!("Connector discovery failed: {}", e);
+                    warn!("Connector discovery failed: {e}");
                 }
             }
         }
@@ -109,8 +112,14 @@ impl SessionPoolManager {
     /// # Errors
     /// Returns an error if no sessions can be established after all retries
     pub async fn discover_and_connect(&self, config: &Config) -> Result<Vec<Session>> {
-        for attempt in 1..=self.max_retries {
-            debug!("Discovery attempt {}/{}", attempt, self.max_retries);
+        let retry_cfg = RetryConfig::default()
+            .with_max_attempts(self.max_retries.max(1))
+            .with_base_delay_ms(1000)
+            .with_max_delay_ms(10_000)
+            .with_jitter_factor(0.2);
+
+        for (attempt, delay) in (1..).zip(ExponentialBackoff::new(&retry_cfg)) {
+            debug!("Discovery attempt {}/{}", attempt, retry_cfg.max_attempts);
 
             match self.discover(config).await {
                 Ok(caps) if !caps.is_empty() => {
@@ -123,27 +132,24 @@ impl SessionPoolManager {
                         );
                         return Ok(sessions);
                     }
-                    warn!("No sessions established on attempt {}", attempt);
+                    warn!("No sessions established on attempt {attempt}");
                 }
                 Ok(_) => {
-                    debug!("No browsers discovered on attempt {}", attempt);
+                    debug!("No browsers discovered on attempt {attempt}");
                 }
                 Err(e) => {
-                    warn!("Discovery failed on attempt {}: {}", attempt, e);
+                    warn!("Discovery failed on attempt {attempt}: {e}");
                 }
             }
 
-            if attempt < self.max_retries {
-                let delay = std::time::Duration::from_millis(1000 * attempt as u64);
-                debug!("Retrying after {:?}...", delay);
-                tokio::time::sleep(delay).await;
-            }
+            debug!("Retrying after {delay:?}...");
+            tokio::time::sleep(delay).await;
         }
 
         Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
             format!(
                 "No browsers discovered after {} retry attempts",
-                self.max_retries
+                retry_cfg.max_attempts
             ),
         )))
     }
@@ -171,7 +177,13 @@ impl SessionPoolManager {
             info!("Browser filters active: {}", filters.join(", "));
         }
 
-        for attempt in 1..=self.max_retries {
+        let retry_cfg = RetryConfig::default()
+            .with_max_attempts(self.max_retries.max(1))
+            .with_base_delay_ms(1000)
+            .with_max_delay_ms(10_000)
+            .with_jitter_factor(0.2);
+
+        for (attempt, delay) in (1..).zip(ExponentialBackoff::new(&retry_cfg)) {
             let caps = self.discover(config).await?;
 
             // Filter capabilities
@@ -194,10 +206,7 @@ impl SessionPoolManager {
                 }
             }
 
-            if attempt < self.max_retries {
-                let delay = std::time::Duration::from_millis(1000 * attempt as u64);
-                tokio::time::sleep(delay).await;
-            }
+            tokio::time::sleep(delay).await;
         }
 
         if !filters.is_empty() {
@@ -240,11 +249,13 @@ impl SessionPoolManager {
     }
 
     /// Returns the number of available connectors.
+    #[must_use]
     pub fn connector_count(&self, config: &Config) -> usize {
         self.registry.available(config).len()
     }
 
     /// Returns the maximum retry count.
+    #[must_use]
     pub fn max_retries(&self) -> u32 {
         self.max_retries
     }
@@ -260,14 +271,7 @@ impl Default for SessionPoolManager {
     }
 }
 
-/// Normalizes a browser token for filter matching.
-fn normalize_browser_token(value: &str) -> String {
-    value
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .flat_map(|c| c.to_lowercase())
-        .collect()
-}
+use crate::utils::normalize_browser_token;
 
 #[cfg(test)]
 mod tests {
@@ -392,6 +396,17 @@ mod tests {
         assert_eq!(normalize_browser_token("Chrome_123"), "chrome123");
         assert_eq!(normalize_browser_token("Test@#$Browser"), "testbrowser");
         assert_eq!(normalize_browser_token(""), "");
+        assert_eq!(
+            normalize_browser_token("MixedCase_Example"),
+            "mixedcaseexample"
+        );
+        assert_eq!(normalize_browser_token("123Numbers456"), "123numbers456");
+        assert_eq!(
+            normalize_browser_token("Only-Special!@#$%^&*()"),
+            "onlyspecial"
+        );
+        assert_eq!(normalize_browser_token("a"), "a");
+        assert_eq!(normalize_browser_token("A_B-C"), "abc");
     }
 
     #[test]
@@ -453,5 +468,163 @@ mod tests {
                 assert!(err_msg.contains("brave"));
             }
         }
+    }
+
+    // ========================================================================
+    // TDD Tests — Coverage Expansion
+    // ========================================================================
+
+    #[tokio::test]
+    async fn tdd_green_discover_empty_registry_returns_empty() {
+        let manager =
+            SessionPoolManager::new(ConnectorRegistry::empty(), SessionFactory::default(), 3);
+        let config = crate::config::Config::default();
+        let result = manager.discover(&config).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn tdd_green_connector_count_with_profiles() {
+        let config = crate::config::Config {
+            browser: crate::config::BrowserConfig {
+                profiles: vec![
+                    crate::config::BrowserProfile {
+                        name: "alpha".to_string(),
+                        r#type: "brave".to_string(),
+                        ws_endpoint: "ws://a:9222".to_string(),
+                    },
+                    crate::config::BrowserProfile {
+                        name: "beta".to_string(),
+                        r#type: "chrome".to_string(),
+                        ws_endpoint: "ws://b:9222".to_string(),
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // ConfiguredProfileConnector is available when profiles is non-empty
+        let manager = SessionPoolManager::default();
+        assert_eq!(manager.connector_count(&config), 1);
+    }
+
+    #[test]
+    fn tdd_green_max_retries_constructors() {
+        // Test max_retries from different constructors
+        let manager_default = SessionPoolManager::default();
+        assert_eq!(manager_default.max_retries(), 3);
+
+        let manager_zero =
+            SessionPoolManager::new(ConnectorRegistry::empty(), SessionFactory::default(), 0);
+        assert_eq!(manager_zero.max_retries(), 0);
+
+        let manager_five =
+            SessionPoolManager::new(ConnectorRegistry::empty(), SessionFactory::default(), 5);
+        assert_eq!(manager_five.max_retries(), 5);
+
+        let config = crate::config::Config {
+            browser: crate::config::BrowserConfig {
+                max_discovery_retries: 10,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let manager_from_config = SessionPoolManager::from_config(&config);
+        assert_eq!(manager_from_config.max_retries(), 10);
+    }
+
+    #[tokio::test]
+    async fn tdd_red_discover_and_connect_zero_retries_fails_immediately() {
+        let manager =
+            SessionPoolManager::new(ConnectorRegistry::empty(), SessionFactory::default(), 0);
+        let config = crate::config::Config::default();
+        let result = manager.discover_and_connect(&config).await;
+        match result {
+            Err(err) => {
+                let err_msg = err.to_string();
+                assert!(
+                    err_msg.contains("No browsers discovered"),
+                    "error: {}",
+                    err_msg
+                );
+            }
+            Ok(sessions) => panic!(
+                "expected error with zero retries, got {} sessions",
+                sessions.len()
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn tdd_red_discover_and_connect_single_retry_fails_on_empty() {
+        let manager =
+            SessionPoolManager::new(ConnectorRegistry::empty(), SessionFactory::default(), 1);
+        let config = crate::config::Config::default();
+        let result = manager.discover_and_connect(&config).await;
+        match result {
+            Err(err) => {
+                let err_msg = err.to_string();
+                assert!(
+                    err_msg.contains("No browsers discovered"),
+                    "error: {}",
+                    err_msg
+                );
+            }
+            Ok(sessions) => panic!(
+                "expected error with empty registry, got {} sessions",
+                sessions.len()
+            ),
+        }
+    }
+
+    #[test]
+    fn tdd_green_capability_matches_partial_across_fields() {
+        let manager = SessionPoolManager::default();
+        let cap = BrowserCapabilities {
+            id: "node-42".to_string(),
+            name: "Firefox Dev".to_string(),
+            browser_type: "firefox".to_string(),
+            ws_url: "ws://localhost:9222".to_string(),
+            source: BrowserSource::Local,
+        };
+        // The filter "node42" matches the normalized concatenation of
+        // name+type+id: "firefoxdevfirefoxnode42" after normalization
+        assert!(manager.capability_matches_filters(&cap, &["node42".to_string()]));
+        // "firefox" matches the browser_type directly
+        assert!(manager.capability_matches_filters(&cap, &["firefox".to_string()]));
+    }
+
+    #[test]
+    fn tdd_green_normalize_unicode_non_ascii() {
+        assert_eq!(normalize_browser_token("Bräve"), "brve");
+        assert_eq!(normalize_browser_token("Chromé_123"), "chrom123");
+        assert_eq!(normalize_browser_token("中文测试"), "");
+        assert_eq!(normalize_browser_token("🦀 Rust"), "rust");
+        assert_eq!(normalize_browser_token("café_browser"), "cafbrowser");
+        assert_eq!(normalize_browser_token("ñ"), "");
+    }
+
+    #[test]
+    fn tdd_green_capability_matches_special_chars_in_ids() {
+        let manager = SessionPoolManager::default();
+        let cap = BrowserCapabilities {
+            id: "test!!".to_string(),
+            name: "Chrome@Home".to_string(),
+            browser_type: "chrome#beta".to_string(),
+            ws_url: "ws://localhost:9222".to_string(),
+            source: BrowserSource::Configured,
+        };
+        // Filter "chrome" matches the browser_type substring after normalization
+        assert!(manager.capability_matches_filters(&cap, &["chrome".to_string()]));
+        // Filter "home" matches the normalized name "chromehome"
+        assert!(manager.capability_matches_filters(&cap, &["home".to_string()]));
+    }
+
+    #[test]
+    fn tdd_green_connector_count_returns_zero_with_empty_registry() {
+        let registry = ConnectorRegistry::empty();
+        let config = crate::config::Config::default();
+        assert_eq!(registry.available(&config).len(), 0);
     }
 }

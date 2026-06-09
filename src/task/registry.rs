@@ -46,21 +46,25 @@ pub enum TaskSource {
 
 impl TaskSource {
     /// Returns true if this is a built-in Rust task.
+    #[must_use]
     pub fn is_built_in(&self) -> bool {
         matches!(self, TaskSource::BuiltInRust)
     }
 
     /// Returns true if this is an external configured task.
+    #[must_use]
     pub fn is_configured(&self) -> bool {
         matches!(self, TaskSource::ConfiguredPath(_))
     }
 
     /// Returns true if this represents an unknown task.
+    #[must_use]
     pub fn is_unknown(&self) -> bool {
         matches!(self, TaskSource::Unknown)
     }
 
-    /// Get the path if this is a ConfiguredPath variant.
+    /// Get the path if this is a `ConfiguredPath` variant.
+    #[must_use]
     pub fn path(&self) -> Option<&PathBuf> {
         match self {
             TaskSource::ConfiguredPath(path) => Some(path),
@@ -85,7 +89,7 @@ impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RegistryError::UnknownTask { name } => {
-                write!(f, "Task '{}' not found", name)
+                write!(f, "Task '{name}' not found")
             }
             RegistryError::Conflict { name, sources } => {
                 let formatted_sources = format_conflict_sources(sources);
@@ -141,6 +145,7 @@ pub struct TaskRegistry {
 
 impl TaskRegistry {
     /// Create an empty registry.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tasks: HashMap::new(),
@@ -151,6 +156,7 @@ impl TaskRegistry {
     /// Create a registry pre-populated with all built-in tasks.
     ///
     /// This is the default registry used by the application.
+    #[must_use]
     pub fn with_built_in_tasks() -> Self {
         let mut registry = Self::new();
         registry.register_built_in_tasks();
@@ -211,7 +217,7 @@ impl TaskRegistry {
     /// Load external tasks from configured discovery roots.
     ///
     /// Scans configured directories for task files, parses them as DSL tasks,
-    /// and adds them to the registry with their TaskDefinition.
+    /// and adds them to the registry with their `TaskDefinition`.
     ///
     /// # Arguments
     /// * `config` - Task discovery configuration
@@ -228,15 +234,12 @@ impl TaskRegistry {
         for root in &config.roots {
             let root_path = std::path::Path::new(root);
             if !root_path.exists() || !root_path.is_dir() {
-                log::warn!(
-                    "Task discovery root '{}' does not exist or is not a directory",
-                    root
-                );
+                log::warn!("Task discovery root '{root}' does not exist or is not a directory");
                 continue;
             }
 
             for extension in &config.extensions {
-                let pattern = format!("{}/**/*.{}", root, extension);
+                let pattern = format!("{root}/**/*.{extension}");
                 if let Ok(entries) = glob::glob(&pattern) {
                     for entry in entries.flatten() {
                         if let Some(name) = entry.file_stem().and_then(|s| s.to_str()) {
@@ -246,12 +249,11 @@ impl TaskRegistry {
                                 }
                                 Err(RegistryError::Conflict { name, .. }) => {
                                     log::warn!(
-                                        "Skipping external task '{}': conflicts with existing task",
-                                        name
+                                        "Skipping external task '{name}': conflicts with existing task"
                                     );
                                 }
                                 Err(e) => {
-                                    log::warn!("Failed to load external task '{}': {}", name, e);
+                                    log::warn!("Failed to load external task '{name}': {e}");
                                 }
                             }
                         }
@@ -287,10 +289,19 @@ impl TaskRegistry {
             }
         };
 
+        // Resolve includes (merge actions from included task files)
+        let parent_dir = path.parent();
+        task_def = task_def.resolve_includes(parent_dir).map_err(|e| {
+            log::error!("Failed to resolve includes for '{}': {}", path.display(), e);
+            RegistryError::UnknownTask {
+                name: name.to_string(),
+            }
+        })?;
+
         // Validate the task definition
         if let Err(errors) = crate::task::dsl::validate_task_definition(&task_def) {
             for error in errors {
-                log::warn!("Task '{}' validation warning: {}", name, error);
+                log::warn!("Task '{name}' validation warning: {error}");
             }
         }
 
@@ -339,6 +350,7 @@ impl TaskRegistry {
     }
 
     /// Check if a task is known (exists in registry).
+    #[must_use]
     pub fn is_known(&self, name: &str) -> bool {
         let normalized = crate::task::normalize_task_name(name);
         self.tasks.contains_key(normalized)
@@ -346,7 +358,7 @@ impl TaskRegistry {
 
     /// Get the task definition for a DSL task.
     ///
-    /// Returns the TaskDefinition if the task is an external DSL task,
+    /// Returns the `TaskDefinition` if the task is an external DSL task,
     /// None for built-in Rust tasks.
     ///
     /// # Arguments
@@ -354,6 +366,7 @@ impl TaskRegistry {
     ///
     /// # Returns
     /// Some(TaskDefinition) if found and has a DSL definition, None otherwise
+    #[must_use]
     pub fn get_task_definition(&self, name: &str) -> Option<&TaskDefinition> {
         let normalized = crate::task::normalize_task_name(name);
         self.tasks.get(normalized).and_then(|d| d.task_def.as_ref())
@@ -362,6 +375,7 @@ impl TaskRegistry {
     /// List all registered tasks.
     ///
     /// Returns tasks sorted by name.
+    #[must_use]
     pub fn list_tasks(&self) -> Vec<&TaskDescriptor> {
         let mut tasks: Vec<_> = self.tasks.values().collect();
         tasks.sort_by_key(|t| &t.name);
@@ -369,6 +383,7 @@ impl TaskRegistry {
     }
 
     /// Get the count of registered tasks.
+    #[must_use]
     pub fn task_count(&self) -> usize {
         self.tasks.len()
     }
@@ -385,6 +400,7 @@ impl TaskRegistry {
     }
 
     /// Get all task names.
+    #[must_use]
     pub fn task_names(&self) -> Vec<String> {
         let mut names: Vec<_> = self.tasks.keys().cloned().collect();
         names.sort();
@@ -429,6 +445,7 @@ impl TaskRegistry {
     ///
     /// # Returns
     /// Validation report with valid and invalid tasks
+    #[must_use]
     pub fn validate_all_tasks(&self) -> ValidationReport {
         let mut valid = Vec::new();
         let mut invalid = Vec::new();
@@ -440,7 +457,9 @@ impl TaskRegistry {
                     match crate::task::dsl::validate_task_definition(task_def) {
                         Ok(()) => {
                             // Also check name consistency
-                            if task_def.name != *name {
+                            if task_def.name == *name {
+                                valid.push(name.clone());
+                            } else {
                                 invalid.push((
                                     name.clone(),
                                     format!(
@@ -448,8 +467,6 @@ impl TaskRegistry {
                                         name, task_def.name
                                     ),
                                 ));
-                            } else {
-                                valid.push(name.clone());
                             }
                         }
                         Err(errors) => {
@@ -474,6 +491,7 @@ impl TaskRegistry {
     /// Generate a diagnostics report for the registry.
     ///
     /// Returns detailed information about tasks, sources, and any issues.
+    #[must_use]
     pub fn diagnostics(&self) -> RegistryDiagnostics {
         let built_in_count = self
             .tasks
@@ -519,11 +537,13 @@ pub struct ValidationReport {
 
 impl ValidationReport {
     /// Returns true if all external tasks are valid.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.invalid.is_empty()
     }
 
     /// Returns the total number of external tasks checked.
+    #[must_use]
     pub fn total(&self) -> usize {
         self.valid.len() + self.invalid.len()
     }
@@ -532,6 +552,7 @@ impl ValidationReport {
 /// Format the task list for display (--list-tasks output).
 ///
 /// Returns a formatted string with task names, sources, and policies.
+#[must_use]
 pub fn format_task_list() -> String {
     let registry = TaskRegistry::with_built_in_tasks();
     let tasks = registry.list_tasks();
@@ -963,5 +984,185 @@ actions:
         let descriptor = registry.lookup("file_canonical").unwrap();
         assert_eq!(descriptor.name, "file_canonical");
         assert_eq!(descriptor.task_def.as_ref().unwrap().name, "file_canonical");
+    }
+
+    #[test]
+    fn test_load_external_task_with_includes() {
+        // Creates a main.task that includes sub.task, loads through registry,
+        // and verifies actions from both files are merged. Included files
+        // live in a sibling 'lib' directory to avoid discovery-root overlap.
+        let dir = TempDir::new().unwrap();
+        let discovery_dir = dir.path().join("discovery");
+        let lib_dir = dir.path().join("lib");
+        fs::create_dir_all(&discovery_dir).unwrap();
+        fs::create_dir_all(&lib_dir).unwrap();
+
+        // Create the included sub-task in lib/ (outside discovery root)
+        let sub_yaml = r##"
+name: sub
+description: "included sub task"
+policy: default
+actions:
+  - action: click
+    selector: "#btn"
+"##;
+        fs::write(lib_dir.join("sub.task"), sub_yaml).unwrap();
+
+        // Create the main task that includes sub.task with relative path
+        let main_yaml = r#"
+name: main
+description: "main task with include"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: ../lib/sub.task
+"#;
+        fs::write(discovery_dir.join("main.task"), main_yaml).unwrap();
+
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![discovery_dir.to_string_lossy().to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let mut registry = TaskRegistry::new();
+        let loaded = registry.load_external_tasks(&config);
+
+        // Only discovery/main.task is in the root; lib/sub.task is not
+        assert_eq!(loaded, 1, "Should have loaded 1 external task (main.task)");
+        assert!(
+            registry.is_known("main"),
+            "Registry should know the 'main' task"
+        );
+
+        let descriptor = registry.lookup("main").unwrap();
+        assert!(descriptor.source.is_configured());
+        assert_eq!(descriptor.policy_name, "default");
+
+        let task_def = descriptor
+            .task_def
+            .as_ref()
+            .expect("Should have a parsed TaskDefinition");
+
+        // Should have 2 actions: main's Wait(100) + resolved sub's Click("#btn")
+        assert_eq!(
+            task_def.actions.len(),
+            2,
+            "Should have 2 merged actions (main Wait + included sub Click), got {}",
+            task_def.actions.len()
+        );
+
+        let has_wait = task_def
+            .actions
+            .iter()
+            .any(|a| matches!(a, crate::task::dsl::Action::Wait { duration_ms: 100 }));
+        let has_click = task_def.actions.iter().any(|a| {
+            matches!(
+                a,
+                crate::task::dsl::Action::Click { selector } if selector == "#btn"
+            )
+        });
+
+        assert!(has_wait, "Main task's Wait(100) action should be present");
+        assert!(
+            has_click,
+            "Included sub task's Click('#btn') action should be present"
+        );
+    }
+
+    #[test]
+    fn test_load_external_task_with_multilevel_includes() {
+        // A → B → C chain: main.task includes sub_a.task, sub_a.task includes sub_b.task.
+        // Verifies multi-level include resolution through the registry.
+        let dir = TempDir::new().unwrap();
+        let task_dir = dir.path().join("tasks");
+        fs::create_dir_all(&task_dir).unwrap();
+
+        // sub_b.task (leaf, no includes)
+        let sub_b = r##"
+name: sub_b
+description: "leaf sub"
+policy: default
+actions:
+  - action: log
+    message: "from sub_b"
+"##;
+        fs::write(task_dir.join("sub_b.task"), sub_b).unwrap();
+
+        // sub_a.task includes sub_b.task
+        let sub_a = r#"
+name: sub_a
+description: "middle sub"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 200
+include:
+  - path: sub_b.task
+"#;
+        fs::write(task_dir.join("sub_a.task"), sub_a).unwrap();
+
+        // main.task includes sub_a.task
+        let main_yaml = r#"
+name: main
+description: "main task"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: sub_a.task
+"#;
+        fs::write(task_dir.join("main.task"), main_yaml).unwrap();
+
+        let config = crate::config::TaskDiscoveryConfig {
+            enabled: true,
+            roots: vec![task_dir.to_string_lossy().to_string()],
+            extensions: vec!["task".to_string()],
+        };
+
+        let mut registry = TaskRegistry::new();
+        let loaded = registry.load_external_tasks(&config);
+
+        assert_eq!(
+            loaded, 3,
+            "Should have loaded 3 external tasks (main, sub_a, sub_b from same root), got {}",
+            loaded
+        );
+
+        let descriptor = registry.lookup("main").unwrap();
+        let task_def = descriptor
+            .task_def
+            .as_ref()
+            .expect("Should have a TaskDefinition");
+
+        // 3 actions: main's Wait, sub_a's Wait, sub_b's Log
+        assert_eq!(
+            task_def.actions.len(),
+            3,
+            "Should have 3 merged actions (main + sub_a + sub_b), got {}",
+            task_def.actions.len()
+        );
+
+        let has_main = task_def
+            .actions
+            .iter()
+            .any(|a| matches!(a, crate::task::dsl::Action::Wait { duration_ms: 100 }));
+        let has_sub_a = task_def
+            .actions
+            .iter()
+            .any(|a| matches!(a, crate::task::dsl::Action::Wait { duration_ms: 200 }));
+        let has_sub_b = task_def.actions.iter().any(|a| {
+            matches!(
+                a,
+                crate::task::dsl::Action::Log { message, .. } if message == "from sub_b"
+            )
+        });
+
+        assert!(has_main, "main.task Wait(100) should be present");
+        assert!(has_sub_a, "sub_a.task Wait(200) should be present");
+        assert!(has_sub_b, "sub_b.task Log should be present");
     }
 }

@@ -1,6 +1,6 @@
-//! Shared types for the task_context module.
+//! Shared types for the `task_context` module.
 //!
-//! This module contains types used across multiple submodules of task_context,
+//! This module contains types used across multiple submodules of `task_context`,
 //! including outcome structs, HTTP response types, and file metadata.
 
 use crate::utils::mouse::CursorMovementConfig;
@@ -97,7 +97,7 @@ impl InteractionRequest {
         }
     }
 
-    /// Create a new select_all interaction request
+    /// Create a new `select_all` interaction request
     pub fn select_all(selector: impl Into<String>) -> Self {
         Self {
             kind: InteractionKind::SelectAll,
@@ -110,18 +110,21 @@ impl InteractionRequest {
     }
 
     /// Disable verification for this interaction
+    #[must_use]
     pub fn without_verification(mut self) -> Self {
         self.verify = false;
         self
     }
 
     /// Disable fallback for this interaction
+    #[must_use]
     pub fn without_fallback(mut self) -> Self {
         self.allow_fallback = false;
         self
     }
 
     /// Set a custom post-action pause
+    #[must_use]
     pub fn with_pause(mut self, ms: u64) -> Self {
         self.post_action_pause_ms = ms;
         self
@@ -147,6 +150,7 @@ pub struct InteractionResult {
 
 impl InteractionResult {
     /// Create a successful result
+    #[must_use]
     pub fn success() -> Self {
         Self {
             success: true,
@@ -159,6 +163,7 @@ impl InteractionResult {
     }
 
     /// Create a successful result with coordinates
+    #[must_use]
     pub fn success_at(x: f64, y: f64) -> Self {
         Self {
             success: true,
@@ -171,6 +176,7 @@ impl InteractionResult {
     }
 
     /// Create a successful result with fallback
+    #[must_use]
     pub fn fallback_success() -> Self {
         Self {
             success: true,
@@ -195,11 +201,13 @@ impl InteractionResult {
     }
 
     /// Check if result is success
+    #[must_use]
     pub fn is_success(&self) -> bool {
         self.success
     }
 
     /// Check if fallback was used
+    #[must_use]
     pub fn is_fallback(&self) -> bool {
         self.fallback_used
     }
@@ -256,6 +264,7 @@ pub struct FocusOutcome {
 }
 
 impl FocusOutcome {
+    #[must_use]
     pub fn summary(&self) -> String {
         let status = match self.focus {
             FocusStatus::Success => "success",
@@ -274,6 +283,7 @@ pub struct RandomCursorOutcome {
 }
 
 impl RandomCursorOutcome {
+    #[must_use]
     pub fn summary(&self) -> String {
         format!(
             "randomcursor ({:.1},{:.1}) delay:{}..{}",
@@ -297,6 +307,7 @@ pub struct ClickAndWaitOutcome {
 }
 
 impl ClickAndWaitOutcome {
+    #[must_use]
     pub fn summary(&self) -> String {
         let next_visible = match self.next_visible {
             WaitForVisibleStatus::Visible => "visible",
@@ -317,4 +328,426 @@ impl ClickAndWaitOutcome {
 pub enum WaitForVisibleStatus {
     Visible,
     Timeout,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // InteractionRequest Tests
+    // ========================================================================
+
+    #[test]
+    fn test_interaction_request_click_defaults() {
+        let req = InteractionRequest::click("#btn");
+        assert_eq!(req.kind, InteractionKind::Click);
+        assert_eq!(req.selector, "#btn");
+        assert!(req.text.is_none());
+        assert!(req.verify);
+        assert!(req.allow_fallback);
+        assert_eq!(req.post_action_pause_ms, 120);
+    }
+
+    #[test]
+    fn test_interaction_request_type_text_defaults() {
+        let req = InteractionRequest::type_text("#input", "hello");
+        assert_eq!(req.kind, InteractionKind::Type);
+        assert_eq!(req.selector, "#input");
+        assert_eq!(req.text.as_deref(), Some("hello"));
+        assert!(req.verify);
+        assert!(req.allow_fallback);
+        assert_eq!(req.post_action_pause_ms, 120);
+    }
+
+    #[test]
+    fn test_interaction_request_focus_defaults() {
+        let req = InteractionRequest::focus("#field");
+        assert_eq!(req.kind, InteractionKind::Focus);
+        assert_eq!(req.selector, "#field");
+        assert!(req.text.is_none());
+        assert!(req.verify);
+        assert!(!req.allow_fallback);
+        assert_eq!(req.post_action_pause_ms, 80);
+    }
+
+    #[test]
+    fn test_interaction_request_clear_defaults() {
+        let req = InteractionRequest::clear("#input");
+        assert_eq!(req.kind, InteractionKind::Clear);
+        assert_eq!(req.selector, "#input");
+        assert!(req.verify);
+        assert!(!req.allow_fallback);
+        assert_eq!(req.post_action_pause_ms, 100);
+    }
+
+    #[test]
+    fn test_interaction_request_select_all_defaults() {
+        let req = InteractionRequest::select_all("#textarea");
+        assert_eq!(req.kind, InteractionKind::SelectAll);
+        assert!(req.verify);
+        assert!(!req.allow_fallback);
+        assert_eq!(req.post_action_pause_ms, 80);
+    }
+
+    #[test]
+    fn test_interaction_request_without_verification() {
+        let req = InteractionRequest::click("#btn").without_verification();
+        assert!(!req.verify);
+        assert!(req.allow_fallback);
+    }
+
+    #[test]
+    fn test_interaction_request_without_fallback() {
+        let req = InteractionRequest::click("#btn").without_fallback();
+        assert!(req.verify);
+        assert!(!req.allow_fallback);
+    }
+
+    #[test]
+    fn test_interaction_request_with_pause() {
+        let req = InteractionRequest::click("#btn").with_pause(500);
+        assert_eq!(req.post_action_pause_ms, 500);
+    }
+
+    #[test]
+    fn test_interaction_request_chained_modifiers() {
+        let req = InteractionRequest::type_text("#input", "text")
+            .without_verification()
+            .without_fallback()
+            .with_pause(250);
+        assert!(!req.verify);
+        assert!(!req.allow_fallback);
+        assert_eq!(req.post_action_pause_ms, 250);
+        assert_eq!(req.text.as_deref(), Some("text"));
+    }
+
+    #[test]
+    fn test_interaction_kind_variants() {
+        assert_eq!(InteractionKind::Click as u8, 0);
+        assert_eq!(InteractionKind::NativeClick as u8, 1);
+        assert_eq!(InteractionKind::Type as u8, 2);
+        assert_eq!(InteractionKind::Keyboard as u8, 3);
+        assert_eq!(InteractionKind::Focus as u8, 4);
+        assert_eq!(InteractionKind::SelectAll as u8, 5);
+        assert_eq!(InteractionKind::Clear as u8, 6);
+        assert_eq!(InteractionKind::Hover as u8, 7);
+    }
+
+    #[test]
+    fn test_interaction_kind_debug() {
+        let kind = InteractionKind::Click;
+        assert_eq!(format!("{:?}", kind), "Click");
+        assert_eq!(format!("{:?}", InteractionKind::Hover), "Hover");
+    }
+
+    // ========================================================================
+    // InteractionResult Tests
+    // ========================================================================
+
+    #[test]
+    fn test_interaction_result_success() {
+        let result = InteractionResult::success();
+        assert!(result.success);
+        assert!(!result.fallback_used);
+        assert!(result.verified);
+        assert!(result.x.is_none());
+        assert!(result.y.is_none());
+        assert!(result.error.is_none());
+        assert!(result.is_success());
+        assert!(!result.is_fallback());
+    }
+
+    #[test]
+    fn test_interaction_result_success_at() {
+        let result = InteractionResult::success_at(100.5, 200.3);
+        assert!(result.success);
+        assert!(result.verified);
+        assert_eq!(result.x, Some(100.5));
+        assert_eq!(result.y, Some(200.3));
+    }
+
+    #[test]
+    fn test_interaction_result_fallback_success() {
+        let result = InteractionResult::fallback_success();
+        assert!(result.success);
+        assert!(result.fallback_used);
+        assert!(result.verified);
+        assert!(result.is_fallback());
+    }
+
+    #[test]
+    fn test_interaction_result_failed() {
+        let result = InteractionResult::failed("element not found");
+        assert!(!result.success);
+        assert!(!result.fallback_used);
+        assert!(!result.verified);
+        assert_eq!(result.error.as_deref(), Some("element not found"));
+        assert!(!result.is_success());
+    }
+
+    #[test]
+    fn test_interaction_result_failed_empty() {
+        let result = InteractionResult::failed("");
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some(""));
+    }
+
+    // ========================================================================
+    // HttpResponse Tests
+    // ========================================================================
+
+    #[test]
+    fn test_http_response_creation() {
+        let response = HttpResponse {
+            status: 200,
+            body: "OK".to_string(),
+            headers: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("content-type".to_string(), "application/json".to_string());
+                m
+            },
+        };
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "OK");
+        assert_eq!(
+            response.headers.get("content-type").map(|s| s.as_str()),
+            Some("application/json")
+        );
+    }
+
+    #[test]
+    fn test_http_response_error_status() {
+        let response = HttpResponse {
+            status: 404,
+            body: "Not Found".to_string(),
+            headers: std::collections::HashMap::new(),
+        };
+        assert_eq!(response.status, 404);
+    }
+
+    #[test]
+    fn test_http_response_empty_body() {
+        let response = HttpResponse {
+            status: 204,
+            body: String::new(),
+            headers: std::collections::HashMap::new(),
+        };
+        assert!(response.body.is_empty());
+    }
+
+    #[test]
+    fn test_http_response_serialize_roundtrip() {
+        let response = HttpResponse {
+            status: 200,
+            body: "{\"key\":\"value\"}".to_string(),
+            headers: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("x-request-id".to_string(), "abc".to_string());
+                m
+            },
+        };
+        let json = serde_json::to_string(&response).expect("serialize");
+        let restored: HttpResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.status, response.status);
+        assert_eq!(restored.body, response.body);
+        assert_eq!(
+            restored.headers.get("x-request-id").map(|s| s.as_str()),
+            Some("abc")
+        );
+    }
+
+    // ========================================================================
+    // Rect Tests
+    // ========================================================================
+
+    #[test]
+    fn test_rect_creation() {
+        let rect = Rect {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 200.0,
+        };
+        assert_eq!(rect.x, 10.0);
+        assert_eq!(rect.y, 20.0);
+        assert_eq!(rect.width, 100.0);
+        assert_eq!(rect.height, 200.0);
+    }
+
+    #[test]
+    fn test_rect_zero_size() {
+        let rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        };
+        assert_eq!(rect.width, 0.0);
+        assert_eq!(rect.height, 0.0);
+    }
+
+    #[test]
+    fn test_rect_serialize_roundtrip() {
+        let rect = Rect {
+            x: 1.5,
+            y: 2.5,
+            width: 3.5,
+            height: 4.5,
+        };
+        let json = serde_json::to_string(&rect).expect("serialize");
+        let restored: Rect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.x, rect.x);
+        assert_eq!(restored.y, rect.y);
+        assert_eq!(restored.width, rect.width);
+        assert_eq!(restored.height, rect.height);
+    }
+
+    // ========================================================================
+    // FileMetadata Tests
+    // ========================================================================
+
+    #[test]
+    fn test_file_metadata_creation() {
+        let meta = FileMetadata {
+            size: 1024,
+            modified: std::time::SystemTime::now(),
+            created: std::time::SystemTime::now(),
+        };
+        assert_eq!(meta.size, 1024);
+    }
+
+    #[test]
+    fn test_file_metadata_zero_size() {
+        let meta = FileMetadata {
+            size: 0,
+            modified: std::time::SystemTime::UNIX_EPOCH,
+            created: std::time::SystemTime::UNIX_EPOCH,
+        };
+        assert_eq!(meta.size, 0);
+    }
+
+    // ========================================================================
+    // FocusOutcome Tests
+    // ========================================================================
+
+    #[test]
+    fn test_focus_outcome_summary_success() {
+        let outcome = FocusOutcome {
+            focus: FocusStatus::Success,
+            x: 100.0,
+            y: 200.0,
+        };
+        let summary = outcome.summary();
+        assert!(summary.contains("success"));
+        assert!(summary.contains("100.0"));
+        assert!(summary.contains("200.0"));
+    }
+
+    #[test]
+    fn test_focus_outcome_summary_failed() {
+        let outcome = FocusOutcome {
+            focus: FocusStatus::Failed,
+            x: 0.0,
+            y: 0.0,
+        };
+        let summary = outcome.summary();
+        assert!(summary.contains("failed"));
+    }
+
+    #[test]
+    fn test_focus_status_variants() {
+        assert_eq!(FocusStatus::Success as u8, 0);
+        assert_eq!(FocusStatus::Failed as u8, 1);
+    }
+
+    #[test]
+    fn test_focus_status_partial_eq() {
+        assert_eq!(FocusStatus::Success, FocusStatus::Success);
+        assert_ne!(FocusStatus::Success, FocusStatus::Failed);
+    }
+
+    // ========================================================================
+    // RandomCursorOutcome Tests
+    // ========================================================================
+
+    #[test]
+    fn test_random_cursor_outcome_summary() {
+        let movement = CursorMovementConfig {
+            min_step_delay_ms: 5,
+            max_step_delay_variance_ms: 15,
+            ..Default::default()
+        };
+        let outcome = RandomCursorOutcome {
+            x: 50.0,
+            y: 75.0,
+            movement,
+        };
+        let summary = outcome.summary();
+        assert!(summary.contains("50.0"));
+        assert!(summary.contains("75.0"));
+        assert!(summary.contains("5..20"));
+    }
+
+    // ========================================================================
+    // ClickAndWaitOutcome Tests
+    // ========================================================================
+
+    #[test]
+    fn test_click_and_wait_outcome_summary_visible() {
+        use crate::utils::mouse::types::{ClickOutcome, ClickStatus};
+        let outcome = ClickAndWaitOutcome {
+            click: ClickOutcome {
+                click: ClickStatus::Success,
+                x: 100.0,
+                y: 200.0,
+                screen_x: None,
+                screen_y: None,
+            },
+            next_selector: "#next".to_string(),
+            next_visible: WaitForVisibleStatus::Visible,
+            timeout_ms: 5000,
+        };
+        let summary = outcome.summary();
+        assert!(summary.contains("visible"));
+        assert!(summary.contains("#next"));
+        assert!(summary.contains("5000ms"));
+    }
+
+    #[test]
+    fn test_click_and_wait_outcome_summary_timeout() {
+        use crate::utils::mouse::types::{ClickOutcome, ClickStatus};
+        let outcome = ClickAndWaitOutcome {
+            click: ClickOutcome {
+                click: ClickStatus::Failed,
+                x: 0.0,
+                y: 0.0,
+                screen_x: None,
+                screen_y: None,
+            },
+            next_selector: "#target".to_string(),
+            next_visible: WaitForVisibleStatus::Timeout,
+            timeout_ms: 10000,
+        };
+        let summary = outcome.summary();
+        assert!(summary.contains("timeout"));
+        assert!(summary.contains("10000ms"));
+    }
+
+    // ========================================================================
+    // WaitForVisibleStatus Tests
+    // ========================================================================
+
+    #[test]
+    fn test_wait_for_visible_status_variants() {
+        assert_eq!(WaitForVisibleStatus::Visible, WaitForVisibleStatus::Visible);
+        assert_eq!(WaitForVisibleStatus::Timeout, WaitForVisibleStatus::Timeout);
+        assert_ne!(WaitForVisibleStatus::Visible, WaitForVisibleStatus::Timeout);
+    }
+
+    #[test]
+    fn test_wait_for_visible_status_debug() {
+        assert_eq!(format!("{:?}", WaitForVisibleStatus::Visible), "Visible");
+        assert_eq!(format!("{:?}", WaitForVisibleStatus::Timeout), "Timeout");
+    }
 }

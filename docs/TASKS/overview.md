@@ -54,7 +54,7 @@ Entries marked `text only` do not have a dedicated task doc page yet.
 
 ## Creating New Tasks
 
-See [Tutorial: Building First Task](../TUTORIAL_BUILDING_FIRST_TASK.md) for detailed instructions.
+See [Creating New Tasks](#creating-new-tasks) above for detailed instructions.
 
 ## Shared Task Rules
 

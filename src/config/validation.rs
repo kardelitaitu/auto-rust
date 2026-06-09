@@ -330,4 +330,113 @@ mod tests {
         let err = config.validate().unwrap_err();
         assert!(matches!(err, ConfigError::MissingField(field, _) if field == "browser.profiles"));
     }
+
+    #[test]
+    fn test_validate_browser_invalid_timeout() {
+        let mut browser = create_valid_browser_config();
+        browser.connection_timeout_ms = 4999; // Invalid
+
+        let config = Config {
+            browser,
+            orchestrator: create_valid_orchestrator_config(),
+            twitter_activity: crate::config::TwitterActivityConfig::default(),
+            tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
+        };
+        let err = config.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "connection_timeout_ms")
+        );
+    }
+
+    #[test]
+    fn test_validate_browser_max_workers_boundary() {
+        let mut browser = create_valid_browser_config();
+        browser.max_workers_per_session = 50; // Exactly at the limit - should be OK
+        browser.profiles[0].name = "boundary".to_string();
+        let config = Config {
+            browser,
+            orchestrator: create_valid_orchestrator_config(),
+            twitter_activity: crate::config::TwitterActivityConfig::default(),
+            tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
+        };
+        assert!(config.validate().is_ok());
+
+        let mut browser = create_valid_browser_config();
+        browser.max_workers_per_session = 51; // Over the limit
+        let config = Config {
+            browser,
+            orchestrator: create_valid_orchestrator_config(),
+            twitter_activity: crate::config::TwitterActivityConfig::default(),
+            tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
+        };
+        let err = config.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_workers_per_session")
+        );
+    }
+
+    #[test]
+    fn test_validate_orchestrator_invalid_timeout() {
+        let mut orchestrator = create_valid_orchestrator_config();
+        orchestrator.task_timeout_ms = 0; // Invalid
+
+        let config = Config {
+            browser: create_valid_browser_config(),
+            orchestrator,
+            twitter_activity: crate::config::TwitterActivityConfig::default(),
+            tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
+        };
+        let err = config.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field: f, value: _, reason: _ } if f == "task_timeout_ms")
+        );
+    }
+
+    #[test]
+    fn test_validate_orchestrator_negative_concurrency() {
+        // usize::MAX passes the == 0 check; this tests that only zero is rejected
+        let mut orchestrator = create_valid_orchestrator_config();
+        orchestrator.max_global_concurrency = 0;
+
+        let config = Config {
+            browser: create_valid_browser_config(),
+            orchestrator,
+            twitter_activity: crate::config::TwitterActivityConfig::default(),
+            tracing: crate::config::TracingConfig::default(),
+            task_discovery: crate::config::TaskDiscoveryConfig::default(),
+        };
+        let err = config.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidValue { field, .. } if field == "max_global_concurrency")
+        );
+    }
+
+    #[test]
+    fn test_config_error_display() {
+        let err = ConfigError::MissingField("test.field".to_string(), "required".to_string());
+        let display = format!("{}", err);
+        assert!(display.contains("test.field"));
+        assert!(display.contains("required"));
+
+        let err = ConfigError::InvalidValue {
+            field: "test.value".to_string(),
+            value: "must be positive".to_string(),
+            reason: "test".to_string(),
+        };
+        let display = format!("{}", err);
+        assert!(display.contains("test.value"));
+        assert!(display.contains("must be positive"));
+    }
+
+    #[test]
+    fn test_config_error_debug() {
+        let err = ConfigError::MissingField("field".to_string(), "reason".to_string());
+        let debug = format!("{:?}", err);
+        assert!(debug.contains("MissingField"));
+        assert!(debug.contains("field"));
+    }
 }

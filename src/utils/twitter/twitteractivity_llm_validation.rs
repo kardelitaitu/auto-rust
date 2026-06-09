@@ -1,7 +1,6 @@
 //! LLM output validation and sanitization for Twitter.
 
 use anyhow::Result;
-use log::warn;
 use std::sync::OnceLock;
 
 /// Banned AI-sounding words list.
@@ -76,10 +75,7 @@ pub fn validate_reply(text: &str) -> Result<String> {
 
     // Check for banned AI words
     if let Some(banned_word) = check_banned_words(&sanitized) {
-        warn!(
-            "Reply contains banned AI word: '{}', but proceeding",
-            banned_word
-        );
+        anyhow::bail!("Reply contains banned AI word: '{banned_word}'");
     }
 
     // Ensure non-empty
@@ -90,7 +86,7 @@ pub fn validate_reply(text: &str) -> Result<String> {
     Ok(sanitized)
 }
 
-/// Truncates text to max_length at word boundary.
+/// Truncates text to `max_length` at word boundary.
 fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
     if text.len() <= max_length {
         return text.to_string();
@@ -98,7 +94,9 @@ fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
 
     // Find last space before max_length (leave room for "...")
     let truncate_limit = max_length.saturating_sub(3);
-    let truncate_at = text[..truncate_limit].rfind(' ').unwrap_or(truncate_limit);
+    // Use char-safe boundary to avoid panic on multi-byte UTF-8
+    let safe_boundary = text.floor_char_boundary(truncate_limit);
+    let truncate_at = text[..safe_boundary].rfind(' ').unwrap_or(safe_boundary);
 
     format!("{}...", &text[..truncate_at])
 }
@@ -123,17 +121,22 @@ fn remove_hashtags(text: &str) -> String {
     hashtags_regex().replace_all(text, "$1").to_string()
 }
 
-/// Removes emojis from text (basic Unicode ranges).
+/// Removes emojis from text (comprehensive Unicode ranges).
 fn remove_emojis(text: &str) -> String {
     text.chars()
         .filter(|c| {
             let cp = *c as u32;
-            !(0x1F600..=0x1F64F).contains(&cp)
-                && !(0x1F300..=0x1F5FF).contains(&cp)
-                && !(0x1F680..=0x1F6FF).contains(&cp)
-                && !(0x1F1E0..=0x1F1FF).contains(&cp)
-                && !(0x2600..=0x26FF).contains(&cp)
-                && !(0x2700..=0x27BF).contains(&cp)
+            !(0x1F600..=0x1F64F).contains(&cp)    // Emoticons
+                && !(0x1F300..=0x1F5FF).contains(&cp)  // Misc Symbols + Pictographs
+                && !(0x1F680..=0x1F6FF).contains(&cp)  // Transport + Map
+                && !(0x1F1E0..=0x1F1FF).contains(&cp)  // Flags (Regional Indicators)
+                && !(0x2600..=0x26FF).contains(&cp)     // Misc Symbols
+                && !(0x2700..=0x27BF).contains(&cp)     // Dingbats
+                && !(0x1F900..=0x1F9FF).contains(&cp)   // Supplemental Symbols + Pictographs
+                && !(0x1FA00..=0x1FAFF).contains(&cp)   // Symbols Extended-A
+                && !(0x1F3FB..=0x1F3FF).contains(&cp)   // Skin tone modifiers
+                && !(0xFE00..=0xFE0F).contains(&cp)     // Variation Selectors
+                && cp != 0x200D // ZWJ (Zero Width Joiner)
         })
         .collect()
 }
@@ -246,6 +249,38 @@ mod tests {
         assert!(!result.contains("🔥"));
         assert!(!result.contains("👍"));
         assert!(result.contains("Test"));
+    }
+
+    #[test]
+    fn test_remove_emojis_supplemental_and_extended() {
+        // 🥰 = U+1F970 (Supplemental Symbols range 0x1F900-0x1F9FF)
+        // 🥸 = U+1F978 (same range)
+        // 🩺 = U+1FA7A (Symbols Extended-A range 0x1FA00-0x1FAFF)
+        let text = "Health 🥰 disguise 🥸 stethoscope 🩺";
+        let result = remove_emojis(text);
+        assert!(!result.contains("🥰"), "🥰 (0x1F970) should be removed");
+        assert!(!result.contains("🥸"), "🥸 (0x1F978) should be removed");
+        assert!(!result.contains("🩺"), "🩺 (0x1FA7A) should be removed");
+        assert!(result.contains("Health"));
+        assert!(result.contains("disguise"));
+        assert!(result.contains("stethoscope"));
+    }
+
+    #[test]
+    fn test_remove_emojis_skin_tone_modifiers() {
+        // Skin tone modifiers: 🏻 (U+1F3FB) through 🏿 (U+1F3FF)
+        let text = "tone 🏻 🏼 🏽 🏾 🏿 done";
+        let result = remove_emojis(text);
+        assert!(
+            !result.contains("🏻"),
+            "skin tone 0x1F3FB should be removed"
+        );
+        assert!(
+            !result.contains("🏿"),
+            "skin tone 0x1F3FF should be removed"
+        );
+        assert!(result.contains("tone"));
+        assert!(result.contains("done"));
     }
 
     #[test]

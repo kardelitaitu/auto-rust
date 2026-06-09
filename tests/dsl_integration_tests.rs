@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use auto::task::dsl::{Action, Condition, LogLevel, TaskDefinition};
-use auto::task::dsl_executor::{DslExecutionStats, ExecutionReport};
+use auto::task::dsl::{DslExecutionStats, ExecutionReport};
 
 /// Helper to create a simple task definition for testing
 fn create_test_task(name: &str, actions: Vec<Action>) -> TaskDefinition {
@@ -186,7 +186,7 @@ fn test_call_action_structure() {
     let mut params = HashMap::new();
     params.insert(
         "target".to_string(),
-        serde_yaml::Value::String("value".to_string()),
+        serde_yml::Value::String("value".to_string()),
     );
 
     let task = create_test_task(
@@ -490,7 +490,7 @@ fn test_condition_types() {
         },
         Condition::VariableEquals {
             name: "var".to_string(),
-            value: serde_yaml::Value::String("value".to_string()),
+            value: serde_yml::Value::String("value".to_string()),
         },
         Condition::And { conditions: vec![] },
         Condition::Or { conditions: vec![] },
@@ -526,7 +526,7 @@ fn test_task_composition_variable_inheritance() {
                     let mut params = HashMap::new();
                     params.insert(
                         "explicit_param".to_string(),
-                        serde_yaml::Value::String("value".to_string()),
+                        serde_yml::Value::String("value".to_string()),
                     );
                     params
                 }),
@@ -678,11 +678,11 @@ fn test_task_composition_variable_references() {
                 let mut params = HashMap::new();
                 params.insert(
                     "url".to_string(),
-                    serde_yaml::Value::String("${base_url}/api".to_string()),
+                    serde_yml::Value::String("${base_url}/api".to_string()),
                 );
                 params.insert(
                     "auth".to_string(),
-                    serde_yaml::Value::String("Bearer ${token}".to_string()),
+                    serde_yml::Value::String("Bearer ${token}".to_string()),
                 );
                 params
             }),

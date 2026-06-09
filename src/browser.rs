@@ -1,10 +1,16 @@
+/*
+last audited 08-05-25 by RSA-Agent
+crate: auto-rust | status: SAFE | lint: CLEAN
+findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
+*/
+
 //! Browser discovery, connection, and management module.
 //!
 //! Handles:
 //! - Browser profile discovery from configuration
 //! - Establishing WebSocket connections to browser instances
 //! - Managing browser lifecycle and health checks
-//! - Integration with RoxyBrowser API for cloud-hosted browsers
+//! - Integration with `RoxyBrowser` API for cloud-hosted browsers
 //!
 //! This module delegates to session-specific connectors and pool management
 //! while maintaining backward-compatible public APIs.
@@ -15,17 +21,7 @@ use crate::session::pool::SessionPoolManager;
 use crate::session::Session;
 use log::{info, warn};
 
-/// Normalizes a browser token for filter matching.
-///
-/// Removes non-alphanumeric characters and converts to lowercase
-/// for consistent case-insensitive comparison.
-pub fn normalize_browser_token(value: &str) -> String {
-    value
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .flat_map(|c| c.to_lowercase())
-        .collect()
-}
+use crate::utils::normalize_browser_token;
 
 /// Checks if a browser candidate matches any of the specified filters.
 ///
@@ -38,6 +34,7 @@ pub fn normalize_browser_token(value: &str) -> String {
 ///
 /// # Returns
 /// True if the candidate matches any filter or if filters is empty
+#[must_use]
 pub fn matches_browser_filters(candidate: &str, filters: &[String]) -> bool {
     if filters.is_empty() {
         return true;
@@ -67,6 +64,7 @@ pub fn matches_browser_filters(candidate: &str, filters: &[String]) -> bool {
 ///
 /// # Returns
 /// True if the profile matches any filter or if filters is empty
+#[must_use]
 pub fn profile_matches_filters(profile: &BrowserProfile, filters: &[String]) -> bool {
     matches_browser_filters(&profile.name, filters)
         || matches_browser_filters(&profile.r#type, filters)
@@ -90,8 +88,8 @@ pub fn session_matches_filters(session: &Session, filters: &[String]) -> bool {
 
 /// Discovers and connects to browser instances based on configuration.
 ///
-/// This function delegates to the SessionPoolManager which coordinates
-/// discovery across multiple connectors (configured profiles, RoxyBrowser,
+/// This function delegates to the `SessionPoolManager` which coordinates
+/// discovery across multiple connectors (configured profiles, `RoxyBrowser`,
 /// and local discovery).
 ///
 /// # Arguments
@@ -108,7 +106,7 @@ pub async fn discover_browsers(config: &Config) -> Result<Vec<Session>> {
 
 /// Discovers browser sessions and optionally filters them by browser name/type tokens.
 ///
-/// Delegates to SessionPoolManager for discovery and connection with
+/// Delegates to `SessionPoolManager` for discovery and connection with
 /// optional filtering applied to discovered capabilities before connection.
 ///
 /// # Arguments
@@ -132,13 +130,13 @@ pub async fn discover_browsers_with_filters(
 
     // Log results
     if sessions.is_empty() {
-        if !browser_filters.is_empty() {
+        if browser_filters.is_empty() {
+            warn!("No browsers discovered (no filters specified)");
+        } else {
             warn!(
                 "No browsers matched the specified filters: {}",
                 browser_filters.join(", ")
             );
-        } else {
-            warn!("No browsers discovered (no filters specified)");
         }
     } else {
         let names: Vec<_> = sessions.iter().map(|s| s.name.as_str()).collect();

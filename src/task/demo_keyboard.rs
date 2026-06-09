@@ -1,25 +1,16 @@
 use crate::capabilities::keyboard;
 use crate::prelude::TaskContext;
-use crate::utils::timing::duration_with_variance;
+use crate::utils::timing::{duration_with_variance, run_with_timeout};
 use anyhow::Result;
 use chromiumoxide::Page;
 use log::{info, warn};
 use serde_json::Value;
-use std::time::Duration;
-use tokio::time::timeout;
 
 pub const DEFAULT_DEMO_KEYBOARD_TASK_DURATION_MS: u64 = 60_000;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
-    timeout(Duration::from_millis(duration_ms), run_inner(api, payload))
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "[demo-keyboard] Task exceeded duration budget of {}ms",
-                duration_ms
-            )
-        })?
+    run_with_timeout(duration_ms, "demo-keyboard", run_inner(api, payload)).await
 }
 
 fn task_duration_ms() -> u64 {
@@ -35,13 +26,13 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         typing.typo_rate_pct = override_rate * 100.0;
     }
     let typo_rate = typing.typo_rate_pct / 100.0;
-    info!("Navigating to: {}", url);
-    info!("Typo rate: {:.2}", typo_rate);
+    info!("Navigating to: {url}");
+    info!("Typo rate: {typo_rate:.2}");
 
     api.navigate(&url, 30000).await?;
 
     if let Err(e) = api.wait_for_load(10000).await {
-        warn!("Failed to wait for load: {}", e);
+        warn!("Failed to wait for load: {e}");
     }
 
     perform_keyboard_demos(api, &typing).await?;
@@ -64,8 +55,7 @@ async fn perform_keyboard_demos(
         )
         .await?
         .value()
-        .map(|v| v.as_bool().unwrap_or(false))
-        .unwrap_or(false);
+        .is_some_and(|v| v.as_bool().unwrap_or(false));
 
     if !exists {
         info!("No interactive element found, performing keyboard demos on page");
@@ -168,7 +158,7 @@ async fn demo_page_keyboard(api: &TaskContext) -> Result<()> {
 
     let keys = ["Tab", "Enter", "ArrowDown", "ArrowUp", "End", "Home"];
 
-    for key in keys.iter() {
+    for key in &keys {
         api.press(key).await?;
         api.pause(200).await;
     }
@@ -179,7 +169,7 @@ async fn demo_page_keyboard(api: &TaskContext) -> Result<()> {
 
 async fn focus_element(page: &Page) -> Result<()> {
     page.evaluate(
-        r#"
+        r"
         (function() {
             const el = document.querySelector('textarea, input[type=text], [contenteditable]');
             if (el) {
@@ -189,38 +179,20 @@ async fn focus_element(page: &Page) -> Result<()> {
             }
             return null;
         })()
-    "#,
+    ",
     )
     .await?;
     Ok(())
 }
 
 fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    if let Some(url) = payload.get("url") {
-        if let Some(url_str) = url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    if let Some(value) = payload.get("value") {
-        if let Some(value_str) = value.as_str() {
-            return Ok(value_str.to_string());
-        }
-    }
-
-    // Check for default_url in payload
-    if let Some(default_url) = payload.get("default_url") {
-        if let Some(url_str) = default_url.as_str() {
-            return Ok(url_str.to_string());
-        }
-    }
-
-    Ok("https://textarea.online/".to_string())
+    crate::utils::url::extract_url_from_payload(payload)
+        .or_else(|_| Ok("https://textarea.online/".to_string()))
 }
 
 async fn select_all_text(page: &Page) -> Result<()> {
     page.evaluate(
-        r#"
+        r"
         (function() {
             const el = document.querySelector('textarea, input[type=text], [contenteditable]');
             if (!el) return;
@@ -236,7 +208,7 @@ async fn select_all_text(page: &Page) -> Result<()> {
                 sel.addRange(range);
             }
         })();
-        "#,
+        ",
     )
     .await?;
     Ok(())
@@ -263,7 +235,7 @@ async fn type_or_typo_text(
 fn extract_typo_rate(payload: &Value) -> Option<f64> {
     payload
         .get("typo_rate")
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .map(|v| v.clamp(0.0, 1.0))
 }
 

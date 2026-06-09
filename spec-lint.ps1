@@ -5,6 +5,16 @@
 .DESCRIPTION
     Validates spec structure, status consistency, and required files.
     Never modifies spec files.
+
+    Lint rules:
+    - REQUIRED_FILES: Every spec package must have spec.yaml, plan.md, validation.md
+    - BUCKET_RULES:
+      * _template/ — status must be "draft", implementer "pending", id "<initiative-id>"
+      * _active/  — status must be "approved", "in-progress", "implemented", or "needs-human-approval", must reference _active/ paths
+      * _done/    — status must be "done", implementer must not be "pending", must reference _done/ paths
+    - ID_MATCH: Folder name must match spec.yaml id (non-template only)
+    - PATH_SANITY: No stale path references (e.g. _done/ paths in _active/ specs)
+    - READONLY_ASSERT: Script verifies its own readonly state (self-audit)
 .PARAMETER Directory
     A spec root, bucket, or package directory to lint. Defaults to docs/specs.
 .EXAMPLE
@@ -22,11 +32,9 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RequiredFiles = @(
-    "README.md",
     "spec.yaml",
     "plan.md",
-    "validation.md",
-    "notes.md"
+    "validation.md"
 )
 
 function Throw-SpecLintError([string]$message) {
@@ -87,7 +95,7 @@ function Read-Text([string]$path) {
 function Parse-Field([string]$text, [string]$pattern) {
     if (-not $text) { return $null }
     $match = [regex]::Match($text, $pattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
-    if ($match.Success) { return $match.Groups[1].Value.Trim() }
+    if ($match.Success) { return $match.Groups[1].Value.Trim().Trim('"', "'") }
     return $null
 }
 
@@ -184,9 +192,7 @@ if ($packages.Count -eq 0) {
 $issues = New-Object System.Collections.Generic.List[object]
 
 foreach ($pkg in $packages) {
-    $readmePath = Join-Path $pkg.Path "README.md"
     $specPath = Join-Path $pkg.Path "spec.yaml"
-    $notesPath = Join-Path $pkg.Path "notes.md"
     $folderName = Split-Path $pkg.Path -Leaf
 
     $missing = New-Object System.Collections.Generic.List[string]
@@ -203,35 +209,20 @@ foreach ($pkg in $packages) {
         continue
     }
 
-    $readme = Read-Text $readmePath
     $spec = Read-Text $specPath
-    if (-not $readme -or -not $spec) {
+    if (-not $spec) {
         $issues.Add((New-Issue $pkg.Path "UNREADABLE_PACKAGE" "Unreadable spec package: $($pkg.Path)" "Fix the missing or unreadable file, then re-run spec-lint."))
         continue
     }
 
-    $readmeStatus = Parse-Field $readme '^Status:\s*`([^`]+)`\s*$'
     $specStatus = Parse-Field $spec '^status:\s*([A-Za-z]+)\s*$'
     $specId = Parse-Field $spec '^id:\s*([^\s]+)\s*$'
     $specImplementer = Parse-Field $spec '^implementer:\s*([^\s]+)\s*$'
-    $notes = Read-Text $notesPath
-
-    if (-not $readmeStatus) {
-        $issues.Add((New-Issue $pkg.Path "README_STATUS_MISSING" "Missing README status in $($pkg.Path)" "Add a line like `Status: `draft`` or `Status: `done`` near the top of README.md."))
-    }
-
-    if (-not $specStatus) {
-        $issues.Add((New-Issue $pkg.Path "SPEC_STATUS_MISSING" "Missing spec.yaml status in $($pkg.Path)" "Add a top-level `status:` field in spec.yaml."))
-    }
-
-    if ($readmeStatus -and $specStatus -and $readmeStatus -ne $specStatus) {
-        $issues.Add((New-Issue $pkg.Path "STATUS_MISMATCH" "Status mismatch in $($pkg.Path): README=$readmeStatus spec.yaml=$specStatus" "Make both status values match before re-running spec-lint."))
-    }
 
     switch ($pkg.Bucket) {
         "_template" {
             if ($specStatus -and $specStatus -ne "draft") {
-                $issues.Add((New-Issue $pkg.Path "TEMPLATE_STATUS_INVALID" "Template must stay draft: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to draft."))
+                $issues.Add((New-Issue $pkg.Path "TEMPLATE_STATUS_INVALID" "Template must stay draft: $($pkg.Path) has status=$specStatus" "Set spec.yaml status to draft."))
             }
 
             if ($specImplementer -and $specImplementer -ne "pending") {
@@ -250,8 +241,9 @@ foreach ($pkg in $packages) {
             }
         }
         "_active" {
-            if ($specStatus -and $specStatus -ne "approved") {
-                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec must be approved: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to approved."))
+            $validActiveStatuses = @("approved", "in-progress", "implemented", "needs-human-approval")
+            if ($specStatus -and $specStatus -notin $validActiveStatuses) {
+                $issues.Add((New-Issue $pkg.Path "ACTIVE_STATUS_INVALID" "Active spec has invalid status: $($pkg.Path) has status=$specStatus (valid: approved, in-progress, implemented, needs-human-approval)" "Set spec.yaml status to a valid active status."))
             }
 
             foreach ($expectedRef in (Get-ExpectedDocsRefs $pkg.Path $pkg.Bucket)) {
@@ -264,14 +256,29 @@ foreach ($pkg in $packages) {
             if ($spec -match [regex]::Escape($staleDonePrefix)) {
                 $issues.Add((New-Issue $pkg.Path "DOC_REF_STALE" "spec.yaml still references done-path docs for an active package: $staleDonePrefix" "Rewrite every docs/specs/_done/$folderName/... entry to docs/specs/_active/$folderName/...."))
             }
+
+            # Quality check: validation.md must not be a Coder Failure Report
+            $validationPath = Join-Path $pkg.Path "validation.md"
+            $validationContent = Read-Text $validationPath
+            if ($validationContent -and $validationContent.TrimStart().StartsWith("# Coder Failure Report")) {
+                $issues.Add((New-Issue $pkg.Path "VALIDATION_FAILURE_REPORT" "validation.md contains a Coder Failure Report instead of acceptance criteria" "Rewrite validation.md with real acceptance criteria, or archive/delete this stuck spec."))
+            }
+
+            # Quality check: acceptance criteria must not be boilerplate
+            $genericCriteria = @(
+                "Generated spec package is complete and validated",
+                "Implementation validates with check-fast.ps1 before completion"
+            )
+            foreach ($criterion in $genericCriteria) {
+                if ($spec.Contains($criterion)) {
+                    $issues.Add((New-Issue $pkg.Path "ACCEPTANCE_GENERIC" "spec.yaml contains boilerplate acceptance criterion: '$criterion'" "Replace with measurable, initiative-specific acceptance criteria."))
+                    break
+                }
+            }
         }
         "_done" {
             if ($specStatus -and $specStatus -ne "done") {
-                $issues.Add((New-Issue $pkg.Path "DONE_STATUS_INVALID" "Done spec must be done: $($pkg.Path) has status=$specStatus" "Set both README and spec.yaml status to done before archiving."))
-            }
-
-            if (-not $notes -or $notes.Trim().Length -eq 0) {
-                $issues.Add((New-Issue $pkg.Path "DONE_NOTES_EMPTY" "Done spec must have implementation notes: $($pkg.Path)" "Add a short implementation summary to implementation-notes.md before archiving."))
+                $issues.Add((New-Issue $pkg.Path "DONE_STATUS_INVALID" "Done spec must be done: $($pkg.Path) has status=$specStatus" "Set spec.yaml status to done before archiving."))
             }
 
             if ($specImplementer -eq "pending") {

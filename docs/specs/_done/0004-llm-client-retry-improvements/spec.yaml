@@ -1,0 +1,33 @@
+version: 1
+id: 0014-llm-client-retry-improvements
+title: Add Exponential Backoff, Jitter, and Retry-After Support to LLM Clients
+status: done
+owner: spec-agent
+implementer: spec-agent
+priority: P2
+area:
+  - bacon-pipeline
+  - llm-client
+files:
+  code:
+    - bacon-pipeline/src/llm/client.rs
+    - src/llm/client.rs
+  docs:
+    - .bacon/workflow.md
+    - docs/TASKS/overview.md
+    - docs/specs/_done/0014-llm-client-retry-improvements/plan.md
+    - docs/specs/_done/0014-llm-client-retry-improvements/validation.md
+acceptance:
+  - LLM retry delay uses exponential backoff with configurable base and multiplier
+  - Jitter factor is applied to retry delays to avoid thundering-herd
+  - Retry-After response header is parsed and respected when present
+  - All existing retry tests continue to pass without modification
+  - LLM retry behavior is documented in .bacon/workflow.md
+non_goals:
+  - Extract shared retry library from Twitter utilities (separate follow-up)
+  - Add circuit breaker pattern to LLM clients (separate follow-up)
+  - Change Twitter/X engagement retry behavior
+  - Add retry configuration to bacon.toml (env-var-only for now)
+risks:
+  - Exponential backoff could extend retry window beyond 3 minutes for retry 3 — acceptable for rate-limit scenarios
+  - Retry-After header may contain unexpected formats — fall back to computed delay

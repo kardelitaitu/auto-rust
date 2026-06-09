@@ -77,7 +77,7 @@ fn dom_cleanup_js() -> &'static str {
 // Aggressive JS-level blocking for cookiebot task.
 // Overrides fetch() and XMLHttpRequest to prevent media requests altogether.
 fn cookiebot_block_js() -> &'static str {
-    r#"
+    r"
         (() => {
             const BLOCK_EXTENSIONS = ['ts', 'm3u8', 'mp4', 'webm', 'mp3', 'wav', 'opus', 'aac', 'ogg', 'mpd', 'mkv', 'avi', 'mov', 'flv'];
             
@@ -132,7 +132,7 @@ fn cookiebot_block_js() -> &'static str {
                 return new OrigWS(url, protocols);
             };
         })()
-    "#
+    "
 }
 
 pub async fn block_heavy_resources(page: &chromiumoxide::Page) -> Result<()> {

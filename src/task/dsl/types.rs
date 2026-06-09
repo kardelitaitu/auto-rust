@@ -8,7 +8,811 @@
 //! - `DurationMs` - wrapper type for u64 that supports dereferencing
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_task_definition_serialization() {
+        let task = TaskDefinition {
+            name: "test-task".to_string(),
+            description: "A test task".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 1000 }],
+        };
+
+        let json = serde_json::to_string(&task).unwrap();
+        let deserialized: TaskDefinition = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(task, deserialized);
+    }
+
+    #[test]
+    fn test_task_definition_defaults() {
+        let task = TaskDefinition {
+            name: "minimal".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions: vec![],
+        };
+
+        // Test that defaults work
+        assert_eq!(task.policy, "default");
+        assert!(task.parameters.is_empty());
+        assert!(task.include.is_empty());
+        assert!(task.actions.is_empty());
+    }
+
+    #[test]
+    fn test_include_spec_serialization() {
+        let include = IncludeSpec {
+            path: "other.task".to_string(),
+            condition: Some("env == 'test'".to_string()),
+        };
+
+        let json = serde_json::to_string(&include).unwrap();
+        let deserialized: IncludeSpec = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(include, deserialized);
+    }
+
+    #[test]
+    fn test_parameter_def_serialization() {
+        let param = ParameterDef {
+            r#type: ParameterType::String,
+            description: "A string parameter".to_string(),
+            default: Some(serde_yml::Value::String("default".to_string())),
+            required: false,
+        };
+
+        let json = serde_json::to_string(&param).unwrap();
+        let deserialized: ParameterDef = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(param, deserialized);
+    }
+
+    #[test]
+    fn test_action_variants() {
+        // Test that all action variants can be created and are distinct
+        let actions = vec![
+            Action::Navigate {
+                url: "https://example.com".to_string(),
+            },
+            Action::Click {
+                selector: "#btn".to_string(),
+            },
+            Action::Type {
+                selector: "#input".to_string(),
+                text: "hello".to_string(),
+            },
+            Action::Wait { duration_ms: 1000 },
+            Action::WaitFor {
+                selector: "#element".to_string(),
+                timeout_ms: Some(5000),
+            },
+            Action::ScrollTo {
+                selector: "#target".to_string(),
+            },
+            Action::Extract {
+                selector: "#text".to_string(),
+                variable: Some("content".to_string()),
+            },
+            Action::Execute {
+                script: "console.log('test')".to_string(),
+            },
+            Action::If {
+                condition: Condition::ElementVisible {
+                    selector: "#btn".to_string(),
+                },
+                then: vec![],
+                r#else: None,
+            },
+            Action::Loop {
+                count: Some(3),
+                condition: None,
+                actions: vec![],
+            },
+            Action::Call {
+                task: "other-task".to_string(),
+                parameters: None,
+            },
+            Action::Log {
+                message: "test".to_string(),
+                level: Some(LogLevel::Info),
+            },
+            Action::Screenshot {
+                path: Some("screenshot.png".to_string()),
+                selector: None,
+            },
+            Action::Clear {
+                selector: "#field".to_string(),
+            },
+            Action::Hover {
+                selector: "#menu".to_string(),
+            },
+            Action::Select {
+                selector: "#dropdown".to_string(),
+                value: "option1".to_string(),
+                by_value: Some(false),
+            },
+            Action::RightClick {
+                selector: "#context".to_string(),
+            },
+            Action::DoubleClick {
+                selector: "#item".to_string(),
+            },
+            Action::Parallel {
+                actions: vec![Action::Wait { duration_ms: 100 }],
+                max_concurrency: Some(2),
+            },
+            Action::Retry {
+                actions: vec![Action::Click {
+                    selector: "#btn".to_string(),
+                }],
+                max_attempts: Some(3),
+                initial_delay_ms: Some(500),
+                max_delay_ms: Some(5000),
+                backoff_multiplier: Some(2.0),
+                jitter: Some(true),
+                retry_on: Some(vec!["timeout".to_string()]),
+            },
+            Action::Foreach {
+                variable: "item".to_string(),
+                collection: ForeachCollection::Array {
+                    values: vec![
+                        serde_yml::Value::String("a".to_string()),
+                        serde_yml::Value::String("b".to_string()),
+                    ],
+                },
+                actions: vec![Action::Log {
+                    message: "${item}".to_string(),
+                    level: None,
+                }],
+                max_iterations: Some(50),
+            },
+            Action::While {
+                condition: Condition::True,
+                actions: vec![Action::Wait { duration_ms: 100 }],
+                max_iterations: Some(10),
+            },
+            Action::Try {
+                try_actions: vec![Action::Click {
+                    selector: "#maybe".to_string(),
+                }],
+                catch_actions: Some(vec![Action::Log {
+                    message: "failed".to_string(),
+                    level: Some(LogLevel::Error),
+                }]),
+                error_variable: Some("err".to_string()),
+                finally_actions: Some(vec![Action::Log {
+                    message: "done".to_string(),
+                    level: None,
+                }]),
+            },
+        ];
+
+        // Verify we have all 23 action variants
+        assert_eq!(actions.len(), 23, "Expected all 23 Action variants");
+
+        // Test serialization of each
+        for action in &actions {
+            let json = serde_json::to_string(&action).unwrap();
+            let deserialized: Action = serde_json::from_str(&json).unwrap();
+            assert_eq!(*action, deserialized, "Round-trip failed for {:?}", action);
+        }
+
+        // Verify YAML serialization works too
+        for action in &actions {
+            let yaml = serde_yml::to_string(&action).unwrap();
+            let deserialized: Action = serde_yml::from_str(&yaml).unwrap();
+            assert_eq!(
+                *action, deserialized,
+                "YAML round-trip failed for {:?}",
+                action
+            );
+        }
+    }
+
+    #[test]
+    fn test_action_select_by_value_variants() {
+        // Test Select with by_value = true (by value attribute)
+        let select_by_val = Action::Select {
+            selector: "#dd".to_string(),
+            value: "v1".to_string(),
+            by_value: Some(true),
+        };
+        let json = serde_json::to_string(&select_by_val).unwrap();
+        assert!(json.contains("\"select\""));
+        let back: Action = serde_json::from_str(&json).unwrap();
+        assert_eq!(select_by_val, back);
+
+        // Test Select with by_value = None (defaults to by text)
+        let select_by_text = Action::Select {
+            selector: "#dd".to_string(),
+            value: "Option Text".to_string(),
+            by_value: None,
+        };
+        let json = serde_json::to_string(&select_by_text).unwrap();
+        let back: Action = serde_json::from_str(&json).unwrap();
+        assert_eq!(select_by_text, back);
+    }
+
+    #[test]
+    fn test_foreach_collection_variants() {
+        let collections = vec![
+            ForeachCollection::Array {
+                values: vec![
+                    serde_yml::Value::String("x".to_string()),
+                    serde_yml::Value::Number(serde_yml::Number::from(42)),
+                ],
+            },
+            ForeachCollection::Range { start: 0, end: 5 },
+            ForeachCollection::Elements {
+                selector: ".item".to_string(),
+            },
+            ForeachCollection::Variable {
+                name: "my_list".to_string(),
+            },
+        ];
+
+        for collection in &collections {
+            let json = serde_json::to_string(&collection).unwrap();
+            let back: ForeachCollection = serde_json::from_str(&json).unwrap();
+            assert_eq!(*collection, back);
+        }
+    }
+
+    #[test]
+    fn test_condition_serialization() {
+        let conditions = vec![
+            Condition::ElementExists {
+                selector: "#btn".to_string(),
+            },
+            Condition::ElementVisible {
+                selector: "#visible".to_string(),
+            },
+            Condition::TextEquals {
+                selector: "#status".to_string(),
+                value: "ready".to_string(),
+            },
+            Condition::TextMatches {
+                selector: "#msg".to_string(),
+                pattern: "success.*".to_string(),
+            },
+            Condition::VariableEquals {
+                name: "status".to_string(),
+                value: serde_yml::Value::String("ok".to_string()),
+            },
+            Condition::VariableMatches {
+                name: "output".to_string(),
+                pattern: r"^\d+$".to_string(),
+            },
+            Condition::NumericGreaterThan {
+                name: "count".to_string(),
+                value: 5.0,
+            },
+            Condition::NumericLessThan {
+                name: "remaining".to_string(),
+                value: 100.0,
+            },
+            Condition::NumericRange {
+                name: "score".to_string(),
+                min: 0.0,
+                max: 100.0,
+            },
+            Condition::DateBefore {
+                name: "deadline".to_string(),
+                date: "2025-12-31".to_string(),
+                format: Some("%Y-%m-%d".to_string()),
+            },
+            Condition::DateAfter {
+                name: "start".to_string(),
+                date: "2024-01-01".to_string(),
+                format: None,
+            },
+            Condition::ArrayContains {
+                name: "items".to_string(),
+                value: serde_yml::Value::String("item1".to_string()),
+            },
+            Condition::ArrayLength {
+                name: "list".to_string(),
+                min: Some(1),
+                max: Some(10),
+                exact: None,
+            },
+            Condition::And {
+                conditions: vec![
+                    Condition::ElementVisible {
+                        selector: "#a".to_string(),
+                    },
+                    Condition::ElementVisible {
+                        selector: "#b".to_string(),
+                    },
+                ],
+            },
+            Condition::Or {
+                conditions: vec![
+                    Condition::ElementVisible {
+                        selector: "#a".to_string(),
+                    },
+                    Condition::ElementExists {
+                        selector: "#b".to_string(),
+                    },
+                ],
+            },
+            Condition::Not {
+                condition: Box::new(Condition::ElementExists {
+                    selector: "#hidden".to_string(),
+                }),
+            },
+            Condition::True,
+            Condition::False,
+            Condition::VariableDefined {
+                name: "token".to_string(),
+            },
+            Condition::VariableNotDefined {
+                name: "missing_var".to_string(),
+            },
+        ];
+
+        // Verify we have all 19 condition variants (And/Or with sub-conditions,
+        // plus Not, True, False, VariableDefined, VariableNotDefined)
+        assert_eq!(
+            conditions.len(),
+            20,
+            "Expected all Condition variants represented"
+        );
+
+        for condition in &conditions {
+            let json = serde_json::to_string(&condition).unwrap();
+            let deserialized: Condition = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                *condition, deserialized,
+                "JSON round-trip failed for {:?}",
+                condition
+            );
+        }
+
+        // Also test YAML round-trip for all
+        for condition in &conditions {
+            let yaml = serde_yml::to_string(&condition).unwrap();
+            let deserialized: Condition = serde_yml::from_str(&yaml).unwrap();
+            assert_eq!(
+                *condition, deserialized,
+                "YAML round-trip failed for {:?}",
+                condition
+            );
+        }
+    }
+
+    #[test]
+    fn test_condition_not_nested() {
+        // Test deeply nested Not
+        let nested = Condition::Not {
+            condition: Box::new(Condition::Not {
+                condition: Box::new(Condition::True),
+            }),
+        };
+        let json = serde_json::to_string(&nested).unwrap();
+        let back: Condition = serde_json::from_str(&json).unwrap();
+        assert_eq!(nested, back);
+    }
+
+    #[test]
+    fn test_condition_compound_nested() {
+        // And containing Or containing Not
+        let compound = Condition::And {
+            conditions: vec![
+                Condition::Or {
+                    conditions: vec![
+                        Condition::Not {
+                            condition: Box::new(Condition::False),
+                        },
+                        Condition::VariableDefined {
+                            name: "x".to_string(),
+                        },
+                    ],
+                },
+                Condition::NumericRange {
+                    name: "val".to_string(),
+                    min: 1.0,
+                    max: 100.0,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&compound).unwrap();
+        let back: Condition = serde_json::from_str(&json).unwrap();
+        assert_eq!(compound, back);
+    }
+
+    #[test]
+    fn test_parameter_types() {
+        assert_eq!(ParameterType::String as u8, 0);
+        assert_eq!(ParameterType::Integer as u8, 1);
+        assert_eq!(ParameterType::Boolean as u8, 2);
+        assert_eq!(ParameterType::Url as u8, 3);
+        assert_eq!(ParameterType::Selector as u8, 4);
+    }
+
+    #[test]
+    fn test_log_level_variants() {
+        assert_eq!(LogLevel::Info as u8, 0);
+        assert_eq!(LogLevel::Debug as u8, 1);
+        assert_eq!(LogLevel::Warn as u8, 2);
+        assert_eq!(LogLevel::Error as u8, 3);
+    }
+
+    #[test]
+    fn test_resolve_includes_circular_detection() {
+        // A circular include graph: A.task includes B.task, B.task includes A.task.
+        // The cycle guard (visited HashSet in resolve_includes_inner) should detect
+        // the cycle and skip the duplicate include rather than infinite-looping.
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create A.task — references B.task
+        let a_yaml = r#"
+name: task_a
+description: "Task A"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: B.task
+"#;
+        std::fs::write(dir_path.join("A.task"), a_yaml).unwrap();
+
+        // Create B.task — references A.task (circular!)
+        let b_yaml = r##"
+name: task_b
+description: "Task B"
+policy: default
+actions:
+  - action: click
+    selector: "#btn"
+include:
+  - path: A.task
+"##;
+        std::fs::write(dir_path.join("B.task"), b_yaml).unwrap();
+
+        // Create the initial TaskDefinition for A (with its include spec)
+        let task = TaskDefinition {
+            name: "task_a".to_string(),
+            description: "Task A".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "B.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        // Resolve includes — this should NOT infinite-loop
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(
+            result.is_ok(),
+            "resolve_includes should succeed: {:?}",
+            result
+        );
+
+        let resolved = result.unwrap();
+
+        // Expected actions = 3:
+        //   1. A's own Wait(100) — from the initial TaskDefinition
+        //   2. B's Click("#btn") — from including B.task
+        //   3. A's Wait(100) — B.task includes A.task on disk, so A's actions are
+        //      legitimately added via B's include resolution
+        //
+        // The cycle guard prevents action #4 (re-including B from the on-disk A.task).
+        // Without the guard, the chain would be infinite:
+        //   A → B → A → B → ...
+        // The visited.insert() for "B.task" on the second pass returns false,
+        // stopping the recursion. Total = 3, not infinite.
+        assert_eq!(
+            resolved.actions.len(),
+            3,
+            "Should have exactly 3 merged actions (A + B + A from B's include), not {}. \
+             The cycle guard prevents infinite recursion, but A.task is a distinct file \
+             that B legitimately includes, so its actions appear once.",
+            resolved.actions.len()
+        );
+
+        // Verify both action types are present
+        let wait_count = resolved
+            .actions
+            .iter()
+            .filter(|a| matches!(a, Action::Wait { duration_ms: 100 }))
+            .count();
+        let has_click = resolved
+            .actions
+            .iter()
+            .any(|a| matches!(a, Action::Click { selector } if selector == "#btn"));
+        // Wait(100) appears twice: once from initial A, once from on-disk A (included by B)
+        assert_eq!(
+            wait_count, 2,
+            "Wait(100) should appear twice (initial A + on-disk A via B)"
+        );
+        assert!(has_click, "Click from B.task should be present");
+    }
+
+    #[test]
+    fn test_resolve_includes_no_cycle_no_duplication() {
+        // Sanity check: a non-circular chain should merge all actions exactly once.
+        // A.task includes B.task, but B.task does NOT include A.task back.
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let a_yaml = r#"
+name: task_a
+description: "Task A"
+policy: default
+actions:
+  - action: wait
+    duration_ms: 100
+include:
+  - path: B.task
+"#;
+        std::fs::write(dir_path.join("A.task"), a_yaml).unwrap();
+
+        let b_yaml = r##"
+name: task_b
+description: "Task B"
+policy: default
+actions:
+  - action: click
+    selector: "#btn2"
+include: []
+"##;
+        std::fs::write(dir_path.join("B.task"), b_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "task_a".to_string(),
+            description: "Task A".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "B.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(result.is_ok());
+
+        let resolved = result.unwrap();
+        assert_eq!(
+            resolved.actions.len(),
+            2,
+            "Non-circular chain should merge exactly 2 actions"
+        );
+    }
+
+    #[test]
+    fn test_resolve_includes_missing_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let task = TaskDefinition {
+            name: "task_missing".to_string(),
+            description: "Test".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "nonexistent.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Wait { duration_ms: 50 }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(
+            result.is_err(),
+            "resolve_includes should fail when included file is missing"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Failed to read file"),
+            "Error should mention file read failure, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_resolve_includes_conditional_skipped() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let included_yaml = r##"
+name: included_task
+description: "Included"
+policy: default
+actions:
+  - action: click
+    selector: "#should-not-appear"
+"##;
+        std::fs::write(dir_path.join("conditional.task"), included_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "main_task".to_string(),
+            description: "Main".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "conditional.task".to_string(),
+                condition: Some("env == 'production'".to_string()),
+            }],
+            actions: vec![Action::Wait { duration_ms: 100 }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(
+            result.is_ok(),
+            "Conditional includes should be skipped, not error"
+        );
+
+        let resolved = result.unwrap();
+        assert_eq!(
+            resolved.actions.len(),
+            1,
+            "Conditional include should be skipped, only original action should remain"
+        );
+        assert!(matches!(
+            resolved.actions[0],
+            Action::Wait { duration_ms: 100 }
+        ));
+    }
+
+    #[test]
+    fn test_resolve_includes_three_level_nesting() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let c_yaml = r#"
+name: task_c
+description: "Task C"
+policy: default
+actions:
+  - action: log
+    message: "from C"
+"#;
+        std::fs::write(dir_path.join("C.task"), c_yaml).unwrap();
+
+        let b_yaml = r#"
+name: task_b
+description: "Task B"
+policy: default
+actions:
+  - action: log
+    message: "from B"
+include:
+  - path: C.task
+"#;
+        std::fs::write(dir_path.join("B.task"), b_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "task_a".to_string(),
+            description: "Task A".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![IncludeSpec {
+                path: "B.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Log {
+                message: "from A".to_string(),
+                level: None,
+            }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(
+            result.is_ok(),
+            "3-level nesting should resolve: {:?}",
+            result
+        );
+
+        let resolved = result.unwrap();
+        assert_eq!(
+            resolved.actions.len(),
+            3,
+            "Expected 3 actions from A + B + C, got {}",
+            resolved.actions.len()
+        );
+
+        match &resolved.actions[0] {
+            Action::Log { message, .. } => assert_eq!(message, "from A"),
+            other => panic!("Expected Log from A, got {:?}", other),
+        }
+        match &resolved.actions[1] {
+            Action::Log { message, .. } => assert_eq!(message, "from B"),
+            other => panic!("Expected Log from B, got {:?}", other),
+        }
+        match &resolved.actions[2] {
+            Action::Log { message, .. } => assert_eq!(message, "from C"),
+            other => panic!("Expected Log from C, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resolve_includes_no_includes() {
+        let task = TaskDefinition {
+            name: "standalone".to_string(),
+            description: "No includes".to_string(),
+            policy: "default".to_string(),
+            parameters: std::collections::HashMap::new(),
+            include: vec![],
+            actions: vec![Action::Wait { duration_ms: 1 }],
+        };
+
+        let result = task.resolve_includes(None);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.actions.len(), 1);
+    }
+
+    #[test]
+    fn test_resolve_includes_merges_parameters() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        let included_yaml = r#"
+name: param_task
+description: "Has params"
+policy: default
+parameters:
+  api_key:
+    type: string
+    description: "API key"
+    required: true
+actions:
+  - action: wait
+    duration_ms: 10
+"#;
+        std::fs::write(dir_path.join("params.task"), included_yaml).unwrap();
+
+        let task = TaskDefinition {
+            name: "main".to_string(),
+            description: "".to_string(),
+            policy: "default".to_string(),
+            parameters: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "url".to_string(),
+                    ParameterDef {
+                        r#type: ParameterType::Url,
+                        description: "Target URL".to_string(),
+                        default: None,
+                        required: true,
+                    },
+                );
+                m
+            },
+            include: vec![IncludeSpec {
+                path: "params.task".to_string(),
+                condition: None,
+            }],
+            actions: vec![Action::Navigate {
+                url: "${url}".to_string(),
+            }],
+        };
+
+        let result = task.resolve_includes(Some(dir_path));
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert!(resolved.parameters.contains_key("url"));
+        assert!(resolved.parameters.contains_key("api_key"));
+        assert_eq!(resolved.parameters.len(), 2);
+    }
+}
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TaskDefinition {
     /// Task name (must be unique)
@@ -44,6 +848,98 @@ fn default_policy() -> String {
     "default".to_string()
 }
 
+impl TaskDefinition {
+    /// Resolve includes by loading and merging included task files into actions.
+    ///
+    /// Recursively resolves nested includes. Unconditional includes (condition is None)
+    /// are resolved eagerly; conditional includes are skipped with a warning.
+    ///
+    /// # Arguments
+    /// * `base_path` - Optional base directory for resolving relative include paths.
+    ///   If None, relative paths are resolved against the current working directory.
+    ///
+    /// # Returns
+    /// `Ok(self)` with all included actions merged, or `Err` with error message.
+    pub fn resolve_includes(self, base_path: Option<&std::path::Path>) -> Result<Self, String> {
+        let mut visited = HashSet::new();
+        self.resolve_includes_inner(base_path, &mut visited)
+    }
+
+    /// Internal recursive resolve with cycle detection.
+    fn resolve_includes_inner(
+        mut self,
+        base_path: Option<&std::path::Path>,
+        visited: &mut HashSet<std::path::PathBuf>,
+    ) -> Result<Self, String> {
+        let includes = std::mem::take(&mut self.include);
+
+        if includes.is_empty() {
+            return Ok(self);
+        }
+
+        for include in includes {
+            // Skip conditional includes for now
+            if include.condition.is_some() {
+                log::warn!(
+                    "Conditional includes not yet supported: skipping '{}'",
+                    include.path
+                );
+                continue;
+            }
+
+            // Resolve the path
+            let path = std::path::Path::new(&include.path);
+            let resolved_path = if path.is_relative() {
+                if let Some(base) = base_path {
+                    base.join(path)
+                } else {
+                    path.to_path_buf()
+                }
+            } else {
+                path.to_path_buf()
+            };
+
+            log::debug!(
+                "Resolving include '{}' from path '{:?}'",
+                include.path,
+                resolved_path
+            );
+
+            // Check for circular includes
+            if !visited.insert(resolved_path.clone()) {
+                log::warn!(
+                    "Circular include detected: '{}' already processed, skipping",
+                    include.path
+                );
+                continue;
+            }
+
+            // Load the included task file
+            let included = crate::task::dsl::parser::parse_task_file(&resolved_path)?;
+
+            // Recursively resolve its includes (with the same base dir)
+            let base_for_child = resolved_path.parent();
+            let resolved = included.resolve_includes_inner(base_for_child, visited)?;
+
+            // Merge actions from the included task
+            let count = resolved.actions.len();
+            self.actions.extend(resolved.actions);
+            log::info!(
+                "Merged {} actions from included task '{}'",
+                count,
+                include.path
+            );
+
+            // Merge parameters (don't overwrite existing)
+            for (key, value) in resolved.parameters {
+                self.parameters.entry(key).or_insert(value);
+            }
+        }
+
+        Ok(self)
+    }
+}
+
 /// Parameter definition for task inputs.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct ParameterDef {
@@ -54,7 +950,7 @@ pub struct ParameterDef {
     #[serde(default)]
     pub description: String,
     /// Default value (optional)
-    pub default: Option<serde_yaml::Value>,
+    pub default: Option<serde_yml::Value>,
     /// Whether parameter is required
     #[serde(default)]
     pub required: bool,
@@ -113,7 +1009,7 @@ pub enum Action {
     /// Call another task
     Call {
         task: String,
-        parameters: Option<HashMap<String, serde_yaml::Value>>,
+        parameters: Option<HashMap<String, serde_yml::Value>>,
     },
     /// Log a message
     Log {
@@ -205,7 +1101,7 @@ pub enum Action {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ForeachCollection {
     /// Array of values to iterate over
-    Array { values: Vec<serde_yaml::Value> },
+    Array { values: Vec<serde_yml::Value> },
     /// Range of integers (inclusive start, exclusive end)
     Range { start: i64, end: i64 },
     /// DOM elements matching a selector
@@ -240,7 +1136,7 @@ pub enum Condition {
     /// Check if variable equals value
     VariableEquals {
         name: String,
-        value: serde_yaml::Value,
+        value: serde_yml::Value,
     },
     /// Check if variable matches regex pattern
     VariableMatches { name: String, pattern: String },
@@ -265,7 +1161,7 @@ pub enum Condition {
     /// Check if array variable contains a value
     ArrayContains {
         name: String,
-        value: serde_yaml::Value,
+        value: serde_yml::Value,
     },
     /// Check if array variable length matches
     ArrayLength {

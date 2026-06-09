@@ -7,7 +7,6 @@
 
 use crate::config::NativeClickCalibrationMode;
 use anyhow::Result;
-use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -22,20 +21,22 @@ pub const NATIVE_CLICK_PROBE_ID: &str = "__auto_rust_nativeclick_probe";
 pub const NATIVE_CLICK_PROBE_HIT_FLAG: &str = "__auto_rust_nativeclick_probe_hit";
 
 /// Global lock for native click operations to prevent concurrent OS input conflicts.
-pub static NATIVE_CLICK_LOCK: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
+pub static NATIVE_CLICK_LOCK: std::sync::LazyLock<TokioMutex<()>> =
+    std::sync::LazyLock::new(|| TokioMutex::new(()));
 
-/// Calibration cache keyed by session::target_id fingerprint.
-pub static NATIVE_CLICK_CALIBRATION_CACHE: Lazy<
+/// Calibration cache keyed by `session::target_id` fingerprint.
+pub static NATIVE_CLICK_CALIBRATION_CACHE: std::sync::LazyLock<
     Mutex<HashMap<String, NativeClickCalibrationEntry>>,
-> = Lazy::new(|| Mutex::new(HashMap::new()));
+> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Forced calibration override for integration tests.
-pub static FORCED_NATIVECLICK_CALIBRATION: Lazy<Mutex<HashMap<String, NativeClickCalibration>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+pub static FORCED_NATIVECLICK_CALIBRATION: std::sync::LazyLock<
+    Mutex<HashMap<String, NativeClickCalibration>>,
+> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Trace hooks for testing native click flow.
-pub static NATIVECLICK_TRACE_HOOKS: Lazy<Mutex<HashMap<String, Vec<String>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+pub static NATIVECLICK_TRACE_HOOKS: std::sync::LazyLock<Mutex<HashMap<String, Vec<String>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Counter for trace IDs.
 static NATIVE_CLICK_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -266,19 +267,11 @@ pub async fn acquire_native_input_lock(
     };
     atomic_update_max(&NATIVE_LOCK_MAX_WAIT_MS, wait_ms);
     if wait_ms > NATIVE_LOCK_WARN_WAIT_THRESHOLD_MS {
-        log::warn!(
-            "[native-lock] High wait time for session_id={} op={}: {}ms",
-            session_id,
-            op,
-            wait_ms
-        );
+        log::warn!("[native-lock] High wait time for session_id={session_id} op={op}: {wait_ms}ms");
     }
     if contentions > 0 {
         log::debug!(
-            "[native-lock] Contention for session_id={} op={}: waited {}ms",
-            session_id,
-            op,
-            contentions
+            "[native-lock] Contention for session_id={session_id} op={op}: waited {contentions}ms"
         );
     }
     NativeInputLockGuard {
@@ -301,6 +294,7 @@ pub struct NativeInputLockMetricsSnapshot {
 }
 
 /// Get metrics snapshot for native input lock.
+#[allow(clippy::cast_precision_loss)]
 pub fn native_input_lock_metrics_snapshot() -> NativeInputLockMetricsSnapshot {
     let acquisitions = NATIVE_LOCK_ACQUISITIONS.load(Ordering::Relaxed);
     let total_wait_ms = NATIVE_LOCK_TOTAL_WAIT_MS.load(Ordering::Relaxed);
@@ -353,6 +347,8 @@ pub fn clear_nativeclick_trace_hooks(session_id: &str) {
 }
 
 /// Generate fingerprint from browser metrics.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn native_click_fingerprint(
     metrics: &BrowserWindowMetrics,
     mode: NativeClickCalibrationMode,
@@ -371,6 +367,7 @@ pub fn native_click_fingerprint(
 }
 
 /// Calculate browser content origin offset.
+#[must_use]
 pub fn browser_content_origin(
     metrics: &BrowserWindowMetrics,
     scale_x: f64,
@@ -391,11 +388,13 @@ pub fn browser_content_origin(
 }
 
 /// Calculate browser scale factor.
+#[must_use]
 pub fn browser_scale(metrics: &BrowserWindowMetrics, _mode: NativeClickCalibrationMode) -> f64 {
     (metrics.device_pixel_ratio / metrics.visual_viewport_scale.max(1.0)).clamp(0.5, 4.0)
 }
 
 /// Create calibration from browser metrics.
+#[must_use]
 pub fn native_click_calibration_from_metrics(
     metrics: &BrowserWindowMetrics,
     mode: NativeClickCalibrationMode,
@@ -411,6 +410,7 @@ pub fn native_click_calibration_from_metrics(
 }
 
 /// Convert page coordinates to screen coordinates using calibration.
+#[must_use]
 pub fn screen_point_from_calibration(
     metrics: &BrowserWindowMetrics,
     calibration: &NativeClickCalibration,
@@ -465,6 +465,7 @@ pub struct NativeClickProbeSample {
 }
 
 /// Solve calibration parameters from two probe samples.
+#[must_use]
 pub fn solve_calibration_from_probe_samples(
     _metrics: &BrowserWindowMetrics,
     candidate: NativeClickCalibration,

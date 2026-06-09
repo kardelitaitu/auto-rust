@@ -26,6 +26,13 @@ impl Llm {
         Ok(Self { client })
     }
 
+    #[must_use]
+    pub fn from_config(config: LlmConfig) -> Self {
+        Self {
+            client: LlmClient::new(config),
+        }
+    }
+
     pub async fn generate(&self, prompt: &str) -> anyhow::Result<String> {
         let messages = vec![ChatMessage::user(prompt)];
         self.client.chat(messages).await
@@ -47,6 +54,10 @@ impl Llm {
     pub async fn health_check(&self) -> bool {
         self.client.health_check().await
     }
+
+    pub async fn health_check_result(&self) -> anyhow::Result<bool> {
+        self.client.health_check_result().await
+    }
 }
 
 impl Default for Llm {
@@ -66,21 +77,21 @@ mod tests {
     #[test]
     fn test_chat_message_user_creation() {
         let msg = ChatMessage::user("Hello, world!");
-        assert_eq!(msg.role, "user");
+        assert_eq!(msg.role, Role::User);
         assert_eq!(msg.content, "Hello, world!");
     }
 
     #[test]
     fn test_chat_message_system_creation() {
         let msg = ChatMessage::system("You are a helpful assistant");
-        assert_eq!(msg.role, "system");
+        assert_eq!(msg.role, Role::System);
         assert_eq!(msg.content, "You are a helpful assistant");
     }
 
     #[test]
     fn test_chat_message_assistant_creation() {
         let msg = ChatMessage::assistant("Here's my response");
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
         assert_eq!(msg.content, "Here's my response");
     }
 
@@ -116,14 +127,14 @@ mod tests {
         let request = ChatRequest {
             model: "gpt-4".to_string(),
             messages,
-            temperature: Some(0.7),
-            max_tokens: Some(2048),
+            temperature: Some(Temperature::new(0.7)),
+            max_tokens: Some(MaxTokens::new(2048).unwrap()),
         };
 
         assert_eq!(request.model, "gpt-4");
         assert_eq!(request.messages.len(), 2);
-        assert_eq!(request.temperature, Some(0.7));
-        assert_eq!(request.max_tokens, Some(2048));
+        assert_eq!(request.temperature, Some(Temperature::new(0.7)));
+        assert_eq!(request.max_tokens, Some(MaxTokens::new(2048).unwrap()));
     }
 
     #[test]
@@ -236,7 +247,7 @@ mod tests {
     fn test_chat_message_deserialization() {
         let json = r#"{"role":"assistant","content":"Hi there"}"#;
         let msg: ChatMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.role, "assistant");
+        assert_eq!(msg.role, Role::Assistant);
         assert_eq!(msg.content, "Hi there");
     }
 
@@ -245,8 +256,8 @@ mod tests {
         let request = ChatRequest {
             model: "test".to_string(),
             messages: vec![ChatMessage::user("Hello")],
-            temperature: Some(0.5),
-            max_tokens: Some(100),
+            temperature: Some(Temperature::new(0.5)),
+            max_tokens: Some(MaxTokens::new(100).unwrap()),
         };
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"model\":\"test\""));
@@ -278,7 +289,7 @@ mod tests {
         };
         match choice {
             ChatChoice::WithMessage { message } => {
-                assert_eq!(message.role, "assistant");
+                assert_eq!(message.role, Role::Assistant);
             }
             _ => panic!("Expected WithMessage variant"),
         }

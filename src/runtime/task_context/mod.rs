@@ -5,7 +5,7 @@
 //!
 //! # Task API Verbs
 //!
-//! The TaskContext provides short, readable verbs for common actions:
+//! The `TaskContext` provides short, readable verbs for common actions:
 //! - `click()` - Click an element with human-like cursor movement
 //! - `nativeclick()` - Click an element using native OS input
 //! - `nativecursor()` - Move native cursor to a visible element
@@ -1632,7 +1632,7 @@ fn wrapper_timeout_context(stage: &str, details: impl Into<String>) -> String {
 }
 
 impl TaskContext {
-    /// Creates a new TaskContext for browser automation.
+    /// Creates a new `TaskContext` for browser automation.
     ///
     /// # Arguments
     ///
@@ -1681,6 +1681,10 @@ impl TaskContext {
                 true,
                 browser_config.learning_ttl_days,
             )
+            .unwrap_or_else(|e| {
+                log::warn!("Failed to initialize LearningEngine, falling back to disabled: {e}");
+                LearningEngine::disabled()
+            })
         } else {
             LearningEngine::disabled()
         };
@@ -1727,6 +1731,7 @@ impl TaskContext {
         ctx
     }
 
+    #[must_use]
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
@@ -1735,18 +1740,22 @@ impl TaskContext {
         &self.page
     }
 
+    #[must_use]
     pub fn clipboard(&self) -> &ClipboardState {
         &self.clipboard
     }
 
+    #[must_use]
     pub fn behavior_profile(&self) -> &BrowserProfile {
         &self.behavior_profile
     }
 
+    #[must_use]
     pub fn behavior_runtime(&self) -> &ProfileRuntime {
         &self.behavior_runtime
     }
 
+    #[must_use]
     pub fn native_interaction(&self) -> &NativeInteractionConfig {
         &self.native_interaction
     }
@@ -1757,6 +1766,7 @@ impl TaskContext {
         }
     }
 
+    #[must_use]
     pub fn metrics(&self) -> &MetricsCollector {
         self.metrics
             .as_ref()
@@ -1802,14 +1812,14 @@ impl TaskContext {
                 serde_json::to_value(&cookies.cookies).unwrap_or(serde_json::Value::Array(vec![]))
             }
             Err(e) => {
-                log::warn!("Failed to export cookies during browser export: {}", e);
+                log::warn!("Failed to export cookies during browser export: {e}");
                 serde_json::Value::Array(vec![])
             }
         };
         let cookies = cookies_json.as_array().unwrap_or(&vec![]).clone();
 
         // Export localStorage from all frames via JavaScript
-        let local_storage_js = r#"
+        let local_storage_js = r"
             (function() {
                 const data = {};
                 const hostname = window.location.hostname;
@@ -1820,10 +1830,10 @@ impl TaskContext {
                 }
                 return JSON.stringify(data);
             })()
-        "#;
+        ";
         let local_storage_str =
             self.page.evaluate(local_storage_js).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage - {}", e)
+                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage - {e}")
             })?;
         let local_storage_value = local_storage_str
             .value()
@@ -1835,7 +1845,7 @@ impl TaskContext {
         > = deserialize_evaluated_json(local_storage_value).unwrap_or_default();
 
         // Export sessionStorage via JavaScript
-        let session_storage_js = r#"
+        let session_storage_js = r"
             (function() {
                 const data = {};
                 const hostname = window.location.hostname;
@@ -1846,10 +1856,11 @@ impl TaskContext {
                 }
                 return JSON.stringify(data);
             })()
-        "#;
-        let session_storage_str = self.page.evaluate(session_storage_js).await.map_err(|e| {
-            anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage - {}", e)
-        })?;
+        ";
+        let session_storage_str =
+            self.page.evaluate(session_storage_js).await.map_err(|e| {
+                anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage - {e}")
+            })?;
         let session_storage_value = session_storage_str
             .value()
             .cloned()
@@ -1860,7 +1871,7 @@ impl TaskContext {
         > = deserialize_evaluated_json(session_storage_value).unwrap_or_default();
 
         // Get IndexedDB database names (simplified - just list databases)
-        let indexeddb_js = r#"
+        let indexeddb_js = r"
             (function() {
                 return new Promise((resolve) => {
                     const hostname = window.location.hostname;
@@ -1885,7 +1896,7 @@ impl TaskContext {
                     }
                 });
             })()
-        "#;
+        ";
         let indexeddb_result = self.page.evaluate(indexeddb_js).await;
         let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match indexeddb_result
         {
@@ -1895,7 +1906,7 @@ impl TaskContext {
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default(),
             Err(e) => {
-                log::warn!("Failed to export IndexedDB names: {}", e);
+                log::warn!("Failed to export IndexedDB names: {e}");
                 std::collections::HashMap::new()
             }
         };
@@ -1925,7 +1936,7 @@ impl TaskContext {
     /// Import complete browser data including cookies, localStorage, sessionStorage.
     ///
     /// # Arguments
-    /// * `browser_data` - Complete BrowserData to import
+    /// * `browser_data` - Complete `BrowserData` to import
     ///
     /// # Errors
     /// Returns error if `allow_browser_import` permission not granted
@@ -1969,12 +1980,12 @@ impl TaskContext {
         // Import localStorage for each origin
         for (origin, data) in &browser_data.local_storage {
             let local_storage_json = serde_json::to_string(data).map_err(|e| {
-                anyhow::anyhow!("Failed to serialize localStorage for {}: {}", origin, e)
+                anyhow::anyhow!("Failed to serialize localStorage for {origin}: {e}")
             })?;
             let js_code = format!(
-                r#"
+                r"
                 (function() {{
-                    const data = {};
+                    const data = {local_storage_json};
                     let count = 0;
                     Object.entries(data).forEach(([k, v]) => {{
                         try {{
@@ -1986,26 +1997,22 @@ impl TaskContext {
                     }});
                     return 'localStorage imported: ' + count + ' items for origin';
                 }})()
-                "#,
-                local_storage_json
+                "
             );
             self.page.evaluate(js_code).await.map_err(|e| {
-                anyhow::anyhow!(
-                    "CDP error: Runtime.evaluate for localStorage import - {}",
-                    e
-                )
+                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage import - {e}")
             })?;
         }
 
         // Import sessionStorage for each origin
         for (origin, data) in &browser_data.session_storage {
             let session_storage_json = serde_json::to_string(data).map_err(|e| {
-                anyhow::anyhow!("Failed to serialize sessionStorage for {}: {}", origin, e)
+                anyhow::anyhow!("Failed to serialize sessionStorage for {origin}: {e}")
             })?;
             let js_code = format!(
-                r#"
+                r"
                 (function() {{
-                    const data = {};
+                    const data = {session_storage_json};
                     let count = 0;
                     Object.entries(data).forEach(([k, v]) => {{
                         try {{
@@ -2017,14 +2024,10 @@ impl TaskContext {
                     }});
                     return 'sessionStorage imported: ' + count + ' items for origin';
                 }})()
-                "#,
-                session_storage_json
+                "
             );
             self.page.evaluate(js_code).await.map_err(|e| {
-                anyhow::anyhow!(
-                    "CDP error: Runtime.evaluate for sessionStorage import - {}",
-                    e
-                )
+                anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage import - {e}")
             })?;
         }
 
@@ -2046,7 +2049,7 @@ impl TaskContext {
     /// * `_url` - URL context (for consistency with other methods)
     ///
     /// # Returns
-    /// HashMap of localStorage key-value pairs
+    /// `HashMap` of localStorage key-value pairs
     ///
     /// # Errors
     /// Returns error if `allow_export_session` permission is not granted
@@ -2087,7 +2090,7 @@ impl TaskContext {
         }
 
         // Export localStorage via JavaScript
-        let local_storage_js = r#"
+        let local_storage_js = r"
             (function() {
                 const data = {};
                 for (let i = 0; i < localStorage.length; i++) {
@@ -2096,12 +2099,12 @@ impl TaskContext {
                 }
                 return JSON.stringify(data);
             })()
-        "#;
+        ";
         let local_storage_str = self
             .page
             .evaluate(local_storage_js)
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
         let local_storage_value = local_storage_str
             .value()
             .cloned()
@@ -2124,7 +2127,7 @@ impl TaskContext {
     ///
     /// # Arguments
     /// * `_url` - URL context (for consistency with other methods)
-    /// * `data` - HashMap of key-value pairs to set in localStorage
+    /// * `data` - `HashMap` of key-value pairs to set in localStorage
     ///
     /// # Errors
     /// Returns error if `allow_import_session` permission is not granted
@@ -2165,23 +2168,22 @@ impl TaskContext {
 
         // Import localStorage via JavaScript
         let local_storage_json = serde_json::to_string(data)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to serialize localStorage: {e}"))?;
         let js_code = format!(
-            r#"
+            r"
             (function() {{
-                const data = {};
+                const data = {local_storage_json};
                 Object.entries(data).forEach(([k, v]) => {{
                     localStorage.setItem(k, v);
                 }});
                 return 'localStorage imported: ' + Object.keys(data).length + ' items';
             }})()
-            "#,
-            local_storage_json
+            "
         );
         self.page
             .evaluate(js_code)
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {}", e))?;
+            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
 
         log::warn!(
             "task_policy_audit: task={} permission={} url={} count={}",
@@ -2194,10 +2196,10 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Validate SessionData structure without importing.
+    /// Validate `SessionData` structure without importing.
     ///
     /// # Arguments
-    /// * `data` - SessionData to validate
+    /// * `data` - `SessionData` to validate
     ///
     /// # Returns
     /// Vec of validation warnings (empty if valid)
@@ -2226,6 +2228,7 @@ impl TaskContext {
     ///     println!("Warnings: {:?}", warnings);
     /// }
     /// ```
+    #[must_use]
     pub fn validate_session_data_for_tests(data: &crate::task::policy::SessionData) -> Vec<String> {
         validate_session_data_impl(data)
     }
@@ -2326,8 +2329,7 @@ impl TaskContext {
         // Phase2: Verify element is in viewport after scroll
         if !self.is_in_viewport(selector).await? {
             return Err(anyhow::anyhow!(
-                "[task-api] focus: element '{}' not in viewport after scroll",
-                selector
+                "[task-api] focus: element '{selector}' not in viewport after scroll"
             ));
         }
 
@@ -2478,6 +2480,7 @@ impl TaskContext {
     /// # Ok(())
     /// # }
     /// ```
+    #[allow(clippy::cast_precision_loss)]
     pub async fn click(&self, selector: &str) -> Result<ClickOutcome> {
         const CLICK_TOTAL_TIMEOUT_SECS: u64 = 12;
         const CLICK_MAX_ATTEMPTS: u32 = 3;
@@ -2535,7 +2538,7 @@ impl TaskContext {
 
             for attempt in 1..=CLICK_MAX_ATTEMPTS {
                 let attempt_delay = (timing_profile.reaction_delay_ms as f64
-                    * (1.0 + ((attempt.saturating_sub(1)) as f64 * 0.18)))
+                    * (1.0 + (f64::from(attempt.saturating_sub(1)) * 0.18)))
                     .round() as u64;
                 let attempt_offset = timing_profile.click_offset_px + (attempt as i32 - 1);
 
@@ -2553,7 +2556,7 @@ impl TaskContext {
                     Err(err) => {
                         last_error = Some(err);
                         if attempt < CLICK_MAX_ATTEMPTS {
-                            let backoff_ms = (150 + (attempt as u64 * 180))
+                            let backoff_ms = (150 + (u64::from(attempt) * 180))
                                 .saturating_add(adaptation.extra_stability_wait_ms / 2)
                                 .clamp(100, 1_000);
                             timing::uniform_pause(backoff_ms, 30).await;
@@ -2564,8 +2567,7 @@ impl TaskContext {
 
             if adaptation.prefer_coordinate_fallback {
                 warn!(
-                    "[task-api] click '{}' entering coordinate fallback after retry exhaustion",
-                    selector
+                    "[task-api] click '{selector}' entering coordinate fallback after retry exhaustion"
                 );
             }
             self.increment_run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT, 1);
@@ -2585,20 +2587,14 @@ impl TaskContext {
                 .with_context(|| {
                     wrapper_timeout_context(
                         "click_total",
-                        format!(
-                            "selector={} timeout_secs={}",
-                            selector, CLICK_TOTAL_TIMEOUT_SECS
-                        ),
+                        format!("selector={selector} timeout_secs={CLICK_TOTAL_TIMEOUT_SECS}"),
                     )
                 })?;
         let outcome = match outcome {
             Ok(outcome) => outcome,
             Err(err) => {
                 if let Err(persist_err) = self.record_click_learning(selector, false).await {
-                    warn!(
-                        "[task-api] click learning persistence failed: {}",
-                        persist_err
-                    );
+                    warn!("[task-api] click learning persistence failed: {persist_err}");
                 }
                 return Err(err);
             }
@@ -2612,10 +2608,7 @@ impl TaskContext {
             if !verified {
                 self.increment_run_counter(RUN_COUNTER_CLICK_STRICT_VERIFY_FAILED, 1);
                 if let Err(persist_err) = self.record_click_learning(selector, false).await {
-                    warn!(
-                        "[task-api] click learning persistence failed: {}",
-                        persist_err
-                    );
+                    warn!("[task-api] click learning persistence failed: {persist_err}");
                 }
                 self.increment_run_counter(RUN_COUNTER_CLICK_FALLBACK_HIT, 1);
                 match self
@@ -2624,10 +2617,7 @@ impl TaskContext {
                 {
                     Ok(fallback_outcome) => {
                         if let Err(persist_err) = self.record_click_learning(selector, true).await {
-                            warn!(
-                                "[task-api] click learning persistence failed: {}",
-                                persist_err
-                            );
+                            warn!("[task-api] click learning persistence failed: {persist_err}");
                         }
                         self.increment_run_counter(RUN_COUNTER_CLICK_SUCCESS, 1);
                         self.post_interaction_pause_with_budget(timing_profile.post_click_pause_ms)
@@ -2636,9 +2626,7 @@ impl TaskContext {
                     }
                     Err(err) => {
                         return Err(anyhow::anyhow!(
-                            "[task-api] strict click verification failed for '{}': {}",
-                            selector,
-                            err
+                            "[task-api] strict click verification failed for '{selector}': {err}"
                         ));
                     }
                 }
@@ -2647,10 +2635,7 @@ impl TaskContext {
 
         {
             if let Err(persist_err) = self.record_click_learning(selector, true).await {
-                warn!(
-                    "[task-api] click learning persistence failed: {}",
-                    persist_err
-                );
+                warn!("[task-api] click learning persistence failed: {persist_err}");
             }
         }
         self.increment_run_counter(RUN_COUNTER_CLICK_SUCCESS, 1);
@@ -2693,7 +2678,7 @@ impl TaskContext {
             Ok(Err(err)) => Err(err),
             Err(_) => Err(anyhow::anyhow!(wrapper_timeout_context(
                 "click_primary",
-                format!("selector={} timeout_ms={}", selector, timeout_ms),
+                format!("selector={selector} timeout_ms={timeout_ms}"),
             ))),
         }
     }
@@ -2710,7 +2695,7 @@ impl TaskContext {
             timing::uniform_pause(adaptation.extra_stability_wait_ms.min(700), 25).await;
         }
 
-        info!("[task-api] click fallback '{}': focus begin", selector);
+        info!("[task-api] click fallback '{selector}': focus begin");
         let focus = match tokio::time::timeout(
             Duration::from_secs(FALLBACK_FOCUS_TIMEOUT_SECS),
             self.focus(selector),
@@ -2720,18 +2705,13 @@ impl TaskContext {
             Ok(Ok(focus)) => focus,
             Ok(Err(err)) => {
                 return Err(anyhow::anyhow!(
-                    "[task-api] fallback focus failed for '{}': {}",
-                    selector,
-                    err
+                    "[task-api] fallback focus failed for '{selector}': {err}"
                 ));
             }
             Err(_) => {
                 return Err(anyhow::anyhow!(wrapper_timeout_context(
                     "click_fallback_focus",
-                    format!(
-                        "selector={} timeout_secs={}",
-                        selector, FALLBACK_FOCUS_TIMEOUT_SECS
-                    ),
+                    format!("selector={selector} timeout_secs={FALLBACK_FOCUS_TIMEOUT_SECS}"),
                 )));
             }
         };
@@ -2740,7 +2720,7 @@ impl TaskContext {
             selector, focus.x, focus.y
         );
 
-        info!("[task-api] click fallback '{}': click_at begin", selector);
+        info!("[task-api] click fallback '{selector}': click_at begin");
         match tokio::time::timeout(
             Duration::from_secs(FALLBACK_CLICK_TIMEOUT_SECS),
             self.click_at(focus.x, focus.y),
@@ -2748,19 +2728,15 @@ impl TaskContext {
         .await
         {
             Ok(Ok(())) => {
-                info!("[task-api] click fallback '{}': click_at ok", selector);
+                info!("[task-api] click fallback '{selector}': click_at ok");
                 let verified = self.verify_selector_hit(selector, focus.x, focus.y).await?;
                 if adaptation.require_strict_verification && !verified {
                     return Err(anyhow::anyhow!(
-                        "[task-api] fallback click target verification failed for '{}'",
-                        selector
+                        "[task-api] fallback click target verification failed for '{selector}'"
                     ));
                 }
                 if !verified {
-                    warn!(
-                        "[task-api] fallback click verification inconclusive for '{}'",
-                        selector
-                    );
+                    warn!("[task-api] fallback click verification inconclusive for '{selector}'");
                 }
                 Ok(ClickOutcome {
                     click: crate::utils::mouse::ClickStatus::Success,
@@ -2771,16 +2747,11 @@ impl TaskContext {
                 })
             }
             Ok(Err(err)) => Err(anyhow::anyhow!(
-                "[task-api] fallback click_at failed for '{}': {}",
-                selector,
-                err
+                "[task-api] fallback click_at failed for '{selector}': {err}"
             )),
             Err(_) => Err(anyhow::anyhow!(wrapper_timeout_context(
                 "click_fallback_click",
-                format!(
-                    "selector={} timeout_secs={}",
-                    selector, FALLBACK_CLICK_TIMEOUT_SECS
-                ),
+                format!("selector={selector} timeout_secs={FALLBACK_CLICK_TIMEOUT_SECS}"),
             ))),
         }
     }
@@ -2905,10 +2876,7 @@ impl TaskContext {
                 let mut ctx = crate::logger::get_log_context();
                 ctx.session_id = Some(session_id.clone());
                 let _guard = scoped_log_context(ctx);
-                warn!(
-                    "[task-api] nativeclick failed selector={} error={}",
-                    selector, err
-                );
+                warn!("[task-api] nativeclick failed selector={selector} error={err}");
                 return Err(err);
             }
         };
@@ -2922,13 +2890,11 @@ impl TaskContext {
             );
             if let (Some(screen_x), Some(screen_y)) = (outcome.screen_x, outcome.screen_y) {
                 debug!(
-                    "[task-api] nativeclick session={} selector={} screen_point=({}, {})",
-                    session_id, selector, screen_x, screen_y
+                    "[task-api] nativeclick session={session_id} selector={selector} screen_point=({screen_x}, {screen_y})"
                 );
             } else {
                 debug!(
-                    "[task-api] nativeclick session={} selector={} screen_point=(unknown)",
-                    session_id, selector
+                    "[task-api] nativeclick session={session_id} selector={selector} screen_point=(unknown)"
                 );
             }
             debug!(
@@ -3073,13 +3039,12 @@ impl TaskContext {
     /// # }
     /// ```
     pub async fn r#type(&self, selector: &str, text: &str) -> Result<()> {
-        info!("[task-api] keyboard {} -> {}", selector, text);
+        info!("[task-api] keyboard {selector} -> {text}");
 
         // Phase2: Verify element exists and is focusable before focusing
         if !self.exists(selector).await? {
             return Err(anyhow::anyhow!(
-                "[task-api] keyboard failed: element '{}' not found",
-                selector
+                "[task-api] keyboard failed: element '{selector}' not found"
             ));
         }
 
@@ -3089,39 +3054,36 @@ impl TaskContext {
 
         // Phase2: Verify text was entered (check value after typing)
         let verification_js = if dom::selector_uses_accessibility_locator(selector) {
-            r#"(() => {
+            r"(() => {
                 const el = document.activeElement;
                 if (!el) return false;
                 const value = el.value || el.textContent || '';
                 return String(value).length > 0;
-            })()"#
+            })()"
                 .to_string()
         } else {
             format!(
-                r#"(() => {{
+                r"(() => {{
                     const el = document.querySelector({});
                     if (!el) return false;
                     const value = el.value || el.textContent || '';
                     return value.length > 0;
-                }})()"#,
+                }})()",
                 serde_json::to_string(selector)?
             )
         };
         match self.page().evaluate(verification_js).await {
             Ok(result) => {
-                let text_entered = result.value().and_then(|v| v.as_bool()).unwrap_or(false);
+                let text_entered = result
+                    .value()
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
                 if !text_entered {
-                    warn!(
-                        "[task-api] keyboard: text may not have been entered for '{}'",
-                        selector
-                    );
+                    warn!("[task-api] keyboard: text may not have been entered for '{selector}'");
                 }
             }
             Err(e) => {
-                debug!(
-                    "[task-api] keyboard verification failed for '{}': {}",
-                    selector, e
-                );
+                debug!("[task-api] keyboard verification failed for '{selector}': {e}");
             }
         }
 
@@ -3164,7 +3126,7 @@ impl TaskContext {
     /// Type text directly without focusing. Applies to currently focused element.
     pub async fn type_text(&self, text: &str) -> Result<()> {
         // Phase2: Verify something is focused and is editable
-        let focus_check_js = r#"(() => {
+        let focus_check_js = r"(() => {
             const el = document.activeElement;
             if (!el) return 'no_focus';
             if (el.readOnly) return 'readonly';
@@ -3172,7 +3134,7 @@ impl TaskContext {
             if (el.isContentEditable) return 'editable';
             if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return 'input';
             return 'not_editable';
-        }})()"#;
+        }})()";
         let status = match self.page().evaluate(focus_check_js).await {
             Ok(result) => result
                 .value()
@@ -3220,8 +3182,7 @@ impl TaskContext {
         // Phase2: Verify element is in viewport after scroll
         if !self.is_in_viewport(selector).await? {
             return Err(anyhow::anyhow!(
-                "[task-api] scroll_to: element '{}' not in viewport after scroll",
-                selector
+                "[task-api] scroll_to: element '{selector}' not in viewport after scroll"
             ));
         }
 
@@ -3400,7 +3361,7 @@ impl TaskContext {
         query::title(self.page()).await
     }
 
-    /// Get viewport dimensions (width, height, device_scale_factor).
+    /// Get viewport dimensions (width, height, `device_scale_factor`).
     pub async fn viewport(&self) -> Result<Viewport> {
         query::viewport(self.page()).await
     }
@@ -3410,13 +3371,13 @@ impl TaskContext {
         let _ = self.focus(selector).await?;
 
         if dom::selector_uses_accessibility_locator(selector) {
-            let check_active_js = r#"(() => {
+            let check_active_js = r"(() => {
                 const el = document.activeElement;
                 if (!el) return 'not_found';
                 if (el.readOnly) return 'readonly';
                 if (el.disabled) return 'disabled';
                 return 'ok';
-            })()"#;
+            })()";
             let status = match self.page().evaluate(check_active_js).await {
                 Ok(result) => result
                     .value()
@@ -3427,14 +3388,12 @@ impl TaskContext {
             };
             if status == "readonly" {
                 return Err(anyhow::anyhow!(
-                    "[task-api] select_all: element '{}' is readonly",
-                    selector
+                    "[task-api] select_all: element '{selector}' is readonly"
                 ));
             }
             if status == "disabled" {
                 return Err(anyhow::anyhow!(
-                    "[task-api] select_all: element '{}' is disabled",
-                    selector
+                    "[task-api] select_all: element '{selector}' is disabled"
                 ));
             }
             return self.press_with_modifiers("a", &["Control"]).await;
@@ -3442,13 +3401,13 @@ impl TaskContext {
 
         // Phase2: Check for readonly/disabled before attempting select all
         let check_js = format!(
-            r#"(() => {{
+            r"(() => {{
                 const el = document.querySelector({});
                 if (!el) return 'not_found';
                 if (el.readOnly) return 'readonly';
                 if (el.disabled) return 'disabled';
                 return 'ok';
-            }})()"#,
+            }})()",
             serde_json::to_string(selector)?
         );
         let status = match self.page().evaluate(check_js).await {
@@ -3461,19 +3420,17 @@ impl TaskContext {
         };
         if status == "readonly" {
             return Err(anyhow::anyhow!(
-                "[task-api] select_all: element '{}' is readonly",
-                selector
+                "[task-api] select_all: element '{selector}' is readonly"
             ));
         }
         if status == "disabled" {
             return Err(anyhow::anyhow!(
-                "[task-api] select_all: element '{}' is disabled",
-                selector
+                "[task-api] select_all: element '{selector}' is disabled"
             ));
         }
 
         let select_js = format!(
-            r#"(() => {{
+            r"(() => {{
                 const el = document.querySelector({});
                 if (!el) return 'not_found';
                 if (typeof el.setSelectionRange === 'function' && typeof el.value === 'string') {{
@@ -3490,7 +3447,7 @@ impl TaskContext {
                     return 'selected';
                 }}
                 return 'unsupported';
-            }})()"#,
+            }})()",
             serde_json::to_string(selector)?
         );
 
@@ -3498,16 +3455,13 @@ impl TaskContext {
             Ok(result) => match result.value().and_then(|v| v.as_str()) {
                 Some("selected") => Ok(()),
                 Some("not_found") => Err(anyhow::anyhow!(
-                    "[task-api] select_all: element '{}' not found",
-                    selector
+                    "[task-api] select_all: element '{selector}' not found"
                 )),
                 Some("readonly") => Err(anyhow::anyhow!(
-                    "[task-api] select_all: element '{}' is readonly",
-                    selector
+                    "[task-api] select_all: element '{selector}' is readonly"
                 )),
                 Some("disabled") => Err(anyhow::anyhow!(
-                    "[task-api] select_all: element '{}' is disabled",
-                    selector
+                    "[task-api] select_all: element '{selector}' is disabled"
                 )),
                 _ => self.press_with_modifiers("a", &["Control"]).await,
             },
@@ -3558,7 +3512,7 @@ impl TaskContext {
     async fn verify_selector_hit(&self, selector: &str, x: f64, y: f64) -> Result<bool> {
         let selector_js = serde_json::to_string(selector)?;
         let js = format!(
-            r#"(() => {{
+            r"(() => {{
                 const el = document.querySelector({selector_js});
                 if (!el) return false;
                 const rect = el.getBoundingClientRect();
@@ -3566,7 +3520,7 @@ impl TaskContext {
                 const hit = document.elementFromPoint({x}, {y});
                 if (!hit) return false;
                 return el === hit || el.contains(hit) || hit.contains(el);
-            }})()"#
+            }})()"
         );
         let eval = tokio::time::timeout(
             std::time::Duration::from_millis(500),
@@ -3576,10 +3530,13 @@ impl TaskContext {
         .map_err(|_| {
             anyhow::anyhow!(wrapper_timeout_context(
                 "click_fallback_verify",
-                format!("selector={} timeout_ms=500", selector),
+                format!("selector={selector} timeout_ms=500"),
             ))
         })??;
-        Ok(eval.value().and_then(|v| v.as_bool()).unwrap_or(false))
+        Ok(eval
+            .value()
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false))
     }
 
     async fn post_interaction_pause(&self) {
@@ -3625,7 +3582,7 @@ impl TaskContext {
         self.keyboard(selector, text).await
     }
 
-    /// Internal select_all method for pipeline use
+    /// Internal `select_all` method for pipeline use
     pub(crate) async fn select_all_internal(&self, selector: &str) -> Result<()> {
         self.select_all(selector).await
     }
@@ -3640,12 +3597,12 @@ impl TaskContext {
     pub(crate) async fn click_coordinate_fallback(&self, selector: &str) -> Result<ClickOutcome> {
         // Get element bounding rect for coordinates
         let js = format!(
-            r#"(() => {{
+            r"(() => {{
                 const el = document.querySelector({});
                 if (!el) return null;
                 const rect = el.getBoundingClientRect();
                 return {{ x: rect.left + rect.width/2, y: rect.top + rect.height/2 }};
-            }})()"#,
+            }})()",
             serde_json::to_string(selector)?
         );
 
@@ -3654,8 +3611,12 @@ impl TaskContext {
 
         let (x, y) = match coords {
             Some(v) => (
-                v.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                v.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                v.get("x")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0),
+                v.get("y")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0),
             ),
             None => return Err(anyhow::anyhow!("Element not found for coordinate fallback")),
         };
@@ -3688,7 +3649,7 @@ impl TaskContext {
             ctx.session_id = Some(session_id.clone());
             let _guard = scoped_log_context(ctx);
             let screen_point = match (outcome.screen_x, outcome.screen_y) {
-                (Some(x), Some(y)) => format!("({}, {})", x, y),
+                (Some(x), Some(y)) => format!("({x}, {y})"),
                 _ => "unknown".to_string(),
             };
             info!(
@@ -3701,6 +3662,7 @@ impl TaskContext {
     }
 }
 
+#[must_use]
 pub fn validate_session_data_impl(data: &crate::task::policy::SessionData) -> Vec<String> {
     let mut warnings = Vec::new();
 
@@ -3711,13 +3673,13 @@ pub fn validate_session_data_impl(data: &crate::task::policy::SessionData) -> Ve
     for (i, cookie) in data.cookies.iter().enumerate() {
         if let Some(obj) = cookie.as_object() {
             if !obj.contains_key("name") {
-                warnings.push(format!("Cookie[{}] missing 'name' field", i));
+                warnings.push(format!("Cookie[{i}] missing 'name' field"));
             }
             if !obj.contains_key("value") {
-                warnings.push(format!("Cookie[{}] missing 'value' field", i));
+                warnings.push(format!("Cookie[{i}] missing 'value' field"));
             }
         } else {
-            warnings.push(format!("Cookie[{}] is not a JSON object", i));
+            warnings.push(format!("Cookie[{i}] is not a JSON object"));
         }
     }
 

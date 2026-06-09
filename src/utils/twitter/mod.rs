@@ -5,12 +5,16 @@
 //! for DOM queries and interactions.
 
 pub mod decision;
+pub mod reply_engine;
+pub mod reply_strategies;
 pub mod sentiment;
+pub mod twitteractivity_actions;
 pub mod twitteractivity_constants;
 pub mod twitteractivity_dive;
 pub mod twitteractivity_engagement;
 pub mod twitteractivity_errors;
 pub mod twitteractivity_feed;
+pub mod twitteractivity_helpers;
 pub mod twitteractivity_humanized;
 pub mod twitteractivity_interact;
 pub mod twitteractivity_limits;
@@ -24,9 +28,14 @@ pub mod twitteractivity_retry;
 pub mod twitteractivity_selectors;
 pub mod twitteractivity_simulation;
 pub mod twitteractivity_state;
+pub mod unified_processor;
 
 #[allow(unused_imports)]
 pub use decision::*;
+#[allow(unused_imports)]
+pub use reply_engine::*;
+#[allow(unused_imports)]
+pub use reply_strategies::*;
 #[allow(unused_imports)]
 pub use sentiment::*;
 #[allow(unused_imports)]
@@ -59,6 +68,8 @@ pub use twitteractivity_retry::*;
 pub use twitteractivity_selectors::*;
 #[allow(unused_imports)]
 pub use twitteractivity_simulation::*;
+#[allow(unused_imports)]
+pub use unified_processor::*;
 
 #[allow(unused_imports)]
 pub use twitteractivity_state::*;

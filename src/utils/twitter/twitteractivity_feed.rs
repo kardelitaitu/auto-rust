@@ -45,9 +45,7 @@ use anyhow::Result;
 use serde_json::Value;
 use tracing::instrument;
 
-use super::twitteractivity_selectors::{
-    js_identify_engagement_candidates, selector_following_indicator,
-};
+use super::twitteractivity_selectors::js_identify_engagement_candidates;
 
 /// Scans the current viewport for tweet articles that are good engagement candidates.
 ///
@@ -159,12 +157,39 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
 
 /// Checks if a given tweet (by center coordinates) currently shows "Following" state
 /// for the author (used to decide whether a follow action is needed).
+/// Scopes the check to the tweet article element at the given position.
 #[allow(clippy::cast_precision_loss)]
-pub async fn is_following_user_at_position(api: &TaskContext, _x: f64, _y: f64) -> Result<bool> {
-    // Move mouse near the tweet to expose any hover-only indicators (optional)
-    // For now, evaluate globally
-    let js = selector_following_indicator();
-    let result = api.page().evaluate(js.to_string()).await?;
+pub async fn is_following_user_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
+    // Move mouse near the tweet to expose any hover-only indicators
+    if let Err(e) = api.move_mouse_to(x, y).await {
+        log::warn!("Failed to move mouse for hover indicators: {e}");
+    }
+    // Use elementFromPoint to scope the query to the tweet at this position
+    let js = format!(
+        r#"(function() {{
+            var el = document.elementFromPoint({x}, {y});
+            while (el && el.tagName !== 'ARTICLE') {{
+                el = el.parentElement;
+            }}
+            if (!el) return false;
+            var buttons = el.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {{
+                var btn = buttons[i];
+                var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
+                var label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                var dataTestId = (btn.getAttribute('data-testid') || '').toLowerCase();
+                if (text === 'following' ||
+                    label.includes('following @') ||
+                    dataTestId.includes('unfollow')) {{
+                    return true;
+                }}
+            }}
+            return false;
+        }})()"#,
+        x = x,
+        y = y
+    );
+    let result = api.page().evaluate(js).await?;
     let value = result.value().cloned().unwrap_or(Value::Bool(false));
     Ok(value.as_bool().unwrap_or(false))
 }

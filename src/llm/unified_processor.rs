@@ -414,6 +414,10 @@ impl UnifiedLLMProcessor {
     /// Calculate confidence score based on text and indicators.
     #[must_use]
     pub fn calculate_confidence(text: &str, indicators: &[String]) -> f32 {
+        if text.trim().is_empty() {
+            return 0.0;
+        }
+
         let mut confidence: f32 = 0.5; // Base confidence
 
         // Increase confidence for longer, more substantive content
@@ -679,8 +683,7 @@ mod tests {
         let indicators = vec!["neutral".to_string()];
         let confidence = UnifiedLLMProcessor::calculate_confidence(text, &indicators);
 
-        assert!(confidence >= 0.5);
-        assert!(confidence <= 0.95);
+        assert_eq!(confidence, 0.0);
     }
 
     #[test]
@@ -901,7 +904,7 @@ mod fuzz_tests {
         }
 
         /// Fuzz: calculate_confidence must never panic,
-        /// must always return a value in [0.5, 0.95].
+        /// must always return a value in [0.0, 0.95].
         #[test]
         fn fuzz_calculate_confidence(
             text in any::<String>(),
@@ -910,8 +913,8 @@ mod fuzz_tests {
             let confidence = UnifiedLLMProcessor::calculate_confidence(&text, &indicators);
             prop_assert!(confidence.is_finite(),
                 "confidence should be finite: {}", confidence);
-            prop_assert!(confidence >= 0.5,
-                "confidence should be >= 0.5: {}", confidence);
+            prop_assert!(confidence >= 0.0,
+                "confidence should be >= 0.0: {}", confidence);
             prop_assert!(confidence <= 0.95,
                 "confidence should be <= 0.95: {}", confidence);
         }

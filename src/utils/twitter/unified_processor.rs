@@ -356,6 +356,10 @@ impl UnifiedLLMProcessor {
                     || *c == ','
                     || *c == '\''
                     || *c == '-'
+                    || *c == '@'
+                    || *c == '#'
+                    || *c == ':'
+                    || *c == ';'
             })
             .collect::<String>()
             .trim()
@@ -414,6 +418,10 @@ impl UnifiedLLMProcessor {
     /// Calculate confidence score based on text and indicators.
     #[must_use]
     pub fn calculate_confidence(text: &str, indicators: &[String]) -> f32 {
+        if text.trim().is_empty() {
+            return 0.0;
+        }
+
         let mut confidence: f32 = 0.5; // Base confidence
 
         // Increase confidence for longer, more substantive content
@@ -437,10 +445,13 @@ impl UnifiedLLMProcessor {
         Ok(Self::analyze_sentiment_from_text(&content))
     }
 
-    /// Extract content from quote response.
+    /// Extract and clean content from quote response.
     fn extract_content_from_quote(response: &str) -> Result<String, anyhow::Error> {
-        // Extract generated content
-        Ok(response.to_string())
+        let cleaned = Self::clean_reply_content(response);
+        if cleaned.is_empty() {
+            anyhow::bail!("Quote response produced empty content after cleaning");
+        }
+        Ok(cleaned)
     }
 }
 
@@ -578,8 +589,8 @@ mod tests {
         let clean = UnifiedLLMProcessor::clean_reply_content(dirty);
 
         assert!(clean.contains("This"));
-        assert!(!clean.contains("@"));
-        assert!(!clean.contains("#"));
+        assert!(clean.contains("@mentions"));
+        assert!(clean.contains("#hashtags"));
     }
 
     #[test]
@@ -591,10 +602,8 @@ mod tests {
     #[test]
     fn test_clean_reply_content_special_chars() {
         let result = UnifiedLLMProcessor::clean_reply_content("  @user #tag  ");
-        assert!(!result.contains("@"));
-        assert!(!result.contains("#"));
-        assert!(result.contains("user"));
-        assert!(result.contains("tag"));
+        assert!(result.contains("@user"));
+        assert!(result.contains("#tag"));
     }
 
     #[test]
@@ -679,8 +688,7 @@ mod tests {
         let indicators = vec!["neutral".to_string()];
         let confidence = UnifiedLLMProcessor::calculate_confidence(text, &indicators);
 
-        assert!(confidence >= 0.5);
-        assert!(confidence <= 0.95);
+        assert_eq!(confidence, 0.0);
     }
 
     #[test]

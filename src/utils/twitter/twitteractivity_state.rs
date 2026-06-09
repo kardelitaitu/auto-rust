@@ -232,8 +232,9 @@ impl TweetActionTracker {
     }
 
     /// Check if an action is allowed on this tweet (prevents rapid action chains).
+    /// Cooldown is per-tweet, not per-action-type.
     #[must_use]
-    pub fn can_perform_action(&self, tweet_id: &str, _action_type: &str) -> bool {
+    pub fn can_perform_action(&self, tweet_id: &str) -> bool {
         if let Some((_, last_time)) = self.last_action.get(tweet_id) {
             let elapsed = last_time.elapsed();
             // Enforce minimum delay between actions on same tweet
@@ -622,11 +623,11 @@ mod tdd_tests {
         let mut tracker = test_action_tracker(50);
 
         tracker.record_action("tweet_1".to_string(), "like");
-        assert!(!tracker.can_perform_action("tweet_1", "retweet"));
+        assert!(!tracker.can_perform_action("tweet_1"));
 
         std::thread::sleep(std::time::Duration::from_millis(60));
 
-        assert!(tracker.can_perform_action("tweet_1", "retweet"));
+        assert!(tracker.can_perform_action("tweet_1"));
     }
 
     // ====================================================================
@@ -637,7 +638,7 @@ mod tdd_tests {
     fn tdd_edge_action_tracker_unknown_tweet_allowed() {
         // EDGE: Unknown tweet should always be allowed
         let tracker = test_action_tracker(1000);
-        assert!(tracker.can_perform_action("unknown_tweet", "like"));
+        assert!(tracker.can_perform_action("unknown_tweet"));
     }
 
     #[test]
@@ -1058,9 +1059,9 @@ mod gap_tests {
         let mut tracker = TweetActionTracker::new(60_000);
 
         tracker.record_action("tweet_1".to_string(), "like");
-        assert!(!tracker.can_perform_action("tweet_1", "retweet"));
+        assert!(!tracker.can_perform_action("tweet_1"));
         // Different tweet should be allowed
-        assert!(tracker.can_perform_action("tweet_2", "retweet"));
+        assert!(tracker.can_perform_action("tweet_2"));
     }
 
     // RateLimitBackoff calculate_delay exponential behavior

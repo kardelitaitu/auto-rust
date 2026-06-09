@@ -76,37 +76,37 @@ pub fn selected_candidate_actions(
     let mut actions_to_do = Vec::new();
 
     if should_like(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "like")
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_like(counters)
     {
         actions_to_do.push("like");
     }
     if should_retweet(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "retweet")
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_retweet(counters)
     {
         actions_to_do.push("retweet");
     }
     if should_quote(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "quote")
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_quote_tweet(counters)
     {
         actions_to_do.push("quote");
     }
     if should_follow(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "follow")
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_follow(counters)
     {
         actions_to_do.push("follow");
     }
     if should_reply(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "reply")
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_reply(counters)
     {
         actions_to_do.push("reply");
     }
     if should_bookmark(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id, "bookmark")
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_bookmark(counters)
     {
         actions_to_do.push("bookmark");

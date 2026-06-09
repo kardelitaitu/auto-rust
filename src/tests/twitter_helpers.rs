@@ -440,19 +440,19 @@ pub fn assert_remaining_time_approx(session: &SessionState, expected_ms: u64, to
 
 /// Assert that a tweet action is allowed by the tracker.
 #[allow(dead_code)]
-pub fn assert_tracker_allows(tracker: &TweetActionTracker, tweet_id: &str, action: &str) {
+pub fn assert_tracker_allows(tracker: &TweetActionTracker, tweet_id: &str) {
     assert!(
-        tracker.can_perform_action(tweet_id, action),
-        "Tracker should allow {action} on tweet '{tweet_id}'"
+        tracker.can_perform_action(tweet_id),
+        "Tracker should allow action on tweet '{tweet_id}'"
     );
 }
 
 /// Assert that a tweet action is blocked by the tracker (cooldown).
 #[allow(dead_code)]
-pub fn assert_tracker_blocks(tracker: &TweetActionTracker, tweet_id: &str, action: &str) {
+pub fn assert_tracker_blocks(tracker: &TweetActionTracker, tweet_id: &str) {
     assert!(
-        !tracker.can_perform_action(tweet_id, action),
-        "Tracker should block {action} on tweet '{tweet_id}'"
+        !tracker.can_perform_action(tweet_id),
+        "Tracker should block action on tweet '{tweet_id}'"
     );
 }
 

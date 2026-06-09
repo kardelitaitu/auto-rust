@@ -574,10 +574,11 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     api.scroll_to_top().await?;
     human_pause(api, 1000).await;
 
-    // Check if already following.
+    // Check if already following (scoped to the tweet detail article).
     let following_js = r#"
         (function() {
-            var buttons = document.querySelectorAll('button, [role="button"]');
+            var container = document.querySelector('main') || document.body;
+            var buttons = container.querySelectorAll('button, [role="button"]');
             for (var i = 0; i < buttons.length; i++) {
                 var btn = buttons[i];
                 var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();

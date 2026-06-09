@@ -490,7 +490,7 @@ mod tdd_tests {
         let mut tracker = test_action_tracker(0);
         tracker.record_action("tweet_id".to_string(), "like");
         assert!(
-            tracker.can_perform_action("tweet_id", "retweet"),
+            tracker.can_perform_action("tweet_id"),
             "Zero delay should allow immediate second action"
         );
     }
@@ -512,7 +512,7 @@ mod tdd_tests {
     #[test]
     fn tdd_edge_action_tracker_unknown_tweet() {
         let tracker = test_action_tracker(1000);
-        assert!(tracker.can_perform_action("unknown_tweet", "like"));
+        assert!(tracker.can_perform_action("unknown_tweet"));
     }
 
     // ====================================================================

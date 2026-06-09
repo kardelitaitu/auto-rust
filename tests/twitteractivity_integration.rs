@@ -97,7 +97,7 @@ fn twitteractivity_action_chaining_prevention_works() {
 
     // First action should be allowed
     assert!(
-        tracker.can_perform_action(tweet_id, "like"),
+        tracker.can_perform_action(tweet_id),
         "first action on tweet should be allowed"
     );
 
@@ -106,7 +106,7 @@ fn twitteractivity_action_chaining_prevention_works() {
 
     // Immediate second action should be blocked due to cooldown
     assert!(
-        !tracker.can_perform_action(tweet_id, "retweet"),
+        !tracker.can_perform_action(tweet_id),
         "second action immediately after first should be blocked"
     );
 
@@ -115,7 +115,7 @@ fn twitteractivity_action_chaining_prevention_works() {
 
     // After cooldown, action should be allowed again
     assert!(
-        tracker.can_perform_action(tweet_id, "retweet"),
+        tracker.can_perform_action(tweet_id),
         "action should be allowed after cooldown expires"
     );
 }
@@ -132,7 +132,7 @@ fn twitteractivity_action_chaining_different_tweets_allowed() {
 
     // Action on different tweet should be allowed immediately
     assert!(
-        tracker.can_perform_action(tweet_id_2, "like"),
+        tracker.can_perform_action(tweet_id_2),
         "action on different tweet should be allowed immediately"
     );
 }
@@ -153,7 +153,7 @@ fn twitteractivity_action_chaining_same_action_after_cooldown() {
 
     // Same action type should be allowed after cooldown
     assert!(
-        tracker.can_perform_action(tweet_id, "like"),
+        tracker.can_perform_action(tweet_id),
         "same action type should be allowed after cooldown"
     );
 }
@@ -403,7 +403,7 @@ fn twitteractivity_action_chaining_multiple_tweets() {
     // Each tweet should be blocked for its own action type
     for tweet_id in &tweet_ids {
         assert!(
-            !tracker.can_perform_action(tweet_id, "retweet"),
+            !tracker.can_perform_action(tweet_id),
             "tweet should be blocked after like"
         );
     }
@@ -414,7 +414,7 @@ fn twitteractivity_action_chaining_multiple_tweets() {
     // All tweets should now be unblocked
     for tweet_id in &tweet_ids {
         assert!(
-            tracker.can_perform_action(tweet_id, "retweet"),
+            tracker.can_perform_action(tweet_id),
             "tweet should be unblocked after cooldown"
         );
     }
@@ -430,14 +430,14 @@ fn twitteractivity_action_chaining_overwrites_previous() {
 
     // Record first action
     tracker.record_action(tweet_id.to_string(), "like");
-    assert!(!tracker.can_perform_action(tweet_id, "retweet"));
+    assert!(!tracker.can_perform_action(tweet_id));
 
     // Wait for cooldown
     std::thread::sleep(Duration::from_millis(TEST_DELAY_MS + 10));
 
     // Record second action
     tracker.record_action(tweet_id.to_string(), "retweet");
-    assert!(!tracker.can_perform_action(tweet_id, "follow"));
+    assert!(!tracker.can_perform_action(tweet_id));
 }
 
 /// Tests that entry point selection has expected distribution.
@@ -530,12 +530,12 @@ fn twitteractivity_action_chaining_zero_delay() {
     let tweet_id = "test_zero_delay";
 
     // First action
-    assert!(tracker.can_perform_action(tweet_id, "like"));
+    assert!(tracker.can_perform_action(tweet_id));
     tracker.record_action(tweet_id.to_string(), "like");
 
     // With zero delay, should be allowed immediately
     assert!(
-        tracker.can_perform_action(tweet_id, "retweet"),
+        tracker.can_perform_action(tweet_id),
         "action should be allowed with zero delay"
     );
 }

@@ -252,8 +252,8 @@ fn bacon_full_dry_run_exits_cleanly_with_local_fixture() {
     let codex = bin_path("codex");
     let worker_dir = codex.parent().expect("codex binary parent");
     let ollama_url = spawn_fake_ollama(
-        // NVIDIA Chat Completions API response format
-        r##"{"choices":[{"message":{"content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."},"finish_reason":"stop"}]}"##,
+        // Ollama API response format (provider=ollama uses /api/chat endpoint)
+        r##"{"done":true,"message":{"content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."}}"##,
         4,
     );
     let dir = tempfile::tempdir().expect("temp config dir");
@@ -325,6 +325,7 @@ timeout_ms = 5000
         .env("OLLAMA_MODEL", "fixture-model")
         .env("BACON_CONFIG", bacon_config)
         .env("RUST_LOG", "info")
+        .env("NO_PROXY", "127.0.0.1,localhost")
         .output()
         .expect("run bacon integration dry-run");
 

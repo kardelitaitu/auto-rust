@@ -331,7 +331,7 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
 
 /// Log final engagement summary including guard threshold values.
 fn log_summary(session: &SessionState, task_config: &TaskConfig, config: &Config) {
-    let (summary_line, remaining_limits_line) = build_summary_lines(session, task_config);
+    let (summary_line, remaining_limits_line) = session.build_summary_lines(task_config.duration_ms);
     info!("{summary_line}");
     info!("{remaining_limits_line}");
     info!(
@@ -341,40 +341,7 @@ fn log_summary(session: &SessionState, task_config: &TaskConfig, config: &Config
     );
 }
 
-fn build_summary_lines(session: &SessionState, task_config: &TaskConfig) -> (String, String) {
-    let last_remaining = session.remaining_time();
-    let duration_secs = Duration::from_millis(task_config.duration_ms)
-        .saturating_sub(last_remaining)
-        .as_secs_f64();
-    let summary_line = format!(
-        "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
-        session.counters.likes,
-        session.counters.retweets,
-        session.counters.follows,
-        session.counters.replies,
-        session.counters.thread_dives,
-        session.counters.bookmarks,
-        session.counters.quote_tweets,
-        session.counters.total_actions(),
-        duration_secs
-    );
 
-    let c = &session.counters;
-    let l = &session.limits;
-    let remaining_limits_line = format!(
-        "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
-        l.max_likes.saturating_sub(c.likes),
-        l.max_retweets.saturating_sub(c.retweets),
-        l.max_follows.saturating_sub(c.follows),
-        l.max_replies.saturating_sub(c.replies),
-        l.max_thread_dives.saturating_sub(c.thread_dives),
-        l.max_bookmarks.saturating_sub(c.bookmarks),
-        l.max_quote_tweets.saturating_sub(c.quote_tweets),
-        l.max_total_actions.saturating_sub(c.total_actions()),
-    );
-
-    (summary_line, remaining_limits_line)
-}
 
 #[cfg(test)]
 mod tdd_tests {
@@ -606,51 +573,9 @@ mod navigation_tests {
 
 #[cfg(test)]
 mod summary_tests {
-    use super::{build_summary_lines, should_continue_feed_loop, TaskConfig};
+    use super::{should_continue_feed_loop, TaskConfig};
     use crate::utils::twitter::twitteractivity_limits::EngagementLimits;
     use crate::utils::twitter::twitteractivity_state::SessionState;
-
-    #[test]
-    fn log_summary_contains_expected_keys() {
-        let limits = EngagementLimits::with_limits(3, 4, 5, 6, 7, 8, 9, 10);
-        let session = SessionState::new(limits, 60_000, 100);
-        let task_config = TaskConfig {
-            duration_ms: 60_000,
-            ..Default::default()
-        };
-
-        let (summary_line, remaining_limits_line) = build_summary_lines(&session, &task_config);
-
-        for key in [
-            "likes=",
-            "retweets=",
-            "follows=",
-            "replies=",
-            "thread_dives=",
-            "bookmarks=",
-            "quote_tweets=",
-            "total_actions=",
-            "duration=",
-        ] {
-            assert!(summary_line.contains(key), "summary line missing {key}");
-        }
-
-        for key in [
-            "likes=",
-            "retweets=",
-            "follows=",
-            "replies=",
-            "thread_dives=",
-            "bookmarks=",
-            "quote_tweets=",
-            "total_actions=",
-        ] {
-            assert!(
-                remaining_limits_line.contains(key),
-                "remaining limits line missing {key}"
-            );
-        }
-    }
 
     #[test]
     fn feed_loop_stops_when_scroll_count_is_reached() {
@@ -691,69 +616,9 @@ mod timeout_tests {
 
 #[cfg(test)]
 mod gap_tests {
-    use super::{build_summary_lines, should_continue_feed_loop, TaskConfig};
+    use super::{should_continue_feed_loop, TaskConfig};
     use crate::utils::twitter::twitteractivity_limits::EngagementLimits;
     use crate::utils::twitter::twitteractivity_state::SessionState;
-
-    #[test]
-    fn build_summary_lines_with_non_zero_counters() {
-        let limits = EngagementLimits::with_limits(10, 8, 6, 4, 5, 3, 3, 50);
-        let mut session = SessionState::new(limits, 60_000, 100);
-
-        session.record_action("t1", "like");
-        session.record_action("t2", "like");
-        session.record_action("t3", "retweet");
-        session.record_action("t4", "follow");
-
-        let (summary, remaining) = build_summary_lines(
-            &session,
-            &TaskConfig {
-                duration_ms: 60_000,
-                ..Default::default()
-            },
-        );
-
-        // Summary should reflect actual counter values
-        assert!(
-            summary.contains("likes=2"),
-            "Expected likes=2, got: {summary}"
-        );
-        assert!(
-            summary.contains("retweets=1"),
-            "Expected retweets=1, got: {summary}"
-        );
-        assert!(
-            summary.contains("follows=1"),
-            "Expected follows=1, got: {summary}"
-        );
-        assert!(summary.contains("total_actions=4"));
-
-        // Remaining should show what's left
-        assert!(
-            remaining.contains("likes=8"),
-            "Expected remaining likes=8, got: {remaining}"
-        );
-        assert!(
-            remaining.contains("retweets=7"),
-            "Expected remaining retweets=7, got: {remaining}"
-        );
-    }
-
-    #[test]
-    fn build_summary_lines_zero_duration() {
-        let limits = EngagementLimits::default();
-        let session = SessionState::new(limits, 60_000, 100);
-        let task_config = TaskConfig {
-            duration_ms: 0,
-            ..Default::default()
-        };
-
-        let (summary, remaining) = build_summary_lines(&session, &task_config);
-        assert!(summary.contains("likes=0"));
-        assert!(summary.contains("total_actions=0"));
-        // Remaining should be full limits
-        assert!(remaining.contains("likes=5"));
-    }
 
     #[test]
     fn should_continue_feed_loop_stops_at_scroll_limit() {
@@ -794,26 +659,5 @@ mod gap_tests {
         assert!(!should_continue_feed_loop(&session, 0, &config));
     }
 
-    #[test]
-    fn build_summary_lines_saturating_sub_no_underflow() {
-        // Counters exceeding limits should not cause underflow
-        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 10);
-        let mut session = SessionState::new(limits, 60_000, 100);
 
-        // Record more than limits allow (bypassing limit check)
-        session.counters.likes = 5;
-        session.counters.retweets = 3;
-
-        let (_, remaining) = build_summary_lines(
-            &session,
-            &TaskConfig {
-                duration_ms: 60_000,
-                ..Default::default()
-            },
-        );
-
-        // Should saturate at 0, not underflow
-        assert!(remaining.contains("likes=0"));
-        assert!(remaining.contains("retweets=0"));
-    }
 }

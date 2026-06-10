@@ -58,6 +58,7 @@ pub(super) fn should_mark_session_unhealthy(kind: TaskErrorKind, was_cancelled: 
                 | TaskErrorKind::Navigation
                 | TaskErrorKind::Session
                 | TaskErrorKind::Browser
+                | TaskErrorKind::ExternalService
         )
 }
 
@@ -122,6 +123,10 @@ mod tests {
         ));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Session, false));
         assert!(should_mark_session_unhealthy(TaskErrorKind::Browser, false));
+        assert!(should_mark_session_unhealthy(
+            TaskErrorKind::ExternalService,
+            false
+        ));
 
         // Should NOT mark unhealthy for these
         assert!(!should_mark_session_unhealthy(
@@ -141,6 +146,10 @@ mod tests {
         ));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Session, true));
         assert!(!should_mark_session_unhealthy(TaskErrorKind::Browser, true));
+        assert!(!should_mark_session_unhealthy(
+            TaskErrorKind::ExternalService,
+            true
+        ));
         assert!(!should_mark_session_unhealthy(
             TaskErrorKind::Validation,
             true

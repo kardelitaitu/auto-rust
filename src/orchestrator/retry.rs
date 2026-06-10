@@ -376,6 +376,7 @@ mod tests {
             TaskErrorKind::Navigation,
             TaskErrorKind::Session,
             TaskErrorKind::Browser,
+            TaskErrorKind::ExternalService,
         ];
 
         for kind in error_kinds {

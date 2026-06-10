@@ -634,6 +634,191 @@ mod retry_inner_tests {
         assert!(result.is_err());
     }
 
+    // ========================================================================
+    // LLM Rate-Limit Retry Integration Tests
+    // ========================================================================
+    // These tests verify that LLM-specific transient errors (rate limit,
+    // overload, 503) are properly retried by retry_with_backoff_inner
+    // using the twitteractivity_errors ErrorClassifier.
+
+    #[tokio::test]
+    async fn rate_limit_retried_then_succeeds() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt == 1 {
+                        Err(anyhow::anyhow!("rate limit exceeded for model gpt-4"))
+                    } else {
+                        Ok::<_, anyhow::Error>("LLM response")
+                    }
+                }
+            },
+            &RetryConfig::conservative(),
+            delay,
+            "generate_reply",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "LLM response");
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_exhaustion_returns_last_error() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("rate limit exceeded")) },
+            &RetryConfig::conservative(),
+            delay,
+            "generate_quote_commentary",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("rate limit exceeded"));
+        // Conservative: max_attempts=5, so 4 delays
+        assert_eq!(call_count.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_succeeds_after_partial_retries() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    match attempt {
+                        1 => Err(anyhow::anyhow!("rate limit exceeded")),
+                        2 => Err(anyhow::anyhow!("HTTP 429: too many requests")),
+                        3 => Err(anyhow::anyhow!("rate limit exceeded")),
+                        _ => Ok::<_, anyhow::Error>(42),
+                    }
+                }
+            },
+            &RetryConfig::conservative(),
+            delay,
+            "generate_reply",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 42);
+        // 3 failures → 3 delays before success on attempt 4
+        assert_eq!(call_count.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn server_overloaded_retried_as_transient() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt == 1 {
+                        Err(anyhow::anyhow!("model overloaded, try again later"))
+                    } else {
+                        Ok::<_, anyhow::Error>("ok")
+                    }
+                }
+            },
+            &RetryConfig::conservative(),
+            delay,
+            "generate_reply",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "ok");
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn http_503_retried_as_transient() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt <= 2 {
+                        Err(anyhow::anyhow!("HTTP 503 service unavailable"))
+                    } else {
+                        Ok::<_, anyhow::Error>(99)
+                    }
+                }
+            },
+            &RetryConfig::default(),
+            delay,
+            "generate_quote_commentary",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 99);
+        // 2 failures → 2 delays, success on attempt 3
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn model_at_capacity_retried_as_transient() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+
+        let result: Result<(), anyhow::Error> = retry_with_backoff_inner(
+            || async { Err(anyhow::anyhow!("model is at capacity, try again later")) },
+            &RetryConfig::default(),
+            delay,
+            "generate_reply",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("model is at capacity"));
+        // Default max_attempts=3, so 2 delays
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn try_again_later_retried_as_transient() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let delay = make_recording_delay(call_count.clone());
+        let mut attempt = 0u32;
+
+        let result = retry_with_backoff_inner(
+            || {
+                attempt += 1;
+                async move {
+                    if attempt == 1 {
+                        Err(anyhow::anyhow!("service busy, try again later"))
+                    } else {
+                        Ok::<_, anyhow::Error>("recovered")
+                    }
+                }
+            },
+            &RetryConfig::conservative(),
+            delay,
+            "generate_reply",
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "recovered");
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
     #[tokio::test]
     async fn multiple_transient_then_success_after_retries() {
         let call_count = Arc::new(AtomicU32::new(0));

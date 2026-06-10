@@ -62,6 +62,27 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool>
     Ok(false)
 }
 
+/// Select a template string from a sentiment-indexed set.
+/// Returns the template at `(idx % len)` position, or empty string if no templates.
+#[must_use]
+fn select_template(
+    sentiment: Sentiment,
+    idx: u32,
+    positive: &[String],
+    neutral: &[String],
+    negative: &[String],
+) -> String {
+    let phrases = match sentiment {
+        Sentiment::Positive => positive,
+        Sentiment::Neutral => neutral,
+        Sentiment::Negative => negative,
+    };
+    if phrases.is_empty() {
+        return String::new();
+    }
+    phrases[(idx as usize) % phrases.len()].clone()
+}
+
 /// Generate a short reply string based on sentiment.
 #[must_use]
 pub fn generate_reply_text(
@@ -69,15 +90,13 @@ pub fn generate_reply_text(
     reply_idx: u32,
     templates: &SentimentTemplates,
 ) -> String {
-    let phrases = match sentiment {
-        Sentiment::Positive => &templates.reply_positive,
-        Sentiment::Neutral => &templates.reply_neutral,
-        Sentiment::Negative => &templates.reply_negative,
-    };
-    if phrases.is_empty() {
-        return String::new();
-    }
-    phrases[(reply_idx as usize) % phrases.len()].clone()
+    select_template(
+        sentiment,
+        reply_idx,
+        &templates.reply_positive,
+        &templates.reply_neutral,
+        &templates.reply_negative,
+    )
 }
 
 /// Generate a short quote commentary string based on sentiment.
@@ -87,13 +106,11 @@ pub fn generate_quote_text(
     quote_idx: u32,
     templates: &SentimentTemplates,
 ) -> String {
-    let phrases = match sentiment {
-        Sentiment::Positive => &templates.quote_positive,
-        Sentiment::Neutral => &templates.quote_neutral,
-        Sentiment::Negative => &templates.quote_negative,
-    };
-    if phrases.is_empty() {
-        return String::new();
-    }
-    phrases[(quote_idx as usize) % phrases.len()].clone()
+    select_template(
+        sentiment,
+        quote_idx,
+        &templates.quote_positive,
+        &templates.quote_neutral,
+        &templates.quote_negative,
+    )
 }

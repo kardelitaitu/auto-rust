@@ -33,6 +33,8 @@ pub(crate) enum ErrorPattern {
     Cancelled,
     /// Standalone "disconnected" (not "node is disconnected") - recoverable
     Disconnected,
+    /// Rate limited (HTTP 429, too many requests, overloaded) — LLM API transient
+    RateLimited,
 
     // --- TaskErrorKind-specific categories ---
     /// Validation error (invalid params, schema issues)
@@ -95,6 +97,18 @@ pub(crate) fn classify_error_pattern(msg: &str) -> ErrorPattern {
     if m.contains("connection") && (m.contains("refused") || m.contains("reset") || m.contains("broken") || m.contains("closed")) {
         return ErrorPattern::Connection;
     }
+    // LLM-specific transient patterns (rate limit, overload, server errors)
+    // Check these before generic "temporary"/"unavailable" for finer classification
+    if m.contains("rate limit") || m.contains("too many requests") || m.contains("429") {
+        return ErrorPattern::RateLimited;
+    }
+    if m.contains("overloaded") || m.contains("503") || m.contains("server error") {
+        return ErrorPattern::RateLimited;
+    }
+    if m.contains("model is at capacity") || m.contains("try again later") {
+        return ErrorPattern::RateLimited;
+    }
+
     if m.contains("temporary") || m.contains("unavailable") {
         return ErrorPattern::Temporary;
     }
@@ -164,6 +178,8 @@ pub enum TaskErrorKind {
     Session,
     /// Browser connection or automation error (`WebDriver` issues, browser crashes)
     Browser,
+    /// External service error (LLM API rate limiting, overloaded, unavailable)
+    ExternalService,
     /// Unknown or uncategorized error type
     Unknown,
 }
@@ -189,6 +205,7 @@ impl TaskErrorKind {
             ErrorPattern::Temporary => TaskErrorKind::Browser,
             ErrorPattern::Cancelled => TaskErrorKind::Session,
             ErrorPattern::Disconnected => TaskErrorKind::Browser,
+            ErrorPattern::RateLimited => TaskErrorKind::ExternalService,
             ErrorPattern::Validation => TaskErrorKind::Validation,
             ErrorPattern::Navigation => TaskErrorKind::Navigation,
             ErrorPattern::SessionChannel => TaskErrorKind::Session,
@@ -212,6 +229,7 @@ impl TaskErrorKind {
                 | TaskErrorKind::Navigation
                 | TaskErrorKind::Session
                 | TaskErrorKind::Browser
+                | TaskErrorKind::ExternalService
                 | TaskErrorKind::Unknown
         )
     }
@@ -225,6 +243,7 @@ impl std::fmt::Display for TaskErrorKind {
             TaskErrorKind::Navigation => write!(f, "Navigation"),
             TaskErrorKind::Session => write!(f, "Session"),
             TaskErrorKind::Browser => write!(f, "Browser"),
+            TaskErrorKind::ExternalService => write!(f, "ExternalService"),
             TaskErrorKind::Unknown => write!(f, "Unknown"),
         }
     }

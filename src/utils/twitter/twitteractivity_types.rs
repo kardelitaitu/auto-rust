@@ -111,13 +111,13 @@ impl Hash for TweetId {
 
 impl From<String> for TweetId {
     fn from(s: String) -> Self {
-        Self(s)
+        Self::new(s).expect("TweetId::from called with empty string")
     }
 }
 
 impl From<&str> for TweetId {
     fn from(s: &str) -> Self {
-        Self(s.to_owned())
+        Self::new(s).expect("TweetId::from called with empty string")
     }
 }
 
@@ -231,13 +231,13 @@ impl Hash for StatusUrl {
 
 impl From<String> for StatusUrl {
     fn from(s: String) -> Self {
-        Self(s)
+        Self::new(s).expect("StatusUrl::from called with empty string")
     }
 }
 
 impl From<&str> for StatusUrl {
     fn from(s: &str) -> Self {
-        Self(s.to_owned())
+        Self::new(s).expect("StatusUrl::from called with empty string")
     }
 }
 
@@ -362,5 +362,17 @@ mod tests {
     fn status_url_into_inner() {
         let url = StatusUrl::from_unchecked("/status/42");
         assert_eq!(url.into_inner(), "/status/42");
+    }
+
+    #[test]
+    #[should_panic(expected = "TweetId::from called with empty string")]
+    fn tweet_id_from_empty_string_panics() {
+        let _: TweetId = "".into();
+    }
+
+    #[test]
+    #[should_panic(expected = "StatusUrl::from called with empty string")]
+    fn status_url_from_empty_string_panics() {
+        let _: StatusUrl = "".into();
     }
 }

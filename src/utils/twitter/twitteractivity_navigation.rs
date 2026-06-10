@@ -225,7 +225,7 @@ pub async fn wait_for_page_ready(
 #[must_use]
 pub fn select_entry_point() -> &'static str {
     let total_weight: u32 = ENTRY_POINTS.iter().map(|ep| ep.weight).sum();
-    let mut random = rand::random::<u32>() % total_weight;
+    let mut random = rand::Rng::gen_range(&mut rand::thread_rng(), 0..total_weight);
 
     for entry in &ENTRY_POINTS {
         if random < entry.weight {

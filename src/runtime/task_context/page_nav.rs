@@ -32,6 +32,7 @@ pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
         ErrorPattern::Network => true,
         ErrorPattern::Cancelled => true,
         ErrorPattern::Disconnected => true,
+        ErrorPattern::RateLimited => true,
 
         // TaskErrorKind-specific patterns - treat as transient (safe default)
         ErrorPattern::Validation => true,
@@ -46,7 +47,7 @@ pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
 impl TaskContext {
     /// Helper to retry an async CDP operation with exponential backoff.
     /// Only retries transient errors; permanent errors fail immediately.
-    async fn with_retry<F, Fut, T>(&self, op: F) -> Result<T>
+    pub(crate) async fn with_retry<F, Fut, T>(&self, op: F) -> Result<T>
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<T, anyhow::Error>>,
@@ -57,7 +58,7 @@ impl TaskContext {
                 Ok(result) => return Ok(result),
                 Err(e) if is_transient_error(&e) && attempt < EVAL_RETRY_MAX_ATTEMPTS => {
                     attempt += 1;
-                    let delay = EVAL_RETRY_BASE_DELAY_MS * (1 << attempt.min(6));
+                    let delay = EVAL_RETRY_BASE_DELAY_MS * (1u64 << attempt.min(6));
                     log::warn!("CDP operation failed (attempt {}), retrying in {}ms: {}", attempt, delay, e);
                     tokio::time::sleep(Duration::from_millis(delay)).await;
                 }
@@ -682,5 +683,58 @@ mod tests {
 
         let thread_interrupted = anyhow::anyhow!("Thread interrupted");
         assert!(is_transient_error(&thread_interrupted));
+    }
+
+    // ========================================================================
+    // Rate-Limited (LLM API) Transient Error Tests
+    // ========================================================================
+
+    #[test]
+    fn test_is_transient_error_rate_limited() {
+        // Rate limit errors (LLM API) should be transient (retry)
+        let rate_limit = anyhow::anyhow!("Rate limit exceeded");
+        assert!(is_transient_error(&rate_limit));
+
+        let too_many = anyhow::anyhow!("Too many requests");
+        assert!(is_transient_error(&too_many));
+
+        let http_429 = anyhow::anyhow!("HTTP 429: rate limited");
+        assert!(is_transient_error(&http_429));
+    }
+
+    #[test]
+    fn test_is_transient_error_llm_overloaded() {
+        // LLM overload/server errors should be transient (retry)
+        let overloaded = anyhow::anyhow!("Model overloaded");
+        assert!(is_transient_error(&overloaded));
+
+        let http_503 = anyhow::anyhow!("HTTP 503: service unavailable");
+        assert!(is_transient_error(&http_503));
+
+        let server_error = anyhow::anyhow!("Server error occurred");
+        assert!(is_transient_error(&server_error));
+    }
+
+    #[test]
+    fn test_is_transient_error_try_again_later() {
+        // "Try again later" errors should be transient (retry)
+        let try_again = anyhow::anyhow!("Model is at capacity, try again later");
+        assert!(is_transient_error(&try_again));
+    }
+
+    #[test]
+    fn test_permanent_errors_unaffected_by_rate_limited_classification() {
+        // Verify RateLimited patterns don't interfere with permanent error classification
+        // Permission denied is always permanent
+        let perm_denied = anyhow::anyhow!("Permission denied");
+        assert!(!is_transient_error(&perm_denied));
+
+        // "Node is disconnected" is always permanent
+        let node_disconnected = anyhow::anyhow!("Node is disconnected");
+        assert!(!is_transient_error(&node_disconnected));
+
+        // "Not found" is always permanent
+        let not_found = anyhow::anyhow!("Element not found: #selector");
+        assert!(!is_transient_error(&not_found));
     }
 }

@@ -92,6 +92,46 @@ impl SessionState {
             self.remaining_time()
         )
     }
+
+    /// Build summary lines for final engagement logging.
+    ///
+    /// Returns `(summary_line, remaining_limits_line)` suitable for `info!()` output.
+    /// Pure formatting — does not mutate session state.
+    #[must_use]
+    pub fn build_summary_lines(&self, duration_ms: u64) -> (String, String) {
+        let last_remaining = self.remaining_time();
+        let duration_secs = Duration::from_millis(duration_ms)
+            .saturating_sub(last_remaining)
+            .as_secs_f64();
+        let summary_line = format!(
+            "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
+            self.counters.likes,
+            self.counters.retweets,
+            self.counters.follows,
+            self.counters.replies,
+            self.counters.thread_dives,
+            self.counters.bookmarks,
+            self.counters.quote_tweets,
+            self.counters.total_actions(),
+            duration_secs
+        );
+
+        let c = &self.counters;
+        let l = &self.limits;
+        let remaining_limits_line = format!(
+            "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
+            l.max_likes.saturating_sub(c.likes),
+            l.max_retweets.saturating_sub(c.retweets),
+            l.max_follows.saturating_sub(c.follows),
+            l.max_replies.saturating_sub(c.replies),
+            l.max_thread_dives.saturating_sub(c.thread_dives),
+            l.max_bookmarks.saturating_sub(c.bookmarks),
+            l.max_quote_tweets.saturating_sub(c.quote_tweets),
+            l.max_total_actions.saturating_sub(c.total_actions()),
+        );
+
+        (summary_line, remaining_limits_line)
+    }
 }
 
 /// Tracks rate-limit backoff state for session-level pacing.
@@ -452,5 +492,89 @@ mod gap_tests {
         assert!(!session.is_total_limit_reached());
         session.record_action("t3", "follow");
         assert!(session.is_total_limit_reached());
+    }
+
+    #[test]
+    fn build_summary_lines_contains_expected_keys() {
+        let limits = EngagementLimits::with_limits(3, 4, 5, 6, 7, 8, 9, 10);
+        let session = SessionState::new(limits, 60_000, 100);
+
+        let (summary_line, remaining_limits_line) = session.build_summary_lines(60_000);
+
+        for key in [
+            "likes=",
+            "retweets=",
+            "follows=",
+            "replies=",
+            "thread_dives=",
+            "bookmarks=",
+            "quote_tweets=",
+            "total_actions=",
+            "duration=",
+        ] {
+            assert!(summary_line.contains(key), "summary line missing {key}");
+        }
+
+        for key in [
+            "likes=",
+            "retweets=",
+            "follows=",
+            "replies=",
+            "thread_dives=",
+            "bookmarks=",
+            "quote_tweets=",
+            "total_actions=",
+        ] {
+            assert!(
+                remaining_limits_line.contains(key),
+                "remaining limits line missing {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_summary_lines_with_non_zero_counters() {
+        let limits = EngagementLimits::with_limits(10, 8, 6, 4, 5, 3, 3, 50);
+        let mut session = SessionState::new(limits, 60_000, 100);
+
+        session.record_action("t1", "like");
+        session.record_action("t2", "like");
+        session.record_action("t3", "retweet");
+        session.record_action("t4", "follow");
+
+        let (summary, remaining) = session.build_summary_lines(60_000);
+
+        assert!(summary.contains("likes=2"), "Expected likes=2, got: {summary}");
+        assert!(summary.contains("retweets=1"), "Expected retweets=1, got: {summary}");
+        assert!(summary.contains("follows=1"), "Expected follows=1, got: {summary}");
+        assert!(summary.contains("total_actions=4"));
+
+        assert!(remaining.contains("likes=8"), "Expected remaining likes=8, got: {remaining}");
+        assert!(remaining.contains("retweets=7"), "Expected remaining retweets=7, got: {remaining}");
+    }
+
+    #[test]
+    fn build_summary_lines_zero_duration() {
+        let limits = EngagementLimits::default();
+        let session = SessionState::new(limits, 60_000, 100);
+
+        let (summary, remaining) = session.build_summary_lines(0);
+        assert!(summary.contains("likes=0"));
+        assert!(summary.contains("total_actions=0"));
+        assert!(remaining.contains("likes=5"));
+    }
+
+    #[test]
+    fn build_summary_lines_saturating_sub_no_underflow() {
+        let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 10);
+        let mut session = SessionState::new(limits, 60_000, 100);
+
+        session.counters.likes = 5;
+        session.counters.retweets = 3;
+
+        let (_, remaining) = session.build_summary_lines(60_000);
+
+        assert!(remaining.contains("likes=0"));
+        assert!(remaining.contains("retweets=0"));
     }
 }

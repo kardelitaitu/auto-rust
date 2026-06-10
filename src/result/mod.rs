@@ -142,6 +142,7 @@ mod tests {
         assert!(TaskErrorKind::Navigation.is_retryable());
         assert!(TaskErrorKind::Session.is_retryable());
         assert!(TaskErrorKind::Browser.is_retryable());
+        assert!(TaskErrorKind::ExternalService.is_retryable());
         assert!(!TaskErrorKind::Validation.is_retryable());
     }
 
@@ -391,9 +392,10 @@ mod tests {
             TaskErrorKind::Navigation,
             TaskErrorKind::Session,
             TaskErrorKind::Browser,
+            TaskErrorKind::ExternalService,
             TaskErrorKind::Unknown,
         ];
-        assert_eq!(variants.len(), 6);
+        assert_eq!(variants.len(), 7);
     }
 
     #[test]
@@ -846,6 +848,7 @@ mod tdd_tests {
         assert_eq!(TaskErrorKind::Navigation.to_string(), "Navigation");
         assert_eq!(TaskErrorKind::Session.to_string(), "Session");
         assert_eq!(TaskErrorKind::Browser.to_string(), "Browser");
+        assert_eq!(TaskErrorKind::ExternalService.to_string(), "ExternalService");
         assert_eq!(TaskErrorKind::Unknown.to_string(), "Unknown");
     }
 
@@ -907,6 +910,7 @@ mod tdd_tests {
             TaskErrorKind::Navigation,
             TaskErrorKind::Session,
             TaskErrorKind::Browser,
+            TaskErrorKind::ExternalService,
             TaskErrorKind::Unknown,
         ];
         for variant in variants {
@@ -941,6 +945,7 @@ mod tdd_tests {
         assert!(TaskErrorKind::Navigation.is_retryable());
         assert!(TaskErrorKind::Session.is_retryable());
         assert!(TaskErrorKind::Browser.is_retryable());
+        assert!(TaskErrorKind::ExternalService.is_retryable());
         assert!(TaskErrorKind::Unknown.is_retryable());
     }
 

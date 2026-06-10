@@ -8,10 +8,20 @@
 //! - Retry behavior with mocked failures
 
 use serde::{Deserialize, Serialize};
+use std::sync::Once;
 use wiremock::{
     matchers::{header, method, path},
     Mock, MockServer, ResponseTemplate,
 };
+
+/// Ensure NO_PROXY is set before any test runs to prevent system HTTP proxies
+/// from intercepting localhost wiremock requests (causes 403 Forbidden).
+static INIT_NO_PROXY: Once = Once::new();
+fn ensure_no_proxy() {
+    INIT_NO_PROXY.call_once(|| {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    });
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct TestResponse {
@@ -56,6 +66,7 @@ fn create_test_client_with_circuit_breaker(
 
 #[tokio::test]
 async fn test_get_request_success() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     let response = TestResponse {
@@ -80,6 +91,7 @@ async fn test_get_request_success() {
 
 #[tokio::test]
 async fn test_get_with_api_key_header() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -104,6 +116,7 @@ async fn test_get_with_api_key_header() {
 
 #[tokio::test]
 async fn test_http_404_error() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -122,6 +135,7 @@ async fn test_http_404_error() {
 
 #[tokio::test]
 async fn test_http_500_retryable_error() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     // First two requests fail with 500, third succeeds
@@ -154,6 +168,7 @@ async fn test_http_500_retryable_error() {
 
 #[tokio::test]
 async fn test_http_429_too_many_requests() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -171,6 +186,7 @@ async fn test_http_429_too_many_requests() {
 
 #[tokio::test]
 async fn test_circuit_breaker_blocks_requests_when_open() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     // All requests fail
@@ -200,6 +216,7 @@ async fn test_circuit_breaker_blocks_requests_when_open() {
 
 #[tokio::test]
 async fn test_malformed_json_response() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -219,6 +236,7 @@ async fn test_malformed_json_response() {
 
 #[tokio::test]
 async fn test_empty_response_body() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -235,6 +253,7 @@ async fn test_empty_response_body() {
 
 #[tokio::test]
 async fn test_base_url_trailing_slash_handling() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -256,6 +275,7 @@ async fn test_base_url_trailing_slash_handling() {
 
 #[tokio::test]
 async fn test_request_timeout() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     // Response that takes too long - use shorter delay for faster test
@@ -280,6 +300,7 @@ async fn test_request_timeout() {
 
 #[tokio::test]
 async fn test_complex_json_response() {
+    ensure_no_proxy();
     let mock_server = MockServer::start().await;
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -119,7 +119,9 @@ pub async fn dive_into_thread(
     info!("Attempting to dive into thread: {}", status_url);
 
     // Click the tweet link using the high-level API (handles scrolling, movement, clicking)
-    let link_selector = format!("a[href='{status_url}']");
+    // Escape single quotes in status_url to prevent CSS selector injection
+    let escaped_url = status_url.replace('\'', "\\'");
+    let link_selector = format!("a[href='{escaped_url}']");
     info!("Clicking tweet link selector: {}", link_selector);
     api.click(&link_selector)
         .await

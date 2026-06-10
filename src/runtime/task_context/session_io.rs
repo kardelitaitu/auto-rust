@@ -2,14 +2,8 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::time::Duration;
 
 use crate::runtime::task_context::{deserialize_evaluated_json, TaskContext};
-use crate::runtime::task_context::page_nav::is_transient_error;
-
-/// Retry configuration for transient CDP failures in session I/O operations
-const SESSION_IO_RETRY_MAX_ATTEMPTS: u32 = 3;
-const SESSION_IO_RETRY_BASE_DELAY_MS: u64 = 50;
 
 impl TaskContext {
     pub async fn export_session(&self, url: &str) -> Result<crate::task::policy::SessionData> {
@@ -417,49 +411,14 @@ impl TaskContext {
     }
 
     /// Retry wrapper for CDP evaluate operations in session I/O.
-    /// Retries transient CDP errors (timeout, connection reset, etc.) with
-    /// exponential backoff. Permanent errors (not found, permission denied)
-    /// fail immediately without retry.
+    /// Delegates to the shared `with_retry` helper on TaskContext.
     async fn session_io_evaluate_with_retry(
         &self,
         js: &str,
     ) -> Result<serde_json::Value> {
-        let mut attempt = 0;
-        loop {
-            match self.page.evaluate(js).await {
-                Ok(result) => {
-                    return Ok(result
-                        .value()
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Null));
-                }
-                Err(e) => {
-                    let any_err = anyhow::Error::from(e);
-                    if is_transient_error(&any_err) && attempt < SESSION_IO_RETRY_MAX_ATTEMPTS {
-                        attempt += 1;
-                        let delay = SESSION_IO_RETRY_BASE_DELAY_MS * (1u64 << attempt.min(6));
-                        log::warn!(
-                            "session_io CDP evaluate failed (attempt {}), retrying in {}ms: {}",
-                            attempt,
-                            delay,
-                            any_err
-                        );
-                        tokio::time::sleep(Duration::from_millis(delay)).await;
-                        continue;
-                    } else {
-                        let classification = if is_transient_error(&any_err) {
-                            "transient (max attempts)"
-                        } else {
-                            "permanent"
-                        };
-                        log::debug!(
-                            "session_io CDP evaluate failed ({classification}): {}",
-                            any_err
-                        );
-                        return Err(any_err);
-                    }
-                }
-            }
-        }
+        let result = self.with_retry(|| async {
+            self.page.evaluate(js).await.map_err(anyhow::Error::from)
+        }).await?;
+        Ok(result.value().cloned().unwrap_or(serde_json::Value::Null))
     }
 }

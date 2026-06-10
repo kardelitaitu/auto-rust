@@ -123,20 +123,20 @@ pub async fn handle_engagement_decision(
 }
 
 /// Cached SentimentAnalyzer instance (created once and reused).
-static SENTIMENT_ANALYZER: std::sync::OnceLock<std::sync::Mutex<SentimentAnalyzer>> =
+static SENTIMENT_ANALYZER: std::sync::OnceLock<tokio::sync::Mutex<SentimentAnalyzer>> =
     std::sync::OnceLock::new();
 
 /// Analyze tweet sentiment and modulate persona weights accordingly.
 #[allow(clippy::cast_precision_loss)]
-fn modulate_persona_by_sentiment(
+async fn modulate_persona_by_sentiment(
     tweet: &Value,
     task_config: &TaskConfig,
     persona: &PersonaWeights,
 ) -> (Sentiment, PersonaWeights) {
     let analyzer = SENTIMENT_ANALYZER
-        .get_or_init(|| std::sync::Mutex::new(SentimentAnalyzer::new()))
+        .get_or_init(|| tokio::sync::Mutex::new(SentimentAnalyzer::new()))
         .lock()
-        .unwrap_or_else(|e| e.into_inner());
+        .await;
     let tweet_text = extract_tweet_text(tweet);
     let sentiment_result = if task_config.enhanced_sentiment_enabled {
         let thread_context = crate::utils::twitter::sentiment::extract_thread_context(tweet);
@@ -268,6 +268,46 @@ async fn engage_replies(
     Ok(())
 }
 
+/// Metrics constants for an engagement action's retry/error tracking.
+struct ActionMetrics {
+    /// User-facing action name for validation messages (e.g., "retweet").
+    action_name: &'static str,
+    /// Operation name for retry logging (e.g., "retweet_tweet").
+    retry_name: &'static str,
+    failure_counter: &'static str,
+}
+
+/// Execute a standard engagement action with page validation, retry, and metrics.
+///
+/// Handles the common pattern: validate tweet page → retry action with backoff →
+/// record failure metrics. Returns `true` if the action succeeded, `false` if
+/// validation failed or the action failed after retries.
+async fn execute_engagement_action<F, Fut>(
+    api: &TaskContext,
+    did_dive: bool,
+    tweet_id: &str,
+    action_fn: F,
+    retry_config: &RetryConfig,
+    metrics: ActionMetrics,
+) -> bool
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<bool>>,
+{
+    if !validate_tweet_page(api, did_dive, metrics.action_name, tweet_id).await {
+        return false;
+    }
+    match retry_with_backoff(action_fn, retry_config, api, metrics.retry_name).await {
+        Ok(result) => result,
+        Err(e) => {
+            warn!("{} failed after retries: {}", metrics.retry_name, e);
+            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+            api.increment_run_counter(metrics.failure_counter, 1);
+            false
+        }
+    }
+}
+
 /// Process a single candidate tweet for engagement.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::cast_precision_loss)]
@@ -305,7 +345,7 @@ pub async fn process_candidate(
     }
 
     // Analyze sentiment and modulate persona
-    let (sentiment, candidate_persona) = modulate_persona_by_sentiment(tweet, task_config, persona);
+    let (sentiment, candidate_persona) = modulate_persona_by_sentiment(tweet, task_config, persona).await;
 
     // Smart decision check (V3 feature - rule-based)
     let engagement_decision = handle_engagement_decision(
@@ -551,28 +591,12 @@ pub async fn process_candidate(
                     }
                 }
             }
-            "retweet" => {
-                if !validate_tweet_page(api, did_dive, "retweet", tweet_id).await {
-                    false
-                } else {
-                    match retry_with_backoff(
-                        || retweet_tweet(api),
-                        &RetryConfig::default(),
-                        api,
-                        "retweet_tweet",
-                    )
-                    .await
-                    {
-                        Ok(result) => result,
-                        Err(e) => {
-                            warn!("Retweet failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                            api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
-                            false
-                        }
-                    }
-                }
-            }
+            "retweet" => execute_engagement_action(
+                api, did_dive, tweet_id,
+                || retweet_tweet(api),
+                &RetryConfig::default(),
+                ActionMetrics { action_name: "retweet", retry_name: "retweet_tweet", failure_counter: RUN_COUNTER_RETWEET_FAILURE },
+            ).await,
             "quote" => {
                 if !validate_tweet_page(api, did_dive, "quote", tweet_id).await {
                     false
@@ -618,28 +642,12 @@ pub async fn process_candidate(
                     }
                 }
             }
-            "follow" => {
-                if !validate_tweet_page(api, did_dive, "follow", tweet_id).await {
-                    false
-                } else {
-                    match retry_with_backoff(
-                        || follow_from_tweet(api),
-                        &RetryConfig::default(),
-                        api,
-                        "follow_from_tweet",
-                    )
-                    .await
-                    {
-                        Ok(result) => result,
-                        Err(e) => {
-                            warn!("Follow failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                            api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
-                            false
-                        }
-                    }
-                }
-            }
+            "follow" => execute_engagement_action(
+                api, did_dive, tweet_id,
+                || follow_from_tweet(api),
+                &RetryConfig::default(),
+                ActionMetrics { action_name: "follow", retry_name: "follow_from_tweet", failure_counter: RUN_COUNTER_FOLLOW_FAILURE },
+            ).await,
             "reply" => {
                 if !validate_tweet_page(api, did_dive, "reply", tweet_id).await {
                     false
@@ -689,28 +697,12 @@ pub async fn process_candidate(
                     }
                 }
             }
-            "bookmark" => {
-                if !validate_tweet_page(api, did_dive, "bookmark", tweet_id).await {
-                    false
-                } else {
-                    match retry_with_backoff(
-                        || bookmark_tweet(api),
-                        &RetryConfig::aggressive(),
-                        api,
-                        "bookmark_tweet",
-                    )
-                    .await
-                    {
-                        Ok(result) => result,
-                        Err(e) => {
-                            warn!("Bookmark failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                            api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
-                            false
-                        }
-                    }
-                }
-            }
+            "bookmark" => execute_engagement_action(
+                api, did_dive, tweet_id,
+                || bookmark_tweet(api),
+                &RetryConfig::aggressive(),
+                ActionMetrics { action_name: "bookmark", retry_name: "bookmark_tweet", failure_counter: RUN_COUNTER_BOOKMARK_FAILURE },
+            ).await,
             _ => false,
         };
 

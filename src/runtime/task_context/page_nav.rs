@@ -4,6 +4,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::time::Duration;
 
+use crate::result::errors::{classify_error_pattern, ErrorPattern};
+
 /// Retry configuration for transient CDP failures
 const EVAL_RETRY_MAX_ATTEMPTS: u32 = 3;
 const EVAL_RETRY_BASE_DELAY_MS: u64 = 50;
@@ -13,57 +15,32 @@ const EVAL_RETRY_BASE_DELAY_MS: u64 = 50;
 /// Transient errors include timeouts, connection issues, and temporary
 /// failures that may succeed on retry. Permanent errors like "element
 /// not found" or "invalid selector" should fail immediately without retry.
+///
+/// Uses shared `classify_error_pattern()` from `result/errors.rs`.
 pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
-    let msg = err.to_string().to_lowercase();
+    let msg = err.to_string();
+    match classify_error_pattern(&msg) {
+        // Permanent: don't retry
+        ErrorPattern::NotFound => false,
+        ErrorPattern::PermissionDenied => false,
+        ErrorPattern::TargetTerminated => false,
 
-    // Permanent errors - don't retry
-    if msg.contains("not found") || msg.contains("element not found") {
-        return false;
-    }
-    if msg.contains("no such element") {
-        return false;
-    }
-    if msg.contains("invalid selector") {
-        return false;
-    }
-    if msg.contains("selector not found") {
-        return false;
-    }
-    if msg.contains("node is disconnected") {
-        return false;
-    }
-    // Standalone "disconnected" without "node is" prefix — could be a temporary
-    // connection dropout that's recoverable
-    if msg.contains("disconnected") {
-        return true;
-    }
-    if msg.contains("target closed") {
-        return false;
-    }
-    if msg.contains("permission denied") {
-        return false;
-    }
+        // Transient: safe to retry
+        ErrorPattern::Timeout => true,
+        ErrorPattern::Connection => true,
+        ErrorPattern::Temporary => true,
+        ErrorPattern::Network => true,
+        ErrorPattern::Cancelled => true,
+        ErrorPattern::Disconnected => true,
 
-    // Transient errors - safe to retry
-    if msg.contains("timeout") || msg.contains("timed out") {
-        return true;
-    }
-    if msg.contains("connection") && (msg.contains("refused") || msg.contains("reset") || msg.contains("broken")) {
-        return true;
-    }
-    if msg.contains("temporary") || msg.contains("unavailable") {
-        return true;
-    }
-    if msg.contains("network") || msg.contains("econnreset") {
-        return true;
-    }
-    if msg.contains("aborted") || msg.contains("cancelled") || msg.contains("interrupted") {
-        return true;
-    }
+        // TaskErrorKind-specific patterns - treat as transient (safe default)
+        ErrorPattern::Validation => true,
+        ErrorPattern::Navigation => true,
+        ErrorPattern::SessionChannel => true,
 
-    // Default: treat unknown errors as potentially transient (retry)
-    // This is safer than failing immediately on unexpected errors
-    true
+        // Unknown: treat as potentially transient (retry for safety)
+        ErrorPattern::Unknown => true,
+    }
 }
 
 impl TaskContext {

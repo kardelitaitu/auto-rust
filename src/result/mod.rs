@@ -2,7 +2,7 @@
 //!
 //! Re-exports all result types from submodules.
 
-mod errors;
+pub(crate) mod errors;
 mod summary;
 mod types;
 

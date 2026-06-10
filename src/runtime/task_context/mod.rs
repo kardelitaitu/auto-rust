@@ -39,7 +39,6 @@
 //! ```
 
 use chromiumoxide::Page;
-use std::collections::BTreeMap;
 #[allow(unused_imports)]
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1796,44 +1795,6 @@ impl TaskContext {
     // [Moved to submodule: session_io.rs]
 
     // [Moved to submodule: session_io.rs]
-
-    /// Set custom user agent string for subsequent navigations.
-    pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {
-        page_nav::set_user_agent(self, user_agent).await
-    }
-
-    /// Set extra HTTP headers for subsequent navigations.
-    pub async fn set_extra_http_headers(&self, headers: &BTreeMap<String, String>) -> Result<()> {
-        page_nav::set_extra_http_headers(self, headers).await
-    }
-
-    /// Apply user agent and/or extra HTTP headers in one call.
-    pub async fn apply_browser_context(
-        &self,
-        user_agent: Option<&str>,
-        headers: &BTreeMap<String, String>,
-    ) -> Result<()> {
-        page_nav::apply_browser_context(self, user_agent, headers).await
-    }
-
-    /// Wait for 'load' event with timeout. Uses page load event.
-    pub async fn wait_for_load(&self, timeout_ms: u64) -> Result<()> {
-        page_nav::wait_for_load(self, timeout_ms).await
-    }
-
-    /// Wait until any of the given selectors becomes visible. Returns first match or false.
-    pub async fn wait_for_any_visible_selector(
-        &self,
-        selectors: &[&str],
-        timeout_ms: u64,
-    ) -> Result<bool> {
-        page_nav::wait_for_any_visible_selector(self, selectors, timeout_ms).await
-    }
-
-    /// Scrolls an element into view, focuses it, and returns the focus outcome.
-    pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
-        page_nav::focus(self, selector).await
-    }
 
     /// Performs a human-like hover over an element with configurable timing.
     ///

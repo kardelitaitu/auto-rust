@@ -57,7 +57,7 @@ fn is_transient_error(err: &anyhow::Error) -> bool {
     if msg.contains("network") || msg.contains("econnreset") {
         return true;
     }
-    if msg.contains("aborted") || msg.contains("cancelled") {
+    if msg.contains("aborted") || msg.contains("cancelled") || msg.contains("interrupted") {
         return true;
     }
 
@@ -695,5 +695,15 @@ mod tests {
 
         let temp_failure = anyhow::anyhow!("Temporary failure in name resolution");
         assert!(is_transient_error(&temp_failure));
+    }
+
+    #[test]
+    fn test_is_transient_error_interrupted() {
+        // Interrupted errors should be transient (retry)
+        let interrupted = anyhow::anyhow!("Operation interrupted");
+        assert!(is_transient_error(&interrupted));
+
+        let thread_interrupted = anyhow::anyhow!("Thread interrupted");
+        assert!(is_transient_error(&thread_interrupted));
     }
 }

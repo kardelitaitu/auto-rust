@@ -2,8 +2,14 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::runtime::task_context::{deserialize_evaluated_json, TaskContext};
+use crate::runtime::task_context::page_nav::is_transient_error;
+
+/// Retry configuration for transient CDP failures in session I/O operations
+const SESSION_IO_RETRY_MAX_ATTEMPTS: u32 = 3;
+const SESSION_IO_RETRY_BASE_DELAY_MS: u64 = 50;
 
 impl TaskContext {
     pub async fn export_session(&self, url: &str) -> Result<crate::task::policy::SessionData> {
@@ -38,15 +44,13 @@ impl TaskContext {
                 return JSON.stringify(data);
             })()
         ";
-        let local_storage_str = self
-            .page
-            .evaluate(local_storage_js)
+        let local_storage_value = self
+            .session_io_evaluate_with_retry(local_storage_js)
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
-        let local_storage_value = local_storage_str
-            .value()
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+            .unwrap_or_else(|e| {
+                log::warn!("Failed to export localStorage (after retries): {e}");
+                serde_json::Value::Null
+            });
         let local_storage: HashMap<String, String> =
             deserialize_evaluated_json(local_storage_value).unwrap_or_default();
         let session_data = crate::task::policy::SessionData {
@@ -90,8 +94,7 @@ impl TaskContext {
             }})()
             "
         );
-        self.page
-            .evaluate(js_code)
+        self.session_io_evaluate_with_retry(&js_code)
             .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
         log::warn!(
@@ -142,14 +145,15 @@ impl TaskContext {
                 return JSON.stringify(data);
             })()
         ";
-        let local_storage_str =
-            self.page.evaluate(local_storage_js).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage - {e}")
-            })?;
-        let local_storage_value = local_storage_str
-            .value()
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+        let local_storage_value = self
+            .session_io_evaluate_with_retry(local_storage_js)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "Failed to export localStorage during browser export (after retries): {e}"
+                );
+                serde_json::Value::Null
+            });
         let local_storage: std::collections::HashMap<
             String,
             std::collections::HashMap<String, String>,
@@ -167,14 +171,15 @@ impl TaskContext {
                 return JSON.stringify(data);
             })()
         ";
-        let session_storage_str =
-            self.page.evaluate(session_storage_js).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage - {e}")
-            })?;
-        let session_storage_value = session_storage_str
-            .value()
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+        let session_storage_value = self
+            .session_io_evaluate_with_retry(session_storage_js)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "Failed to export sessionStorage during browser export (after retries): {e}"
+                );
+                serde_json::Value::Null
+            });
         let session_storage: std::collections::HashMap<
             String,
             std::collections::HashMap<String, String>,
@@ -205,16 +210,15 @@ impl TaskContext {
                 });
             })()
         ";
-        let indexeddb_result = self.page.evaluate(indexeddb_js).await;
-        let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match indexeddb_result
+        let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match self
+            .session_io_evaluate_with_retry(indexeddb_js)
+            .await
         {
-            Ok(result) => result
-                .value()
-                .cloned()
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
+            Ok(result) => serde_json::from_value(result).unwrap_or_default(),
             Err(e) => {
-                log::warn!("Failed to export IndexedDB names: {e}");
+                log::warn!(
+                    "Failed to export IndexedDB names (after retries): {e}"
+                );
                 std::collections::HashMap::new()
             }
         };
@@ -276,9 +280,11 @@ impl TaskContext {
                 }})()
                 "
             );
-            self.page.evaluate(js_code).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage import - {e}")
-            })?;
+            self.session_io_evaluate_with_retry(&js_code)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("CDP error: Runtime.evaluate for localStorage import - {e}")
+                })?;
         }
 
         for (origin, data) in &browser_data.session_storage {
@@ -302,9 +308,11 @@ impl TaskContext {
                 }})()
                 "
             );
-            self.page.evaluate(js_code).await.map_err(|e| {
-                anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage import - {e}")
-            })?;
+            self.session_io_evaluate_with_retry(&js_code)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("CDP error: Runtime.evaluate for sessionStorage import - {e}")
+                })?;
         }
 
         log::warn!(
@@ -341,15 +349,13 @@ impl TaskContext {
                 return JSON.stringify(data);
             })()
         ";
-        let local_storage_str = self
-            .page
-            .evaluate(local_storage_js)
+        let local_storage_value = self
+            .session_io_evaluate_with_retry(local_storage_js)
             .await
-            .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
-        let local_storage_value = local_storage_str
-            .value()
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+            .unwrap_or_else(|e| {
+                log::warn!("Failed to export localStorage (after retries): {e}");
+                serde_json::Value::Null
+            });
         let local_storage: std::collections::HashMap<String, String> =
             deserialize_evaluated_json(local_storage_value).unwrap_or_default();
 
@@ -390,8 +396,7 @@ impl TaskContext {
             }})()
             "
         );
-        self.page
-            .evaluate(js_code)
+        self.session_io_evaluate_with_retry(&js_code)
             .await
             .map_err(|e| anyhow::anyhow!("CDP error: Runtime.evaluate - {e}"))?;
 
@@ -409,5 +414,52 @@ impl TaskContext {
     #[must_use]
     pub fn validate_session_data_for_tests(data: &crate::task::policy::SessionData) -> Vec<String> {
         super::validate_session_data_impl(data)
+    }
+
+    /// Retry wrapper for CDP evaluate operations in session I/O.
+    /// Retries transient CDP errors (timeout, connection reset, etc.) with
+    /// exponential backoff. Permanent errors (not found, permission denied)
+    /// fail immediately without retry.
+    async fn session_io_evaluate_with_retry(
+        &self,
+        js: &str,
+    ) -> Result<serde_json::Value> {
+        let mut attempt = 0;
+        loop {
+            match self.page.evaluate(js).await {
+                Ok(result) => {
+                    return Ok(result
+                        .value()
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null));
+                }
+                Err(e) => {
+                    let any_err = anyhow::Error::from(e);
+                    if is_transient_error(&any_err) && attempt < SESSION_IO_RETRY_MAX_ATTEMPTS {
+                        attempt += 1;
+                        let delay = SESSION_IO_RETRY_BASE_DELAY_MS * (1u64 << attempt.min(6));
+                        log::warn!(
+                            "session_io CDP evaluate failed (attempt {}), retrying in {}ms: {}",
+                            attempt,
+                            delay,
+                            any_err
+                        );
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        continue;
+                    } else {
+                        let classification = if is_transient_error(&any_err) {
+                            "transient (max attempts)"
+                        } else {
+                            "permanent"
+                        };
+                        log::debug!(
+                            "session_io CDP evaluate failed ({classification}): {}",
+                            any_err
+                        );
+                        return Err(any_err);
+                    }
+                }
+            }
+        }
     }
 }

@@ -13,7 +13,7 @@ const EVAL_RETRY_BASE_DELAY_MS: u64 = 50;
 /// Transient errors include timeouts, connection issues, and temporary
 /// failures that may succeed on retry. Permanent errors like "element
 /// not found" or "invalid selector" should fail immediately without retry.
-fn is_transient_error(err: &anyhow::Error) -> bool {
+pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
     let msg = err.to_string().to_lowercase();
 
     // Permanent errors - don't retry

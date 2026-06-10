@@ -683,4 +683,17 @@ mod tests {
         let not_found_title = anyhow::anyhow!("Element NOT FOUND");
         assert!(!is_transient_error(&not_found_title));
     }
+
+    #[test]
+    fn test_is_transient_error_temporary_unavailable() {
+        // Temporary or unavailable errors should be transient (retry)
+        let temporary = anyhow::anyhow!("Service temporarily unavailable");
+        assert!(is_transient_error(&temporary));
+
+        let unavailable = anyhow::anyhow!("Resource unavailable");
+        assert!(is_transient_error(&unavailable));
+
+        let temp_failure = anyhow::anyhow!("Temporary failure in name resolution");
+        assert!(is_transient_error(&temp_failure));
+    }
 }

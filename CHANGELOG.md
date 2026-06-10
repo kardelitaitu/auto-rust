@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **tests**: Fixed 6 pre-existing `api_client_integration.rs` failures (403 Forbidden) caused by system HTTP proxy intercepting localhost wiremock — added `ensure_no_proxy()` using `std::sync::Once`
+- **tests**: Fixed 2 pre-existing Ollama test failures — added `NO_PROXY=127.0.0.1,localhost` to subprocess env and switched fake Ollama response from NVIDIA Chat Completions format (`choices[]`) to Ollama API format (`{"done":true,"message":{"content":"..."}}`) in `bacon_dry_run_smoke.rs` and `bacon_pipeline_integration.rs`
+- **bacon-pipeline**: Fixed 23 pre-existing test failures ("Once poisoned", "ProjectConfig already initialized") caused by parallel test modules racing on `OnceLock::set()` — made `config::init()` idempotent with warning log on re-init, added `ENV_MUTEX` to serialize `LLM_PROVIDER` env var mutations between two racing tests
+- **docs**: Fixed 2 pre-existing doc-test failures in `src/session/mod.rs` — changed plain integer literals (`30_000`, `30000`) to `DurationMs::new_const(...)` for `CircuitBreakerConfig.half_open_time_ms` (field type is `DurationMs`, not `u64`)
 
 ### Removed
 - **cleanup**: Removed standalone `build_summary_lines()` from `src/task/twitteractivity.rs` (moved to `SessionState`)

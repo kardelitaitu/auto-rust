@@ -4,6 +4,7 @@
 //! describing its filesystem layout. All bacon-pipeline modules then read paths
 //! from the global config instead of compile-time `env!` macros.
 
+use log::warn;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -12,11 +13,11 @@ static PROJECT_CONFIG: OnceLock<ProjectConfig> = OnceLock::new();
 /// Initialize the global project configuration.
 ///
 /// Must be called once before any bacon-pipeline function that reads paths.
-/// Panics if called more than once.
+/// Subsequent calls are silently ignored — the first `init()` wins.
 pub fn init(config: ProjectConfig) {
-    PROJECT_CONFIG
-        .set(config)
-        .expect("ProjectConfig already initialized — call bacon_pipeline::init() only once");
+    if PROJECT_CONFIG.set(config).is_err() {
+        log::warn!("bacon_pipeline::init() called more than once — ignoring re-initialization");
+    }
 }
 
 /// Access the global project configuration.

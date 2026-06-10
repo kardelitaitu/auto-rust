@@ -21,16 +21,19 @@
     .\scripts\run-integration-tests.ps1
     .\scripts\run-integration-tests.ps1 -Port 9002
     .\scripts\run-integration-tests.ps1 -TestFilter query
+    .\scripts\run-integration-tests.ps1 -TimeoutSec 120
 #>
 
 param(
     [int]    $Port       = 9222,
+    [int]    $TimeoutSec = 60,
     [switch] $NoLaunch,
     [switch] $IncludeOrchestrator,
     [string] $TestFilter = ""
 )
 
 $ErrorActionPreference = "Stop"
+$proc = $null
 $hostAddr = "127.0.0.1"
 $wsUrl = "ws://${hostAddr}:$Port"
 
@@ -114,14 +117,42 @@ $extraArgs = if ($TestFilter) { @("--", "--ignored", $TestFilter, "--test-thread
 $allPassed = $true
 
 foreach ($file in $testFiles) {
-    Write-Host "`n>>> Running: $file" -ForegroundColor Yellow
-    & "cargo" "test" "--test" $file @extraArgs 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "FAIL: $file" -ForegroundColor Red
-        $allPassed = $false
+    Write-Host "`n>>> Running: $file (timeout: ${TimeoutSec}s)" -ForegroundColor Yellow
+
+    $cmdStr = "test --test $file $($extraArgs -join ' ')"
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $codeFile = [System.IO.Path]::GetTempFileName()
+    $job = Start-Job -ScriptBlock {
+        param($a, $of, $cf)
+        Invoke-Expression "cargo $a" *> $of
+        Set-Content -Path $cf -Value $LASTEXITCODE
+    } -ArgumentList $cmdStr, $outFile, $codeFile
+
+    $finished = $job | Wait-Job -Timeout $TimeoutSec
+
+    if ($finished) {
+        if (Test-Path $outFile) { Get-Content $outFile -ErrorAction SilentlyContinue }
+        $exitCode = 1
+        if (Test-Path $codeFile) {
+            $rawCode = Get-Content $codeFile -ErrorAction SilentlyContinue
+            if ($rawCode) { $exitCode = [int]$rawCode }
+        }
+        Remove-Job $job -ErrorAction SilentlyContinue
+        if ($exitCode -ne 0) {
+            Write-Host "FAIL: $file" -ForegroundColor Red
+            $allPassed = $false
+        } else {
+            Write-Host "PASS: $file" -ForegroundColor Green
+        }
     } else {
-        Write-Host "PASS: $file" -ForegroundColor Green
+        Write-Host "TIMEOUT: $file exceeded ${TimeoutSec}s - skipping" -ForegroundColor Red
+        Stop-Job $job -ErrorAction SilentlyContinue
+        Remove-Job $job -Force -ErrorAction SilentlyContinue
+        $allPassed = $false
     }
+
+    Remove-Item $outFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $codeFile -Force -ErrorAction SilentlyContinue
 }
 
 # ── 4. Cleanup ───────────────────────────────────────────────────────────────

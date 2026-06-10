@@ -60,7 +60,7 @@ use tokio::sync::Semaphore;
 /// #     enabled: true,
 /// #     failure_threshold: 5,
 /// #     success_threshold: 3,
-/// #     half_open_time_ms: 30_000,
+/// #     half_open_time_ms: auto::session::DurationMs::new_const(30_000),
 /// # };
 /// // Session is typically created by the orchestrator
 /// let session = Session::new(
@@ -161,7 +161,7 @@ impl Session {
     ///     enabled: true,
     ///     failure_threshold: 5,
     ///     success_threshold: 3,
-    ///     half_open_time_ms: 30000,
+    ///     half_open_time_ms: auto::session::DurationMs::new_const(30000),
     /// };
     /// let session = Session::new(
     ///     "session-1".to_string(),

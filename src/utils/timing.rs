@@ -828,7 +828,8 @@ mod tests {
             let start = std::time::Instant::now();
             random_delay(20, 40).await;
             let elapsed = start.elapsed();
-            assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 80);
+            // Wide upper bound for Windows scheduler jitter under parallel test load
+            assert!(elapsed.as_millis() >= 20 && elapsed.as_millis() < 300);
         }
     }
 

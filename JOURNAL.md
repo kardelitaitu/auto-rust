@@ -1703,3 +1703,58 @@ The Bacon gated-LLM pipeline is now fully implemented. The system is a **Config 
 | Spec 0018 implementation | ✅ Done → archived |
 | Active specs | ✅ 0 remaining |
 | Repo gate | ✅ Pass |
+
+---
+
+## 2026-06-10 (continued) — Transient error classification for page_nav.rs CDP retry logic
+
+### Accomplished This Session
+
+#### Retry Logic Improvement
+- **`src/runtime/task_context/page_nav.rs`**: Added `is_transient_error()` function that classifies CDP errors as transient (retry) or permanent (fail immediately)
+- **Transient (retry)**: timeouts, connection issues (refused/reset/broken), network errors, aborted/cancelled operations
+- **Permanent (no retry)**: "not found", "no such element", "invalid selector", "target closed", "permission denied", "node is disconnected"
+- **Default**: Unknown errors treated as transient (safer) — bounded by max retry attempts
+
+#### Updated with_retry
+- Only retries when `is_transient_error(&e) && attempt < EVAL_RETRY_MAX_ATTEMPTS`
+- Permanent errors fail immediately without retry
+- Transient errors retry with exponential backoff (50ms * 2^attempt)
+- Debug logging distinguishes "permanent" vs "transient (max attempts)" classifications
+
+#### Unit Tests Added (10 new tests)
+- `test_is_transient_error_timeout` — timeout is transient
+- `test_is_transient_error_not_found` — not found is permanent
+- `test_is_transient_error_connection` — connection refused/reset/broken are transient
+- `test_is_transient_error_target_closed` — target closed is permanent
+- `test_is_transient_error_permission_denied` — permission denied is permanent
+- `test_is_transient_error_aborted` — aborted/cancelled are transient
+- `test_is_transient_error_network` — network/econnreset are transient
+- `test_is_transient_error_unknown_defaults_to_retry` — unknown errors retry
+- `test_is_transient_error_case_insensitive` — matching is case-insensitive
+- Total: 28 tests for page_nav.rs (18 existing + 10 new)
+
+#### Previous Improvements (carried forward)
+- `wait_for_load` timeout enforcement with tokio::time::timeout polling loop
+- `apply_browser_context` signature changed to `Option<&str>` (None skips setting)
+- `with_retry` helper with exponential backoff (max 3 attempts)
+- Applied to: set_user_agent, wait_for_any_visible_selector, focus
+- All 6 functions: set_user_agent, set_extra_http_headers, apply_browser_context, wait_for_load, wait_for_any_visible_selector, focus
+
+#### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo check` | ✅ Pass |
+| `cargo test --lib task_context::page_nav` | ✅ 28 passed |
+| `check-fast.ps1` | ✅ Pass |
+
+#### Files Changed
+- `src/runtime/task_context/page_nav.rs` — is_transient_error(), with_retry update, 10 new tests
+
+| Item | Status |
+|------|--------|
+| Transient error classification | ✅ Done |
+| with_retry update | ✅ Done |
+| Unit tests (10 new) | ✅ Done |
+| check-fast.ps1 | ✅ Pass |

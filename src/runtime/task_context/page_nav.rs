@@ -32,6 +32,11 @@ fn is_transient_error(err: &anyhow::Error) -> bool {
     if msg.contains("node is disconnected") {
         return false;
     }
+    // Standalone "disconnected" without "node is" prefix — could be a temporary
+    // connection dropout that's recoverable
+    if msg.contains("disconnected") {
+        return true;
+    }
     if msg.contains("target closed") {
         return false;
     }
@@ -622,6 +627,17 @@ mod tests {
 
         let node_disconnected = anyhow::anyhow!("Node is disconnected");
         assert!(!is_transient_error(&node_disconnected));
+    }
+
+    #[test]
+    fn test_is_transient_error_disconnected_standalone() {
+        // Standalone "disconnected" (without "node is" prefix) should be transient
+        // This catches connection dropouts that may recover on retry
+        let disconnected = anyhow::anyhow!("Connection disconnected");
+        assert!(is_transient_error(&disconnected));
+
+        let disconnected2 = anyhow::anyhow!("Pipe disconnected");
+        assert!(is_transient_error(&disconnected2));
     }
 
     #[test]

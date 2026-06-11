@@ -47,7 +47,7 @@ struct ActionMetrics {
 async fn execute_engagement_action<F, Fut>(
     api: &TaskContext,
     did_dive: bool,
-    tweet_id: &str,
+    tweet_id: &TweetId,
     action_fn: F,
     retry_config: &RetryConfig,
     metrics: ActionMetrics,
@@ -56,7 +56,7 @@ where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<bool>>,
 {
-    if !validate_tweet_page(api, did_dive, metrics.action_name, tweet_id).await {
+    if !validate_tweet_page(api, did_dive, metrics.action_name, tweet_id.as_ref()).await {
         return false;
     }
     match retry_with_backoff(action_fn, retry_config, api, metrics.retry_name).await {
@@ -76,7 +76,7 @@ pub async fn dispatch_action(
     api: &TaskContext,
     action: &'static str,
     tweet: &Value,
-    tweet_id: &str,
+    tweet_id: &TweetId,
     did_dive: bool,
     sentiment: Sentiment,
     task_config: &TaskConfig,
@@ -94,7 +94,7 @@ pub async fn dispatch_action(
         info!("Dry-run: would perform {action} on tweet {tweet_id} (did_dive={did_dive})");
         counters.increment(action);
         *actions_this_scan += 1;
-        action_tracker.record_action(TweetId::from_unchecked(tweet_id), action);
+        action_tracker.record_action(tweet_id.clone(), action);
         return Ok(true);
     }
 
@@ -176,7 +176,7 @@ pub async fn dispatch_action(
             .await
         }
         "quote" => {
-            if !validate_tweet_page(api, did_dive, "quote", tweet_id).await {
+            if !validate_tweet_page(api, did_dive, "quote", tweet_id.as_ref()).await {
                 false
             } else {
                 let quote_text = if task_config.llm_enabled {
@@ -236,7 +236,7 @@ pub async fn dispatch_action(
             .await
         }
         "reply" => {
-            if !validate_tweet_page(api, did_dive, "reply", tweet_id).await {
+            if !validate_tweet_page(api, did_dive, "reply", tweet_id.as_ref()).await {
                 false
             } else {
                 let reply_text = if task_config.llm_enabled {
@@ -337,7 +337,7 @@ pub async fn dispatch_action(
             _ => {}
         }
         *actions_this_scan += 1;
-        action_tracker.record_action(TweetId::from_unchecked(tweet_id), action);
+        action_tracker.record_action(tweet_id.clone(), action);
 
         // Use appropriate pause
         if action == "reply" || action == "quote" {

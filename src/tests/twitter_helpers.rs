@@ -403,7 +403,7 @@ pub fn assert_action_allowed(session: &mut SessionState, tweet_id: &str, action:
         session.is_action_allowed(action),
         "Action '{action}' should be allowed"
     );
-    session.record_action(tweet_id, action);
+    session.record_action(&TweetId::from_unchecked(tweet_id), action);
 }
 
 /// Assert that an action is blocked (either by limit or cooldown).

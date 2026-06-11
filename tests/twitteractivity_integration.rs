@@ -844,9 +844,9 @@ fn twitteractivity_session_state_record_action() {
     let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
     let mut state = SessionState::new(limits, 60000, 100);
 
-    state.record_action("tweet_1", "like");
-    state.record_action("tweet_2", "retweet");
-    state.record_action("tweet_3", "follow");
+    state.record_action(&TweetId::from_unchecked("tweet_1"), "like");
+    state.record_action(&TweetId::from_unchecked("tweet_2"), "retweet");
+    state.record_action(&TweetId::from_unchecked("tweet_3"), "follow");
 
     assert_eq!(state.counters.likes, 1);
     assert_eq!(state.counters.retweets, 1);
@@ -865,9 +865,9 @@ fn twitteractivity_session_state_total_limit() {
     let mut state = SessionState::new(limits, 60000, 100);
 
     // Exceed total limit
-    state.record_action("tweet_1", "like");
-    state.record_action("tweet_2", "like");
-    state.record_action("tweet_3", "like");
+    state.record_action(&TweetId::from_unchecked("tweet_1"), "like");
+    state.record_action(&TweetId::from_unchecked("tweet_2"), "like");
+    state.record_action(&TweetId::from_unchecked("tweet_3"), "like");
 
     assert!(state.is_total_limit_reached());
     assert_eq!(state.action_summary(), (3, 3));
@@ -882,7 +882,7 @@ fn twitteractivity_session_state_progress_summary() {
     let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
     let mut state = SessionState::new(limits, 60000, 100);
 
-    state.record_action("tweet_1", "like");
+    state.record_action(&TweetId::from_unchecked("tweet_1"), "like");
     let summary = state.progress_summary();
     assert!(summary.contains("1/10"));
     assert!(summary.contains("L:1"));

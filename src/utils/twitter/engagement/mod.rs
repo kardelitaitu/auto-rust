@@ -196,13 +196,14 @@ pub async fn process_candidate(
         }
     }
 
-    let tweet_id = tweet
+    let raw_id = tweet
         .get("id")
         .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
+        .ok_or_else(|| anyhow::anyhow!("tweet missing 'id' field"))?;
+    let tweet_id = TweetId::new(raw_id).map_err(anyhow::Error::msg)?;
     let mut actions_to_do = selected_candidate_actions(
         &candidate_persona,
-        tweet_id,
+        tweet_id.as_ref(),
         limits,
         counters,
         action_tracker,
@@ -259,7 +260,7 @@ pub async fn process_candidate(
             info!("Dry-run: would dive into thread for tweet {tweet_id}");
             counters.increment_thread_dive();
             actions_this_scan += 1;
-            action_tracker.record_action(TweetId::from_unchecked(tweet_id), "dive");
+            action_tracker.record_action(tweet_id.clone(), "dive");
             did_dive = true;
             next_scroll = Instant::now() + scroll_interval;
             next_candidate_scan = Instant::now() + scroll_interval;
@@ -312,7 +313,7 @@ pub async fn process_candidate(
                 counters.increment_thread_dive();
                 actions_this_scan += 1;
                 // Record dive action
-                action_tracker.record_action(TweetId::from_unchecked(tweet_id), "dive");
+                action_tracker.record_action(tweet_id.clone(), "dive");
                 did_dive = true;
             } else {
                 info!("Thread dive failed: no valid target resolved");
@@ -342,7 +343,7 @@ pub async fn process_candidate(
             api,
             action,
             tweet,
-            tweet_id,
+            &tweet_id,
             did_dive,
             sentiment,
             task_config,

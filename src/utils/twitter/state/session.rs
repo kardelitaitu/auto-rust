@@ -72,10 +72,10 @@ impl SessionState {
         self.counters.total_actions() >= self.limits.max_total_actions
     }
 
-    pub fn record_action(&mut self, tweet_id: &str, action_type: &'static str) {
+    pub fn record_action(&mut self, tweet_id: &TweetId, action_type: &'static str) {
         self.counters.increment(action_type);
         self.action_tracker
-            .record_action(TweetId::from_unchecked(tweet_id), action_type);
+            .record_action(tweet_id.clone(), action_type);
     }
 
     #[must_use]
@@ -215,6 +215,7 @@ mod tdd_tests {
     use super::{RateLimitBackoff, SessionState};
     use crate::tests::twitter_helpers::*;
     use crate::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use crate::utils::twitter::TweetId;
 
     // ====================================================================
     // SessionState tests
@@ -239,7 +240,7 @@ mod tdd_tests {
     #[test]
     fn tdd_green_session_progress_summary_format() {
         let mut session = test_session_state();
-        session.record_action("tweet_1", "like");
+        session.record_action(&TweetId::from_unchecked("tweet_1"), "like");
         let summary = session.progress_summary();
         assert!(summary.contains("1/10"), "Summary should show 1/10 actions");
         assert!(summary.contains("L:1"), "Summary should show L:1");
@@ -252,13 +253,13 @@ mod tdd_tests {
     #[test]
     fn tdd_green_session_records_multiple_action_types() {
         let mut session = test_session_state_with_limits(5, 3, 2, 1, 3, 2, 2, 20, 60000);
-        session.record_action("t1", "like");
-        session.record_action("t2", "retweet");
-        session.record_action("t3", "follow");
-        session.record_action("t4", "reply");
-        session.record_action("t5", "bookmark");
-        session.record_action("t6", "quote");
-        session.record_action("t7", "dive");
+        session.record_action(&TweetId::from_unchecked("t1"), "like");
+        session.record_action(&TweetId::from_unchecked("t2"), "retweet");
+        session.record_action(&TweetId::from_unchecked("t3"), "follow");
+        session.record_action(&TweetId::from_unchecked("t4"), "reply");
+        session.record_action(&TweetId::from_unchecked("t5"), "bookmark");
+        session.record_action(&TweetId::from_unchecked("t6"), "quote");
+        session.record_action(&TweetId::from_unchecked("t7"), "dive");
         assert_eq!(session.counters.likes, 1);
         assert_eq!(session.counters.retweets, 1);
         assert_eq!(session.counters.follows, 1);
@@ -273,9 +274,9 @@ mod tdd_tests {
     fn tdd_green_session_is_total_limit_reached_detection() {
         let mut session = test_session_state_with_limits(5, 3, 2, 1, 3, 2, 2, 3, 60000);
         assert!(!session.is_total_limit_reached());
-        session.record_action("t1", "like");
-        session.record_action("t2", "like");
-        session.record_action("t3", "like");
+        session.record_action(&TweetId::from_unchecked("t1"), "like");
+        session.record_action(&TweetId::from_unchecked("t2"), "like");
+        session.record_action(&TweetId::from_unchecked("t3"), "like");
         assert!(session.is_total_limit_reached());
     }
 
@@ -411,6 +412,7 @@ mod tdd_tests {
 mod gap_tests {
     use super::{RateLimitBackoff, SessionState};
     use crate::utils::twitter::twitteractivity_limits::EngagementLimits;
+    use crate::utils::twitter::TweetId;
 
     #[test]
     fn is_action_allowed_checks_all_seven_types() {
@@ -426,19 +428,19 @@ mod gap_tests {
             );
         }
 
-        session.record_action("t1", "like");
+        session.record_action(&TweetId::from_unchecked("t1"), "like");
         assert!(!session.is_action_allowed("like"));
-        session.record_action("t2", "retweet");
+        session.record_action(&TweetId::from_unchecked("t2"), "retweet");
         assert!(!session.is_action_allowed("retweet"));
-        session.record_action("t3", "follow");
+        session.record_action(&TweetId::from_unchecked("t3"), "follow");
         assert!(!session.is_action_allowed("follow"));
-        session.record_action("t4", "reply");
+        session.record_action(&TweetId::from_unchecked("t4"), "reply");
         assert!(!session.is_action_allowed("reply"));
-        session.record_action("t5", "bookmark");
+        session.record_action(&TweetId::from_unchecked("t5"), "bookmark");
         assert!(!session.is_action_allowed("bookmark"));
-        session.record_action("t6", "quote");
+        session.record_action(&TweetId::from_unchecked("t6"), "quote");
         assert!(!session.is_action_allowed("quote"));
-        session.record_action("t7", "dive");
+        session.record_action(&TweetId::from_unchecked("t7"), "dive");
         assert!(!session.is_action_allowed("dive"));
     }
 
@@ -476,9 +478,9 @@ mod gap_tests {
             100,
         );
         assert_eq!(session.action_summary(), (0, 20));
-        session.record_action("t1", "like");
-        session.record_action("t2", "like");
-        session.record_action("t3", "retweet");
+        session.record_action(&TweetId::from_unchecked("t1"), "like");
+        session.record_action(&TweetId::from_unchecked("t2"), "like");
+        session.record_action(&TweetId::from_unchecked("t3"), "retweet");
         assert_eq!(session.action_summary(), (3, 20));
     }
 
@@ -490,10 +492,10 @@ mod gap_tests {
             100,
         );
         assert!(!session.is_total_limit_reached());
-        session.record_action("t1", "like");
-        session.record_action("t2", "retweet");
+        session.record_action(&TweetId::from_unchecked("t1"), "like");
+        session.record_action(&TweetId::from_unchecked("t2"), "retweet");
         assert!(!session.is_total_limit_reached());
-        session.record_action("t3", "follow");
+        session.record_action(&TweetId::from_unchecked("t3"), "follow");
         assert!(session.is_total_limit_reached());
     }
 
@@ -540,10 +542,10 @@ mod gap_tests {
         let limits = EngagementLimits::with_limits(10, 8, 6, 4, 5, 3, 3, 50);
         let mut session = SessionState::new(limits, 60_000, 100);
 
-        session.record_action("t1", "like");
-        session.record_action("t2", "like");
-        session.record_action("t3", "retweet");
-        session.record_action("t4", "follow");
+        session.record_action(&TweetId::from_unchecked("t1"), "like");
+        session.record_action(&TweetId::from_unchecked("t2"), "like");
+        session.record_action(&TweetId::from_unchecked("t3"), "retweet");
+        session.record_action(&TweetId::from_unchecked("t4"), "follow");
 
         let (summary, remaining) = session.build_summary_lines(60_000);
 

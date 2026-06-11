@@ -389,9 +389,9 @@ mod tdd_tests {
     fn tdd_green_session_tracks_actions() {
         let mut session = test_session_state();
 
-        session.record_action("tweet_1", "like");
-        session.record_action("tweet_2", "retweet");
-        session.record_action("tweet_3", "follow");
+        session.record_action(&TweetId::from_unchecked("tweet_1"), "like");
+        session.record_action(&TweetId::from_unchecked("tweet_2"), "retweet");
+        session.record_action(&TweetId::from_unchecked("tweet_3"), "follow");
 
         assert_eq!(session.counters.total_actions(), 3);
         assert_eq!(session.counters.likes, 1);
@@ -405,8 +405,8 @@ mod tdd_tests {
         // Set max_likes = 2 to test per-action boundary
         let mut session = test_session_state_with_limits(2, 5, 5, 5, 5, 5, 5, 10, 60_000);
 
-        session.record_action("t1", "like");
-        session.record_action("t2", "like");
+        session.record_action(&TweetId::from_unchecked("t1"), "like");
+        session.record_action(&TweetId::from_unchecked("t2"), "like");
 
         assert_eq!(session.counters.total_actions(), 2);
         assert_eq!(session.counters.likes, 2);
@@ -437,7 +437,7 @@ mod tdd_tests {
     fn tdd_green_session_action_summary_format() {
         let mut session = test_session_state();
 
-        session.record_action("tweet_1", "like");
+        session.record_action(&TweetId::from_unchecked("tweet_1"), "like");
         let summary = session.progress_summary();
 
         assert!(summary.contains("1/10"), "Summary should show 1/10 actions");

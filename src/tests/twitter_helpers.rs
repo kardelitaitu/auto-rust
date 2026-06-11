@@ -36,6 +36,7 @@ use crate::config::TwitterActivityConfig;
 use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
 use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
 use crate::utils::twitter::twitteractivity_state::{SessionState, TaskConfig, TweetActionTracker};
+use crate::utils::twitter::twitteractivity_types::TweetId;
 
 // ============================================================================
 // TDD Lifecycle Markers
@@ -442,7 +443,7 @@ pub fn assert_remaining_time_approx(session: &SessionState, expected_ms: u64, to
 #[allow(dead_code)]
 pub fn assert_tracker_allows(tracker: &TweetActionTracker, tweet_id: &str) {
     assert!(
-        tracker.can_perform_action(tweet_id),
+        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "Tracker should allow action on tweet '{tweet_id}'"
     );
 }
@@ -451,7 +452,7 @@ pub fn assert_tracker_allows(tracker: &TweetActionTracker, tweet_id: &str) {
 #[allow(dead_code)]
 pub fn assert_tracker_blocks(tracker: &TweetActionTracker, tweet_id: &str) {
     assert!(
-        !tracker.can_perform_action(tweet_id),
+        !tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "Tracker should block action on tweet '{tweet_id}'"
     );
 }

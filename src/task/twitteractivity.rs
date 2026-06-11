@@ -346,6 +346,7 @@ fn log_summary(session: &SessionState, task_config: &TaskConfig, config: &Config
 mod tdd_tests {
     use crate::tests::twitter_helpers::*;
     use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
+    use crate::utils::twitter::TweetId;
 
     // ====================================================================
     // RED Tests — describe desired behavior (expected to fail on first run)
@@ -454,9 +455,9 @@ mod tdd_tests {
     #[test]
     fn tdd_edge_action_tracker_zero_delay() {
         let mut tracker = test_action_tracker(0);
-        tracker.record_action("tweet_id".to_string(), "like");
+        tracker.record_action(TweetId::from_unchecked("tweet_id"), "like");
         assert!(
-            tracker.can_perform_action("tweet_id"),
+            tracker.can_perform_action(&TweetId::from_unchecked("tweet_id")),
             "Zero delay should allow immediate second action"
         );
     }
@@ -478,7 +479,7 @@ mod tdd_tests {
     #[test]
     fn tdd_edge_action_tracker_unknown_tweet() {
         let tracker = test_action_tracker(1000);
-        assert!(tracker.can_perform_action("unknown_tweet"));
+        assert!(tracker.can_perform_action(&TweetId::from_unchecked("unknown_tweet")));
     }
 
     // ====================================================================

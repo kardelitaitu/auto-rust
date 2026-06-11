@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::utils::twitter::twitteractivity_actions::extract_tweet_text;
+use crate::utils::twitter::TweetId;
 
 #[cfg(test)]
 mod integration_tests {
@@ -64,7 +65,7 @@ mod integration_tests {
             vec!["like", "retweet", "quote", "follow", "reply", "bookmark"]
         );
 
-        tracker.record_action("tweet_1".to_string(), "like");
+        tracker.record_action(TweetId::from_unchecked("tweet_1"), "like");
         let blocked = selected_candidate_actions(&persona, "tweet_1", &limits, &counters, &tracker);
         assert!(blocked.is_empty());
     }
@@ -647,7 +648,7 @@ mod gap_tests {
         assert!(actions.contains(&"retweet"));
 
         // Record an action on tweet_x — tracker blocks further actions on same tweet
-        tracker.record_action("tweet_x".to_string(), "like");
+        tracker.record_action(TweetId::from_unchecked("tweet_x"), "like");
         let blocked = selected_candidate_actions(&persona, "tweet_x", &limits, &counters, &tracker);
         assert!(blocked.is_empty());
 

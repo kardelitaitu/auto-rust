@@ -1,6 +1,9 @@
 //! Per-session engagement state and rate-limit backoff pacing.
 
-use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
+use crate::utils::twitter::{
+    twitteractivity_limits::{EngagementCounters, EngagementLimits},
+    twitteractivity_types::TweetId,
+};
 use std::time::{Duration, Instant};
 
 use super::tracking::TweetActionTracker;
@@ -72,7 +75,7 @@ impl SessionState {
     pub fn record_action(&mut self, tweet_id: &str, action_type: &'static str) {
         self.counters.increment(action_type);
         self.action_tracker
-            .record_action(tweet_id.to_string(), action_type);
+            .record_action(TweetId::from_unchecked(tweet_id), action_type);
     }
 
     #[must_use]

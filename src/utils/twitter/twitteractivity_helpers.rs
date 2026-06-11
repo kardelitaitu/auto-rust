@@ -10,6 +10,7 @@ use crate::utils::twitter::{
         PersonaWeights,
     },
     twitteractivity_state::{TaskConfig, TweetActionTracker},
+    twitteractivity_types::TweetId,
 };
 use log::warn;
 
@@ -74,39 +75,40 @@ pub fn selected_candidate_actions(
     action_tracker: &TweetActionTracker,
 ) -> Vec<&'static str> {
     let mut actions_to_do = Vec::new();
+    let tid = TweetId::from_unchecked(tweet_id);
 
     if should_like(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id)
+        && action_tracker.can_perform_action(&tid)
         && limits.can_like(counters)
     {
         actions_to_do.push("like");
     }
     if should_retweet(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id)
+        && action_tracker.can_perform_action(&tid)
         && limits.can_retweet(counters)
     {
         actions_to_do.push("retweet");
     }
     if should_quote(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id)
+        && action_tracker.can_perform_action(&tid)
         && limits.can_quote_tweet(counters)
     {
         actions_to_do.push("quote");
     }
     if should_follow(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id)
+        && action_tracker.can_perform_action(&tid)
         && limits.can_follow(counters)
     {
         actions_to_do.push("follow");
     }
     if should_reply(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id)
+        && action_tracker.can_perform_action(&tid)
         && limits.can_reply(counters)
     {
         actions_to_do.push("reply");
     }
     if should_bookmark(candidate_persona)
-        && action_tracker.can_perform_action(tweet_id)
+        && action_tracker.can_perform_action(&tid)
         && limits.can_bookmark(counters)
     {
         actions_to_do.push("bookmark");

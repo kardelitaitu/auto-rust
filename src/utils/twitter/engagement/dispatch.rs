@@ -2,6 +2,7 @@
 
 use super::super::twitteractivity_retry::{retry_with_backoff, RetryConfig};
 use super::super::twitteractivity_state::{TaskConfig, TweetActionTracker};
+use crate::utils::twitter::twitteractivity_types::TweetId;
 use crate::metrics::{
     RUN_COUNTER_BOOKMARK_FAILURE, RUN_COUNTER_BOOKMARK_SUCCESS, RUN_COUNTER_CLICK_VERIFY_FAILED,
     RUN_COUNTER_FOLLOW_FAILURE, RUN_COUNTER_FOLLOW_SUCCESS, RUN_COUNTER_LIKE_FAILURE,
@@ -93,7 +94,7 @@ pub async fn dispatch_action(
         info!("Dry-run: would perform {action} on tweet {tweet_id} (did_dive={did_dive})");
         counters.increment(action);
         *actions_this_scan += 1;
-        action_tracker.record_action(tweet_id.to_string(), action);
+        action_tracker.record_action(TweetId::from_unchecked(tweet_id), action);
         return Ok(true);
     }
 
@@ -336,7 +337,7 @@ pub async fn dispatch_action(
             _ => {}
         }
         *actions_this_scan += 1;
-        action_tracker.record_action(tweet_id.to_string(), action);
+        action_tracker.record_action(TweetId::from_unchecked(tweet_id), action);
 
         // Use appropriate pause
         if action == "reply" || action == "quote" {

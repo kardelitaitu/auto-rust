@@ -21,6 +21,8 @@ use log::{info, warn};
 use rand::Rng;
 use std::time::{Duration, Instant};
 
+use super::twitteractivity_types::TweetId;
+
 // Submodules
 pub mod dispatch;
 pub mod scoring;
@@ -257,7 +259,7 @@ pub async fn process_candidate(
             info!("Dry-run: would dive into thread for tweet {tweet_id}");
             counters.increment_thread_dive();
             actions_this_scan += 1;
-            action_tracker.record_action(tweet_id.to_string(), "dive");
+            action_tracker.record_action(TweetId::from_unchecked(tweet_id), "dive");
             did_dive = true;
             next_scroll = Instant::now() + scroll_interval;
             next_candidate_scan = Instant::now() + scroll_interval;
@@ -310,7 +312,7 @@ pub async fn process_candidate(
                 counters.increment_thread_dive();
                 actions_this_scan += 1;
                 // Record dive action
-                action_tracker.record_action(tweet_id.to_string(), "dive");
+                action_tracker.record_action(TweetId::from_unchecked(tweet_id), "dive");
                 did_dive = true;
             } else {
                 info!("Thread dive failed: no valid target resolved");

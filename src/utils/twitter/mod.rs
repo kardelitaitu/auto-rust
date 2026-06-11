@@ -34,7 +34,10 @@ pub mod twitteractivity_retry;
 pub mod twitteractivity_selectors;
 pub mod twitteractivity_simulation;
 pub mod twitteractivity_state;
+pub mod twitteractivity_types;
 pub mod unified_processor;
+
+pub use twitteractivity_types::{StatusUrl, TweetId};
 
 #[allow(unused_imports, ambiguous_glob_reexports)]
 pub use decision::*;

@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```
-//! use crate::utils::twitter::twitteractivity_types::TweetId;
+//! use auto::utils::twitter::TweetId;
 //!
 //! let id = TweetId::new("12345").unwrap();
 //! assert_eq!(id.as_ref(), "12345");
@@ -14,7 +14,7 @@
 //! ```
 //!
 //! ```
-//! use crate::utils::twitter::twitteractivity_types::StatusUrl;
+//! use auto::utils::twitter::StatusUrl;
 //!
 //! let url = StatusUrl::new("/user/status/12345").unwrap();
 //! assert_eq!(url.tweet_id(), Some("12345"));
@@ -140,7 +140,7 @@ impl FromStr for TweetId {
 /// # Examples
 ///
 /// ```
-/// let url = StatusUrl::new("/username/status/12345").unwrap();
+/// let url = auto::utils::twitter::StatusUrl::new("/username/status/12345").unwrap();
 /// assert_eq!(url.tweet_id(), Some("12345"));
 /// ```
 #[derive(Debug, Clone)]

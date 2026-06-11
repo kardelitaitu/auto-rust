@@ -7,6 +7,7 @@ use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
 use crate::utils::twitter::twitteractivity_navigation::goto_home;
+use crate::utils::twitter::{StatusUrl, TweetId};
 use anyhow::Result;
 use log::info;
 use serde_json::Value;
@@ -129,8 +130,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     Ok(())
 }
 
-fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    crate::utils::url::extract_url_from_payload(payload)
+fn extract_url_from_payload(payload: &Value) -> Result<StatusUrl> {
+    crate::utils::url::extract_url_from_payload(payload).map(StatusUrl::from_unchecked)
 }
 
 async fn extract_tweet_info(api: &TaskContext) -> Result<(String, String)> {
@@ -169,7 +170,7 @@ async fn extract_tweet_info(api: &TaskContext) -> Result<(String, String)> {
     Err(anyhow::anyhow!("Could not extract tweet info"))
 }
 
-async fn extract_visible_tweet_ids(api: &TaskContext) -> Result<Vec<String>> {
+async fn extract_visible_tweet_ids(api: &TaskContext) -> Result<Vec<TweetId>> {
     let page = api.page();
     let js = r#"
         (function() {
@@ -201,7 +202,7 @@ async fn extract_visible_tweet_ids(api: &TaskContext) -> Result<Vec<String>> {
     if let Some(arr) = value {
         Ok(arr
             .iter()
-            .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
+            .filter_map(|v| v.as_str().map(TweetId::from_unchecked))
             .collect())
     } else {
         Ok(Vec::new())
@@ -242,14 +243,14 @@ mod tests {
     fn extract_url_from_payload_url() {
         let payload = json!({"url": "https://x.com/user/status/123"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]
     fn extract_url_from_payload_value() {
         let payload = json!({"value": "https://x.com/user/status/456"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]

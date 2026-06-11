@@ -8,6 +8,7 @@ use crate::utils::timing::{
 };
 use crate::utils::twitter::reply_engine::reply_engine_system_prompt;
 use crate::utils::twitter::twitteractivity_llm::validate_reply;
+use crate::utils::twitter::StatusUrl;
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -148,8 +149,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     Ok(())
 }
 
-fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    crate::utils::url::extract_url_from_payload(payload)
+fn extract_url_from_payload(payload: &Value) -> Result<StatusUrl> {
+    crate::utils::url::extract_url_from_payload(payload).map(StatusUrl::from_unchecked)
 }
 
 async fn extract_tweet_context(api: &TaskContext) -> Result<(String, String)> {
@@ -293,14 +294,14 @@ mod tests {
     fn extract_url_from_payload_url() {
         let payload = json!({"url": "https://x.com/user/status/123"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]
     fn extract_url_from_payload_value() {
         let payload = json!({"value": "https://x.com/user/status/456"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]

@@ -21,7 +21,7 @@ use log::{info, warn};
 use rand::Rng;
 use std::time::{Duration, Instant};
 
-use super::twitteractivity_types::TweetId;
+use super::twitteractivity_types::{EngagementOutcome, TweetId};
 
 // Submodules
 pub mod dispatch;
@@ -106,7 +106,7 @@ async fn engage_replies(
                             )
                             .await
                             {
-                                Ok(true) => {
+                                Ok(EngagementOutcome::Completed) => {
                                     info!("Successfully liked reply");
                                     counters.increment_like();
                                     *actions_this_scan += 1;

@@ -249,6 +249,97 @@ impl FromStr for StatusUrl {
     }
 }
 
+// ============================================================================
+// Outcome Enums — typed results for engagement actions
+// ============================================================================
+
+/// Outcome of a single engagement action (like, retweet, reply, bookmark, quote).
+///
+/// Replaces the ambiguous `Result<bool>` pattern where `false` could mean
+/// "already done", "element not found", or "action failed".
+///
+/// # Examples
+///
+/// ```
+/// use auto::utils::twitter::EngagementOutcome;
+///
+/// let outcome = EngagementOutcome::Completed;
+/// match outcome {
+///     EngagementOutcome::Completed => println!("action done"),
+///     EngagementOutcome::AlreadyDone => println!("was already done"),
+///     EngagementOutcome::ElementNotFound => println!("button missing"),
+///     EngagementOutcome::Failed => println!("action failed"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngagementOutcome {
+    /// Action completed successfully.
+    Completed,
+    /// Action was already performed (e.g., tweet already liked).
+    AlreadyDone,
+    /// Required UI element not found (button, composer, etc.).
+    ElementNotFound,
+    /// Action failed after attempt (network, timing, etc.).
+    Failed,
+}
+
+/// Outcome of a follow action.
+///
+/// Replaces the ambiguous `Result<bool>` pattern from `follow_from_tweet()`
+/// and `robust_follow()`.
+///
+/// # Examples
+///
+/// ```
+/// use auto::utils::twitter::FollowOutcome;
+///
+/// let outcome = FollowOutcome::Followed;
+/// match outcome {
+///     FollowOutcome::Followed => println!("now following"),
+///     FollowOutcome::AlreadyFollowing => println!("already following"),
+///     FollowOutcome::ButtonNotFound => println!("no follow button"),
+///     FollowOutcome::Failed => println!("follow failed"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FollowOutcome {
+    /// Successfully followed.
+    Followed,
+    /// Already following this user.
+    AlreadyFollowing,
+    /// Follow button not visible or not found.
+    ButtonNotFound,
+    /// Follow attempted but failed (retries exhausted, verification failed).
+    Failed,
+}
+
+/// Outcome of posting a reply or quote tweet.
+///
+/// Replaces the ambiguous `Result<bool>` pattern from `post_reply()`
+/// and `post_quote()`.
+///
+/// # Examples
+///
+/// ```
+/// use auto::utils::twitter::PostOutcome;
+///
+/// let outcome = PostOutcome::Posted;
+/// match outcome {
+///     PostOutcome::Posted => println!("posted"),
+///     PostOutcome::ComposerNotFound => println!("no composer"),
+///     PostOutcome::Failed => println!("post failed"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PostOutcome {
+    /// Post confirmed successful.
+    Posted,
+    /// Composer or post button not found.
+    ComposerNotFound,
+    /// Post attempted but failed.
+    Failed,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,5 +465,146 @@ mod tests {
     #[should_panic(expected = "StatusUrl::from called with empty string")]
     fn status_url_from_empty_string_panics() {
         let _: StatusUrl = "".into();
+    }
+
+    // ========================================================================
+    // EngagementOutcome tests
+    // ========================================================================
+
+    #[test]
+    fn engagement_outcome_all_variants_exist() {
+        let completed = EngagementOutcome::Completed;
+        let already_done = EngagementOutcome::AlreadyDone;
+        let not_found = EngagementOutcome::ElementNotFound;
+        let failed = EngagementOutcome::Failed;
+
+        // Verify Debug/Display for each variant
+        assert!(!format!("{completed:?}").is_empty());
+        assert!(!format!("{already_done:?}").is_empty());
+        assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{failed:?}").is_empty());
+    }
+
+    #[test]
+    fn engagement_outcome_eq() {
+        assert_eq!(EngagementOutcome::Completed, EngagementOutcome::Completed);
+        assert_ne!(EngagementOutcome::Completed, EngagementOutcome::AlreadyDone);
+        assert_ne!(
+            EngagementOutcome::AlreadyDone,
+            EngagementOutcome::ElementNotFound
+        );
+        assert_ne!(
+            EngagementOutcome::ElementNotFound,
+            EngagementOutcome::Failed
+        );
+    }
+
+    #[test]
+    fn engagement_outcome_clone() {
+        let outcome = EngagementOutcome::Completed;
+        let cloned = outcome.clone();
+        assert_eq!(outcome, cloned);
+    }
+
+    #[test]
+    fn engagement_outcome_debug() {
+        assert_eq!(format!("{:?}", EngagementOutcome::Completed), "Completed");
+        assert_eq!(
+            format!("{:?}", EngagementOutcome::AlreadyDone),
+            "AlreadyDone"
+        );
+        assert_eq!(
+            format!("{:?}", EngagementOutcome::ElementNotFound),
+            "ElementNotFound"
+        );
+        assert_eq!(format!("{:?}", EngagementOutcome::Failed), "Failed");
+    }
+
+    // ========================================================================
+    // FollowOutcome tests
+    // ========================================================================
+
+    #[test]
+    fn follow_outcome_all_variants_exist() {
+        let followed = FollowOutcome::Followed;
+        let already = FollowOutcome::AlreadyFollowing;
+        let not_found = FollowOutcome::ButtonNotFound;
+        let failed = FollowOutcome::Failed;
+
+        assert!(!format!("{followed:?}").is_empty());
+        assert!(!format!("{already:?}").is_empty());
+        assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{failed:?}").is_empty());
+    }
+
+    #[test]
+    fn follow_outcome_eq() {
+        assert_eq!(FollowOutcome::Followed, FollowOutcome::Followed);
+        assert_ne!(FollowOutcome::Followed, FollowOutcome::AlreadyFollowing);
+        assert_ne!(
+            FollowOutcome::AlreadyFollowing,
+            FollowOutcome::ButtonNotFound
+        );
+        assert_ne!(FollowOutcome::ButtonNotFound, FollowOutcome::Failed);
+    }
+
+    #[test]
+    fn follow_outcome_clone() {
+        let outcome = FollowOutcome::Followed;
+        let cloned = outcome.clone();
+        assert_eq!(outcome, cloned);
+    }
+
+    #[test]
+    fn follow_outcome_debug() {
+        assert_eq!(format!("{:?}", FollowOutcome::Followed), "Followed");
+        assert_eq!(
+            format!("{:?}", FollowOutcome::AlreadyFollowing),
+            "AlreadyFollowing"
+        );
+        assert_eq!(
+            format!("{:?}", FollowOutcome::ButtonNotFound),
+            "ButtonNotFound"
+        );
+        assert_eq!(format!("{:?}", FollowOutcome::Failed), "Failed");
+    }
+
+    // ========================================================================
+    // PostOutcome tests
+    // ========================================================================
+
+    #[test]
+    fn post_outcome_all_variants_exist() {
+        let posted = PostOutcome::Posted;
+        let not_found = PostOutcome::ComposerNotFound;
+        let failed = PostOutcome::Failed;
+
+        assert!(!format!("{posted:?}").is_empty());
+        assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{failed:?}").is_empty());
+    }
+
+    #[test]
+    fn post_outcome_eq() {
+        assert_eq!(PostOutcome::Posted, PostOutcome::Posted);
+        assert_ne!(PostOutcome::Posted, PostOutcome::ComposerNotFound);
+        assert_ne!(PostOutcome::ComposerNotFound, PostOutcome::Failed);
+    }
+
+    #[test]
+    fn post_outcome_clone() {
+        let outcome = PostOutcome::Posted;
+        let cloned = outcome.clone();
+        assert_eq!(outcome, cloned);
+    }
+
+    #[test]
+    fn post_outcome_debug() {
+        assert_eq!(format!("{:?}", PostOutcome::Posted), "Posted");
+        assert_eq!(
+            format!("{:?}", PostOutcome::ComposerNotFound),
+            "ComposerNotFound"
+        );
+        assert_eq!(format!("{:?}", PostOutcome::Failed), "Failed");
     }
 }

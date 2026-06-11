@@ -10,7 +10,7 @@ use crate::metrics::{
     RUN_COUNTER_RETWEET_SUCCESS, RUN_COUNTER_TRANSIENT_ERROR,
 };
 use crate::prelude::TaskContext;
-use crate::utils::twitter::twitteractivity_types::TweetId;
+use crate::utils::twitter::twitteractivity_types::{EngagementOutcome, FollowOutcome, TweetId};
 use crate::utils::twitter::{
     sentiment::Sentiment,
     twitteractivity_actions::{
@@ -30,44 +30,12 @@ use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
 
-/// Metrics constants for an engagement action's retry/error tracking.
-struct ActionMetrics {
-    /// User-facing action name for validation messages (e.g., "retweet").
-    action_name: &'static str,
-    /// Operation name for retry logging (e.g., "retweet_tweet").
-    retry_name: &'static str,
-    failure_counter: &'static str,
+fn engagement_success(outcome: &EngagementOutcome) -> bool {
+    matches!(outcome, EngagementOutcome::Completed)
 }
 
-/// Execute a standard engagement action with page validation, retry, and metrics.
-///
-/// Handles the common pattern: validate tweet page → retry action with backoff →
-/// record failure metrics. Returns `true` if the action succeeded, `false` if
-/// validation failed or the action failed after retries.
-async fn execute_engagement_action<F, Fut>(
-    api: &TaskContext,
-    did_dive: bool,
-    tweet_id: &TweetId,
-    action_fn: F,
-    retry_config: &RetryConfig,
-    metrics: ActionMetrics,
-) -> bool
-where
-    F: Fn() -> Fut,
-    Fut: std::future::Future<Output = Result<bool>>,
-{
-    if !validate_tweet_page(api, did_dive, metrics.action_name, tweet_id).await {
-        return false;
-    }
-    match retry_with_backoff(action_fn, retry_config, api, metrics.retry_name).await {
-        Ok(result) => result,
-        Err(e) => {
-            warn!("{} failed after retries: {}", metrics.retry_name, e);
-            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-            api.increment_run_counter(metrics.failure_counter, 1);
-            false
-        }
-    }
+fn follow_success(outcome: &FollowOutcome) -> bool {
+    matches!(outcome, FollowOutcome::Followed)
 }
 
 /// Dispatch a single engagement action with full retry, validation, and metrics tracking.
@@ -111,7 +79,7 @@ pub async fn dispatch_action(
                 )
                 .await
                 {
-                    Ok(result) => result,
+                    Ok(outcome) => engagement_success(&outcome),
                     Err(e) => {
                         warn!("Like failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -130,7 +98,7 @@ pub async fn dispatch_action(
                     )
                     .await
                     {
-                        Ok(result) => result,
+                        Ok(outcome) => engagement_success(&outcome),
                         Err(e) => {
                             warn!("Like at position failed after retries: {e}");
                             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -149,7 +117,7 @@ pub async fn dispatch_action(
                     )
                     .await
                     {
-                        Ok(result) => result,
+                        Ok(outcome) => engagement_success(&outcome),
                         Err(e) => {
                             warn!("Selector-based like failed after retries: {e}");
                             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -161,19 +129,26 @@ pub async fn dispatch_action(
             }
         }
         "retweet" => {
-            execute_engagement_action(
-                api,
-                did_dive,
-                tweet_id,
-                || retweet_tweet(api),
-                &RetryConfig::default(),
-                ActionMetrics {
-                    action_name: "retweet",
-                    retry_name: "retweet_tweet",
-                    failure_counter: RUN_COUNTER_RETWEET_FAILURE,
-                },
-            )
-            .await
+            if !validate_tweet_page(api, did_dive, "retweet", tweet_id).await {
+                false
+            } else {
+                match retry_with_backoff(
+                    || retweet_tweet(api),
+                    &RetryConfig::default(),
+                    api,
+                    "retweet_tweet",
+                )
+                .await
+                {
+                    Ok(outcome) => engagement_success(&outcome),
+                    Err(e) => {
+                        warn!("retweet_tweet failed after retries: {e}");
+                        api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                        api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
+                        false
+                    }
+                }
+            }
         }
         "quote" => {
             if !validate_tweet_page(api, did_dive, "quote", tweet_id).await {
@@ -207,7 +182,8 @@ pub async fn dispatch_action(
                     )
                 };
                 match quote_tweet(api, &quote_text).await {
-                    Ok(success) => {
+                    Ok(outcome) => {
+                        let success = engagement_success(&outcome);
                         if success {
                             info!("Quote tweeted with commentary: {quote_text}");
                         }
@@ -221,19 +197,26 @@ pub async fn dispatch_action(
             }
         }
         "follow" => {
-            execute_engagement_action(
-                api,
-                did_dive,
-                tweet_id,
-                || follow_from_tweet(api),
-                &RetryConfig::default(),
-                ActionMetrics {
-                    action_name: "follow",
-                    retry_name: "follow_from_tweet",
-                    failure_counter: RUN_COUNTER_FOLLOW_FAILURE,
-                },
-            )
-            .await
+            if !validate_tweet_page(api, did_dive, "follow", tweet_id).await {
+                false
+            } else {
+                match retry_with_backoff(
+                    || follow_from_tweet(api),
+                    &RetryConfig::default(),
+                    api,
+                    "follow_from_tweet",
+                )
+                .await
+                {
+                    Ok(outcome) => follow_success(&outcome),
+                    Err(e) => {
+                        warn!("Follow failed after retries: {e}");
+                        api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                        api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
+                        false
+                    }
+                }
+            }
         }
         "reply" => {
             if !validate_tweet_page(api, did_dive, "reply", tweet_id).await {
@@ -274,7 +257,7 @@ pub async fn dispatch_action(
                 )
                 .await
                 {
-                    Ok(result) => result,
+                    Ok(outcome) => engagement_success(&outcome),
                     Err(e) => {
                         warn!("Reply failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -285,19 +268,26 @@ pub async fn dispatch_action(
             }
         }
         "bookmark" => {
-            execute_engagement_action(
-                api,
-                did_dive,
-                tweet_id,
-                || bookmark_tweet(api),
-                &RetryConfig::aggressive(),
-                ActionMetrics {
-                    action_name: "bookmark",
-                    retry_name: "bookmark_tweet",
-                    failure_counter: RUN_COUNTER_BOOKMARK_FAILURE,
-                },
-            )
-            .await
+            if !validate_tweet_page(api, did_dive, "bookmark", tweet_id).await {
+                false
+            } else {
+                match retry_with_backoff(
+                    || bookmark_tweet(api),
+                    &RetryConfig::aggressive(),
+                    api,
+                    "bookmark_tweet",
+                )
+                .await
+                {
+                    Ok(outcome) => engagement_success(&outcome),
+                    Err(e) => {
+                        warn!("bookmark_tweet failed after retries: {e}");
+                        api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                        api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
+                        false
+                    }
+                }
+            }
         }
         _ => false,
     };

@@ -4,6 +4,7 @@ use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
 use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
+use crate::utils::twitter::StatusUrl;
 use anyhow::Result;
 use log::{info, warn};
 use rand::Rng;
@@ -96,8 +97,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     Ok(())
 }
 
-fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    crate::utils::url::extract_url_from_payload(payload)
+fn extract_url_from_payload(payload: &Value) -> Result<StatusUrl> {
+    crate::utils::url::extract_url_from_payload(payload).map(StatusUrl::from_unchecked)
 }
 
 async fn extract_main_tweet(api: &TaskContext) -> Result<(String, String)> {

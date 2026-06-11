@@ -10,6 +10,7 @@ use tokio::time::timeout;
 
 use super::twitteractivity_humanized::human_pause;
 use super::twitteractivity_interact::click_retweet_button;
+use super::EngagementOutcome;
 
 /// Timeout for finding quote tweet button - uses `TIMEOUT_SHORT_SECS` (5s)
 /// Short pause after clicking quote button (milliseconds)
@@ -20,12 +21,12 @@ const QUOTE_CLICK_PAUSE_LONG_MS: u64 = 600;
 const COMPOSER_WAIT_MS: u64 = 1000;
 
 /// Performs a quote tweet with AI-generated commentary.
-pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
+pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<EngagementOutcome> {
     info!("Executing quote tweet with {} chars", commentary.len());
 
-    if !click_retweet_button(api).await? {
+    if click_retweet_button(api).await? != EngagementOutcome::Completed {
         warn!("Unable to open retweet menu before quote tweet");
-        return Ok(false);
+        return Ok(EngagementOutcome::ElementNotFound);
     }
 
     // Find quote tweet button coordinates
@@ -40,7 +41,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         r?
     } else {
         warn!("Timeout finding quote tweet button");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     };
     let coords = result.value().and_then(|v| v.as_object());
 
@@ -57,7 +58,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         (x, y)
     } else {
         warn!("Quote tweet button not found");
-        return Ok(false);
+        return Ok(EngagementOutcome::ElementNotFound);
     };
 
     // Human-like cursor movement then click
@@ -81,7 +82,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         r?
     } else {
         warn!("Timeout focusing composer textarea");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     };
     if !focused
         .value()
@@ -89,7 +90,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         .unwrap_or(false)
     {
         warn!("Composer textarea not found");
-        return Ok(false);
+        return Ok(EngagementOutcome::ElementNotFound);
     }
 
     api.pause(500).await;
@@ -104,7 +105,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         r?
     } else {
         warn!("Timeout typing commentary");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
     api.pause(COMPOSER_WAIT_MS).await;
 
@@ -120,7 +121,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         r?
     } else {
         warn!("Timeout finding tweet button");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     };
     let coords = button_result.value().and_then(|v| v.as_object());
 
@@ -137,7 +138,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         (tx, ty)
     } else {
         warn!("Tweet button not found");
-        return Ok(false);
+        return Ok(EngagementOutcome::ElementNotFound);
     };
 
     // Human-like cursor movement then click
@@ -149,7 +150,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     .is_err()
     {
         warn!("Timeout moving mouse to tweet button");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
     human_pause(api, QUOTE_CLICK_PAUSE_SHORT_MS).await;
     if timeout(
@@ -160,7 +161,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
     .is_err()
     {
         warn!("Timeout clicking tweet button");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
 
     // Wait for post to complete
@@ -183,11 +184,15 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<bool> {
         } else {
             warn!("Quote tweet verification failed: {reason}");
         }
-        return Ok(posted);
+        return if posted {
+            Ok(EngagementOutcome::Completed)
+        } else {
+            Ok(EngagementOutcome::Failed)
+        };
     }
 
     warn!("Quote tweet verification returned an unexpected result");
-    Ok(false)
+    Ok(EngagementOutcome::Failed)
 }
 
 #[cfg(test)]

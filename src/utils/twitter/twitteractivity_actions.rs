@@ -8,6 +8,7 @@ use crate::utils::twitter::{
     twitteractivity_humanized::{click_post_pause, click_prep_pause},
     twitteractivity_selectors,
     twitteractivity_state::SentimentTemplates,
+    EngagementOutcome,
 };
 use anyhow::Result;
 use serde_json::Value;
@@ -38,7 +39,7 @@ pub fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64
 }
 
 /// Helper: click like at a specific coordinate with profile-aware timing and hover
-pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
+pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
     let page = api.page();
     let element_type = "button";
     hover_before_click(page, x, y, element_type).await?;
@@ -54,12 +55,16 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool>
     let value = result.value();
     if let Some(v) = value {
         if let Some(liked) = v.as_bool() {
-            return Ok(liked);
+            return if liked {
+                Ok(EngagementOutcome::Completed)
+            } else {
+                Ok(EngagementOutcome::AlreadyDone)
+            };
         }
     }
 
     // Verification failed - assume like was not registered
-    Ok(false)
+    Ok(EngagementOutcome::Failed)
 }
 
 /// Select a template string from a sentiment-indexed set.

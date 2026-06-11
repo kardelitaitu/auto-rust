@@ -37,7 +37,9 @@ pub mod twitteractivity_state;
 pub mod twitteractivity_types;
 pub mod unified_processor;
 
-pub use twitteractivity_types::{StatusUrl, TweetId};
+pub use twitteractivity_types::{
+    EngagementOutcome, FollowOutcome, PostOutcome, StatusUrl, TweetId,
+};
 
 #[allow(unused_imports, ambiguous_glob_reexports)]
 pub use decision::*;

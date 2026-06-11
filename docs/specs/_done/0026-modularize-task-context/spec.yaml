@@ -1,7 +1,7 @@
 version: 1
 id: 0026-modularize-task-context
 title: Modularize TaskContext mod.rs — Extract Tests, Click Pipeline, and Pointer/Keyboard
-status: completed
+status: done
 owner: spec-agent
 implementer: completed
 priority: P2
@@ -16,8 +16,8 @@ files:
     - src/runtime/task_context/click.rs
     - src/runtime/task_context/pointer.rs
   docs:
-    - docs/specs/_active/0026-modularize-task-context/plan.md
-    - docs/specs/_active/0026-modularize-task-context/validation.md
+    - docs/specs/_done/0026-modularize-task-context/plan.md
+    - docs/specs/_done/0026-modularize-task-context/validation.md
 acceptance:
   - "Extract ~1,500 lines of tests (80+ test functions) from mod.rs into tests.rs as #[cfg(test)] mod tests"
   - "Extract click pipeline methods (~400 lines) into click.rs: click(), execute_primary_click_attempt(), fallback_click_with_adaptation(), click_at(), click_and_wait(), double_click(), middle_click(), left_click(), left_click_fast(), right_click(), right_click_at(), right_click_fast(), nativeclick(), record_click_learning()"

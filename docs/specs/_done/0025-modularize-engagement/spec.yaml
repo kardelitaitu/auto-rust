@@ -1,7 +1,7 @@
 version: 1
 id: 0025-modularize-engagement
 title: Modularize twitteractivity_engagement.rs — Extract Scoring, Dispatch, and Tests
-status: completed
+status: done
 owner: spec-agent
 implementer: completed
 priority: P2
@@ -14,8 +14,8 @@ files:
     - src/utils/twitter/twitteractivity_engagement.rs
     - src/utils/twitter/engagement/
   docs:
-    - docs/specs/_active/0025-modularize-engagement/plan.md
-    - docs/specs/_active/0025-modularize-engagement/validation.md
+    - docs/specs/_done/0025-modularize-engagement/plan.md
+    - docs/specs/_done/0025-modularize-engagement/validation.md
 acceptance:
   - "Extract handle_engagement_decision() + modulate_persona_by_sentiment() into engagement/scoring.rs (≤150 lines)"
   - "Extract per-action dispatch logic (like/retweet/quote/follow/reply/bookmark) from process_candidate() match block into engagement/dispatch.rs as dispatch_action() (≤250 lines)"

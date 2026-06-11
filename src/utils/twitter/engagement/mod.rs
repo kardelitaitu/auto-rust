@@ -35,8 +35,7 @@ pub(crate) use scoring::modulate_persona_by_sentiment;
 pub use dispatch::dispatch_action;
 
 pub use super::twitteractivity_actions::{
-    extract_tweet_button_position, generate_quote_text, generate_reply_text,
-    like_at_position,
+    extract_tweet_button_position, generate_quote_text, generate_reply_text, like_at_position,
 };
 pub use super::twitteractivity_helpers::{
     action_allowed_by_limits, calc_rate, filter_actions_for_decision_level,

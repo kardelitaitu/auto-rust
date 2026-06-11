@@ -1,9 +1,9 @@
 version: 1
 id: 0026-modularize-task-context
 title: Modularize TaskContext mod.rs — Extract Tests, Click Pipeline, and Pointer/Keyboard
-status: approved
+status: completed
 owner: spec-agent
-implementer: pending
+implementer: completed
 priority: P2
 area:
   - runtime

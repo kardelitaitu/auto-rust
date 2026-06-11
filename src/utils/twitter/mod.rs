@@ -11,13 +11,13 @@ findings: 0 unsafe, all unwrap/expect in test code, clean clippy, 4 files >1kLoC
 //! for DOM queries and interactions.
 
 pub mod decision;
+pub mod engagement;
 pub mod reply_engine;
 pub mod sentiment;
 pub mod state;
 pub mod twitteractivity_actions;
 pub mod twitteractivity_constants;
 pub mod twitteractivity_dive;
-pub mod twitteractivity_engagement;
 pub mod twitteractivity_errors;
 pub mod twitteractivity_feed;
 pub mod twitteractivity_helpers;
@@ -38,6 +38,8 @@ pub mod unified_processor;
 
 #[allow(unused_imports, ambiguous_glob_reexports)]
 pub use decision::*;
+#[allow(unused_imports)]
+pub use engagement::*;
 pub use reply_engine::*;
 #[allow(unused_imports)]
 pub use sentiment::*;
@@ -45,8 +47,6 @@ pub use sentiment::*;
 pub use twitteractivity_constants::*;
 #[allow(unused_imports)]
 pub use twitteractivity_dive::*;
-#[allow(unused_imports)]
-pub use twitteractivity_engagement::*;
 #[allow(unused_imports)]
 pub use twitteractivity_errors::*;
 #[allow(unused_imports)]

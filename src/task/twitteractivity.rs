@@ -20,7 +20,7 @@ use crate::utils::timing::run_with_timeout;
 // by config.twitter_activity fields. The MAX_CONSECUTIVE_* constants
 // in twitteractivity_constants.rs serve as defaults for new configs.
 use crate::utils::twitter::{
-    twitteractivity_engagement::process_candidate,
+    engagement::process_candidate,
     twitteractivity_feed::identify_engagement_candidates,
     twitteractivity_limits::EngagementLimits,
     twitteractivity_navigation::phase1_navigation,

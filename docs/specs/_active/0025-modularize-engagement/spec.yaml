@@ -1,9 +1,9 @@
 version: 1
 id: 0025-modularize-engagement
 title: Modularize twitteractivity_engagement.rs — Extract Scoring, Dispatch, and Tests
-status: approved
+status: completed
 owner: spec-agent
-implementer: pending
+implementer: completed
 priority: P2
 area:
   - twitter

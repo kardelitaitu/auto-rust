@@ -4,7 +4,6 @@
 //! describing its filesystem layout. All bacon-pipeline modules then read paths
 //! from the global config instead of compile-time `env!` macros.
 
-use log::warn;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 

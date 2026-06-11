@@ -51,6 +51,7 @@ use tracing::instrument;
 use super::twitteractivity_selectors::{
     js_extract_all_tweets, js_get_current_url, selector_all_tweets,
 };
+use super::twitteractivity_types::StatusUrl;
 
 #[derive(Debug, Clone, Default)]
 pub struct DiveIntoThreadOutcome {
@@ -58,12 +59,10 @@ pub struct DiveIntoThreadOutcome {
     pub used_fallback_target: bool,
 }
 
-fn status_id_from_url(status_url: &str) -> Option<&str> {
-    status_url
-        .split("/status/")
-        .nth(1)
-        .and_then(|tail| tail.split(['?', '/', '#']).next())
-        .filter(|id| !id.is_empty())
+fn status_id_from_url(status_url: &str) -> Option<String> {
+    StatusUrl::from_unchecked(status_url)
+        .tweet_id()
+        .map(String::from)
 }
 
 /// Clicks on a tweet to open it in the thread/detail view.
@@ -151,7 +150,7 @@ pub async fn dive_into_thread(
         })
         .unwrap_or_default();
     let target_status_id = status_id_from_url(status_url);
-    let url_matches = target_status_id.map_or_else(
+    let url_matches = target_status_id.as_deref().map_or_else(
         || current_url.contains(status_url),
         |id| current_url.contains(&format!("/status/{id}")),
     );
@@ -238,13 +237,16 @@ mod tests {
 
     #[test]
     fn test_status_id_from_relative_url() {
-        assert_eq!(status_id_from_url("/user/status/12345"), Some("12345"));
+        assert_eq!(
+            status_id_from_url("/user/status/12345").as_deref(),
+            Some("12345")
+        );
     }
 
     #[test]
     fn test_status_id_from_absolute_url_with_query() {
         assert_eq!(
-            status_id_from_url("https://x.com/user/status/12345?lang=en"),
+            status_id_from_url("https://x.com/user/status/12345?lang=en").as_deref(),
             Some("12345")
         );
     }
@@ -257,14 +259,17 @@ mod tests {
     #[test]
     fn test_status_id_from_url_with_fragment() {
         assert_eq!(
-            status_id_from_url("/user/status/12345#reply-1"),
+            status_id_from_url("/user/status/12345#reply-1").as_deref(),
             Some("12345")
         );
     }
 
     #[test]
     fn test_status_id_from_url_with_trailing_slash() {
-        assert_eq!(status_id_from_url("/user/status/12345/"), Some("12345"));
+        assert_eq!(
+            status_id_from_url("/user/status/12345/").as_deref(),
+            Some("12345")
+        );
     }
 
     #[test]
@@ -282,14 +287,17 @@ mod tests {
     #[test]
     fn test_status_id_from_numeric_username_path() {
         // Edge case: username is numeric (e.g., user ID-based URL)
-        assert_eq!(status_id_from_url("/12345/status/67890"), Some("67890"));
+        assert_eq!(
+            status_id_from_url("/12345/status/67890").as_deref(),
+            Some("67890")
+        );
     }
 
     #[test]
     fn test_status_id_from_url_with_special_chars() {
         // Edge case: URL with encoded characters
         assert_eq!(
-            status_id_from_url("/user.name/status/12345?source=search"),
+            status_id_from_url("/user.name/status/12345?source=search").as_deref(),
             Some("12345")
         );
     }
@@ -297,7 +305,7 @@ mod tests {
     #[test]
     fn test_status_id_from_url_with_multiple_query_params() {
         assert_eq!(
-            status_id_from_url("https://x.com/user/status/12345?lang=en&t=abc123&s=01"),
+            status_id_from_url("https://x.com/user/status/12345?lang=en&t=abc123&s=01").as_deref(),
             Some("12345")
         );
     }
@@ -306,7 +314,7 @@ mod tests {
     fn test_status_id_from_url_with_www_prefix() {
         // Edge case: www subdomain
         assert_eq!(
-            status_id_from_url("https://www.x.com/user/status/12345"),
+            status_id_from_url("https://www.x.com/user/status/12345").as_deref(),
             Some("12345")
         );
     }
@@ -314,7 +322,7 @@ mod tests {
     #[test]
     fn test_status_id_from_short_status_url() {
         // Edge case: minimal valid status URL
-        assert_eq!(status_id_from_url("/status/1"), Some("1"));
+        assert_eq!(status_id_from_url("/status/1").as_deref(), Some("1"));
     }
 
     #[test]
@@ -350,14 +358,14 @@ mod tdd_tests {
 
     #[test]
     fn tdd_red_dive_status_id_accepts_minimal_valid_url() {
-        assert_eq!(status_id_from_url("/status/0"), Some("0"));
-        assert_eq!(status_id_from_url("/status/1"), Some("1"));
+        assert_eq!(status_id_from_url("/status/0").as_deref(), Some("0"));
+        assert_eq!(status_id_from_url("/status/1").as_deref(), Some("1"));
     }
 
     #[test]
     fn tdd_green_dive_status_id_with_multiple_slashes_in_path() {
         assert_eq!(
-            status_id_from_url("/user/extra/status/12345"),
+            status_id_from_url("/user/extra/status/12345").as_deref(),
             Some("12345")
         );
     }

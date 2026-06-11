@@ -19,6 +19,7 @@ use crate::utils::math::random_in_range;
 use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
+use crate::utils::twitter::TweetId;
 use anyhow::Result;
 use log::{debug, info, warn};
 use serde_json::Value;
@@ -234,7 +235,9 @@ fn parse_intent_info(url: &str, intent_type: IntentType) -> IntentInfo {
             }
         }
         IntentType::Like => {
-            let tweet_id = extract_param(url, "tweet_id").unwrap_or_else(|| "unknown".to_string());
+            let tweet_id = extract_param(url, "tweet_id")
+                .map(TweetId::from_unchecked)
+                .unwrap_or_else(|| TweetId::from_unchecked("unknown"));
             IntentInfo {
                 description: format!("Liked tweet {tweet_id}"),
             }
@@ -252,7 +255,9 @@ fn parse_intent_info(url: &str, intent_type: IntentType) -> IntentInfo {
             }
         }
         IntentType::Retweet => {
-            let tweet_id = extract_param(url, "tweet_id").unwrap_or_else(|| "unknown".to_string());
+            let tweet_id = extract_param(url, "tweet_id")
+                .map(TweetId::from_unchecked)
+                .unwrap_or_else(|| TweetId::from_unchecked("unknown"));
             IntentInfo {
                 description: format!("Retweeted tweet {tweet_id}"),
             }

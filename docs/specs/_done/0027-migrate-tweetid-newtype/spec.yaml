@@ -1,9 +1,9 @@
 version: 1
 id: 0027-migrate-tweetid-newtype
 title: Migrate String tweet IDs/status URLs to TweetId and StatusUrl newtypes
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-pending
 priority: P2
 area:
   - twitter
@@ -30,8 +30,8 @@ files:
     - src/task/twitterintent.rs
     - src/utils/twitter/twitteractivity_dive.rs
   docs:
-    - docs/specs/_active/0027-migrate-tweetid-newtype/plan.md
-    - docs/specs/_active/0027-migrate-tweetid-newtype/validation.md
+    - docs/specs/_done/0027-migrate-tweetid-newtype/plan.md
+    - docs/specs/_done/0027-migrate-tweetid-newtype/validation.md
 acceptance:
   - "TweetActionTracker uses HashMap<TweetId, ...> instead of HashMap<String, ...>"
   - "record_action() accepts TweetId instead of String (eliminates .to_string() allocations at call sites)"

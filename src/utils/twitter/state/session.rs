@@ -544,13 +544,28 @@ mod gap_tests {
 
         let (summary, remaining) = session.build_summary_lines(60_000);
 
-        assert!(summary.contains("likes=2"), "Expected likes=2, got: {summary}");
-        assert!(summary.contains("retweets=1"), "Expected retweets=1, got: {summary}");
-        assert!(summary.contains("follows=1"), "Expected follows=1, got: {summary}");
+        assert!(
+            summary.contains("likes=2"),
+            "Expected likes=2, got: {summary}"
+        );
+        assert!(
+            summary.contains("retweets=1"),
+            "Expected retweets=1, got: {summary}"
+        );
+        assert!(
+            summary.contains("follows=1"),
+            "Expected follows=1, got: {summary}"
+        );
         assert!(summary.contains("total_actions=4"));
 
-        assert!(remaining.contains("likes=8"), "Expected remaining likes=8, got: {remaining}");
-        assert!(remaining.contains("retweets=7"), "Expected remaining retweets=7, got: {remaining}");
+        assert!(
+            remaining.contains("likes=8"),
+            "Expected remaining likes=8, got: {remaining}"
+        );
+        assert!(
+            remaining.contains("retweets=7"),
+            "Expected remaining retweets=7, got: {remaining}"
+        );
     }
 
     #[test]

@@ -59,7 +59,12 @@ impl TaskContext {
                 Err(e) if is_transient_error(&e) && attempt < EVAL_RETRY_MAX_ATTEMPTS => {
                     attempt += 1;
                     let delay = EVAL_RETRY_BASE_DELAY_MS * (1u64 << attempt.min(6));
-                    log::warn!("CDP operation failed (attempt {}), retrying in {}ms: {}", attempt, delay, e);
+                    log::warn!(
+                        "CDP operation failed (attempt {}), retrying in {}ms: {}",
+                        attempt,
+                        delay,
+                        e
+                    );
                     tokio::time::sleep(Duration::from_millis(delay)).await;
                 }
                 Err(e) => {
@@ -117,19 +122,27 @@ impl TaskContext {
                 .evaluate(format!("navigator.userAgent = '{}'", escaped))
                 .await
                 .map_err(anyhow::Error::from)
-        }).await?;
+        })
+        .await?;
         Ok(())
     }
 
     /// Set extra HTTP headers to be sent with each request.
     pub async fn set_extra_http_headers(&self, headers: &[(String, String)]) -> Result<()> {
-        log::debug!("set_extra_http_headers called with {} headers", headers.len());
+        log::debug!(
+            "set_extra_http_headers called with {} headers",
+            headers.len()
+        );
         Ok(())
     }
 
     /// Apply browser context settings (user agent and headers).
     /// If user_agent is None, skips setting it.
-    pub async fn apply_browser_context(&self, user_agent: Option<&str>, headers: &[(String, String)]) -> Result<()> {
+    pub async fn apply_browser_context(
+        &self,
+        user_agent: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<()> {
         if let Some(ua) = user_agent {
             self.set_user_agent(ua).await?;
         }
@@ -143,7 +156,8 @@ impl TaskContext {
             // Poll until document is complete (loaded)
             loop {
                 let ready_state = self.page.evaluate("document.readyState").await?;
-                let state = ready_state.value()
+                let state = ready_state
+                    .value()
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
                 if state == "complete" || state == "interactive" {
@@ -152,7 +166,8 @@ impl TaskContext {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
             Ok::<(), anyhow::Error>(())
-        }).await
+        })
+        .await
         .map_err(|e| anyhow::anyhow!("wait_for_load timeout after {}ms: {}", timeout_ms, e))??;
         Ok(())
     }
@@ -160,7 +175,11 @@ impl TaskContext {
     /// Wait until any of the given selectors becomes visible.
     /// Uses getBoundingClientRect to verify width > 0 and height > 0, ensuring
     /// the element is not hidden, collapsed, or display:none.
-    pub async fn wait_for_any_visible_selector(&self, selectors: &[&str], timeout_ms: u64) -> Result<bool> {
+    pub async fn wait_for_any_visible_selector(
+        &self,
+        selectors: &[&str],
+        timeout_ms: u64,
+    ) -> Result<bool> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
         for selector_str in selectors {
             let mut attempt = 0;
@@ -175,7 +194,11 @@ impl TaskContext {
                     )).await.map_err(anyhow::Error::from)
                 }).await?;
                 if visible.value().and_then(|v| v.as_bool()).unwrap_or(false) {
-                    log::debug!("Selector '{}' visible after {} attempts", selector_str, attempt);
+                    log::debug!(
+                        "Selector '{}' visible after {} attempts",
+                        selector_str,
+                        attempt
+                    );
                     return Ok(true);
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
@@ -187,7 +210,10 @@ impl TaskContext {
     /// Focus the element matching the selector.
     pub async fn focus(&self, selector: &str) -> Result<FocusOutcome> {
         #[derive(Deserialize)]
-        struct Rect { x: f64, y: f64 }
+        struct Rect {
+            x: f64,
+            y: f64,
+        }
         let escaped = selector.replace('\"', "\\\"");
         let rect: Option<Rect> = self.with_retry(|| async {
             self.page.evaluate(format!(
@@ -203,9 +229,17 @@ impl TaskContext {
                         escaped
                     )).await.map_err(anyhow::Error::from)
                 }).await?;
-                Ok(FocusOutcome { focus: FocusStatus::Success, x: r.x, y: r.y })
+                Ok(FocusOutcome {
+                    focus: FocusStatus::Success,
+                    x: r.x,
+                    y: r.y,
+                })
             }
-            None => Ok(FocusOutcome { focus: FocusStatus::Failed, x: 0.0, y: 0.0 }),
+            None => Ok(FocusOutcome {
+                focus: FocusStatus::Failed,
+                x: 0.0,
+                y: 0.0,
+            }),
         }
     }
 
@@ -319,7 +353,7 @@ mod tests {
         let attempt_2 = EVAL_RETRY_BASE_DELAY_MS * (1u64 << 2);
         let attempt_3 = EVAL_RETRY_BASE_DELAY_MS * (1u64 << 3);
 
-        assert_eq!(attempt_0, 50);  // 50 * 1 = 50ms
+        assert_eq!(attempt_0, 50); // 50 * 1 = 50ms
         assert_eq!(attempt_1, 100); // 50 * 2 = 100ms
         assert_eq!(attempt_2, 200); // 50 * 4 = 200ms
         assert_eq!(attempt_3, 400); // 50 * 8 = 400ms
@@ -737,4 +771,4 @@ mod tests {
         let not_found = anyhow::anyhow!("Element not found: #selector");
         assert!(!is_transient_error(&not_found));
     }
-}
+}

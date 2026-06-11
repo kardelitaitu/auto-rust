@@ -331,7 +331,8 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
 
 /// Log final engagement summary including guard threshold values.
 fn log_summary(session: &SessionState, task_config: &TaskConfig, config: &Config) {
-    let (summary_line, remaining_limits_line) = session.build_summary_lines(task_config.duration_ms);
+    let (summary_line, remaining_limits_line) =
+        session.build_summary_lines(task_config.duration_ms);
     info!("{summary_line}");
     info!("{remaining_limits_line}");
     info!(
@@ -340,8 +341,6 @@ fn log_summary(session: &SessionState, task_config: &TaskConfig, config: &Config
         config.twitter_activity.max_consecutive_empty_scans,
     );
 }
-
-
 
 #[cfg(test)]
 mod tdd_tests {
@@ -658,6 +657,4 @@ mod gap_tests {
         // With scroll_count=0, should never continue
         assert!(!should_continue_feed_loop(&session, 0, &config));
     }
-
-
 }

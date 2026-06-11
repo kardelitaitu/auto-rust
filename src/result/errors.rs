@@ -94,7 +94,12 @@ pub(crate) fn classify_error_pattern(msg: &str) -> ErrorPattern {
     if m.contains("timeout") || m.contains("timed out") || m.contains("deadline") {
         return ErrorPattern::Timeout;
     }
-    if m.contains("connection") && (m.contains("refused") || m.contains("reset") || m.contains("broken") || m.contains("closed")) {
+    if m.contains("connection")
+        && (m.contains("refused")
+            || m.contains("reset")
+            || m.contains("broken")
+            || m.contains("closed"))
+    {
         return ErrorPattern::Connection;
     }
     // LLM-specific transient patterns (rate limit, overload, server errors)
@@ -197,7 +202,7 @@ impl TaskErrorKind {
     pub fn classify(error: &str) -> Self {
         match classify_error_pattern(error) {
             ErrorPattern::Timeout => TaskErrorKind::Timeout,
-            ErrorPattern::NotFound => TaskErrorKind::Session,   // not found = session issue
+            ErrorPattern::NotFound => TaskErrorKind::Session, // not found = session issue
             ErrorPattern::PermissionDenied => TaskErrorKind::Browser,
             ErrorPattern::TargetTerminated => TaskErrorKind::Browser,
             ErrorPattern::Connection => TaskErrorKind::Browser,

@@ -1262,9 +1262,15 @@ mod mutation_tests {
     #[test]
     fn computed_total_synced_after_mixed_increments() {
         let mut counters = EngagementCounters::new();
-        for _ in 0..5 { counters.increment_like(); }
-        for _ in 0..3 { counters.increment_retweet(); }
-        for _ in 0..2 { counters.increment_follow(); }
+        for _ in 0..5 {
+            counters.increment_like();
+        }
+        for _ in 0..3 {
+            counters.increment_retweet();
+        }
+        for _ in 0..2 {
+            counters.increment_follow();
+        }
         counters.increment_reply();
         counters.increment_thread_dive();
         counters.increment_bookmark();
@@ -1277,7 +1283,9 @@ mod mutation_tests {
     #[test]
     fn computed_total_synced_after_unified_increment() {
         let mut counters = EngagementCounters::new();
-        for action in ["like", "retweet", "follow", "reply", "bookmark", "quote", "dive"] {
+        for action in [
+            "like", "retweet", "follow", "reply", "bookmark", "quote", "dive",
+        ] {
             counters.increment(action);
             assert_eq!(counters.total_actions(), counters.computed_total());
         }

@@ -23,9 +23,7 @@ use std::sync::Arc;
 
 async fn connect_test_session() -> Option<auto::session::Session> {
     let Ok(ws_url) = env::var("TASK_API_TEST_WS") else {
-        eprintln!(
-            "skipping page_nav integration tests: TASK_API_TEST_WS is not set"
-        );
+        eprintln!("skipping page_nav integration tests: TASK_API_TEST_WS is not set");
         return None;
     };
 
@@ -184,7 +182,8 @@ mod tests {
         let api = build_task_context(&session, page.clone());
 
         // When user_agent is Some, it should be applied
-        api.apply_browser_context(Some("TestAgent/2.0"), &[]).await?;
+        api.apply_browser_context(Some("TestAgent/2.0"), &[])
+            .await?;
 
         session.release_page(page).await;
         session.graceful_shutdown().await?;
@@ -315,7 +314,9 @@ mod tests {
         };
 
         let page: Arc<chromiumoxide::Page> = session
-            .acquire_page_at("data:text/html,<div id='a'>A</div><div id='b'>B</div><div id='c'>C</div>")
+            .acquire_page_at(
+                "data:text/html,<div id='a'>A</div><div id='b'>B</div><div id='c'>C</div>",
+            )
             .await?;
         let api = build_task_context(&session, page.clone());
 
@@ -505,7 +506,9 @@ mod tests {
         };
 
         let page: Arc<chromiumoxide::Page> = session
-            .acquire_page_at("data:text/html,<div id='collapsed' style='visibility:hidden'>Collapsed</div>")
+            .acquire_page_at(
+                "data:text/html,<div id='collapsed' style='visibility:hidden'>Collapsed</div>",
+            )
             .await?;
         let api = build_task_context(&session, page.clone());
 

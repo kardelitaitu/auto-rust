@@ -204,18 +204,14 @@ impl TaskContext {
                 });
             })()
         ";
-        let indexeddb_names: std::collections::HashMap<String, Vec<String>> = match self
-            .session_io_evaluate_with_retry(indexeddb_js)
-            .await
-        {
-            Ok(result) => serde_json::from_value(result).unwrap_or_default(),
-            Err(e) => {
-                log::warn!(
-                    "Failed to export IndexedDB names (after retries): {e}"
-                );
-                std::collections::HashMap::new()
-            }
-        };
+        let indexeddb_names: std::collections::HashMap<String, Vec<String>> =
+            match self.session_io_evaluate_with_retry(indexeddb_js).await {
+                Ok(result) => serde_json::from_value(result).unwrap_or_default(),
+                Err(e) => {
+                    log::warn!("Failed to export IndexedDB names (after retries): {e}");
+                    std::collections::HashMap::new()
+                }
+            };
 
         let browser_data = crate::task::policy::BrowserData {
             cookies,
@@ -412,13 +408,10 @@ impl TaskContext {
 
     /// Retry wrapper for CDP evaluate operations in session I/O.
     /// Delegates to the shared `with_retry` helper on TaskContext.
-    async fn session_io_evaluate_with_retry(
-        &self,
-        js: &str,
-    ) -> Result<serde_json::Value> {
-        let result = self.with_retry(|| async {
-            self.page.evaluate(js).await.map_err(anyhow::Error::from)
-        }).await?;
+    async fn session_io_evaluate_with_retry(&self, js: &str) -> Result<serde_json::Value> {
+        let result = self
+            .with_retry(|| async { self.page.evaluate(js).await.map_err(anyhow::Error::from) })
+            .await?;
         Ok(result.value().cloned().unwrap_or(serde_json::Value::Null))
     }
 }

@@ -345,7 +345,8 @@ pub async fn process_candidate(
     }
 
     // Analyze sentiment and modulate persona
-    let (sentiment, candidate_persona) = modulate_persona_by_sentiment(tweet, task_config, persona).await;
+    let (sentiment, candidate_persona) =
+        modulate_persona_by_sentiment(tweet, task_config, persona).await;
 
     // Smart decision check (V3 feature - rule-based)
     let engagement_decision = handle_engagement_decision(
@@ -591,12 +592,21 @@ pub async fn process_candidate(
                     }
                 }
             }
-            "retweet" => execute_engagement_action(
-                api, did_dive, tweet_id,
-                || retweet_tweet(api),
-                &RetryConfig::default(),
-                ActionMetrics { action_name: "retweet", retry_name: "retweet_tweet", failure_counter: RUN_COUNTER_RETWEET_FAILURE },
-            ).await,
+            "retweet" => {
+                execute_engagement_action(
+                    api,
+                    did_dive,
+                    tweet_id,
+                    || retweet_tweet(api),
+                    &RetryConfig::default(),
+                    ActionMetrics {
+                        action_name: "retweet",
+                        retry_name: "retweet_tweet",
+                        failure_counter: RUN_COUNTER_RETWEET_FAILURE,
+                    },
+                )
+                .await
+            }
             "quote" => {
                 if !validate_tweet_page(api, did_dive, "quote", tweet_id).await {
                     false
@@ -642,12 +652,21 @@ pub async fn process_candidate(
                     }
                 }
             }
-            "follow" => execute_engagement_action(
-                api, did_dive, tweet_id,
-                || follow_from_tweet(api),
-                &RetryConfig::default(),
-                ActionMetrics { action_name: "follow", retry_name: "follow_from_tweet", failure_counter: RUN_COUNTER_FOLLOW_FAILURE },
-            ).await,
+            "follow" => {
+                execute_engagement_action(
+                    api,
+                    did_dive,
+                    tweet_id,
+                    || follow_from_tweet(api),
+                    &RetryConfig::default(),
+                    ActionMetrics {
+                        action_name: "follow",
+                        retry_name: "follow_from_tweet",
+                        failure_counter: RUN_COUNTER_FOLLOW_FAILURE,
+                    },
+                )
+                .await
+            }
             "reply" => {
                 if !validate_tweet_page(api, did_dive, "reply", tweet_id).await {
                     false
@@ -697,12 +716,21 @@ pub async fn process_candidate(
                     }
                 }
             }
-            "bookmark" => execute_engagement_action(
-                api, did_dive, tweet_id,
-                || bookmark_tweet(api),
-                &RetryConfig::aggressive(),
-                ActionMetrics { action_name: "bookmark", retry_name: "bookmark_tweet", failure_counter: RUN_COUNTER_BOOKMARK_FAILURE },
-            ).await,
+            "bookmark" => {
+                execute_engagement_action(
+                    api,
+                    did_dive,
+                    tweet_id,
+                    || bookmark_tweet(api),
+                    &RetryConfig::aggressive(),
+                    ActionMetrics {
+                        action_name: "bookmark",
+                        retry_name: "bookmark_tweet",
+                        failure_counter: RUN_COUNTER_BOOKMARK_FAILURE,
+                    },
+                )
+                .await
+            }
             _ => false,
         };
 

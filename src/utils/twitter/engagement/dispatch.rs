@@ -2,7 +2,6 @@
 
 use super::super::twitteractivity_retry::{retry_with_backoff, RetryConfig};
 use super::super::twitteractivity_state::{TaskConfig, TweetActionTracker};
-use crate::utils::twitter::twitteractivity_types::TweetId;
 use crate::metrics::{
     RUN_COUNTER_BOOKMARK_FAILURE, RUN_COUNTER_BOOKMARK_SUCCESS, RUN_COUNTER_CLICK_VERIFY_FAILED,
     RUN_COUNTER_FOLLOW_FAILURE, RUN_COUNTER_FOLLOW_SUCCESS, RUN_COUNTER_LIKE_FAILURE,
@@ -11,6 +10,7 @@ use crate::metrics::{
     RUN_COUNTER_RETWEET_SUCCESS, RUN_COUNTER_TRANSIENT_ERROR,
 };
 use crate::prelude::TaskContext;
+use crate::utils::twitter::twitteractivity_types::TweetId;
 use crate::utils::twitter::{
     sentiment::Sentiment,
     twitteractivity_actions::{

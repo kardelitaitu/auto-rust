@@ -260,6 +260,7 @@ impl Default for HybridStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     fn persona_decision(score: i32, level: EngagementLevel, confidence: f64) -> EngagementDecision {
         EngagementDecision {
@@ -568,7 +569,7 @@ mod tests {
     async fn test_decide_without_llm_uses_persona_only() {
         let strategy = HybridStrategy::persona_only();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "Hello world".to_string(),
             author: "user".to_string(),
             replies: vec![],
@@ -585,7 +586,7 @@ mod tests {
     async fn test_decide_with_empty_llm_key_falls_to_persona() {
         let strategy = HybridStrategy::with_llm(String::new(), 0.5, 0.5);
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "Hello world".to_string(),
             author: "user".to_string(),
             replies: vec![],

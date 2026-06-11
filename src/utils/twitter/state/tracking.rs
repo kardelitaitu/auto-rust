@@ -49,8 +49,8 @@ impl TweetActionTracker {
 
 #[cfg(test)]
 mod tdd_tests {
-    use crate::tests::twitter_helpers::test_action_tracker;
     use super::TweetId;
+    use crate::tests::twitter_helpers::test_action_tracker;
 
     #[test]
     fn tdd_green_action_tracker_cooldown_expires() {
@@ -83,9 +83,14 @@ mod gap_tests {
 
         tracker.record_action(TweetId::from_unchecked("tweet_1"), "like");
         assert_eq!(tracker.last_action.len(), 1);
-        assert!(tracker.last_action.contains_key(&TweetId::from_unchecked("tweet_1")));
+        assert!(tracker
+            .last_action
+            .contains_key(&TweetId::from_unchecked("tweet_1")));
 
-        let (action_type, _) = tracker.last_action.get(&TweetId::from_unchecked("tweet_1")).unwrap();
+        let (action_type, _) = tracker
+            .last_action
+            .get(&TweetId::from_unchecked("tweet_1"))
+            .unwrap();
         assert_eq!(*action_type, "like");
     }
 
@@ -97,7 +102,10 @@ mod gap_tests {
         tracker.record_action(TweetId::from_unchecked("tweet_1"), "retweet");
 
         assert_eq!(tracker.last_action.len(), 1);
-        let (action_type, _) = tracker.last_action.get(&TweetId::from_unchecked("tweet_1")).unwrap();
+        let (action_type, _) = tracker
+            .last_action
+            .get(&TweetId::from_unchecked("tweet_1"))
+            .unwrap();
         assert_eq!(*action_type, "retweet");
     }
 

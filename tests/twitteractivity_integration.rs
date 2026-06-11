@@ -107,7 +107,7 @@ fn twitteractivity_action_chaining_prevention_works() {
 
     // Immediate second action should be blocked due to cooldown
     assert!(
-        !        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
+        !tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "second action immediately after first should be blocked"
     );
 

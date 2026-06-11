@@ -354,10 +354,11 @@ mod tests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
     use crate::utils::twitter::twitteractivity_state::TaskConfig;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     fn default_tweet_context(text: &str) -> TweetContext {
         TweetContext {
-            tweet_id: "test-1".to_string(),
+            tweet_id: TweetId::from_unchecked("test-1"),
             text: text.to_string(),
             author: "testuser".to_string(),
             replies: vec![],
@@ -819,6 +820,7 @@ mod proptests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
     use crate::utils::twitter::twitteractivity_state::TaskConfig;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     // Helper strategies: outside proptest! to avoid macro nesting issues
     fn any_replies_0_20() -> impl Strategy<Value = Vec<String>> {
@@ -911,7 +913,7 @@ mod proptests {
         #[test]
         fn pt_decide_bounds(text in any::<String>()) {
             let ctx = TweetContext {
-                tweet_id: "pt-1".into(), text, author: "u".into(),
+                tweet_id: TweetId::from_unchecked("pt-1"), text, author: "u".into(),
                 replies: vec![], persona: PersonaWeights::default(),
                 task_config: TaskConfig::default(), tweet_age: "r".into(),
             };
@@ -923,7 +925,7 @@ mod proptests {
         #[test]
         fn pt_decide_level_consistency(text in any::<String>()) {
             let ctx = TweetContext {
-                tweet_id: "pt-1".into(), text, author: "u".into(),
+                tweet_id: TweetId::from_unchecked("pt-1"), text, author: "u".into(),
                 replies: vec![], persona: PersonaWeights::default(),
                 task_config: TaskConfig::default(), tweet_age: "r".into(),
             };
@@ -944,7 +946,7 @@ mod proptests {
         fn pt_decide_controversial(text in "[a-z]{1,20}", kidx in 0..CONTROVERSIAL_TOPICS.len()) {
             let kw = CONTROVERSIAL_TOPICS[kidx];
             let ctx = TweetContext {
-                tweet_id: "pt-1".into(), text: format!("{text} {kw}"), author: "u".into(),
+                tweet_id: TweetId::from_unchecked("pt-1"), text: format!("{text} {kw}"), author: "u".into(),
                 replies: vec![], persona: PersonaWeights::default(),
                 task_config: TaskConfig::default(), tweet_age: "r".into(),
             };

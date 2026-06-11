@@ -269,6 +269,7 @@ mod tests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
     use crate::utils::twitter::twitteractivity_state::TaskConfig;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     fn make_strategy() -> LlmStrategy {
         LlmStrategy::new("test-key".to_string())
@@ -276,7 +277,7 @@ mod tests {
 
     fn default_ctx() -> TweetContext {
         TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "Hello world".to_string(),
             author: "user".to_string(),
             replies: vec![],

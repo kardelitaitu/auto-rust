@@ -11,6 +11,7 @@ use log::info;
 use serde_json::Value;
 
 use crate::utils::twitter::twitteractivity_actions::extract_tweet_text;
+use crate::utils::twitter::twitteractivity_types::TweetId;
 
 pub async fn handle_engagement_decision(
     tweet: &Value,
@@ -56,7 +57,7 @@ pub async fn handle_engagement_decision(
 
     // Create context for decision engine
     let ctx = TweetContext {
-        tweet_id: tweet_id.to_string(),
+        tweet_id: TweetId::from_unchecked(tweet_id),
         text: tweet_text.to_string(),
         author: author.to_string(),
         replies,

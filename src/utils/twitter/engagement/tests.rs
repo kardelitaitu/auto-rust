@@ -59,14 +59,16 @@ mod integration_tests {
         let counters = EngagementCounters::new();
         let mut tracker = TweetActionTracker::new(60_000);
 
-        let actions = selected_candidate_actions(&persona, "tweet_1", &limits, &counters, &tracker);
+        let tid1 = TweetId::from_unchecked("tweet_1");
+
+        let actions = selected_candidate_actions(&persona, &tid1, &limits, &counters, &tracker);
         assert_eq!(
             actions,
             vec!["like", "retweet", "quote", "follow", "reply", "bookmark"]
         );
 
         tracker.record_action(TweetId::from_unchecked("tweet_1"), "like");
-        let blocked = selected_candidate_actions(&persona, "tweet_1", &limits, &counters, &tracker);
+        let blocked = selected_candidate_actions(&persona, &tid1, &limits, &counters, &tracker);
         assert!(blocked.is_empty());
     }
 
@@ -642,18 +644,21 @@ mod gap_tests {
         let counters = EngagementCounters::new();
         let mut tracker = TweetActionTracker::new(60_000);
 
+        let tid_x = TweetId::from_unchecked("tweet_x");
+        let tid_y = TweetId::from_unchecked("tweet_y");
+
         // First call should include like and retweet
-        let actions = selected_candidate_actions(&persona, "tweet_x", &limits, &counters, &tracker);
+        let actions = selected_candidate_actions(&persona, &tid_x, &limits, &counters, &tracker);
         assert!(actions.contains(&"like"));
         assert!(actions.contains(&"retweet"));
 
         // Record an action on tweet_x — tracker blocks further actions on same tweet
         tracker.record_action(TweetId::from_unchecked("tweet_x"), "like");
-        let blocked = selected_candidate_actions(&persona, "tweet_x", &limits, &counters, &tracker);
+        let blocked = selected_candidate_actions(&persona, &tid_x, &limits, &counters, &tracker);
         assert!(blocked.is_empty());
 
         // Different tweet should still be allowed
-        let other = selected_candidate_actions(&persona, "tweet_y", &limits, &counters, &tracker);
+        let other = selected_candidate_actions(&persona, &tid_y, &limits, &counters, &tracker);
         assert!(!other.is_empty());
     }
 }

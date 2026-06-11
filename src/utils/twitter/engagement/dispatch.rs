@@ -56,7 +56,7 @@ where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<bool>>,
 {
-    if !validate_tweet_page(api, did_dive, metrics.action_name, tweet_id.as_ref()).await {
+    if !validate_tweet_page(api, did_dive, metrics.action_name, tweet_id).await {
         return false;
     }
     match retry_with_backoff(action_fn, retry_config, api, metrics.retry_name).await {
@@ -176,7 +176,7 @@ pub async fn dispatch_action(
             .await
         }
         "quote" => {
-            if !validate_tweet_page(api, did_dive, "quote", tweet_id.as_ref()).await {
+            if !validate_tweet_page(api, did_dive, "quote", tweet_id).await {
                 false
             } else {
                 let quote_text = if task_config.llm_enabled {
@@ -236,7 +236,7 @@ pub async fn dispatch_action(
             .await
         }
         "reply" => {
-            if !validate_tweet_page(api, did_dive, "reply", tweet_id.as_ref()).await {
+            if !validate_tweet_page(api, did_dive, "reply", tweet_id).await {
                 false
             } else {
                 let reply_text = if task_config.llm_enabled {

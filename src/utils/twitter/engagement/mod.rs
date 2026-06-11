@@ -203,7 +203,7 @@ pub async fn process_candidate(
     let tweet_id = TweetId::new(raw_id).map_err(anyhow::Error::msg)?;
     let mut actions_to_do = selected_candidate_actions(
         &candidate_persona,
-        tweet_id.as_ref(),
+        &tweet_id,
         limits,
         counters,
         action_tracker,

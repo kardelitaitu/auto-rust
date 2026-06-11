@@ -48,7 +48,7 @@ pub async fn validate_tweet_page(
     api: &TaskContext,
     did_dive: bool,
     action_name: &str,
-    tweet_id: &str,
+    tweet_id: &TweetId,
 ) -> bool {
     if !did_dive {
         warn!("Skipping {action_name}: not in thread detail view for tweet {tweet_id}");
@@ -69,46 +69,45 @@ pub async fn validate_tweet_page(
 
 pub fn selected_candidate_actions(
     candidate_persona: &PersonaWeights,
-    tweet_id: &str,
+    tweet_id: &TweetId,
     limits: &EngagementLimits,
     counters: &EngagementCounters,
     action_tracker: &TweetActionTracker,
 ) -> Vec<&'static str> {
     let mut actions_to_do = Vec::new();
-    let tid = TweetId::from_unchecked(tweet_id);
 
     if should_like(candidate_persona)
-        && action_tracker.can_perform_action(&tid)
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_like(counters)
     {
         actions_to_do.push("like");
     }
     if should_retweet(candidate_persona)
-        && action_tracker.can_perform_action(&tid)
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_retweet(counters)
     {
         actions_to_do.push("retweet");
     }
     if should_quote(candidate_persona)
-        && action_tracker.can_perform_action(&tid)
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_quote_tweet(counters)
     {
         actions_to_do.push("quote");
     }
     if should_follow(candidate_persona)
-        && action_tracker.can_perform_action(&tid)
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_follow(counters)
     {
         actions_to_do.push("follow");
     }
     if should_reply(candidate_persona)
-        && action_tracker.can_perform_action(&tid)
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_reply(counters)
     {
         actions_to_do.push("reply");
     }
     if should_bookmark(candidate_persona)
-        && action_tracker.can_perform_action(&tid)
+        && action_tracker.can_perform_action(tweet_id)
         && limits.can_bookmark(counters)
     {
         actions_to_do.push("bookmark");

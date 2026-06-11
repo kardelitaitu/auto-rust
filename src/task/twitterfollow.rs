@@ -15,6 +15,7 @@ use crate::utils::twitter::{
     twitteractivity_selectors::{
         selector_follow_button, selector_following_indicator, selector_tweet_user_avatar,
     },
+    FollowOutcome, StatusUrl,
 };
 
 const MAX_ATTEMPTS: u32 = 5;
@@ -27,8 +28,9 @@ fn task_duration_ms() -> u64 {
 }
 
 /// Retry delay: base 3s + attempt*1s, with ±500ms jitter
-fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    crate::utils::url::extract_url_from_payload(payload).map(|url| normalize_url(&url))
+fn extract_url_from_payload(payload: &Value) -> Result<StatusUrl> {
+    crate::utils::url::extract_url_from_payload(payload)
+        .map(|url| StatusUrl::from_unchecked(normalize_url(&url)))
 }
 
 fn backoff_delay(attempt: u32) -> u64 {
@@ -69,19 +71,22 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Humanized read delay
     human_pause(api, random_in_range(8000, 15000)).await;
 
-    let followed = robust_follow(api, &username).await?;
-
-    if followed {
-        info!("[twitterfollow] ✅ Successfully followed @{username}");
-    } else {
-        info!("[twitterfollow] ℹ️ No action needed");
+    let outcome = robust_follow(api, &username).await?;
+    match outcome {
+        FollowOutcome::Followed => info!("[twitterfollow] ✅ Successfully followed @{username}"),
+        FollowOutcome::AlreadyFollowing => {
+            info!("[twitterfollow] ℹ️ Already following @{username}")
+        }
+        FollowOutcome::ButtonNotFound | FollowOutcome::Failed => {
+            info!("[twitterfollow] ℹ️ No action needed");
+        }
     }
 
     info!("[twitterfollow] Task complete");
     Ok(())
 }
 
-async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
+async fn robust_follow(api: &TaskContext, username: &str) -> Result<FollowOutcome> {
     let mut attempt = 0u32;
     let mut has_reloaded = false;
 
@@ -91,7 +96,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
         // Exhausted pre-reload attempts → reload
         if attempt > MAX_ATTEMPTS {
             if has_reloaded || POST_RELOAD_ATTEMPTS == 0 {
-                return Ok(false);
+                return Ok(FollowOutcome::Failed);
             }
             info!("[twitterfollow] Reloading page for retry...");
             api.navigate(
@@ -132,7 +137,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
 
         // Pre-check: already following (includes pending handling)
         if handle_pending_state(api, username).await? {
-            return Ok(true);
+            return Ok(FollowOutcome::AlreadyFollowing);
         }
 
         // Locate and click follow button
@@ -158,7 +163,7 @@ async fn robust_follow(api: &TaskContext, username: &str) -> Result<bool> {
         match poll_for_follow_success(api, username).await {
             Ok(true) => {
                 info!("[twitterfollow] ✅ Follow verified");
-                return Ok(true);
+                return Ok(FollowOutcome::Followed);
             }
             Ok(false) => {
                 warn!("[twitterfollow] Follow not verified");
@@ -527,14 +532,12 @@ fn normalize_url(url: &str) -> String {
         .replace("www.x.com/", "x.com/")
 }
 
-fn is_tweet_url(url: &str) -> bool {
-    let normalized = normalize_url(url);
-    normalized.contains("/status/") && normalized.contains("x.com/")
+fn is_tweet_url(url: &StatusUrl) -> bool {
+    url.tweet_id().is_some()
 }
 
-fn extract_username_from_tweet_url(url: &str) -> Option<String> {
-    let normalized = normalize_url(url);
-    let path = normalized
+fn extract_username_from_tweet_url(url: &StatusUrl) -> Option<String> {
+    let path = url
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_start_matches("x.com/");
@@ -542,7 +545,7 @@ fn extract_username_from_tweet_url(url: &str) -> Option<String> {
     path.find("/status/").map(|idx| path[..idx].to_string())
 }
 
-async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &str) -> Result<String> {
+async fn tweet_to_profile_flow(api: &TaskContext, tweet_url: &StatusUrl) -> Result<String> {
     let username = extract_username_from_tweet_url(tweet_url)
         .ok_or_else(|| anyhow::anyhow!("Could not extract username from tweet URL"))?;
 
@@ -626,23 +629,38 @@ mod tests {
 
     #[test]
     fn test_is_tweet_url_detects_status() {
-        assert!(is_tweet_url("https://x.com/user/status/123"));
-        assert!(is_tweet_url("x.com/user/status/456"));
-        assert!(!is_tweet_url("https://x.com/user"));
-        assert!(!is_tweet_url("https://twitter.com/user"));
+        assert!(is_tweet_url(&StatusUrl::from_unchecked(
+            "https://x.com/user/status/123"
+        )));
+        assert!(is_tweet_url(&StatusUrl::from_unchecked(
+            "x.com/user/status/456"
+        )));
+        assert!(!is_tweet_url(&StatusUrl::from_unchecked(
+            "https://x.com/user"
+        )));
+        assert!(!is_tweet_url(&StatusUrl::from_unchecked(
+            "https://twitter.com/user"
+        )));
     }
 
     #[test]
     fn test_extract_username_from_tweet_url() {
         assert_eq!(
-            extract_username_from_tweet_url("https://x.com/testuser/status/123"),
+            extract_username_from_tweet_url(&StatusUrl::from_unchecked(
+                "https://x.com/testuser/status/123"
+            )),
             Some("testuser".to_string())
         );
         assert_eq!(
-            extract_username_from_tweet_url("x.com/anotheruser/status/456"),
+            extract_username_from_tweet_url(&StatusUrl::from_unchecked(
+                "x.com/anotheruser/status/456"
+            )),
             Some("anotheruser".to_string())
         );
-        assert_eq!(extract_username_from_tweet_url("https://x.com/user"), None);
+        assert_eq!(
+            extract_username_from_tweet_url(&StatusUrl::from_unchecked("https://x.com/user")),
+            None
+        );
     }
 
     #[test]
@@ -795,7 +813,7 @@ mod tests {
     fn test_extract_url_from_payload_url_field() {
         let payload = json!({"url": "https://x.com/elonmusk"});
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://x.com/elonmusk"
         );
     }
@@ -804,7 +822,7 @@ mod tests {
     fn test_extract_url_from_payload_value_field() {
         let payload = json!({"value": "x.com/naval"});
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://x.com/naval"
         );
     }
@@ -813,7 +831,7 @@ mod tests {
     fn test_extract_url_from_payload_default_url_field() {
         let payload = json!({"default_url": "twitter.com/paulg"});
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://twitter.com/paulg"
         );
     }
@@ -826,7 +844,7 @@ mod tests {
             "another": "not a url"
         });
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://x.com/fallbackuser"
         );
     }
@@ -837,7 +855,7 @@ mod tests {
         // Note: normalize_url only handles www.twitter.com/, not plain twitter.com/
         let payload = json!({"profile": "https://www.twitter.com/jack"});
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://x.com/jack"
         );
     }
@@ -850,7 +868,7 @@ mod tests {
             "value": "https://x.com/from_value"
         });
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://x.com/from_url"
         );
     }
@@ -863,7 +881,7 @@ mod tests {
             "default_url": "https://x.com/from_default"
         });
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://x.com/from_value"
         );
     }
@@ -895,7 +913,7 @@ mod tests {
             "valid": "https://x.com/validuser"
         });
         assert_eq!(
-            extract_url_from_payload(&payload).unwrap(),
+            extract_url_from_payload(&payload).unwrap().as_str(),
             "https://x.com/validuser"
         );
     }

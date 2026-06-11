@@ -1,9 +1,9 @@
 version: 1
 id: 0028-adopt-statusurl-task-files
 title: Adopt StatusUrl/TweetId in task files and URL helpers
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-pending
 priority: P2
 area:
   - twitter task files
@@ -18,8 +18,8 @@ files:
     - src/task/twitterfollow.rs
     - src/task/twitterintent.rs
   docs:
-    - docs/specs/_active/0028-adopt-statusurl-task-files/plan.md
-    - docs/specs/_active/0028-adopt-statusurl-task-files/validation.md
+    - docs/specs/_done/0028-adopt-statusurl-task-files/plan.md
+    - docs/specs/_done/0028-adopt-statusurl-task-files/validation.md
 acceptance:
   - All 7 task files use `StatusUrl` for tweet URLs instead of `String`
   - `extract_url_from_payload()` returns `Result<StatusUrl>` in every task file

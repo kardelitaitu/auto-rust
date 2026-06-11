@@ -1,9 +1,9 @@
 version: 1
 id: 0029-enum-action-outcomes
 title: Replace ambiguous Result<bool> with typed outcome enums
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-pending
 priority: P2
 area:
   - twitter engagement
@@ -20,8 +20,8 @@ files:
     - src/task/twitterquote.rs
     - src/task/twitterfollow.rs
   docs:
-    - docs/specs/_active/0029-enum-action-outcomes/plan.md
-    - docs/specs/_active/0029-enum-action-outcomes/validation.md
+    - docs/specs/_done/0029-enum-action-outcomes/plan.md
+    - docs/specs/_done/0029-enum-action-outcomes/validation.md
 acceptance:
   - `like_tweet()`, `retweet_tweet()`, `reply_to_tweet()`, `follow_from_tweet()`, `quote_tweet()` return typed enums instead of `bool`
   - `post_reply()`/`post_quote()` return `PostOutcome` enum instead of `bool`

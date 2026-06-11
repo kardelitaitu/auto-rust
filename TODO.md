@@ -13,7 +13,7 @@ Encode invariants so invalid states are unrepresentable.
 - [x] **Newtype for status URLs** — same problem, `/status/` parsing scattered across `dive.rs`. *(spec 0027 — `status_id_from_url()` now delegates to `StatusUrl::tweet_id()`)*
 - [ ] **State machine for engagement flow** — `TweetOpened -> ComposerVisible -> TextEntered -> Posted`. Currently all fields are `Option<X>` and we `unwrap_or`.
 - [ ] **`NonZeroU32` for counters** — `EngagementCounters` fields are `u32` but should never be zero for initialized state.
-- [ ] **`bool` → `enum` for action outcomes** — `like_tweet(api) -> Result<bool>` — what does `false` mean? Button not found? Already liked? Use `enum LikeOutcome { Liked, AlreadyLiked, ButtonNotFound }`.
+- [x] **`bool` → `enum` for action outcomes** — `like_tweet(api) -> Result<EngagementOutcome>` + `FollowOutcome` + `PostOutcome`. *(spec 0029 — 14 functions across 8 files)*
 
 ## Layer 2: Property-Based Testing (`proptest`)
 

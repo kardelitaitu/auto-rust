@@ -7,6 +7,7 @@ use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
 use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
+use crate::utils::twitter::PostOutcome;
 use crate::utils::twitter::StatusUrl;
 use anyhow::Result;
 use log::{info, warn};
@@ -98,12 +99,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Post
     info!("[twitterquote] Posting quote...");
-    let posted = post_quote_with_retry(api, 3).await?;
-
-    if posted {
-        info!("[twitterquote] Quote posted successfully!");
-    } else {
-        warn!("[twitterquote] Failed to post quote");
+    match post_quote_with_retry(api, 3).await? {
+        PostOutcome::Posted => info!("[twitterquote] Quote posted successfully!"),
+        PostOutcome::ComposerNotFound => warn!("[twitterquote] Composer not found"),
+        PostOutcome::Failed => warn!("[twitterquote] Failed to post quote"),
     }
 
     api.pause(POST_WAIT_MS).await;
@@ -247,33 +246,32 @@ async fn type_quote(api: &TaskContext, text: &str) -> Result<()> {
     Err(anyhow::anyhow!("Composer not found"))
 }
 
-async fn post_quote(api: &TaskContext) -> Result<bool> {
+async fn post_quote(api: &TaskContext) -> Result<PostOutcome> {
     let outcome = api
         .click("[data-testid=\"retweetConfirm\"], [data-testid=\"tweetButton\"]")
         .await?;
     info!("[twitterquote] Post: {}", outcome.summary());
-    Ok(true)
+    Ok(PostOutcome::Posted)
 }
 
-async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bool> {
-    let mut last_error: Option<anyhow::Error> = None;
+async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<PostOutcome> {
+    let mut last_outcome = PostOutcome::Failed;
     for attempt in 1..=max_retries {
         match post_quote(api).await {
-            Ok(true) => return Ok(true),
-            Ok(false) => {
-                warn!("[twitterquote] Post failed (attempt {attempt}/{max_retries})");
-                last_error = Some(anyhow::anyhow!("Post returned false"));
+            Ok(PostOutcome::Posted) => return Ok(PostOutcome::Posted),
+            Ok(other) => {
+                warn!("[twitterquote] Post failed (attempt {attempt}/{max_retries}): {other:?}");
+                last_outcome = other;
             }
             Err(e) => {
                 warn!("[twitterquote] Post error (attempt {attempt}/{max_retries}): {e}");
-                last_error = Some(e);
             }
         }
         if attempt < max_retries {
             api.pause(2000).await;
         }
     }
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {max_retries} retries")))
+    Ok(last_outcome)
 }
 
 #[cfg(test)]

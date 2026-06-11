@@ -6,6 +6,8 @@ Place only approved initiative folders here.
 
 - `0025-modularize-engagement` — approved
 - `0026-modularize-task-context` — approved
+- `0028-adopt-statusurl-task-files` — approved
+- `0029-enum-action-outcomes` — approved
 
 ## Archived (stuck/cleanup)
 

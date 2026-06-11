@@ -9,8 +9,8 @@ The best returns come from finding what the compiler can't see.*
 
 Encode invariants so invalid states are unrepresentable.
 
-- [ ] **Newtype for tweet IDs** — `String` everywhere means mixups are silent. `struct TweetId(String)` with `FromStr` validation.
-- [ ] **Newtype for status URLs** — same problem, `/status/` parsing scattered across `dive.rs`.
+- [x] **Newtype for tweet IDs** — `String` everywhere means mixups are silent. `struct TweetId(String)` with `FromStr` validation. *(spec 0027 — migrated ~140 call sites across ~15 files)*
+- [x] **Newtype for status URLs** — same problem, `/status/` parsing scattered across `dive.rs`. *(spec 0027 — `status_id_from_url()` now delegates to `StatusUrl::tweet_id()`)*
 - [ ] **State machine for engagement flow** — `TweetOpened -> ComposerVisible -> TextEntered -> Posted`. Currently all fields are `Option<X>` and we `unwrap_or`.
 - [ ] **`NonZeroU32` for counters** — `EngagementCounters` fields are `u32` but should never be zero for initialized state.
 - [ ] **`bool` → `enum` for action outcomes** — `like_tweet(api) -> Result<bool>` — what does `false` mean? Button not found? Already liked? Use `enum LikeOutcome { Liked, AlreadyLiked, ButtonNotFound }`.
@@ -69,7 +69,7 @@ Detects undefined behavior in unsafe code. Run weekly.
 
 ## Priority Order
 
-1. **Newtypes** for tweet IDs, status URLs — quick, mechanical, prevents entire bug class.
+1. **~~Newtypes~~** for tweet IDs, status URLs — ~~quick, mechanical, prevents entire bug class.~~ ✅ Done (spec 0027).
 2. **Proptest** on `select_persona_weights`, `remove_emojis`, `status_id_from_url` — find edge cases now.
 3. **Fuzz** LLM response parser — untrusted input, high impact.
 4. **Mutants** baseline on limits module — quick confidence boost.

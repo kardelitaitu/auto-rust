@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn test_retry_delay_exponential_backoff() {
         // Verify the exponential backoff formula: base * 2^attempt
-        let attempt_0 = EVAL_RETRY_BASE_DELAY_MS * (1u64 << 0);
+        let attempt_0 = EVAL_RETRY_BASE_DELAY_MS;
         let attempt_1 = EVAL_RETRY_BASE_DELAY_MS * (1u64 << 1);
         let attempt_2 = EVAL_RETRY_BASE_DELAY_MS * (1u64 << 2);
         let attempt_3 = EVAL_RETRY_BASE_DELAY_MS * (1u64 << 3);

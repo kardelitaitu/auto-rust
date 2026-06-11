@@ -690,7 +690,10 @@ duration_ms = 200
         // ── Condition strategies (recursive, depth-limited) ─────────────────
 
         fn arb_condition() -> impl Strategy<Value = Condition> {
-            arb_condition_depth(0)
+            arb_condition_depth(0).prop_filter(
+                "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
+                |c| !condition_contains_unsafe_chars(c),
+            )
         }
 
         fn arb_condition_depth(depth: usize) -> impl Strategy<Value = Condition> {
@@ -801,7 +804,10 @@ duration_ms = 200
         }
 
         fn arb_action() -> impl Strategy<Value = Action> {
-            arb_action_depth(0)
+            arb_action_depth(0).prop_filter(
+                "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
+                |a| !action_contains_unsafe_chars(a),
+            )
         }
 
         fn arb_action_depth(depth: usize) -> impl Strategy<Value = Action> {
@@ -966,156 +972,210 @@ duration_ms = 200
 
         // ── Unsafe character filter ────────────────────────────────────────
 
-        /// Recursively check whether any string field in the TaskDefinition tree
-        /// contains Unicode characters that cause `libyml` to panic:
+        /// Check if a string contains characters that cause `libyml` to panic:
         /// \\u{2028} (LINE SEPARATOR) and \\u{2029} (PARAGRAPH SEPARATOR).
-        fn task_def_contains_unsafe_chars(td: &TaskDefinition) -> bool {
-            fn str_bad(s: &str) -> bool {
-                s.contains('\u{2028}') || s.contains('\u{2029}')
-            }
-            fn val_bad(v: &serde_yml::Value) -> bool {
-                match v {
-                    serde_yml::Value::String(s) => str_bad(s),
-                    _ => false,
-                }
-            }
-            fn cond_bad(c: &Condition) -> bool {
-                match c {
-                    Condition::ElementExists { selector }
-                    | Condition::ElementVisible { selector } => str_bad(selector),
-                    Condition::TextEquals { selector, value }
-                    | Condition::TextMatches {
-                        selector,
-                        pattern: value,
-                    } => str_bad(selector) || str_bad(value),
-                    Condition::VariableEquals { name, value } => str_bad(name) || val_bad(value),
-                    Condition::VariableMatches { name, pattern } => {
-                        str_bad(name) || str_bad(pattern)
-                    }
-                    Condition::NumericGreaterThan { name, .. }
-                    | Condition::NumericLessThan { name, .. } => str_bad(name),
-                    Condition::NumericRange { name, .. } => str_bad(name),
-                    Condition::DateBefore { name, date, format }
-                    | Condition::DateAfter { name, date, format } => {
-                        str_bad(name)
-                            || str_bad(date)
-                            || format.as_ref().is_some_and(|f| str_bad(f))
-                    }
-                    Condition::ArrayContains { name, value } => str_bad(name) || val_bad(value),
-                    Condition::ArrayLength { name, .. } => str_bad(name),
-                    Condition::And { conditions } | Condition::Or { conditions } => {
-                        conditions.iter().any(cond_bad)
-                    }
-                    Condition::Not { condition } => cond_bad(condition),
-                    Condition::True | Condition::False => false,
-                    Condition::VariableDefined { name }
-                    | Condition::VariableNotDefined { name } => str_bad(name),
-                }
-            }
-            fn act_bad(a: &Action) -> bool {
-                match a {
-                    Action::Navigate { url } => str_bad(url),
-                    Action::Click { selector }
-                    | Action::ScrollTo { selector }
-                    | Action::Clear { selector }
-                    | Action::Hover { selector }
-                    | Action::RightClick { selector }
-                    | Action::DoubleClick { selector } => str_bad(selector),
-                    Action::Type { selector, text } => str_bad(selector) || str_bad(text),
-                    Action::Wait { .. } => false,
-                    Action::WaitFor { selector, .. } => str_bad(selector),
-                    Action::Extract {
-                        selector, variable, ..
-                    } => str_bad(selector) || variable.as_ref().is_some_and(|v| str_bad(v)),
-                    Action::Execute { script } => str_bad(script),
-                    Action::If {
-                        condition,
-                        then,
-                        r#else,
-                    } => {
-                        cond_bad(condition)
-                            || then.iter().any(act_bad)
-                            || r#else.as_ref().is_some_and(|v| v.iter().any(act_bad))
-                    }
-                    Action::Loop {
-                        condition, actions, ..
-                    } => condition.as_ref().is_some_and(cond_bad) || actions.iter().any(act_bad),
-                    Action::Call { task, parameters } => {
-                        str_bad(task)
-                            || parameters.as_ref().is_some_and(|m| {
-                                m.keys().any(|k| str_bad(k)) || m.values().any(val_bad)
-                            })
-                    }
-                    Action::Log { message, .. } => str_bad(message),
-                    Action::Screenshot { path, selector } => {
-                        path.as_ref().is_some_and(|p| str_bad(p))
-                            || selector.as_ref().is_some_and(|s| str_bad(s))
-                    }
-                    Action::Select {
-                        selector, value, ..
-                    } => str_bad(selector) || str_bad(value),
-                    Action::Parallel { actions, .. } => actions.iter().any(act_bad),
-                    Action::Retry {
-                        actions, retry_on, ..
-                    } => {
-                        actions.iter().any(act_bad)
-                            || retry_on
-                                .as_ref()
-                                .is_some_and(|v| v.iter().any(|s| str_bad(s)))
-                    }
-                    Action::Foreach {
-                        variable,
-                        collection,
-                        actions,
-                        ..
-                    } => {
-                        str_bad(variable)
-                            || match collection {
-                                ForeachCollection::Array { values } => values.iter().any(val_bad),
-                                ForeachCollection::Range { .. } => false,
-                                ForeachCollection::Elements { selector } => str_bad(selector),
-                                ForeachCollection::Variable { name } => str_bad(name),
-                            }
-                            || actions.iter().any(act_bad)
-                    }
-                    Action::While {
-                        condition, actions, ..
-                    } => cond_bad(condition) || actions.iter().any(act_bad),
-                    Action::Try {
-                        try_actions,
-                        catch_actions,
-                        error_variable,
-                        finally_actions,
-                    } => {
-                        try_actions.iter().any(act_bad)
-                            || catch_actions
-                                .as_ref()
-                                .is_some_and(|v| v.iter().any(act_bad))
-                            || error_variable.as_ref().is_some_and(|v| str_bad(v))
-                            || finally_actions
-                                .as_ref()
-                                .is_some_and(|v| v.iter().any(act_bad))
-                    }
-                }
-            }
+        fn str_contains_unsafe_chars(s: &str) -> bool {
+            s.contains('\u{2028}') || s.contains('\u{2029}')
+        }
 
-            if str_bad(&td.name) || str_bad(&td.description) || str_bad(&td.policy) {
+        /// Check if a serde_yml Value contains unsafe chars (recursively for string values).
+        fn yaml_value_contains_unsafe_chars(v: &serde_yml::Value) -> bool {
+            match v {
+                serde_yml::Value::String(s) => str_contains_unsafe_chars(s),
+                _ => false,
+            }
+        }
+
+        /// Check if a Condition contains unsafe chars in any of its string fields.
+        fn condition_contains_unsafe_chars(c: &Condition) -> bool {
+            match c {
+                Condition::ElementExists { selector } | Condition::ElementVisible { selector } => {
+                    str_contains_unsafe_chars(selector)
+                }
+                Condition::TextEquals { selector, value }
+                | Condition::TextMatches {
+                    selector,
+                    pattern: value,
+                } => str_contains_unsafe_chars(selector) || str_contains_unsafe_chars(value),
+                Condition::VariableEquals { name, value } => {
+                    str_contains_unsafe_chars(name) || yaml_value_contains_unsafe_chars(value)
+                }
+                Condition::VariableMatches { name, pattern } => {
+                    str_contains_unsafe_chars(name) || str_contains_unsafe_chars(pattern)
+                }
+                Condition::NumericGreaterThan { name, .. }
+                | Condition::NumericLessThan { name, .. } => str_contains_unsafe_chars(name),
+                Condition::NumericRange { name, .. } => str_contains_unsafe_chars(name),
+                Condition::DateBefore { name, date, format }
+                | Condition::DateAfter { name, date, format } => {
+                    str_contains_unsafe_chars(name)
+                        || str_contains_unsafe_chars(date)
+                        || format
+                            .as_ref()
+                            .is_some_and(|f| str_contains_unsafe_chars(f))
+                }
+                Condition::ArrayContains { name, value } => {
+                    str_contains_unsafe_chars(name) || yaml_value_contains_unsafe_chars(value)
+                }
+                Condition::ArrayLength { name, .. } => str_contains_unsafe_chars(name),
+                Condition::And { conditions } | Condition::Or { conditions } => {
+                    conditions.iter().any(condition_contains_unsafe_chars)
+                }
+                Condition::Not { condition } => condition_contains_unsafe_chars(condition),
+                Condition::True | Condition::False => false,
+                Condition::VariableDefined { name } | Condition::VariableNotDefined { name } => {
+                    str_contains_unsafe_chars(name)
+                }
+            }
+        }
+
+        /// Check if an Action contains unsafe chars in any of its string fields.
+        fn action_contains_unsafe_chars(a: &Action) -> bool {
+            match a {
+                Action::Navigate { url } => str_contains_unsafe_chars(url),
+                Action::Click { selector }
+                | Action::ScrollTo { selector }
+                | Action::Clear { selector }
+                | Action::Hover { selector }
+                | Action::RightClick { selector }
+                | Action::DoubleClick { selector } => str_contains_unsafe_chars(selector),
+                Action::Type { selector, text } => {
+                    str_contains_unsafe_chars(selector) || str_contains_unsafe_chars(text)
+                }
+                Action::Wait { .. } => false,
+                Action::WaitFor { selector, .. } => str_contains_unsafe_chars(selector),
+                Action::Extract {
+                    selector, variable, ..
+                } => {
+                    str_contains_unsafe_chars(selector)
+                        || variable
+                            .as_ref()
+                            .is_some_and(|v| str_contains_unsafe_chars(v))
+                }
+                Action::Execute { script } => str_contains_unsafe_chars(script),
+                Action::If {
+                    condition,
+                    then,
+                    r#else,
+                } => {
+                    condition_contains_unsafe_chars(condition)
+                        || then.iter().any(action_contains_unsafe_chars)
+                        || r#else
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(action_contains_unsafe_chars))
+                }
+                Action::Loop {
+                    condition, actions, ..
+                } => {
+                    condition
+                        .as_ref()
+                        .is_some_and(condition_contains_unsafe_chars)
+                        || actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::Call { task, parameters } => {
+                    str_contains_unsafe_chars(task)
+                        || parameters.as_ref().is_some_and(|m| {
+                            m.keys().any(|k| str_contains_unsafe_chars(k))
+                                || m.values().any(yaml_value_contains_unsafe_chars)
+                        })
+                }
+                Action::Log { message, .. } => str_contains_unsafe_chars(message),
+                Action::Screenshot { path, selector } => {
+                    path.as_ref().is_some_and(|p| str_contains_unsafe_chars(p))
+                        || selector
+                            .as_ref()
+                            .is_some_and(|s| str_contains_unsafe_chars(s))
+                }
+                Action::Select {
+                    selector, value, ..
+                } => str_contains_unsafe_chars(selector) || str_contains_unsafe_chars(value),
+                Action::Parallel { actions, .. } => {
+                    actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::Retry {
+                    actions, retry_on, ..
+                } => {
+                    actions.iter().any(action_contains_unsafe_chars)
+                        || retry_on
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(|s| str_contains_unsafe_chars(s)))
+                }
+                Action::Foreach {
+                    variable,
+                    collection,
+                    actions,
+                    ..
+                } => {
+                    str_contains_unsafe_chars(variable)
+                        || match collection {
+                            ForeachCollection::Array { values } => {
+                                values.iter().any(yaml_value_contains_unsafe_chars)
+                            }
+                            ForeachCollection::Range { .. } => false,
+                            ForeachCollection::Elements { selector } => {
+                                str_contains_unsafe_chars(selector)
+                            }
+                            ForeachCollection::Variable { name } => str_contains_unsafe_chars(name),
+                        }
+                        || actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::While {
+                    condition, actions, ..
+                } => {
+                    condition_contains_unsafe_chars(condition)
+                        || actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::Try {
+                    try_actions,
+                    catch_actions,
+                    error_variable,
+                    finally_actions,
+                } => {
+                    try_actions.iter().any(action_contains_unsafe_chars)
+                        || catch_actions
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(action_contains_unsafe_chars))
+                        || error_variable
+                            .as_ref()
+                            .is_some_and(|v| str_contains_unsafe_chars(v))
+                        || finally_actions
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(action_contains_unsafe_chars))
+                }
+            }
+        }
+
+        /// Recursively check whether any string field in the TaskDefinition tree
+        /// contains Unicode characters that cause `libyml` to panic.
+        fn task_def_contains_unsafe_chars(td: &TaskDefinition) -> bool {
+            if str_contains_unsafe_chars(&td.name)
+                || str_contains_unsafe_chars(&td.description)
+                || str_contains_unsafe_chars(&td.policy)
+            {
                 return true;
             }
             for (key, param) in &td.parameters {
-                if str_bad(key)
-                    || str_bad(&param.description)
-                    || param.default.as_ref().is_some_and(val_bad)
+                if str_contains_unsafe_chars(key)
+                    || str_contains_unsafe_chars(&param.description)
+                    || param
+                        .default
+                        .as_ref()
+                        .is_some_and(yaml_value_contains_unsafe_chars)
                 {
                     return true;
                 }
             }
             for inc in &td.include {
-                if str_bad(&inc.path) || inc.condition.as_ref().is_some_and(|c| str_bad(c)) {
+                if str_contains_unsafe_chars(&inc.path)
+                    || inc
+                        .condition
+                        .as_ref()
+                        .is_some_and(|c| str_contains_unsafe_chars(c))
+                {
                     return true;
                 }
             }
-            td.actions.iter().any(act_bad)
+            td.actions.iter().any(action_contains_unsafe_chars)
         }
 
         // ── Task definition strategy ────────────────────────────────────────

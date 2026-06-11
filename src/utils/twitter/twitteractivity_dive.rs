@@ -384,3 +384,51 @@ mod tdd_tests {
         assert!(!modified.used_fallback_target);
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Roundtrip: format!("/{user}/status/{id}") → status_id_from_url → Some(id)
+        #[test]
+        fn proptest_status_id_roundtrip(
+            username in "[a-zA-Z0-9._-]{1,20}",
+            id in "[a-zA-Z0-9_-]{1,30}",
+        ) {
+            let url = format!("/{username}/status/{id}");
+            let result = status_id_from_url(&url);
+            prop_assert_eq!(result.as_deref(), Some(id.as_str()),
+                "Failed roundtrip for url={}", url);
+        }
+
+        /// status_id_from_url returns None for URLs without /status/.
+        #[test]
+        fn proptest_status_id_returns_none_for_other_urls(
+            path in "[a-zA-Z0-9/_]{1,50}",
+        ) {
+            prop_assume!(!path.contains("/status/"));
+            let result = status_id_from_url(&path);
+            prop_assert_eq!(result, None,
+                "Expected None for non-status URL: {}", path);
+        }
+
+        /// Absolute URLs with query strings still extract the tweet ID.
+        #[test]
+        fn proptest_status_id_with_query_string(
+            username in "[a-zA-Z0-9_]{1,20}",
+            id in "[0-9]{1,20}",
+            query in "[a-zA-Z0-9=;&-]{0,30}",
+        ) {
+            let url = if query.is_empty() {
+                format!("https://x.com/{username}/status/{id}")
+            } else {
+                format!("https://x.com/{username}/status/{id}?{query}")
+            };
+            let result = status_id_from_url(&url);
+            prop_assert_eq!(result.as_deref(), Some(id.as_str()),
+                "Failed for url={}", url);
+        }
+    }
+}

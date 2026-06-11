@@ -681,6 +681,66 @@ mod tdd_tests {
 }
 
 #[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Given any f64 override values for all weight fields,
+        /// select_persona_weights always produces weights in [0, 1].
+        #[test]
+        fn proptest_select_persona_weights_stays_in_bounds(
+            like_prob in -2.0f64..=3.0f64,
+            retweet_prob in -1.0f64..=2.0f64,
+            quote_prob in -0.5f64..=1.5f64,
+            follow_prob in -1.0f64..=1.0f64,
+            reply_prob in -2.0f64..=2.0f64,
+            bookmark_prob in -3.0f64..=3.0f64,
+            thread_dive_prob in -1.0f64..=2.5f64,
+        ) {
+            let config_probs = crate::config::TwitterProbabilitiesConfig::default();
+            let weights = serde_json::json!({
+                "like_prob": like_prob,
+                "retweet_prob": retweet_prob,
+                "quote_prob": quote_prob,
+                "follow_prob": follow_prob,
+                "reply_prob": reply_prob,
+                "bookmark_prob": bookmark_prob,
+                "thread_dive_prob": thread_dive_prob,
+            });
+            let persona = select_persona_weights(Some(&weights), &config_probs);
+
+            prop_assert!(persona.like_prob >= 0.0 && persona.like_prob <= 1.0,
+                "like_prob={}", persona.like_prob);
+            prop_assert!(persona.retweet_prob >= 0.0 && persona.retweet_prob <= 1.0,
+                "retweet_prob={}", persona.retweet_prob);
+            prop_assert!(persona.quote_prob >= 0.0 && persona.quote_prob <= 1.0,
+                "quote_prob={}", persona.quote_prob);
+            prop_assert!(persona.follow_prob >= 0.0 && persona.follow_prob <= 1.0,
+                "follow_prob={}", persona.follow_prob);
+            prop_assert!(persona.reply_prob >= 0.0 && persona.reply_prob <= 1.0,
+                "reply_prob={}", persona.reply_prob);
+            prop_assert!(persona.bookmark_prob >= 0.0 && persona.bookmark_prob <= 1.0,
+                "bookmark_prob={}", persona.bookmark_prob);
+            prop_assert!(persona.thread_dive_prob >= 0.0 && persona.thread_dive_prob <= 1.0,
+                "thread_dive_prob={}", persona.thread_dive_prob);
+        }
+
+        /// For any sentiment score in [-1, 1], with_sentiment_modulation
+        /// produces interest_multiplier in [0, 1].
+        #[test]
+        fn proptest_sentiment_modulation_bounds(
+            sentiment in -1.0f64..=1.0f64,
+        ) {
+            let weights = PersonaWeights::default();
+            let modulated = weights.with_sentiment_modulation(sentiment);
+            prop_assert!(modulated.interest_multiplier >= 0.0 && modulated.interest_multiplier <= 1.0,
+                "sentiment={}, interest_multiplier={}", sentiment, modulated.interest_multiplier);
+        }
+    }
+}
+
+#[cfg(test)]
 mod gap_tests {
     use super::*;
 

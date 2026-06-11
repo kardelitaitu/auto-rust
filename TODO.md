@@ -20,10 +20,10 @@ Encode invariants so invalid states are unrepresentable.
 Hand-written tests find the cases you think of. Proptest finds the cases you don't.
 
 - [x] **Timing ranges** — `random_delay` bounds are tested with proptest already.
-- [ ] **`select_persona_weights`** — property: given any valid JSON overrides, result weights stay in `[0, 1]`.
-- [ ] **`modulate_persona_by_sentiment`** — property: sentiment -1..=1 maps to `interest_multiplier` in `[0, 1]`.
-- [ ] **`remove_emojis`** — property: output length <= input length, no emoji codepoints remain, valid UTF-8 preserved.
-- [ ] **`status_id_from_url`** — property: roundtrip: `format!("/user/status/{id}")` → parse → same `id`.
+- [x] **`select_persona_weights`** — property: given any valid JSON overrides, result weights stay in `[0, 1]`. *(proptest added)*
+- [x] **`modulate_persona_by_sentiment`** — property: sentiment -1..=1 maps to `interest_multiplier` in `[0, 1]`. *(proptest added — via `with_sentiment_modulation`)*
+- [x] **`remove_emojis`** — property: output length <= input length, no emoji codepoints remain, valid UTF-8 preserved. *(3 proptests added)*
+- [x] **`status_id_from_url`** — property: roundtrip: `format!("/user/status/{id}")` → parse → same `id`. *(3 proptests added)*
 - [ ] **Engagement limit counters** — property: after N increments, `total_actions() == N`, no overflow panics.
 
 ## Layer 3: Fuzzing (`cargo fuzz`)

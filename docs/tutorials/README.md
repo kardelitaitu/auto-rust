@@ -214,7 +214,7 @@ Tasks calling tasks calling tasks:
 Example:
 ```bash
 # Copy and modify
-cp examples/tasks/basic/simple-navigation.task my-task.task
+cp docs/tutorials/basic/simple-navigation.task my-task.task
 
 # Edit my-task.task with your requirements
 

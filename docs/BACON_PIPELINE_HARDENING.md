@@ -1,3 +1,4 @@
+last audited 16-06-26 by opencode
 # Bacon-Pipeline Hardening & Improvement Plan
 
 *Not "write more tests." The pipeline already has strong compile-time guarantees.

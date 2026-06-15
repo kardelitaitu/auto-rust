@@ -84,13 +84,13 @@ impl SessionState {
             "Session: {}/{} actions | L:{}/{} R:{}/{} F:{}/{} Re:{}/{} | Time left: {:?}",
             self.counters.total_actions(),
             self.limits.max_total_actions,
-            self.counters.likes,
+            self.counters.likes(),
             self.limits.max_likes,
-            self.counters.retweets,
+            self.counters.retweets(),
             self.limits.max_retweets,
-            self.counters.follows,
+            self.counters.follows(),
             self.limits.max_follows,
-            self.counters.replies,
+            self.counters.replies(),
             self.limits.max_replies,
             self.remaining_time()
         )
@@ -108,13 +108,13 @@ impl SessionState {
             .as_secs_f64();
         let summary_line = format!(
             "[twitter] Engagement summary | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={} duration={:.1}s",
-            self.counters.likes,
-            self.counters.retweets,
-            self.counters.follows,
-            self.counters.replies,
-            self.counters.thread_dives,
-            self.counters.bookmarks,
-            self.counters.quote_tweets,
+            self.counters.likes(),
+            self.counters.retweets(),
+            self.counters.follows(),
+            self.counters.replies(),
+            self.counters.thread_dives(),
+            self.counters.bookmarks(),
+            self.counters.quote_tweets(),
             self.counters.total_actions(),
             duration_secs
         );
@@ -123,13 +123,13 @@ impl SessionState {
         let l = &self.limits;
         let remaining_limits_line = format!(
             "[twitter] Remaining limits | likes={} retweets={} follows={} replies={} thread_dives={} bookmarks={} quote_tweets={} total_actions={}",
-            l.max_likes.saturating_sub(c.likes),
-            l.max_retweets.saturating_sub(c.retweets),
-            l.max_follows.saturating_sub(c.follows),
-            l.max_replies.saturating_sub(c.replies),
-            l.max_thread_dives.saturating_sub(c.thread_dives),
-            l.max_bookmarks.saturating_sub(c.bookmarks),
-            l.max_quote_tweets.saturating_sub(c.quote_tweets),
+            l.max_likes.saturating_sub(c.likes()),
+            l.max_retweets.saturating_sub(c.retweets()),
+            l.max_follows.saturating_sub(c.follows()),
+            l.max_replies.saturating_sub(c.replies()),
+            l.max_thread_dives.saturating_sub(c.thread_dives()),
+            l.max_bookmarks.saturating_sub(c.bookmarks()),
+            l.max_quote_tweets.saturating_sub(c.quote_tweets()),
             l.max_total_actions.saturating_sub(c.total_actions()),
         );
 
@@ -260,13 +260,13 @@ mod tdd_tests {
         session.record_action(&TweetId::from_unchecked("t5"), "bookmark");
         session.record_action(&TweetId::from_unchecked("t6"), "quote");
         session.record_action(&TweetId::from_unchecked("t7"), "dive");
-        assert_eq!(session.counters.likes, 1);
-        assert_eq!(session.counters.retweets, 1);
-        assert_eq!(session.counters.follows, 1);
-        assert_eq!(session.counters.replies, 1);
-        assert_eq!(session.counters.bookmarks, 1);
-        assert_eq!(session.counters.quote_tweets, 1);
-        assert_eq!(session.counters.thread_dives, 1);
+        assert_eq!(session.counters.likes(), 1);
+        assert_eq!(session.counters.retweets(), 1);
+        assert_eq!(session.counters.follows(), 1);
+        assert_eq!(session.counters.replies(), 1);
+        assert_eq!(session.counters.bookmarks(), 1);
+        assert_eq!(session.counters.quote_tweets(), 1);
+        assert_eq!(session.counters.thread_dives(), 1);
         assert_eq!(session.counters.total_actions(), 7);
     }
 
@@ -589,8 +589,8 @@ mod gap_tests {
         let limits = EngagementLimits::with_limits(1, 1, 1, 1, 1, 1, 1, 10);
         let mut session = SessionState::new(limits, 60_000, 100);
 
-        session.counters.likes = 5;
-        session.counters.retweets = 3;
+        session.counters.set_for_test("likes", 5);
+        session.counters.set_for_test("retweets", 3);
 
         let (_, remaining) = session.build_summary_lines(60_000);
 

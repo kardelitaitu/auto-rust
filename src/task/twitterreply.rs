@@ -4,8 +4,7 @@ use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
 use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
-use crate::utils::twitter::PostOutcome;
-use crate::utils::twitter::StatusUrl;
+use crate::utils::twitter::{ComposerFlow, PostOutcome, StatusUrl};
 use anyhow::Result;
 use log::{info, warn};
 use rand::Rng;
@@ -74,19 +73,26 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     info!("AI Reply: {reply_text}");
 
+    let mut flow = ComposerFlow::new();
+
     info!("Clicking reply button...");
     click_reply_button(api).await?;
+    flow.record_composer_opened()?;
 
     api.pause(1500).await;
 
     info!("Typing reply...");
     type_reply(api, &reply_text).await?;
+    flow.record_text_entered()?;
 
     api.pause(1000).await;
 
     info!("Posting reply...");
     match post_reply_with_retry(api, 3).await? {
-        PostOutcome::Posted => info!("Reply posted successfully!"),
+        PostOutcome::Posted => {
+            flow.record_posted()?;
+            info!("Reply posted successfully!");
+        }
         PostOutcome::ComposerNotFound => warn!("Composer not found"),
         PostOutcome::Failed => warn!("Failed to post reply"),
     }

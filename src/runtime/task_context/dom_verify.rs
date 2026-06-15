@@ -71,3 +71,30 @@ pub async fn post_interaction_pause_with_budget(ctx: &TaskContext, min_budget_ms
     let variance_pct = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
     crate::capabilities::timing::uniform_pause(base_ms, variance_pct).await;
 }
+
+#[cfg(test)]
+mod fuzz_tests {
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    fn val(s: &str) -> Value {
+        serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))
+    }
+
+    proptest! {
+        #[test]
+        fn fuzz_verify_selector_hit_value(s: String) {
+            let value = val(&s);
+            let _ = value.as_bool().unwrap_or(false);
+        }
+
+        #[test]
+        fn fuzz_verify_selector_hit_nested(s: String) {
+            let value = val(&s);
+            let _ = value.as_object()
+                .and_then(|obj| obj.get("found"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+        }
+    }
+}

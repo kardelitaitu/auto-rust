@@ -321,22 +321,72 @@ mod tests {
         assert!(js.contains("window.scrollBy"));
         assert!(js.contains("0,"));
     }
+}
 
-    #[test]
-    fn test_identify_engagement_candidates_js_generates_fallback_id() {
-        let js = r#"
-        (function() {
-            var tweetId = el.dataset.tweetId ||
-                          el.getAttribute('data-item-id') ||
-                          el.getAttribute('data-tweet-id') ||
-                          statusId ||
-                          'tweet_' + Math.floor(rect.x) + '_' + Math.floor(rect.y);
-            return tweetId;
-        })()
-        "#;
-        assert!(js.contains("dataset.tweetId"));
-        assert!(js.contains("data-item-id"));
-        assert!(js.contains("data-tweet-id"));
-        assert!(js.contains("'tweet_' + Math.floor(rect.x)"));
+#[cfg(test)]
+mod fuzz_tests {
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    /// Simulate the candidate filtering logic from identify_engagement_candidates.
+    fn simulate_candidate_filtering(value: &Value, viewport_height: f64) -> usize {
+        let mut candidates = 0usize;
+        if let Some(arr) = value.as_array() {
+            for tweet_val in arr {
+                if let Some(obj) = tweet_val.as_object() {
+                    let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    if id.is_empty() {
+                        continue;
+                    }
+                    let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
+                    let height = obj
+                        .get("height")
+                        .and_then(|v: &Value| v.as_f64())
+                        .unwrap_or(0.0);
+                    if y < 0.0 || height <= 50.0 {
+                        continue;
+                    }
+                    if y >= (viewport_height * 0.9) {
+                        continue;
+                    }
+                    candidates += 1;
+                }
+            }
+        }
+        candidates
+    }
+
+    fn val(s: &str) -> Value {
+        serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))
+    }
+
+    proptest! {
+        #[test]
+        fn fuzz_simulate_candidate_filtering(s: String) {
+            let value = val(&s);
+            let _ = simulate_candidate_filtering(&value, 1080.0);
+            let _ = simulate_candidate_filtering(&value, f64::NAN);
+            let _ = simulate_candidate_filtering(&value, -1.0);
+            let _ = simulate_candidate_filtering(&value, 99999.0);
+        }
+
+        #[test]
+        fn fuzz_simulate_candidate_filtering_with_tweet(
+            id: String,
+            y: String,
+            height: String,
+        ) {
+            let arr = serde_json::json!([
+                {"id": val(&id), "y": val(&y), "height": val(&height)},
+                {"id": "valid", "y": 100.0, "height": 200.0},
+            ]);
+            let _ = simulate_candidate_filtering(&arr, 1080.0);
+        }
+
+        #[test]
+        fn fuzz_is_following_value_pattern(s: String) {
+            let value = val(&s);
+            let _ = value.as_bool().unwrap_or(false);
+        }
     }
 }

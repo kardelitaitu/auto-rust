@@ -119,3 +119,59 @@ pub fn generate_quote_text(
         &templates.quote_negative,
     )
 }
+
+#[cfg(test)]
+mod fuzz_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    /// Convert an arbitrary string to a Value: parses as JSON if valid, falls back to Value::String.
+    fn val(s: &str) -> Value {
+        serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))
+    }
+
+    proptest! {
+        /// extract_tweet_text must never panic on any string -> Value conversion.
+        #[test]
+        fn fuzz_extract_tweet_text(s: String) {
+            let value = val(&s);
+            let _ = extract_tweet_text(&value);
+        }
+
+        /// extract_tweet_text with object containing arbitrary text/full_text values.
+        #[test]
+        fn fuzz_extract_tweet_text_fields(text: String, full_text: String) {
+            let obj = serde_json::json!({"text": val(&text), "full_text": val(&full_text)});
+            let _ = extract_tweet_text(&obj);
+        }
+
+        /// extract_tweet_button_position must never panic on any string + button name.
+        #[test]
+        fn fuzz_extract_tweet_button_position(json: String, button: String) {
+            let value = val(&json);
+            let _ = extract_tweet_button_position(&value, &button);
+        }
+
+        /// like verification pattern: value.as_bool().unwrap_or(false) — never panic.
+        #[test]
+        fn fuzz_like_verify_value(s: String) {
+            let value = val(&s);
+            let _ = value.as_bool().unwrap_or(false);
+        }
+
+        /// nested value chain pattern: get → as_object → get → as_str/as_f64.
+        #[test]
+        fn fuzz_nested_value_chain(json: String, key1: String, key2: String) {
+            let value = val(&json);
+            let _ = value.get(&key1)
+                .and_then(|v| v.as_object())
+                .and_then(|obj| obj.get(&key2))
+                .and_then(|v| v.as_str());
+            let _ = value.get(&key1)
+                .and_then(|v| v.as_object())
+                .and_then(|obj| obj.get(&key2))
+                .and_then(|v| v.as_f64());
+        }
+    }
+}

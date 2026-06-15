@@ -254,7 +254,8 @@ pub async fn process_candidate(
         if !limits.can_dive(counters) {
             info!(
                 "Skipping dive: limit reached ({}/{})",
-                counters.thread_dives, limits.max_thread_dives
+                counters.thread_dives(),
+                limits.max_thread_dives
             );
         } else if task_config.dry_run_actions {
             info!("Dry-run: would dive into thread for tweet {tweet_id}");

@@ -169,7 +169,7 @@ pub async fn dispatch_action(
                             warn!("LLM quote failed, using template: {e}");
                             generate_quote_text(
                                 sentiment,
-                                counters.quote_tweets,
+                                counters.quote_tweets(),
                                 &task_config.sentiment_templates,
                             )
                         }
@@ -177,7 +177,7 @@ pub async fn dispatch_action(
                 } else {
                     generate_quote_text(
                         sentiment,
-                        counters.quote_tweets,
+                        counters.quote_tweets(),
                         &task_config.sentiment_templates,
                     )
                 };
@@ -237,7 +237,7 @@ pub async fn dispatch_action(
                             warn!("LLM reply failed, using template: {e}");
                             generate_reply_text(
                                 sentiment,
-                                counters.replies,
+                                counters.replies(),
                                 &task_config.sentiment_templates,
                             )
                         }
@@ -245,7 +245,7 @@ pub async fn dispatch_action(
                 } else {
                     generate_reply_text(
                         sentiment,
-                        counters.replies,
+                        counters.replies(),
                         &task_config.sentiment_templates,
                     )
                 };

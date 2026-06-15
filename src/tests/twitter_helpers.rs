@@ -584,10 +584,10 @@ mod tests {
     #[test]
     fn tdd_green_test_counters_with_actions_works() {
         let counters = test_counters_with_actions(3, 2, 1, 1);
-        assert_eq!(counters.likes, 3);
-        assert_eq!(counters.retweets, 2);
-        assert_eq!(counters.follows, 1);
-        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.likes(), 3);
+        assert_eq!(counters.retweets(), 2);
+        assert_eq!(counters.follows(), 1);
+        assert_eq!(counters.replies(), 1);
         assert_eq!(counters.total_actions(), 7);
     }
 

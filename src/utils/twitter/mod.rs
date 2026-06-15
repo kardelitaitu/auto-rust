@@ -38,7 +38,8 @@ pub mod twitteractivity_types;
 pub mod unified_processor;
 
 pub use twitteractivity_types::{
-    EngagementOutcome, FollowOutcome, PostOutcome, StatusUrl, TweetId,
+    ComposerFlow, EngagementOutcome, FlowError, FollowOutcome, PostOutcome, ReplyFlowState,
+    StatusUrl, TweetId,
 };
 
 #[allow(unused_imports, ambiguous_glob_reexports)]

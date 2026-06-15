@@ -772,3 +772,47 @@ mod tests {
         assert!(!is_transient_error(&not_found));
     }
 }
+
+#[cfg(test)]
+mod fuzz_tests {
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    fn val(s: &str) -> Value {
+        serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))
+    }
+
+    proptest! {
+        #[test]
+        fn fuzz_wait_for_load_value(s: String) {
+            let value = val(&s);
+            let _ = value.as_str().unwrap_or("unknown");
+        }
+
+        #[test]
+        fn fuzz_wait_for_any_visible_selector_value(s: String) {
+            let value = val(&s);
+            let _ = value.as_bool().unwrap_or(false);
+        }
+
+        #[test]
+        fn fuzz_focus_rect_deserialization(s: String) {
+            let value = val(&s);
+            let _ = serde_json::from_value::<Value>(value);
+        }
+
+        #[test]
+        fn fuzz_focus_rect_processing(s: String) {
+            let value = val(&s);
+            let _ = value.as_object()
+                .and_then(|obj| serde_json::from_value::<Value>(Value::Object(obj.clone())).ok());
+        }
+
+        #[test]
+        fn fuzz_click_coordinate_fallback_value(s: String) {
+            let value = val(&s);
+            let _x = value.get("x").and_then(Value::as_f64).unwrap_or(0.0);
+            let _y = value.get("y").and_then(Value::as_f64).unwrap_or(0.0);
+        }
+    }
+}

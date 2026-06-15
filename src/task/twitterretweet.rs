@@ -8,8 +8,7 @@ use crate::utils::timing::{
 };
 use crate::utils::twitter::reply_engine::reply_engine_system_prompt;
 use crate::utils::twitter::twitteractivity_llm::validate_reply;
-use crate::utils::twitter::PostOutcome;
-use crate::utils::twitter::StatusUrl;
+use crate::utils::twitter::{ComposerFlow, PostOutcome, StatusUrl};
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -76,20 +75,27 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
         info!("[twitterretweet] Quote text: {commentary}");
 
+        let mut flow = ComposerFlow::new();
+
         // Click quote button
         info!("[twitterretweet] Clicking quote button...");
         click_quote_button(api).await?;
+        flow.record_composer_opened()?;
         api.pause(1500).await;
 
         // Type quote
         info!("[twitterretweet] Typing quote...");
         type_quote(api, &commentary).await?;
+        flow.record_text_entered()?;
         api.pause(1000).await;
 
         // Post
         info!("[twitterretweet] Posting quote...");
         match post_quote_with_retry(api, 3).await? {
-            PostOutcome::Posted => info!("[twitterretweet] Quote posted successfully!"),
+            PostOutcome::Posted => {
+                flow.record_posted()?;
+                info!("[twitterretweet] Quote posted successfully!");
+            }
             PostOutcome::ComposerNotFound => warn!("[twitterretweet] Composer not found"),
             PostOutcome::Failed => warn!("[twitterretweet] Failed to post quote"),
         }

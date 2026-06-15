@@ -248,7 +248,7 @@ fn twitteractivity_engagement_limits_total_actions() {
     // Total should be sum of all individual counters
     assert_eq!(
         counters.total_actions(),
-        counters.likes + counters.retweets + counters.follows + counters.replies,
+        counters.likes() + counters.retweets() + counters.follows() + counters.replies(),
         "total actions should equal sum of individual counters"
     );
 
@@ -274,7 +274,7 @@ fn twitteractivity_engagement_limits_remaining_calculation() {
     let remaining = limits.remaining(&counters);
     assert_eq!(
         remaining.get("likes"),
-        Some(&(limits.max_likes - counters.likes)),
+        Some(&(limits.max_likes - counters.likes())),
         "remaining likes should be max minus current"
     );
 }
@@ -848,9 +848,9 @@ fn twitteractivity_session_state_record_action() {
     state.record_action(&TweetId::from_unchecked("tweet_2"), "retweet");
     state.record_action(&TweetId::from_unchecked("tweet_3"), "follow");
 
-    assert_eq!(state.counters.likes, 1);
-    assert_eq!(state.counters.retweets, 1);
-    assert_eq!(state.counters.follows, 1);
+    assert_eq!(state.counters.likes(), 1);
+    assert_eq!(state.counters.retweets(), 1);
+    assert_eq!(state.counters.follows(), 1);
     assert_eq!(state.counters.total_actions(), 3);
     assert!(!state.is_total_limit_reached());
 }

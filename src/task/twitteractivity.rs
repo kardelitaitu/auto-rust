@@ -114,11 +114,11 @@ fn init_session(config: &Config, task_config: &TaskConfig) -> SessionState {
 
     info!(
         "Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
-        session.counters.likes,
+        session.counters.likes(),
         session.limits.max_likes,
-        session.counters.retweets,
+        session.counters.retweets(),
         session.limits.max_retweets,
-        session.counters.follows,
+        session.counters.follows(),
         session.limits.max_follows,
         session.counters.total_actions(),
         session.limits.max_total_actions
@@ -394,9 +394,9 @@ mod tdd_tests {
         session.record_action(&TweetId::from_unchecked("tweet_3"), "follow");
 
         assert_eq!(session.counters.total_actions(), 3);
-        assert_eq!(session.counters.likes, 1);
-        assert_eq!(session.counters.retweets, 1);
-        assert_eq!(session.counters.follows, 1);
+        assert_eq!(session.counters.likes(), 1);
+        assert_eq!(session.counters.retweets(), 1);
+        assert_eq!(session.counters.follows(), 1);
     }
 
     #[test]
@@ -409,7 +409,7 @@ mod tdd_tests {
         session.record_action(&TweetId::from_unchecked("t2"), "like");
 
         assert_eq!(session.counters.total_actions(), 2);
-        assert_eq!(session.counters.likes, 2);
+        assert_eq!(session.counters.likes(), 2);
 
         // Per-action limit reached — is_action_allowed should block
         assert_action_blocked(&session, "like");

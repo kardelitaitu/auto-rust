@@ -7,8 +7,7 @@ use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
 use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
-use crate::utils::twitter::PostOutcome;
-use crate::utils::twitter::StatusUrl;
+use crate::utils::twitter::{ComposerFlow, PostOutcome, StatusUrl};
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -85,22 +84,29 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         preview_chars(&quote_text, 60)
     );
 
+    let mut flow = ComposerFlow::new();
+
     // Click quote button
     info!("[twitterquote] Clicking quote button...");
     click_quote_button(api).await?;
+    flow.record_composer_opened()?;
 
     api.pause(1500).await;
 
     // Type quote text
     info!("[twitterquote] Typing quote...");
     type_quote(api, &quote_text).await?;
+    flow.record_text_entered()?;
 
     api.pause(1000).await;
 
     // Post
     info!("[twitterquote] Posting quote...");
     match post_quote_with_retry(api, 3).await? {
-        PostOutcome::Posted => info!("[twitterquote] Quote posted successfully!"),
+        PostOutcome::Posted => {
+            flow.record_posted()?;
+            info!("[twitterquote] Quote posted successfully!");
+        }
         PostOutcome::ComposerNotFound => warn!("[twitterquote] Composer not found"),
         PostOutcome::Failed => warn!("[twitterquote] Failed to post quote"),
     }

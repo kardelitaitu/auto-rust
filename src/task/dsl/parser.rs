@@ -1180,6 +1180,14 @@ duration_ms = 200
 
         // ── Task definition strategy ────────────────────────────────────────
 
+        fn param_def_contains_unsafe_chars(pd: &ParameterDef) -> bool {
+            str_contains_unsafe_chars(&pd.description)
+                || pd
+                    .default
+                    .as_ref()
+                    .is_some_and(yaml_value_contains_unsafe_chars)
+        }
+
         fn arb_parameter_def() -> impl Strategy<Value = ParameterDef> {
             (
                 arb_parameter_type(),
@@ -1193,6 +1201,10 @@ duration_ms = 200
                     default,
                     required,
                 })
+                .prop_filter(
+                    "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
+                    |pd| !param_def_contains_unsafe_chars(pd),
+                )
         }
 
         fn arb_include_spec() -> impl Strategy<Value = IncludeSpec> {
@@ -1293,6 +1305,172 @@ duration_ms = 200
                 let parsed: TaskDefinition = toml::from_str(&toml_str)
                     .expect("TOML deserialization should succeed");
                 prop_assert_eq!(task_def, parsed);
+            }
+        }
+    }
+
+    // ========================================================================
+    // Fuzz-style proptests — malformed input must never cause panics
+    // ========================================================================
+
+    /// Fuzz module: throws random (often malformed) input at all spec parsing
+    /// entry points to verify they never panic — only return Err gracefully.
+    mod fuzz_tests {
+        use super::*;
+        use bacon_pipeline::core::spec_io::SpecMeta;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Fuzz: parse_task_yaml must never panic on any input.
+            /// serde_yml returns Err for malformed YAML, which is fine.
+            #[test]
+            fn fuzz_parse_task_yaml(
+                yaml in any::<String>(),
+            ) {
+                let _result = parse_task_yaml(&yaml);
+                // No panic — only Err or Ok
+            }
+
+            /// Fuzz: parse_task_toml must never panic on any input.
+            /// toml returns Err for malformed TOML, which is fine.
+            #[test]
+            fn fuzz_parse_task_toml(
+                toml_str in any::<String>(),
+            ) {
+                let _result = parse_task_toml(&toml_str);
+                // No panic — only Err or Ok
+            }
+
+            /// Fuzz: TaskDefinition YAML deserialization must never panic.
+            /// Random garbage, JSON, partial YAML, deeply nested structures.
+            #[test]
+            fn fuzz_task_definition_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<TaskDefinition, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: TaskDefinition TOML deserialization must never panic.
+            #[test]
+            fn fuzz_task_definition_toml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<TaskDefinition, _> = toml::from_str(&content);
+            }
+
+            /// Fuzz: Action YAML deserialization must never panic.
+            /// Random strings, partial enums, bad tags.
+            #[test]
+            fn fuzz_action_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<Action, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: Condition YAML deserialization must never panic.
+            #[test]
+            fn fuzz_condition_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<crate::task::dsl::Condition, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: SpecMeta YAML deserialization must never panic.
+            /// Tests the spec.yaml parser with unknown keys, wrong types,
+            /// missing fields, and completely random garbage.
+            #[test]
+            fn fuzz_spec_meta_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<SpecMeta, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: validate_task_definition must never panic.
+            /// Tests edge-case TaskDefinitions with extreme values.
+            #[test]
+            fn fuzz_validate_task_definition(
+                name in any::<String>(),
+                description in any::<String>(),
+                policy in any::<String>(),
+            ) {
+                let task_def = TaskDefinition {
+                    name,
+                    description,
+                    policy,
+                    parameters: std::collections::HashMap::new(),
+                    include: vec![],
+                    actions: vec![],
+                };
+                let _result = validate_task_definition(&task_def);
+            }
+
+            /// Fuzz: format_task_definition must never panic.
+            /// Tests with extreme/edge-case TaskDefinitions.
+            #[test]
+            fn fuzz_format_task_definition(
+                name in any::<String>(),
+                description in any::<String>(),
+                policy in any::<String>(),
+            ) {
+                let task_def = TaskDefinition {
+                    name,
+                    description,
+                    policy,
+                    parameters: std::collections::HashMap::new(),
+                    include: vec![],
+                    actions: vec![],
+                };
+                let _formatted = format_task_definition(&task_def);
+            }
+
+            /// Fuzz: SpecMeta with YAML-like content — unknown keys, wrong
+            /// value types (numbers instead of strings), empty values.
+            #[test]
+            fn fuzz_spec_meta_yaml_variants(
+                id_val in any::<String>(),
+                title_val in any::<String>(),
+                status_val in any::<String>(),
+                extra_key in any::<String>(),
+                extra_val in any::<String>(),
+            ) {
+                // Test with extra unknown keys (serde ignores unknown by default)
+                let yaml = format!(
+                    r#"id: {}
+title: {}
+status: {}
+{}: {}"#,
+                    id_val, title_val, status_val, extra_key, extra_val
+                );
+                let _result: Result<SpecMeta, _> = serde_yml::from_str(&yaml);
+            }
+
+            /// Fuzz: TaskDefinition with deeply nested, empty, or extreme structures.
+            #[test]
+            fn fuzz_task_definition_json_like(
+                name in any::<String>(),
+                action_type in any::<String>(),
+                selector in any::<String>(),
+            ) {
+                // Simulate what a malformed spec file might look like
+                let yaml = format!(
+                    r#"name: {}
+actions:
+  - action: {}
+    selector: {}"#,
+                    name, action_type, selector
+                );
+                let _result: Result<TaskDefinition, _> = serde_yml::from_str(&yaml);
+            }
+
+            /// Fuzz: parse_task_yaml with JSON-like input (valid JSON is also
+            /// valid YAML, but edge cases in the boundaries).
+            #[test]
+            fn fuzz_parse_task_yaml_boundary(
+                prefix in any::<String>(),
+                suffix in any::<String>(),
+            ) {
+                let yaml = format!("{}name: test\nactions: []{}", prefix, suffix);
+                let _result = parse_task_yaml(&yaml);
             }
         }
     }

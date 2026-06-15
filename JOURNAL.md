@@ -1,3 +1,35 @@
+## 2026-06-16 - .ps1 script hardening: resource detection, output streaming, Start-Process removal
+
+### Accomplished This Session:
+
+#### Script Review & Fixes (9 root .ps1 files analyzed, 3 fixed)
+- **Analyzed**: All 14 root `.ps1` scripts for systemic issues (resource detection, output buffering, `Start-Process` usage, `Set-Location -LiteralPath`)
+
+#### Fixes Applied
+
+| Script | Changes |
+|---|---|
+| **`miri.ps1`** | Added `cargo miri setup` step (catches UB in deps), fixed output streaming (removed buffering), removed dead Unsafe Code Inventory block, added `-AutoTune` (ON by default), added system resource detection |
+| **`mutants.ps1`** | Added system resource detection + `-AutoTune` (Jobs/BuildThreads auto-scale to machine) |
+| **`coverage.ps1`** | Added system resource detection + `-AutoTune` (test-threads auto-scale), fixed `Set-Location` → `Set-Location -LiteralPath` |
+| **`check.ps1`** | Replaced all 4 `Start-Process` calls with direct `&` invocation (real-time output, proper exit codes), simplified nextest section (removed temp file hack + inline script) |
+| **`run-twitter-tests.ps1`** | Fixed output buffering (streams to console in real-time while capturing for log), fixed `Set-Location` → `Set-Location -LiteralPath` |
+
+#### Systemic Pattern Applied
+All resource-aware scripts now display `Logical CPUs` and `Total RAM` at startup, then auto-tune parallelism parameters capped at sensible limits (max 8 threads for Miri, max 16 build threads for mutants).
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Scripts with resource detection + auto-tune | ✅ `miri.ps1`, `mutants.ps1`, `coverage.ps1` |
+| Scripts with direct `&` (no `Start-Process`) | ✅ `check.ps1` (all 4 steps) |
+| Scripts with real-time output streaming | ✅ `miri.ps1`, `run-twitter-tests.ps1` |
+| Scripts with `-LiteralPath` | ✅ `coverage.ps1`, `run-twitter-tests.ps1` |
+| Unchanged (fine as-is) | `spec-lint.ps1`, `spec-stash.ps1`, `spec-restore.ps1`, `spec-archive.ps1`, `docs.ps1`, `performance.ps1`, `check-fast.ps1`, `benchmark-builds.ps1`, `codebase-index.ps1` |
+
+---
+
 ## 2026-05-12 - TwitterActivity architecture review, 3 spec packages implemented, v0.2.0
 
 ### Accomplished This Session:

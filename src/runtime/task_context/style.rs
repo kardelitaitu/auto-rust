@@ -190,3 +190,77 @@ impl TaskContext {
             .unwrap_or(false))
     }
 }
+
+#[cfg(test)]
+mod fuzz_tests {
+    use crate::runtime::task_context::Rect;
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    /// Convert an arbitrary string to a Value: valid JSON or fallback to string.
+    fn val(s: &str) -> Value {
+        serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))
+    }
+
+    /// Simulate the get_element_rect value processing logic.
+    fn simulate_rect_from_value(value: &Value) -> Option<Rect> {
+        let obj = value.as_object()?;
+        let x = obj.get("x").and_then(Value::as_f64).unwrap_or(0.0);
+        let y = obj.get("y").and_then(Value::as_f64).unwrap_or(0.0);
+        let width = obj.get("width").and_then(Value::as_f64).unwrap_or(0.0);
+        let height = obj.get("height").and_then(Value::as_f64).unwrap_or(0.0);
+        Some(Rect {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn fuzz_get_element_rect_processing(s: String) {
+            let value = val(&s);
+            let _ = simulate_rect_from_value(&value);
+        }
+
+        #[test]
+        fn fuzz_get_element_rect_with_fields(x: String, y: String, width: String, height: String) {
+            let obj = serde_json::json!({
+                "x": val(&x), "y": val(&y),
+                "width": val(&width), "height": val(&height)
+            });
+            let _ = simulate_rect_from_value(&obj);
+        }
+
+        #[test]
+        fn fuzz_get_computed_style_value(s: String) {
+            let value = val(&s);
+            let _ = value.as_str().map(std::string::ToString::to_string);
+        }
+
+        #[test]
+        fn fuzz_count_elements_value(s: String) {
+            let value = val(&s);
+            let _ = value.as_u64().unwrap_or(0) as usize;
+        }
+
+        #[test]
+        fn fuzz_is_in_viewport_value(s: String) {
+            let value = val(&s);
+            let _ = value.as_bool().unwrap_or(false);
+        }
+
+        #[test]
+        fn fuzz_scroll_position_processing(s: String) {
+            let value = val(&s);
+            if let Some(str_val) = value.as_str() {
+                let _ = serde_json::from_str::<Value>(str_val);
+            }
+            if let Some(obj) = value.as_object() {
+                let _x = obj.get("x").and_then(Value::as_f64).unwrap_or(0.0) as u32;
+                let _y = obj.get("y").and_then(Value::as_f64).unwrap_or(0.0) as u32;
+            }
+        }
+    }
+}

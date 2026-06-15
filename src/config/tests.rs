@@ -1593,6 +1593,7 @@ retry_delay_ms = 2000
         "MAX_GLOBAL_CONCURRENCY",
         "CURSOR_OVERLAY_MS",
         "NATIVE_CLICK_CALIBRATION",
+        "native_click_calibration",
     ];
     let saved_env: Vec<(String, Option<OsString>)> = keys
         .iter()

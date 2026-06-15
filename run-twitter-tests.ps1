@@ -57,7 +57,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $root
+Set-Location -LiteralPath $root
 
 $LogDir = "bacon-logs"
 $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -140,14 +140,15 @@ function Invoke-CargoTest {
         Write-Host "Log: $logFile" -ForegroundColor Gray
     }
 
-    # Run cargo, merge stderr into stdout so output is visible in the terminal
-    $output = & cargo @cmdArgs 2>&1
+    # Run cargo, stream to console in real-time, capture for log
+    $lines = [System.Collections.Generic.List[string]]::new()
+    & cargo @cmdArgs 2>&1 | ForEach-Object {
+        $lines.Add($_)
+        $_
+    }
     $exitCode = $LASTEXITCODE
-    # Send to terminal via host output (works reliably via pipe/redirection)
-    $output | Out-String | Write-Host
-    # Persist to log file
     if ($logFile) {
-        $output | Out-File -FilePath $logFile -Encoding utf8
+        $lines | Out-File -FilePath $logFile -Encoding utf8
     }
 
     if ($Coverage) {

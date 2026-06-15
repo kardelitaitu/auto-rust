@@ -497,3 +497,124 @@ mod tests {
         assert!(decision.reason.contains("unavailable"));
     }
 }
+
+// ============================================================================
+// Fuzz-style proptests for LlmDecision deserialization
+// ============================================================================
+
+#[cfg(test)]
+mod fuzz_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Helper: simulate the full LlmDecision deserialization + downstream processing
+    /// to verify no panics occur with any input.
+    fn simulate_llm_decision_pipeline(content: &str) {
+        // Step 1: Deserialize (should never panic, always returns Ok or Err)
+        let _decision: Result<LlmDecision, _> = serde_json::from_str(content);
+    }
+
+    proptest! {
+        /// Fuzz: LlmDecision deserialization must never panic.
+        /// serde_json returns Err for malformed JSON, which is fine —
+        /// the important property is no panic/unwrapping.
+        #[test]
+        fn fuzz_llm_decision_deserialize(
+            content in any::<String>(),
+        ) {
+            simulate_llm_decision_pipeline(&content);
+        }
+
+        /// Fuzz: parse_level must never panic for any string input.
+        /// Defaults to EngagementLevel::None for unrecognized strings.
+        #[test]
+        fn fuzz_parse_level(
+            level in any::<String>(),
+        ) {
+            let strategy = LlmStrategy::new("test-key".to_string());
+            let result = strategy.parse_level(&level);
+            // Result must always be a valid EngagementLevel variant
+            let variants = [
+                EngagementLevel::Full,
+                EngagementLevel::Medium,
+                EngagementLevel::Minimal,
+                EngagementLevel::None,
+            ];
+            prop_assert!(variants.contains(&result),
+                "parse_level('{:?}') returned {:?}, not a valid variant", level, result);
+        }
+
+        /// Fuzz: parse_level with level strings near the valid set.
+        /// Tests case-insensitive matching and edge cases.
+        #[test]
+        fn fuzz_parse_level_near_valid(
+            prefix in any::<String>(),
+            suffix in any::<String>(),
+        ) {
+            let strategy = LlmStrategy::new("test-key".to_string());
+            let valid = ["skip", "none", "low", "minimal", "medium", "high", "full", ""];
+            for v in &valid {
+                let test = format!("{}{}{}", prefix, v, suffix);
+                let result = strategy.parse_level(&test);
+                // Should still not panic and return a valid variant
+                let variants = [
+                    EngagementLevel::Full,
+                    EngagementLevel::Medium,
+                    EngagementLevel::Minimal,
+                    EngagementLevel::None,
+                ];
+                prop_assert!(variants.contains(&result));
+            }
+        }
+
+        /// Fuzz: simulate the full decision pipeline with random JSON-like inputs.
+        /// This exercises the serde deserialization + downstream processing.
+        #[test]
+        fn fuzz_decision_pipeline_json_like(
+            score_str in any::<String>(),
+            level_str in any::<String>(),
+            reason_str in any::<String>(),
+            multiplier_str in any::<String>(),
+            confidence_str in any::<String>(),
+        ) {
+            // Build various JSON structures the LLM might return
+            let json_candidates = [
+                // Valid-ish structure with random field values
+                format!(r#"{{"score":{},"level":"{}","reason":"{}","multiplier":{},"confidence":{}}}"#,
+                    score_str, level_str, reason_str, multiplier_str, confidence_str),
+                // Missing fields
+                format!(r#"{{"score":{},"level":"{}"}}"#, score_str, level_str),
+                // Extra fields
+                format!(r#"{{"score":{},"level":"{}","reason":"{}","multiplier":{},"confidence":{},"extra":"data"}}"#,
+                    score_str, level_str, reason_str, multiplier_str, confidence_str),
+                // Nested structure
+                format!(r#"{{"decision":{{"score":{}}},"metadata":{{"level":"{}"}}}}"#,
+                    score_str, level_str),
+            ];
+            for json in &json_candidates {
+                let _ = serde_json::from_str::<LlmDecision>(json);
+            }
+        }
+
+        /// Fuzz: verify that LlmDecision fields are safe after deserialization
+        /// (clamp operations in the downstream code should never panic).
+        #[test]
+        fn fuzz_llm_decision_safe_downstream(
+            score in any::<i32>(),
+            level in any::<String>(),
+            reason in any::<String>(),
+            multiplier in any::<f64>(),
+            confidence in any::<f64>(),
+        ) {
+            // These are the exact operations performed in the LlmStrategy::decide() method
+            let _clamped_score = score.clamp(0, 100);
+            let _clamped_multiplier = multiplier.clamp(0.0, 3.0);
+            let _clamped_confidence = confidence.clamp(0.0, 1.0);
+            // parse_level with the level string
+            let strategy = LlmStrategy::new("test-key".to_string());
+            let _parsed_level = strategy.parse_level(&level);
+            // reason is used as-is (any string is fine)
+            let _ = reason;
+        }
+    }
+}

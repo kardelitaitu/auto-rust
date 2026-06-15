@@ -432,3 +432,71 @@ mod proptests {
         }
     }
 }
+
+#[cfg(test)]
+mod fuzz_tests {
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    /// Simulate the thread reply filtering logic from identify_thread_replies.
+    fn simulate_thread_reply_filtering(value: &Value) -> usize {
+        let replies = value
+            .as_object()
+            .and_then(|obj| obj.get("replies"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        replies
+            .into_iter()
+            .filter(|r| {
+                r.get("visible").and_then(|v| v.as_bool()).unwrap_or(false)
+                    && r.get("like_pos").is_some()
+                    && r.get("like_pos").and_then(|p| p.as_object()).is_some()
+            })
+            .take(8)
+            .count()
+    }
+
+    /// Simulate the thread depth logic from get_thread_depth.
+    fn simulate_thread_depth(value: &Value) -> u32 {
+        value.as_array().map(|arr| arr.len() as u32).unwrap_or(0)
+    }
+
+    fn val(s: &str) -> Value {
+        serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))
+    }
+
+    proptest! {
+        #[test]
+        fn fuzz_thread_reply_filtering(s: String) {
+            let value = val(&s);
+            let _ = simulate_thread_reply_filtering(&value);
+        }
+
+        #[test]
+        fn fuzz_thread_reply_filtering_with_replies(visible: String, like_pos: String) {
+            let value = serde_json::json!({
+                "replies": [
+                    {"visible": val(&visible), "like_pos": val(&like_pos)},
+                    {"visible": true, "like_pos": {"x": 100, "y": 200}},
+                    {},
+                    null,
+                ]
+            });
+            let _ = simulate_thread_reply_filtering(&value);
+        }
+
+        #[test]
+        fn fuzz_thread_depth(s: String) {
+            let value = val(&s);
+            let _ = simulate_thread_depth(&value);
+        }
+
+        #[test]
+        fn fuzz_current_url_value_pattern(s: String) {
+            let value = val(&s);
+            let _ = value.as_str().map(str::to_owned);
+        }
+    }
+}

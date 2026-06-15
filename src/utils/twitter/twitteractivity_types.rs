@@ -250,6 +250,213 @@ impl FromStr for StatusUrl {
 }
 
 // ============================================================================
+// State Machine — typed states for reply/quote composer flow
+// ============================================================================
+
+/// States in the reply/quote composer flow.
+///
+/// Encodes the transition: `Idle → ComposerOpen → TextEntered → Posted`.
+/// Replaces implicit procedural order (where the caller must manually ensure
+/// the correct sequence) with a tracked state that can be checked at runtime.
+///
+/// # Transitions
+///
+/// | From | To | How |
+/// |---|---|---|
+/// | `Idle` | `ComposerOpen` | `click_reply_button()` or `click_quote_button()`
+/// | `ComposerOpen` | `TextEntered` | `type_reply()` or `type_quote()`
+/// | `TextEntered` | `Posted` | `post_reply_with_retry()` or `post_quote_with_retry()`
+///
+/// # Example
+///
+/// ```rust
+/// use auto::utils::twitter::ComposerFlow;
+///
+/// let mut flow = ComposerFlow::new();
+/// assert!(flow.is_idle());
+///
+/// flow.record_composer_opened().unwrap();
+/// assert!(flow.is_composer_open());
+///
+/// flow.record_text_entered().unwrap();
+/// assert!(flow.has_text());
+///
+/// flow.record_posted().unwrap();
+/// assert!(flow.is_posted());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplyFlowState {
+    /// Initial state — no composer open.
+    Idle,
+    /// Reply/quote composer is visible and ready for text input.
+    ComposerOpen,
+    /// Text has been entered into the composer, ready to post.
+    TextEntered,
+    /// Post was successfully submitted.
+    Posted,
+}
+
+/// Type-safe controller for the reply/quote composer flow.
+///
+/// Tracks the current state of the composer interaction and provides
+/// transition methods that enforce the valid state machine order. Each
+/// transition returns `Result` to prevent accidental misuse.
+///
+/// # Valid Transitions
+///
+/// ```ignore
+/// Idle --record_composer_opened()--> ComposerOpen
+/// ComposerOpen --record_text_entered()--> TextEntered
+/// TextEntered --record_posted()--> Posted
+/// ```
+///
+/// Any other transition returns `Err(FlowError)` with a descriptive message.
+#[derive(Debug, Clone)]
+pub struct ComposerFlow {
+    state: ReplyFlowState,
+}
+
+impl ComposerFlow {
+    /// Create a new flow in `Idle` state.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            state: ReplyFlowState::Idle,
+        }
+    }
+
+    /// Return the current state.
+    #[must_use]
+    pub fn state(&self) -> ReplyFlowState {
+        self.state
+    }
+
+    // -- Query helpers --
+
+    /// Check if in `Idle` state (no composer open).
+    #[must_use]
+    pub fn is_idle(&self) -> bool {
+        self.state == ReplyFlowState::Idle
+    }
+
+    /// Check if in `ComposerOpen` state (composer visible, ready for text).
+    #[must_use]
+    pub fn is_composer_open(&self) -> bool {
+        self.state == ReplyFlowState::ComposerOpen
+    }
+
+    /// Check if in `TextEntered` state (text entered, ready to post).
+    #[must_use]
+    pub fn has_text(&self) -> bool {
+        self.state == ReplyFlowState::TextEntered
+    }
+
+    /// Check if in `Posted` state (post submitted successfully).
+    #[must_use]
+    pub fn is_posted(&self) -> bool {
+        self.state == ReplyFlowState::Posted
+    }
+
+    // -- Transition methods --
+
+    /// Transition from `Idle` → `ComposerOpen`.
+    ///
+    /// Call this after successfully clicking the reply or quote button.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FlowError::InvalidTransition` if not in `Idle` state.
+    pub fn record_composer_opened(&mut self) -> Result<&mut Self, FlowError> {
+        require_state(self.state, ReplyFlowState::Idle)?;
+        self.state = ReplyFlowState::ComposerOpen;
+        Ok(self)
+    }
+
+    /// Transition from `ComposerOpen` → `TextEntered`.
+    ///
+    /// Call this after successfully typing text into the composer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FlowError::InvalidTransition` if not in `ComposerOpen` state.
+    pub fn record_text_entered(&mut self) -> Result<&mut Self, FlowError> {
+        require_state(self.state, ReplyFlowState::ComposerOpen)?;
+        self.state = ReplyFlowState::TextEntered;
+        Ok(self)
+    }
+
+    /// Transition from `TextEntered` → `Posted`.
+    ///
+    /// Call this after successfully submitting the post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FlowError::InvalidTransition` if not in `TextEntered` state.
+    pub fn record_posted(&mut self) -> Result<&mut Self, FlowError> {
+        require_state(self.state, ReplyFlowState::TextEntered)?;
+        self.state = ReplyFlowState::Posted;
+        Ok(self)
+    }
+
+    /// Reset the flow back to `Idle` state.
+    pub fn reset(&mut self) {
+        self.state = ReplyFlowState::Idle;
+    }
+}
+
+impl Default for ComposerFlow {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Error type for invalid state transitions in the composer flow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowError {
+    from: ReplyFlowState,
+    expected: ReplyFlowState,
+}
+
+impl FlowError {
+    #[must_use]
+    pub fn new(from: ReplyFlowState, expected: ReplyFlowState) -> Self {
+        Self { from, expected }
+    }
+
+    /// The actual state that caused the error.
+    #[must_use]
+    pub fn from_state(&self) -> ReplyFlowState {
+        self.from
+    }
+
+    /// The expected state required for the transition.
+    #[must_use]
+    pub fn expected_state(&self) -> ReplyFlowState {
+        self.expected
+    }
+}
+
+impl std::fmt::Display for FlowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "invalid composer flow transition: expected {:?}, got {:?}",
+            self.expected, self.from
+        )
+    }
+}
+
+impl std::error::Error for FlowError {}
+
+fn require_state(actual: ReplyFlowState, expected: ReplyFlowState) -> Result<(), FlowError> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(FlowError::new(actual, expected))
+    }
+}
+
+// ============================================================================
 // Outcome Enums — typed results for engagement actions
 // ============================================================================
 

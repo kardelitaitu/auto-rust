@@ -1,6 +1,16 @@
 # development
 .bacon/snapshots
 
+# Private tool/editor directories
+.commandcode/
+.hermes/
+.qoder/
+.windsurf/
+
+# Generated output directories
+coverage-data/
+mutants-out/
+
 # OS files
 .DS_Store
 Thumbs.db

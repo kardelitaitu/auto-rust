@@ -1,3 +1,5 @@
+last audited 16-06-26 by opencode
+
 ## Acceptance Criteria
 <!-- Measurable conditions that prove the spec is done.
      Each criterion must be specific to THIS initiative, not generic.

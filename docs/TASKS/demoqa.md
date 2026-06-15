@@ -1,6 +1,6 @@
 # DemoQA Task
 
-last audited 13-05-26 by Buffy
+last audited 16-06-26 by opencode
 
 Demonstrates the task-api on the DemoQA text box page: focus, keyboard input, random cursor movement, submit, and output verification.
 

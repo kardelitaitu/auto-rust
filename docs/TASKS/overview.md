@@ -1,4 +1,4 @@
-last audited 08-05-26 by Kilo
+last audited 16-06-26 by opencode
 # Task Overview
 
 Tasks are the automation units in the Rust Orchestrator. Each task is a Rust async function that runs browser automation actions through a `TaskContext`.
@@ -54,7 +54,7 @@ Entries marked `text only` do not have a dedicated task doc page yet.
 
 ## Creating New Tasks
 
-See [Creating New Tasks](#creating-new-tasks) above for detailed instructions.
+See [docs/CONTRIBUTING.md](../CONTRIBUTING.md) for the task creation guide including file setup, registration, and documentation requirements.
 
 ## Shared Task Rules
 

@@ -1,3 +1,5 @@
+last audited 16-06-26 by opencode
+
 # Browser Profile Documentation
 
 This document describes the behavioral profiles for human-like browser automation.

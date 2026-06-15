@@ -1,6 +1,6 @@
 # Spec Workspace
 
-last audited 14-05-26 by Buffy
+last audited 16-06-26 by opencode
 
 This is the contract between spec planning and implementation.
 

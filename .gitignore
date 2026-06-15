@@ -11,6 +11,15 @@
 coverage-data/
 mutants-out/
 
+# Private analysis/plan docs (not code)
+BACON_PIPELINE_IMPROVEMENT_ANALYSIS.md
+BUG_HUNTING_PLAN.md
+TWITTERACTIVITY-ANALYSIS-*.md
+bacon-audit.md
+
+# coverage-improvement generated scripts
+coverage-improvement/
+
 # OS files
 .DS_Store
 Thumbs.db

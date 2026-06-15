@@ -71,11 +71,11 @@ fn binary_name_is_auto() {
 #[test]
 fn setup_script_exists() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let setup_path = root.join("setup-windows.bat");
+    let setup_path = root.join("scripts").join("setup-windows.bat");
 
     assert!(
         setup_path.exists(),
-        "setup-windows.bat not found at project root"
+        "setup-windows.bat not found at scripts/setup-windows.bat"
     );
 }
 
@@ -83,7 +83,7 @@ fn setup_script_exists() {
 #[test]
 fn setup_script_references_launcher() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let setup_path = root.join("setup-windows.bat");
+    let setup_path = root.join("scripts").join("setup-windows.bat");
 
     if setup_path.exists() {
         let content = std::fs::read_to_string(&setup_path).expect("Failed to read setup script");

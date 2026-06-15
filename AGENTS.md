@@ -1,5 +1,5 @@
 # rust-orchestrator operating notes
-*Last updated: May 14, 2026*
+*Last updated: June 16, 2026*
 
 AGENTS.md is the router. Keep it short, stable, and direct readers to the right doc when a topic needs more depth.
 
@@ -7,7 +7,7 @@ AGENTS.md is the router. Keep it short, stable, and direct readers to the right 
 
 All **15 roadmap items (Phases 0–3)** are complete. The Bacon gated-LLM pipeline is production-ready:
 
-- **Shared core** (`src/bacon_core/`) — canonical types (`Stage`, `PipelineConfig`, `PipelineCtx`, `WorkerOutput`), `PipelineAgent` trait, `GitSnapshot` rollback, `spec_io` module
+- **Shared core** (`crates/bacon-pipeline/`) — canonical types (`Stage`, `PipelineConfig`, `PipelineCtx`, `WorkerOutput`), `PipelineAgent` trait, `GitSnapshot` rollback, `spec_io` module
 - **Single agent pipeline** (`nvidia`) — implements `PipelineAgent` for all 4 roles
 - **Spec-lint** ensures spec quality; `check-fast.ps1`/`check.ps1` verify code changes
 - **All 4 roles** (Observer, Strategist, Coder, Auditor) tested in contract tests

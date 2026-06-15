@@ -17,6 +17,7 @@ pub mod types;
 pub mod parser;
 
 // Executor submodules
+pub mod actions;
 pub mod api;
 pub mod cache;
 pub mod control_flow;

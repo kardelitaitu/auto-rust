@@ -8,7 +8,7 @@ use crate::utils::timing::{
 };
 use crate::utils::twitter::{
     close_active_popup, twitteractivity_feed::identify_engagement_candidates,
-    twitteractivity_humanized::human_pause, twitteractivity_navigation::goto_home,
+    twitteractivity_humanized::human_pause, twitteractivity_navigation::goto_home, StatusUrl,
 };
 use anyhow::Result;
 use log::{info, warn};
@@ -42,7 +42,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     let mut likes_count = 0u32;
 
-    if from_feed || tweet_url.is_empty() {
+    if from_feed || tweet_url.as_str().is_empty() {
         // Like from feed
         info!("[twitterlike] Navigating to home feed...");
         goto_home(api).await?;
@@ -159,9 +159,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     Ok(())
 }
 
-fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    // Returns empty string to mean "use feed" when no URL found
-    crate::utils::url::extract_url_from_payload(payload).or_else(|_| Ok(String::new()))
+fn extract_url_from_payload(payload: &Value) -> Result<StatusUrl> {
+    // Returns empty StatusUrl to mean "use feed" when no URL found
+    crate::utils::url::extract_url_from_payload(payload)
+        .map(StatusUrl::from_unchecked)
+        .or_else(|_| Ok(StatusUrl::from_unchecked("")))
 }
 
 #[cfg(test)]
@@ -173,21 +175,21 @@ mod tests {
     fn extract_url_from_payload_url() {
         let payload = json!({"url": "https://x.com/user/status/123"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]
     fn extract_url_from_payload_value() {
         let payload = json!({"value": "https://x.com/user/status/456"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]
     fn extract_url_from_payload_empty() {
         let payload = json!({});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert_eq!(result, ""); // Empty means use feed
+        assert_eq!(result.as_str(), ""); // Empty means use feed
     }
 
     #[test]

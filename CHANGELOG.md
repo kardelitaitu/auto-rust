@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **errors**: Added `ErrorPattern::RateLimited` variant and LLM-specific transient patterns (`"rate limit"`, `"429"`, `"overloaded"`, `"503"`, `"server error"`, `"model is at capacity"`, `"try again later"`) to shared `classify_error_pattern()` in `result/errors.rs`
+- **errors**: Added `TaskErrorKind::ExternalService` variant for LLM API errors (rate limiting, overloaded, unavailable) — separate from `Browser` for semantic clarity
+- **errors**: Added 8 LLM transient patterns to `twitteractivity_errors` `ErrorClassifier` so rate limits and server errors are classified as `Transient` (retryable) instead of `Permanent`
+- **errors**: Added `test_permanent_errors_unaffected_by_rate_limited_classification` regression guard in `page_nav.rs` to verify permanent errors stay permanent
+- **retry**: Added 7 end-to-end integration tests in `twitteractivity_retry.rs` verifying LLM rate-limit retry loop: conservative config (5 attempts / 4 delays), default config (3 attempts / 2 delays), partial retry then success, all patterns covered
+- **llm**: Wrapped `generate_reply()` and `generate_quote_commentary()` with `retry_with_backoff` using `RetryConfig::conservative()` — each attempt gets its own 30s timeout, messages cloned per attempt
+- **counters**: Added `EngagementCounters::computed_total()` (raw sum of all 7 counter fields) and `assert_total_synced()` (`debug_assert_eq!` consistency check in debug builds) with 3 mutation tests
+- **tests**: `test_is_transient_error_rate_limited`, `test_is_transient_error_llm_overloaded`, `test_is_transient_error_try_again_later` in `page_nav.rs`
+- **tests**: 8 `anyhow_*_is_transient` tests in `twitteractivity_errors.rs` gap_tests for each LLM pattern
+
+### Changed
+- **errors**: `ErrorPattern::RateLimited` now maps to `TaskErrorKind::ExternalService` (was `Browser`)
+- **errors**: DRY refactoring — `ErrorClassifier::classify()` now calls `is_rate_limit_error(self)` instead of duplicating 3 inline string checks
+- **retry**: `is_retryable()` now includes `ExternalService`; `should_mark_session_unhealthy()` includes `ExternalService`
+- **retry**: Session I/O retry (`session_io_evaluate_with_retry`) now delegates to shared `TaskContext::with_retry()` instead of duplicating retry logic
+- **engagement**: Extracted `execute_engagement_action()` helper from 3 identical match arms (retweet, follow, bookmark) — each reduced from ~15 to 6 lines; added `ActionMetrics` struct with separate `action_name`/`retry_name` fields
+- **actions**: Extracted shared `select_template()` helper from near-identical `generate_reply_text()` and `generate_quote_text()`
+- **state**: Moved `build_summary_lines()` from orchestrator standalone fn to `SessionState::build_summary_lines(duration_ms: u64)`; 4 tests relocated to `session.rs`
+- **sentiment**: Switched `static SENTIMENT_ANALYZER` from `std::sync::Mutex` to `tokio::sync::Mutex` for async consistency; `modulate_persona_by_sentiment()` now async
+- **llm**: Renamed `_api → api` in `generate_reply()`/`generate_quote_commentary()`; updated `#[instrument(skip(api, ...))]`
+- **metrics**: Added `ExternalService` to `ERROR_KIND_STRINGS` static map
+- **tests**: All `TaskErrorKind` enumeration tests updated (6→7 variants), serde round-trip tests updated, retryable assertions updated
+
+### Fixed
+- **tests**: Fixed 6 pre-existing `api_client_integration.rs` failures (403 Forbidden) caused by system HTTP proxy intercepting localhost wiremock — added `ensure_no_proxy()` using `std::sync::Once`
+- **tests**: Fixed 2 pre-existing Ollama test failures — added `NO_PROXY=127.0.0.1,localhost` to subprocess env and switched fake Ollama response from NVIDIA Chat Completions format (`choices[]`) to Ollama API format (`{"done":true,"message":{"content":"..."}}`) in `bacon_dry_run_smoke.rs` and `bacon_pipeline_integration.rs`
+- **bacon-pipeline**: Fixed 23 pre-existing test failures ("Once poisoned", "ProjectConfig already initialized") caused by parallel test modules racing on `OnceLock::set()` — made `config::init()` idempotent with warning log on re-init, added `ENV_MUTEX` to serialize `LLM_PROVIDER` env var mutations between two racing tests
+- **docs**: Fixed 2 pre-existing doc-test failures in `src/session/mod.rs` — changed plain integer literals (`30_000`, `30000`) to `DurationMs::new_const(...)` for `CircuitBreakerConfig.half_open_time_ms` (field type is `DurationMs`, not `u64`)
+
+### Removed
+- **cleanup**: Removed standalone `build_summary_lines()` from `src/task/twitteractivity.rs` (moved to `SessionState`)
+
 ### Fixed
 - **panic**: Replaced byte-index string slicing `&text[..N]` with `chars().take(N).collect()` in LLM sentiment analysis to prevent panic on multi-byte Unicode characters (wasm/pyodide-safe compilation)
 - **panic**: Replaced manual byte-index in `truncate_to_word_boundary` with `floor_char_boundary()` to prevent panic on non-ASCII text

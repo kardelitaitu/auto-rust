@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```
-//! use crate::utils::twitter::twitteractivity_types::TweetId;
+//! use auto::utils::twitter::TweetId;
 //!
 //! let id = TweetId::new("12345").unwrap();
 //! assert_eq!(id.as_ref(), "12345");
@@ -14,7 +14,7 @@
 //! ```
 //!
 //! ```
-//! use crate::utils::twitter::twitteractivity_types::StatusUrl;
+//! use auto::utils::twitter::StatusUrl;
 //!
 //! let url = StatusUrl::new("/user/status/12345").unwrap();
 //! assert_eq!(url.tweet_id(), Some("12345"));
@@ -111,13 +111,13 @@ impl Hash for TweetId {
 
 impl From<String> for TweetId {
     fn from(s: String) -> Self {
-        Self(s)
+        Self::new(s).expect("TweetId::from called with empty string")
     }
 }
 
 impl From<&str> for TweetId {
     fn from(s: &str) -> Self {
-        Self(s.to_owned())
+        Self::new(s).expect("TweetId::from called with empty string")
     }
 }
 
@@ -140,7 +140,7 @@ impl FromStr for TweetId {
 /// # Examples
 ///
 /// ```
-/// let url = StatusUrl::new("/username/status/12345").unwrap();
+/// let url = auto::utils::twitter::StatusUrl::new("/username/status/12345").unwrap();
 /// assert_eq!(url.tweet_id(), Some("12345"));
 /// ```
 #[derive(Debug, Clone)]
@@ -231,13 +231,13 @@ impl Hash for StatusUrl {
 
 impl From<String> for StatusUrl {
     fn from(s: String) -> Self {
-        Self(s)
+        Self::new(s).expect("StatusUrl::from called with empty string")
     }
 }
 
 impl From<&str> for StatusUrl {
     fn from(s: &str) -> Self {
-        Self(s.to_owned())
+        Self::new(s).expect("StatusUrl::from called with empty string")
     }
 }
 
@@ -247,6 +247,304 @@ impl FromStr for StatusUrl {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::new(s)
     }
+}
+
+// ============================================================================
+// State Machine — typed states for reply/quote composer flow
+// ============================================================================
+
+/// States in the reply/quote composer flow.
+///
+/// Encodes the transition: `Idle → ComposerOpen → TextEntered → Posted`.
+/// Replaces implicit procedural order (where the caller must manually ensure
+/// the correct sequence) with a tracked state that can be checked at runtime.
+///
+/// # Transitions
+///
+/// | From | To | How |
+/// |---|---|---|
+/// | `Idle` | `ComposerOpen` | `click_reply_button()` or `click_quote_button()`
+/// | `ComposerOpen` | `TextEntered` | `type_reply()` or `type_quote()`
+/// | `TextEntered` | `Posted` | `post_reply_with_retry()` or `post_quote_with_retry()`
+///
+/// # Example
+///
+/// ```rust
+/// use auto::utils::twitter::ComposerFlow;
+///
+/// let mut flow = ComposerFlow::new();
+/// assert!(flow.is_idle());
+///
+/// flow.record_composer_opened().unwrap();
+/// assert!(flow.is_composer_open());
+///
+/// flow.record_text_entered().unwrap();
+/// assert!(flow.has_text());
+///
+/// flow.record_posted().unwrap();
+/// assert!(flow.is_posted());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplyFlowState {
+    /// Initial state — no composer open.
+    Idle,
+    /// Reply/quote composer is visible and ready for text input.
+    ComposerOpen,
+    /// Text has been entered into the composer, ready to post.
+    TextEntered,
+    /// Post was successfully submitted.
+    Posted,
+}
+
+/// Type-safe controller for the reply/quote composer flow.
+///
+/// Tracks the current state of the composer interaction and provides
+/// transition methods that enforce the valid state machine order. Each
+/// transition returns `Result` to prevent accidental misuse.
+///
+/// # Valid Transitions
+///
+/// ```ignore
+/// Idle --record_composer_opened()--> ComposerOpen
+/// ComposerOpen --record_text_entered()--> TextEntered
+/// TextEntered --record_posted()--> Posted
+/// ```
+///
+/// Any other transition returns `Err(FlowError)` with a descriptive message.
+#[derive(Debug, Clone)]
+pub struct ComposerFlow {
+    state: ReplyFlowState,
+}
+
+impl ComposerFlow {
+    /// Create a new flow in `Idle` state.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            state: ReplyFlowState::Idle,
+        }
+    }
+
+    /// Return the current state.
+    #[must_use]
+    pub fn state(&self) -> ReplyFlowState {
+        self.state
+    }
+
+    // -- Query helpers --
+
+    /// Check if in `Idle` state (no composer open).
+    #[must_use]
+    pub fn is_idle(&self) -> bool {
+        self.state == ReplyFlowState::Idle
+    }
+
+    /// Check if in `ComposerOpen` state (composer visible, ready for text).
+    #[must_use]
+    pub fn is_composer_open(&self) -> bool {
+        self.state == ReplyFlowState::ComposerOpen
+    }
+
+    /// Check if in `TextEntered` state (text entered, ready to post).
+    #[must_use]
+    pub fn has_text(&self) -> bool {
+        self.state == ReplyFlowState::TextEntered
+    }
+
+    /// Check if in `Posted` state (post submitted successfully).
+    #[must_use]
+    pub fn is_posted(&self) -> bool {
+        self.state == ReplyFlowState::Posted
+    }
+
+    // -- Transition methods --
+
+    /// Transition from `Idle` → `ComposerOpen`.
+    ///
+    /// Call this after successfully clicking the reply or quote button.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FlowError::InvalidTransition` if not in `Idle` state.
+    pub fn record_composer_opened(&mut self) -> Result<&mut Self, FlowError> {
+        require_state(self.state, ReplyFlowState::Idle)?;
+        self.state = ReplyFlowState::ComposerOpen;
+        Ok(self)
+    }
+
+    /// Transition from `ComposerOpen` → `TextEntered`.
+    ///
+    /// Call this after successfully typing text into the composer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FlowError::InvalidTransition` if not in `ComposerOpen` state.
+    pub fn record_text_entered(&mut self) -> Result<&mut Self, FlowError> {
+        require_state(self.state, ReplyFlowState::ComposerOpen)?;
+        self.state = ReplyFlowState::TextEntered;
+        Ok(self)
+    }
+
+    /// Transition from `TextEntered` → `Posted`.
+    ///
+    /// Call this after successfully submitting the post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FlowError::InvalidTransition` if not in `TextEntered` state.
+    pub fn record_posted(&mut self) -> Result<&mut Self, FlowError> {
+        require_state(self.state, ReplyFlowState::TextEntered)?;
+        self.state = ReplyFlowState::Posted;
+        Ok(self)
+    }
+
+    /// Reset the flow back to `Idle` state.
+    pub fn reset(&mut self) {
+        self.state = ReplyFlowState::Idle;
+    }
+}
+
+impl Default for ComposerFlow {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Error type for invalid state transitions in the composer flow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowError {
+    from: ReplyFlowState,
+    expected: ReplyFlowState,
+}
+
+impl FlowError {
+    #[must_use]
+    pub fn new(from: ReplyFlowState, expected: ReplyFlowState) -> Self {
+        Self { from, expected }
+    }
+
+    /// The actual state that caused the error.
+    #[must_use]
+    pub fn from_state(&self) -> ReplyFlowState {
+        self.from
+    }
+
+    /// The expected state required for the transition.
+    #[must_use]
+    pub fn expected_state(&self) -> ReplyFlowState {
+        self.expected
+    }
+}
+
+impl std::fmt::Display for FlowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "invalid composer flow transition: expected {:?}, got {:?}",
+            self.expected, self.from
+        )
+    }
+}
+
+impl std::error::Error for FlowError {}
+
+fn require_state(actual: ReplyFlowState, expected: ReplyFlowState) -> Result<(), FlowError> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(FlowError::new(actual, expected))
+    }
+}
+
+// ============================================================================
+// Outcome Enums — typed results for engagement actions
+// ============================================================================
+
+/// Outcome of a single engagement action (like, retweet, reply, bookmark, quote).
+///
+/// Replaces the ambiguous `Result<bool>` pattern where `false` could mean
+/// "already done", "element not found", or "action failed".
+///
+/// # Examples
+///
+/// ```
+/// use auto::utils::twitter::EngagementOutcome;
+///
+/// let outcome = EngagementOutcome::Completed;
+/// match outcome {
+///     EngagementOutcome::Completed => println!("action done"),
+///     EngagementOutcome::AlreadyDone => println!("was already done"),
+///     EngagementOutcome::ElementNotFound => println!("button missing"),
+///     EngagementOutcome::Failed => println!("action failed"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngagementOutcome {
+    /// Action completed successfully.
+    Completed,
+    /// Action was already performed (e.g., tweet already liked).
+    AlreadyDone,
+    /// Required UI element not found (button, composer, etc.).
+    ElementNotFound,
+    /// Action failed after attempt (network, timing, etc.).
+    Failed,
+}
+
+/// Outcome of a follow action.
+///
+/// Replaces the ambiguous `Result<bool>` pattern from `follow_from_tweet()`
+/// and `robust_follow()`.
+///
+/// # Examples
+///
+/// ```
+/// use auto::utils::twitter::FollowOutcome;
+///
+/// let outcome = FollowOutcome::Followed;
+/// match outcome {
+///     FollowOutcome::Followed => println!("now following"),
+///     FollowOutcome::AlreadyFollowing => println!("already following"),
+///     FollowOutcome::ButtonNotFound => println!("no follow button"),
+///     FollowOutcome::Failed => println!("follow failed"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FollowOutcome {
+    /// Successfully followed.
+    Followed,
+    /// Already following this user.
+    AlreadyFollowing,
+    /// Follow button not visible or not found.
+    ButtonNotFound,
+    /// Follow attempted but failed (retries exhausted, verification failed).
+    Failed,
+}
+
+/// Outcome of posting a reply or quote tweet.
+///
+/// Replaces the ambiguous `Result<bool>` pattern from `post_reply()`
+/// and `post_quote()`.
+///
+/// # Examples
+///
+/// ```
+/// use auto::utils::twitter::PostOutcome;
+///
+/// let outcome = PostOutcome::Posted;
+/// match outcome {
+///     PostOutcome::Posted => println!("posted"),
+///     PostOutcome::ComposerNotFound => println!("no composer"),
+///     PostOutcome::Failed => println!("post failed"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PostOutcome {
+    /// Post confirmed successful.
+    Posted,
+    /// Composer or post button not found.
+    ComposerNotFound,
+    /// Post attempted but failed.
+    Failed,
 }
 
 #[cfg(test)]
@@ -362,5 +660,158 @@ mod tests {
     fn status_url_into_inner() {
         let url = StatusUrl::from_unchecked("/status/42");
         assert_eq!(url.into_inner(), "/status/42");
+    }
+
+    #[test]
+    #[should_panic(expected = "TweetId::from called with empty string")]
+    fn tweet_id_from_empty_string_panics() {
+        let _: TweetId = "".into();
+    }
+
+    #[test]
+    #[should_panic(expected = "StatusUrl::from called with empty string")]
+    fn status_url_from_empty_string_panics() {
+        let _: StatusUrl = "".into();
+    }
+
+    // ========================================================================
+    // EngagementOutcome tests
+    // ========================================================================
+
+    #[test]
+    fn engagement_outcome_all_variants_exist() {
+        let completed = EngagementOutcome::Completed;
+        let already_done = EngagementOutcome::AlreadyDone;
+        let not_found = EngagementOutcome::ElementNotFound;
+        let failed = EngagementOutcome::Failed;
+
+        // Verify Debug/Display for each variant
+        assert!(!format!("{completed:?}").is_empty());
+        assert!(!format!("{already_done:?}").is_empty());
+        assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{failed:?}").is_empty());
+    }
+
+    #[test]
+    fn engagement_outcome_eq() {
+        assert_eq!(EngagementOutcome::Completed, EngagementOutcome::Completed);
+        assert_ne!(EngagementOutcome::Completed, EngagementOutcome::AlreadyDone);
+        assert_ne!(
+            EngagementOutcome::AlreadyDone,
+            EngagementOutcome::ElementNotFound
+        );
+        assert_ne!(
+            EngagementOutcome::ElementNotFound,
+            EngagementOutcome::Failed
+        );
+    }
+
+    #[test]
+    fn engagement_outcome_clone() {
+        let outcome = EngagementOutcome::Completed;
+        let cloned = outcome.clone();
+        assert_eq!(outcome, cloned);
+    }
+
+    #[test]
+    fn engagement_outcome_debug() {
+        assert_eq!(format!("{:?}", EngagementOutcome::Completed), "Completed");
+        assert_eq!(
+            format!("{:?}", EngagementOutcome::AlreadyDone),
+            "AlreadyDone"
+        );
+        assert_eq!(
+            format!("{:?}", EngagementOutcome::ElementNotFound),
+            "ElementNotFound"
+        );
+        assert_eq!(format!("{:?}", EngagementOutcome::Failed), "Failed");
+    }
+
+    // ========================================================================
+    // FollowOutcome tests
+    // ========================================================================
+
+    #[test]
+    fn follow_outcome_all_variants_exist() {
+        let followed = FollowOutcome::Followed;
+        let already = FollowOutcome::AlreadyFollowing;
+        let not_found = FollowOutcome::ButtonNotFound;
+        let failed = FollowOutcome::Failed;
+
+        assert!(!format!("{followed:?}").is_empty());
+        assert!(!format!("{already:?}").is_empty());
+        assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{failed:?}").is_empty());
+    }
+
+    #[test]
+    fn follow_outcome_eq() {
+        assert_eq!(FollowOutcome::Followed, FollowOutcome::Followed);
+        assert_ne!(FollowOutcome::Followed, FollowOutcome::AlreadyFollowing);
+        assert_ne!(
+            FollowOutcome::AlreadyFollowing,
+            FollowOutcome::ButtonNotFound
+        );
+        assert_ne!(FollowOutcome::ButtonNotFound, FollowOutcome::Failed);
+    }
+
+    #[test]
+    fn follow_outcome_clone() {
+        let outcome = FollowOutcome::Followed;
+        let cloned = outcome.clone();
+        assert_eq!(outcome, cloned);
+    }
+
+    #[test]
+    fn follow_outcome_debug() {
+        assert_eq!(format!("{:?}", FollowOutcome::Followed), "Followed");
+        assert_eq!(
+            format!("{:?}", FollowOutcome::AlreadyFollowing),
+            "AlreadyFollowing"
+        );
+        assert_eq!(
+            format!("{:?}", FollowOutcome::ButtonNotFound),
+            "ButtonNotFound"
+        );
+        assert_eq!(format!("{:?}", FollowOutcome::Failed), "Failed");
+    }
+
+    // ========================================================================
+    // PostOutcome tests
+    // ========================================================================
+
+    #[test]
+    fn post_outcome_all_variants_exist() {
+        let posted = PostOutcome::Posted;
+        let not_found = PostOutcome::ComposerNotFound;
+        let failed = PostOutcome::Failed;
+
+        assert!(!format!("{posted:?}").is_empty());
+        assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{failed:?}").is_empty());
+    }
+
+    #[test]
+    fn post_outcome_eq() {
+        assert_eq!(PostOutcome::Posted, PostOutcome::Posted);
+        assert_ne!(PostOutcome::Posted, PostOutcome::ComposerNotFound);
+        assert_ne!(PostOutcome::ComposerNotFound, PostOutcome::Failed);
+    }
+
+    #[test]
+    fn post_outcome_clone() {
+        let outcome = PostOutcome::Posted;
+        let cloned = outcome.clone();
+        assert_eq!(outcome, cloned);
+    }
+
+    #[test]
+    fn post_outcome_debug() {
+        assert_eq!(format!("{:?}", PostOutcome::Posted), "Posted");
+        assert_eq!(
+            format!("{:?}", PostOutcome::ComposerNotFound),
+            "ComposerNotFound"
+        );
+        assert_eq!(format!("{:?}", PostOutcome::Failed), "Failed");
     }
 }

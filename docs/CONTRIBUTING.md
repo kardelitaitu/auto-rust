@@ -70,6 +70,31 @@ cargo test test_shutdown_channel_signal
 cargo test -- --nocapture
 ```
 
+### Integration Tests
+
+Browser-backed integration tests require a running Chromium-based browser with CDP:
+```powershell
+.\scripts\run-integration-tests.ps1
+```
+This launches a headless Chrome/Brave/Edge on port 9222, runs the ignored
+integration tests, and cleans up.
+
+Use `-TestFilter` to run a subset:
+```powershell
+.\scripts\run-integration-tests.ps1 -TestFilter query
+```
+
+Orchestrator integration tests need configured browser profiles (not just a raw
+CDP port). Run them separately:
+```powershell
+.\scripts\run-integration-tests.ps1 -IncludeOrchestrator
+```
+
+Non-ignored unit tests always pass without a browser:
+```bash
+cargo test --lib
+```
+
 ### Adding a New Task
 
 1. Create file in `src/task/my_task.rs`

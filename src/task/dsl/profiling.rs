@@ -3,6 +3,7 @@
 //! Provides action profiling, metrics tracking, and comprehensive
 //! execution reports for DSL task runs.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// Performance profiler for action execution.
@@ -115,6 +116,23 @@ impl ActionMetrics {
         self.error = Some(error.to_string());
         self
     }
+}
+
+/// Record action execution in profiler (extracted from executor).
+#[allow(dead_code)]
+pub fn record_profile(
+    profilers: &mut HashMap<String, ActionProfiler>,
+    action_type: &str,
+    duration: Duration,
+    success: bool,
+) {
+    let profiler = profilers
+        .entry(action_type.to_string())
+        .or_insert_with(|| ActionProfiler {
+            action_type: action_type.to_string(),
+            ..Default::default()
+        });
+    profiler.record(duration, success);
 }
 
 /// Comprehensive execution report for a DSL task.

@@ -49,6 +49,42 @@ pub struct DebugEvent {
     pub error: Option<String>,
 }
 
+/// Watch a variable for changes (extracted from executor).
+///
+/// Returns `Some(DebugEvent)` if debug mode is on and the variable changed;
+/// returns `None` otherwise. The caller is responsible for pushing the event
+/// to the debug_events log.
+#[allow(dead_code)]
+pub fn watch_variable(
+    watched: &mut HashMap<String, String>,
+    debug_mode: bool,
+    name: &str,
+    value: &str,
+) -> Option<DebugEvent> {
+    if !debug_mode {
+        return None;
+    }
+
+    let mut event = None;
+    if let Some(old_value) = watched.get(name) {
+        if old_value != value {
+            event = Some(DebugEvent {
+                timestamp: chrono::Local::now().to_rfc3339(),
+                event_type: DebugEventType::VariableSet,
+                action_index: None,
+                action_type: None,
+                variable_name: Some(name.to_string()),
+                variable_value: Some(value.to_string()),
+                condition_result: None,
+                error: None,
+            });
+        }
+    }
+
+    watched.insert(name.to_string(), value.to_string());
+    event
+}
+
 /// Breakpoint configuration.
 pub struct Breakpoint {
     /// Action index to break on (if None, applies to all actions)

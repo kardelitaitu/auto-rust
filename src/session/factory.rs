@@ -29,7 +29,7 @@ impl SessionFactory {
     #[must_use]
     pub fn from_config(config: &Config) -> Self {
         Self {
-            connection_timeout_ms: config.browser.connection_timeout_ms.max(5000),
+            connection_timeout_ms: config.browser.connection_timeout_ms.get().max(5000),
             max_workers: config.browser.max_workers_per_session,
             cursor_overlay_ms: config.browser.cursor_overlay_ms,
             circuit_breaker_config: config.browser.circuit_breaker.clone(),
@@ -245,6 +245,7 @@ impl Default for SessionFactoryBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::DurationMs;
 
     #[test]
     fn test_session_factory_default() {
@@ -258,14 +259,14 @@ mod tests {
     fn test_session_factory_from_config() {
         let config = crate::config::Config {
             browser: crate::config::BrowserConfig {
-                connection_timeout_ms: 45000,
+                connection_timeout_ms: DurationMs::new_const(45000),
                 max_workers_per_session: 5,
                 cursor_overlay_ms: 100,
                 circuit_breaker: crate::config::CircuitBreakerConfig {
                     enabled: true,
                     failure_threshold: 10,
                     success_threshold: 3,
-                    half_open_time_ms: 60000,
+                    half_open_time_ms: DurationMs::new_const(60000),
                 },
                 ..Default::default()
             },

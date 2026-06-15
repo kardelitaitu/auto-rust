@@ -337,6 +337,7 @@ impl DecisionStrategyImpl for UnifiedStrategy {
 mod tests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     fn make_strategy() -> UnifiedStrategy {
         UnifiedStrategy::new("test-key".to_string())
@@ -513,7 +514,7 @@ mod tests {
     fn test_check_safety_tragedy() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "He died yesterday".to_string(),
             author: "user".to_string(),
             replies: vec![],
@@ -529,7 +530,7 @@ mod tests {
     fn test_check_safety_crypto_scam() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "guaranteed profit dm me".to_string(),
             author: "user".to_string(),
             replies: vec![],
@@ -545,7 +546,7 @@ mod tests {
     fn test_check_safety_excessive_hashtags() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "#a #b #c #d #e #f #g".to_string(),
             author: "user".to_string(),
             replies: vec![],
@@ -561,7 +562,7 @@ mod tests {
     fn test_check_safety_safe_content() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "I like programming in Rust".to_string(),
             author: "user".to_string(),
             replies: vec![],
@@ -576,7 +577,7 @@ mod tests {
     fn test_check_safety_checks_replies_too() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "some innocent text".to_string(),
             author: "user".to_string(),
             replies: vec!["he passed away".to_string()],
@@ -591,7 +592,7 @@ mod tests {
     fn test_check_safety_few_hashtags_ok() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "#rust #programming".to_string(),
             author: "user".to_string(),
             replies: vec![],
@@ -665,7 +666,7 @@ mod tests {
     fn test_build_user_prompt_includes_text_author_and_tone() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "Rust is great".to_string(),
             author: "devuser".to_string(),
             replies: vec![],
@@ -683,7 +684,7 @@ mod tests {
     fn test_build_user_prompt_no_replies_omits_section() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "test".to_string(),
             author: "u".to_string(),
             replies: vec![],
@@ -699,7 +700,7 @@ mod tests {
     fn test_build_user_prompt_with_replies() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "test".to_string(),
             author: "u".to_string(),
             replies: vec!["First reply".to_string(), "Second reply".to_string()],
@@ -718,7 +719,7 @@ mod tests {
         let s = make_strategy();
         let many: Vec<String> = (0..10).map(|i| format!("reply {i}")).collect();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "test".to_string(),
             author: "u".to_string(),
             replies: many,
@@ -740,7 +741,7 @@ mod tests {
     fn test_check_safety_exactly_five_hashtags_ok() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "#a #b #c #d #e".to_string(),
             author: "u".to_string(),
             replies: vec![],
@@ -756,7 +757,7 @@ mod tests {
     fn test_check_safety_exactly_six_hashtags_triggers() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "#a #b #c #d #e #f".to_string(),
             author: "u".to_string(),
             replies: vec![],
@@ -773,7 +774,7 @@ mod tests {
         let s = make_strategy();
         // Tragedy trigger in replies, not main text
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "innocent text".to_string(),
             author: "u".to_string(),
             replies: vec!["this is a scam".to_string()],
@@ -794,7 +795,7 @@ mod tests {
     fn test_check_safety_crypto_in_replies() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "nice post".to_string(),
             author: "u".to_string(),
             replies: vec!["dm for signal".to_string()],
@@ -844,7 +845,7 @@ mod tests {
     async fn test_decide_safety_tragedy_returns_skip() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "He passed away yesterday".to_string(),
             author: "u".to_string(),
             replies: vec![],
@@ -862,7 +863,7 @@ mod tests {
     async fn test_decide_safety_hashtags_returns_skip() {
         let s = make_strategy();
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "#a #b #c #d #e #f #g".to_string(),
             author: "u".to_string(),
             replies: vec![],
@@ -883,10 +884,11 @@ mod proptests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
     use crate::utils::twitter::twitteractivity_state::TaskConfig;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     fn make_ctx(text: &str, replies: Vec<&str>) -> TweetContext {
         TweetContext {
-            tweet_id: "pt-1".into(),
+            tweet_id: TweetId::from_unchecked("pt-1"),
             text: text.into(),
             author: "u".into(),
             replies: replies.into_iter().map(String::from).collect(),
@@ -902,7 +904,7 @@ mod proptests {
 
     fn make_ctx_full(text: &str, replies: Vec<&str>, persona: PersonaWeights) -> TweetContext {
         TweetContext {
-            tweet_id: "pt-1".into(),
+            tweet_id: TweetId::from_unchecked("pt-1"),
             text: text.into(),
             author: "u".into(),
             replies: replies.into_iter().map(String::from).collect(),

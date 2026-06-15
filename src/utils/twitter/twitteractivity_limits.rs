@@ -4,95 +4,137 @@
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::instrument;
+use std::num::NonZeroU32;
 
 /// Tracks the number of actions taken during a Twitter session.
 /// Used to enforce rate limits and prevent account restrictions.
+///
+/// Each counter field uses `Option<NonZeroU32>` to encode the invariant
+/// that zero is `None` and any positive value is `Some(non_zero)`. This
+/// prevents accidentally treating uninitialized counters as having a value.
+/// Use the getter methods (`likes()`, `retweets()`, etc.) to access the
+/// `u32` value, or the `increment_*` methods to increment.
 #[derive(Debug, Clone, Default)]
 pub struct EngagementCounters {
     /// Number of likes performed in current session
-    pub likes: u32,
+    likes: Option<NonZeroU32>,
     /// Number of retweets performed in current session
-    pub retweets: u32,
+    retweets: Option<NonZeroU32>,
     /// Number of follows performed in current session
-    pub follows: u32,
+    follows: Option<NonZeroU32>,
     /// Number of replies performed in current session
-    pub replies: u32,
+    replies: Option<NonZeroU32>,
     /// Number of thread dives performed in current session
-    pub thread_dives: u32,
+    thread_dives: Option<NonZeroU32>,
     /// Number of bookmarks performed in current session (V2)
-    pub bookmarks: u32,
+    bookmarks: Option<NonZeroU32>,
     /// Number of quote tweets performed in current session (V2)
-    pub quote_tweets: u32,
+    quote_tweets: Option<NonZeroU32>,
     /// Cached total (avoids recomputing sum on every `can_*` call)
     cached_total_actions: u32,
 }
 
 impl EngagementCounters {
     /// Creates a new counters instance with all counts at zero.
-    #[instrument]
     pub fn new() -> Self {
         Self::default()
     }
 
+    // ── Getters ────────────────────────────────────────────────────────
+
+    /// Returns the number of likes performed.
+    pub fn likes(&self) -> u32 {
+        self.likes.map_or(0, NonZeroU32::get)
+    }
+
+    /// Returns the number of retweets performed.
+    pub fn retweets(&self) -> u32 {
+        self.retweets.map_or(0, NonZeroU32::get)
+    }
+
+    /// Returns the number of follows performed.
+    pub fn follows(&self) -> u32 {
+        self.follows.map_or(0, NonZeroU32::get)
+    }
+
+    /// Returns the number of replies performed.
+    pub fn replies(&self) -> u32 {
+        self.replies.map_or(0, NonZeroU32::get)
+    }
+
+    /// Returns the number of thread dives performed.
+    pub fn thread_dives(&self) -> u32 {
+        self.thread_dives.map_or(0, NonZeroU32::get)
+    }
+
+    /// Returns the number of bookmarks performed.
+    pub fn bookmarks(&self) -> u32 {
+        self.bookmarks.map_or(0, NonZeroU32::get)
+    }
+
+    /// Returns the number of quote tweets performed.
+    pub fn quote_tweets(&self) -> u32 {
+        self.quote_tweets.map_or(0, NonZeroU32::get)
+    }
+
     /// Returns total number of engagement actions taken.
-    #[instrument]
     pub fn total_actions(&self) -> u32 {
         self.cached_total_actions
     }
 
+    // ── Increment methods ──────────────────────────────────────────────
+
     /// Increments the like counter.
-    #[instrument]
     pub fn increment_like(&mut self) {
-        self.likes += 1;
+        let nv = self.likes.map_or(1, |n| n.get() + 1);
+        self.likes = NonZeroU32::new(nv);
         self.cached_total_actions += 1;
     }
 
     /// Increments the retweet counter.
-    #[instrument]
     pub fn increment_retweet(&mut self) {
-        self.retweets += 1;
+        let nv = self.retweets.map_or(1, |n| n.get() + 1);
+        self.retweets = NonZeroU32::new(nv);
         self.cached_total_actions += 1;
     }
 
     /// Increments the follow counter.
-    #[instrument]
     pub fn increment_follow(&mut self) {
-        self.follows += 1;
+        let nv = self.follows.map_or(1, |n| n.get() + 1);
+        self.follows = NonZeroU32::new(nv);
         self.cached_total_actions += 1;
     }
 
     /// Increments the reply counter.
-    #[instrument]
     pub fn increment_reply(&mut self) {
-        self.replies += 1;
+        let nv = self.replies.map_or(1, |n| n.get() + 1);
+        self.replies = NonZeroU32::new(nv);
         self.cached_total_actions += 1;
     }
 
     /// Increments the thread dive counter.
-    #[instrument]
     pub fn increment_thread_dive(&mut self) {
-        self.thread_dives += 1;
+        let nv = self.thread_dives.map_or(1, |n| n.get() + 1);
+        self.thread_dives = NonZeroU32::new(nv);
         self.cached_total_actions += 1;
     }
 
     /// Increments the bookmark counter.
-    #[instrument]
     pub fn increment_bookmark(&mut self) {
-        self.bookmarks += 1;
+        let nv = self.bookmarks.map_or(1, |n| n.get() + 1);
+        self.bookmarks = NonZeroU32::new(nv);
         self.cached_total_actions += 1;
     }
 
     /// Increments the quote tweet counter.
-    #[instrument]
     pub fn increment_quote_tweet(&mut self) {
-        self.quote_tweets += 1;
+        let nv = self.quote_tweets.map_or(1, |n| n.get() + 1);
+        self.quote_tweets = NonZeroU32::new(nv);
         self.cached_total_actions += 1;
     }
 
     /// Increments counter by action type string.
     /// Used by `SessionState` for unified action recording.
-    #[instrument]
     pub fn increment(&mut self, action: &str) {
         match action {
             "like" => self.increment_like(),
@@ -107,17 +149,59 @@ impl EngagementCounters {
     }
 
     /// Returns a summary of all counters as a `HashMap`.
-    #[instrument]
     pub fn to_summary(&self) -> HashMap<String, u32> {
         let mut summary = HashMap::new();
-        summary.insert("likes".to_string(), self.likes);
-        summary.insert("retweets".to_string(), self.retweets);
-        summary.insert("follows".to_string(), self.follows);
-        summary.insert("replies".to_string(), self.replies);
-        summary.insert("thread_dives".to_string(), self.thread_dives);
-        summary.insert("bookmarks".to_string(), self.bookmarks);
-        summary.insert("quote_tweets".to_string(), self.quote_tweets);
+        summary.insert("likes".to_string(), self.likes());
+        summary.insert("retweets".to_string(), self.retweets());
+        summary.insert("follows".to_string(), self.follows());
+        summary.insert("replies".to_string(), self.replies());
+        summary.insert("thread_dives".to_string(), self.thread_dives());
+        summary.insert("bookmarks".to_string(), self.bookmarks());
+        summary.insert("quote_tweets".to_string(), self.quote_tweets());
         summary
+    }
+
+    /// Returns the sum of all individual counter fields.
+    ///
+    /// Use this to verify `cached_total_actions` is in sync, e.g. in tests
+    /// with `assert_eq!(counters.total_actions(), counters.computed_total())`.
+    #[must_use]
+    pub fn computed_total(&self) -> u32 {
+        self.likes()
+            + self.retweets()
+            + self.follows()
+            + self.replies()
+            + self.thread_dives()
+            + self.bookmarks()
+            + self.quote_tweets()
+    }
+
+    /// Debug assertion that `cached_total_actions` matches the sum of individual counters.
+    ///
+    /// Panics in debug builds if the cached total is out of sync, catching
+    /// bugs where a new counter field was added but the cached total was not
+    /// updated. No-op in release builds. For test coverage regardless of
+    /// build profile, use `computed_total()` with `assert_eq!` instead.
+    pub fn assert_total_synced(&self) {
+        debug_assert_eq!(self.cached_total_actions, self.computed_total());
+    }
+
+    /// Direct-set a counter value. Only available in test builds.
+    /// Used by mutation tests that need specific internal states.
+    #[cfg(test)]
+    pub fn set_for_test(&mut self, field: &str, value: u32) {
+        let nz = NonZeroU32::new(value);
+        match field {
+            "likes" => self.likes = nz,
+            "retweets" => self.retweets = nz,
+            "follows" => self.follows = nz,
+            "replies" => self.replies = nz,
+            "thread_dives" => self.thread_dives = nz,
+            "bookmarks" => self.bookmarks = nz,
+            "quote_tweets" => self.quote_tweets = nz,
+            _ => {}
+        }
+        self.cached_total_actions = self.computed_total();
     }
 }
 
@@ -207,13 +291,11 @@ impl Default for EngagementLimits {
 
 impl EngagementLimits {
     /// Creates a new limits instance with conservative defaults.
-    #[instrument]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Creates a new limits instance with custom values.
-    #[instrument]
     #[allow(clippy::too_many_arguments)]
     pub fn with_limits(
         max_likes: u32,
@@ -238,46 +320,40 @@ impl EngagementLimits {
     }
 
     /// Returns true if a like action is still allowed.
-    #[instrument(skip(counters))]
     pub fn can_like(&self, counters: &EngagementCounters) -> bool {
-        counters.likes < self.max_likes && counters.total_actions() < self.max_total_actions
+        counters.likes() < self.max_likes && counters.total_actions() < self.max_total_actions
     }
 
     /// Returns true if a retweet action is still allowed.
-    #[instrument(skip(counters))]
     pub fn can_retweet(&self, counters: &EngagementCounters) -> bool {
-        counters.retweets < self.max_retweets && counters.total_actions() < self.max_total_actions
+        counters.retweets() < self.max_retweets && counters.total_actions() < self.max_total_actions
     }
 
     /// Returns true if a follow action is still allowed.
-    #[instrument(skip(counters))]
     pub fn can_follow(&self, counters: &EngagementCounters) -> bool {
-        counters.follows < self.max_follows && counters.total_actions() < self.max_total_actions
+        counters.follows() < self.max_follows && counters.total_actions() < self.max_total_actions
     }
 
     /// Returns true if a reply action is still allowed.
-    #[instrument(skip(counters))]
     pub fn can_reply(&self, counters: &EngagementCounters) -> bool {
-        counters.replies < self.max_replies && counters.total_actions() < self.max_total_actions
+        counters.replies() < self.max_replies && counters.total_actions() < self.max_total_actions
     }
 
     /// Returns true if a thread dive is still allowed.
-    #[instrument(skip(counters))]
     pub fn can_dive(&self, counters: &EngagementCounters) -> bool {
-        counters.thread_dives < self.max_thread_dives
+        counters.thread_dives() < self.max_thread_dives
             && counters.total_actions() < self.max_total_actions
     }
 
     /// Returns true if a bookmark action is still allowed.
-    #[instrument(skip(counters))]
     pub fn can_bookmark(&self, counters: &EngagementCounters) -> bool {
-        counters.bookmarks < self.max_bookmarks && counters.total_actions() < self.max_total_actions
+        counters.bookmarks() < self.max_bookmarks
+            && counters.total_actions() < self.max_total_actions
     }
 
     /// Returns true if a quote tweet action is still allowed.
-    #[instrument(skip(counters))]
     pub fn can_quote_tweet(&self, counters: &EngagementCounters) -> bool {
-        counters.quote_tweets < self.max_quote_tweets
+        counters.quote_tweets() < self.max_quote_tweets
             && counters.total_actions() < self.max_total_actions
     }
 
@@ -317,31 +393,33 @@ impl EngagementLimits {
         let mut remaining = HashMap::new();
         remaining.insert(
             "likes".to_string(),
-            self.max_likes.saturating_sub(counters.likes),
+            self.max_likes.saturating_sub(counters.likes()),
         );
         remaining.insert(
             "retweets".to_string(),
-            self.max_retweets.saturating_sub(counters.retweets),
+            self.max_retweets.saturating_sub(counters.retweets()),
         );
         remaining.insert(
             "follows".to_string(),
-            self.max_follows.saturating_sub(counters.follows),
+            self.max_follows.saturating_sub(counters.follows()),
         );
         remaining.insert(
             "replies".to_string(),
-            self.max_replies.saturating_sub(counters.replies),
+            self.max_replies.saturating_sub(counters.replies()),
         );
         remaining.insert(
             "thread_dives".to_string(),
-            self.max_thread_dives.saturating_sub(counters.thread_dives),
+            self.max_thread_dives
+                .saturating_sub(counters.thread_dives()),
         );
         remaining.insert(
             "bookmarks".to_string(),
-            self.max_bookmarks.saturating_sub(counters.bookmarks),
+            self.max_bookmarks.saturating_sub(counters.bookmarks()),
         );
         remaining.insert(
             "quote_tweets".to_string(),
-            self.max_quote_tweets.saturating_sub(counters.quote_tweets),
+            self.max_quote_tweets
+                .saturating_sub(counters.quote_tweets()),
         );
         remaining.insert(
             "total_actions".to_string(),
@@ -412,13 +490,13 @@ mod tdd_tests {
         counters.increment("quote");
         counters.increment("dive");
 
-        assert_eq!(counters.likes, 1);
-        assert_eq!(counters.retweets, 1);
-        assert_eq!(counters.follows, 1);
-        assert_eq!(counters.replies, 1);
-        assert_eq!(counters.bookmarks, 1);
-        assert_eq!(counters.quote_tweets, 1);
-        assert_eq!(counters.thread_dives, 1);
+        assert_eq!(counters.likes(), 1);
+        assert_eq!(counters.retweets(), 1);
+        assert_eq!(counters.follows(), 1);
+        assert_eq!(counters.replies(), 1);
+        assert_eq!(counters.bookmarks(), 1);
+        assert_eq!(counters.quote_tweets(), 1);
+        assert_eq!(counters.thread_dives(), 1);
     }
 
     #[test]
@@ -447,7 +525,7 @@ mod tdd_tests {
         for _ in 0..10_000 {
             counters.increment_like();
         }
-        assert_eq!(counters.likes, 10_000);
+        assert_eq!(counters.likes(), 10_000);
     }
 
     #[test]
@@ -479,19 +557,6 @@ mod tdd_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_counters_increment() {
-        let mut counters = EngagementCounters::new();
-        assert_eq!(counters.likes, 0);
-
-        counters.increment_like();
-        assert_eq!(counters.likes, 1);
-
-        counters.increment_retweet();
-        counters.increment_follow();
-        assert_eq!(counters.total_actions(), 3);
-    }
 
     #[test]
     fn test_limits_default_values() {
@@ -607,13 +672,13 @@ mod tests {
     #[test]
     fn test_counters_all_zero_initially() {
         let counters = EngagementCounters::new();
-        assert_eq!(counters.likes, 0);
-        assert_eq!(counters.retweets, 0);
-        assert_eq!(counters.follows, 0);
-        assert_eq!(counters.replies, 0);
-        assert_eq!(counters.thread_dives, 0);
-        assert_eq!(counters.bookmarks, 0);
-        assert_eq!(counters.quote_tweets, 0);
+        assert_eq!(counters.likes(), 0);
+        assert_eq!(counters.retweets(), 0);
+        assert_eq!(counters.follows(), 0);
+        assert_eq!(counters.replies(), 0);
+        assert_eq!(counters.thread_dives(), 0);
+        assert_eq!(counters.bookmarks(), 0);
+        assert_eq!(counters.quote_tweets(), 0);
     }
 
     #[test]
@@ -622,7 +687,7 @@ mod tests {
         for _ in 0..10 {
             counters.increment_like();
         }
-        assert_eq!(counters.likes, 10);
+        assert_eq!(counters.likes(), 10);
     }
 
     #[test]
@@ -649,17 +714,6 @@ mod tests {
     }
 
     #[test]
-    fn test_remaining_saturates_at_zero() {
-        let limits = EngagementLimits::new();
-        let mut counters = EngagementCounters::new();
-        for _ in 0..100 {
-            counters.increment_like();
-        }
-        let remaining = limits.remaining(&counters);
-        assert_eq!(remaining.get("likes").copied().unwrap_or(0), 0);
-    }
-
-    #[test]
     fn test_available_actions_empty_when_all_blocked() {
         let limits = EngagementLimits::with_limits(0, 0, 0, 0, 0, 0, 0, 0);
         let counters = EngagementCounters::new();
@@ -673,8 +727,8 @@ mod tests {
         counters.increment_like();
         counters.increment_retweet();
         let cloned = counters.clone();
-        assert_eq!(cloned.likes, counters.likes);
-        assert_eq!(cloned.retweets, counters.retweets);
+        assert_eq!(cloned.likes(), counters.likes());
+        assert_eq!(cloned.retweets(), counters.retweets());
     }
 
     #[test]
@@ -905,7 +959,7 @@ mod gap_tests {
     fn increment_dive_dispatches_correctly() {
         let mut counters = EngagementCounters::new();
         counters.increment("dive");
-        assert_eq!(counters.thread_dives, 1);
+        assert_eq!(counters.thread_dives(), 1);
     }
 
     // to_summary reflects all counter values
@@ -1103,23 +1157,28 @@ mod mutation_tests {
         let mut counters = EngagementCounters::new();
         counters.increment_like();
         assert_eq!(
-            counters.likes, 1,
+            counters.likes(),
+            1,
             "increment_like must add (catches += → -= swap: 0+1=1 vs 0-1=MAX)"
         );
         assert_eq!(counters.total_actions(), 1);
 
         // Increment from non-zero to catch += → *= mutation (2+1=3 vs 2*1=2)
-        counters.likes = 2;
-        counters.cached_total_actions = 5;
+        counters.set_for_test("likes", 2);
+        counters.set_for_test("retweets", 1);
+        counters.set_for_test("follows", 1);
+        counters.set_for_test("replies", 1);
+        // cached_total_actions = 2 + 1 + 1 + 1 = 5
         counters.increment_like();
         assert_eq!(
-            counters.likes, 3,
+            counters.likes(),
+            3,
             "increment from 2 must produce 3 (catches += → *= swap: 2+1=3 vs 2*1=2)"
         );
         assert_eq!(
             counters.total_actions(),
             6,
-            "cached_total_actions must also use addition"
+            "cached_total_actions must also use addition (5 + 1 = 6)"
         );
     }
 
@@ -1138,13 +1197,13 @@ mod mutation_tests {
             7,
             "cached_total_actions should match 7 increments"
         );
-        assert_eq!(counters.likes, 1);
-        assert_eq!(counters.retweets, 1);
-        assert_eq!(counters.follows, 1);
-        assert_eq!(counters.replies, 1);
-        assert_eq!(counters.thread_dives, 1);
-        assert_eq!(counters.bookmarks, 1);
-        assert_eq!(counters.quote_tweets, 1);
+        assert_eq!(counters.likes(), 1);
+        assert_eq!(counters.retweets(), 1);
+        assert_eq!(counters.follows(), 1);
+        assert_eq!(counters.replies(), 1);
+        assert_eq!(counters.thread_dives(), 1);
+        assert_eq!(counters.bookmarks(), 1);
+        assert_eq!(counters.quote_tweets(), 1);
     }
 
     // ── available_actions: empty vec mutation ─────────────────────────────
@@ -1247,37 +1306,102 @@ mod mutation_tests {
         );
     }
 
+    // ── cached_total_actions sync guards ─────────────────────────────────
+
+    #[test]
+    fn computed_total_synced_after_each_increment_type() {
+        // Verify computed_total() matches total_actions() after each increment type
+        let mut counters = EngagementCounters::new();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        counters.increment_like();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        counters.increment_retweet();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        counters.increment_follow();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        counters.increment_reply();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        counters.increment_thread_dive();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        counters.increment_bookmark();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        counters.increment_quote_tweet();
+        assert_eq!(counters.total_actions(), counters.computed_total());
+
+        assert_eq!(counters.total_actions(), 7);
+    }
+
+    #[test]
+    fn computed_total_synced_after_mixed_increments() {
+        let mut counters = EngagementCounters::new();
+        for _ in 0..5 {
+            counters.increment_like();
+        }
+        for _ in 0..3 {
+            counters.increment_retweet();
+        }
+        for _ in 0..2 {
+            counters.increment_follow();
+        }
+        counters.increment_reply();
+        counters.increment_thread_dive();
+        counters.increment_bookmark();
+        counters.increment_quote_tweet();
+
+        assert_eq!(counters.total_actions(), counters.computed_total());
+        assert_eq!(counters.total_actions(), 14);
+    }
+
+    #[test]
+    fn computed_total_synced_after_unified_increment() {
+        let mut counters = EngagementCounters::new();
+        for action in [
+            "like", "retweet", "follow", "reply", "bookmark", "quote", "dive",
+        ] {
+            counters.increment(action);
+            assert_eq!(counters.total_actions(), counters.computed_total());
+        }
+        assert_eq!(counters.total_actions(), 7);
+    }
+
     // ── Match-arm deletion in increment() dispatch ────────────────────────
 
     #[test]
     fn mutation_increment_dispatch_all_arms() {
         let mut counters = EngagementCounters::new();
         counters.increment("like");
-        assert_eq!(counters.likes, 1);
+        assert_eq!(counters.likes(), 1);
 
         let mut counters = EngagementCounters::new();
         counters.increment("retweet");
-        assert_eq!(counters.retweets, 1);
+        assert_eq!(counters.retweets(), 1);
 
         let mut counters = EngagementCounters::new();
         counters.increment("follow");
-        assert_eq!(counters.follows, 1);
+        assert_eq!(counters.follows(), 1);
 
         let mut counters = EngagementCounters::new();
         counters.increment("reply");
-        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.replies(), 1);
 
         let mut counters = EngagementCounters::new();
         counters.increment("bookmark");
-        assert_eq!(counters.bookmarks, 1);
+        assert_eq!(counters.bookmarks(), 1);
 
         let mut counters = EngagementCounters::new();
         counters.increment("quote");
-        assert_eq!(counters.quote_tweets, 1);
+        assert_eq!(counters.quote_tweets(), 1);
 
         let mut counters = EngagementCounters::new();
         counters.increment("dive");
-        assert_eq!(counters.thread_dives, 1);
+        assert_eq!(counters.thread_dives(), 1);
     }
 
     // ── to_summary: missing key mutation ──────────────────────────────────
@@ -1306,5 +1430,180 @@ mod mutation_tests {
         assert!(!limits.can_dive(&counters));
         assert!(!limits.can_bookmark(&counters));
         assert!(!limits.can_quote_tweet(&counters));
+    }
+}
+
+// ============================================================================
+// Fuzz-style proptests for EngagementCounters
+// ============================================================================
+
+#[cfg(test)]
+mod fuzz_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Strategy that generates a sequence of increment operations.
+    /// Each element is an action type string.
+    fn arb_action() -> impl Strategy<Value = &'static str> {
+        prop_oneof![
+            Just("like"),
+            Just("retweet"),
+            Just("follow"),
+            Just("reply"),
+            Just("bookmark"),
+            Just("quote"),
+            Just("dive"),
+        ]
+    }
+
+    proptest! {
+        /// Property: After N increments, total_actions() == N == computed_total().
+        /// This verifies cached_total_actions stays in sync with individual counters
+        /// regardless of the mix of action types.
+        #[test]
+        fn proptest_total_actions_equals_increment_count(
+            actions in proptest::collection::vec(arb_action(), 0..=100usize),
+        ) {
+            let mut counters = EngagementCounters::new();
+            let count = actions.len() as u32;
+
+            for action in actions {
+                counters.increment(action);
+            }
+
+            prop_assert_eq!(counters.total_actions(), count,
+                "total_actions() should equal number of increments ({})", count);
+            prop_assert_eq!(counters.total_actions(), counters.computed_total(),
+                "cached total must match computed sum");
+        }
+
+        /// Property: total_actions() == computed_total() after any sequence
+        /// of individual increment_*() calls for each action type.
+        #[test]
+        fn proptest_total_sync_after_mixed_increments(
+            likes in 0u32..=50u32,
+            retweets in 0u32..=50u32,
+            follows in 0u32..=50u32,
+            replies in 0u32..=50u32,
+            bookmarks in 0u32..=50u32,
+            quotes in 0u32..=50u32,
+            dives in 0u32..=50u32,
+        ) {
+            let mut counters = EngagementCounters::new();
+
+            for _ in 0..likes { counters.increment_like(); }
+            for _ in 0..retweets { counters.increment_retweet(); }
+            for _ in 0..follows { counters.increment_follow(); }
+            for _ in 0..replies { counters.increment_reply(); }
+            for _ in 0..bookmarks { counters.increment_bookmark(); }
+            for _ in 0..quotes { counters.increment_quote_tweet(); }
+            for _ in 0..dives { counters.increment_thread_dive(); }
+
+            let expected_total = likes + retweets + follows + replies
+                + bookmarks + quotes + dives;
+
+            prop_assert_eq!(counters.total_actions(), expected_total,
+                "total_actions() should match sum of individual counters");
+            prop_assert_eq!(counters.total_actions(), counters.computed_total(),
+                "cached total must match computed sum after individual increments");
+
+            // Verify individual field values
+            prop_assert_eq!(counters.likes(), likes);
+            prop_assert_eq!(counters.retweets(), retweets);
+            prop_assert_eq!(counters.follows(), follows);
+            prop_assert_eq!(counters.replies(), replies);
+            prop_assert_eq!(counters.bookmarks(), bookmarks);
+            prop_assert_eq!(counters.quote_tweets(), quotes);
+            prop_assert_eq!(counters.thread_dives(), dives);
+        }
+
+        /// Property: No overflow panic on large increment sequences.
+        /// u32 overflow is a debug-mode panic in Rust; in release mode it wraps.
+        /// This test verifies that large sequences complete without panicking.
+        #[test]
+        fn proptest_no_overflow_on_large_increments(
+            like_count in 0u32..=500u32,
+            retweet_count in 0u32..=500u32,
+        ) {
+            let mut counters = EngagementCounters::new();
+            for _ in 0..like_count { counters.increment_like(); }
+            for _ in 0..retweet_count { counters.increment_retweet(); }
+
+            let expected = like_count + retweet_count;
+            prop_assert_eq!(counters.total_actions(), expected,
+                "total should match sum even with large counts");
+            prop_assert_eq!(counters.total_actions(), counters.computed_total());
+        }
+
+        /// Property: increment() dispatch assigns to the correct field.
+        /// Tests that the unified increment method maps to the right
+        /// individual method for each action type.
+        #[test]
+        fn proptest_increment_dispatch(
+            likes in 0u32..=20u32,
+            retweets in 0u32..=20u32,
+            follows in 0u32..=20u32,
+            replies in 0u32..=20u32,
+            bookmarks in 0u32..=20u32,
+            quotes in 0u32..=20u32,
+            dives in 0u32..=20u32,
+        ) {
+            let mut counters = EngagementCounters::new();
+
+            for _ in 0..likes { counters.increment("like"); }
+            for _ in 0..retweets { counters.increment("retweet"); }
+            for _ in 0..follows { counters.increment("follow"); }
+            for _ in 0..replies { counters.increment("reply"); }
+            for _ in 0..bookmarks { counters.increment("bookmark"); }
+            for _ in 0..quotes { counters.increment("quote"); }
+            for _ in 0..dives { counters.increment("dive"); }
+
+            prop_assert_eq!(counters.likes(), likes);
+            prop_assert_eq!(counters.retweets(), retweets);
+            prop_assert_eq!(counters.follows(), follows);
+            prop_assert_eq!(counters.replies(), replies);
+            prop_assert_eq!(counters.bookmarks(), bookmarks);
+            prop_assert_eq!(counters.quote_tweets(), quotes);
+            prop_assert_eq!(counters.thread_dives(), dives);
+
+            let expected_total = likes + retweets + follows + replies
+                + bookmarks + quotes + dives;
+            prop_assert_eq!(counters.total_actions(), expected_total);
+        }
+
+        /// Property: to_summary() keys and values match individual field access.
+        #[test]
+        fn proptest_to_summary_consistent(
+            likes in 0u32..=30u32,
+            retweets in 0u32..=30u32,
+            follows in 0u32..=30u32,
+            replies in 0u32..=30u32,
+            bookmarks in 0u32..=30u32,
+            quotes in 0u32..=30u32,
+            dives in 0u32..=30u32,
+        ) {
+            let mut counters = EngagementCounters::new();
+
+            for _ in 0..likes { counters.increment_like(); }
+            for _ in 0..retweets { counters.increment_retweet(); }
+            for _ in 0..follows { counters.increment_follow(); }
+            for _ in 0..replies { counters.increment_reply(); }
+            for _ in 0..bookmarks { counters.increment_bookmark(); }
+            for _ in 0..quotes { counters.increment_quote_tweet(); }
+            for _ in 0..dives { counters.increment_thread_dive(); }
+
+            let summary = counters.to_summary();
+
+            prop_assert_eq!(summary.get("likes").copied().unwrap_or(0), likes);
+            prop_assert_eq!(summary.get("retweets").copied().unwrap_or(0), retweets);
+            prop_assert_eq!(summary.get("follows").copied().unwrap_or(0), follows);
+            prop_assert_eq!(summary.get("replies").copied().unwrap_or(0), replies);
+            prop_assert_eq!(summary.get("bookmarks").copied().unwrap_or(0), bookmarks);
+            prop_assert_eq!(summary.get("quote_tweets").copied().unwrap_or(0), quotes);
+            prop_assert_eq!(summary.get("thread_dives").copied().unwrap_or(0), dives);
+
+            // Verify exactly 7 keys
+            prop_assert_eq!(summary.len(), 7);
+        }
     }
 }

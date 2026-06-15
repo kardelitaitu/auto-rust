@@ -1,0 +1,36 @@
+version: 1
+id: 0025-modularize-engagement
+title: Modularize twitteractivity_engagement.rs — Extract Scoring, Dispatch, and Tests
+status: done
+owner: spec-agent
+implementer: completed
+priority: P2
+area:
+  - twitter
+  - modularization
+  - engagement
+files:
+  code:
+    - src/utils/twitter/twitteractivity_engagement.rs
+    - src/utils/twitter/engagement/
+  docs:
+    - docs/specs/_done/0025-modularize-engagement/plan.md
+    - docs/specs/_done/0025-modularize-engagement/validation.md
+acceptance:
+  - "Extract handle_engagement_decision() + modulate_persona_by_sentiment() into engagement/scoring.rs (≤150 lines)"
+  - "Extract per-action dispatch logic (like/retweet/quote/follow/reply/bookmark) from process_candidate() match block into engagement/dispatch.rs as dispatch_action() (≤250 lines)"
+  - "process_candidate() stays in engagement/mod.rs, calls dispatch::dispatch_action() instead of inline match block"
+  - "engage_replies() stays in engagement/mod.rs alongside SENTIMENT_ANALYZER static"
+  - "All 5 test modules extracted to engagement/tests.rs (≤600 lines)"
+  - "Delete original src/utils/twitter/twitteractivity_engagement.rs; replace with engagement/ directory"
+  - "Update all imports in dependent files to use crate::utils::twitter::engagement::*"
+  - "cargo check passes; cargo test --lib twitteractivity_engagement passes; check.ps1 passes"
+non_goals:
+  - Do not change engagement behavior, scoring algorithms, or action execution logic
+  - Do not refactor process_candidate() flow — only extract the dispatch match block
+  - Do not modify files outside src/utils/twitter/twitteractivity_engagement.rs or src/utils/twitter/engagement/
+  - Do not modify any twitteractivity_*.rs files besides the target file
+risks:
+  - "process_candidate() has 298 lines with 7 action types in match block — dispatch extraction must preserve all retry/counter/sentiment logic per action"
+  - "SENTIMENT_ANALYZER static is shared between modulate_persona_by_sentiment() calls — must stay accessible from both scoring.rs and mod.rs"
+  - "Multiple dependent files import from twitteractivity_engagement — import paths need careful updating"

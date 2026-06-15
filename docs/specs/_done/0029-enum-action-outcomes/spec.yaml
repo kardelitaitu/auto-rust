@@ -1,0 +1,40 @@
+version: 1
+id: 0029-enum-action-outcomes
+title: Replace ambiguous Result<bool> with typed outcome enums
+status: done
+owner: spec-agent
+implementer: archived-pending
+priority: P2
+area:
+  - twitter engagement
+  - task files
+  - utils
+files:
+  code:
+    - src/utils/twitter/twitteractivity_interact.rs
+    - src/utils/twitter/twitteractivity_actions.rs
+    - src/utils/twitter/twitteractivity_llm_execute.rs
+    - src/task/twitterlike.rs
+    - src/task/twitterretweet.rs
+    - src/task/twitterreply.rs
+    - src/task/twitterquote.rs
+    - src/task/twitterfollow.rs
+  docs:
+    - docs/specs/_done/0029-enum-action-outcomes/plan.md
+    - docs/specs/_done/0029-enum-action-outcomes/validation.md
+acceptance:
+  - `like_tweet()`, `retweet_tweet()`, `reply_to_tweet()`, `follow_from_tweet()`, `quote_tweet()` return typed enums instead of `bool`
+  - `post_reply()`/`post_quote()` return `PostOutcome` enum instead of `bool`
+  - `robust_follow()` returns `FollowOutcome` enum instead of `bool`
+  - Boolean status checks (`is_already_following`, `check_soft_error`, `is_on_home_feed`, etc.) remain `bool`
+  - All call sites use exhaustive `match` on outcomes
+  - `cargo check --tests` passes
+  - `cargo test -p auto-rust -- twitter` passes with 0 regressions
+non_goals:
+  - Do NOT convert boolean status checks (is_X, check_X) — these are true predicates
+  - Do NOT change `find_and_click_follow_button` or `click_retweet_button` (low-level click operations where bool is appropriate)
+  - Do NOT break the engagement dispatch pipeline
+risks:
+  - Engagement dispatch (`dispatch_action`) uses `bool` returns — enum introduction must be backward-compatible or done atomically
+  - `robust_follow` has complex retry logic — enum must carry failure reasons
+  - Test code may rely on `assert!(result.is_ok())` patterns that break with enum

@@ -159,6 +159,7 @@ mod tests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
     use crate::utils::twitter::twitteractivity_state::TaskConfig;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     // ========================================================================
     // create_strategies Tests
@@ -315,7 +316,7 @@ mod tests {
     async fn test_decide_falls_back_when_primary_unavailable() {
         let engine = UnifiedEngine::with_llm(DecisionStrategy::Unified, String::new());
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "test".to_string(),
             author: "u".to_string(),
             replies: vec![],

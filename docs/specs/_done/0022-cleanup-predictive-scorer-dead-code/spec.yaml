@@ -1,0 +1,31 @@
+version: 1
+id: 0022-cleanup-predictive-scorer-dead-code
+title: Cleanup Predictive Scorer Dead Code
+status: done
+owner: spec-agent
+implementer: implementation-agent
+priority: P2
+area:
+  - adaptive
+  - dead-code
+files:
+  code:
+    - src/adaptive/predictive_scorer.rs
+  docs:
+    - docs/specs/_done/0022-cleanup-predictive-scorer-dead-code/plan.md
+    - docs/specs/_done/0022-cleanup-predictive-scorer-dead-code/validation.md
+acceptance:
+  - "Remove 10 #[allow(dead_code)] annotations safely"
+  - "Delete EngagementModel struct + ModelWeights + accuracy types (unused ML prediction infra)"
+  - "Delete 5 feature extractor structs (TextFeature, TemporalFeature, UserFeature, ContextFeature, FeatureExtractor)"
+  - "Delete 2 recommendation engine types (ActionRecommendationEngine, TimingRecommendation)"
+  - "Delete FeatureExtractor::new() and EngagementModel::new() constructors"
+  - "Keep only ActionRecommender + UserBehaviorProfile (actively used)"
+  - "cargo check passes; cargo test --lib predictive_scorer passes; cargo clippy clean"
+non_goals:
+  - Do not change ActionRecommender behavior or API
+  - Do not remove UserBehaviorProfile
+  - Do not modify files outside src/adaptive/
+risks:
+  - "Low: dead code annotations confirm these types are never constructed or called"
+  - "If any test references removed types, update test imports"

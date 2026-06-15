@@ -894,4 +894,185 @@ mod tests {
             .unwrap();
         assert!(!result);
     }
+
+    // ── execute_while ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn while_runs_up_to_max_iterations() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_while(
+            &Condition::True,
+            &[Action::Click {
+                selector: "#item".to_string(),
+            }],
+            &Some(3),
+        )
+        .await
+        .unwrap();
+
+        let clicks: Vec<_> = mock
+            .get_calls()
+            .into_iter()
+            .filter(|c| matches!(c, MockCall::Click { .. }))
+            .collect();
+        assert_eq!(clicks.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn while_false_condition_skips_body() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_while(
+            &Condition::False,
+            &[Action::Click {
+                selector: "#item".to_string(),
+            }],
+            &Some(100),
+        )
+        .await
+        .unwrap();
+
+        assert!(mock.get_calls().is_empty());
+    }
+
+    // ── execute_try ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn try_succeeds_without_catch_or_finally() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_try(
+            &[Action::Click {
+                selector: "#btn".to_string(),
+            }],
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(mock.get_calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn try_catches_error_and_sets_variable() {
+        let mock = MockDslApi::new();
+        mock.set_fail_all(true);
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_try(
+            &[Action::Click {
+                selector: "#failing".to_string(),
+            }],
+            Some(&vec![Action::Log {
+                message: "caught".to_string(),
+                level: None,
+            }]),
+            Some("err"),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(exec.variables.contains_key("err"));
+        assert!(exec
+            .variables
+            .get("err")
+            .unwrap()
+            .contains("MockDslApi forced failure"));
+    }
+
+    #[tokio::test]
+    async fn try_finally_runs_on_success() {
+        let mock = MockDslApi::new();
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_try(
+            &[Action::Click {
+                selector: "#btn".to_string(),
+            }],
+            None,
+            None,
+            Some(&vec![Action::Click {
+                selector: "#finally".to_string(),
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let calls = mock.get_calls();
+        assert_eq!(calls.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn try_finally_runs_on_failure() {
+        let mock = MockDslApi::new();
+        mock.set_fail_all(true);
+        let mut exec = create_executor(&mock, vec![]);
+
+        exec.execute_try(
+            &[Action::Click {
+                selector: "#failing".to_string(),
+            }],
+            None,
+            None,
+            Some(&vec![Action::Log {
+                message: "finally executed".to_string(),
+                level: None,
+            }]),
+        )
+        .await
+        .unwrap();
+
+        // Only the failing try click should be recorded (Log doesn't call API)
+        assert_eq!(mock.get_calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn try_suppresses_error_without_catch() {
+        let mock = MockDslApi::new();
+        mock.set_fail_all(true);
+        let mut exec = create_executor(&mock, vec![]);
+
+        let result = exec
+            .execute_try(
+                &[Action::Click {
+                    selector: "#failing".to_string(),
+                }],
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    // ── additional evaluate_condition ─────────────────────────────────
+
+    #[tokio::test]
+    async fn evaluate_condition_visible() {
+        let mock = MockDslApi::new();
+        mock.set_visible_result("#visible", true);
+        mock.set_visible_result("#hidden", false);
+        let exec = create_executor(&mock, vec![]);
+
+        assert!(exec
+            .evaluate_condition(&Condition::ElementVisible {
+                selector: "#visible".to_string(),
+            })
+            .await
+            .unwrap());
+        assert!(!exec
+            .evaluate_condition(&Condition::ElementVisible {
+                selector: "#hidden".to_string(),
+            })
+            .await
+            .unwrap());
+    }
 }

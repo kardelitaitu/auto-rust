@@ -598,16 +598,18 @@ mod tests {
 
     #[test]
     fn test_render_dry_run_output_smoke() {
+        use auto::session::DurationMs;
+
         let config = auto::config::Config {
             browser: auto::config::BrowserConfig {
-                connection_timeout_ms: 1,
+                connection_timeout_ms: DurationMs::new_const(1),
                 max_discovery_retries: 1,
-                discovery_retry_delay_ms: 1,
+                discovery_retry_delay_ms: DurationMs::new_const(1),
                 circuit_breaker: auto::config::CircuitBreakerConfig {
                     enabled: false,
                     failure_threshold: 1,
                     success_threshold: 1,
-                    half_open_time_ms: 1,
+                    half_open_time_ms: DurationMs::new_const(1),
                 },
                 profiles: vec![],
                 roxybrowser: auto::config::RoxybrowserConfig {
@@ -625,12 +627,12 @@ mod tests {
             },
             orchestrator: auto::config::OrchestratorConfig {
                 max_global_concurrency: 1,
-                task_timeout_ms: 1,
-                group_timeout_ms: 1,
-                worker_wait_timeout_ms: 1,
+                task_timeout_ms: DurationMs::new_const(1),
+                group_timeout_ms: DurationMs::new_const(1),
+                worker_wait_timeout_ms: DurationMs::new_const(1),
                 task_stagger_delay_ms: 1,
                 max_retries: 0,
-                retry_delay_ms: 1,
+                retry_delay_ms: DurationMs::new_const(1),
             },
             twitter_activity: auto::config::TwitterActivityConfig::default(),
             tracing: auto::config::TracingConfig::default(),

@@ -1,0 +1,40 @@
+version: 1
+id: 0017-modularize-twitter-state
+title: Modularize Twitter Activity State
+status: done
+owner: spec-agent
+implementer: buffy
+priority: P2
+area:
+  - twitter
+  - state-management
+files:
+  code:
+    - src/utils/twitter/twitteractivity_state.rs (replaced by state/ submodules)
+    - src/utils/twitter/state/mod.rs
+    - src/utils/twitter/state/types.rs
+    - src/utils/twitter/state/session.rs
+    - src/utils/twitter/state/tracking.rs
+    - src/utils/twitter/state/config.rs
+  docs:
+    - docs/specs/_done/0017-modularize-twitter-state/plan.md
+    - docs/specs/_done/0017-modularize-twitter-state/validation.md
+acceptance:
+  - twitteractivity_state.rs reduced from 1226 to ≤50 lines (re-export shim)
+  - state/types.rs ≤250 (TaskValidationError, SentimentTemplates, CandidateContext, CandidateResult)
+  - state/session.rs ≤500 (SessionState, RateLimitBackoff + impls + tests)
+  - state/tracking.rs ≤200 (TweetActionTracker + impls)
+  - state/config.rs ≤400 (TaskConfig + impls + helpers + tests)
+  - All submodules compile (cargo check -p auto-rust)
+  - All existing tests pass (cargo test --lib)
+  - No public API breakage — re-exports preserve all paths
+  - cargo clippy --all-targets --all-features passes with 0 warnings
+non_goals:
+  - No behavioral changes to state management or Twitter automation
+  - No changes to public type signatures or trait impls
+  - No new features or optimizations
+  - No changes to how other modules import state types
+risks:
+  - SessionState has Default impl that depends on EngagementLimits — extract together
+  - TweetActionTracker's Default impl uses hardcoded value — preserve
+  - TaskConfig has from_payload constructor used by CLI — preserve signature

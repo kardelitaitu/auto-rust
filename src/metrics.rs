@@ -39,6 +39,7 @@ static ERROR_KIND_STRINGS: std::sync::LazyLock<FxHashMap<TaskErrorKind, &'static
         m.insert(TaskErrorKind::Navigation, "Navigation");
         m.insert(TaskErrorKind::Session, "Session");
         m.insert(TaskErrorKind::Browser, "Browser");
+        m.insert(TaskErrorKind::ExternalService, "ExternalService");
         m.insert(TaskErrorKind::Unknown, "Unknown");
         m
     });

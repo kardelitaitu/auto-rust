@@ -58,6 +58,7 @@ use super::twitteractivity_selectors::{
     js_find_reply_submit_button, js_find_reply_textarea, js_root_tweet_button_center,
     selector_follow_button, REPLY_BUTTON_SELECTOR,
 };
+use super::{EngagementOutcome, FollowOutcome};
 
 /// Gets the current page URL.
 #[instrument(skip(api))]
@@ -122,7 +123,7 @@ async fn click_root_tweet_button(
     api: &TaskContext,
     selector: &str,
     action_name: &str,
-) -> Result<bool> {
+) -> Result<EngagementOutcome> {
     let js = root_tweet_button_center_js(selector);
     let result = api.page().evaluate(js).await?;
 
@@ -136,12 +137,12 @@ async fn click_root_tweet_button(
             human_pause(api, 250).await;
             api.click_at(x, y).await?;
             human_pause(api, 500).await;
-            return Ok(true);
+            return Ok(EngagementOutcome::Completed);
         }
     }
 
     info!("Root tweet {action_name} button not found");
-    Ok(false)
+    Ok(EngagementOutcome::ElementNotFound)
 }
 
 /// Clicks the "like" (heart) button on the current tweet.
@@ -173,15 +174,14 @@ async fn click_root_tweet_button(
 ///
 /// - Like button: `LIKE_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
-pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
+pub async fn like_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
     use super::twitteractivity_selectors::LIKE_BUTTON_SELECTOR;
 
-    if click_root_tweet_button(api, LIKE_BUTTON_SELECTOR, "like").await? {
+    let outcome = click_root_tweet_button(api, LIKE_BUTTON_SELECTOR, "like").await?;
+    if matches!(outcome, EngagementOutcome::Completed) {
         info!("Clicked root tweet like button");
-        return Ok(true);
     }
-
-    Ok(false)
+    Ok(outcome)
 }
 
 /// Clicks the "retweet" button on the current tweet to open the retweet menu.
@@ -215,15 +215,10 @@ pub async fn like_tweet(api: &TaskContext) -> Result<bool> {
 /// Uses broad search: `button[data-testid], a[data-testid]`
 /// Filters for: data-testid includes "retweet" but not "unretweet"
 #[instrument(skip(api))]
-pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
+pub async fn click_retweet_button(api: &TaskContext) -> Result<EngagementOutcome> {
     use super::twitteractivity_selectors::RETWEET_BUTTON_SELECTOR;
 
-    if click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
-        return Ok(true);
-    }
-
-    info!("Retweet button not found");
-    Ok(false)
+    click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await
 }
 
 /// Full retweet action: click retweet button then confirm in modal.
@@ -251,13 +246,15 @@ pub async fn click_retweet_button(api: &TaskContext) -> Result<bool> {
 /// - Scrolls confirm button into view and clicks
 /// - Waits 800ms after confirmation
 #[instrument(skip(api))]
-pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
+pub async fn retweet_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
     use super::twitteractivity_selectors::RETWEET_BUTTON_SELECTOR;
     use super::twitteractivity_selectors::RETWEET_CONFIRM_SELECTOR;
 
     info!("Starting retweet action");
-    if !click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await? {
-        return Ok(false);
+    if click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await?
+        != EngagementOutcome::Completed
+    {
+        return Ok(EngagementOutcome::ElementNotFound);
     }
     info!("Clicked retweet button, waiting for menu...");
 
@@ -268,18 +265,18 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
     // Scroll retweet confirm button into view before clicking
     if let Err(e) = api.scroll_into_view(RETWEET_CONFIRM_SELECTOR).await {
         info!("Failed to scroll retweet confirm button into view: {e}");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
     // Click confirm button
     if let Err(e) = api.click(RETWEET_CONFIRM_SELECTOR).await {
         info!("Failed to click retweet confirm: {e}");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
     info!("Retweet confirmed");
 
     // Wait for action to complete
     human_pause(api, 800).await;
-    Ok(true)
+    Ok(EngagementOutcome::Completed)
 }
 
 /// Clicks the "reply" button on the current tweet to open the reply composer.
@@ -312,12 +309,8 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<bool> {
 /// Uses broad search: `button[data-testid], a[data-testid]`
 /// Filters for: data-testid includes "reply" or "comment"
 #[instrument(skip(api))]
-pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
-    if click_root_tweet_button(api, REPLY_BUTTON_SELECTOR, "reply").await? {
-        return Ok(true);
-    }
-
-    Ok(false)
+pub async fn click_reply_button(api: &TaskContext) -> Result<EngagementOutcome> {
+    click_root_tweet_button(api, REPLY_BUTTON_SELECTOR, "reply").await
 }
 
 /// Types text into the currently focused reply composer and sends it.
@@ -358,7 +351,7 @@ pub async fn click_reply_button(api: &TaskContext) -> Result<bool> {
 /// - Button find: 5 seconds
 /// - Mouse move: 5 seconds
 /// - Button click: 5 seconds
-pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
+pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<EngagementOutcome> {
     use std::time::Duration;
     use tokio::time::timeout;
     // Timeout constants imported from crate::utils::timing
@@ -385,11 +378,11 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 
         if !found {
             info!("Reply textarea not found");
-            return Ok(false);
+            return Ok(EngagementOutcome::ElementNotFound);
         }
     } else {
         info!("Timeout focusing reply textarea");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
 
     info!("Reply textarea focused");
@@ -405,7 +398,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
     .is_err()
     {
         info!("Timeout typing reply text");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
     human_pause(api, 400).await;
 
@@ -422,7 +415,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
         result?
     } else {
         info!("Timeout finding reply button");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     };
 
     if let Some(coords) = button_result.value().and_then(|v| v.as_object()) {
@@ -446,19 +439,19 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
                     info!("Clicked Reply button successfully");
                 } else {
                     info!("Timeout clicking reply button");
-                    return Ok(false);
+                    return Ok(EngagementOutcome::Failed);
                 }
             } else {
                 info!("Timeout moving mouse to reply button");
-                return Ok(false);
+                return Ok(EngagementOutcome::Failed);
             }
         } else {
             info!("Reply button coordinates not found");
-            return Ok(false);
+            return Ok(EngagementOutcome::Failed);
         }
     } else {
         info!("Reply button not found");
-        return Ok(false);
+        return Ok(EngagementOutcome::Failed);
     }
 
     human_pause(api, 1000).await;
@@ -479,22 +472,22 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
         if let Some(sent) = obj.get("sent").and_then(serde_json::Value::as_bool) {
             if sent {
                 info!("Reply send completed and verified");
-                Ok(true)
+                Ok(EngagementOutcome::Completed)
             } else {
                 let reason = obj
                     .get("reason")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
                 info!("Reply send verification failed: {reason}");
-                Ok(false)
+                Ok(EngagementOutcome::Failed)
             }
         } else {
             info!("Reply send completed (unable to verify)");
-            Ok(false)
+            Ok(EngagementOutcome::Failed)
         }
     } else {
         info!("Reply send completed (verification failed)");
-        Ok(false)
+        Ok(EngagementOutcome::Failed)
     }
 }
 
@@ -523,9 +516,10 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<bool> {
 /// - Types the reply text into the textarea
 /// - Clicks the send button to post the reply
 #[instrument(skip(api))]
-pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<bool> {
-    if !click_reply_button(api).await? {
-        return Ok(false);
+pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<EngagementOutcome> {
+    match click_reply_button(api).await? {
+        EngagementOutcome::Completed => {}
+        other => return Ok(other),
     }
     send_reply(api, reply_text).await
 }
@@ -563,7 +557,7 @@ pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<bool>
 /// - Follow button: `FOLLOW_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 /// - Subscribe check: `button[data-testid*="-subscribe"]` with aria-label
 #[instrument(skip(api))]
-pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
+pub async fn follow_from_tweet(api: &TaskContext) -> Result<FollowOutcome> {
     // Simulate reading replies by scrolling down a bit more
     info!("Simulating reading replies before following...");
     api.scroll_read(1, 200, true, false).await?;
@@ -574,10 +568,13 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
     api.scroll_to_top().await?;
     human_pause(api, 1000).await;
 
-    // Check if already following.
+    // Check if already following (scoped to the tweet detail article).
     let following_js = r#"
         (function() {
-            var buttons = document.querySelectorAll('button, [role="button"]');
+            // Scope to the first visible tweet article on the detail page
+            var container = document.querySelector('article[data-testid="tweet"]');
+            if (!container) return false;
+            var buttons = container.querySelectorAll('button, [role="button"]');
             for (var i = 0; i < buttons.length; i++) {
                 var btn = buttons[i];
                 var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
@@ -601,7 +598,7 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
         .unwrap_or(false)
     {
         info!("Already following tweet author");
-        return Ok(false);
+        return Ok(FollowOutcome::AlreadyFollowing);
     }
 
     let follow_result = api.page().evaluate(selector_follow_button()).await?;
@@ -615,12 +612,12 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
             human_pause(api, 250).await;
             api.click_at(x, y).await?;
             human_pause(api, 1000).await;
-            return Ok(true);
+            return Ok(FollowOutcome::Followed);
         }
     }
 
     info!("Scoped follow button not found");
-    Ok(false)
+    Ok(FollowOutcome::ButtonNotFound)
 }
 
 /// Clicks the "bookmark" button on the current tweet.
@@ -651,15 +648,14 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<bool> {
 ///
 /// - Bookmark button: `BOOKMARK_BUTTON_SELECTOR` (defined in twitteractivity.rs)
 #[instrument(skip(api))]
-pub async fn bookmark_tweet(api: &TaskContext) -> Result<bool> {
+pub async fn bookmark_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
     use super::twitteractivity_selectors::BOOKMARK_BUTTON_SELECTOR;
 
-    if click_root_tweet_button(api, BOOKMARK_BUTTON_SELECTOR, "bookmark").await? {
+    let outcome = click_root_tweet_button(api, BOOKMARK_BUTTON_SELECTOR, "bookmark").await?;
+    if matches!(outcome, EngagementOutcome::Completed) {
         info!("Clicked root tweet bookmark button");
-        return Ok(true);
     }
-
-    Ok(false)
+    Ok(outcome)
 }
 
 #[cfg(test)]

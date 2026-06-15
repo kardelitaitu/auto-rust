@@ -11,51 +11,17 @@
 // 3. Run the tests:
 //    cargo test --test task_context_integration -- --ignored --test-threads=1
 
-use anyhow::Result;
-use chromiumoxide::Browser;
-use futures::StreamExt;
-use std::env;
-
-async fn connect_test_browser() -> Result<Browser> {
-    let cdp_url = env::var("TASK_API_TEST_WS")
-        .map_err(|_| anyhow::anyhow!("TASK_API_TEST_WS environment variable not set"))?;
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!(
-            "{}/json/version",
-            cdp_url.replace("ws://", "http://")
-        ))
-        .timeout(std::time::Duration::from_secs(5))
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query CDP endpoint: {}", e))?;
-
-    let version_data: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to parse CDP response: {}", e))?;
-
-    let ws_url = version_data
-        .get("webSocketDebuggerUrl")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("No webSocketDebuggerUrl in CDP response"))?;
-
-    let (browser, mut handler) = Browser::connect(ws_url).await?;
-
-    tokio::task::spawn(async move { while let Some(_event) = handler.next().await {} });
-
-    Ok(browser)
-}
+#[path = "common/mod.rs"]
+mod common;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::common::connect_test_browser;
 
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_exists_with_body() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test body exists
@@ -74,7 +40,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_visible_with_body() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test body is visible
@@ -93,7 +59,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_text() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser
             .new_page("data:text/html,<div id='test'>Hello World</div>")
             .await
@@ -115,7 +81,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_html() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser
             .new_page("data:text/html,<div id='test'><span>Content</span></div>")
             .await
@@ -139,7 +105,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_attr() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser
             .new_page("data:text/html,<div id='test' class='my-class' data-value='123'></div>")
             .await
@@ -170,7 +136,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_value() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser
             .new_page("data:text/html,<input id='test' value='input-value'>")
             .await
@@ -192,7 +158,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_wait_for() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test wait for body (should exist immediately)
@@ -211,7 +177,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_wait_for_visible() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test wait for visible body
@@ -232,7 +198,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_url() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         let result = auto::runtime::task_context::query::url(&page).await;
@@ -245,7 +211,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_query_title() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser
             .new_page("data:text/html,<title>Test Page</title><body></body>")
             .await

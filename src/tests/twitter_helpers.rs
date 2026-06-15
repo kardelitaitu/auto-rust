@@ -36,6 +36,7 @@ use crate::config::TwitterActivityConfig;
 use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
 use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
 use crate::utils::twitter::twitteractivity_state::{SessionState, TaskConfig, TweetActionTracker};
+use crate::utils::twitter::twitteractivity_types::TweetId;
 
 // ============================================================================
 // TDD Lifecycle Markers
@@ -402,7 +403,7 @@ pub fn assert_action_allowed(session: &mut SessionState, tweet_id: &str, action:
         session.is_action_allowed(action),
         "Action '{action}' should be allowed"
     );
-    session.record_action(tweet_id, action);
+    session.record_action(&TweetId::from_unchecked(tweet_id), action);
 }
 
 /// Assert that an action is blocked (either by limit or cooldown).
@@ -440,19 +441,19 @@ pub fn assert_remaining_time_approx(session: &SessionState, expected_ms: u64, to
 
 /// Assert that a tweet action is allowed by the tracker.
 #[allow(dead_code)]
-pub fn assert_tracker_allows(tracker: &TweetActionTracker, tweet_id: &str, action: &str) {
+pub fn assert_tracker_allows(tracker: &TweetActionTracker, tweet_id: &str) {
     assert!(
-        tracker.can_perform_action(tweet_id, action),
-        "Tracker should allow {action} on tweet '{tweet_id}'"
+        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
+        "Tracker should allow action on tweet '{tweet_id}'"
     );
 }
 
 /// Assert that a tweet action is blocked by the tracker (cooldown).
 #[allow(dead_code)]
-pub fn assert_tracker_blocks(tracker: &TweetActionTracker, tweet_id: &str, action: &str) {
+pub fn assert_tracker_blocks(tracker: &TweetActionTracker, tweet_id: &str) {
     assert!(
-        !tracker.can_perform_action(tweet_id, action),
-        "Tracker should block {action} on tweet '{tweet_id}'"
+        !tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
+        "Tracker should block action on tweet '{tweet_id}'"
     );
 }
 
@@ -583,10 +584,10 @@ mod tests {
     #[test]
     fn tdd_green_test_counters_with_actions_works() {
         let counters = test_counters_with_actions(3, 2, 1, 1);
-        assert_eq!(counters.likes, 3);
-        assert_eq!(counters.retweets, 2);
-        assert_eq!(counters.follows, 1);
-        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.likes(), 3);
+        assert_eq!(counters.retweets(), 2);
+        assert_eq!(counters.follows(), 1);
+        assert_eq!(counters.replies(), 1);
         assert_eq!(counters.total_actions(), 7);
     }
 

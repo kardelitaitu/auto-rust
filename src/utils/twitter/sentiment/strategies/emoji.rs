@@ -1,7 +1,17 @@
 //! Emoji sentiment analysis strategy.
 
+use super::super::SentimentStrategy;
 use std::collections::HashMap;
 use std::sync::OnceLock;
+
+#[derive(Debug)]
+pub struct EmojiStrategy;
+
+impl SentimentStrategy for EmojiStrategy {
+    fn analyze(&self, text: &str) -> f32 {
+        analyze_emoji_sentiment(text)
+    }
+}
 
 /// Positive emojis with sentiment strength (1.0-3.0).
 const POSITIVE_EMOJIS: &[(&str, f32)] = &[

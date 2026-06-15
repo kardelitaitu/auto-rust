@@ -108,3 +108,5 @@ check_output.txt
 codebase-files.txt
 
 
+.aider*
+nul

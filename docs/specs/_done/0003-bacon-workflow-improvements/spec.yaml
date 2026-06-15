@@ -1,5 +1,5 @@
 version: 1
-id: 0013-bacon-workflow-improvements
+id: 0003-bacon-workflow-improvements
 title: Bacon Pipeline — Workflow Hardening & Provider Extensibility
 status: done
 owner: spec-agent
@@ -24,9 +24,9 @@ files:
     - bacon-pipeline/src/config.rs
     - bacon-pipeline/src/core/spec_io.rs
   docs:
-    - docs/specs/_done/0013-bacon-workflow-improvements/plan.md
-    - docs/specs/_done/0013-bacon-workflow-improvements/validation.md
-    - docs/specs/_done/0013-bacon-workflow-improvements/spec.yaml
+    - docs/specs/_done/0003-bacon-workflow-improvements/plan.md
+    - docs/specs/_done/0003-bacon-workflow-improvements/validation.md
+    - docs/specs/_done/0003-bacon-workflow-improvements/spec.yaml
 acceptance:
   - NVIDIA_TOP_P env var is read by load_nvidia_config_from_env() and applied as config override
   - `bacon test` subcommand executes cargo test -p bacon-pipeline and reports results

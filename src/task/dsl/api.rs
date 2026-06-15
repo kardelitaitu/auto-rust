@@ -198,6 +198,7 @@ pub(crate) mod mock {
         }
 
         /// Set a custom return value for `count_elements()` on a specific selector.
+        #[allow(dead_code)]
         pub fn set_count_result(&self, selector: &str, count: usize) {
             self.count_results
                 .lock()

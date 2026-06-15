@@ -15,53 +15,17 @@
 // 3. Run the tests without --ignored flag:
 //    cargo test --test navigation_integration -- --ignored
 
-use anyhow::Result;
-use chromiumoxide::Browser;
-use futures::StreamExt;
-use std::env;
-
-async fn connect_test_browser() -> Result<Browser> {
-    let cdp_url = env::var("TASK_API_TEST_WS")
-        .map_err(|_| anyhow::anyhow!("TASK_API_TEST_WS environment variable not set"))?;
-
-    // Fetch the actual WebSocket URL from the CDP version endpoint
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!(
-            "{}/json/version",
-            cdp_url.replace("ws://", "http://")
-        ))
-        .timeout(std::time::Duration::from_secs(5))
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query CDP endpoint: {}", e))?;
-
-    let version_data: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to parse CDP response: {}", e))?;
-
-    let ws_url = version_data
-        .get("webSocketDebuggerUrl")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("No webSocketDebuggerUrl in CDP response"))?;
-
-    let (browser, mut handler) = Browser::connect(ws_url).await?;
-
-    // Spawn the handler task to keep it running
-    tokio::task::spawn(async move { while let Some(_event) = handler.next().await {} });
-
-    Ok(browser)
-}
+#[path = "common/mod.rs"]
+mod common;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::common::connect_test_browser;
 
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_goto_raw_timeout() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test timeout behavior with invalid URL
@@ -75,7 +39,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_wait_for_selector_timeout() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test timeout with non-existent selector
@@ -96,7 +60,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_wait_for_visible_selector_timeout() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test timeout with non-existent selector
@@ -110,7 +74,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_wait_for_any_visible_selector_timeout() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test timeout with non-existent selectors
@@ -125,7 +89,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_selector_exists_css() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test with body selector (always exists)
@@ -144,7 +108,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_selector_is_visible_css() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test with body selector (always visible)
@@ -163,7 +127,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_page_url() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         let url = auto::utils::navigation::page_url(&page).await;
@@ -176,7 +140,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_page_title() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         let title = auto::utils::navigation::page_title(&page).await;
@@ -188,7 +152,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_focus() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test focus on body (should succeed)
@@ -201,7 +165,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires real browser connection
     async fn test_go_back() {
-        let browser = connect_test_browser().await.unwrap();
+        let browser = connect_test_browser().await;
         let page = browser.new_page("about:blank").await.unwrap();
 
         // Test go_back (should succeed even if no history)

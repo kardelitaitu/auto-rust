@@ -174,6 +174,65 @@ impl SelectorCache {
     }
 }
 
+use crate::task::dsl::api::DslApi;
+
+/// Cached wrapper for checking element visibility (extracted from executor).
+///
+/// Checks the cache first; if not found, fetches from the API and caches.
+#[allow(dead_code)]
+pub async fn cached_visible<T: DslApi>(
+    api: &T,
+    cache: &mut SelectorCache,
+    enabled: bool,
+    ttl: Duration,
+    selector: &str,
+) -> anyhow::Result<bool> {
+    if !enabled {
+        return api.visible(selector).await;
+    }
+
+    if let Some(entry) = cache.get(selector) {
+        return Ok(entry.visible);
+    }
+
+    let exists = api.exists(selector).await.unwrap_or(false);
+    let visible = api.visible(selector).await?;
+    let entry = SelectorCacheEntry::with_ttl(exists, visible, None, 0, ttl);
+    cache.insert(selector.to_string(), entry);
+
+    Ok(visible)
+}
+
+/// Cached wrapper for getting element text (extracted from executor).
+///
+/// Checks the cache first for text; if not found, fetches from the API and caches.
+#[allow(dead_code)]
+pub async fn cached_text<T: DslApi>(
+    api: &T,
+    cache: &mut SelectorCache,
+    enabled: bool,
+    ttl: Duration,
+    selector: &str,
+) -> anyhow::Result<Option<String>> {
+    if !enabled {
+        return api.text(selector).await;
+    }
+
+    if let Some(entry) = cache.get(selector) {
+        if entry.text.is_some() {
+            return Ok(entry.text.clone());
+        }
+    }
+
+    let exists = api.exists(selector).await.unwrap_or(false);
+    let visible = api.visible(selector).await.unwrap_or(false);
+    let text = api.text(selector).await?;
+    let entry = SelectorCacheEntry::with_ttl(exists, visible, text.clone(), 0, ttl);
+    cache.insert(selector.to_string(), entry);
+
+    Ok(text)
+}
+
 /// Cache statistics for performance monitoring.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CacheStats {

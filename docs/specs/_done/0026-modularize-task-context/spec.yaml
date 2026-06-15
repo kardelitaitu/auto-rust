@@ -1,0 +1,36 @@
+version: 1
+id: 0026-modularize-task-context
+title: Modularize TaskContext mod.rs — Extract Tests, Click Pipeline, and Pointer/Keyboard
+status: done
+owner: spec-agent
+implementer: completed
+priority: P2
+area:
+  - runtime
+  - modularization
+  - task-context
+files:
+  code:
+    - src/runtime/task_context/mod.rs
+    - src/runtime/task_context/tests.rs
+    - src/runtime/task_context/click.rs
+    - src/runtime/task_context/pointer.rs
+  docs:
+    - docs/specs/_done/0026-modularize-task-context/plan.md
+    - docs/specs/_done/0026-modularize-task-context/validation.md
+acceptance:
+  - "Extract ~1,500 lines of tests (80+ test functions) from mod.rs into tests.rs as #[cfg(test)] mod tests"
+  - "Extract click pipeline methods (~400 lines) into click.rs: click(), execute_primary_click_attempt(), fallback_click_with_adaptation(), click_at(), click_and_wait(), double_click(), middle_click(), left_click(), left_click_fast(), right_click(), right_click_at(), right_click_fast(), nativeclick(), record_click_learning()"
+  - "Extract pointer+keyboard methods (~300 lines) into pointer.rs: hover(), focus(), move_mouse_to(), move_mouse_fast(), randomcursor(), sync_cursor_overlay(), drag(), nativecursor*(), r#type(), keyboard(), type_into(), type_text(), press(), press_with_modifiers()"
+  - "mod.rs shrinks from 3,265 to ≤1,100 lines: struct, constructors, accessors, navigation wrappers, query methods, scroll, pause, thin delegations"
+  - "All existing tests pass unchanged — no behavioral modifications"
+  - "cargo check passes; cargo test --lib task_context passes; check.ps1 passes"
+non_goals:
+  - Do not change any method behavior, signatures, or logic
+  - Do not add/remove any public API surface
+  - Do not touch the 12 existing submodules (click_learning, clipboard, cookies, etc.)
+  - Do not modify any files outside src/runtime/task_context/
+risks:
+  - "click.rs methods use private TaskContext fields (page, behavior_runtime, behavior_profile, learning_engine, metrics, native_interaction, session_id) — need to either make these pub(crate) or pass them as parameters"
+  - "mod.rs is the crate::runtime::task_context module root — all submodule paths remain stable since we're adding files, not creating a subdirectory"
+  - "verify_selector_hit, focus_internal, click_internal, nativeclick_internal, execute_nativecursor, is_in_viewport, post_interaction_pause* are private helpers — must stay accessible from click.rs and pointer.rs via pub(crate)"

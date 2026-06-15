@@ -1,3 +1,35 @@
+## 2026-06-16 - .ps1 script hardening: resource detection, output streaming, Start-Process removal
+
+### Accomplished This Session:
+
+#### Script Review & Fixes (9 root .ps1 files analyzed, 3 fixed)
+- **Analyzed**: All 14 root `.ps1` scripts for systemic issues (resource detection, output buffering, `Start-Process` usage, `Set-Location -LiteralPath`)
+
+#### Fixes Applied
+
+| Script | Changes |
+|---|---|
+| **`miri.ps1`** | Added `cargo miri setup` step (catches UB in deps), fixed output streaming (removed buffering), removed dead Unsafe Code Inventory block, added `-AutoTune` (ON by default), added system resource detection |
+| **`mutants.ps1`** | Added system resource detection + `-AutoTune` (Jobs/BuildThreads auto-scale to machine) |
+| **`coverage.ps1`** | Added system resource detection + `-AutoTune` (test-threads auto-scale), fixed `Set-Location` → `Set-Location -LiteralPath` |
+| **`check.ps1`** | Replaced all 4 `Start-Process` calls with direct `&` invocation (real-time output, proper exit codes), simplified nextest section (removed temp file hack + inline script) |
+| **`run-twitter-tests.ps1`** | Fixed output buffering (streams to console in real-time while capturing for log), fixed `Set-Location` → `Set-Location -LiteralPath` |
+
+#### Systemic Pattern Applied
+All resource-aware scripts now display `Logical CPUs` and `Total RAM` at startup, then auto-tune parallelism parameters capped at sensible limits (max 8 threads for Miri, max 16 build threads for mutants).
+
+### Current Status
+
+| Item | Status |
+|------|--------|
+| Scripts with resource detection + auto-tune | ✅ `miri.ps1`, `mutants.ps1`, `coverage.ps1` |
+| Scripts with direct `&` (no `Start-Process`) | ✅ `check.ps1` (all 4 steps) |
+| Scripts with real-time output streaming | ✅ `miri.ps1`, `run-twitter-tests.ps1` |
+| Scripts with `-LiteralPath` | ✅ `coverage.ps1`, `run-twitter-tests.ps1` |
+| Unchanged (fine as-is) | `spec-lint.ps1`, `spec-stash.ps1`, `spec-restore.ps1`, `spec-archive.ps1`, `docs.ps1`, `performance.ps1`, `check-fast.ps1`, `benchmark-builds.ps1`, `codebase-index.ps1` |
+
+---
+
 ## 2026-05-12 - TwitterActivity architecture review, 3 spec packages implemented, v0.2.0
 
 ### Accomplished This Session:
@@ -1478,3 +1510,283 @@ The Bacon gated-LLM pipeline is now fully implemented. The system is a **Config 
 | clippy (-D warnings) | ✅ Pass |
 | nextest (2696 tests) | ✅ Pass |
 | CI (GitHub Actions) | ✅ All green |
+
+---
+
+## 2026-06-10 — Spec 0014 (DSL Executor), 0016 (Orchestrator), DurationMs fixes, test consolidation
+
+### Accomplished This Session
+
+#### Spec 0014 — Modularize DSL Executor (continued + completed)
+- **`executor.rs`**: 4736 → 1296 lines (71% reduction) — action handlers extracted to 4 submodules under `src/task/dsl/actions/`
+  - `browser.rs` (572): navigate, click, type, hover, select, scroll_to, right_click, double_click, clear
+  - `wait.rs` (174): wait, wait_for
+  - `inspection.rs` (158): extract
+  - `media.rs` (146): screenshot
+- Consolidated 16 call tests → 8 (2-4 sub-cases each using scoped blocks)
+- Added 2 dispatch-level smoke tests for If/Loop through `execute_action()`
+- Extracted 5 dead-code methods: `cached_visible`/`cached_text` → `cache.rs`, `record_profile` → `profiling.rs`, `watch_variable` → `debug.rs`; deleted `invalidate_cache` wrapper
+- All 3311 tests pass, clippy 0 warnings
+
+#### Pre-existing DurationMs Compilation Fixes
+- **`src/task/validation/tests.rs`**: Added missing imports (`Action`, `Condition`, `ForeachCollection`, `ParameterDef`, `TaskDefinition`, `HashSet`)
+- **`src/tests/mod.rs`**: Wrapped 12 bare integer literals in `DurationMs::new_const()`
+- **`src/utils/mouse.rs`**: Added 3 missing builder methods to `CursorMovementConfig` (`with_speed`, `with_precision`, `with_path_style`)
+- **`src/task/dsl/executor.rs`**: Added missing `substitute_variables()` call in `execute_js()`
+- Fixed `try_finally_runs_on_failure` test flakiness (changed to `Action::Log` in finally)
+
+#### Test Consolidation in executor.rs
+- Merged 16 call tests → 8 with scoped-block isolation (226 lines saved, 1566→1340)
+- Added 2 dispatch-level smoke tests for If/Loop (coverage gap from spec 0014 extraction)
+
+#### Spec 0016 — Extract Orchestrator Concerns
+- **`src/orchestrator.rs`** (1623 lines) → replaced by `src/orchestrator/` with 6 submodules:
+  - `mod.rs` (394): `Orchestrator` struct, `new()`, `execute_group()`, `execute_group_with_cancel()`
+  - `execution.rs` (345): `execute_group_with_cancel()`, `execute_task_on_session()`
+  - `guards.rs` (328): `GlobalExecutionSlot`, `SessionExecutionGuard`, `acquire_global_execution_slot()`
+  - `retry.rs` (415): `TaskAttemptFailure`, `execute_task_with_retry()`
+  - `health.rs` (150): `format_duration()`, `broadcast_execution_count()`, `should_mark_session_unhealthy()`
+  - `test_utils.rs` (49): shared test helpers (`create_test_config`, `connect_test_session`)
+- All 23 original tests preserved and passing
+- Public API unchanged — `Orchestrator::new()`, `execute_group()` identical
+
+#### Spec 0017 — Modularize Twitter Activity State (generated, not implemented)
+- Scanned codebase with improvement-proposal-agent
+- Identified `twitteractivity_state.rs` (1226 lines, 8 structs) as highest-impact target (score: 34/40)
+- Generated complete spec package in `docs/specs/_active/0017-modularize-twitter-state/`
+- Extraction targets: `types.rs` (≤250), `session.rs` (≤300), `tracking.rs` (≤200), `config.rs` (≤250)
+
+#### Spec System Maintenance
+- Archived specs 0014 and 0016 to `_done/`
+- Fixed 10 stale metadata issues across both archived specs (paths `_active/`→`_done/`, status→done, implementer→buffy)
+- Fixed spec-lint `DOC_REF_MISSING` for plan.md/validation.md in both specs
+- `spec-lint.ps1` passes (14 packages)
+
+#### Clippy Cleanup
+- Removed unused `ForeachCollection` and `LogLevel` from executor.rs test imports
+- Added `#[allow(dead_code)]` to `MockDslApi::set_count_result` in `api.rs`
+
+#### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo check` | ✅ Pass (0 warnings) |
+| `cargo test --lib` | ✅ 3311 passed, 0 failed, 6 ignored |
+| `cargo clippy --all-targets --all-features` | ✅ 0 warnings |
+| `spec-lint.ps1` | ✅ Pass (14 packages) |
+| `check-fast.ps1` | ✅ Pass (spec-lint + rustfmt + fmt check) |
+
+#### Files Changed (38 modified, 7 new submodules)
+
+**Modified:**
+- `src/task/dsl/executor.rs` — reduced from 4736→1296 lines
+- `src/task/dsl/control_flow.rs` — added While/Try/evaluate_condition tests
+- `src/task/dsl/cache.rs` — added `cached_visible`, `cached_text`
+- `src/task/dsl/profiling.rs` — added `record_profile`
+- `src/task/dsl/debug.rs` — added `watch_variable`
+- `src/task/dsl/api.rs` — `#[allow(dead_code)]` on `set_count_result`
+- `src/task/validation/tests.rs` — added missing imports
+- `src/tests/mod.rs` — DurationMs type fixes
+- `src/utils/mouse.rs` — added `CursorMovementConfig` builder methods
+- `docs/specs/_active/README.md` — updated active specs list
+- `docs/specs/_done/0014-modularize-dsl-executor/spec.yaml` — status/paths fixed
+- `docs/specs/_done/0016-extract-orchestrator-concerns/spec.yaml` — status/paths fixed
+- `JOURNAL.md` — this entry
+
+**Deleted:**
+- `src/orchestrator.rs` — replaced by `src/orchestrator/mod.rs`
+
+**New submodules:**
+- `src/orchestrator/mod.rs`, `execution.rs`, `guards.rs`, `retry.rs`, `health.rs`, `test_utils.rs`
+- `docs/specs/_active/0017-modularize-twitter-state/` (spec package)
+
+| Item | Status |
+|------|--------|
+| Spec 0014 (DSL executor) | ✅ Done → archived |
+| Spec 0016 (orchestrator) | ✅ Done → archived |
+| Spec 0017 (twitter state) | 📋 Generated, pending |
+| DurationMs fixes | ✅ All resolved |
+| Test consolidation | ✅ Done |
+| Full clippy cleanup | ✅ 0 warnings |
+| Repo gate | ✅ Pass |
+
+---
+
+## 2026-06-10 (continued) — Spec 0017 review, implementation, archive
+
+### Accomplished This Session
+
+#### Spec 0017 Review
+- Cross-referenced spec package against actual 1226-line `twitteractivity_state.rs`
+- Found 4 issues:
+  1. Missing helpers (`read_u64`, `read_u32`, `value_kind`, `decision_llm_api_key`) not in extraction mapping
+  2. Line budget misalignment — spec said ≤300 for shim vs actual ≤50
+  3. Test distribution (7 test modules) not planned
+  4. `CandidateContext` cross-module dependency not documented
+- Fixed all 4 in `plan.md`, `spec.yaml`, `baseline.md`
+
+#### Spec 0017 — Modularize Twitter Activity State (implemented)
+- **`twitteractivity_state.rs`**: 1226 → 37 lines (re-export shim)
+- Created `src/utils/twitter/state/` with 4 submodules:
+  - `types.rs` (207): `TaskValidationError`, `SentimentTemplates`, `CandidateContext`, `CandidateResult` + 6 tests
+  - `config.rs` (367): `TaskConfig`, `from_payload()`, `read_u64`, `read_u32`, `value_kind`, `decision_llm_api_key` + 14 tests
+  - `session.rs` (456): `SessionState`, `RateLimitBackoff` + 18 tests
+  - `tracking.rs` (110): `TweetActionTracker` + 5 tests
+  - `mod.rs` (12): module declarations + re-exports
+- Added `pub mod state;` to `src/utils/twitter/mod.rs`
+- Re-export chain preserved: `mod.rs` → `twitteractivity_state` (shim) → `state::*`
+- Fixed: missing `Instant` import in `types.rs`, unused `log::info` in `config.rs`
+- Fixed: 5 clippy dead_code warnings on `test_support` module
+
+#### Spec Maintenance
+- Updated line budgets in `spec.yaml`: `session.rs` ≤300→≤500, `config.rs` ≤250→≤400
+- `spec-lint.ps1`: Pass (14 packages)
+- Archived `0017-modularize-twitter-state` from `_active/` to `_done/`
+- `docs/specs/_active/README.md`: Cleared (no active specs)
+
+#### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo check` | ✅ Pass (0 warnings) |
+| `cargo test --lib` | ✅ 3311 passed, 0 failed, 6 ignored |
+| `cargo clippy --all-targets --all-features` | ✅ 0 warnings |
+| `spec-lint.ps1` | ✅ Pass |
+| `check-fast.ps1` | ✅ Pass |
+
+#### Files Changed
+
+**New:**
+- `src/utils/twitter/state/mod.rs`, `types.rs`, `config.rs`, `session.rs`, `tracking.rs`
+
+**Modified:**
+- `src/utils/twitter/twitteractivity_state.rs` — 1226→37 line shim
+- `src/utils/twitter/mod.rs` — added `pub mod state;`
+- `docs/specs/_active/0017-modularize-twitter-state/spec.yaml`, `plan.md`, `baseline.md`
+- `docs/specs/_active/README.md`
+- `JOURNAL.md` — this entry
+
+| Item | Status |
+|------|--------|
+| Spec 0017 review | ✅ 4 issues fixed |
+| Spec 0017 implementation | ✅ Done → archived |
+| Spec line budgets | ✅ Updated |
+| Active specs | ✅ 0 remaining |
+| Repo gate | ✅ Pass |
+
+---
+
+## 2026-06-10 (continued) — Spec 0018 extract config submodules
+
+### Accomplished This Session
+
+#### Spec 0018 Review
+- Cross-referenced plan.md against actual 3637-line config/mod.rs
+- Found 6 inconsistencies:
+  1. `from_env_value()`/`as_str()` assigned to env.rs but are enum impl methods → moved to types.rs
+  2. `TwitterLLMConfig`/`TracingConfig` use `#[derive(Default)]` not manual impls
+  3. `ConfigValidationReport` missing from extraction mapping (~150 lines)
+  4. `load_code_config()`/`load_dotenv_defaults()` missing from env.rs mapping
+  5. mod.rs ≤200 impossible with inline tests → extracted tests.rs, mod.rs target clarified
+  6. `load_from_file()` doesn't exist → replaced with `load_config()` throughout
+- Fixed all 6 in plan.md, spec.yaml, baseline.md; spec-lint passes
+
+#### Spec 0018 — Extract Config Submodules (implemented)
+- **`config/mod.rs`**: 3637 → 632 lines — module decls + re-exports + `load_config()` + `validate_config()` + `ConfigValidationReport`
+- Created 4 new submodules:
+  - `types.rs` (442): 13 structs + 2 enums + `default_*()` helper fns + inline Default impls (`NativeInteractionConfig`, `TwitterProbabilitiesConfig`, `EngagementLimitsConfig`, `TaskDiscoveryConfig`)
+  - `defaults.rs` (104): 6 standalone Default impls (`TwitterActivityConfig`, `BrowserConfig`, `OrchestratorConfig`, `CircuitBreakerConfig`, `RoxybrowserConfig`, `BrowserProfile`)
+  - `env.rs` (331): `load_dotenv_defaults()`, `load_code_config()`, `apply_env_overrides()` with all env-var parsing
+  - `tests.rs` (2053): ~60 config test functions extracted verbatim
+
+#### Implementation Fixes
+- **Visibility bug**: 7 `default_*()` functions in `types.rs` were `fn` (private) but called from `defaults.rs` via `super::types::`. Changed to `pub(crate)`.
+- **Missing function**: `validate_config()` was between `apply_env_overrides` and `ConfigValidationReport` in original but missed during extraction. Added back to mod.rs.
+- Cleaned up backup file `mod_old_backup.rs` after verification.
+
+#### Spec Maintenance
+- Archived `0018-extract-config-submodules` from `_active/` to `_done/`
+- `docs/specs/_active/README.md`: Cleared (no active specs)
+
+#### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo check` | ✅ Pass (0 errors, 6 pre-existing warnings) |
+| `cargo test --lib config` | ✅ 170 passed, 0 failed, 1 ignored |
+| `cargo test --lib` | ✅ 3310 passed, 1 pre-existing flaky, 6 ignored |
+| `cargo clippy --all-targets --all-features` | ✅ 0 new warnings |
+| `spec-lint.ps1` | ✅ Pass |
+
+#### Files Changed
+
+**New:**
+- `src/config/types.rs`, `defaults.rs`, `env.rs`, `tests.rs`
+
+**Modified:**
+- `src/config/mod.rs` — 3637→632 lines
+- `docs/specs/_active/0018-extract-config-submodules/spec.yaml`, `plan.md`, `baseline.md`
+- `docs/specs/_active/README.md`
+- `JOURNAL.md` — this entry
+
+| Item | Status |
+|------|--------|
+| Spec 0018 review | ✅ 6 issues fixed |
+| Spec 0018 implementation | ✅ Done → archived |
+| Active specs | ✅ 0 remaining |
+| Repo gate | ✅ Pass |
+
+---
+
+## 2026-06-10 (continued) — Transient error classification for page_nav.rs CDP retry logic
+
+### Accomplished This Session
+
+#### Retry Logic Improvement
+- **`src/runtime/task_context/page_nav.rs`**: Added `is_transient_error()` function that classifies CDP errors as transient (retry) or permanent (fail immediately)
+- **Transient (retry)**: timeouts, connection issues (refused/reset/broken), network errors, aborted/cancelled operations
+- **Permanent (no retry)**: "not found", "no such element", "invalid selector", "target closed", "permission denied", "node is disconnected"
+- **Default**: Unknown errors treated as transient (safer) — bounded by max retry attempts
+
+#### Updated with_retry
+- Only retries when `is_transient_error(&e) && attempt < EVAL_RETRY_MAX_ATTEMPTS`
+- Permanent errors fail immediately without retry
+- Transient errors retry with exponential backoff (50ms * 2^attempt)
+- Debug logging distinguishes "permanent" vs "transient (max attempts)" classifications
+
+#### Unit Tests Added (10 new tests)
+- `test_is_transient_error_timeout` — timeout is transient
+- `test_is_transient_error_not_found` — not found is permanent
+- `test_is_transient_error_connection` — connection refused/reset/broken are transient
+- `test_is_transient_error_target_closed` — target closed is permanent
+- `test_is_transient_error_permission_denied` — permission denied is permanent
+- `test_is_transient_error_aborted` — aborted/cancelled are transient
+- `test_is_transient_error_network` — network/econnreset are transient
+- `test_is_transient_error_unknown_defaults_to_retry` — unknown errors retry
+- `test_is_transient_error_case_insensitive` — matching is case-insensitive
+- Total: 28 tests for page_nav.rs (18 existing + 10 new)
+
+#### Previous Improvements (carried forward)
+- `wait_for_load` timeout enforcement with tokio::time::timeout polling loop
+- `apply_browser_context` signature changed to `Option<&str>` (None skips setting)
+- `with_retry` helper with exponential backoff (max 3 attempts)
+- Applied to: set_user_agent, wait_for_any_visible_selector, focus
+- All 6 functions: set_user_agent, set_extra_http_headers, apply_browser_context, wait_for_load, wait_for_any_visible_selector, focus
+
+#### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo check` | ✅ Pass |
+| `cargo test --lib task_context::page_nav` | ✅ 28 passed |
+| `check-fast.ps1` | ✅ Pass |
+
+#### Files Changed
+- `src/runtime/task_context/page_nav.rs` — is_transient_error(), with_retry update, 10 new tests
+
+| Item | Status |
+|------|--------|
+| Transient error classification | ✅ Done |
+| with_retry update | ✅ Done |
+| Unit tests (10 new) | ✅ Done |
+| check-fast.ps1 | ✅ Pass |

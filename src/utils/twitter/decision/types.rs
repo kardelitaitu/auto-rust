@@ -7,11 +7,13 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use crate::utils::twitter::twitteractivity_types::TweetId;
+
 /// Context passed to decision engines for analysis.
 #[derive(Debug, Clone)]
 pub struct TweetContext {
     /// Unique tweet identifier
-    pub tweet_id: String,
+    pub tweet_id: TweetId,
     /// Tweet text content
     pub text: String,
     /// Tweet author handle
@@ -304,7 +306,7 @@ mod tests {
         let engine = TestEngine;
         // Construct a minimal TweetContext for testing
         let ctx = TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: "test".to_string(),
             author: "user".to_string(),
             replies: vec![],
@@ -324,7 +326,7 @@ mod tests {
     #[test]
     fn test_tweet_context_creation() {
         let ctx = TweetContext {
-            tweet_id: "123".to_string(),
+            tweet_id: TweetId::from_unchecked("123"),
             text: "Hello world".to_string(),
             author: "testuser".to_string(),
             replies: vec!["Great post!".to_string()],
@@ -332,7 +334,7 @@ mod tests {
             task_config: crate::utils::twitter::twitteractivity_state::TaskConfig::default(),
             tweet_age: "recent".to_string(),
         };
-        assert_eq!(ctx.tweet_id, "123");
+        assert_eq!(ctx.tweet_id, TweetId::from_unchecked("123"));
         assert_eq!(ctx.author, "testuser");
         assert_eq!(ctx.replies.len(), 1);
     }

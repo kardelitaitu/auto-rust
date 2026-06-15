@@ -12,9 +12,18 @@ findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependen
 //! - Health monitoring and failure tracking
 //! - Graceful shutdown and cleanup
 
+pub mod cleanup;
 pub mod connector;
 pub mod factory;
 pub mod pool;
+
+mod duration;
+mod permits;
+mod state;
+
+pub use duration::DurationMs;
+pub use permits::WorkerPermit;
+pub use state::{is_circuit_breaker_open_pure, SessionState};
 
 use crate::internal::profile::{random_preset, randomize_profile, BrowserProfile, ProfileRuntime};
 use crate::state::{bind_page_overlay, unbind_page_overlay, SessionOverlayState};
@@ -28,34 +37,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
-use tokio::sync::SemaphorePermit;
-
-/// Represents the current operational state of a browser session.
-/// Used to track session health and availability for task assignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionState {
-    /// Session is available and ready to accept tasks
-    Idle,
-    /// Session is currently executing a task
-    Busy,
-    /// Session has failed and is not available for tasks
-    Failed,
-}
-
-/// Represents a browser session with connection management and health monitoring.
-/// A session encapsulates a browser instance and manages its lifecycle, worker allocation,
-/// and health status for reliable task execution.
-pub struct WorkerPermit<'a> {
-    _permit: SemaphorePermit<'a>,
-    active_workers: &'a std::sync::atomic::AtomicUsize,
-}
-
-impl Drop for WorkerPermit<'_> {
-    fn drop(&mut self) {
-        self.active_workers
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-    }
-}
 
 /// Represents a browser session with connection management and health monitoring.
 ///
@@ -79,7 +60,7 @@ impl Drop for WorkerPermit<'_> {
 /// #     enabled: true,
 /// #     failure_threshold: 5,
 /// #     success_threshold: 3,
-/// #     half_open_time_ms: 30_000,
+/// #     half_open_time_ms: auto::session::DurationMs::new_const(30_000),
 /// # };
 /// // Session is typically created by the orchestrator
 /// let session = Session::new(
@@ -180,7 +161,7 @@ impl Session {
     ///     enabled: true,
     ///     failure_threshold: 5,
     ///     success_threshold: 3,
-    ///     half_open_time_ms: 30000,
+    ///     half_open_time_ms: auto::session::DurationMs::new_const(30000),
     /// };
     /// let session = Session::new(
     ///     "session-1".to_string(),
@@ -249,7 +230,7 @@ impl Session {
             if let Some(cb_config) = circuit_breaker_config {
                 (
                     cb_config.failure_threshold as usize,
-                    cb_config.half_open_time_ms / 1000,
+                    cb_config.half_open_time_ms.get() / 1000,
                 )
             } else {
                 (5, 30) // defaults: 5 failures, 30 second timeout
@@ -421,7 +402,7 @@ impl Session {
 
     /// Check if circuit breaker is currently open (for testing)
     pub fn is_circuit_breaker_open(&self) -> bool {
-        let current_time = unix_timestamp_secs();
+        let current_time = state::unix_timestamp_secs();
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
 
@@ -450,34 +431,6 @@ impl Session {
     pub fn set_circuit_breaker_last_failure_time(&self, time: usize) {
         self.cb_last_failure_time.store(time, Ordering::SeqCst);
     }
-}
-
-/// Returns the current Unix timestamp in seconds, using a safe fallback.
-/// Uses `unwrap_or_default()` instead of `expect()` to avoid panicking
-/// if the system clock is set before UNIX epoch.
-fn unix_timestamp_secs() -> usize {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as usize
-}
-
-/// Pure function to determine if circuit breaker should be open.
-/// This logic is extracted for testability without requiring `SystemTime` calls.
-#[must_use]
-pub fn is_circuit_breaker_open_pure(
-    failure_count: usize,
-    failure_threshold: usize,
-    last_failure_time: usize,
-    current_time: usize,
-    timeout_secs: u64,
-) -> bool {
-    if failure_threshold == 0 {
-        return false; // No threshold means circuit never opens
-    }
-
-    failure_count >= failure_threshold
-        && current_time.saturating_sub(last_failure_time) < timeout_secs as usize
 }
 
 impl Session {
@@ -530,10 +483,7 @@ impl Session {
             Ok(Ok(permit)) => {
                 self.active_workers
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Some(WorkerPermit {
-                    _permit: permit,
-                    active_workers: &self.active_workers,
-                })
+                Some(WorkerPermit::new(permit, &self.active_workers))
             }
             Ok(Err(_)) => {
                 warn!("[{}] Semaphore closed, cannot acquire worker", self.id);
@@ -555,7 +505,7 @@ impl Session {
 
     /// Check circuit breaker state. Returns `current_time` if closed, bails if open.
     fn cb_check(&self) -> anyhow::Result<usize> {
-        let current_time = unix_timestamp_secs();
+        let current_time = state::unix_timestamp_secs();
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);
 
@@ -634,7 +584,7 @@ impl Session {
                 page
             }
             Err(e) => {
-                self.cb_record_failure(unix_timestamp_secs());
+                self.cb_record_failure(state::unix_timestamp_secs());
                 return Err(e.into());
             }
         };
@@ -689,7 +639,7 @@ impl Session {
                 page
             }
             Err(e) => {
-                self.cb_record_failure(unix_timestamp_secs());
+                self.cb_record_failure(state::unix_timestamp_secs());
                 return Err(e.into());
             }
         };
@@ -858,9 +808,6 @@ impl Session {
         Ok(())
     }
 }
-
-/// Cleanup utilities for session management.
-pub mod cleanup;
 
 #[cfg(test)]
 mod tests {

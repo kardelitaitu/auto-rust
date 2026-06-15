@@ -8,6 +8,7 @@ use crate::utils::timing::{
 };
 use crate::utils::twitter::reply_engine::reply_engine_system_prompt;
 use crate::utils::twitter::twitteractivity_llm::validate_reply;
+use crate::utils::twitter::{ComposerFlow, PostOutcome, StatusUrl};
 use anyhow::Result;
 use log::{info, warn};
 use serde_json::Value;
@@ -74,23 +75,29 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
         info!("[twitterretweet] Quote text: {commentary}");
 
+        let mut flow = ComposerFlow::new();
+
         // Click quote button
         info!("[twitterretweet] Clicking quote button...");
         click_quote_button(api).await?;
+        flow.record_composer_opened()?;
         api.pause(1500).await;
 
         // Type quote
         info!("[twitterretweet] Typing quote...");
         type_quote(api, &commentary).await?;
+        flow.record_text_entered()?;
         api.pause(1000).await;
 
         // Post
         info!("[twitterretweet] Posting quote...");
-        let posted = post_quote_with_retry(api, 3).await?;
-        if posted {
-            info!("[twitterretweet] Quote posted successfully!");
-        } else {
-            warn!("[twitterretweet] Failed to post quote");
+        match post_quote_with_retry(api, 3).await? {
+            PostOutcome::Posted => {
+                flow.record_posted()?;
+                info!("[twitterretweet] Quote posted successfully!");
+            }
+            PostOutcome::ComposerNotFound => warn!("[twitterretweet] Composer not found"),
+            PostOutcome::Failed => warn!("[twitterretweet] Failed to post quote"),
         }
     } else {
         // Native retweet flow
@@ -148,8 +155,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     Ok(())
 }
 
-fn extract_url_from_payload(payload: &Value) -> Result<String> {
-    crate::utils::url::extract_url_from_payload(payload)
+fn extract_url_from_payload(payload: &Value) -> Result<StatusUrl> {
+    crate::utils::url::extract_url_from_payload(payload).map(StatusUrl::from_unchecked)
 }
 
 async fn extract_tweet_context(api: &TaskContext) -> Result<(String, String)> {
@@ -247,33 +254,32 @@ async fn type_quote(api: &TaskContext, text: &str) -> Result<()> {
     Err(anyhow::anyhow!("Composer not found"))
 }
 
-async fn post_quote(api: &TaskContext) -> Result<bool> {
+async fn post_quote(api: &TaskContext) -> Result<PostOutcome> {
     let outcome = api
         .click("[data-testid=\"retweetConfirm\"], [data-testid=\"tweetButton\"]")
         .await?;
     info!("[twitterretweet] Post: {}", outcome.summary());
-    Ok(true)
+    Ok(PostOutcome::Posted)
 }
 
-async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<bool> {
-    let mut last_error: Option<anyhow::Error> = None;
+async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<PostOutcome> {
+    let mut last_outcome = PostOutcome::Failed;
     for attempt in 1..=max_retries {
         match post_quote(api).await {
-            Ok(true) => return Ok(true),
-            Ok(false) => {
-                warn!("[twitterretweet] Post failed (attempt {attempt}/{max_retries})");
-                last_error = Some(anyhow::anyhow!("Post returned false"));
+            Ok(PostOutcome::Posted) => return Ok(PostOutcome::Posted),
+            Ok(other) => {
+                warn!("[twitterretweet] Post failed (attempt {attempt}/{max_retries}): {other:?}");
+                last_outcome = other;
             }
             Err(e) => {
                 warn!("[twitterretweet] Post error (attempt {attempt}/{max_retries}): {e}");
-                last_error = Some(e);
             }
         }
         if attempt < max_retries {
             api.pause(2000).await;
         }
     }
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Post failed after {max_retries} retries")))
+    Ok(last_outcome)
 }
 
 fn build_quote_messages(tweet_author: &str, tweet_text: &str) -> Vec<ChatMessage> {
@@ -293,14 +299,14 @@ mod tests {
     fn extract_url_from_payload_url() {
         let payload = json!({"url": "https://x.com/user/status/123"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]
     fn extract_url_from_payload_value() {
         let payload = json!({"value": "https://x.com/user/status/456"});
         let result = extract_url_from_payload(&payload).unwrap();
-        assert!(result.contains("x.com"));
+        assert!(result.as_str().contains("x.com"));
     }
 
     #[test]

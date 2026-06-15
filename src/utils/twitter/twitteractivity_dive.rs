@@ -51,6 +51,7 @@ use tracing::instrument;
 use super::twitteractivity_selectors::{
     js_extract_all_tweets, js_get_current_url, selector_all_tweets,
 };
+use super::twitteractivity_types::StatusUrl;
 
 #[derive(Debug, Clone, Default)]
 pub struct DiveIntoThreadOutcome {
@@ -58,12 +59,10 @@ pub struct DiveIntoThreadOutcome {
     pub used_fallback_target: bool,
 }
 
-fn status_id_from_url(status_url: &str) -> Option<&str> {
-    status_url
-        .split("/status/")
-        .nth(1)
-        .and_then(|tail| tail.split(['?', '/', '#']).next())
-        .filter(|id| !id.is_empty())
+fn status_id_from_url(status_url: &str) -> Option<String> {
+    StatusUrl::from_unchecked(status_url)
+        .tweet_id()
+        .map(String::from)
 }
 
 /// Clicks on a tweet to open it in the thread/detail view.
@@ -119,15 +118,13 @@ pub async fn dive_into_thread(
     info!("Attempting to dive into thread: {}", status_url);
 
     // Click the tweet link using the high-level API (handles scrolling, movement, clicking)
-    let link_selector = format!("a[href='{status_url}']");
+    // Escape single quotes in status_url to prevent CSS selector injection
+    let escaped_url = status_url.replace('\'', "\\'");
+    let link_selector = format!("a[href='{escaped_url}']");
     info!("Clicking tweet link selector: {}", link_selector);
-    if let Err(e) = api.click(&link_selector).await {
-        info!("Dive failed: click on link failed: {e}");
-        return Ok(DiveIntoThreadOutcome {
-            opened: false,
-            used_fallback_target: false,
-        });
-    }
+    api.click(&link_selector)
+        .await
+        .context("Dive failed: click on link failed")?;
     info!("Clicked tweet link, waiting for thread view...");
 
     // Wait for thread/modal view to open (tweet detail or thread)
@@ -153,7 +150,7 @@ pub async fn dive_into_thread(
         })
         .unwrap_or_default();
     let target_status_id = status_id_from_url(status_url);
-    let url_matches = target_status_id.map_or_else(
+    let url_matches = target_status_id.as_deref().map_or_else(
         || current_url.contains(status_url),
         |id| current_url.contains(&format!("/status/{id}")),
     );
@@ -240,13 +237,16 @@ mod tests {
 
     #[test]
     fn test_status_id_from_relative_url() {
-        assert_eq!(status_id_from_url("/user/status/12345"), Some("12345"));
+        assert_eq!(
+            status_id_from_url("/user/status/12345").as_deref(),
+            Some("12345")
+        );
     }
 
     #[test]
     fn test_status_id_from_absolute_url_with_query() {
         assert_eq!(
-            status_id_from_url("https://x.com/user/status/12345?lang=en"),
+            status_id_from_url("https://x.com/user/status/12345?lang=en").as_deref(),
             Some("12345")
         );
     }
@@ -259,14 +259,17 @@ mod tests {
     #[test]
     fn test_status_id_from_url_with_fragment() {
         assert_eq!(
-            status_id_from_url("/user/status/12345#reply-1"),
+            status_id_from_url("/user/status/12345#reply-1").as_deref(),
             Some("12345")
         );
     }
 
     #[test]
     fn test_status_id_from_url_with_trailing_slash() {
-        assert_eq!(status_id_from_url("/user/status/12345/"), Some("12345"));
+        assert_eq!(
+            status_id_from_url("/user/status/12345/").as_deref(),
+            Some("12345")
+        );
     }
 
     #[test]
@@ -284,14 +287,17 @@ mod tests {
     #[test]
     fn test_status_id_from_numeric_username_path() {
         // Edge case: username is numeric (e.g., user ID-based URL)
-        assert_eq!(status_id_from_url("/12345/status/67890"), Some("67890"));
+        assert_eq!(
+            status_id_from_url("/12345/status/67890").as_deref(),
+            Some("67890")
+        );
     }
 
     #[test]
     fn test_status_id_from_url_with_special_chars() {
         // Edge case: URL with encoded characters
         assert_eq!(
-            status_id_from_url("/user.name/status/12345?source=search"),
+            status_id_from_url("/user.name/status/12345?source=search").as_deref(),
             Some("12345")
         );
     }
@@ -299,7 +305,7 @@ mod tests {
     #[test]
     fn test_status_id_from_url_with_multiple_query_params() {
         assert_eq!(
-            status_id_from_url("https://x.com/user/status/12345?lang=en&t=abc123&s=01"),
+            status_id_from_url("https://x.com/user/status/12345?lang=en&t=abc123&s=01").as_deref(),
             Some("12345")
         );
     }
@@ -308,7 +314,7 @@ mod tests {
     fn test_status_id_from_url_with_www_prefix() {
         // Edge case: www subdomain
         assert_eq!(
-            status_id_from_url("https://www.x.com/user/status/12345"),
+            status_id_from_url("https://www.x.com/user/status/12345").as_deref(),
             Some("12345")
         );
     }
@@ -316,7 +322,7 @@ mod tests {
     #[test]
     fn test_status_id_from_short_status_url() {
         // Edge case: minimal valid status URL
-        assert_eq!(status_id_from_url("/status/1"), Some("1"));
+        assert_eq!(status_id_from_url("/status/1").as_deref(), Some("1"));
     }
 
     #[test]
@@ -352,14 +358,14 @@ mod tdd_tests {
 
     #[test]
     fn tdd_red_dive_status_id_accepts_minimal_valid_url() {
-        assert_eq!(status_id_from_url("/status/0"), Some("0"));
-        assert_eq!(status_id_from_url("/status/1"), Some("1"));
+        assert_eq!(status_id_from_url("/status/0").as_deref(), Some("0"));
+        assert_eq!(status_id_from_url("/status/1").as_deref(), Some("1"));
     }
 
     #[test]
     fn tdd_green_dive_status_id_with_multiple_slashes_in_path() {
         assert_eq!(
-            status_id_from_url("/user/extra/status/12345"),
+            status_id_from_url("/user/extra/status/12345").as_deref(),
             Some("12345")
         );
     }
@@ -376,5 +382,121 @@ mod tdd_tests {
         };
         assert!(modified.opened);
         assert!(!modified.used_fallback_target);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Roundtrip: format!("/{user}/status/{id}") → status_id_from_url → Some(id)
+        #[test]
+        fn proptest_status_id_roundtrip(
+            username in "[a-zA-Z0-9._-]{1,20}",
+            id in "[a-zA-Z0-9_-]{1,30}",
+        ) {
+            let url = format!("/{username}/status/{id}");
+            let result = status_id_from_url(&url);
+            prop_assert_eq!(result.as_deref(), Some(id.as_str()),
+                "Failed roundtrip for url={}", url);
+        }
+
+        /// status_id_from_url returns None for URLs without /status/.
+        #[test]
+        fn proptest_status_id_returns_none_for_other_urls(
+            path in "[a-zA-Z0-9/_]{1,50}",
+        ) {
+            prop_assume!(!path.contains("/status/"));
+            let result = status_id_from_url(&path);
+            prop_assert_eq!(result, None,
+                "Expected None for non-status URL: {}", path);
+        }
+
+        /// Absolute URLs with query strings still extract the tweet ID.
+        #[test]
+        fn proptest_status_id_with_query_string(
+            username in "[a-zA-Z0-9_]{1,20}",
+            id in "[0-9]{1,20}",
+            query in "[a-zA-Z0-9=;&-]{0,30}",
+        ) {
+            let url = if query.is_empty() {
+                format!("https://x.com/{username}/status/{id}")
+            } else {
+                format!("https://x.com/{username}/status/{id}?{query}")
+            };
+            let result = status_id_from_url(&url);
+            prop_assert_eq!(result.as_deref(), Some(id.as_str()),
+                "Failed for url={}", url);
+        }
+    }
+}
+
+#[cfg(test)]
+mod fuzz_tests {
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    /// Simulate the thread reply filtering logic from identify_thread_replies.
+    fn simulate_thread_reply_filtering(value: &Value) -> usize {
+        let replies = value
+            .as_object()
+            .and_then(|obj| obj.get("replies"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        replies
+            .into_iter()
+            .filter(|r| {
+                r.get("visible").and_then(|v| v.as_bool()).unwrap_or(false)
+                    && r.get("like_pos").is_some()
+                    && r.get("like_pos").and_then(|p| p.as_object()).is_some()
+            })
+            .take(8)
+            .count()
+    }
+
+    /// Simulate the thread depth logic from get_thread_depth.
+    fn simulate_thread_depth(value: &Value) -> u32 {
+        value.as_array().map(|arr| arr.len() as u32).unwrap_or(0)
+    }
+
+    fn val(s: &str) -> Value {
+        serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))
+    }
+
+    proptest! {
+        #[test]
+        fn fuzz_thread_reply_filtering(s: String) {
+            let value = val(&s);
+            let _ = simulate_thread_reply_filtering(&value);
+        }
+
+        #[test]
+        fn fuzz_thread_reply_filtering_with_replies(visible: String, like_pos: String) {
+            let value = serde_json::json!({
+                "replies": [
+                    {"visible": val(&visible), "like_pos": val(&like_pos)},
+                    {"visible": true, "like_pos": {"x": 100, "y": 200}},
+                    {},
+                    null,
+                ]
+            });
+            let _ = simulate_thread_reply_filtering(&value);
+        }
+
+        #[test]
+        fn fuzz_thread_depth(s: String) {
+            let value = val(&s);
+            let _ = simulate_thread_depth(&value);
+        }
+
+        #[test]
+        fn fuzz_current_url_value_pattern(s: String) {
+            let value = val(&s);
+            let _ = value.as_str().map(str::to_owned);
+        }
     }
 }

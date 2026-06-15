@@ -1,0 +1,40 @@
+version: 1
+id: 0014-modularize-dsl-executor
+title: Modularize dsl/executor.rs into Domain-Specific Submodules
+status: done
+owner: spec-agent
+implementer: buffy
+priority: P1
+area:
+  - dsl-executor
+files:
+  code:
+    - src/task/dsl/executor.rs
+    - src/task/dsl/mod.rs
+    - src/task/dsl/actions/mod.rs
+    - src/task/dsl/actions/browser.rs
+    - src/task/dsl/actions/wait.rs
+    - src/task/dsl/actions/inspection.rs
+    - src/task/dsl/actions/media.rs
+  docs:
+    - docs/specs/_done/0014-modularize-dsl-executor/plan.md
+    - docs/specs/_done/0014-modularize-dsl-executor/validation.md
+acceptance:
+  - "executor.rs non-test code reduced from 864 lines to ≤500 lines (only dispatch + orchestration + struct remains)"
+  - "executor.rs total file reduced from 4736 lines to ≤1000 lines (accounting for remaining dispatch tests)"
+  - "Action handler functions extracted into 4 focused submodules under actions/"
+  - "Each extracted submodule compiles independently via `cargo check` with no dead_code warnings"
+  - "All 3466+ existing tests pass without behavioral changes"
+  - "`cargo clippy --all-targets` shows no new warnings"
+  - "Module-level `//!` doc comment on each new submodule"
+  - "dsl/mod.rs re-exports unchanged (no public API breakage)"
+non_goals:
+  - No behavioral changes to DSL execution logic
+  - No renaming of public types or functions consumed outside dsl/
+  - No changes to the DSL YAML/TOML syntax or semantics
+  - No refactoring of cache or debug/profiling methods (stay in executor.rs)
+  - No extraction of execute_call (stays in executor.rs)
+risks:
+  - execute_ handlers reference `self.api`, `self.cache_ttl`, `self.selector_cache` — extracted modules need `&mut DslExecutor` or `&DslApi`
+  - Handler functions call `self.clear_cache()` and `self.substitute_variables()` — these helpers stay in executor.rs and extracted handlers call through a dispatch pattern
+  - Tests use `MockDslApi` from `dsl::api::mock` — must be accessible from action submodule test modules

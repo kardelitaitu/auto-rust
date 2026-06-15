@@ -100,10 +100,11 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
 /// Gets the center coordinates of an element matching the selector.
 /// Returns None if element not found or rect invalid.
 async fn get_element_center(api: &TaskContext, selector: &str) -> Result<Option<(f64, f64)>> {
+    let escaped = selector.replace('\'', "\\'");
     let js = format!(
         r"
         (function() {{
-            var el = document.querySelector('{selector}');
+            var el = document.querySelector('{escaped}');
             if (!el) return null;
             var rect = el.getBoundingClientRect();
             if (rect.width <= 0 || rect.height <= 0) return null;
@@ -220,12 +221,11 @@ pub async fn wait_for_page_ready(
 
 // Navigation functions moved from twitteractivity.rs
 
-/// Select a weighted entry point randomly using a seeded RNG.
-/// If `seed` is 0, uses non-deterministic random (backward compat).
+/// Select a weighted entry point randomly using non-deterministic random.
 #[must_use]
 pub fn select_entry_point() -> &'static str {
     let total_weight: u32 = ENTRY_POINTS.iter().map(|ep| ep.weight).sum();
-    let mut random = rand::random::<u32>() % total_weight;
+    let mut random = rand::Rng::gen_range(&mut rand::thread_rng(), 0..total_weight);
 
     for entry in &ENTRY_POINTS {
         if random < entry.weight {

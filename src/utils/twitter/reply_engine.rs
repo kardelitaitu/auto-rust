@@ -1,5 +1,5 @@
 use crate::llm::models::ChatMessage;
-use crate::utils::twitter::reply_strategies::{build_reply_prompt, StrategyContext};
+use crate::llm::reply_strategies::{build_reply_prompt, StrategyContext};
 
 #[must_use]
 pub fn reply_engine_system_prompt() -> String {

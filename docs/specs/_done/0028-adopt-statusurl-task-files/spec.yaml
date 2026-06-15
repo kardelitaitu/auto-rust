@@ -1,0 +1,37 @@
+version: 1
+id: 0028-adopt-statusurl-task-files
+title: Adopt StatusUrl/TweetId in task files and URL helpers
+status: done
+owner: spec-agent
+implementer: archived-pending
+priority: P2
+area:
+  - twitter task files
+  - url parsing
+files:
+  code:
+    - src/task/twitterlike.rs
+    - src/task/twitterretweet.rs
+    - src/task/twitterreply.rs
+    - src/task/twitterquote.rs
+    - src/task/twitterdive.rs
+    - src/task/twitterfollow.rs
+    - src/task/twitterintent.rs
+  docs:
+    - docs/specs/_done/0028-adopt-statusurl-task-files/plan.md
+    - docs/specs/_done/0028-adopt-statusurl-task-files/validation.md
+acceptance:
+  - All 7 task files use `StatusUrl` for tweet URLs instead of `String`
+  - `extract_url_from_payload()` returns `Result<StatusUrl>` in every task file
+  - `twitterfollow.rs` `is_tweet_url()` and `extract_username_from_tweet_url()` delegate to `StatusUrl`
+  - `twitterdive.rs` `extract_visible_tweet_ids()` returns `Vec<TweetId>` instead of `Vec<String>`
+  - `cargo check --tests` passes
+  - `cargo test -p auto-rust -- task` passes with 0 regressions
+  - `cargo fmt --check` and `cargo clippy -- -D warnings` pass
+non_goals:
+  - Do NOT change `api.navigate()` signature (StatusUrl: Deref<str> makes this unnecessary)
+  - Do NOT touch `twitteractivity_types.rs` (StatusUrl already complete)
+  - Do NOT refactor task logic beyond URL type changes
+risks:
+  - `tweet_url.is_empty()` checks need updating to `status_url.as_str().is_empty()` or StatusUrl::new validation
+  - Test code uses `extract_url_from_payload` with string comparisons — need StatusUrl::as_str()

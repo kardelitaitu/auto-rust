@@ -303,6 +303,9 @@ mod tests {
         });
     }
 
+    /// Serialize tests that mutate `LLM_PROVIDER` to avoid races.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Base RunArgs for tests: auto mode, no prompt override.
     fn base_args() -> RunArgs {
         RunArgs {
@@ -326,8 +329,10 @@ mod tests {
     #[test]
     fn pipeline_new_succeeds_with_clean_env() {
         setup();
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::remove_var("LLM_PROVIDER");
         let result = Pipeline::new(base_args(), false, true);
+        drop(_guard);
         assert!(
             result.is_ok(),
             "expected Ok, got error: {:?}",
@@ -338,9 +343,11 @@ mod tests {
     #[test]
     fn pipeline_new_fails_with_openrouter_env() {
         setup();
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("LLM_PROVIDER", "openrouter");
         let result = Pipeline::new(base_args(), false, true);
         std::env::remove_var("LLM_PROVIDER");
+        drop(_guard);
         let err = match &result {
             Err(e) => format!("{e}"),
             Ok(_) => panic!("expected Err with LLM_PROVIDER=openrouter"),

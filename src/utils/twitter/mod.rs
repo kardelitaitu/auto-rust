@@ -1,3 +1,9 @@
+/*
+last audited 09-06-26 by RSA-Agent
+crate: utils::twitter | status: SAFE | lint: CLEAN
+findings: 0 unsafe, all unwrap/expect in test code, clean clippy, 4 files >1kLoC | next: none | perf: OnceLock lazy static, no red flags
+*/
+
 //! Twitter activity task utilities.
 //! Provides helper functions for browser automation on Twitter/X.
 //!
@@ -5,13 +11,13 @@
 //! for DOM queries and interactions.
 
 pub mod decision;
+pub mod engagement;
 pub mod reply_engine;
-pub mod reply_strategies;
 pub mod sentiment;
+pub mod state;
 pub mod twitteractivity_actions;
 pub mod twitteractivity_constants;
 pub mod twitteractivity_dive;
-pub mod twitteractivity_engagement;
 pub mod twitteractivity_errors;
 pub mod twitteractivity_feed;
 pub mod twitteractivity_helpers;
@@ -28,22 +34,25 @@ pub mod twitteractivity_retry;
 pub mod twitteractivity_selectors;
 pub mod twitteractivity_simulation;
 pub mod twitteractivity_state;
+pub mod twitteractivity_types;
 pub mod unified_processor;
 
-#[allow(unused_imports)]
+pub use twitteractivity_types::{
+    ComposerFlow, EngagementOutcome, FlowError, FollowOutcome, PostOutcome, ReplyFlowState,
+    StatusUrl, TweetId,
+};
+
+#[allow(unused_imports, ambiguous_glob_reexports)]
 pub use decision::*;
 #[allow(unused_imports)]
+pub use engagement::*;
 pub use reply_engine::*;
-#[allow(unused_imports)]
-pub use reply_strategies::*;
 #[allow(unused_imports)]
 pub use sentiment::*;
 #[allow(unused_imports)]
 pub use twitteractivity_constants::*;
 #[allow(unused_imports)]
 pub use twitteractivity_dive::*;
-#[allow(unused_imports)]
-pub use twitteractivity_engagement::*;
 #[allow(unused_imports)]
 pub use twitteractivity_errors::*;
 #[allow(unused_imports)]

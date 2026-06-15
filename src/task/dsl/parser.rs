@@ -690,7 +690,10 @@ duration_ms = 200
         // ── Condition strategies (recursive, depth-limited) ─────────────────
 
         fn arb_condition() -> impl Strategy<Value = Condition> {
-            arb_condition_depth(0)
+            arb_condition_depth(0).prop_filter(
+                "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
+                |c| !condition_contains_unsafe_chars(c),
+            )
         }
 
         fn arb_condition_depth(depth: usize) -> impl Strategy<Value = Condition> {
@@ -801,7 +804,10 @@ duration_ms = 200
         }
 
         fn arb_action() -> impl Strategy<Value = Action> {
-            arb_action_depth(0)
+            arb_action_depth(0).prop_filter(
+                "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
+                |a| !action_contains_unsafe_chars(a),
+            )
         }
 
         fn arb_action_depth(depth: usize) -> impl Strategy<Value = Action> {
@@ -964,7 +970,223 @@ duration_ms = 200
             prop_oneof![leaf, recursive].boxed()
         }
 
+        // ── Unsafe character filter ────────────────────────────────────────
+
+        /// Check if a string contains characters that cause `libyml` to panic:
+        /// \\u{2028} (LINE SEPARATOR) and \\u{2029} (PARAGRAPH SEPARATOR).
+        fn str_contains_unsafe_chars(s: &str) -> bool {
+            s.contains('\u{2028}') || s.contains('\u{2029}')
+        }
+
+        /// Check if a serde_yml Value contains unsafe chars (recursively for string values).
+        fn yaml_value_contains_unsafe_chars(v: &serde_yml::Value) -> bool {
+            match v {
+                serde_yml::Value::String(s) => str_contains_unsafe_chars(s),
+                _ => false,
+            }
+        }
+
+        /// Check if a Condition contains unsafe chars in any of its string fields.
+        fn condition_contains_unsafe_chars(c: &Condition) -> bool {
+            match c {
+                Condition::ElementExists { selector } | Condition::ElementVisible { selector } => {
+                    str_contains_unsafe_chars(selector)
+                }
+                Condition::TextEquals { selector, value }
+                | Condition::TextMatches {
+                    selector,
+                    pattern: value,
+                } => str_contains_unsafe_chars(selector) || str_contains_unsafe_chars(value),
+                Condition::VariableEquals { name, value } => {
+                    str_contains_unsafe_chars(name) || yaml_value_contains_unsafe_chars(value)
+                }
+                Condition::VariableMatches { name, pattern } => {
+                    str_contains_unsafe_chars(name) || str_contains_unsafe_chars(pattern)
+                }
+                Condition::NumericGreaterThan { name, .. }
+                | Condition::NumericLessThan { name, .. } => str_contains_unsafe_chars(name),
+                Condition::NumericRange { name, .. } => str_contains_unsafe_chars(name),
+                Condition::DateBefore { name, date, format }
+                | Condition::DateAfter { name, date, format } => {
+                    str_contains_unsafe_chars(name)
+                        || str_contains_unsafe_chars(date)
+                        || format
+                            .as_ref()
+                            .is_some_and(|f| str_contains_unsafe_chars(f))
+                }
+                Condition::ArrayContains { name, value } => {
+                    str_contains_unsafe_chars(name) || yaml_value_contains_unsafe_chars(value)
+                }
+                Condition::ArrayLength { name, .. } => str_contains_unsafe_chars(name),
+                Condition::And { conditions } | Condition::Or { conditions } => {
+                    conditions.iter().any(condition_contains_unsafe_chars)
+                }
+                Condition::Not { condition } => condition_contains_unsafe_chars(condition),
+                Condition::True | Condition::False => false,
+                Condition::VariableDefined { name } | Condition::VariableNotDefined { name } => {
+                    str_contains_unsafe_chars(name)
+                }
+            }
+        }
+
+        /// Check if an Action contains unsafe chars in any of its string fields.
+        fn action_contains_unsafe_chars(a: &Action) -> bool {
+            match a {
+                Action::Navigate { url } => str_contains_unsafe_chars(url),
+                Action::Click { selector }
+                | Action::ScrollTo { selector }
+                | Action::Clear { selector }
+                | Action::Hover { selector }
+                | Action::RightClick { selector }
+                | Action::DoubleClick { selector } => str_contains_unsafe_chars(selector),
+                Action::Type { selector, text } => {
+                    str_contains_unsafe_chars(selector) || str_contains_unsafe_chars(text)
+                }
+                Action::Wait { .. } => false,
+                Action::WaitFor { selector, .. } => str_contains_unsafe_chars(selector),
+                Action::Extract {
+                    selector, variable, ..
+                } => {
+                    str_contains_unsafe_chars(selector)
+                        || variable
+                            .as_ref()
+                            .is_some_and(|v| str_contains_unsafe_chars(v))
+                }
+                Action::Execute { script } => str_contains_unsafe_chars(script),
+                Action::If {
+                    condition,
+                    then,
+                    r#else,
+                } => {
+                    condition_contains_unsafe_chars(condition)
+                        || then.iter().any(action_contains_unsafe_chars)
+                        || r#else
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(action_contains_unsafe_chars))
+                }
+                Action::Loop {
+                    condition, actions, ..
+                } => {
+                    condition
+                        .as_ref()
+                        .is_some_and(condition_contains_unsafe_chars)
+                        || actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::Call { task, parameters } => {
+                    str_contains_unsafe_chars(task)
+                        || parameters.as_ref().is_some_and(|m| {
+                            m.keys().any(|k| str_contains_unsafe_chars(k))
+                                || m.values().any(yaml_value_contains_unsafe_chars)
+                        })
+                }
+                Action::Log { message, .. } => str_contains_unsafe_chars(message),
+                Action::Screenshot { path, selector } => {
+                    path.as_ref().is_some_and(|p| str_contains_unsafe_chars(p))
+                        || selector
+                            .as_ref()
+                            .is_some_and(|s| str_contains_unsafe_chars(s))
+                }
+                Action::Select {
+                    selector, value, ..
+                } => str_contains_unsafe_chars(selector) || str_contains_unsafe_chars(value),
+                Action::Parallel { actions, .. } => {
+                    actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::Retry {
+                    actions, retry_on, ..
+                } => {
+                    actions.iter().any(action_contains_unsafe_chars)
+                        || retry_on
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(|s| str_contains_unsafe_chars(s)))
+                }
+                Action::Foreach {
+                    variable,
+                    collection,
+                    actions,
+                    ..
+                } => {
+                    str_contains_unsafe_chars(variable)
+                        || match collection {
+                            ForeachCollection::Array { values } => {
+                                values.iter().any(yaml_value_contains_unsafe_chars)
+                            }
+                            ForeachCollection::Range { .. } => false,
+                            ForeachCollection::Elements { selector } => {
+                                str_contains_unsafe_chars(selector)
+                            }
+                            ForeachCollection::Variable { name } => str_contains_unsafe_chars(name),
+                        }
+                        || actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::While {
+                    condition, actions, ..
+                } => {
+                    condition_contains_unsafe_chars(condition)
+                        || actions.iter().any(action_contains_unsafe_chars)
+                }
+                Action::Try {
+                    try_actions,
+                    catch_actions,
+                    error_variable,
+                    finally_actions,
+                } => {
+                    try_actions.iter().any(action_contains_unsafe_chars)
+                        || catch_actions
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(action_contains_unsafe_chars))
+                        || error_variable
+                            .as_ref()
+                            .is_some_and(|v| str_contains_unsafe_chars(v))
+                        || finally_actions
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(action_contains_unsafe_chars))
+                }
+            }
+        }
+
+        /// Recursively check whether any string field in the TaskDefinition tree
+        /// contains Unicode characters that cause `libyml` to panic.
+        fn task_def_contains_unsafe_chars(td: &TaskDefinition) -> bool {
+            if str_contains_unsafe_chars(&td.name)
+                || str_contains_unsafe_chars(&td.description)
+                || str_contains_unsafe_chars(&td.policy)
+            {
+                return true;
+            }
+            for (key, param) in &td.parameters {
+                if str_contains_unsafe_chars(key)
+                    || str_contains_unsafe_chars(&param.description)
+                    || param
+                        .default
+                        .as_ref()
+                        .is_some_and(yaml_value_contains_unsafe_chars)
+                {
+                    return true;
+                }
+            }
+            for inc in &td.include {
+                if str_contains_unsafe_chars(&inc.path)
+                    || inc
+                        .condition
+                        .as_ref()
+                        .is_some_and(|c| str_contains_unsafe_chars(c))
+                {
+                    return true;
+                }
+            }
+            td.actions.iter().any(action_contains_unsafe_chars)
+        }
+
         // ── Task definition strategy ────────────────────────────────────────
+
+        fn param_def_contains_unsafe_chars(pd: &ParameterDef) -> bool {
+            str_contains_unsafe_chars(&pd.description)
+                || pd
+                    .default
+                    .as_ref()
+                    .is_some_and(yaml_value_contains_unsafe_chars)
+        }
 
         fn arb_parameter_def() -> impl Strategy<Value = ParameterDef> {
             (
@@ -979,6 +1201,10 @@ duration_ms = 200
                     default,
                     required,
                 })
+                .prop_filter(
+                    "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
+                    |pd| !param_def_contains_unsafe_chars(pd),
+                )
         }
 
         fn arb_include_spec() -> impl Strategy<Value = IncludeSpec> {
@@ -1007,14 +1233,7 @@ duration_ms = 200
                 )
                 .prop_filter(
                     "libyml panics on \\u{2028} LINE SEPARATOR and \\u{2029} PARAGRAPH SEPARATOR",
-                    |td| {
-                        fn has_unsafe_chars(s: &str) -> bool {
-                            s.contains('\u{2028}') || s.contains('\u{2029}')
-                        }
-                        !has_unsafe_chars(&td.name)
-                            && !has_unsafe_chars(&td.description)
-                            && !has_unsafe_chars(&td.policy)
-                    },
+                    |td| !task_def_contains_unsafe_chars(td),
                 )
         }
 
@@ -1086,6 +1305,172 @@ duration_ms = 200
                 let parsed: TaskDefinition = toml::from_str(&toml_str)
                     .expect("TOML deserialization should succeed");
                 prop_assert_eq!(task_def, parsed);
+            }
+        }
+    }
+
+    // ========================================================================
+    // Fuzz-style proptests — malformed input must never cause panics
+    // ========================================================================
+
+    /// Fuzz module: throws random (often malformed) input at all spec parsing
+    /// entry points to verify they never panic — only return Err gracefully.
+    mod fuzz_tests {
+        use super::*;
+        use bacon_pipeline::core::spec_io::SpecMeta;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Fuzz: parse_task_yaml must never panic on any input.
+            /// serde_yml returns Err for malformed YAML, which is fine.
+            #[test]
+            fn fuzz_parse_task_yaml(
+                yaml in any::<String>(),
+            ) {
+                let _result = parse_task_yaml(&yaml);
+                // No panic — only Err or Ok
+            }
+
+            /// Fuzz: parse_task_toml must never panic on any input.
+            /// toml returns Err for malformed TOML, which is fine.
+            #[test]
+            fn fuzz_parse_task_toml(
+                toml_str in any::<String>(),
+            ) {
+                let _result = parse_task_toml(&toml_str);
+                // No panic — only Err or Ok
+            }
+
+            /// Fuzz: TaskDefinition YAML deserialization must never panic.
+            /// Random garbage, JSON, partial YAML, deeply nested structures.
+            #[test]
+            fn fuzz_task_definition_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<TaskDefinition, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: TaskDefinition TOML deserialization must never panic.
+            #[test]
+            fn fuzz_task_definition_toml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<TaskDefinition, _> = toml::from_str(&content);
+            }
+
+            /// Fuzz: Action YAML deserialization must never panic.
+            /// Random strings, partial enums, bad tags.
+            #[test]
+            fn fuzz_action_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<Action, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: Condition YAML deserialization must never panic.
+            #[test]
+            fn fuzz_condition_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<crate::task::dsl::Condition, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: SpecMeta YAML deserialization must never panic.
+            /// Tests the spec.yaml parser with unknown keys, wrong types,
+            /// missing fields, and completely random garbage.
+            #[test]
+            fn fuzz_spec_meta_yaml_deserialize(
+                content in any::<String>(),
+            ) {
+                let _result: Result<SpecMeta, _> = serde_yml::from_str(&content);
+            }
+
+            /// Fuzz: validate_task_definition must never panic.
+            /// Tests edge-case TaskDefinitions with extreme values.
+            #[test]
+            fn fuzz_validate_task_definition(
+                name in any::<String>(),
+                description in any::<String>(),
+                policy in any::<String>(),
+            ) {
+                let task_def = TaskDefinition {
+                    name,
+                    description,
+                    policy,
+                    parameters: std::collections::HashMap::new(),
+                    include: vec![],
+                    actions: vec![],
+                };
+                let _result = validate_task_definition(&task_def);
+            }
+
+            /// Fuzz: format_task_definition must never panic.
+            /// Tests with extreme/edge-case TaskDefinitions.
+            #[test]
+            fn fuzz_format_task_definition(
+                name in any::<String>(),
+                description in any::<String>(),
+                policy in any::<String>(),
+            ) {
+                let task_def = TaskDefinition {
+                    name,
+                    description,
+                    policy,
+                    parameters: std::collections::HashMap::new(),
+                    include: vec![],
+                    actions: vec![],
+                };
+                let _formatted = format_task_definition(&task_def);
+            }
+
+            /// Fuzz: SpecMeta with YAML-like content — unknown keys, wrong
+            /// value types (numbers instead of strings), empty values.
+            #[test]
+            fn fuzz_spec_meta_yaml_variants(
+                id_val in any::<String>(),
+                title_val in any::<String>(),
+                status_val in any::<String>(),
+                extra_key in any::<String>(),
+                extra_val in any::<String>(),
+            ) {
+                // Test with extra unknown keys (serde ignores unknown by default)
+                let yaml = format!(
+                    r#"id: {}
+title: {}
+status: {}
+{}: {}"#,
+                    id_val, title_val, status_val, extra_key, extra_val
+                );
+                let _result: Result<SpecMeta, _> = serde_yml::from_str(&yaml);
+            }
+
+            /// Fuzz: TaskDefinition with deeply nested, empty, or extreme structures.
+            #[test]
+            fn fuzz_task_definition_json_like(
+                name in any::<String>(),
+                action_type in any::<String>(),
+                selector in any::<String>(),
+            ) {
+                // Simulate what a malformed spec file might look like
+                let yaml = format!(
+                    r#"name: {}
+actions:
+  - action: {}
+    selector: {}"#,
+                    name, action_type, selector
+                );
+                let _result: Result<TaskDefinition, _> = serde_yml::from_str(&yaml);
+            }
+
+            /// Fuzz: parse_task_yaml with JSON-like input (valid JSON is also
+            /// valid YAML, but edge cases in the boundaries).
+            #[test]
+            fn fuzz_parse_task_yaml_boundary(
+                prefix in any::<String>(),
+                suffix in any::<String>(),
+            ) {
+                let yaml = format!("{}name: test\nactions: []{}", prefix, suffix);
+                let _result = parse_task_yaml(&yaml);
             }
         }
     }

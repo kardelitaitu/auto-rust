@@ -296,4 +296,73 @@ mod tests {
         let result = truncate_to_word_boundary(text, 10);
         assert!(result.len() <= 13); // 10 + "..."
     }
+
+    mod proptests {
+        use super::*;
+        use proptest::collection::vec;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Output of remove_emojis is never longer than input.
+            #[test]
+            fn proptest_remove_emojis_output_length(
+                chars in vec(any::<char>(), 0..50),
+            ) {
+                let text: String = chars.into_iter().collect();
+                let result = remove_emojis(&text);
+                prop_assert!(result.len() <= text.len(),
+                    "result.len()={} > text.len()={} for text={:?}",
+                    result.len(), text.len(), text);
+            }
+
+            /// No emoji codepoints remain in the output of remove_emojis.
+            #[test]
+            fn proptest_remove_emojis_no_emoji_remains(
+                chars in vec(any::<char>(), 0..50),
+            ) {
+                let text: String = chars.into_iter().collect();
+                let result = remove_emojis(&text);
+                for c in result.chars() {
+                    let cp = c as u32;
+                    prop_assert!(
+                        !is_emoji_codepoint(cp),
+                        "emoji U+{cp:04X} remains in output for input={:?}",
+                        text
+                    );
+                }
+            }
+
+            /// Characters that are not emojis are preserved in order.
+            #[test]
+            fn proptest_remove_emojis_preserves_non_emoji(
+                prefix in "[a-zA-Z0-9 ,.!?]{0,10}",
+                suffix in "[a-zA-Z0-9 ,.!?]{0,10}",
+            ) {
+                let text = format!("{prefix}😀🔥👍{suffix}");
+                let result = remove_emojis(&text);
+                prop_assert!(result.contains(&prefix),
+                    "prefix {:?} should be preserved", prefix);
+                prop_assert!(result.contains(&suffix),
+                    "suffix {:?} should be preserved", suffix);
+                prop_assert!(!result.contains("😀"));
+                prop_assert!(!result.contains("🔥"));
+                prop_assert!(!result.contains("👍"));
+            }
+        }
+
+        /// Helper: check if a codepoint is in any emoji range.
+        fn is_emoji_codepoint(cp: u32) -> bool {
+            (0x1F600..=0x1F64F).contains(&cp)    // Emoticons
+                || (0x1F300..=0x1F5FF).contains(&cp)  // Misc Symbols + Pictographs
+                || (0x1F680..=0x1F6FF).contains(&cp)  // Transport + Map
+                || (0x1F1E0..=0x1F1FF).contains(&cp)  // Flags (Regional Indicators)
+                || (0x2600..=0x26FF).contains(&cp)     // Misc Symbols
+                || (0x2700..=0x27BF).contains(&cp)     // Dingbats
+                || (0x1F900..=0x1F9FF).contains(&cp)   // Supplemental Symbols + Pictographs
+                || (0x1FA00..=0x1FAFF).contains(&cp)   // Symbols Extended-A
+                || (0x1F3FB..=0x1F3FF).contains(&cp)   // Skin tone modifiers
+                || (0xFE00..=0xFE0F).contains(&cp)     // Variation Selectors
+                || cp == 0x200D // ZWJ (Zero Width Joiner)
+        }
+    }
 }

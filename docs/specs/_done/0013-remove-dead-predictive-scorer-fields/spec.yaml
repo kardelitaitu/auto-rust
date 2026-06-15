@@ -1,0 +1,25 @@
+version: 1
+id: 0013-remove-dead-predictive-scorer-fields
+title: Remove Dead Fields and #[allow(dead_code)] from Predictive Scorer
+status: done
+owner: spec-agent
+implementer: implementer
+priority: P2
+area:
+  - adaptive-scoring
+files:
+  code:
+    - src/adaptive/predictive_scorer.rs
+  docs:
+    - docs/specs/_done/0013-remove-dead-predictive-scorer-fields/plan.md
+    - docs/specs/_done/0013-remove-dead-predictive-scorer-fields/validation.md
+acceptance:
+  - "`#[allow(dead_code)]` is removed from `src/adaptive/predictive_scorer.rs` and `cargo check --lib` compiles without dead-code warnings"
+  - "`engagement_model` and `feature_extractor` fields removed from `PredictiveEngagementScorer` struct"
+  - "`cargo test` passes all existing tests with no regressions"
+  - "`cargo clippy` shows no new warnings"
+non_goals:
+  - No behavioral changes to prediction logic
+  - No removal of structs or fields used in production code paths (only truly dead fields)
+risks:
+  - All private structs (EngagementModel, FeatureExtractor, ActionRecommender, etc.) ARE used in production code paths; only 2 fields in PredictiveEngagementScorer are dead

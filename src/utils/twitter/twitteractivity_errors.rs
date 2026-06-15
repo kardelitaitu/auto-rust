@@ -64,6 +64,13 @@ impl ErrorClassifier for anyhow::Error {
             || err_str.contains("navigation")
             || err_str.contains("net::")
             || err_str.contains("network error")
+            // LLM-specific transient patterns (rate limit via is_rate_limit_error, overload, server errors)
+            || is_rate_limit_error(self)
+            || err_str.contains("overloaded")
+            || err_str.contains("503")
+            || err_str.contains("server error")
+            || err_str.contains("model is at capacity")
+            || err_str.contains("try again later")
         {
             return ErrorClass::Transient;
         }
@@ -384,6 +391,55 @@ mod gap_tests {
     fn anyhow_unknown_error_is_permanent() {
         let err = anyhow::anyhow!("something completely unexpected happened");
         assert_eq!(err.classify(), ErrorClass::Permanent);
+    }
+
+    // LLM-specific transient patterns
+    #[test]
+    fn anyhow_rate_limit_is_transient() {
+        let err = anyhow::anyhow!("rate limit exceeded for model gpt-4");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_too_many_requests_is_transient() {
+        let err = anyhow::anyhow!("too many requests, please slow down");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_http_429_is_transient() {
+        let err = anyhow::anyhow!("HTTP 429: rate limited");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_overloaded_is_transient() {
+        let err = anyhow::anyhow!("model overloaded, try again later");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_http_503_is_transient() {
+        let err = anyhow::anyhow!("HTTP 503 service unavailable");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_server_error_is_transient() {
+        let err = anyhow::anyhow!("server error occurred during processing");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_model_at_capacity_is_transient() {
+        let err = anyhow::anyhow!("model is at capacity, try again later");
+        assert_eq!(err.classify(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn anyhow_try_again_later_is_transient() {
+        let err = anyhow::anyhow!("service busy, try again later");
+        assert_eq!(err.classify(), ErrorClass::Transient);
     }
 
     // is_auth_error additional patterns

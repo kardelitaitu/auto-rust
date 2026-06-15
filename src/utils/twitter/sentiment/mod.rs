@@ -15,8 +15,12 @@ pub trait SentimentStrategy: std::fmt::Debug + Send + Sync {
     fn analyze(&self, text: &str) -> f32;
 }
 
-pub mod analyzer;
+pub mod core;
+pub mod helpers;
 pub mod strategies;
+pub mod types;
 pub mod utils;
 
-pub use analyzer::*;
+pub use core::*;
+pub use helpers::*;
+pub use types::*;

@@ -34,9 +34,17 @@ pub async fn analyze_sentiment_llm(llm: &LlmClient, text: &str) -> Result<LlmSen
     let prompt = SENTIMENT_PROMPT.replace("{tweet_text}", &truncated);
     let messages = vec![ChatMessage::user(prompt)];
     let response_text = llm.chat(messages).await?;
-    let json_start = response_text.find('{').unwrap_or(0);
-    let json_end = response_text.rfind('}').unwrap_or(response_text.len());
-    let json_str = &response_text[json_start..json_end.min(response_text.len())];
+    let json_start = response_text.find('{');
+    let json_end = response_text.rfind('}');
+    let json_str = match (json_start, json_end) {
+        (Some(start), Some(end)) if start < end => &response_text[start..=end],
+        _ => {
+            return Err(anyhow::anyhow!(
+                "No valid JSON object found in LLM response: {}",
+                &response_text[..response_text.len().min(100)],
+            ))
+        }
+    };
     let result: LlmSentimentResult = serde_json::from_str(json_str)?;
     Ok(result)
 }
@@ -180,5 +188,99 @@ mod tests {
         let result: LlmSentimentResult = serde_json::from_str(json).expect("deserialize");
         assert_eq!(result.sentiment, "negative");
         assert!((result.confidence - 0.3).abs() < 0.01);
+    }
+}
+
+// ============================================================================
+// Fuzz-style proptests for LlmSentimentResult deserialization
+// ============================================================================
+
+#[cfg(test)]
+mod fuzz_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Fuzz: LlmSentimentResult deserialization must never panic.
+        /// serde_json returns Err for malformed JSON, which is fine.
+        #[test]
+        fn fuzz_sentiment_result_deserialize(
+            content in any::<String>(),
+        ) {
+            let _result: Result<LlmSentimentResult, _> = serde_json::from_str(&content);
+        }
+
+        /// Fuzz: JSON extraction logic (used in analyze_sentiment_llm) must never panic.
+        /// The code does response_text.find('{').unwrap_or(0) and
+        /// response_text.rfind('}').unwrap_or(response_text.len()) then slices.
+        #[test]
+        fn fuzz_json_extraction(
+            response_text in any::<String>(),
+        ) {
+            // Simulate the fixed extraction logic (now safe on all inputs):
+            let json_start = response_text.find('{');
+            let json_end = response_text.rfind('}');
+            match (json_start, json_end) {
+                (Some(start), Some(end)) if start < end => {
+                    let json_str = &response_text[start..=end];
+                    let _ = serde_json::from_str::<LlmSentimentResult>(json_str);
+                }
+                _ => {
+                    // No valid JSON — should not panic
+                }
+            }
+        }
+
+        /// Fuzz: llm_sentiment_to_enum must never panic for any string.
+        /// Defaults to Sentiment::Neutral for unrecognized values.
+        #[test]
+        fn fuzz_sentiment_to_enum(
+            sentiment_str in any::<String>(),
+        ) {
+            let result = llm_sentiment_to_enum(&sentiment_str);
+            // Result must always be a valid Sentiment variant
+            let variants = [
+                crate::utils::twitter::sentiment::Sentiment::Positive,
+                crate::utils::twitter::sentiment::Sentiment::Negative,
+                crate::utils::twitter::sentiment::Sentiment::Neutral,
+            ];
+            prop_assert!(variants.contains(&result),
+                "llm_sentiment_to_enum('{:?}') returned {:?}, not a valid variant",
+                sentiment_str, result);
+        }
+
+        /// Fuzz: simulate the full LLM sentiment JSON pipeline with edge-case JSON.
+        /// Tests various JSON structures the LLM might return for sentiment.
+        #[test]
+        fn fuzz_sentiment_json_pipeline(
+            sentiment in any::<String>(),
+            confidence in any::<f32>(),
+        ) {
+            let json = format!(
+                r#"{{"sentiment":"{}","confidence":{}}}"#,
+                sentiment, confidence
+            );
+            if let Ok(result) = serde_json::from_str::<LlmSentimentResult>(&json) {
+                // Downstream processing should also not panic
+                let _enum = llm_sentiment_to_enum(&result.sentiment);
+                // confidence can be any f32 — the downstream code uses it as-is
+                // No assertion needed; we just verify no panic during deserialization/enum conversion
+            }
+        }
+
+        /// Fuzz: LlmSentimentResult with extra/unexpected fields.
+        /// serde by default ignores unknown fields, so this should never fail.
+        #[test]
+        fn fuzz_sentiment_result_extra_fields(
+            sentiment in any::<String>(),
+            extra_key in any::<String>(),
+            extra_value in any::<String>(),
+        ) {
+            let json = format!(
+                r#"{{"sentiment":"{}","{}":"{}"}}"#,
+                sentiment, extra_key, extra_value
+            );
+            let _ = serde_json::from_str::<LlmSentimentResult>(&json);
+        }
     }
 }

@@ -230,6 +230,7 @@ mod tests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
     use crate::utils::twitter::twitteractivity_state::TaskConfig;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     fn persona_with_probs(
         like: f64,
@@ -254,7 +255,7 @@ mod tests {
 
     fn ctx(text: &str, replies: Vec<&str>, persona: PersonaWeights) -> TweetContext {
         TweetContext {
-            tweet_id: "1".to_string(),
+            tweet_id: TweetId::from_unchecked("1"),
             text: text.to_string(),
             author: "user".to_string(),
             replies: replies.into_iter().map(String::from).collect(),
@@ -576,6 +577,7 @@ mod proptests {
     use super::*;
     use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
     use crate::utils::twitter::twitteractivity_state::TaskConfig;
+    use crate::utils::twitter::twitteractivity_types::TweetId;
 
     fn make_persona(
         like: f64,
@@ -600,7 +602,7 @@ mod proptests {
 
     fn make_ctx(text: &str, replies: Vec<&str>, persona: PersonaWeights) -> TweetContext {
         TweetContext {
-            tweet_id: "pt-1".into(),
+            tweet_id: TweetId::from_unchecked("pt-1"),
             text: text.into(),
             author: "u".into(),
             replies: replies.into_iter().map(String::from).collect(),

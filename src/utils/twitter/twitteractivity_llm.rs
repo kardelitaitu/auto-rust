@@ -16,6 +16,7 @@ use crate::llm::Llm;
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_LONG_SECS;
 use crate::utils::twitter::reply_engine::{build_quote_messages, build_reply_messages};
+use crate::utils::twitter::twitteractivity_retry::{retry_with_backoff, RetryConfig};
 use crate::utils::twitter::twitteractivity_selectors;
 
 fn llm_instance() -> Result<&'static Llm> {
@@ -31,9 +32,9 @@ fn llm_instance() -> Result<&'static Llm> {
 }
 
 /// Generates a contextual reply to a tweet using LLM.
-#[instrument(skip(_api, top_replies))]
+#[instrument(skip(api, top_replies))]
 pub async fn generate_reply(
-    _api: &TaskContext,
+    api: &TaskContext,
     tweet_author: &str,
     tweet_text: &str,
     top_replies: Vec<(String, String)>,
@@ -54,14 +55,25 @@ pub async fn generate_reply(
             .collect::<Vec<_>>(),
     );
 
-    // Generate with timeout
+    // Generate with retry and timeout (each attempt gets its own 30s window)
     let llm = llm_instance()?;
-    let reply = tokio::time::timeout(
-        std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
-        llm.chat_with_fallback(messages),
+    let reply = retry_with_backoff(
+        || {
+            let msgs = messages.clone();
+            async move {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
+                    llm.chat_with_fallback(msgs),
+                )
+                .await
+                .context("LLM generation timed out after 30s")?
+            }
+        },
+        &RetryConfig::conservative(),
+        api,
+        "generate_reply",
     )
-    .await
-    .context("LLM generation timed out after 30s")??;
+    .await?;
 
     // Validate and sanitize output
     let sanitized = validate_reply(&reply)?;
@@ -77,9 +89,9 @@ pub async fn generate_reply(
 }
 
 /// Generates a quote tweet commentary using LLM.
-#[instrument(skip(_api, top_replies))]
+#[instrument(skip(api, top_replies))]
 pub async fn generate_quote_commentary(
-    _api: &TaskContext,
+    api: &TaskContext,
     tweet_author: &str,
     tweet_text: &str,
     top_replies: Vec<(String, String)>,
@@ -99,13 +111,25 @@ pub async fn generate_quote_commentary(
             .collect::<Vec<_>>(),
     );
 
+    // Generate with retry and timeout (each attempt gets its own 30s window)
     let llm = llm_instance()?;
-    let commentary = tokio::time::timeout(
-        std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
-        llm.chat_with_fallback(messages),
+    let commentary = retry_with_backoff(
+        || {
+            let msgs = messages.clone();
+            async move {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(TIMEOUT_LONG_SECS),
+                    llm.chat_with_fallback(msgs),
+                )
+                .await
+                .context("LLM generation timed out after 30s")?
+            }
+        },
+        &RetryConfig::conservative(),
+        api,
+        "generate_quote_commentary",
     )
-    .await
-    .context("LLM generation timed out after 30s")??;
+    .await?;
 
     // Validate and sanitize output
     let sanitized = validate_reply(&commentary)?;

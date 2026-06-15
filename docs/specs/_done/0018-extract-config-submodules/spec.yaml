@@ -1,0 +1,42 @@
+version: 1
+id: 0018-extract-config-submodules
+title: Extract Config Submodules
+status: done
+owner: spec-agent
+implementer: buffy
+priority: P2
+area:
+  - config
+  - modularization
+files:
+  code:
+    - src/config/mod.rs (reduced to re-exports + load_config + ConfigValidationReport)
+    - src/config/types.rs
+    - src/config/defaults.rs
+    - src/config/env.rs
+    - src/config/tests.rs
+    - src/config/validation.rs
+  docs:
+    - docs/specs/_done/0018-extract-config-submodules/plan.md
+    - docs/specs/_done/0018-extract-config-submodules/validation.md
+acceptance:
+  - config/mod.rs reduced from 3631 to ≤200 lines (re-exports + load_config + ConfigValidationReport, excl. tests)
+  - config/types.rs ≤800 (all 13 struct + 2 enum definitions)
+  - config/defaults.rs ≤600 (all Default impls + default_*() helpers)
+  - config/env.rs ≤300 (load_dotenv_defaults + load_code_config + apply_env_overrides)
+  - config/tests.rs ≤3000 (all config tests extracted from mod.rs)
+  - config/validation.rs unchanged (already a separate file)
+  - All submodules compile (cargo check -p auto-rust)
+  - All existing tests pass (cargo test --lib)
+  - No public API breakage — re-exports preserve all paths
+  - cargo clippy --all-targets --all-features passes with 0 warnings
+non_goals:
+  - No behavioral changes to config loading, validation, or env overrides
+  - No changes to public type signatures or trait impls
+  - No new features or optimizations
+  - No changes to how other modules import config types
+risks:
+  - BrowserConfig references CircuitBreakerConfig + NativeInteractionConfig — extract together
+  - Config struct references all sub-configs — extract all types to types.rs first
+  - apply_env_overrides mutates Config in-place — preserve signature exactly
+  - Default impls for types with sub-configs need sibling imports from types.rs

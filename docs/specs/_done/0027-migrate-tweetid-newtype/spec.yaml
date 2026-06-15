@@ -1,0 +1,60 @@
+version: 1
+id: 0027-migrate-tweetid-newtype
+title: Migrate String tweet IDs/status URLs to TweetId and StatusUrl newtypes
+status: done
+owner: spec-agent
+implementer: archived-pending
+priority: P2
+area:
+  - twitter
+  - types
+  - safety
+files:
+  code:
+    - src/utils/twitter/twitteractivity_types.rs
+    - src/utils/twitter/state/tracking.rs
+    - src/utils/twitter/state/session.rs
+    - src/utils/twitter/decision/types.rs
+    - src/utils/twitter/state/types.rs
+    - src/utils/twitter/engagement/mod.rs
+    - src/utils/twitter/engagement/dispatch.rs
+    - src/utils/twitter/engagement/scoring.rs
+    - src/utils/twitter/twitteractivity_helpers.rs
+    - src/utils/twitter/twitteractivity_dive.rs
+    - src/task/twitterdive.rs
+    - src/task/twitterfollow.rs
+    - src/task/twitterlike.rs
+    - src/task/twitterretweet.rs
+    - src/task/twitterreply.rs
+    - src/task/twitterquote.rs
+    - src/task/twitterintent.rs
+    - src/utils/twitter/twitteractivity_dive.rs
+  docs:
+    - docs/specs/_done/0027-migrate-tweetid-newtype/plan.md
+    - docs/specs/_done/0027-migrate-tweetid-newtype/validation.md
+acceptance:
+  - "TweetActionTracker uses HashMap<TweetId, ...> instead of HashMap<String, ...>"
+  - "record_action() accepts TweetId instead of String (eliminates .to_string() allocations at call sites)"
+  - "can_perform_action() accepts &TweetId instead of &str"
+  - "TweetContext.tweet_id and CandidateContext fields use TweetId instead of String"
+  - "All engagement helpers (validate_tweet_page, action_allowed_by_limits, selected_candidate_actions) use &TweetId instead of &str"
+  - "dispatch_action() and dispatch.rs use TweetId instead of &str for tweet_id parameter"
+  - "engagement/mod.rs extracts tweet_id as TweetId from JSON (fail fast on missing/malformed, not 'unknown')"
+  - "status_url in engagement flow uses StatusUrl instead of &str"
+  - "status_id_from_url() in twitteractivity_dive.rs delegates to StatusUrl::tweet_id() or is removed"
+  - "is_tweet_url()/extract_username_from_tweet_url() in twitterfollow.rs use StatusUrl"
+  - "All task files (twitterlike, retweet, reply, quote, dive, intent) pass TweetId/StatusUrl to navigation"
+  - "All test helpers and test code use TweetId::from_unchecked() for literal IDs"
+  - "cargo check passes; cargo test -p auto-rust passes; check.ps1 passes"
+non_goals:
+  - Do not change any engagement or navigation behavior
+  - Do not modify the TweetId/StatusUrl struct definitions or validation rules
+  - Do not add new validation (TweetId already rejects empty strings; StatusUrl already extracts IDs)
+  - Do not touch files outside the twitter subsystem
+  - Do not change JSON key names (continue using "id" and "status_url" as field names)
+risks:
+  - "TweetActionTracker's HashMap key change is the central choke point — all callers of record_action() and can_perform_action() must be updated"
+  - "TweetContext is used across 4 decision strategy files — field type change propagates to all test code creating TweetContext literals"
+  - "TweetId::from_unchecked() vs TweetId::new() — from_unchecked is preferred for values already validated (JSON keys, DOM attributes) to avoid redundant error handling"
+  - "JSON extraction in engagement/mod.rs line 197 currently defaults to 'unknown' on missing ID — must fail fast instead (return error, not silently proceed)"
+  - "Approximately 15 files and ~80 call sites — mechanical but high-touch; regression risk mitigated by 3,400+ existing tests"

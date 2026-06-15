@@ -10,6 +10,7 @@ use auto::utils::twitter::{
     sentiment::{analyze_tweet_sentiment_sync, sentiment_score, Sentiment, SentimentAnalyzer},
     twitteractivity_navigation::ENTRY_POINTS,
     twitteractivity_persona::select_persona_weights,
+    TweetId,
 };
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde_json::json;
@@ -28,11 +29,11 @@ fn twitteractivity_config_has_valid_defaults() {
     let ta = TwitterActivityConfig::default();
 
     assert!(
-        ta.feed_scan_duration_ms >= 10_000,
+        ta.feed_scan_duration_ms.get() >= 10_000,
         "scan duration must be >= 10s"
     );
     assert!(
-        ta.feed_scan_duration_ms <= 1_800_000,
+        ta.feed_scan_duration_ms.get() <= 1_800_000,
         "scan duration must be <= 30min"
     );
     assert!(ta.feed_scroll_count >= 1, "scroll count must be at least 1");
@@ -97,16 +98,16 @@ fn twitteractivity_action_chaining_prevention_works() {
 
     // First action should be allowed
     assert!(
-        tracker.can_perform_action(tweet_id, "like"),
+        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "first action on tweet should be allowed"
     );
 
     // Record the action
-    tracker.record_action(tweet_id.to_string(), "like");
+    tracker.record_action(TweetId::from_unchecked(tweet_id), "like");
 
     // Immediate second action should be blocked due to cooldown
     assert!(
-        !tracker.can_perform_action(tweet_id, "retweet"),
+        !tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "second action immediately after first should be blocked"
     );
 
@@ -115,7 +116,7 @@ fn twitteractivity_action_chaining_prevention_works() {
 
     // After cooldown, action should be allowed again
     assert!(
-        tracker.can_perform_action(tweet_id, "retweet"),
+        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "action should be allowed after cooldown expires"
     );
 }
@@ -128,11 +129,11 @@ fn twitteractivity_action_chaining_different_tweets_allowed() {
     let tweet_id_2 = "test_tweet_2";
 
     // Record action on first tweet
-    tracker.record_action(tweet_id_1.to_string(), "like");
+    tracker.record_action(TweetId::from_unchecked(tweet_id_1), "like");
 
     // Action on different tweet should be allowed immediately
     assert!(
-        tracker.can_perform_action(tweet_id_2, "like"),
+        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id_2)),
         "action on different tweet should be allowed immediately"
     );
 }
@@ -146,14 +147,14 @@ fn twitteractivity_action_chaining_same_action_after_cooldown() {
     let tweet_id = "test_tweet_456";
 
     // Record first like action
-    tracker.record_action(tweet_id.to_string(), "like");
+    tracker.record_action(TweetId::from_unchecked(tweet_id), "like");
 
     // Wait for cooldown
     std::thread::sleep(Duration::from_millis(TEST_DELAY_MS + 10));
 
     // Same action type should be allowed after cooldown
     assert!(
-        tracker.can_perform_action(tweet_id, "like"),
+        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "same action type should be allowed after cooldown"
     );
 }
@@ -247,7 +248,7 @@ fn twitteractivity_engagement_limits_total_actions() {
     // Total should be sum of all individual counters
     assert_eq!(
         counters.total_actions(),
-        counters.likes + counters.retweets + counters.follows + counters.replies,
+        counters.likes() + counters.retweets() + counters.follows() + counters.replies(),
         "total actions should equal sum of individual counters"
     );
 
@@ -273,7 +274,7 @@ fn twitteractivity_engagement_limits_remaining_calculation() {
     let remaining = limits.remaining(&counters);
     assert_eq!(
         remaining.get("likes"),
-        Some(&(limits.max_likes - counters.likes)),
+        Some(&(limits.max_likes - counters.likes())),
         "remaining likes should be max minus current"
     );
 }
@@ -397,13 +398,13 @@ fn twitteractivity_action_chaining_multiple_tweets() {
 
     // Record actions on different tweets
     for tweet_id in &tweet_ids {
-        tracker.record_action(tweet_id.to_string(), "like");
+        tracker.record_action(TweetId::from_unchecked(*tweet_id), "like");
     }
 
     // Each tweet should be blocked for its own action type
     for tweet_id in &tweet_ids {
         assert!(
-            !tracker.can_perform_action(tweet_id, "retweet"),
+            !tracker.can_perform_action(&TweetId::from_unchecked(*tweet_id)),
             "tweet should be blocked after like"
         );
     }
@@ -414,7 +415,7 @@ fn twitteractivity_action_chaining_multiple_tweets() {
     // All tweets should now be unblocked
     for tweet_id in &tweet_ids {
         assert!(
-            tracker.can_perform_action(tweet_id, "retweet"),
+            tracker.can_perform_action(&TweetId::from_unchecked(*tweet_id)),
             "tweet should be unblocked after cooldown"
         );
     }
@@ -429,15 +430,15 @@ fn twitteractivity_action_chaining_overwrites_previous() {
     let tweet_id = "test_tweet_overwrite";
 
     // Record first action
-    tracker.record_action(tweet_id.to_string(), "like");
-    assert!(!tracker.can_perform_action(tweet_id, "retweet"));
+    tracker.record_action(TweetId::from_unchecked(tweet_id), "like");
+    assert!(!tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)));
 
     // Wait for cooldown
     std::thread::sleep(Duration::from_millis(TEST_DELAY_MS + 10));
 
     // Record second action
-    tracker.record_action(tweet_id.to_string(), "retweet");
-    assert!(!tracker.can_perform_action(tweet_id, "follow"));
+    tracker.record_action(TweetId::from_unchecked(tweet_id), "retweet");
+    assert!(!tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)));
 }
 
 /// Tests that entry point selection has expected distribution.
@@ -530,12 +531,12 @@ fn twitteractivity_action_chaining_zero_delay() {
     let tweet_id = "test_zero_delay";
 
     // First action
-    assert!(tracker.can_perform_action(tweet_id, "like"));
-    tracker.record_action(tweet_id.to_string(), "like");
+    assert!(tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)));
+    tracker.record_action(TweetId::from_unchecked(tweet_id), "like");
 
     // With zero delay, should be allowed immediately
     assert!(
-        tracker.can_perform_action(tweet_id, "retweet"),
+        tracker.can_perform_action(&TweetId::from_unchecked(tweet_id)),
         "action should be allowed with zero delay"
     );
 }
@@ -843,13 +844,13 @@ fn twitteractivity_session_state_record_action() {
     let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
     let mut state = SessionState::new(limits, 60000, 100);
 
-    state.record_action("tweet_1", "like");
-    state.record_action("tweet_2", "retweet");
-    state.record_action("tweet_3", "follow");
+    state.record_action(&TweetId::from_unchecked("tweet_1"), "like");
+    state.record_action(&TweetId::from_unchecked("tweet_2"), "retweet");
+    state.record_action(&TweetId::from_unchecked("tweet_3"), "follow");
 
-    assert_eq!(state.counters.likes, 1);
-    assert_eq!(state.counters.retweets, 1);
-    assert_eq!(state.counters.follows, 1);
+    assert_eq!(state.counters.likes(), 1);
+    assert_eq!(state.counters.retweets(), 1);
+    assert_eq!(state.counters.follows(), 1);
     assert_eq!(state.counters.total_actions(), 3);
     assert!(!state.is_total_limit_reached());
 }
@@ -864,9 +865,9 @@ fn twitteractivity_session_state_total_limit() {
     let mut state = SessionState::new(limits, 60000, 100);
 
     // Exceed total limit
-    state.record_action("tweet_1", "like");
-    state.record_action("tweet_2", "like");
-    state.record_action("tweet_3", "like");
+    state.record_action(&TweetId::from_unchecked("tweet_1"), "like");
+    state.record_action(&TweetId::from_unchecked("tweet_2"), "like");
+    state.record_action(&TweetId::from_unchecked("tweet_3"), "like");
 
     assert!(state.is_total_limit_reached());
     assert_eq!(state.action_summary(), (3, 3));
@@ -881,7 +882,7 @@ fn twitteractivity_session_state_progress_summary() {
     let limits = EngagementLimits::with_limits(5, 3, 2, 1, 3, 2, 2, 10);
     let mut state = SessionState::new(limits, 60000, 100);
 
-    state.record_action("tweet_1", "like");
+    state.record_action(&TweetId::from_unchecked("tweet_1"), "like");
     let summary = state.progress_summary();
     assert!(summary.contains("1/10"));
     assert!(summary.contains("L:1"));

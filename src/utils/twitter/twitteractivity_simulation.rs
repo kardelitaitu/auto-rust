@@ -112,13 +112,13 @@ impl SimAction {
         limits: &EngagementLimits,
     ) -> (u32, u32) {
         match self {
-            Self::Like => (counters.likes, limits.max_likes),
-            Self::Retweet => (counters.retweets, limits.max_retweets),
-            Self::Quote => (counters.quote_tweets, limits.max_quote_tweets),
-            Self::Follow => (counters.follows, limits.max_follows),
-            Self::Reply => (counters.replies, limits.max_replies),
-            Self::Bookmark => (counters.bookmarks, limits.max_bookmarks),
-            Self::Dive => (counters.thread_dives, limits.max_thread_dives),
+            Self::Like => (counters.likes(), limits.max_likes),
+            Self::Retweet => (counters.retweets(), limits.max_retweets),
+            Self::Quote => (counters.quote_tweets(), limits.max_quote_tweets),
+            Self::Follow => (counters.follows(), limits.max_follows),
+            Self::Reply => (counters.replies(), limits.max_replies),
+            Self::Bookmark => (counters.bookmarks(), limits.max_bookmarks),
+            Self::Dive => (counters.thread_dives(), limits.max_thread_dives),
         }
     }
 
@@ -515,31 +515,31 @@ mod tests {
         let mut counters = EngagementCounters::new();
 
         SimAction::Like.increment(&mut counters);
-        assert_eq!(counters.likes, 1);
+        assert_eq!(counters.likes(), 1);
         assert_eq!(counters.total_actions(), 1);
 
         SimAction::Retweet.increment(&mut counters);
-        assert_eq!(counters.retweets, 1);
+        assert_eq!(counters.retweets(), 1);
         assert_eq!(counters.total_actions(), 2);
 
         SimAction::Follow.increment(&mut counters);
-        assert_eq!(counters.follows, 1);
+        assert_eq!(counters.follows(), 1);
         assert_eq!(counters.total_actions(), 3);
 
         SimAction::Reply.increment(&mut counters);
-        assert_eq!(counters.replies, 1);
+        assert_eq!(counters.replies(), 1);
         assert_eq!(counters.total_actions(), 4);
 
         SimAction::Bookmark.increment(&mut counters);
-        assert_eq!(counters.bookmarks, 1);
+        assert_eq!(counters.bookmarks(), 1);
         assert_eq!(counters.total_actions(), 5);
 
         SimAction::Quote.increment(&mut counters);
-        assert_eq!(counters.quote_tweets, 1);
+        assert_eq!(counters.quote_tweets(), 1);
         assert_eq!(counters.total_actions(), 6);
 
         SimAction::Dive.increment(&mut counters);
-        assert_eq!(counters.thread_dives, 1);
+        assert_eq!(counters.thread_dives(), 1);
         assert_eq!(counters.total_actions(), 7);
     }
 

@@ -34,8 +34,8 @@ fn spawn_fake_ollama(max_requests: usize) -> String {
             let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
             let _ = read_http_request(&mut stream);
 
-            // NVIDIA Chat Completions API response format
-            let body = r##"{"choices":[{"message":{"content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."},"finish_reason":"stop"}]}"##;
+            // Ollama API response format (provider=ollama uses /api/chat endpoint)
+            let body = r##"{"done":true,"message":{"content":"# Fixture Plan\n\n1. Keep this dry-run fixture deterministic.\n2. Do not write files.\n3. Report success."}}"##;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),
@@ -163,6 +163,7 @@ timeout_ms = 5000
         .env("OLLAMA_MODEL", "fixture-model")
         .env("BACON_CONFIG", bacon_config)
         .env("RUST_LOG", "info")
+        .env("NO_PROXY", "127.0.0.1,localhost")
         .output()
         .expect("run bacon dry-run smoke");
 

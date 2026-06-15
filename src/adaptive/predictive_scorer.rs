@@ -10,13 +10,7 @@ pub struct UserBehaviorProfile {
 
 /// Predictive engagement scorer that uses ML models for engagement prediction.
 pub struct PredictiveEngagementScorer {
-    /// ML model for engagement prediction
-    #[allow(dead_code)]
-    engagement_model: EngagementModel,
-    // Feature extractor for tweet analysis
-    #[allow(dead_code)]
-    feature_extractor: FeatureExtractor,
-    // Action recommendation engine
+    /// Action recommendation engine
     action_recommender: ActionRecommender,
 }
 
@@ -176,8 +170,6 @@ impl PredictiveEngagementScorer {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            engagement_model: EngagementModel::new(),
-            feature_extractor: FeatureExtractor::new(),
             action_recommender: ActionRecommender::new(),
         }
     }

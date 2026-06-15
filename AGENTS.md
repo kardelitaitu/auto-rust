@@ -89,7 +89,8 @@ Use for commands that produce output, or when indexing docs.
 3. Present findings when the change is risky or ambiguous.
 4. Implement the smallest safe change.
 5. Verify with the relevant checks.
-6. Close out with a short summary and, when useful, `JOURNAL.md` updates.
+6. Never commit or push unless `.\check.ps1` passes — unless explicitly instructed to do otherwise.
+7. Close out with a short summary and, when useful, `JOURNAL.md` updates.
 
 ## Response style
 

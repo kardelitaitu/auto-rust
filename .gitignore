@@ -10,6 +10,7 @@
 # Generated output directories
 coverage-data/
 mutants-out/
+tarpaulin-report.html
 
 # Private analysis/plan docs (not code)
 BACON_PIPELINE_IMPROVEMENT_ANALYSIS.md

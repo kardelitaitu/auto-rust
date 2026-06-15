@@ -126,6 +126,12 @@ fix_*
 check_errors.txt
 check_output.txt
 codebase-files.txt
+coverage.txt
+metadata.tmp
+upgrade
+index-codebase.js
+apply_press_executor.py
+codebase-index.ps1
 
 
 .aider*

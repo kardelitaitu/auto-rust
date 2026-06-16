@@ -1,6 +1,6 @@
 # Twitter Reply Task
 
-last audited 13-05-26 by Buffy
+last audited 16-06-26 by opencode
 
 Extract tweet context and compose human-like replies with optional LLM integration.
 

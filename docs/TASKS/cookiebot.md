@@ -1,6 +1,6 @@
 # CookieBot Task
 
-last audited 13-05-26 by Buffy
+last audited 16-06-26 by opencode
 
 Manages browser cookies and consent dialogs. Visits URLs from `data/cookiebot.txt`.
 

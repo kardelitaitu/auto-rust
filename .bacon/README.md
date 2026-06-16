@@ -1,5 +1,7 @@
 # Bacon — Autonomous Coding Pipeline
 
+*last audited 16-06-26 by opencode*
+
 Bacon is a gated 4-agent LLM pipeline for autonomous code improvements. It turns prompts or compiler warnings into verified, spec-driven code changes.
 
 ## Quick Start
@@ -141,11 +143,13 @@ docs/
 ├── _archive/            # Archived historical documents
 └── ...                  # Other project docs
 
+crates/
+├── bacon-pipeline/      # Shared pipeline types, traits & agent implementations
+└── ...                  # Future workspace crates
+
 src/
-├── bacon_core/          # Shared pipeline types & traits
-├── bacon_agent_nvidia/  # NVIDIA pipeline implementation
 ├── bin/                 # Binary entry points
-└── ...                  # Other modules
+└── ...                  # Application modules
 ```
 
 ## Validation
@@ -155,6 +159,6 @@ src/
 | Quick | `check-fast.ps1` (cargo check, clippy, fmt) |
 | Full | `check.ps1` (slow + integration tests) |
 | Specs | `spec-lint.ps1` |
-| Tests | `cargo nextest run` (2,949+ tests) |
+| Tests | `cargo nextest run` (3,510+ tests) |
 
 For detailed pipeline operations, configuration, error recovery, and CLI worker contracts, see [workflow.md](workflow.md).

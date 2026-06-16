@@ -1,4 +1,4 @@
-last audited 13-05-26 by Buffy
+last audited 16-06-26 by opencode
 # Selector Rules
 
 Use this guide when you edit task selectors, selector helpers, or task author docs.

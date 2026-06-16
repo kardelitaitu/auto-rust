@@ -1,4 +1,4 @@
-last audited 08-05-26 by Kilo
+last audited 16-06-26 by opencode
 # API Reference
 
 Complete reference for the TaskContext API and interaction patterns.
@@ -390,8 +390,7 @@ The `DslExecutor` provides programmatic control over declarative task execution.
 ### Basic Usage
 
 ```rust
-use auto::task::dsl_executor::DslExecutor;
-use auto::task::dsl::TaskDefinition;
+use auto::task::dsl::{DslExecutor, TaskDefinition};
 
 let task_def = TaskDefinition::from_yaml_file("tasks/my_task.yaml")?;
 let mut executor = DslExecutor::new(api, &task_def);
@@ -407,7 +406,7 @@ pub fn with_debug_mode(mut self, enabled: bool) -> Self
 
 #### Add Breakpoints
 ```rust
-use auto::task::dsl_executor::Breakpoint;
+use auto::task::dsl::Breakpoint;
 
 // Break at specific action index
 executor.add_breakpoint(Breakpoint::on_action(5));

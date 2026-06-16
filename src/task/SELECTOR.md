@@ -1,6 +1,6 @@
 # Selector Standard
 
-last audited 08-05-26 by Kilo
+last audited 16-06-26 by opencode
 
 This file defines the selector approach for task code.
 

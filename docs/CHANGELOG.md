@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-06-16
+
+### Changed
+- **crates**: Moved `bacon-pipeline/` to `crates/bacon-pipeline/` (workspace member rename, all paths updated)
+- **docs**: Fixed project structure tree in `.bacon/README.md` to reflect `crates/bacon-pipeline/` layout
+
+### Removed
+- **cleanup**: Deleted 42 root-level generated artifacts (compiler output, analysis docs, temp files, stale output directories)
+
+### Fixed
+- **tests**: Updated `setup_script_exists` test path for `scripts/setup-windows.bat` after root reorganization
+
 ## [Unreleased]
 
 ### Added

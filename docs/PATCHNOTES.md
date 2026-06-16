@@ -1,5 +1,7 @@
 # Patch Notes
 
+*last audited 16-06-26 by opencode — covers v0.0.0–v0.0.3 only; see CHANGELOG.md for newer releases*
+
 ## v0.0.0 - 18 February 2026
 
 ### Initial Development

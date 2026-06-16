@@ -1,3 +1,4 @@
+*last audited 16-06-26 by opencode*
 # Bug-Hunting Strategy for Rust Codebase
 
 *Not "write more unit tests." The type system already kills most common bugs.

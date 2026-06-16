@@ -142,11 +142,12 @@ test: add integration test for graceful shutdown
 ## Project Structure
 
 ```
+crates/
+├── bacon-pipeline/  # Shared pipeline types, traits & agent implementations
+
 src/
 ├── adaptive/        # Adaptive learning module
 ├── api/             # API client
-├── bacon_agent_*/   # LLM agent implementations (codex, gemini, kilocode, nvidia, ollama, opencode, pi)
-├── bacon_core/      # Shared pipeline types (Stage, Confidence, extract_confidence)
 ├── benchmarks/      # Performance benchmarks
 ├── bin/             # CLI binary entry points
 ├── capabilities/    # Task-facing actions (mouse, keyboard, scroll)

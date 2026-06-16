@@ -1,4 +1,4 @@
-last audited 08-05-26 by Kilo
+last audited 16-06-26 by opencode
 # API Usage Guide
 
 Practical recipes and patterns for using the v0.1.0 TaskContext APIs.
@@ -658,5 +658,5 @@ async fn download_with_retry(
 ## See Also
 
 - [API Reference](API_REFERENCE.md) - Complete API documentation
-- [Task Authoring Guide](TASK_AUTHORING_GUIDE.md) - Building custom tasks
+- [Task Authoring Guide](_archive/TASK_AUTHORING_GUIDE.md) - Building custom tasks
 - [rustdoc](https://docs.rs) - Generated API docs with examples

@@ -73,6 +73,7 @@ Detects undefined behavior in unsafe code. Run weekly.
 - [x] **`serde_yml`→`serde_yaml`** — migrated from unsound unmaintained crate to stable fork (129 occurrences across 18 files); `.cargo/audit.toml` created for transitive `async-std` advisory
 - [x] **Dead code audit** — 88 `#[allow(dead_code)]` annotations analyzed; all justified (test-supporting code, public API surface, config docs)
 - [x] **Binary target audit** — 7 binary files (`src/main.rs`, `src/bin/*.rs`): zero `.unwrap()`/`.expect()` violations; `--bins` CI enforcement added
+- [x] **Dependency cleanup** — `cargo +nightly udeps --all-targets`: confirmed `tracing-subscriber` used by tests (moved to `[dev-dependencies]`); removed unused `do-over` crate + dead `circuit_breaker.rs` module
 
 ## Layer 7: What NOT to Do
 

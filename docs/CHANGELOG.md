@@ -40,10 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **miri**: Ran `cargo +nightly miri test` — 18/18 duration tests pass, full suite (excluding FFI/async) passes in 2,496s; no undefined behavior detected in the 2 `unsafe` blocks
 - **fuzz**: Fixed `fuzz/Cargo.toml` — migrated `serde_yml = "0.0.13"` to `serde_yaml = "0.9"`, fixed TOML table-header bug (dependency was dangling outside `[dependencies]`), updated `fuzz/README.md` references; fuzz workspace compiles cleanly
 - **integration**: `cargo nextest --all-features --tests` — 3,896 tests passed, 0 failed (55 skipped)
-- **udeps**: `cargo +nightly udeps --all-features` — 2 flagged (`do-over`, `tracing-subscriber`), both false positives used by binary targets
+- **udeps**: `cargo +nightly udeps --all-targets` — `tracing-subscriber` confirmed used by tests; `do-over` confirmed unused (dead `circuit_breaker.rs` module was never declared in `mod.rs`) and removed
 
 ### Removed
 - **cleanup**: Removed stale `#[allow(deprecated)] // TODO: migrate from serde_yml...` comment from `src/task/dsl/parser.rs`
+- **deps**: Removed unused `do-over = "0.1.0"` dependency (dead circuit breaker module, never compiled)
+- **cleanup**: Deleted `src/internal/circuit_breaker.rs` (dead file, not declared in `mod.rs`, `BrowserCircuitBreaker` never referenced outside its own tests)
 
 ### Added
 - **errors**: Added `ErrorPattern::RateLimited` variant and LLM-specific transient patterns (`"rate limit"`, `"429"`, `"overloaded"`, `"503"`, `"server error"`, `"model is at capacity"`, `"try again later"`) to shared `classify_error_pattern()` in `result/errors.rs`

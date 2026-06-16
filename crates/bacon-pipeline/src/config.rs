@@ -23,6 +23,7 @@ pub fn init(config: ProjectConfig) {
 ///
 /// Panics if [`init()`] has not been called yet.
 #[must_use]
+#[allow(clippy::expect_used)]
 pub fn project_config() -> &'static ProjectConfig {
     PROJECT_CONFIG
         .get()

@@ -101,11 +101,13 @@ fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
     format!("{}...", &text[..truncate_at])
 }
 
+#[allow(clippy::expect_used)]
 fn mentions_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"@\w+").expect("Failed to compile mentions regex"))
 }
 
+#[allow(clippy::expect_used)]
 fn hashtags_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"#(\w+)").expect("Failed to compile hashtags regex"))

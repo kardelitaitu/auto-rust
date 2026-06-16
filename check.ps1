@@ -121,6 +121,45 @@ if (-not $SkipClippy -and -not $failed) {
     $stepNum++
 }
 
+# ---- CLIPPY: unwrap_used --------------------------------------------
+if (-not $SkipClippy -and -not $failed) {
+    Write-StepHeader $stepNum "Clippy — ban .unwrap() in production code (cargo clippy --lib -- -D clippy::unwrap_used)"
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    & cargo clippy --lib -- -D warnings -D clippy::unwrap_used
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $LASTEXITCODE -eq 0
+    $results.UnwrapClippy = @{ Passed = $passed; Duration = $elapsed }
+    Write-StepResult $passed
+    if (-not $passed) { $failed = $true }
+    $stepNum++
+}
+
+# ---- CLIPPY: expect_used --------------------------------------------
+if (-not $SkipClippy -and -not $failed) {
+    Write-StepHeader $stepNum "Clippy — ban .expect() in production code (cargo clippy --lib -- -D clippy::expect_used)"
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    & cargo clippy --lib -- -D warnings -D clippy::expect_used
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $LASTEXITCODE -eq 0
+    $results.ExpectClippy = @{ Passed = $passed; Duration = $elapsed }
+    Write-StepResult $passed
+    if (-not $passed) { $failed = $true }
+    $stepNum++
+}
+
+# ---- CLIPPY: binary targets (unwrap + expect) ----------------------
+if (-not $SkipClippy -and -not $failed) {
+    Write-StepHeader $stepNum "Clippy — ban unwrap/expect in binary targets (cargo clippy --bins -- -D clippy::unwrap_used -D clippy::expect_used)"
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    & cargo clippy --bins -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
+    $elapsed = $sw.Elapsed.TotalSeconds
+    $passed = $LASTEXITCODE -eq 0
+    $results.BinsClippy = @{ Passed = $passed; Duration = $elapsed }
+    Write-StepResult $passed
+    if (-not $passed) { $failed = $true }
+    $stepNum++
+}
+
 # ---- TESTS ----------------------------------------------------------
 if (-not $SkipTests -and -not $failed) {
     Write-StepHeader $stepNum "Nextest check (cargo nextest run --all-features --lib)"
@@ -144,7 +183,7 @@ if (-not $SkipTests -and -not $failed) {
 $total = ((Get-Date) - $startTime).TotalSeconds
 Write-Status "CI CHECKER REPORT:" "Yellow"
 $p = 0; $f = 0
-$runOrder = @("SpecLint", "Build", "Format", "Clippy", "Tests")
+$runOrder = @("SpecLint", "Build", "Format", "Clippy", "UnwrapClippy", "ExpectClippy", "BinsClippy", "Tests")
 foreach ($name in $runOrder) {
     $r = $results.$name
     if ($r.Duration -gt 0 -or $r.Passed) {
@@ -188,6 +227,30 @@ if ($f -gt 0) {
         Write-Output "  Run 'cargo clippy --all-targets --all-features' to see all warnings."
         Write-Output "  Common fixes: Address performance suggestions, fix unsafe code warnings, improve code quality."
         Write-Output "  Use 'cargo clippy --fix' to auto-fix some issues."
+        Write-Output ""
+    }
+
+    if (-not $results.UnwrapClippy.Passed -and $results.UnwrapClippy.Duration -gt 0) {
+        Write-Status "Unwrap Clippy Failed:" "Red"
+        Write-Output "  .unwrap() calls are banned in production code."
+        Write-Output "  Use '?' for error propagation or '.expect("...")' with a message."
+        Write-Output "  Run 'cargo clippy --lib -- -D clippy::unwrap_used' to see violations."
+        Write-Output ""
+    }
+
+    if (-not $results.ExpectClippy.Passed -and $results.ExpectClippy.Duration -gt 0) {
+        Write-Status "Expect Clippy Failed:" "Red"
+        Write-Output "  .expect() calls are banned in production code."
+        Write-Output "  Use '?' for error propagation or add '#[allow(clippy::expect_used)]' for justified invariants."
+        Write-Output "  Run 'cargo clippy --lib -- -D clippy::expect_used' to see violations."
+        Write-Output ""
+    }
+
+    if (-not $results.BinsClippy.Passed -and $results.BinsClippy.Duration -gt 0) {
+        Write-Status "Binary Clippy Failed:" "Red"
+        Write-Output "  .unwrap()/.expect() calls are banned in binary targets."
+        Write-Output "  Use '?' for error propagation or '.unwrap_or_default()' for safe fallbacks."
+        Write-Output "  Run 'cargo clippy --bins -- -D clippy::unwrap_used -D clippy::expect_used' to see violations."
         Write-Output ""
     }
 

@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use log::warn;
 use serde::{Deserialize, Serialize};
-use serde_yml::{Mapping, Value};
+use serde_yaml::{Mapping, Value};
 use std::path::{Path, PathBuf};
 
 /// Metadata stored in spec.yaml.
@@ -123,7 +123,7 @@ pub fn read_spec_meta(path: &Path) -> Result<SpecMeta> {
     let yaml_path = path.join("spec.yaml");
     let content = std::fs::read_to_string(&yaml_path)
         .with_context(|| format!("reading spec.yaml from {}", path.display()))?;
-    serde_yml::from_str(&content)
+    serde_yaml::from_str(&content)
         .with_context(|| format!("parsing spec.yaml from {}", path.display()))
 }
 
@@ -134,7 +134,7 @@ pub fn write_spec_meta(path: &Path, meta: &SpecMeta) -> Result<()> {
     let tmp_path = path.join("spec.yaml.tmp");
     let mut value = std::fs::read_to_string(&yaml_path)
         .ok()
-        .and_then(|content| serde_yml::from_str::<Value>(&content).ok())
+        .and_then(|content| serde_yaml::from_str::<Value>(&content).ok())
         .unwrap_or_else(|| Value::Mapping(Mapping::new()));
 
     let mapping = if let Value::Mapping(mapping) = &mut value {
@@ -154,7 +154,7 @@ pub fn write_spec_meta(path: &Path, meta: &SpecMeta) -> Result<()> {
     set_yaml_string(mapping, "implementer", &meta.implementer);
     set_yaml_string(mapping, "priority", &meta.priority);
 
-    let content = serde_yml::to_string(&value)?;
+    let content = serde_yaml::to_string(&value)?;
     // Write to temp file first, then atomically rename — prevents partial writes
     std::fs::write(&tmp_path, &content)
         .with_context(|| format!("writing {}", tmp_path.display()))?;
@@ -330,7 +330,7 @@ mod tests {
         write_spec_meta(&spec, &meta)?;
 
         let updated: Value =
-            serde_yml::from_str(&std::fs::read_to_string(spec.join("spec.yaml"))?)?;
+            serde_yaml::from_str(&std::fs::read_to_string(spec.join("spec.yaml"))?)?;
         assert_eq!(updated["status"], Value::String("implemented".to_string()));
         assert_eq!(updated["area"][0], Value::String("bacon".to_string()));
         assert_eq!(
@@ -381,8 +381,8 @@ mod tests {
             implementer: "coder".to_string(),
             priority: "high".to_string(),
         };
-        let yaml = serde_yml::to_string(&meta).expect("serialize");
-        let restored: SpecMeta = serde_yml::from_str(&yaml).expect("deserialize");
+        let yaml = serde_yaml::to_string(&meta).expect("serialize");
+        let restored: SpecMeta = serde_yaml::from_str(&yaml).expect("deserialize");
         assert_eq!(restored.id, meta.id);
         assert_eq!(restored.title, meta.title);
         assert_eq!(restored.status, meta.status);

@@ -82,6 +82,7 @@ fn parse_search_replace_blocks(response: &str) -> Vec<(String, String, String)> 
     let normalized = normalize_search_replace_fences(response);
 
     // Match blocks where the file path is on a line before <<<<<<< SEARCH
+    #[allow(clippy::expect_used)]
     let re = regex::Regex::new(
         r"(?ms)(?:^|\n)\s*([^\n]+?\.(?:rs|toml|md|json|ps1|sh|js|ts|css|html))\s*\n\s*<<<<<<< SEARCH\s*\n(.*?)\n\s*=======\s*\n(.*?)\n\s*>>>>>>> REPLACE"
     ).expect("invalid SEARCH/REPLACE regex");
@@ -333,7 +334,9 @@ fn find_unique_blank_line_insensitive_match(
             .zip(search_lines.iter())
             .all(|(content_line, search_line)| content_line.text == search_line.text)
         {
+            #[allow(clippy::expect_used)]
             let start = window.first().expect("nonempty window").start;
+            #[allow(clippy::expect_used)]
             let end = window.last().expect("nonempty window").end;
             matches.push((start, end));
         }
@@ -389,7 +392,7 @@ fn normalize_scope_path(path: &str) -> String {
     path.trim_start_matches(&['/', '\\'][..]).replace('\\', "/")
 }
 
-fn yaml_sequence_strings(value: &serde_yml::Value) -> Vec<String> {
+fn yaml_sequence_strings(value: &serde_yaml::Value) -> Vec<String> {
     value
         .as_sequence()
         .map(|items| {
@@ -406,7 +409,7 @@ fn declared_spec_code_paths(spec_path: &Path) -> Vec<String> {
     let yaml_path = spec_path.join("spec.yaml");
     let value = std::fs::read_to_string(&yaml_path)
         .ok()
-        .and_then(|content| serde_yml::from_str::<serde_yml::Value>(&content).ok());
+        .and_then(|content| serde_yaml::from_str::<serde_yaml::Value>(&content).ok());
 
     let Some(value) = value else {
         return Vec::new();
@@ -1323,55 +1326,7 @@ pub async fn run(llm: &crate::llm::Llm, args: &RunArgs, ctx: &PipelineCtx) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use std::path::PathBuf;
-
-    #[allow(dead_code)]
-    struct MockFileSystem;
-    #[async_trait]
-    impl crate::core::traits::FileSystem for MockFileSystem {
-        fn read_to_string(&self, _path: &Path) -> Result<String> {
-            Ok("".into())
-        }
-        fn write(&self, _path: &Path, _content: &str) -> Result<()> {
-            Ok(())
-        }
-        fn exists(&self, _path: &Path) -> bool {
-            true
-        }
-        fn create_dir_all(&self, _path: &Path) -> Result<()> {
-            Ok(())
-        }
-        fn rename(&self, _from: &Path, _to: &Path) -> Result<()> {
-            Ok(())
-        }
-        fn copy(&self, _from: &Path, _to: &Path) -> Result<()> {
-            Ok(())
-        }
-    }
-
-    #[allow(dead_code)]
-    struct MockCommandRunner;
-    #[async_trait]
-    impl crate::core::traits::CommandRunner for MockCommandRunner {
-        fn run(
-            &self,
-            _command: &str,
-            _args: &[String],
-            _dir: Option<&Path>,
-        ) -> Result<(bool, String)> {
-            Ok((true, "".into()))
-        }
-    }
-
-    #[allow(dead_code)]
-    struct MockLlmClient;
-    #[async_trait]
-    impl crate::core::traits::LlmClient for MockLlmClient {
-        async fn chat(&self, _messages: Vec<crate::llm::models::ChatMessage>) -> Result<String> {
-            Ok("".into())
-        }
-    }
 
     // ========================================================================
     // is_refusal Tests

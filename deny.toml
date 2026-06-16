@@ -1,0 +1,83 @@
+# cargo-deny configuration for auto-rust
+# Run: cargo deny check
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Only check targets relevant to this project
+targets = [
+    # Windows (primary development platform)
+    "x86_64-pc-windows-msvc",
+]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+# Vulnerability database is fetched automatically into CARGO_HOME
+# db-path = "~/.cargo/advisory-db"
+# db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = [
+    # serde_yml 0.0.13 — upgraded from 0.0.12 to fix RUSTSEC-2025-0067,
+    # but 0.0.13 has its own RUSTSEC-2025-0068 (unsound).
+    # Migration to a maintained alternative is tracked in docs/TODO.md.
+    "RUSTSEC-2025-0068",
+    # async-std 1.13.2 — marked unmaintained (RUSTSEC-2025-0052).
+    # All async operations are via tokio directly, this is only a transitive dep.
+    "RUSTSEC-2025-0052",
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    "MPL-2.0",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+exceptions = [
+    # ring crate uses a complex ISC/OpenSSL license
+    #{ allow = ["ISC", "OpenSSL"], crate = "ring" },
+]
+
+[licenses.private]
+ignore = false
+registries = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+allow-workspace = false
+skip = [
+    # serde_yml appears in both root and bacon-pipeline Cargo.toml
+    # but both use the same version (0.0.13), so this is just a workspace
+    # artifact, not a true duplicate.
+    #{ crate = "serde_yml@0.0.13", reason = "workspace member, same version" },
+]
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

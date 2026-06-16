@@ -67,7 +67,7 @@ mod tests {
         let param = ParameterDef {
             r#type: ParameterType::String,
             description: "A string parameter".to_string(),
-            default: Some(serde_yml::Value::String("default".to_string())),
+            default: Some(serde_yaml::Value::String("default".to_string())),
             required: false,
         };
 
@@ -166,8 +166,8 @@ mod tests {
                 variable: "item".to_string(),
                 collection: ForeachCollection::Array {
                     values: vec![
-                        serde_yml::Value::String("a".to_string()),
-                        serde_yml::Value::String("b".to_string()),
+                        serde_yaml::Value::String("a".to_string()),
+                        serde_yaml::Value::String("b".to_string()),
                     ],
                 },
                 actions: vec![Action::Log {
@@ -209,8 +209,8 @@ mod tests {
 
         // Verify YAML serialization works too
         for action in &actions {
-            let yaml = serde_yml::to_string(&action).unwrap();
-            let deserialized: Action = serde_yml::from_str(&yaml).unwrap();
+            let yaml = serde_yaml::to_string(&action).unwrap();
+            let deserialized: Action = serde_yaml::from_str(&yaml).unwrap();
             assert_eq!(
                 *action, deserialized,
                 "YAML round-trip failed for {:?}",
@@ -248,8 +248,8 @@ mod tests {
         let collections = vec![
             ForeachCollection::Array {
                 values: vec![
-                    serde_yml::Value::String("x".to_string()),
-                    serde_yml::Value::Number(serde_yml::Number::from(42)),
+                    serde_yaml::Value::String("x".to_string()),
+                    serde_yaml::Value::Number(serde_yaml::Number::from(42)),
                 ],
             },
             ForeachCollection::Range { start: 0, end: 5 },
@@ -287,7 +287,7 @@ mod tests {
             },
             Condition::VariableEquals {
                 name: "status".to_string(),
-                value: serde_yml::Value::String("ok".to_string()),
+                value: serde_yaml::Value::String("ok".to_string()),
             },
             Condition::VariableMatches {
                 name: "output".to_string(),
@@ -318,7 +318,7 @@ mod tests {
             },
             Condition::ArrayContains {
                 name: "items".to_string(),
-                value: serde_yml::Value::String("item1".to_string()),
+                value: serde_yaml::Value::String("item1".to_string()),
             },
             Condition::ArrayLength {
                 name: "list".to_string(),
@@ -381,8 +381,8 @@ mod tests {
 
         // Also test YAML round-trip for all
         for condition in &conditions {
-            let yaml = serde_yml::to_string(&condition).unwrap();
-            let deserialized: Condition = serde_yml::from_str(&yaml).unwrap();
+            let yaml = serde_yaml::to_string(&condition).unwrap();
+            let deserialized: Condition = serde_yaml::from_str(&yaml).unwrap();
             assert_eq!(
                 *condition, deserialized,
                 "YAML round-trip failed for {:?}",
@@ -950,7 +950,7 @@ pub struct ParameterDef {
     #[serde(default)]
     pub description: String,
     /// Default value (optional)
-    pub default: Option<serde_yml::Value>,
+    pub default: Option<serde_yaml::Value>,
     /// Whether parameter is required
     #[serde(default)]
     pub required: bool,
@@ -1009,7 +1009,7 @@ pub enum Action {
     /// Call another task
     Call {
         task: String,
-        parameters: Option<HashMap<String, serde_yml::Value>>,
+        parameters: Option<HashMap<String, serde_yaml::Value>>,
     },
     /// Log a message
     Log {
@@ -1101,7 +1101,7 @@ pub enum Action {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ForeachCollection {
     /// Array of values to iterate over
-    Array { values: Vec<serde_yml::Value> },
+    Array { values: Vec<serde_yaml::Value> },
     /// Range of integers (inclusive start, exclusive end)
     Range { start: i64, end: i64 },
     /// DOM elements matching a selector
@@ -1136,7 +1136,7 @@ pub enum Condition {
     /// Check if variable equals value
     VariableEquals {
         name: String,
-        value: serde_yml::Value,
+        value: serde_yaml::Value,
     },
     /// Check if variable matches regex pattern
     VariableMatches { name: String, pattern: String },
@@ -1161,7 +1161,7 @@ pub enum Condition {
     /// Check if array variable contains a value
     ArrayContains {
         name: String,
-        value: serde_yml::Value,
+        value: serde_yaml::Value,
     },
     /// Check if array variable length matches
     ArrayLength {

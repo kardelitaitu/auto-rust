@@ -12,13 +12,13 @@
 //!
 //! ## Key Functions
 //!
-//! - [`click_like_button()`]: Like a tweet
-//! - [`click_retweet_button()`]: Open retweet menu
-//! - [`retweet_tweet()`]: Complete retweet action
-//! - [`follow_from_tweet()`]: Follow a tweet author
-//! - [`reply_to_tweet()`]: Reply to a tweet
-//! - [`quote_tweet()`]: Quote a tweet (in `twitteractivity_llm` module)
-//! - [`bookmark_tweet()`]: Bookmark a tweet
+//! - `click_like_button()`: Like a tweet
+//! - `click_retweet_button()`: Open retweet menu
+//! - `retweet_tweet()`: Complete retweet action
+//! - `follow_from_tweet()`: Follow a tweet author
+//! - `reply_to_tweet()`: Reply to a tweet
+//! - `quote_tweet()`: Quote a tweet (in `twitteractivity_llm` module)
+//! - `bookmark_tweet()`: Bookmark a tweet
 //!
 //! ## Usage
 //!

@@ -13,10 +13,10 @@
 //!
 //! ## Key Functions
 //!
-//! - [`scroll_through_feed()`]: Perform human-like scroll through timeline
-//! - [`identify_engagement_candidates()`]: Find engagement-ready tweets
-//! - [`get_scroll_progress()`]: Calculate current scroll position (0.0-1.0)
-//! - [`scroll_read()`]: Single scroll with reading pause
+//! - `scroll_through_feed()`: Perform human-like scroll through timeline
+//! - `identify_engagement_candidates()`: Find engagement-ready tweets
+//! - `get_scroll_progress()`: Calculate current scroll position (0.0-1.0)
+//! - `scroll_read()`: Single scroll with reading pause
 //!
 //! ## Usage
 //!

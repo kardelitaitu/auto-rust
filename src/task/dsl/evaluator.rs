@@ -68,9 +68,9 @@ impl<T: super::DslApi> super::DslExecutor<'_, T> {
             Condition::VariableEquals { name, value } => {
                 if let Some(var_value) = self.variables.get(name) {
                     let expected = match value {
-                        serde_yml::Value::String(s) => s.clone(),
-                        serde_yml::Value::Number(n) => n.to_string(),
-                        serde_yml::Value::Bool(b) => b.to_string(),
+                        serde_yaml::Value::String(s) => s.clone(),
+                        serde_yaml::Value::Number(n) => n.to_string(),
+                        serde_yaml::Value::Bool(b) => b.to_string(),
                         _ => format!("{value:?}"),
                     };
                     Ok(var_value == &expected)
@@ -148,7 +148,7 @@ impl<T: super::DslApi> super::DslExecutor<'_, T> {
                 if let Some(var_value) = self.variables.get(name) {
                     // Simplified: check if value is in a comma-separated string
                     let search = match value {
-                        serde_yml::Value::String(s) => s.clone(),
+                        serde_yaml::Value::String(s) => s.clone(),
                         _ => format!("{value:?}"),
                     };
                     Ok(var_value.contains(&search))

@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 //! bacon-spec — Observer + Strategist stages.
 //!
 //! Scans the codebase (Observer) and optionally generates a spec package (Strategist).

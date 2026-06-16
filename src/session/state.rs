@@ -4,7 +4,10 @@
 
 /// Represents the current operational state of a browser session.
 /// Used to track session health and availability for task assignment.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SessionState {
     /// Session is available and ready to accept tasks
     Idle,

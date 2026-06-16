@@ -136,14 +136,14 @@ impl<'a, T: DslApi> DslExecutor<'a, T> {
 
     /// Set initial parameters from CLI payload.
     #[must_use]
-    pub fn with_parameters(mut self, payload: &serde_yml::Value) -> Self {
+    pub fn with_parameters(mut self, payload: &serde_yaml::Value) -> Self {
         if let Some(obj) = payload.as_mapping() {
             for (key, value) in obj {
                 let key_str = key.as_str().unwrap_or_default().to_string();
                 let value_str = match value {
-                    serde_yml::Value::String(s) => s.clone(),
-                    serde_yml::Value::Number(n) => n.to_string(),
-                    serde_yml::Value::Bool(b) => b.to_string(),
+                    serde_yaml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::Number(n) => n.to_string(),
+                    serde_yaml::Value::Bool(b) => b.to_string(),
                     _ => format!("{value:?}"),
                 };
                 log::debug!("Set parameter '{key_str}': {value_str}");
@@ -525,7 +525,7 @@ impl<'a, T: DslApi> DslExecutor<'a, T> {
     pub(super) async fn execute_call(
         &mut self,
         task_name: &str,
-        parameters: Option<&HashMap<String, serde_yml::Value>>,
+        parameters: Option<&HashMap<String, serde_yaml::Value>>,
     ) -> Result<()> {
         // Check recursion depth
         if self.call_depth >= MAX_CALL_DEPTH {
@@ -561,9 +561,9 @@ impl<'a, T: DslApi> DslExecutor<'a, T> {
             for (key, value) in params {
                 let var_name = key.clone();
                 let raw_value = match value {
-                    serde_yml::Value::String(s) => s.clone(),
-                    serde_yml::Value::Number(n) => n.to_string(),
-                    serde_yml::Value::Bool(b) => b.to_string(),
+                    serde_yaml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::Number(n) => n.to_string(),
+                    serde_yaml::Value::Bool(b) => b.to_string(),
                     _ => format!("{value:?}"),
                 };
                 // Substitute ${variable} references in the parameter value
@@ -999,14 +999,14 @@ mod tests {
         let mut called_vars = exec.variables.clone();
 
         // 2. Apply Call parameters as overrides (with variable substitution)
-        let params: HashMap<String, serde_yml::Value> = [
+        let params: HashMap<String, serde_yaml::Value> = [
             (
                 "username".to_string(),
-                serde_yml::Value::String("alice".to_string()),
+                serde_yaml::Value::String("alice".to_string()),
             ),
             (
                 "timeout".to_string(),
-                serde_yml::Value::Number(serde_yml::Number::from(30)),
+                serde_yaml::Value::Number(serde_yaml::Number::from(30)),
             ),
         ]
         .into();
@@ -1014,9 +1014,9 @@ mod tests {
         for (key, value) in &params {
             let var_name = key.clone();
             let raw_value = match value {
-                serde_yml::Value::String(s) => s.clone(),
-                serde_yml::Value::Number(n) => n.to_string(),
-                serde_yml::Value::Bool(b) => b.to_string(),
+                serde_yaml::Value::String(s) => s.clone(),
+                serde_yaml::Value::Number(n) => n.to_string(),
+                serde_yaml::Value::Bool(b) => b.to_string(),
                 _ => format!("{value:?}"),
             };
             // Substitute ${variable} references (use a simple version)
@@ -1148,14 +1148,14 @@ mod tests {
             exec.variables
                 .insert("debug".to_string(), "false".to_string());
             let mut called_vars = exec.variables.clone();
-            let params: HashMap<String, serde_yml::Value> = [(
+            let params: HashMap<String, serde_yaml::Value> = [(
                 "host".to_string(),
-                serde_yml::Value::String("api.example.com".to_string()),
+                serde_yaml::Value::String("api.example.com".to_string()),
             )]
             .into();
             for (key, value) in &params {
                 let resolved = match value {
-                    serde_yml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::String(s) => s.clone(),
                     _ => format!("{value:?}"),
                 };
                 called_vars.insert(key.clone(), resolved);
@@ -1169,23 +1169,23 @@ mod tests {
         // Case 2: Params can be String, Number, or Bool
         {
             let mut called_vars = HashMap::new();
-            let params: HashMap<String, serde_yml::Value> = [
+            let params: HashMap<String, serde_yaml::Value> = [
                 (
                     "name".to_string(),
-                    serde_yml::Value::String("alice".to_string()),
+                    serde_yaml::Value::String("alice".to_string()),
                 ),
                 (
                     "age".to_string(),
-                    serde_yml::Value::Number(serde_yml::Number::from(30)),
+                    serde_yaml::Value::Number(serde_yaml::Number::from(30)),
                 ),
-                ("active".to_string(), serde_yml::Value::Bool(true)),
+                ("active".to_string(), serde_yaml::Value::Bool(true)),
             ]
             .into();
             for (key, value) in &params {
                 let resolved = match value {
-                    serde_yml::Value::String(s) => s.clone(),
-                    serde_yml::Value::Number(n) => n.to_string(),
-                    serde_yml::Value::Bool(b) => b.to_string(),
+                    serde_yaml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::Number(n) => n.to_string(),
+                    serde_yaml::Value::Bool(b) => b.to_string(),
                     _ => format!("{value:?}"),
                 };
                 called_vars.insert(key.clone(), resolved);
@@ -1207,20 +1207,20 @@ mod tests {
                 .insert("base_url".to_string(), "https://example.com".to_string());
             exec.variables
                 .insert("api_key".to_string(), "sk-test123".to_string());
-            let params: HashMap<String, serde_yml::Value> = [
+            let params: HashMap<String, serde_yaml::Value> = [
                 (
                     "endpoint".to_string(),
-                    serde_yml::Value::String("${base_url}/api/v1".to_string()),
+                    serde_yaml::Value::String("${base_url}/api/v1".to_string()),
                 ),
                 (
                     "auth_header".to_string(),
-                    serde_yml::Value::String("Bearer ${api_key}".to_string()),
+                    serde_yaml::Value::String("Bearer ${api_key}".to_string()),
                 ),
             ]
             .into();
             for (key, value) in &params {
                 let raw = match value {
-                    serde_yml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::String(s) => s.clone(),
                     _ => continue,
                 };
                 let resolved = exec.substitute_variables(&raw);

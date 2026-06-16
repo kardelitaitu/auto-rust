@@ -5,7 +5,7 @@
 //! - `validate_task_definition` - Validate a `TaskDefinition` for correctness
 
 use crate::task::dsl::{Action, TaskDefinition};
-use serde_yml;
+use serde_yaml;
 use std::path::Path;
 use toml;
 
@@ -23,7 +23,7 @@ pub fn parse_task_file<P: AsRef<Path>>(path: P) -> Result<TaskDefinition, String
     let content = std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
 
     // Try YAML first
-    match serde_yml::from_str::<TaskDefinition>(&content) {
+    match serde_yaml::from_str::<TaskDefinition>(&content) {
         Ok(task) => Ok(task),
         Err(yaml_err) => {
             // YAML failed, try TOML
@@ -201,7 +201,7 @@ pub fn validate_task_definition(task_def: &TaskDefinition) -> Result<(), Vec<Str
 /// * `Ok(TaskDefinition)` if parsing succeeds
 /// * `Err(String)` with error message if parsing fails
 pub fn parse_task_yaml(yaml: &str) -> Result<TaskDefinition, String> {
-    serde_yml::from_str(yaml).map_err(|e| format!("Failed to parse YAML: {e}"))
+    serde_yaml::from_str(yaml).map_err(|e| format!("Failed to parse YAML: {e}"))
 }
 
 /// Parse a TOML string into a `TaskDefinition`.
@@ -449,7 +449,7 @@ actions:
             actions: vec![Action::Foreach {
                 variable: "item".to_string(),
                 collection: crate::task::dsl::ForeachCollection::Array {
-                    values: vec![serde_yml::Value::String("a".to_string())],
+                    values: vec![serde_yaml::Value::String("a".to_string())],
                 },
                 actions: vec![Action::Log {
                     message: "${item}".to_string(),
@@ -660,11 +660,11 @@ duration_ms = 200
 
         // ── Value strategies ────────────────────────────────────────────────
 
-        fn arb_serde_yml_value() -> impl Strategy<Value = serde_yml::Value> {
+        fn arb_serde_yaml_value() -> impl Strategy<Value = serde_yaml::Value> {
             prop_oneof![
-                any::<String>().prop_map(serde_yml::Value::String),
-                any::<i64>().prop_map(|n| serde_yml::Value::Number(serde_yml::Number::from(n))),
-                any::<bool>().prop_map(serde_yml::Value::Bool),
+                any::<String>().prop_map(serde_yaml::Value::String),
+                any::<i64>().prop_map(|n| serde_yaml::Value::Number(serde_yaml::Number::from(n))),
+                any::<bool>().prop_map(serde_yaml::Value::Bool),
             ]
         }
 
@@ -708,7 +708,7 @@ duration_ms = 200
                     selector: s,
                     pattern: p
                 }),
-                (any::<String>(), arb_serde_yml_value())
+                (any::<String>(), arb_serde_yaml_value())
                     .prop_map(|(n, v)| Condition::VariableEquals { name: n, value: v }),
                 (any::<String>(), any::<String>()).prop_map(|(n, p)| Condition::VariableMatches {
                     name: n,
@@ -745,7 +745,7 @@ duration_ms = 200
                         date: d,
                         format: f,
                     }),
-                (any::<String>(), arb_serde_yml_value())
+                (any::<String>(), arb_serde_yaml_value())
                     .prop_map(|(n, v)| Condition::ArrayContains { name: n, value: v }),
                 (
                     any::<String>(),
@@ -786,7 +786,7 @@ duration_ms = 200
 
         fn arb_foreach_collection() -> impl Strategy<Value = ForeachCollection> {
             prop_oneof![
-                vec(arb_serde_yml_value(), 0..MAX_SIZE)
+                vec(arb_serde_yaml_value(), 0..MAX_SIZE)
                     .prop_map(|values| ForeachCollection::Array { values }),
                 (any::<i64>(), any::<i64>()).prop_map(|(s, e)| {
                     if s < e {
@@ -798,7 +798,12 @@ duration_ms = 200
                         }
                     }
                 }),
-                any::<String>().prop_map(|sel| ForeachCollection::Elements { selector: sel }),
+                any::<String>()
+                    .prop_filter(
+                        "selector string must round-trip through noyalib",
+                        |sel: &String| !str_contains_unsafe_chars(sel),
+                    )
+                    .prop_map(|sel| ForeachCollection::Elements { selector: sel }),
                 any::<String>().prop_map(|name| ForeachCollection::Variable { name }),
             ]
         }
@@ -865,7 +870,7 @@ duration_ms = 200
                     any::<String>(),
                     proptest::option::of(hash_map(
                         any::<String>(),
-                        arb_serde_yml_value(),
+                        arb_serde_yaml_value(),
                         0..MAX_SIZE
                     ))
                 )
@@ -972,16 +977,28 @@ duration_ms = 200
 
         // ── Unsafe character filter ────────────────────────────────────────
 
-        /// Check if a string contains characters that cause `libyml` to panic:
-        /// \\u{2028} (LINE SEPARATOR) and \\u{2029} (PARAGRAPH SEPARATOR).
+        /// Check if a string contains characters that cause the YAML library
+        /// to fail to round-trip:
+        /// - \\u{2028} (LINE SEPARATOR) and \\u{2029} (PARAGRAPH SEPARATOR) panic libyml.
+        /// - Strings that are YAML special tokens (e.g. "-") fail noyalib round-trip
+        ///   because they aren't quoted on serialization.
         fn str_contains_unsafe_chars(s: &str) -> bool {
-            s.contains('\u{2028}') || s.contains('\u{2029}')
+            if s.contains('\u{2028}') || s.contains('\u{2029}') {
+                return true;
+            }
+            // Strings that would be ambiguous in YAML when unquoted.
+            // serde_yaml 0.0.13 (noyalib) doesn't always quote these.
+            let trimmed = s.trim();
+            if trimmed == "-" || trimmed.starts_with("- ") {
+                return true;
+            }
+            false
         }
 
-        /// Check if a serde_yml Value contains unsafe chars (recursively for string values).
-        fn yaml_value_contains_unsafe_chars(v: &serde_yml::Value) -> bool {
+        /// Check if a serde_yaml Value contains unsafe chars (recursively for string values).
+        fn yaml_value_contains_unsafe_chars(v: &serde_yaml::Value) -> bool {
             match v {
-                serde_yml::Value::String(s) => str_contains_unsafe_chars(s),
+                serde_yaml::Value::String(s) => str_contains_unsafe_chars(s),
                 _ => false,
             }
         }
@@ -1192,7 +1209,7 @@ duration_ms = 200
             (
                 arb_parameter_type(),
                 any::<String>(),
-                proptest::option::of(arb_serde_yml_value()),
+                proptest::option::of(arb_serde_yaml_value()),
                 any::<bool>(),
             )
                 .prop_map(|(r#type, description, default, required)| ParameterDef {
@@ -1244,9 +1261,9 @@ duration_ms = 200
             /// Generates random task definitions and verifies structural equality.
             #[test]
             fn test_yaml_round_trip(task_def in arb_task_definition()) {
-                let yaml = serde_yml::to_string(&task_def)
+                let yaml = serde_yaml::to_string(&task_def)
                     .expect("YAML serialization should succeed");
-                let parsed: TaskDefinition = serde_yml::from_str(&yaml)
+                let parsed: TaskDefinition = serde_yaml::from_str(&yaml)
                     .expect("YAML deserialization should succeed");
                 prop_assert_eq!(task_def, parsed);
             }
@@ -1255,9 +1272,9 @@ duration_ms = 200
             /// Catches per-action serde tag mismatches.
             #[test]
             fn test_action_yaml_round_trip(action in arb_action()) {
-                let yaml = serde_yml::to_string(&action)
+                let yaml = serde_yaml::to_string(&action)
                     .expect("Action YAML serialization should succeed");
-                let parsed: Action = serde_yml::from_str(&yaml)
+                let parsed: Action = serde_yaml::from_str(&yaml)
                     .expect("Action YAML deserialization should succeed");
                 prop_assert_eq!(action, parsed);
             }
@@ -1266,9 +1283,9 @@ duration_ms = 200
             /// Catches condition serde tag mismatches.
             #[test]
             fn test_condition_yaml_round_trip(condition in arb_condition()) {
-                let yaml = serde_yml::to_string(&condition)
+                let yaml = serde_yaml::to_string(&condition)
                     .expect("Condition YAML serialization should succeed");
-                let parsed: Condition = serde_yml::from_str(&yaml)
+                let parsed: Condition = serde_yaml::from_str(&yaml)
                     .expect("Condition YAML deserialization should succeed");
                 prop_assert_eq!(condition, parsed);
             }
@@ -1278,9 +1295,9 @@ duration_ms = 200
             fn test_foreach_collection_yaml_round_trip(
                 collection in arb_foreach_collection()
             ) {
-                let yaml = serde_yml::to_string(&collection)
+                let yaml = serde_yaml::to_string(&collection)
                     .expect("ForeachCollection YAML serialization should succeed");
-                let parsed: ForeachCollection = serde_yml::from_str(&yaml)
+                let parsed: ForeachCollection = serde_yaml::from_str(&yaml)
                     .expect("ForeachCollection YAML deserialization should succeed");
                 prop_assert_eq!(collection, parsed);
             }
@@ -1288,9 +1305,9 @@ duration_ms = 200
             /// Round-trip a ParameterDef through YAML.
             #[test]
             fn test_parameter_def_yaml_round_trip(def in arb_parameter_def()) {
-                let yaml = serde_yml::to_string(&def)
+                let yaml = serde_yaml::to_string(&def)
                     .expect("ParameterDef YAML serialization should succeed");
-                let parsed: ParameterDef = serde_yml::from_str(&yaml)
+                let parsed: ParameterDef = serde_yaml::from_str(&yaml)
                     .expect("ParameterDef YAML deserialization should succeed");
                 prop_assert_eq!(def, parsed);
             }
@@ -1322,7 +1339,7 @@ duration_ms = 200
 
         proptest! {
             /// Fuzz: parse_task_yaml must never panic on any input.
-            /// serde_yml returns Err for malformed YAML, which is fine.
+            /// serde_yaml returns Err for malformed YAML, which is fine.
             #[test]
             fn fuzz_parse_task_yaml(
                 yaml in any::<String>(),
@@ -1347,7 +1364,7 @@ duration_ms = 200
             fn fuzz_task_definition_yaml_deserialize(
                 content in any::<String>(),
             ) {
-                let _result: Result<TaskDefinition, _> = serde_yml::from_str(&content);
+                let _result: Result<TaskDefinition, _> = serde_yaml::from_str(&content);
             }
 
             /// Fuzz: TaskDefinition TOML deserialization must never panic.
@@ -1364,7 +1381,7 @@ duration_ms = 200
             fn fuzz_action_yaml_deserialize(
                 content in any::<String>(),
             ) {
-                let _result: Result<Action, _> = serde_yml::from_str(&content);
+                let _result: Result<Action, _> = serde_yaml::from_str(&content);
             }
 
             /// Fuzz: Condition YAML deserialization must never panic.
@@ -1372,7 +1389,7 @@ duration_ms = 200
             fn fuzz_condition_yaml_deserialize(
                 content in any::<String>(),
             ) {
-                let _result: Result<crate::task::dsl::Condition, _> = serde_yml::from_str(&content);
+                let _result: Result<crate::task::dsl::Condition, _> = serde_yaml::from_str(&content);
             }
 
             /// Fuzz: SpecMeta YAML deserialization must never panic.
@@ -1382,7 +1399,7 @@ duration_ms = 200
             fn fuzz_spec_meta_yaml_deserialize(
                 content in any::<String>(),
             ) {
-                let _result: Result<SpecMeta, _> = serde_yml::from_str(&content);
+                let _result: Result<SpecMeta, _> = serde_yaml::from_str(&content);
             }
 
             /// Fuzz: validate_task_definition must never panic.
@@ -1441,7 +1458,7 @@ status: {}
 {}: {}"#,
                     id_val, title_val, status_val, extra_key, extra_val
                 );
-                let _result: Result<SpecMeta, _> = serde_yml::from_str(&yaml);
+                let _result: Result<SpecMeta, _> = serde_yaml::from_str(&yaml);
             }
 
             /// Fuzz: TaskDefinition with deeply nested, empty, or extreme structures.
@@ -1459,7 +1476,7 @@ actions:
     selector: {}"#,
                     name, action_type, selector
                 );
-                let _result: Result<TaskDefinition, _> = serde_yml::from_str(&yaml);
+                let _result: Result<TaskDefinition, _> = serde_yaml::from_str(&yaml);
             }
 
             /// Fuzz: parse_task_yaml with JSON-like input (valid JSON is also

@@ -93,6 +93,7 @@ impl TaskWatcher {
         task_config: &crate::config::TaskDiscoveryConfig,
     ) -> Result<()> {
         let (tx, mut rx) = mpsc::channel(100);
+        let watcher_tx = tx.clone();
         self.tx = Some(tx);
 
         let path = path.as_ref().to_path_buf();
@@ -100,7 +101,6 @@ impl TaskWatcher {
         let config = task_config.clone();
 
         // Create notify watcher
-        let watcher_tx = self.tx.as_ref().unwrap().clone();
         let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| match res {
             Ok(event) => {
                 if let Err(e) = Self::handle_notify_event(&event, &watcher_tx) {

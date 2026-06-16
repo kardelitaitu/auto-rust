@@ -12,10 +12,10 @@
 //!
 //! ## Key Functions
 //!
-//! - [`dive_into_thread()`]: Click a tweet link to open thread detail view
-//! - [`read_full_thread()`]: Scroll through a thread with optional caching
-//! - [`extract_initial_thread_data()`]: Capture root tweet author and text
-//! - [`extract_visible_replies()`]: Extract replies visible in current view
+//! - `dive_into_thread()`: Click a tweet link to open thread detail view
+//! - `read_full_thread()`: Scroll through a thread with optional caching
+//! - `extract_initial_thread_data()`: Capture root tweet author and text
+//! - `extract_visible_replies()`: Extract replies visible in current view
 //!
 //! ## Usage
 //!
@@ -38,7 +38,7 @@
 //!
 //! ## Thread Caching
 //!
-//! The [`ThreadCache`] struct captures thread data incrementally:
+//! The `ThreadCache` struct captures thread data incrementally:
 //! - Initial tweet data (author, text) captured after thread opens
 //! - Replies extracted before each scroll (up to 20 total)
 //! - Cache can be used for LLM reply/quote generation

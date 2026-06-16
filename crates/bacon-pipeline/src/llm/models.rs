@@ -5,8 +5,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Chat message role.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum Role {
     User,
     System,
@@ -47,8 +50,11 @@ impl ChatMessage {
 }
 
 /// LLM provider.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum LlmProvider {
     Nvidia,
     Ollama,

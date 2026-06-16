@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 //! bacon-review — Auditor stage only.
 //!
 //! Reads a spec package and the implemented patch, then audits PASS/FAIL.

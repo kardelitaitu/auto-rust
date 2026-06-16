@@ -171,7 +171,10 @@ pub(crate) fn classify_error_pattern(msg: &str) -> ErrorPattern {
 /// Categorizes different types of errors that can occur during task execution.
 /// This enum helps with error handling, logging, and debugging by classifying
 /// errors into specific categories for appropriate handling.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum TaskErrorKind {
     /// Task execution exceeded the configured timeout limit
     Timeout,

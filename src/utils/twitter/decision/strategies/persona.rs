@@ -22,6 +22,7 @@ pub(crate) struct PersonaStrategy {
 }
 
 impl PersonaStrategy {
+    #[allow(clippy::expect_used)]
     pub fn new() -> Self {
         Self {
             controversial_keywords: serde_json::from_str(include_str!(

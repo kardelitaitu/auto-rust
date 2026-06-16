@@ -110,12 +110,14 @@ impl Hash for TweetId {
 }
 
 impl From<String> for TweetId {
+    #[allow(clippy::expect_used)]
     fn from(s: String) -> Self {
         Self::new(s).expect("TweetId::from called with empty string")
     }
 }
 
 impl From<&str> for TweetId {
+    #[allow(clippy::expect_used)]
     fn from(s: &str) -> Self {
         Self::new(s).expect("TweetId::from called with empty string")
     }
@@ -230,12 +232,14 @@ impl Hash for StatusUrl {
 }
 
 impl From<String> for StatusUrl {
+    #[allow(clippy::expect_used)]
     fn from(s: String) -> Self {
         Self::new(s).expect("StatusUrl::from called with empty string")
     }
 }
 
 impl From<&str> for StatusUrl {
+    #[allow(clippy::expect_used)]
     fn from(s: &str) -> Self {
         Self::new(s).expect("StatusUrl::from called with empty string")
     }

@@ -863,7 +863,7 @@ fn validate_parameter_redundant_required_default_warns() {
         "p".into(),
         ParameterDef {
             required: true,
-            default: Some(serde_yml::Value::String("x".into())),
+            default: Some(serde_yaml::Value::String("x".into())),
             description: String::new(),
             r#type: ParameterType::String,
         },

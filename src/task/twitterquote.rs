@@ -58,7 +58,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         text
     } else {
         info!("[twitterquote] Generating LLM quote using unified batch processor...");
-        let processor = UnifiedLLMProcessor::new();
+        let processor = UnifiedLLMProcessor::new()?;
 
         // Convert replies to format expected by unified processor
         let reply_tuples: Vec<(&str, &str)> = replies

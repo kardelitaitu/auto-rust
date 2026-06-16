@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 // bacon-test.rs - Comprehensive testing framework for Bacon autonomous coding system
 // Usage: cargo run --bin bacon-test [OPTIONS]
 

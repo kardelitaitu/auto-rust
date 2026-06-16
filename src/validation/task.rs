@@ -144,12 +144,6 @@ impl TaskPayload {
             .get("value")
             .and_then(|v| v.as_str())
             .is_some_and(|s| !s.trim().is_empty());
-        let has_quote_text = self
-            .payload
-            .get("quote_text")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.trim().is_empty());
-
         if !(has_url || has_value) {
             return Err(OrchestratorError::Task(TaskError::ValidationFailed {
                 task_name: "twitterquote".to_string(),
@@ -157,8 +151,7 @@ impl TaskPayload {
             }));
         }
 
-        if has_quote_text {
-            let text = self.payload.get("quote_text").unwrap().as_str().unwrap();
+        if let Some(text) = self.payload.get("quote_text").and_then(|v| v.as_str()) {
             if text.len() > 280 {
                 return Err(OrchestratorError::Task(TaskError::ValidationFailed {
                     task_name: "twitterquote".to_string(),

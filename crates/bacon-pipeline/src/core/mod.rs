@@ -31,7 +31,10 @@ use std::time::{Duration, Instant};
 // ---------------------------------------------------------------------------
 
 /// Pipeline stage identifiers.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum Stage {
     Observer,
     Strategist,
@@ -86,7 +89,10 @@ impl std::str::FromStr for StageName {
 
 /// Pipeline stage confidence level, extracted from `Confidence: High/Medium/Low`
 /// lines in LLM responses. Used for metrics and observability.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub enum Confidence {
     High,
     Medium,
@@ -410,7 +416,10 @@ pub struct PipelineCtx {
 ///
 /// Replaces ad-hoc combinations of `coder_refused`, `needs_human_approval`,
 /// `scope_reduction_needed`, and `patch_path` with one authoritative value.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PatchStatus {
     Applied(PathBuf),
     Queued(PathBuf),
@@ -685,7 +694,7 @@ pub fn check_stale_in_progress() -> Result<()> {
                 continue;
             }
         };
-        let meta: serde_yml::Value = match serde_yml::from_str(&meta_content) {
+        let meta: serde_yaml::Value = match serde_yaml::from_str(&meta_content) {
             Ok(v) => v,
             Err(e) => {
                 debug!(
@@ -731,15 +740,15 @@ pub fn check_stale_in_progress() -> Result<()> {
                         // Re-read spec.yaml, update status, write back atomically
                         if let Some(mut meta_value) = std::fs::read_to_string(&meta_path)
                             .ok()
-                            .and_then(|c| serde_yml::from_str::<serde_yml::Value>(&c).ok())
+                            .and_then(|c| serde_yaml::from_str::<serde_yaml::Value>(&c).ok())
                         {
                             if let Some(map) = meta_value.as_mapping_mut() {
                                 map.insert(
-                                    serde_yml::Value::String("status".to_string()),
-                                    serde_yml::Value::String("approved".to_string()),
+                                    serde_yaml::Value::String("status".to_string()),
+                                    serde_yaml::Value::String("approved".to_string()),
                                 );
                                 let tmp = spec_path.join("spec.yaml.tmp");
-                                if let Ok(content) = serde_yml::to_string(&meta_value) {
+                                if let Ok(content) = serde_yaml::to_string(&meta_value) {
                                     let _ = std::fs::write(&tmp, &content);
                                     let _ = std::fs::rename(&tmp, &meta_path);
                                 }
@@ -1258,6 +1267,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     let normalized_text = text.replace('\\', "/");
 
     // Match paths starting from project root directories (src/, tests/, docs/, config/, .bacon/)
+    #[allow(clippy::expect_used)]
     let path_re = Regex::new(r"\b(?:src|tests|docs|config|scripts|\.bacon)/[\w./-]+\.(?:rs|toml|md|json|ps1|sh|yaml|yml)\b")
         .expect("static path regex for collect_source_context");
 
@@ -1305,6 +1315,7 @@ pub fn collect_source_context(text: &str, max_files: usize, max_lines_per_file: 
     }
 
     // Also match root-level files like Cargo.toml, build.rs, bacon.toml
+    #[allow(clippy::expect_used)]
     let root_re = Regex::new(r"\b(?:Cargo\.toml|build\.rs|bacon\.toml|rust-toolchain\.toml|spec-lint\.ps1|check-fast\.ps1|check\.ps1)\b")
         .expect("static root-file regex for collect_source_context");
     for m in root_re.find_iter(&normalized_text) {

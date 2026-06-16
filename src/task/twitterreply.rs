@@ -46,7 +46,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Extracted {} replies for context", replies.len());
 
     info!("Generating AI reply using unified batch processor...");
-    let processor = UnifiedLLMProcessor::new();
+    let processor = UnifiedLLMProcessor::new()?;
 
     // Convert replies to format expected by unified processor
     let reply_tuples: Vec<(&str, &str)> = replies

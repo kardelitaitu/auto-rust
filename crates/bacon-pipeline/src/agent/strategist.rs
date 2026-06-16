@@ -336,7 +336,7 @@ fn write_generated_spec_yaml(
         risks: vec!["LLM-generated plans may still need human review for scope.".to_string()],
     };
 
-    let content = serde_yml::to_string(&spec)?;
+    let content = serde_yaml::to_string(&spec)?;
     std::fs::write(spec_dir.join("spec.yaml"), content)?;
     Ok(())
 }

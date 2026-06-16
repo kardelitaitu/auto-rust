@@ -11,7 +11,10 @@ use super::errors::TaskErrorKind;
 
 /// Represents the outcome status of a task execution.
 /// Used to categorize whether a task completed successfully, failed, or timed out.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[non_exhaustive]
 pub enum TaskStatus {
     /// Task completed successfully without errors
     Success,

@@ -675,9 +675,9 @@ mod tests {
             "item",
             &ForeachCollection::Array {
                 values: vec![
-                    serde_yml::Value::String("a".to_string()),
-                    serde_yml::Value::String("b".to_string()),
-                    serde_yml::Value::String("c".to_string()),
+                    serde_yaml::Value::String("a".to_string()),
+                    serde_yaml::Value::String("b".to_string()),
+                    serde_yaml::Value::String("c".to_string()),
                 ],
             },
             &[Action::Click {

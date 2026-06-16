@@ -1,0 +1,83 @@
+# cargo-deny configuration
+# Run: cargo deny check
+#
+# Install: cargo install cargo-deny
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Also check dependencies of dev-dependencies
+include-dev = true
+# Also check dependencies of build dependencies
+include-build = true
+
+[advisories]
+# Vulnerability database path
+db-path = "~/.cargo/advisory-db"
+# URL(s) of the advisory databases to use
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# How to handle unmaintained/unsound/etc advisories
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "deny"
+notice = "warn"
+# Ignore specific advisories by ID (temporary, with justification)
+# Example: ignore = ["RUSTSEC-2020-0001"]
+ignore = [
+    # serde_yml 0.0.13 is the latest but still has minor issues tracked in docs/TODO.md
+    # Being replaced in future phase
+]
+
+[licenses]
+# Deny unknown licenses
+unlicensed = "deny"
+# Allow these licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    "MPL-2.0",
+]
+# Don't fail on copyleft if it's explicitly allowed above
+copyleft = "deny"
+# Allow packages with permissive licenses
+deny = []
+# Skip checking certain packages' licenses
+skip = [
+    # webp crate (BSD-2-Clause or MIT) — transitive via image
+    # ring (ISC) — complex, listed manually
+]
+# Confidence threshold for license detection (0.0 = lowest, 1.0 = highest)
+confidence-threshold = 0.8
+
+[bans]
+# Multiple versions of the same crate
+multiple-versions = "deny"
+# Skip certain crates from duplicate checks
+skip = [
+    # serde_yml is used in both root and bacon-pipeline
+]
+# Explicitly forbid certain crates
+deny = []
+# Highlight certain crates as high-risk
+highlight = []
+
+[sources]
+# Deny crates from unknown registries
+unknown-registry = "deny"
+# Deny crates from unknown git repositories
+unknown-git = "deny"
+# Allow crates from these registries
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Allow crates from these git sources
+allow-git = []
+
+[output]
+# Feature depth for feature resolution
+feature-depth = 1

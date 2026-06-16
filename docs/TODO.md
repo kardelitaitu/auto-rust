@@ -58,9 +58,19 @@ Untested branches, not untested lines.
 
 Detects undefined behavior in unsafe code. Run weekly.
 
-- [x] **Script** — `.\miri.ps1` created (installs nightly + miri, focuses on session/duration.rs unsafe blocks)
-- [ ] **`miri` on test suite** — run `.\miri.ps1` to check for UB. Only 2 unsafe blocks found (both in `src/session/duration.rs` — `NonZeroU64::new_unchecked`).
-- [ ] **Focus** — `unsafe` blocks in `session/duration.rs` lines 38 and 84.
+- [x] **Script** — `.\scripts\miri.ps1` created (moved from root, installs nightly + miri, focuses on session/duration.rs unsafe blocks)
+- [x] **`miri` on test suite** — `.\scripts\miri.ps1` run — 18/18 tests pass, no UB detected. Fixed PowerShell encoding bug in `scripts/miri.ps1` (UTF-8 em dash on line 281 → ASCII hyphens).
+- [x] **Focus** — `unsafe` blocks in `session/duration.rs` lines 38 and 84. Both sound (`new_const`: guarded by `assert!(value > 0)`; `Mul::mul`: `saturating_mul` of non-zero values ≥ 1).
+
+## Layer 6.5: Lint Hardening (completed 2026-06-16)
+
+- [x] **`unwrap_used` enforcement** — `#![deny(clippy::unwrap_used)]` in both `src/lib.rs` and `crates/bacon-pipeline/src/lib.rs`; CI + `check.ps1` steps for `--lib` and `--bins`
+- [x] **`expect_used` enforcement** — same pattern; 4 HIGH-risk panics fixed (Llm::default removed, UnifiedLLMProcessor::new() returns Result); ~20 justified expects annotated with `#[allow]`
+- [x] **`unsafe_code` ban** — `#![deny(unsafe_code)]` in bacon-pipeline (0 unsafe blocks)
+- [x] **`unsafe_op_in_unsafe_fn`** — `#![deny(unsafe_op_in_unsafe_fn)]` in auto-rust (0 `unsafe fn` definitions)
+- [x] **`serde_yml`→`serde_yaml`** — migrated from unsound unmaintained crate to stable fork (129 occurrences across 18 files); `.cargo/audit.toml` created for transitive `async-std` advisory
+- [x] **Dead code audit** — 88 `#[allow(dead_code)]` annotations analyzed; all justified (test-supporting code, public API surface, config docs)
+- [x] **Binary target audit** — 7 binary files (`src/main.rs`, `src/bin/*.rs`): zero `.unwrap()`/`.expect()` violations; `--bins` CI enforcement added
 
 ## Layer 7: What NOT to Do
 
@@ -78,4 +88,4 @@ Detects undefined behavior in unsafe code. Run weekly.
 3. **~~Fuzz~~** LLM response parser — ~~untrusted input, high impact.~~ Done (found + fixed real bug).
 4. **Mutants** baseline on limits module — quick confidence boost. **Ready: `.\mutants.ps1 -Target limits`**
 5. **Coverage gap** on decision strategies — find untested branches. **Ready: `.\coverage.ps1 -Target decision`**
-6. **Miri** UB detection — safety net for unsafe code. **Ready: `.\miri.ps1`**
+6. **~~Miri~~** UB detection — ~~safety net for unsafe code.~~ **Done: `.\scripts\miri.ps1` — 18/18 pass, no UB.**

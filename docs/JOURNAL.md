@@ -1738,6 +1738,94 @@ The Bacon gated-LLM pipeline is now fully implemented. The system is a **Config 
 
 ---
 
+## 2026-06-16 — Comprehensive hardening: lints, unsound deps migration, dead code cleanup, docs
+
+### Accomplished This Session
+
+#### Binary Target Audit — `.unwrap()`/`.expect()` Enforcement
+- **Audited**: All 7 binary files (`src/main.rs`, `src/bin/*.rs`) — zero `.unwrap()`/`.expect()` calls found
+- **Added CI step**: `.github/workflows/ci.yml` — `cargo clippy --bins -- -D warnings -D clippy::unwrap_used -D clippy::expect_used`
+- **Added to `check.ps1`**: `BinsClippy` sub-step with report table entry and failure help section
+- **Coverage map**: All production code paths (lib + bins, both crates) now enforced against `.unwrap()`/`.expect()`
+
+#### Unsafe Block Audit + Lint Guards
+- **Audited**: 2 `unsafe` blocks in `src/session/duration.rs` (`NonZeroU64::new_unchecked`) — both sound, well-guarded, covered by 18 Miri tests
+- **Added `#![deny(unsafe_code)]`**: `crates/bacon-pipeline/src/lib.rs` — forward-looking guard (crate has zero unsafe blocks)
+- **Added `#![deny(unsafe_op_in_unsafe_fn)]`**: `src/lib.rs` — ensures future `unsafe fn` definitions wrap operations properly
+
+#### Miri UB Detection
+- **Ran `scripts/miri.ps1`**: 18/18 duration tests pass, no undefined behavior detected
+- **Fixed encoding bug**: Replaced UTF-8 em dash (`—`, U+2014) with ASCII hyphens on line 281 — PowerShell was mangling the non-ASCII byte
+
+#### Dead Code Audit
+- **Analyzed**: 88 `#[allow(dead_code)]` annotations across both crates — all justified (test-supporting, public API surface, config documentation)
+- **Removed 3 unused mock structs** from `crates/bacon-pipeline/src/agent/coder.rs`: `MockFileSystem`, `MockCommandRunner`, `MockLlmClient` — never instantiated, other agents have their own working mocks
+- **Removed unused `async_trait` import** — no longer needed after mock removal
+
+#### Unsound Dependency Migration
+- **`serde_yml` (v0.0.13) → `serde_yaml` (v0.9)**: Migrated 18 `.rs` files (129 occurrences) across both crates
+- **Fixed 3 API differences**: `Mapping::insert` keys need `Value::String()` wrapper, `Value::as_str()` returns `Option<&str>`
+- **Removed stale migration TODO comment** from `src/task/dsl/parser.rs`
+- **Created `.cargo/audit.toml`**: Allow-listed `async-std` advisory (RUSTSEC-2025-0052) — transitive dep via `chromiumoxide`, cannot be removed
+- **Full nextest suite**: 3,528 tests pass, 0 failed
+- **Cargo audit clean**: `serde_yml` advisory gone
+
+#### Documentation Updates
+- **`docs/TODO.md`**: Marked Layer 6 (Miri) complete, added Layer 6.5 (Lint Hardening) summarizing all hardening work
+- **`docs/CHANGELOG.md`**: Added Unreleased section documenting lint enforcement, deps migration, dead code cleanup
+
+#### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo clippy --lib -D clippy::unwrap_used` | ✅ Pass |
+| `cargo clippy --lib -D clippy::expect_used` | ✅ Pass |
+| `cargo clippy --bins -D clippy::unwrap_used -D clippy::expect_used` | ✅ Pass |
+| `cargo clippy --all-targets --all-features -D warnings` | ✅ Pass |
+| `cargo audit` (2 advisories: serde_yml gone, async-std allowed) | ✅ Clean |
+| `cargo +nightly miri test -- session::duration` (18/18) | ✅ No UB |
+| `cargo nextest --all-features --lib` (3,528 passed) | ✅ Pass |
+| `cargo bench --bench predictive_scorer` | ✅ All groups pass |
+| `spec-lint.ps1` | ✅ Pass |
+
+#### Files Changed
+
+**Modified:**
+- `.github/workflows/ci.yml` — added `--bins` clippy step
+- `.cargo/audit.toml` — new (async-std advisory exception)
+- `Cargo.toml` — `serde_yml` → `serde_yaml`
+- `crates/bacon-pipeline/Cargo.toml` — `serde_yml` → `serde_yaml`
+- `crates/bacon-pipeline/src/lib.rs` — `#![deny(unsafe_code)]`
+- `crates/bacon-pipeline/src/agent/coder.rs` — removed 3 dead mock structs + unused import
+- `crates/bacon-pipeline/src/agent/cli.rs` — wrapped test-only code in `#[cfg(test)]`
+- `crates/bacon-pipeline/src/core/mod.rs` — `Mapping::insert` key fix for `serde_yaml`
+- `crates/bacon-pipeline/src/core/spec_io.rs` — same `Mapping::insert` key fix
+- `scripts/miri.ps1` — fixed UTF-8 em dash encoding bug
+- `src/lib.rs` — `#![deny(unsafe_op_in_unsafe_fn)]`
+- `src/task/dsl/executor.rs` — `key.as_str()` → `key.as_str().unwrap_or_default()`
+- `src/task/dsl/parser.rs` — removed stale migration TODO comment
+- `src/session/duration.rs` — 18 unit tests for `DurationMs`
+- `check.ps1` — added `BinsClippy` sub-step + report + failure help
+- `docs/TODO.md` — marked Miri complete, added Layer 6.5
+- `docs/CHANGELOG.md` — added Unreleased section
+- 15 `.rs` files — bulk `serde_yml` → `serde_yaml` replacement
+- `JOURNAL.md` — this entry
+
+| Item | Status |
+|------|--------|
+| `.unwrap()`/`.expect()` enforcement (lib + bins) | ✅ CI + check.ps1 |
+| Unsafe block audit | ✅ 2 blocks, both sound |
+| `#[deny(unsafe_code)]` bacon-pipeline | ✅ |
+| `#[deny(unsafe_op_in_unsafe_fn)]` auto-rust | ✅ |
+| Miri UB detection (script fixed, 18/18 pass) | ✅ |
+| `serde_yml` → `serde_yaml` migration | ✅ 129 occurrences, 3,528 tests pass |
+| Dead code cleanup (3 mocks removed, 88 justified) | ✅ |
+| Benchmarks verification | ✅ All pass |
+| check.ps1 integration | ✅ All clippy steps verified |
+| Docs updated (TODO, CHANGELOG, JOURNAL) | ✅ |
+
+---
+
 ## 2026-06-10 (continued) — Transient error classification for page_nav.rs CDP retry logic
 
 ### Accomplished This Session

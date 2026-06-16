@@ -72,7 +72,6 @@ pub struct DslExecutor<'a, T: DslApi> {
     /// Pause flag for step-through debugging
     pub paused: bool,
     /// Variable watch list for tracking changes
-    #[allow(dead_code)]
     pub watched_variables: HashMap<String, String>,
     /// Selector cache for DOM queries
     pub selector_cache: super::cache::SelectorCache,
@@ -319,23 +318,8 @@ impl<'a, T: DslApi> DslExecutor<'a, T> {
                 actions,
                 max_concurrency,
             } => self.execute_parallel(actions, max_concurrency).await,
-            Action::Retry {
-                actions,
-                max_attempts,
-                initial_delay_ms,
-                max_delay_ms,
-                backoff_multiplier,
-                jitter,
-                retry_on,
-            } => {
-                let config = super::control_flow::RetryConfig {
-                    max_attempts: max_attempts.unwrap_or(3),
-                    initial_delay_ms: initial_delay_ms.unwrap_or(1000),
-                    max_delay_ms: max_delay_ms.unwrap_or(30000),
-                    backoff_multiplier: backoff_multiplier.unwrap_or(2.0),
-                    jitter: jitter.unwrap_or(true),
-                    retry_on: retry_on.clone(),
-                };
+            Action::Retry { actions, .. } => {
+                let config = super::control_flow::RetryConfig::from_action(action);
                 self.execute_retry(actions, &config).await
             }
             Action::Foreach {

@@ -61,7 +61,6 @@ pub fn get_log_context() -> LogContext {
 }
 
 /// Clears the logging context.
-#[allow(dead_code)]
 pub fn clear_log_context() {
     LOG_CONTEXT.with(|c| c.replace(LogContext::default()));
 }

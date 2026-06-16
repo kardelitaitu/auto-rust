@@ -10,6 +10,21 @@ use crate::utils::mouse::ClickStatus;
 use anyhow::Result;
 use log::{debug, warn};
 
+/// Check whether an interaction kind requires the target element to be visible.
+///
+/// Click, native click, hover, and focus all need visual visibility.
+/// Type, keyboard, select_all, and clear can work on hidden elements.
+#[must_use]
+pub(crate) fn interaction_needs_visibility(kind: &InteractionKind) -> bool {
+    matches!(
+        kind,
+        InteractionKind::Click
+            | InteractionKind::NativeClick
+            | InteractionKind::Hover
+            | InteractionKind::Focus
+    )
+}
+
 /// Execute an interaction through the shared pipeline.
 ///
 /// This is the main entry point for the shared interaction pipeline. It handles:
@@ -39,15 +54,7 @@ pub async fn execute_interaction(
     }
 
     // Preflight: Check element is visible for interactions that need it
-    let needs_visibility = matches!(
-        request.kind,
-        InteractionKind::Click
-            | InteractionKind::NativeClick
-            | InteractionKind::Hover
-            | InteractionKind::Focus
-    );
-
-    if needs_visibility {
+    if interaction_needs_visibility(&request.kind) {
         let visible = ctx.visible(&request.selector).await?;
         if !visible {
             return Ok(InteractionResult::failed(format!(
@@ -207,6 +214,83 @@ async fn execute_hover_pipeline(ctx: &TaskContext, selector: &str) -> Result<Int
         _ => Ok(InteractionResult::failed(format!(
             "Failed to hover over element '{selector}'"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::interaction_needs_visibility;
+    use crate::runtime::task_context::InteractionKind;
+
+    #[test]
+    fn test_click_needs_visibility() {
+        assert!(interaction_needs_visibility(&InteractionKind::Click));
+    }
+
+    #[test]
+    fn test_native_click_needs_visibility() {
+        assert!(interaction_needs_visibility(&InteractionKind::NativeClick));
+    }
+
+    #[test]
+    fn test_hover_needs_visibility() {
+        assert!(interaction_needs_visibility(&InteractionKind::Hover));
+    }
+
+    #[test]
+    fn test_focus_needs_visibility() {
+        assert!(interaction_needs_visibility(&InteractionKind::Focus));
+    }
+
+    #[test]
+    fn test_type_does_not_need_visibility() {
+        assert!(!interaction_needs_visibility(&InteractionKind::Type));
+    }
+
+    #[test]
+    fn test_keyboard_does_not_need_visibility() {
+        assert!(!interaction_needs_visibility(&InteractionKind::Keyboard));
+    }
+
+    #[test]
+    fn test_select_all_does_not_need_visibility() {
+        assert!(!interaction_needs_visibility(&InteractionKind::SelectAll));
+    }
+
+    #[test]
+    fn test_clear_does_not_need_visibility() {
+        assert!(!interaction_needs_visibility(&InteractionKind::Clear));
+    }
+
+    #[test]
+    fn test_all_visibility_requirements_are_correct() {
+        let needs_visibility = [
+            InteractionKind::Click,
+            InteractionKind::NativeClick,
+            InteractionKind::Hover,
+            InteractionKind::Focus,
+        ];
+        let no_visibility = [
+            InteractionKind::Type,
+            InteractionKind::Keyboard,
+            InteractionKind::SelectAll,
+            InteractionKind::Clear,
+        ];
+
+        for kind in &needs_visibility {
+            assert!(
+                interaction_needs_visibility(kind),
+                "{:?} should need visibility",
+                kind
+            );
+        }
+        for kind in &no_visibility {
+            assert!(
+                !interaction_needs_visibility(kind),
+                "{:?} should not need visibility",
+                kind
+            );
+        }
     }
 }
 

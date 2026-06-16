@@ -54,9 +54,7 @@ pub(crate) fn nativeclick_debug(
     });
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum PathStyle {
     #[default]
     Bezier,
@@ -67,9 +65,7 @@ pub enum PathStyle {
     Muscle,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Precision {
     Exact,
     #[default]
@@ -77,9 +73,7 @@ pub enum Precision {
     Rough,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Speed {
     Fast,
     #[default]

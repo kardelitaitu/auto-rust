@@ -7,8 +7,33 @@ use std::time::Duration;
 use crate::result::errors::{classify_error_pattern, ErrorPattern};
 
 /// Retry configuration for transient CDP failures
-const EVAL_RETRY_MAX_ATTEMPTS: u32 = 3;
-const EVAL_RETRY_BASE_DELAY_MS: u64 = 50;
+pub(crate) const EVAL_RETRY_MAX_ATTEMPTS: u32 = 3;
+pub(crate) const EVAL_RETRY_BASE_DELAY_MS: u64 = 50;
+
+/// Compute the exponential backoff delay for a given retry attempt.
+///
+/// Formula: `base_delay * (1 << attempt.min(6))` where `base_delay` is 50ms.
+/// - Attempt 1: 50 * 2 = 100ms
+/// - Attempt 2: 50 * 4 = 200ms
+/// - Attempt 3: 50 * 8 = 400ms
+/// - Capped at `1 << 6 = 64` multiplier max.
+#[must_use]
+pub(crate) fn compute_retry_delay(attempt: u32) -> u64 {
+    EVAL_RETRY_BASE_DELAY_MS * (1u64 << attempt.min(6))
+}
+
+/// Compute the settle timing for navigation page loads.
+///
+/// Formula: `action_delay_min_ms + (navigate_timeout_ms.min(2000) / 4)`, clamped to [150, 4000].
+#[must_use]
+pub(crate) fn compute_navigate_settle_timing(
+    action_delay_min_ms: u64,
+    navigate_timeout_ms: u64,
+) -> u64 {
+    action_delay_min_ms
+        .saturating_add(navigate_timeout_ms.min(2_000) / 4)
+        .clamp(150, 4_000)
+}
 
 /// Returns true if the error is transient and safe to retry.
 ///
@@ -58,7 +83,7 @@ impl TaskContext {
                 Ok(result) => return Ok(result),
                 Err(e) if is_transient_error(&e) && attempt < EVAL_RETRY_MAX_ATTEMPTS => {
                     attempt += 1;
-                    let delay = EVAL_RETRY_BASE_DELAY_MS * (1u64 << attempt.min(6));
+                    let delay = compute_retry_delay(attempt);
                     log::warn!(
                         "CDP operation failed (attempt {}), retrying in {}ms: {}",
                         attempt,
@@ -99,10 +124,7 @@ impl TaskContext {
             action_delay.variance_pct.round() as u32,
         )
         .await;
-        let settle_base = action_delay
-            .min_ms
-            .saturating_add(navigate_timeout_ms.min(2_000) / 4)
-            .clamp(150, 4_000);
+        let settle_base = compute_navigate_settle_timing(action_delay.min_ms, navigate_timeout_ms);
         let settle_variance = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
         timing::human_pause(settle_base, settle_variance).await;
         let settle_ms = navigate_timeout_ms.min(3_000);
@@ -770,6 +792,79 @@ mod tests {
         // "Not found" is always permanent
         let not_found = anyhow::anyhow!("Element not found: #selector");
         assert!(!is_transient_error(&not_found));
+    }
+}
+#[cfg(test)]
+mod extract_tests {
+    use super::{compute_navigate_settle_timing, compute_retry_delay, EVAL_RETRY_BASE_DELAY_MS};
+
+    #[test]
+    fn test_compute_retry_delay_attempt_1() {
+        assert_eq!(compute_retry_delay(1), 100); // 50 * 2
+    }
+
+    #[test]
+    fn test_compute_retry_delay_attempt_2() {
+        assert_eq!(compute_retry_delay(2), 200); // 50 * 4
+    }
+
+    #[test]
+    fn test_compute_retry_delay_attempt_3() {
+        assert_eq!(compute_retry_delay(3), 400); // 50 * 8
+    }
+
+    #[test]
+    fn test_compute_retry_delay_capped_at_shift_6() {
+        let delay_at_6 = compute_retry_delay(6); // 50 * 64 = 3200
+        let delay_at_10 = compute_retry_delay(10); // capped, same as 6
+        assert_eq!(delay_at_6, 3200);
+        assert_eq!(delay_at_10, delay_at_6);
+    }
+
+    #[test]
+    fn test_compute_retry_delay_attempt_0() {
+        // attempt 0: min(0,6) = 0, so 50 * 1 = 50
+        assert_eq!(compute_retry_delay(0), EVAL_RETRY_BASE_DELAY_MS);
+    }
+
+    #[test]
+    fn test_compute_navigate_settle_normal() {
+        // 300 + min(5000, 2000)/4 = 300 + 500 = 800
+        assert_eq!(compute_navigate_settle_timing(300, 5000), 800);
+    }
+
+    #[test]
+    fn test_compute_navigate_settle_small_timeout() {
+        // 300 + min(400, 2000)/4 = 300 + 100 = 400
+        assert_eq!(compute_navigate_settle_timing(300, 400), 400);
+    }
+
+    #[test]
+    fn test_compute_navigate_settle_clamped_to_min() {
+        // 50 + min(100, 2000)/4 = 50 + 25 = 75, clamped to 150
+        assert_eq!(compute_navigate_settle_timing(50, 100), 150);
+    }
+
+    #[test]
+    fn test_compute_navigate_settle_clamped_to_max() {
+        // 5000 + min(10000, 2000)/4 = 5000 + 500 = 5500, clamped to 4000
+        assert_eq!(compute_navigate_settle_timing(5000, 10000), 4000);
+    }
+
+    #[test]
+    fn test_compute_navigate_settle_zero_values() {
+        // 0 + min(0, 2000)/4 = 0, clamped to 150
+        assert_eq!(compute_navigate_settle_timing(0, 0), 150);
+    }
+
+    #[test]
+    fn test_compute_navigate_settle_at_boundaries() {
+        // At min boundary: 150
+        assert_eq!(compute_navigate_settle_timing(150, 0), 150);
+        // At max boundary
+        assert_eq!(compute_navigate_settle_timing(4000, 0), 4000);
+        // Just within bounds
+        assert_eq!(compute_navigate_settle_timing(250, 0), 250);
     }
 }
 

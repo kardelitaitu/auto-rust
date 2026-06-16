@@ -20,10 +20,10 @@ struct TestResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 enum TestStatus {
     Passed,
     Failed,
+    #[allow(dead_code)]
     Skipped,
     Warning,
 }

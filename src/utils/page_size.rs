@@ -44,13 +44,11 @@ pub async fn get_viewport(page: &Page) -> Result<Viewport> {
 /// # Returns
 /// Ok(DocumentSize) with scrollWidth and scrollHeight, Err if evaluation fails
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 pub struct DocumentSize {
     pub scroll_width: f64,
     pub scroll_height: f64,
 }
 
-#[allow(dead_code)]
 pub async fn get_document_size(page: &Page) -> Result<DocumentSize> {
     let result = page.evaluate(
         "({scroll_width: document.documentElement.scrollWidth, scroll_height: document.documentElement.scrollHeight})"
@@ -69,7 +67,6 @@ pub async fn get_document_size(page: &Page) -> Result<DocumentSize> {
 ///
 /// # Returns
 /// (x, y) tuple representing the center coordinates
-#[allow(dead_code)]
 #[must_use]
 pub fn center_position(viewport: &Viewport) -> (f64, f64) {
     (viewport.width / 2.0, viewport.height / 2.0)
@@ -84,7 +81,6 @@ pub fn center_position(viewport: &Viewport) -> (f64, f64) {
 ///
 /// # Returns
 /// (x, y) tuple representing random coordinates within bounds
-#[allow(dead_code)]
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
 pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
@@ -100,7 +96,6 @@ pub fn random_position(viewport: &Viewport, margin: f64) -> (f64, f64) {
 
 /// Generates a random viewport position while avoiding the outer edge band.
 /// `edge_ratio` is clamped to [0.0, 0.45], where 0.10 means avoid outer 10% on each side.
-#[allow(dead_code)]
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
 pub fn random_position_with_edge_ratio(viewport: &Viewport, edge_ratio: f64) -> (f64, f64) {
@@ -181,7 +176,6 @@ impl ElementCoords {
 ///
 /// # Returns
 /// `Ok((min_x`, `min_y`, `max_x`, `max_y`)) with element bounds, Err if element not found
-#[allow(dead_code)]
 pub async fn get_element_bounds(page: &Page, selector: &str) -> Result<(f64, f64, f64, f64)> {
     let selector_js = serde_json::to_string(selector)?;
     let js = format!(

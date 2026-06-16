@@ -341,9 +341,9 @@ impl LegacyStrategy {
 }
 
 /// Analysis results for tweet replies.
+#[allow(dead_code)]
 #[derive(Debug)]
 struct ReplyAnalysis {
-    #[allow(dead_code)]
     positive_ratio: f64,
     negative_ratio: f64,
     spam_ratio: f64,

@@ -32,7 +32,6 @@ impl Default for RetryConfig {
 }
 
 impl RetryConfig {
-    #[allow(dead_code)]
     pub fn from_action(action: &crate::task::dsl::Action) -> Self {
         match action {
             crate::task::dsl::Action::Retry {

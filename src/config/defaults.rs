@@ -33,7 +33,6 @@ impl Default for TwitterActivityConfig {
     }
 }
 
-#[allow(dead_code)]
 impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
@@ -54,7 +53,6 @@ impl Default for BrowserConfig {
     }
 }
 
-#[allow(dead_code)]
 impl Default for OrchestratorConfig {
     fn default() -> Self {
         Self {
@@ -69,7 +67,6 @@ impl Default for OrchestratorConfig {
     }
 }
 
-#[allow(dead_code)]
 impl Default for CircuitBreakerConfig {
     fn default() -> Self {
         Self {
@@ -81,7 +78,6 @@ impl Default for CircuitBreakerConfig {
     }
 }
 
-#[allow(dead_code)]
 impl Default for RoxybrowserConfig {
     fn default() -> Self {
         Self {
@@ -92,7 +88,6 @@ impl Default for RoxybrowserConfig {
     }
 }
 
-#[allow(dead_code)]
 impl Default for BrowserProfile {
     fn default() -> Self {
         Self {

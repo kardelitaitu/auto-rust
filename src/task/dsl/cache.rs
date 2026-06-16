@@ -16,13 +16,10 @@ pub struct SelectorCacheEntry {
     /// Whether the selector exists
     pub exists: bool,
     /// Whether the selector is visible
-    #[allow(dead_code)]
     pub visible: bool,
     /// Text content (if extracted)
-    #[allow(dead_code)]
     pub text: Option<String>,
     /// Element count (for collection selectors)
-    #[allow(dead_code)]
     pub count: usize,
     /// Timestamp when cached
     pub cached_at: Instant,
@@ -145,13 +142,11 @@ impl SelectorCache {
     }
 
     /// Invalidate all cached entries for a selector.
-    #[allow(dead_code)]
     pub fn invalidate(&mut self, selector: &str) {
         self.cache.remove(selector);
     }
 
     /// Clear all cached entries.
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.cache.clear();
     }
@@ -179,7 +174,6 @@ use crate::task::dsl::api::DslApi;
 /// Cached wrapper for checking element visibility (extracted from executor).
 ///
 /// Checks the cache first; if not found, fetches from the API and caches.
-#[allow(dead_code)]
 pub async fn cached_visible<T: DslApi>(
     api: &T,
     cache: &mut SelectorCache,
@@ -206,7 +200,6 @@ pub async fn cached_visible<T: DslApi>(
 /// Cached wrapper for getting element text (extracted from executor).
 ///
 /// Checks the cache first for text; if not found, fetches from the API and caches.
-#[allow(dead_code)]
 pub async fn cached_text<T: DslApi>(
     api: &T,
     cache: &mut SelectorCache,

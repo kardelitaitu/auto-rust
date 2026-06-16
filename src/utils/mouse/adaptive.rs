@@ -268,16 +268,16 @@ fn calculate_adaptive_cursor_config(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
 enum ExperienceLevel {
     Novice,
     Intermediate,
     Expert,
 }
 
-#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
 enum ElementPriority {
     Critical,
     Normal,

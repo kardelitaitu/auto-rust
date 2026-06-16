@@ -258,8 +258,8 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 #[allow(clippy::cast_precision_loss)]
+#[allow(dead_code)]
 async fn type_character(page: &Page, ch: char) -> Result<()> {
     let key_delay = gaussian(120.0, 40.0, 50.0, 300.0) as u64;
     dispatch_input_event(page, ch).await?;
@@ -307,7 +307,6 @@ async fn typo_correction_profiled(
     Ok(())
 }
 
-#[allow(dead_code)]
 #[allow(clippy::cast_precision_loss)]
 fn get_similar_char(ch: char) -> char {
     match ch.to_ascii_lowercase() {

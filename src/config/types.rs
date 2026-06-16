@@ -27,7 +27,6 @@ pub struct BrowserConfig {
     pub connection_timeout_ms: DurationMs,
     pub max_discovery_retries: u32,
     pub discovery_retry_delay_ms: DurationMs,
-    #[allow(dead_code)]
     pub circuit_breaker: CircuitBreakerConfig,
     pub profiles: Vec<BrowserProfile>,
     pub roxybrowser: RoxybrowserConfig,

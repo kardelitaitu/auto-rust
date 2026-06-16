@@ -54,7 +54,6 @@ pub struct DebugEvent {
 /// Returns `Some(DebugEvent)` if debug mode is on and the variable changed;
 /// returns `None` otherwise. The caller is responsible for pushing the event
 /// to the debug_events log.
-#[allow(dead_code)]
 pub fn watch_variable(
     watched: &mut HashMap<String, String>,
     debug_mode: bool,

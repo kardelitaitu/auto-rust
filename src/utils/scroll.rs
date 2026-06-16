@@ -37,7 +37,6 @@ pub async fn read_by_duration(page: &Page, duration_ms: u64) -> Result<()> {
     .await
 }
 
-#[allow(dead_code)]
 pub async fn human_scroll(page: &Page, direction: &str, amount: i32) -> Result<()> {
     let signed = match direction {
         "down" => f64::from(amount),
@@ -108,7 +107,6 @@ pub async fn back(page: &Page, distance: i32) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn scroll_back(page: &Page, distance: i32) -> Result<()> {
     back(page, distance).await
 }

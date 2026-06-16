@@ -37,7 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - **audit**: Ran `cargo audit` — 2 advisories: `serde_yml` resolved by migration to `serde_yaml`; `async-std` is transitive, allowed via `.cargo/audit.toml`
-- **miri**: Ran `cargo +nightly miri test` — 18/18 duration tests pass; no undefined behavior detected in the 2 `unsafe` blocks
+- **miri**: Ran `cargo +nightly miri test` — 18/18 duration tests pass, full suite (excluding FFI/async) passes in 2,496s; no undefined behavior detected in the 2 `unsafe` blocks
+- **fuzz**: Fixed `fuzz/Cargo.toml` — migrated `serde_yml = "0.0.13"` to `serde_yaml = "0.9"`, fixed TOML table-header bug (dependency was dangling outside `[dependencies]`), updated `fuzz/README.md` references; fuzz workspace compiles cleanly
+- **integration**: `cargo nextest --all-features --tests` — 3,896 tests passed, 0 failed (55 skipped)
+- **udeps**: `cargo +nightly udeps --all-features` — 2 flagged (`do-over`, `tracing-subscriber`), both false positives used by binary targets
 
 ### Removed
 - **cleanup**: Removed stale `#[allow(deprecated)] // TODO: migrate from serde_yml...` comment from `src/task/dsl/parser.rs`

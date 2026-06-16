@@ -34,6 +34,8 @@ Best for parsing, deserialization, and any code that touches untrusted input.
 - [x] **LLM response parser** — proptest fuzzing for `LlmDecision` deserializer (5 tests) + `LlmSentimentResult` deserializer (5 tests) + JSON extraction logic. **Found and fixed a real bug** in `analyze_sentiment_llm`: potential panic when `{` appears after `}` in LLM response + off-by-one that dropped closing `}`.
 - [x] **Spec file loader** — 12 fuzz proptests: parse_task_yaml, parse_task_toml, TaskDefinition/Action/Condition/SpecMeta YAML deserialize, validate_task_definition, format_task_definition, unknown keys, extra fields, boundary tests. All with any::<String>() — no panics.
 - [x] **JS evaluation results** — `api.page().evaluate()` returns `serde_json::Value`. Downstream code assumes shape. Fuzz with unexpected shapes.
+- [x] **Fuzz workspace dependency fix** — migrated `fuzz/Cargo.toml` from `serde_yml` to `serde_yaml`, fixed TOML structure, all 4 fuzz targets compile cleanly on nightly
+- [x] **Integration tests verified** — 3,896 `--tests` pass (0 failed, 55 skipped) post-`serde_yaml` migration
 
 ## Layer 4: Mutation Testing (`cargo mutants`)
 

@@ -743,6 +743,16 @@ This project is actively maintained and used in production environments.
 - **Pilot suite validation**: `cargo test --features accessibility-locator twitterfollow` passing
 - **Parser parity:** All edge cases verified vs Node.js reference
 
+**Miri (Undefined Behavior Detection):**
+
+```
+Target                 Status         Time
+--------------------- -------- ------------
+duration                 PASS          60s
+full                     PASS       2,496s
+No undefined behavior detected.
+```
+
 ### Browser Support
 
 | Browser | Status | Notes |

@@ -236,12 +236,6 @@ pub fn js_extract_all_tweets() -> &'static str {
     include_str!("js/js_extract_all_tweets.js")
 }
 
-/// Deprecated alias for js_extract_all_tweets.
-#[must_use]
-pub fn js_extract_tweet_context() -> &'static str {
-    js_extract_all_tweets()
-}
-
 /// Returns JS to find the quote tweet button in the retweet menu.
 /// Returns `{x, y}` or `null` if not found.
 #[must_use]

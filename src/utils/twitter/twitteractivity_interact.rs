@@ -50,7 +50,7 @@ use crate::prelude::TaskContext;
 use crate::utils::timing::{TIMEOUT_MEDIUM_SECS, TIMEOUT_SHORT_SECS};
 use anyhow::Result;
 use log::info;
-use rand;
+use rand::Rng;
 use tracing::instrument;
 
 use super::twitteractivity_humanized::human_pause;
@@ -259,7 +259,7 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
     info!("Clicked retweet button, waiting for menu...");
 
     // Random pause 1-2s before confirming
-    let pause_ms = rand::random::<u64>() % 1000 + 1000; // 1-2s
+    let pause_ms = rand::thread_rng().gen_range(1000..2000);
     human_pause(api, pause_ms).await;
 
     // Scroll retweet confirm button into view before clicking

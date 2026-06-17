@@ -59,6 +59,17 @@ pub struct DiveIntoThreadOutcome {
     pub used_fallback_target: bool,
 }
 
+/// Escape a CSS attribute value for use in a quoted selector.
+///
+/// Handles `'`, `"`, `\\`, and other CSS metacharacters per the CSS spec
+/// to prevent injection when building dynamic selectors like `a[href='{value}']`.
+fn css_escape_attr_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('"', "\\\"")
+}
+
 fn status_id_from_url(status_url: &str) -> Option<String> {
     StatusUrl::from_unchecked(status_url)
         .tweet_id()
@@ -118,8 +129,8 @@ pub async fn dive_into_thread(
     info!("Attempting to dive into thread: {}", status_url);
 
     // Click the tweet link using the high-level API (handles scrolling, movement, clicking)
-    // Escape single quotes in status_url to prevent CSS selector injection
-    let escaped_url = status_url.replace('\'', "\\'");
+    // Escape special CSS characters in the URL attribute value to prevent injection
+    let escaped_url = css_escape_attr_value(status_url);
     let link_selector = format!("a[href='{escaped_url}']");
     info!("Clicking tweet link selector: {}", link_selector);
     api.click(&link_selector)

@@ -109,6 +109,9 @@ impl Hash for TweetId {
     }
 }
 
+// Note: These From impls panic on empty strings. Prefer `TweetId::new()` (returns Result)
+// or `from_unchecked()` for trusted input. `#[deprecated]` is not supported on trait impls,
+// but these are intentionally kept for backward compatibility with existing `.into()` callers.
 impl From<String> for TweetId {
     #[allow(clippy::expect_used)]
     fn from(s: String) -> Self {

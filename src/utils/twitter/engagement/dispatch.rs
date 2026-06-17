@@ -31,7 +31,10 @@ use log::{info, warn};
 use serde_json::Value;
 
 fn engagement_success(outcome: &EngagementOutcome) -> bool {
-    matches!(outcome, EngagementOutcome::Completed)
+    matches!(
+        outcome,
+        EngagementOutcome::Completed | EngagementOutcome::Unverified
+    )
 }
 
 fn follow_success(outcome: &FollowOutcome) -> bool {

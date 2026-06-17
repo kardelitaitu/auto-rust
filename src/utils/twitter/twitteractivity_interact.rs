@@ -483,11 +483,11 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
             }
         } else {
             info!("Reply send completed (unable to verify)");
-            Ok(EngagementOutcome::Failed)
+            Ok(EngagementOutcome::Unverified)
         }
     } else {
         info!("Reply send completed (verification failed)");
-        Ok(EngagementOutcome::Failed)
+        Ok(EngagementOutcome::Unverified)
     }
 }
 

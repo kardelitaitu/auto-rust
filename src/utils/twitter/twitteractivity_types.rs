@@ -479,6 +479,7 @@ fn require_state(actual: ReplyFlowState, expected: ReplyFlowState) -> Result<(),
 ///     EngagementOutcome::Completed => println!("action done"),
 ///     EngagementOutcome::AlreadyDone => println!("was already done"),
 ///     EngagementOutcome::ElementNotFound => println!("button missing"),
+///     EngagementOutcome::Unverified => println!("action may have succeeded but could not confirm"),
 ///     EngagementOutcome::Failed => println!("action failed"),
 /// }
 /// ```
@@ -490,6 +491,12 @@ pub enum EngagementOutcome {
     AlreadyDone,
     /// Required UI element not found (button, composer, etc.).
     ElementNotFound,
+    /// Action may have been performed but verification could not confirm.
+    ///
+    /// This distinguishes "definitely failed" from "probably succeeded but
+    /// couldn't verify" — useful when the DOM shape after an action is
+    /// unexpected but not necessarily a failure.
+    Unverified,
     /// Action failed after attempt (network, timing, etc.).
     Failed,
 }
@@ -687,12 +694,14 @@ mod tests {
         let completed = EngagementOutcome::Completed;
         let already_done = EngagementOutcome::AlreadyDone;
         let not_found = EngagementOutcome::ElementNotFound;
+        let unverified = EngagementOutcome::Unverified;
         let failed = EngagementOutcome::Failed;
 
         // Verify Debug/Display for each variant
         assert!(!format!("{completed:?}").is_empty());
         assert!(!format!("{already_done:?}").is_empty());
         assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{unverified:?}").is_empty());
         assert!(!format!("{failed:?}").is_empty());
     }
 
@@ -706,6 +715,10 @@ mod tests {
         );
         assert_ne!(
             EngagementOutcome::ElementNotFound,
+            EngagementOutcome::Unverified
+        );
+        assert_ne!(
+            EngagementOutcome::Unverified,
             EngagementOutcome::Failed
         );
     }
@@ -727,6 +740,10 @@ mod tests {
         assert_eq!(
             format!("{:?}", EngagementOutcome::ElementNotFound),
             "ElementNotFound"
+        );
+        assert_eq!(
+            format!("{:?}", EngagementOutcome::Unverified),
+            "Unverified"
         );
         assert_eq!(format!("{:?}", EngagementOutcome::Failed), "Failed");
     }

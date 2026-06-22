@@ -1,3 +1,46 @@
+## 2026-06-23 (continued) — RunSummary tests (42), .md file audit fixes, git commit
+
+### Changes Made This Session
+
+**Co-located Unit Tests Added — `src/result/summary.rs` (+42 tests):**
+- **RunSummary::new()** (2 tests): All fields zero, results vec empty
+- **RunSummary::add() — success** (3 tests): Increments succeeded, accumulates duration, appends result
+- **RunSummary::add() — failure** (3 tests): Increments failed, accumulates duration, appends result
+- **RunSummary::add() — timeout** (2 tests): Increments timed_out, does NOT increment failed
+- **RunSummary::add() — cancelled** (2 tests): Increments cancelled, accumulates duration
+- **RunSummary::add() — mixed** (4 tests): All 4 statuses, order preservation, 20 results, large accumulation
+- **RunSummary::success_rate()** (9 tests): 0 total, 0%, 25%, 50%, 75%, 100%, timeout/cancelled not counted, all-four-status mix
+- **RunSummary::Default** (2 tests): Matches new(), chaining
+- **Display for TaskStatus** (6 tests): All 4 variants, empty message, long message
+- **Serde round-trip** (3 tests): Empty, with results, JSON field names
+- **Edge cases** (5 tests): Zero duration, 100 tasks, 50 failures, clone, Debug trait
+
+**Result module totals:** types.rs (57) + errors.rs (106) + summary.rs (42) = **370 tests, all passing**
+
+**Documentation Drift Fixes (3 .md files):**
+- `docs/archive/plan/twitterActivity/01-overview.md`: Fixed 3 stale module paths (`config.rs`→`config/`, `cli.rs`→`cli/`, `validation/task.rs`→`validation/`)
+- `docs/archive/plan/archive/TWITTERACTIVITY_RUST_API_REFACTOR_NOTES.md`: Annotated 2 stale function refs (`like_at_position`→`like_tweet`, `dismiss_signup_nag` removed)
+- `.pi/AGENTS.md`, `GEMINI.md`: Previously updated — all references verified
+
+**New Script:**
+- `find-oldest-files.ps1`: PowerShell script to find and audit oldest `.rs` and `.md` files
+
+### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo test --lib result::summary` | ✅ 42/42 passed |
+| `cargo test --lib result` | ✅ 370/370 passed, 0 regressions |
+| Working tree | ✅ Clean on `v0.2.32` (commit `89b25a2`) |
+
+### Files Changed (4 files)
+
+**Modified:** `src/result/summary.rs` (+42 tests), `docs/archive/plan/twitterActivity/01-overview.md` (3 path fixes), `docs/archive/plan/archive/TWITTERACTIVITY_RUST_API_REFACTOR_NOTES.md` (2 annotations)
+
+**New:** `find-oldest-files.ps1`
+
+---
+
 ## 2026-06-23 (continued) — Co-located unit tests for result module: types.rs (57) + errors.rs (106) = 163 new tests
 
 ### Changes Made This Session

@@ -1,3 +1,51 @@
+## 2026-06-23 (continued) — Co-located unit tests for result module: types.rs (57) + errors.rs (106) = 163 new tests
+
+### Changes Made This Session
+
+**Co-located Unit Tests Added — `src/result/types.rs` (+57 tests):**
+- **TaskStatus** (11 tests): All 4 variants, clone/debug/eq, serde round-trip all variants, empty/long messages, non_exhaustive match
+- **TaskResult::success** (3 tests): Basic, zero duration, `u64::MAX`
+- **TaskResult::failure** (5 tests): Basic, Timeout→Timeout status, non-Timeout→Failed, empty string, last_error matches status message
+- **TaskResult::cancelled** (3 tests): Basic, preserves error_kind, empty string
+- **Builder methods** (11 tests): `with_retry` (updates fields, preserves status, zero values), `with_attempt`, `with_error_kind` (all 7 variants, overwrites)
+- **Chaining** (3 tests): Full builder chain, failure+chain, cancelled+retry
+- **is_success** (5 tests): True/false for all 4 statuses, stays false after builders
+- **Struct literal** (3 tests): All fields, failure with all fields, with metadata
+- **Derived traits** (2 tests): Clone, debug
+- **Serde round-trip** (4 tests): Success, failure, metadata, all fields
+- **TaskResultFn** (3 tests): Callable, failure, Send (thread::spawn)
+- **Edge cases** (4 tests): All non-Timeout→Failed, `u32::MAX`, 6000-char error, metadata serde omit
+
+**Co-located Unit Tests Added — `src/result/errors.rs` (+106 tests):**
+- **`classify_error_pattern` — Permanent** (8 tests): 5 NotFound variants, TargetTerminated (node disconnected, target closed), PermissionDenied
+- **`classify_error_pattern` — Transient** (23 tests): Timeout (3sub), Connection (4), RateLimited (8), Temporary (2), Network (2), Cancelled (3), Disconnected
+- **`classify_error_pattern` — Kind-specific** (10 tests): Validation (3), Navigation (3), SessionChannel (5)
+- **`classify_error_pattern` — Browser/page** (6 tests): target.detached, detachedFromTarget, websocket, protocol error, page-without-load
+- **`classify_error_pattern` — Fallback/priority** (11 tests): Unknown (3), 6 priority ordering (node disconnected > disconnected, timeout > validation, not found > invalid, rate limit > temporary, connection > session, target closed > session), case insensitivity
+- **`TaskErrorKind::classify`** (19 tests): All 14 ErrorPattern→TaskErrorKind mappings + browser/chromium/brave keyword fallbacks + empty/whitespace + case insensitivity
+- **`TaskErrorKind::is_retryable`** (7 tests): 6 retryable + 1 non-retryable (Validation)
+- **`TaskErrorKind` Display** (7 tests): All 7 variants
+- **Derived traits** (15 tests): Debug, clone, copy, PartialEq, Eq, Hash, PartialOrd, Ord sort, serialize, deserialize, serde round-trip all 7 variants, non_exhaustive
+- **`ErrorPattern`** (3 tests): Debug, Clone/Copy/Eq, all 14 variants
+
+**Bug Found & Fixed:**
+- `classify_page_not_loading` test used input `"page not found"` which matched the `NotFound` check before reaching the page-without-load `SessionChannel` branch. Renamed to `classify_page_without_load` and changed input to `"page general error"`.
+
+### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo test --lib result::types` | ✅ 57/57 passed |
+| `cargo test --lib result::errors` | ✅ 106/106 passed |
+| `cargo test --lib result` | ✅ 328/328 passed (all result module, 0 regressions) |
+| Working tree | 2 modified files on `v0.2.32` |
+
+### Files Changed (2 files)
+
+**Modified:** `src/result/types.rs` (+57 tests), `src/result/errors.rs` (+106 tests)
+
+---
+
 ## 2026-06-23 — Dead code precision refinement, scaffold ML types removed, extract_tweet_text edge case tests
 
 ### Changes Made This Session

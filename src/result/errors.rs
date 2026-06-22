@@ -268,27 +268,42 @@ mod tests {
 
     #[test]
     fn classify_not_found_basic() {
-        assert_eq!(classify_error_pattern("element not found"), ErrorPattern::NotFound);
+        assert_eq!(
+            classify_error_pattern("element not found"),
+            ErrorPattern::NotFound
+        );
     }
 
     #[test]
     fn classify_not_found_no_such_element() {
-        assert_eq!(classify_error_pattern("no such element: #foo"), ErrorPattern::NotFound);
+        assert_eq!(
+            classify_error_pattern("no such element: #foo"),
+            ErrorPattern::NotFound
+        );
     }
 
     #[test]
     fn classify_not_found_invalid_selector() {
-        assert_eq!(classify_error_pattern("invalid selector: div[foo"), ErrorPattern::NotFound);
+        assert_eq!(
+            classify_error_pattern("invalid selector: div[foo"),
+            ErrorPattern::NotFound
+        );
     }
 
     #[test]
     fn classify_not_found_selector_not_found() {
-        assert_eq!(classify_error_pattern("selector not found: .bar"), ErrorPattern::NotFound);
+        assert_eq!(
+            classify_error_pattern("selector not found: .bar"),
+            ErrorPattern::NotFound
+        );
     }
 
     #[test]
     fn classify_not_found_generic() {
-        assert_eq!(classify_error_pattern("item not found"), ErrorPattern::NotFound);
+        assert_eq!(
+            classify_error_pattern("item not found"),
+            ErrorPattern::NotFound
+        );
     }
 
     #[test]
@@ -301,7 +316,10 @@ mod tests {
 
     #[test]
     fn classify_target_terminated_target_closed() {
-        assert_eq!(classify_error_pattern("Target closed"), ErrorPattern::TargetTerminated);
+        assert_eq!(
+            classify_error_pattern("Target closed"),
+            ErrorPattern::TargetTerminated
+        );
     }
 
     #[test]
@@ -318,42 +336,66 @@ mod tests {
 
     #[test]
     fn classify_disconnected_standalone() {
-        assert_eq!(classify_error_pattern("disconnected: no response"), ErrorPattern::Disconnected);
+        assert_eq!(
+            classify_error_pattern("disconnected: no response"),
+            ErrorPattern::Disconnected
+        );
     }
 
     #[test]
     fn classify_timeout_basic() {
-        assert_eq!(classify_error_pattern("Request timed out"), ErrorPattern::Timeout);
+        assert_eq!(
+            classify_error_pattern("Request timed out"),
+            ErrorPattern::Timeout
+        );
     }
 
     #[test]
     fn classify_timeout_timed_out() {
-        assert_eq!(classify_error_pattern("timed out after 30s"), ErrorPattern::Timeout);
+        assert_eq!(
+            classify_error_pattern("timed out after 30s"),
+            ErrorPattern::Timeout
+        );
     }
 
     #[test]
     fn classify_timeout_deadline() {
-        assert_eq!(classify_error_pattern("deadline exceeded"), ErrorPattern::Timeout);
+        assert_eq!(
+            classify_error_pattern("deadline exceeded"),
+            ErrorPattern::Timeout
+        );
     }
 
     #[test]
     fn classify_connection_refused() {
-        assert_eq!(classify_error_pattern("connection refused"), ErrorPattern::Connection);
+        assert_eq!(
+            classify_error_pattern("connection refused"),
+            ErrorPattern::Connection
+        );
     }
 
     #[test]
     fn classify_connection_reset() {
-        assert_eq!(classify_error_pattern("connection reset by peer"), ErrorPattern::Connection);
+        assert_eq!(
+            classify_error_pattern("connection reset by peer"),
+            ErrorPattern::Connection
+        );
     }
 
     #[test]
     fn classify_connection_broken() {
-        assert_eq!(classify_error_pattern("connection broken"), ErrorPattern::Connection);
+        assert_eq!(
+            classify_error_pattern("connection broken"),
+            ErrorPattern::Connection
+        );
     }
 
     #[test]
     fn classify_connection_closed() {
-        assert_eq!(classify_error_pattern("connection closed"), ErrorPattern::Connection);
+        assert_eq!(
+            classify_error_pattern("connection closed"),
+            ErrorPattern::Connection
+        );
     }
 
     // =========================================================================
@@ -362,42 +404,66 @@ mod tests {
 
     #[test]
     fn classify_rate_limit_basic() {
-        assert_eq!(classify_error_pattern("rate limit exceeded"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("rate limit exceeded"),
+            ErrorPattern::RateLimited
+        );
     }
 
     #[test]
     fn classify_rate_limit_too_many_requests() {
-        assert_eq!(classify_error_pattern("too many requests"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("too many requests"),
+            ErrorPattern::RateLimited
+        );
     }
 
     #[test]
     fn classify_rate_limit_http_429() {
-        assert_eq!(classify_error_pattern("HTTP 429 response"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("HTTP 429 response"),
+            ErrorPattern::RateLimited
+        );
     }
 
     #[test]
     fn classify_rate_limit_overloaded() {
-        assert_eq!(classify_error_pattern("server overloaded"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("server overloaded"),
+            ErrorPattern::RateLimited
+        );
     }
 
     #[test]
     fn classify_rate_limit_http_503() {
-        assert_eq!(classify_error_pattern("503 Service Unavailable"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("503 Service Unavailable"),
+            ErrorPattern::RateLimited
+        );
     }
 
     #[test]
     fn classify_rate_limit_server_error() {
-        assert_eq!(classify_error_pattern("server error: internal"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("server error: internal"),
+            ErrorPattern::RateLimited
+        );
     }
 
     #[test]
     fn classify_rate_limit_model_at_capacity() {
-        assert_eq!(classify_error_pattern("model is at capacity"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("model is at capacity"),
+            ErrorPattern::RateLimited
+        );
     }
 
     #[test]
     fn classify_rate_limit_try_again_later() {
-        assert_eq!(classify_error_pattern("try again later"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("try again later"),
+            ErrorPattern::RateLimited
+        );
     }
 
     // =========================================================================
@@ -406,17 +472,26 @@ mod tests {
 
     #[test]
     fn classify_temporary_error() {
-        assert_eq!(classify_error_pattern("temporary error"), ErrorPattern::Temporary);
+        assert_eq!(
+            classify_error_pattern("temporary error"),
+            ErrorPattern::Temporary
+        );
     }
 
     #[test]
     fn classify_unavailable() {
-        assert_eq!(classify_error_pattern("service unavailable"), ErrorPattern::Temporary);
+        assert_eq!(
+            classify_error_pattern("service unavailable"),
+            ErrorPattern::Temporary
+        );
     }
 
     #[test]
     fn classify_network_error() {
-        assert_eq!(classify_error_pattern("network error"), ErrorPattern::Network);
+        assert_eq!(
+            classify_error_pattern("network error"),
+            ErrorPattern::Network
+        );
     }
 
     #[test]
@@ -426,17 +501,26 @@ mod tests {
 
     #[test]
     fn classify_aborted() {
-        assert_eq!(classify_error_pattern("operation aborted"), ErrorPattern::Cancelled);
+        assert_eq!(
+            classify_error_pattern("operation aborted"),
+            ErrorPattern::Cancelled
+        );
     }
 
     #[test]
     fn classify_cancelled() {
-        assert_eq!(classify_error_pattern("task cancelled"), ErrorPattern::Cancelled);
+        assert_eq!(
+            classify_error_pattern("task cancelled"),
+            ErrorPattern::Cancelled
+        );
     }
 
     #[test]
     fn classify_interrupted() {
-        assert_eq!(classify_error_pattern("interrupted by user"), ErrorPattern::Cancelled);
+        assert_eq!(
+            classify_error_pattern("interrupted by user"),
+            ErrorPattern::Cancelled
+        );
     }
 
     // =========================================================================
@@ -445,32 +529,50 @@ mod tests {
 
     #[test]
     fn classify_validation() {
-        assert_eq!(classify_error_pattern("validation error"), ErrorPattern::Validation);
+        assert_eq!(
+            classify_error_pattern("validation error"),
+            ErrorPattern::Validation
+        );
     }
 
     #[test]
     fn classify_schema_error() {
-        assert_eq!(classify_error_pattern("schema mismatch"), ErrorPattern::Validation);
+        assert_eq!(
+            classify_error_pattern("schema mismatch"),
+            ErrorPattern::Validation
+        );
     }
 
     #[test]
     fn classify_invalid_parameters() {
-        assert_eq!(classify_error_pattern("invalid parameters"), ErrorPattern::Validation);
+        assert_eq!(
+            classify_error_pattern("invalid parameters"),
+            ErrorPattern::Validation
+        );
     }
 
     #[test]
     fn classify_navigation_basic() {
-        assert_eq!(classify_error_pattern("navigation failed"), ErrorPattern::Navigation);
+        assert_eq!(
+            classify_error_pattern("navigation failed"),
+            ErrorPattern::Navigation
+        );
     }
 
     #[test]
     fn classify_goto_failed() {
-        assert_eq!(classify_error_pattern("goto failed"), ErrorPattern::Navigation);
+        assert_eq!(
+            classify_error_pattern("goto failed"),
+            ErrorPattern::Navigation
+        );
     }
 
     #[test]
     fn classify_load_failed() {
-        assert_eq!(classify_error_pattern("page load failed"), ErrorPattern::Navigation);
+        assert_eq!(
+            classify_error_pattern("page load failed"),
+            ErrorPattern::Navigation
+        );
     }
 
     #[test]
@@ -483,22 +585,34 @@ mod tests {
 
     #[test]
     fn classify_channel_closed() {
-        assert_eq!(classify_error_pattern("channel closed"), ErrorPattern::SessionChannel);
+        assert_eq!(
+            classify_error_pattern("channel closed"),
+            ErrorPattern::SessionChannel
+        );
     }
 
     #[test]
     fn classify_send_failed() {
-        assert_eq!(classify_error_pattern("send failed"), ErrorPattern::SessionChannel);
+        assert_eq!(
+            classify_error_pattern("send failed"),
+            ErrorPattern::SessionChannel
+        );
     }
 
     #[test]
     fn classify_worker_error() {
-        assert_eq!(classify_error_pattern("worker acquisition failed"), ErrorPattern::SessionChannel);
+        assert_eq!(
+            classify_error_pattern("worker acquisition failed"),
+            ErrorPattern::SessionChannel
+        );
     }
 
     #[test]
     fn classify_session_error() {
-        assert_eq!(classify_error_pattern("session expired"), ErrorPattern::SessionChannel);
+        assert_eq!(
+            classify_error_pattern("session expired"),
+            ErrorPattern::SessionChannel
+        );
     }
 
     // =========================================================================
@@ -515,17 +629,26 @@ mod tests {
 
     #[test]
     fn classify_detached_from_target() {
-        assert_eq!(classify_error_pattern("detachedFromTarget"), ErrorPattern::TargetTerminated);
+        assert_eq!(
+            classify_error_pattern("detachedFromTarget"),
+            ErrorPattern::TargetTerminated
+        );
     }
 
     #[test]
     fn classify_websocket_error() {
-        assert_eq!(classify_error_pattern("WebSocket error"), ErrorPattern::TargetTerminated);
+        assert_eq!(
+            classify_error_pattern("WebSocket error"),
+            ErrorPattern::TargetTerminated
+        );
     }
 
     #[test]
     fn classify_protocol_error() {
-        assert_eq!(classify_error_pattern("protocol error"), ErrorPattern::TargetTerminated);
+        assert_eq!(
+            classify_error_pattern("protocol error"),
+            ErrorPattern::TargetTerminated
+        );
     }
 
     #[test]
@@ -545,7 +668,10 @@ mod tests {
 
     #[test]
     fn classify_unknown_fallback() {
-        assert_eq!(classify_error_pattern("something completely random"), ErrorPattern::Unknown);
+        assert_eq!(
+            classify_error_pattern("something completely random"),
+            ErrorPattern::Unknown
+        );
     }
 
     #[test]
@@ -620,7 +746,10 @@ mod tests {
     fn classify_case_insensitive() {
         assert_eq!(classify_error_pattern("TIMEOUT"), ErrorPattern::Timeout);
         assert_eq!(classify_error_pattern("NOT FOUND"), ErrorPattern::NotFound);
-        assert_eq!(classify_error_pattern("RATE LIMIT"), ErrorPattern::RateLimited);
+        assert_eq!(
+            classify_error_pattern("RATE LIMIT"),
+            ErrorPattern::RateLimited
+        );
     }
 
     // =========================================================================
@@ -779,10 +908,7 @@ mod tests {
             TaskErrorKind::classify("CONNECTION REFUSED"),
             TaskErrorKind::Browser
         );
-        assert_eq!(
-            TaskErrorKind::classify("TIMEOUT"),
-            TaskErrorKind::Timeout
-        );
+        assert_eq!(TaskErrorKind::classify("TIMEOUT"), TaskErrorKind::Timeout);
     }
 
     // =========================================================================
@@ -855,7 +981,10 @@ mod tests {
 
     #[test]
     fn kind_display_external_service() {
-        assert_eq!(format!("{}", TaskErrorKind::ExternalService), "ExternalService");
+        assert_eq!(
+            format!("{}", TaskErrorKind::ExternalService),
+            "ExternalService"
+        );
     }
 
     #[test]
@@ -991,7 +1120,8 @@ mod tests {
         let a = ErrorPattern::NotFound;
         let b = a; // Copy
         assert_eq!(a, b);
-        let c = a.clone(); // Clone
+        #[allow(clippy::clone_on_copy)]
+        let c = a.clone(); // Clone - intentionally verifying Clone on Copy type
         assert_eq!(a, c);
     }
 

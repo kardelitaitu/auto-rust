@@ -145,7 +145,11 @@ mod tests {
     #[test]
     fn run_summary_add_failure_increments_failed() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(50, "error".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(
+            50,
+            "error".to_string(),
+            TaskErrorKind::Browser,
+        ));
         assert_eq!(summary.total_tasks, 1);
         assert_eq!(summary.succeeded, 0);
         assert_eq!(summary.failed, 1);
@@ -156,14 +160,22 @@ mod tests {
     #[test]
     fn run_summary_add_failure_accumulates_duration() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(75, "err".to_string(), TaskErrorKind::Validation));
+        summary.add(TaskResult::failure(
+            75,
+            "err".to_string(),
+            TaskErrorKind::Validation,
+        ));
         assert_eq!(summary.total_duration_ms, 75);
     }
 
     #[test]
     fn run_summary_add_failure_appends_result() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(30, "fail".to_string(), TaskErrorKind::Session));
+        summary.add(TaskResult::failure(
+            30,
+            "fail".to_string(),
+            TaskErrorKind::Session,
+        ));
         assert_eq!(summary.results.len(), 1);
         assert!(!summary.results[0].is_success());
     }
@@ -175,7 +187,11 @@ mod tests {
     #[test]
     fn run_summary_add_timeout_increments_timed_out() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(10, "timeout".to_string(), TaskErrorKind::Timeout));
+        summary.add(TaskResult::failure(
+            10,
+            "timeout".to_string(),
+            TaskErrorKind::Timeout,
+        ));
         assert_eq!(summary.total_tasks, 1);
         assert_eq!(summary.succeeded, 0);
         assert_eq!(summary.failed, 0);
@@ -187,7 +203,11 @@ mod tests {
     fn run_summary_add_timeout_does_not_increment_failed() {
         // Timeout goes to timed_out counter, NOT failed
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(10, "timeout".to_string(), TaskErrorKind::Timeout));
+        summary.add(TaskResult::failure(
+            10,
+            "timeout".to_string(),
+            TaskErrorKind::Timeout,
+        ));
         assert_eq!(summary.failed, 0);
         assert_eq!(summary.timed_out, 1);
     }
@@ -199,7 +219,11 @@ mod tests {
     #[test]
     fn run_summary_add_cancelled_increments_cancelled() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::cancelled(5, "cancel".to_string(), TaskErrorKind::Session));
+        summary.add(TaskResult::cancelled(
+            5,
+            "cancel".to_string(),
+            TaskErrorKind::Session,
+        ));
         assert_eq!(summary.total_tasks, 1);
         assert_eq!(summary.succeeded, 0);
         assert_eq!(summary.failed, 0);
@@ -210,7 +234,11 @@ mod tests {
     #[test]
     fn run_summary_add_cancelled_accumulates_duration() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::cancelled(20, "cancel".to_string(), TaskErrorKind::Session));
+        summary.add(TaskResult::cancelled(
+            20,
+            "cancel".to_string(),
+            TaskErrorKind::Session,
+        ));
         assert_eq!(summary.total_duration_ms, 20);
     }
 
@@ -222,9 +250,21 @@ mod tests {
     fn run_summary_add_multiple_results_all_statuses() {
         let mut summary = RunSummary::new();
         summary.add(TaskResult::success(100));
-        summary.add(TaskResult::failure(50, "err".to_string(), TaskErrorKind::Browser));
-        summary.add(TaskResult::failure(10, "timeout".to_string(), TaskErrorKind::Timeout));
-        summary.add(TaskResult::cancelled(5, "cancel".to_string(), TaskErrorKind::Session));
+        summary.add(TaskResult::failure(
+            50,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
+        summary.add(TaskResult::failure(
+            10,
+            "timeout".to_string(),
+            TaskErrorKind::Timeout,
+        ));
+        summary.add(TaskResult::cancelled(
+            5,
+            "cancel".to_string(),
+            TaskErrorKind::Session,
+        ));
 
         assert_eq!(summary.total_tasks, 4);
         assert_eq!(summary.succeeded, 1);
@@ -239,7 +279,11 @@ mod tests {
     fn run_summary_add_preserves_result_order() {
         let mut summary = RunSummary::new();
         summary.add(TaskResult::success(10));
-        summary.add(TaskResult::failure(20, "fail".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(
+            20,
+            "fail".to_string(),
+            TaskErrorKind::Browser,
+        ));
         summary.add(TaskResult::success(30));
 
         assert_eq!(summary.results.len(), 3);
@@ -256,7 +300,7 @@ mod tests {
                 summary.add(TaskResult::success(i * 10));
             } else {
                 summary.add(TaskResult::failure(
-                    i as u64 * 5,
+                    i * 5,
                     format!("err_{}", i),
                     TaskErrorKind::Browser,
                 ));
@@ -280,7 +324,11 @@ mod tests {
     #[test]
     fn run_summary_success_rate_zero_percent() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(10, "err".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(
+            10,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
         assert_eq!(summary.success_rate(), 0.0);
     }
 
@@ -295,7 +343,11 @@ mod tests {
     fn run_summary_success_rate_fifty_percent() {
         let mut summary = RunSummary::new();
         summary.add(TaskResult::success(10));
-        summary.add(TaskResult::failure(20, "err".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(
+            20,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
         assert!((summary.success_rate() - 50.0).abs() < f64::EPSILON);
     }
 
@@ -303,9 +355,21 @@ mod tests {
     fn run_summary_success_rate_twenty_five_percent() {
         let mut summary = RunSummary::new();
         summary.add(TaskResult::success(10));
-        summary.add(TaskResult::failure(20, "e1".to_string(), TaskErrorKind::Browser));
-        summary.add(TaskResult::failure(20, "e2".to_string(), TaskErrorKind::Session));
-        summary.add(TaskResult::failure(20, "e3".to_string(), TaskErrorKind::Timeout));
+        summary.add(TaskResult::failure(
+            20,
+            "e1".to_string(),
+            TaskErrorKind::Browser,
+        ));
+        summary.add(TaskResult::failure(
+            20,
+            "e2".to_string(),
+            TaskErrorKind::Session,
+        ));
+        summary.add(TaskResult::failure(
+            20,
+            "e3".to_string(),
+            TaskErrorKind::Timeout,
+        ));
         assert!((summary.success_rate() - 25.0).abs() < f64::EPSILON);
     }
 
@@ -315,7 +379,11 @@ mod tests {
         summary.add(TaskResult::success(10));
         summary.add(TaskResult::success(10));
         summary.add(TaskResult::success(10));
-        summary.add(TaskResult::failure(20, "e1".to_string(), TaskErrorKind::Browser));
+        summary.add(TaskResult::failure(
+            20,
+            "e1".to_string(),
+            TaskErrorKind::Browser,
+        ));
         assert!((summary.success_rate() - 75.0).abs() < f64::EPSILON);
     }
 
@@ -323,34 +391,66 @@ mod tests {
     fn run_summary_success_rate_only_failures_ignores_other_statuses() {
         // success_rate is purely succeeded / total_tasks
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(10, "err".to_string(), TaskErrorKind::Browser));
-        summary.add(TaskResult::failure(10, "timeout".to_string(), TaskErrorKind::Timeout));
-        summary.add(TaskResult::cancelled(5, "cancel".to_string(), TaskErrorKind::Session));
+        summary.add(TaskResult::failure(
+            10,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
+        summary.add(TaskResult::failure(
+            10,
+            "timeout".to_string(),
+            TaskErrorKind::Timeout,
+        ));
+        summary.add(TaskResult::cancelled(
+            5,
+            "cancel".to_string(),
+            TaskErrorKind::Session,
+        ));
         assert_eq!(summary.success_rate(), 0.0);
     }
 
     #[test]
     fn run_summary_success_rate_timeout_not_counted_as_success() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::failure(10, "timeout".to_string(), TaskErrorKind::Timeout));
+        summary.add(TaskResult::failure(
+            10,
+            "timeout".to_string(),
+            TaskErrorKind::Timeout,
+        ));
         assert_eq!(summary.success_rate(), 0.0);
     }
 
     #[test]
     fn run_summary_success_rate_cancelled_not_counted_as_success() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::cancelled(5, "cancel".to_string(), TaskErrorKind::Session));
+        summary.add(TaskResult::cancelled(
+            5,
+            "cancel".to_string(),
+            TaskErrorKind::Session,
+        ));
         assert_eq!(summary.success_rate(), 0.0);
     }
 
     #[test]
     fn run_summary_success_rate_partial_with_all_four_statuses() {
         let mut summary = RunSummary::new();
-        summary.add(TaskResult::success(10));   // 1 success
-        summary.add(TaskResult::failure(5, "a".to_string(), TaskErrorKind::Browser));  // 1 failed
-        summary.add(TaskResult::failure(3, "b".to_string(), TaskErrorKind::Timeout));  // 1 timeout
-        summary.add(TaskResult::cancelled(1, "c".to_string(), TaskErrorKind::Session)); // 1 cancelled
-        // Total 4 tasks, 1 success => 25%
+        summary.add(TaskResult::success(10)); // 1 success
+        summary.add(TaskResult::failure(
+            5,
+            "a".to_string(),
+            TaskErrorKind::Browser,
+        )); // 1 failed
+        summary.add(TaskResult::failure(
+            3,
+            "b".to_string(),
+            TaskErrorKind::Timeout,
+        )); // 1 timeout
+        summary.add(TaskResult::cancelled(
+            1,
+            "c".to_string(),
+            TaskErrorKind::Session,
+        )); // 1 cancelled
+            // Total 4 tasks, 1 success => 25%
         assert!((summary.success_rate() - 25.0).abs() < f64::EPSILON);
     }
 
@@ -416,7 +516,7 @@ mod tests {
         let msg = "x".repeat(100);
         let display = format!("{}", TaskStatus::Failed(msg));
         assert!(display.starts_with("Failed: "));
-        assert_eq!(display.len(), 8 + 100);  // "Failed: " = 8 chars
+        assert_eq!(display.len(), 8 + 100); // "Failed: " = 8 chars
     }
 
     // =========================================================================
@@ -437,8 +537,16 @@ mod tests {
     fn run_summary_serde_round_trip_with_results() {
         let mut original = RunSummary::new();
         original.add(TaskResult::success(100));
-        original.add(TaskResult::failure(50, "err".to_string(), TaskErrorKind::Browser));
-        original.add(TaskResult::failure(10, "timeout".to_string(), TaskErrorKind::Timeout));
+        original.add(TaskResult::failure(
+            50,
+            "err".to_string(),
+            TaskErrorKind::Browser,
+        ));
+        original.add(TaskResult::failure(
+            10,
+            "timeout".to_string(),
+            TaskErrorKind::Timeout,
+        ));
 
         let json = serde_json::to_string(&original).unwrap();
         let round: RunSummary = serde_json::from_str(&json).unwrap();
@@ -486,7 +594,7 @@ mod tests {
         let mut summary = RunSummary::new();
         for i in 0..50 {
             summary.add(TaskResult::failure(
-                i as u64,
+                i,
                 format!("error_{}", i),
                 TaskErrorKind::Validation,
             ));
@@ -512,11 +620,23 @@ mod tests {
             if i < 40 {
                 summary.add(TaskResult::success(1));
             } else if i < 70 {
-                summary.add(TaskResult::failure(1, "f".to_string(), TaskErrorKind::Browser));
+                summary.add(TaskResult::failure(
+                    1,
+                    "f".to_string(),
+                    TaskErrorKind::Browser,
+                ));
             } else if i < 90 {
-                summary.add(TaskResult::failure(1, "t".to_string(), TaskErrorKind::Timeout));
+                summary.add(TaskResult::failure(
+                    1,
+                    "t".to_string(),
+                    TaskErrorKind::Timeout,
+                ));
             } else {
-                summary.add(TaskResult::cancelled(1, "c".to_string(), TaskErrorKind::Session));
+                summary.add(TaskResult::cancelled(
+                    1,
+                    "c".to_string(),
+                    TaskErrorKind::Session,
+                ));
             }
         }
         assert_eq!(summary.total_tasks, 100);

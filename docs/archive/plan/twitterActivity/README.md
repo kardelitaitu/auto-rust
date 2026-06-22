@@ -1,6 +1,6 @@
 # Twitter Activity Task — Planning Index
 
-last audited 08-05-26 by Kilo
+last audited 08-05-26 by Kilo · refreshed 23-06-26 by Buffy
 
 **Task Name:** `twitterActivity`  
 **Status:** Planning phase → Ready for implementation  

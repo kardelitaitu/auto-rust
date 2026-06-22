@@ -401,8 +401,8 @@ mod tests {
 
     #[test]
     fn task_result_with_attempt_does_not_affect_error() {
-        let result = TaskResult::failure(50, "err".to_string(), TaskErrorKind::Browser)
-            .with_attempt(2, 3);
+        let result =
+            TaskResult::failure(50, "err".to_string(), TaskErrorKind::Browser).with_attempt(2, 3);
         assert_eq!(result.last_error, Some("err".to_string()));
         assert_eq!(result.error_kind, Some(TaskErrorKind::Browser));
     }
@@ -494,7 +494,9 @@ mod tests {
 
     #[test]
     fn task_result_is_success_false_for_timeout() {
-        assert!(!TaskResult::failure(0, "timeout".to_string(), TaskErrorKind::Timeout).is_success());
+        assert!(
+            !TaskResult::failure(0, "timeout".to_string(), TaskErrorKind::Timeout).is_success()
+        );
     }
 
     #[test]
@@ -683,7 +685,7 @@ mod tests {
         // Verify TaskResultFn implements Send (required by thread::spawn)
         // Sync is enforced at compile time by the type alias definition (+ Send + Sync)
         let f: TaskResultFn = Box::new(|| TaskResult::success(42));
-        let result = std::thread::spawn(move || f()).join().unwrap();
+        let result = std::thread::spawn(f).join().unwrap();
         assert!(result.is_success());
         assert_eq!(result.duration_ms, 42);
     }
@@ -714,8 +716,7 @@ mod tests {
 
     #[test]
     fn task_result_large_attempt_numbers() {
-        let result = TaskResult::success(100)
-            .with_attempt(u32::MAX, u32::MAX);
+        let result = TaskResult::success(100).with_attempt(u32::MAX, u32::MAX);
         assert_eq!(result.attempt, u32::MAX);
         assert_eq!(result.max_retries, u32::MAX);
     }
@@ -723,11 +724,7 @@ mod tests {
     #[test]
     fn task_result_large_last_error() {
         let long_error = "error ".repeat(1000);
-        let result = TaskResult::failure(
-            10,
-            long_error.clone(),
-            TaskErrorKind::Browser,
-        );
+        let result = TaskResult::failure(10, long_error.clone(), TaskErrorKind::Browser);
         assert_eq!(result.last_error.as_ref().unwrap().len(), 6000);
     }
 

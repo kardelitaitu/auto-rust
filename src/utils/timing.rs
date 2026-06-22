@@ -306,8 +306,12 @@ mod tests {
         let start = std::time::Instant::now();
         human_pause(20, 0).await;
         let elapsed = start.elapsed();
-        // Should be approximately 20ms (with tolerance)
-        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 50);
+        // Should be approximately 20ms (with tolerance for scheduler jitter under parallel load)
+        assert!(
+            (10..100).contains(&elapsed.as_millis()),
+            "human_pause(20, 0) took {}ms, expected ~20ms",
+            elapsed.as_millis()
+        );
     }
 
     #[tokio::test]

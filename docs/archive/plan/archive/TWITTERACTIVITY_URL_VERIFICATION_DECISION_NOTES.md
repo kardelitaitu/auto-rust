@@ -1,6 +1,6 @@
 # Twitter Activity URL Verification Decision Notes
 
-last audited 08-05-26 by Kilo
+last audited 08-05-26 by Kilo · re-audited 23-06-26 by Buffy
 
 **Date:** 2026-04-21   
 **Purpose:** Historical decision notes on URL verification. 

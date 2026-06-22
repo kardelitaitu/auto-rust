@@ -159,6 +159,6 @@ src/
 | Quick | `check-fast.ps1` (cargo check, clippy, fmt) |
 | Full | `check.ps1` (slow + integration tests) |
 | Specs | `spec-lint.ps1` |
-| Tests | `cargo nextest run` (3,510+ tests) |
+| Tests | `cargo test --lib` (3,753+ tests) |
 
 For detailed pipeline operations, configuration, error recovery, and CLI worker contracts, see [workflow.md](workflow.md).

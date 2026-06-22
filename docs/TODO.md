@@ -1,4 +1,4 @@
-*last audited 16-06-26 by opencode*
+*last audited 23-06-26 by Buffy*
 # Bug-Hunting Strategy for Rust Codebase
 
 *Not "write more unit tests." The type system already kills most common bugs.
@@ -6,89 +6,80 @@ The best returns come from finding what the compiler can't see.*
 
 ---
 
-## Layer 1: Types over Tests (highest ROI)
-
-Encode invariants so invalid states are unrepresentable.
-
-- [x] **Newtype for tweet IDs** — `String` everywhere means mixups are silent. `struct TweetId(String)` with `FromStr` validation. *(spec 0027 — migrated ~140 call sites across ~15 files)*
-- [x] **Newtype for status URLs** — same problem, `/status/` parsing scattered across `dive.rs`. *(spec 0027 — `status_id_from_url()` now delegates to `StatusUrl::tweet_id()`)*
-- [x] **State machine for engagement flow** — `Idle -> ComposerOpen -> TextEntered -> Posted` encoded as `ReplyFlowState` enum + `ComposerFlow` struct with guarded transition methods. Used in 3 task files (twitterreply, twitterretweet, twitterquote).
-- [x] **`NonZeroU32` for counters** — `EngagementCounters` fields are `u32` but should never be zero for initialized state.
-- [x] **`bool` → `enum` for action outcomes** — `like_tweet(api) -> Result<EngagementOutcome>` + `FollowOutcome` + `PostOutcome`. *(spec 0029 — 14 functions across 8 files)*
-
-## Layer 2: Property-Based Testing (`proptest`)
-
-Hand-written tests find the cases you think of. Proptest finds the cases you don't.
-
-- [x] **Timing ranges** — `random_delay` bounds are tested with proptest already.
-- [x] **`select_persona_weights`** — property: given any valid JSON overrides, result weights stay in `[0, 1]`. *(proptest added)*
-- [x] **`modulate_persona_by_sentiment`** — property: sentiment -1..=1 maps to `interest_multiplier` in `[0, 1]`. *(proptest added — via `with_sentiment_modulation`)*
-- [x] **`remove_emojis`** — property: output length <= input length, no emoji codepoints remain, valid UTF-8 preserved. *(3 proptests added)*
-- [x] **`status_id_from_url`** — property: roundtrip: `format!("/user/status/{id}")` → parse → same `id`. *(3 proptests added)*
-- [x] **Engagement limit counters** — 5 proptests: total_actions==N after N increments, cache sync (total_actions==computed_total), no overflow on large counts, increment() dispatch for all 7 action types, to_summary() consistency.
-
-## Layer 3: Fuzzing (`cargo fuzz`)
-
-Best for parsing, deserialization, and any code that touches untrusted input.
-
-- [x] **LLM response parser** — proptest fuzzing for `LlmDecision` deserializer (5 tests) + `LlmSentimentResult` deserializer (5 tests) + JSON extraction logic. **Found and fixed a real bug** in `analyze_sentiment_llm`: potential panic when `{` appears after `}` in LLM response + off-by-one that dropped closing `}`.
-- [x] **Spec file loader** — 12 fuzz proptests: parse_task_yaml, parse_task_toml, TaskDefinition/Action/Condition/SpecMeta YAML deserialize, validate_task_definition, format_task_definition, unknown keys, extra fields, boundary tests. All with any::<String>() — no panics.
-- [x] **JS evaluation results** — `api.page().evaluate()` returns `serde_json::Value`. Downstream code assumes shape. Fuzz with unexpected shapes.
-- [x] **Fuzz workspace dependency fix** — migrated `fuzz/Cargo.toml` from `serde_yml` to `serde_yaml`, fixed TOML structure, all 4 fuzz targets compile cleanly on nightly
-- [x] **Integration tests verified** — 3,896 `--tests` pass (0 failed, 55 skipped) post-`serde_yaml` migration
+## Layer 1-3: Type Safety, Property Testing & Fuzzing (Completed)
+- **Newtypes & State Machines** — `TweetId`, `StatusUrl`, `ReplyFlowState`, `EngagementOutcome`, `FollowOutcome`, `PostOutcome` migrated.
+- **Property-Based Testing** — Proptests active for timing ranges, persona weights, sentiment modulation, emoji removal, and engagement limits.
+- **Fuzzing** — LLM parser and spec file loader fuzz targets verified (found + fixed real LLM parsing bug).
 
 ## Layer 4: Mutation Testing (`cargo mutants`)
 
 Verifies tests actually catch bugs instead of just passing.
 
-- [x] **Install** — `cargo install cargo-mutants` (v27.1.0 installed)
-- [x] **Script** — `.\mutants.ps1` created (7 targets: limits, decision-engine, decision-strategies, persona, llm, errors, duration)
-- [ ] **Baseline** — run `.\mutants.ps1 -Target limits` on Windows native machine.
-- [ ] **Threshold** — aim for < 10% surviving mutants on core logic modules.
-- [ ] **Target** — run `.\mutants.ps1` for decision strategies, sentiment analysis, limit enforcement.
+- [x] **Install & Setup** — `cargo install cargo-mutants` (v27.1.0) and `.\mutants.ps1` wrapper script created.
+- [x] **Script encoding fix applied** — Replaced em dash characters (`—`, U+2014) with ASCII hyphens on 2 lines that broke PowerShell parsing.
+- [x] **Baseline attempted** — Run `.\mutants.ps1 -Target limits`. **Still blocked by Windows `nul` copy bug** in `cargo-mutants` v27.1.0 (known issue: `Failed to copy ...\nul to ...\tmp\nul`). 166 mutants found but `outcomes.json` not written due to copy failure. Requires running on Linux/WSL or waiting for cargo-mutants fix.
+- [ ] **Threshold** — Aim for < 10% surviving mutants on core logic modules.
+- [ ] **Target** — Run `.\mutants.ps1` for decision strategies, sentiment analysis, limit enforcement.
 
 ## Layer 5: Coverage-Guided Gap Analysis (`cargo tarpaulin`)
 
 Untested branches, not untested lines.
 
-- [x] **Script** — `.\coverage.ps1` created (6 focus modules: decision engine, JS verification, error paths, engagement state, persona weights, limits enforcement)
-- [ ] **`handle_engagement_decision`** — which `match` arms are never exercised? Run `.\coverage.ps1 -Target decision`
-- [ ] **`js_*` verification fallbacks** — every JS file has `.querySelector` chains with fallback to `null`/`document`. Run `.\coverage.ps1 -Target js`
-- [ ] **Error propagation paths** — `anyhow::bail!`, `context()`, `unwrap_or_else` — which error paths are never triggered? Run `.\coverage.ps1 -Target errors`
+- [x] **Script** — `.\coverage.ps1` created (focuses on decision engine, JS verification, error paths, engagement state, etc.).
+- [x] **coverage script fixed** — `--test-threads`, `$testFilter`, `$testThreads`, JSON array parsing, UTF-8 encoding, try/catch all working.
+- [x] **Full project coverage** — **40.95%** (7,849/19,167 lines), 3,819 tests passed.
+- [x] **P1: `extract_tweet_text` consolidated** — Enhanced with retweet recursion + truncated JSON fallback. Duplicate removed from `sentiment/helpers.rs` (replaced with `pub(crate) use` re-export).
+- [x] **P2: Coordinate parsing centralized** — 6 inline sites migrated to `parse_button_coordinates` across `popup.rs`, `navigation.rs`, `llm_execute.rs`.
+- [x] **P3: Pure functions moved to `state/types.rs`** — `compute_trending_bias`, `detect_conversation_indicators` moved + 27 new tests.
+- [x] **Decision engine coverage verified** — 276/276 tests pass, all modules at 91-100% coverage:
+  - `engine.rs`: 34/34 (100%)
+  - `strategies/hybrid.rs`: 66/66 (100%)
+  - `strategies/legacy.rs`: 105/106 (99%)
+  - `strategies/persona.rs`: 54/54 (100%)
+  - `strategies/unified.rs`: 129/141 (91%)
+  - `types.rs`: 18/18 (100%)
+  - `strategies/llm.rs`: 47/64 (73%) — LLM-dependent paths
+- [x] **predictive_scorer.rs scaffold cleanup** — Removed 4 unused ML scaffold structs (-110 lines), precision-refined 10 dead_code annotations to field-level
+- [x] **twitteractivity_actions.rs test expansion** — +7 extract_tweet_text edge case tests, +4 generate_quote_text tests (now matches generate_reply_text coverage), removed 8 duplicate tests across engagement/tests.rs and sentiment/core.rs
+- [ ] **Remaining low-coverage areas** — All are browser-dependent async orchestration:
+  - `engagement/dispatch.rs` (2.3%) and `engagement/mod.rs` (0%) — pure async orchestration
+  - `twitteractivity_llm.rs` (0%) — LLM + browser dependent
+  - `dom.rs` (0%, 378 lines) — feature-gated browser interaction
 
-## Layer 6: Dynamic Analysis (`cargo miri`)
+## Layer 6: Dynamic Analysis & Lint Hardening (Completed)
+- **Miri Analysis** — `.\scripts\miri.ps1` verified 18/18 tests, no UB detected in unsafe duration blocks.
+- **Lint Hardening** — Denied `unwrap_used`, `expect_used`, and unsafe code in pipeline.
+- **`serde_yml` → `serde_yaml`** — Migrated 129 occurrences across 18 files.
+- **Dead code audit** — 88 `#[allow(dead_code)]` annotations analyzed, 3 unused mocks removed.
 
-Detects undefined behavior in unsafe code. Run weekly.
+---
 
-- [x] **Script** — `.\scripts\miri.ps1` created (moved from root, installs nightly + miri, focuses on session/duration.rs unsafe blocks)
-- [x] **`miri` on test suite** — `.\scripts\miri.ps1` run — 18/18 tests pass, no UB detected. Fixed PowerShell encoding bug in `scripts/miri.ps1` (UTF-8 em dash on line 281 → ASCII hyphens).
-- [x] **Focus** — `unsafe` blocks in `session/duration.rs` lines 38 and 84. Both sound (`new_const`: guarded by `assert!(value > 0)`; `Mul::mul`: `saturating_mul` of non-zero values ≥ 1).
+## Layer 7: Twitter/X Activity Orchestrator Weaknesses (Resolved)
 
-## Layer 6.5: Lint Hardening (completed 2026-06-16)
+- [x] **Loop Scheduler Starvation** — Fixed scroll check ordering.
+- [x] **Async Cancellation Safety** — `ThreadDiveGuard` drop guard.
+- [x] **Dynamic Pause Scaling** — Profile-derived ranges replacing hardcoded values.
+- [x] **LLM Context Fallback** — Valid context checks before LLM calls.
 
-- [x] **`unwrap_used` enforcement** — `#![deny(clippy::unwrap_used)]` in both `src/lib.rs` and `crates/bacon-pipeline/src/lib.rs`; CI + `check.ps1` steps for `--lib` and `--bins`
-- [x] **`expect_used` enforcement** — same pattern; 4 HIGH-risk panics fixed (Llm::default removed, UnifiedLLMProcessor::new() returns Result); ~20 justified expects annotated with `#[allow]`
-- [x] **`unsafe_code` ban** — `#![deny(unsafe_code)]` in bacon-pipeline (0 unsafe blocks)
-- [x] **`unsafe_op_in_unsafe_fn`** — `#![deny(unsafe_op_in_unsafe_fn)]` in auto-rust (0 `unsafe fn` definitions)
-- [x] **`serde_yml`→`serde_yaml`** — migrated from unsound unmaintained crate to stable fork (129 occurrences across 18 files); `.cargo/audit.toml` created for transitive `async-std` advisory
-- [x] **Dead code audit** — 88 `#[allow(dead_code)]` annotations analyzed; all justified (test-supporting code, public API surface, config docs)
-- [x] **Binary target audit** — 7 binary files (`src/main.rs`, `src/bin/*.rs`): zero `.unwrap()`/`.expect()` violations; `--bins` CI enforcement added
-- [x] **Dependency cleanup** — `cargo +nightly udeps --all-targets`: confirmed `tracing-subscriber` used by tests (moved to `[dev-dependencies]`); removed unused `do-over` crate + dead `circuit_breaker.rs` module
-
-## Layer 7: What NOT to Do
-
-| Low-ROI activity | Why |
-|---|---|
-| More unit tests on covered lines | Find near-zero new bugs, cost stays flat |
-| 100% line coverage | Rust compiler already guarantees no null/UB/data-race. Diminishing returns hit hard after ~70%. |
-| Integration tests for browser automation | Slow, flaky, test the framework not your logic. Unit-test the decision layer, mock the browser. |
-| Doc-test everything | Doc-tests are documentation with side effects. Prefer `#[cfg(test)] mod` for real test coverage. |
+---
 
 ## Priority Order
 
-1. **~~Newtypes~~** for tweet IDs, status URLs — ~~quick, mechanical, prevents entire bug class.~~ Done (spec 0027).
-2. **~~Proptest~~** on `select_persona_weights`, `remove_emojis`, `status_id_from_url` — ~~find edge cases now.~~ Done (Layers 1-3 complete).
-3. **~~Fuzz~~** LLM response parser — ~~untrusted input, high impact.~~ Done (found + fixed real bug).
-4. **Mutants** baseline on limits module — quick confidence boost. **Ready: `.\mutants.ps1 -Target limits`**
-5. **Coverage gap** on decision strategies — find untested branches. **Ready: `.\coverage.ps1 -Target decision`**
-6. **~~Miri~~** UB detection — ~~safety net for unsafe code.~~ **Done: `.\scripts\miri.ps1` — 18/18 pass, no UB.**
+1. **✅ P1: `extract_tweet_text` consolidated** — 1 canonical implementation, retweet recursion + JSON fallback.
+2. **✅ P2: Coordinate parsing centralized** — 6 inline sites → `parse_button_coordinates`.
+3. **✅ P3: Pure functions moved + tested** — `compute_trending_bias`, `detect_conversation_indicators` + 27 tests.
+4. **✅ Decision engine coverage** — 276 tests, 91-100% across all modules.
+5. **✅ Mutants.ps1 encoding fixed** — Em dash characters replaced, but **Windows `nul` copy bug persists** (needs WSL/Linux).
+6. **✅ Bacon-pipeline investigated** — 22 source files, inline tests exist (25 `#[cfg(test)]` markers), 0% tarpaulin coverage (not measured from main crate).
+7. **✅ Utils module coverage verified** — math.rs (43), geometry.rs (10), url.rs (9), retry.rs (7) — all well tested
+8. **⏸️ Full check.ps1 passes** — 8/8 steps, 3,819 tests
+9. **⏸️ `check.ps1` + `check-fast.ps1`** — Both clean, ready for commit.
+
+## What NOT to Do
+
+| Low-ROI activity | Why |
+|---|---|
+| More twitter pure-function extraction | Exhausted — remaining gaps are browser-dependent |
+| `dom.rs` tests | Feature-gated (`accessibility-locator`), browser-only |
+| `bacon-pipeline` coverage | Separate crate, 22 files, tests exist but not measured from main crate |
+| `mutants.ps1` on Windows | `cargo-mutants` v27.1.0 `nul` copy bug — blocked |

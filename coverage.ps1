@@ -69,9 +69,11 @@ $ramGB = [math]::Round($ramBytes / 1GB, 1)
 Write-Status "  Logical CPUs: $cpuCores" "Cyan"
 Write-Status "  Total RAM:    $ramGB GB" "Cyan"
 
+$testThreads = [math]::Min($cpuCores, 8)
 if ($AutoTune) {
-    $testThreads = [math]::Min($cpuCores, 8)
     Write-Status "  Auto-tuned: test-threads=$testThreads" "Green"
+} else {
+    Write-Status "  Using default: test-threads=$testThreads" "Cyan"
 }
 
 # ---- Preflight ------------------------------------------------------
@@ -135,10 +137,14 @@ $tarpaulinArgs = @(
     "--skip-clean"
 )
 
+# Pass test runner arguments after -- separator
+$tarpaulinArgs += "--"
+$tarpaulinArgs += "--test-threads"
+$tarpaulinArgs += $testThreads.ToString()
+
 if ($Target -ne "all" -and $testFilter) {
     # Run specific test subset for focused coverage
-    $tarpaulinArgs += "--test-threads"
-    $tarpaulinArgs += $testThreads.ToString()
+    $tarpaulinArgs += $testFilter
 }
 
 Write-Status "  Running: cargo $($tarpaulinArgs -join ' ')" "Yellow"
@@ -158,31 +164,35 @@ $jsonFile = Join-Path $outputDir "tarpaulin-report.json"
 $htmlFile = Join-Path $outputDir "tarpaulin-report.html"
 
 if (Test-Path $jsonFile) {
-    $report = Get-Content $jsonFile -Raw | ConvertFrom-Json
+    try {
+        $report = Get-Content $jsonFile -Raw -Encoding UTF8 | ConvertFrom-Json
 
-    # Overall stats
-    $totalLines = 0
-    $coveredLines = 0
-    $totalBranches = 0
-    $coveredBranches = 0
+        # Overall stats (tarpaulin reports files as a JSON array)
+        $totalLines = 0
+        $coveredLines = 0
+        $totalBranches = 0
+        $coveredBranches = 0
 
-    foreach ($file in $report.files.PSObject.Properties) {
-        $fileData = $file.Value
-        $totalLines += $fileData.coverable_lines
-        $coveredLines += $fileData.covered_lines
-        if ($null -ne $fileData.branches) {
-            $totalBranches += $fileData.branches.total
-            $coveredBranches += $fileData.branches.covered
+        foreach ($fileData in $report.files) {
+            $totalLines += $fileData.coverable_lines
+            $coveredLines += $fileData.covered_lines
+            if ($null -ne $fileData.branches) {
+                $totalBranches += $fileData.branches.total
+                $coveredBranches += $fileData.branches.covered
+            }
         }
+
+        $lineRate = if ($totalLines -gt 0) { [math]::Round(($coveredLines / $totalLines) * 100, 1) } else { 0 }
+        $branchRate = if ($totalBranches -gt 0) { [math]::Round(($coveredBranches / $totalBranches) * 100, 1) } else { 0 }
+
+        Write-Status ("  Line coverage:   {0}/{1} ({2}%)" -f $coveredLines, $totalLines, $lineRate) `
+            $(if ($lineRate -ge 70) { "Green" } elseif ($lineRate -ge 50) { "Yellow" } else { "Red" })
+        Write-Status ("  Branch coverage: {0}/{1} ({2}%)" -f $coveredBranches, $totalBranches, $branchRate) `
+            $(if ($branchRate -ge 60) { "Green" } elseif ($branchRate -ge 40) { "Yellow" } else { "Red" })
+    } catch {
+        Write-Status "  WARN: Could not parse JSON report ($($_.Exception.Message))" "Yellow"
+        Write-Status "  HTML report is available at $htmlFile" "Yellow"
     }
-
-    $lineRate = if ($totalLines -gt 0) { [math]::Round(($coveredLines / $totalLines) * 100, 1) } else { 0 }
-    $branchRate = if ($totalBranches -gt 0) { [math]::Round(($coveredBranches / $totalBranches) * 100, 1) } else { 0 }
-
-    Write-Status ("  Line coverage:   {0}/{1} ({2}%)" -f $coveredLines, $totalLines, $lineRate) `
-        $(if ($lineRate -ge 70) { "Green" } elseif ($lineRate -ge 50) { "Yellow" } else { "Red" })
-    Write-Status ("  Branch coverage: {0}/{1} ({2}%)" -f $coveredBranches, $totalBranches, $branchRate) `
-        $(if ($branchRate -ge 60) { "Green" } elseif ($branchRate -ge 40) { "Yellow" } else { "Red" })
 } else {
     Write-Status "  WARN: No JSON report found at $jsonFile" "Yellow"
     Write-Status "  Check tarpaulin output above for errors." "Yellow"
@@ -196,7 +206,7 @@ $gapTargets = @(
     @{
         Name = "handle_engagement_decision"
         File = "src/utils/twitter/decision/engine.rs"
-        Desc = "Match arms for engagement decisions — tweet_age branches, edge cases"
+        Desc = "Match arms for engagement decisions - tweet_age branches, edge cases"
     },
     @{
         Name = "js_verification"
@@ -206,54 +216,63 @@ $gapTargets = @(
     @{
         Name = "error_propagation"
         File = "src/utils/twitter/twitteractivity_errors.rs"
-        Desc = "anyhow::bail!, context(), unwrap_or_else — which error paths never fire?"
+        Desc = "anyhow::bail!, context(), unwrap_or_else - which error paths never fire?"
     },
     @{
         Name = "engagement_state"
         File = "src/utils/twitter/twitteractivity_state.rs"
-        Desc = "State transitions — are all branches of handle_state_change tested?"
+        Desc = "State transitions - are all branches of handle_state_change tested?"
     },
     @{
         Name = "persona_weights"
         File = "src/utils/twitter/twitteractivity_persona.rs"
-        Desc = "select_persona_weights — override paths, boundary conditions"
+        Desc = "select_persona_weights - override paths, boundary conditions"
     },
     @{
         Name = "limits_enforcement"
         File = "src/utils/twitter/twitteractivity_limits.rs"
-        Desc = "Limit checks — which action types hit limits, overflow guards"
+        Desc = "Limit checks - which action types hit limits, overflow guards"
     }
 )
 
 # Check if each target file has coverage data
 if (Test-Path $jsonFile) {
-    $report = Get-Content $jsonFile -Raw | ConvertFrom-Json
+    try {
+        $report = Get-Content $jsonFile -Raw -Encoding UTF8 | ConvertFrom-Json
 
-    Write-Status ("{0,-30} {1,12} {2,12} {3,10}" -f "Module", "Lines", "Covered", "Rate") "Cyan"
-    Write-Status ("{0,-30} {1,12} {2,12} {3,10}" -f ("-" * 30), ("-" * 12), ("-" * 12), ("-" * 10)) "Cyan"
+        Write-Status ("{0,-30} {1,12} {2,12} {3,10}" -f "Module", "Lines", "Covered", "Rate") "Cyan"
+        Write-Status ("{0,-30} {1,12} {2,12} {3,10}" -f ("-" * 30), ("-" * 12), ("-" * 12), ("-" * 10)) "Cyan"
 
-    foreach ($gt in $gapTargets) {
-        $normPath = $gt.File -replace '/', '\'
-        $found = $false
+        $jsonLookup = @{}
+        foreach ($fd in $report.files) {
+            $jsonLookup[$fd.name] = $fd
+        }
 
-        foreach ($file in $report.files.PSObject.Properties) {
-            $filePath = $file.Name -replace '/', '\'
-            if ($filePath -like "*$normPath*" -or $normPath -like "*$filePath*") {
-                $fileData = $file.Value
-                $total = $fileData.coverable_lines
-                $covered = $fileData.covered_lines
-                $rate = if ($total -gt 0) { [math]::Round(($covered / $total) * 100, 1) } else { 0 }
-                $col = if ($rate -ge 70) { "Green" } elseif ($rate -ge 50) { "Yellow" } else { "Red" }
+        foreach ($gt in $gapTargets) {
+            $normPath = $gt.File -replace '/', '\'
+            $found = $false
 
-                Write-Status ("{0,-30} {1,12} {2,12} {3,9:N1}%" -f $gt.Name, $total, $covered, $rate) $col
-                $found = $true
-                break
+            foreach ($jsonPath in $jsonLookup.Keys) {
+                $reportPath = $jsonPath -replace '/', '\'
+                if ($reportPath -like "*$normPath*" -or $normPath -like "*$reportPath*") {
+                    $fd = $jsonLookup[$jsonPath]
+                    $total = $fd.coverable_lines
+                    $covered = $fd.covered_lines
+                    $rate = if ($total -gt 0) { [math]::Round(($covered / $total) * 100, 1) } else { 0 }
+                    $col = if ($rate -ge 70) { "Green" } elseif ($rate -ge 50) { "Yellow" } else { "Red" }
+
+                    Write-Status ("{0,-30} {1,12} {2,12} {3,9:N1}%" -f $gt.Name, $total, $covered, $rate) $col
+                    $found = $true
+                    break
+                }
+            }
+
+            if (-not $found) {
+                Write-Status ("{0,-30} {1,12} {2,12} {3,10}" -f $gt.Name, "-", "-", "N/A") "Yellow"
             }
         }
-
-        if (-not $found) {
-            Write-Status ("{0,-30} {1,12} {2,12} {3,10}" -f $gt.Name, "-", "-", "N/A") "Yellow"
-        }
+    } catch {
+        Write-Status "  WARN: Could not parse JSON report ($($_.Exception.Message))" "Yellow"
     }
 }
 
@@ -262,21 +281,27 @@ if (Test-Path $jsonFile) {
     Write-Header "Files Below 50% Line Coverage"
 
     $lowCoverage = @()
-    foreach ($file in $report.files.PSObject.Properties) {
-        $fileData = $file.Value
-        $total = $fileData.coverable_lines
-        $covered = $fileData.covered_lines
-        if ($total -gt 0) {
-            $rate = ($covered / $total) * 100
-            if ($rate -lt 50 -and $total -ge 10) {
-                $lowCoverage += @{
-                    Path   = $file.Name
-                    Total  = $total
-                    Covered = $covered
-                    Rate   = $rate
+
+    try {
+        $report = Get-Content $jsonFile -Raw -Encoding UTF8 | ConvertFrom-Json
+
+        foreach ($fd in $report.files) {
+            $total = $fd.coverable_lines
+            $covered = $fd.covered_lines
+            if ($total -gt 0) {
+                $rate = ($covered / $total) * 100
+                if ($rate -lt 50 -and $total -ge 10) {
+                    $lowCoverage += @{
+                        Path   = $fd.name
+                        Total  = $total
+                        Covered = $covered
+                        Rate   = $rate
+                    }
                 }
             }
         }
+    } catch {
+        Write-Status "  WARN: Could not parse JSON report ($($_.Exception.Message))" "Yellow"
     }
 
     if ($lowCoverage.Count -eq 0) {
@@ -334,7 +359,7 @@ if ($Html -and (Test-Path $htmlFile)) {
 }
 
 if ($tarpExitCode -ne 0) {
-    Write-Status "  tarpaulin exited with code $tarpExitCode — check output above" "Yellow"
+    Write-Status "  tarpaulin exited with code $tarpExitCode - check output above" "Yellow"
 }
 
 Write-Output ""

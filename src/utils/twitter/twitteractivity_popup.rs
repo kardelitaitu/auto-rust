@@ -4,11 +4,11 @@
 use crate::prelude::TaskContext;
 use anyhow::Result;
 use log::{info, trace};
-use serde_json::Value;
 use tracing::instrument;
 
 use super::twitteractivity_navigation::is_login_flow;
 use super::{
+    state::parse_button_coordinates,
     twitteractivity_humanized::{attempt_close_popup, human_pause},
     twitteractivity_selectors::{selector_follow_confirm_modal, selector_popup_overlay},
 };
@@ -67,17 +67,12 @@ pub async fn close_active_popup(api: &TaskContext) -> Result<bool> {
                     })()
                 ";
                 if let Ok(result) = api.page().evaluate(cancel_js.to_string()).await {
-                    if let Some(obj) = result.value().and_then(|v: &Value| v.as_object()) {
-                        if let (Some(x), Some(y)) = (
-                            obj.get("x").and_then(|v: &Value| v.as_f64()),
-                            obj.get("y").and_then(|v: &Value| v.as_f64()),
-                        ) {
-                            api.move_mouse_to(x, y).await?;
-                            human_pause(api, 200).await;
-                            api.click_at(x, y).await?;
-                            human_pause(api, 500).await;
-                            return Ok(true);
-                        }
+                    if let Some((x, y)) = result.value().and_then(parse_button_coordinates) {
+                        api.move_mouse_to(x, y).await?;
+                        human_pause(api, 200).await;
+                        api.click_at(x, y).await?;
+                        human_pause(api, 500).await;
+                        return Ok(true);
                     }
                 }
             }
@@ -120,17 +115,12 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
         );
         let result = api.page().evaluate(js).await;
         if let Ok(res) = result {
-            if let Some(obj) = res.value().and_then(|v: &Value| v.as_object()) {
-                if let (Some(x), Some(y)) = (
-                    obj.get("x").and_then(|v: &Value| v.as_f64()),
-                    obj.get("y").and_then(|v: &Value| v.as_f64()),
-                ) {
-                    api.move_mouse_to(x, y).await?;
-                    human_pause(api, 200).await;
-                    api.click_at(x, y).await?;
-                    human_pause(api, 800).await;
-                    return Ok(true);
-                }
+            if let Some((x, y)) = res.value().and_then(parse_button_coordinates) {
+                api.move_mouse_to(x, y).await?;
+                human_pause(api, 200).await;
+                api.click_at(x, y).await?;
+                human_pause(api, 800).await;
+                return Ok(true);
             }
         }
     }
@@ -155,17 +145,12 @@ pub async fn dismiss_cookie_banner(api: &TaskContext) -> Result<bool> {
 
     let result = api.page().evaluate(fallback_js.to_string()).await;
     if let Ok(res) = result {
-        if let Some(obj) = res.value().and_then(|v: &Value| v.as_object()) {
-            if let (Some(x), Some(y)) = (
-                obj.get("x").and_then(|v: &Value| v.as_f64()),
-                obj.get("y").and_then(|v: &Value| v.as_f64()),
-            ) {
-                api.move_mouse_to(x, y).await?;
-                human_pause(api, 200).await;
-                api.click_at(x, y).await?;
-                human_pause(api, 800).await;
-                return Ok(true);
-            }
+        if let Some((x, y)) = res.value().and_then(parse_button_coordinates) {
+            api.move_mouse_to(x, y).await?;
+            human_pause(api, 200).await;
+            api.click_at(x, y).await?;
+            human_pause(api, 800).await;
+            return Ok(true);
         }
     }
 

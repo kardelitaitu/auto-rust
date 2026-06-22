@@ -2,8 +2,10 @@
 //! Re-exports from `state/` submodules per spec 0017.
 
 pub use super::state::{
-    read_u32, read_u64, CandidateContext, CandidateResult, RateLimitBackoff, SentimentTemplates,
-    SessionState, TaskConfig, TaskValidationError, TweetActionTracker,
+    parse_button_coordinates, parse_coordinates_with_default, parse_following_result,
+    parse_reply_verification, read_u32, read_u64, CandidateContext, CandidateResult,
+    RateLimitBackoff, SentimentTemplates, SessionState, TaskConfig, TaskValidationError,
+    TweetActionTracker,
 };
 
 #[cfg(test)]

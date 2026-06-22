@@ -170,7 +170,7 @@ if ($Red) {
     $exitCode = Invoke-CargoTest -TestArgs @("--", "tdd_red") -ModeLabel "RED" -TddProfile
     if ($exitCode -eq 0) {
         Write-Host ""
-        Write-Host "⚠  RED tests PASSED — behavior already implemented." -ForegroundColor Yellow
+        Write-Host "⚠  RED tests PASSED - behavior already implemented." -ForegroundColor Yellow
         Write-Host "   These tests describe existing behavior. Move them to" -ForegroundColor Yellow
         Write-Host "   the GREEN category or write a true RED test for" -ForegroundColor Yellow
         Write-Host "   unimplemented behavior." -ForegroundColor Yellow

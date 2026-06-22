@@ -1,3 +1,162 @@
+## 2026-06-23 — Dead code precision refinement, scaffold ML types removed, extract_tweet_text edge case tests
+
+### Changes Made This Session
+
+**Scaffold ML Types Removed (`predictive_scorer.rs`, -110 lines):**
+- Removed 4 unused structs that were never wired into production: `EngagementModel`, `ModelWeights`, `ModelAccuracy`, `FeatureExtractor`
+- Promoted 5 static methods to standalone module functions (`extract_text_features`, `extract_user_features`, `extract_temporal_features`, `extract_context_features`, `combine_features`)
+- Inlined `EngagementModel::predict()` as standalone `predict_model()`
+- Removed 5 tests that only tested removed types; preserved all public API types, feature types, `ActionRecommender`, `TimingRecommendations`, and `benchmark_predict_engagement()`
+
+**Dead Code Annotation Precision Refinement (`predictive_scorer.rs`):**
+- Moved all 10 `#[allow(dead_code)]` annotations from blanket struct-level to precise field-level
+- Added `///` doc comments documenting why each field is reserved (future ML integration) vs actively used
+- Reveals clearly: `length`, `hour`, `is_peak`, `engagement_rate`, `reply_count`, `timing_recommendations`, `optimal_times` are wired into production logic
+- Zero behavioral change — pure annotation precision improvement
+
+**Edge Case Tests Added (`twitteractivity_actions.rs`, +7 tests):**
+- Added tests for: empty string `text`, empty string `full_text`, non-object `retweeted_status`, null `retweeted_status`, array `text` (as_str returns None), outer `text` priority over nested, large JSON fallback truncation to 280 chars
+- Fixed pre-existing buggy test `extract_text_full_text_preferred_over_text` — was asserting `full_text` wins but implementation checks `text` first. Renamed to `extract_text_text_field_takes_priority_over_full_text` with corrected assertion.
+- Total: 36 tests for `twitteractivity_actions.rs`
+
+**Documentation Drift Fix:**
+- `.bacon/README.md`: Updated test count from "3,510+" to "3,753+", changed from generic `cargo nextest run` to `cargo test --lib`
+
+**Em Dash Audit (all `.ps1` files):**
+- Scanned all project `.ps1` files for em dashes (—, U+2014) — 23 found, all confirmed in safe comment blocks
+- Also scanned for en dashes, smart quotes, ellipsis — 0 found across all `.ps1` files
+- No new encoding bugs found
+
+**Duplicate Test Cleanup (8 tests removed):**
+- Removed 3 duplicate `extract_tweet_text` tests from `sentiment/core.rs` (all covered by actions.rs 17-unit + 2-fuzz test suite)
+- Removed 5 duplicate `extract_tweet_text` tests from `engagement/tests.rs` (same coverage rationale)
+- Cleaned up 2 orphaned imports (`extract_tweet_text` import at module level, `serde_json::json` in integration_tests)
+- No test count regression: 54 engagement tests, 110 sentiment tests remain
+
+**generate_quote_text Test Coverage (+4 tests):**
+- Added `generate_quote_text_neutral_uses_neutral_list` — Neutral → `quote_neutral[0]`
+- Added `generate_quote_text_negative_uses_negative_list` — Negative → `quote_negative[0]`
+- Added `generate_quote_text_wraps_around_with_modulo` — idx wraps via modulo
+- Added `generate_quote_text_empty_list_returns_empty` — empty vecs return ""
+- `generate_quote_text` now matches `generate_reply_text` in coverage breadth
+- Total: 40 tests for `twitteractivity_actions.rs`
+
+### Verification
+
+| Check | Status |
+|-------|--------|
+| `cargo check` | ✅ 0 warnings |
+| `cargo test --lib utils::twitter::twitteractivity_actions` (36 tests) | ✅ All passed |
+| `cargo test --lib adaptive::predictive_scorer` (22 tests) | ✅ All passed |
+| `cargo check --benches -p auto-rust` | ✅ Benchmarks compile |
+| `check.ps1` (8 steps, 3,819 tests) | ✅ All passed, 0 failed |
+| `cargo fmt --all -- --check` | ✅ Clean (reformatted) |
+| Working tree | 29 modified files on `v0.2.32` |
+
+### Files Changed (4 files)
+
+**Modified (4):** `.bacon/README.md`, `docs/JOURNAL.md`, `src/adaptive/predictive_scorer.rs`, `src/utils/twitter/twitteractivity_actions.rs`
+
+---
+
+## 2026-06-22 — P1-P3 extraction completion, script encoding audit, mutants.ps1 fix, full coverage verification
+
+### Changes Made This Session
+
+**P1-P3 Code Extractions (code quality):**
+| Extraction | Details | Impact |
+|---|---|---|
+| `extract_tweet_text` consolidated | Enhanced with retweet recursion + JSON fallback. Duplicate removed from `sentiment/helpers.rs` | 1 canonical function for all callers |
+| Coordinate parsing centralized | 6 inline sites → `parse_button_coordinates` across `popup.rs`, `navigation.rs`, `llm_execute.rs` | Shared utility replaces duplicated logic |
+| Pure functions relocated | `compute_trending_bias`, `detect_conversation_indicators` moved to `state/types.rs` + 27 new tests | Systematic pure-function extraction pattern exhausted |
+
+**Script Encoding Bug Audit:**
+Scanned all 31 project-owned `.ps1` files and fixed 11 em dash characters (U+2014) across 4 files that would break PowerShell parsing:
+| File | Em Dashes Fixed | Context |
+|---|---|---|
+| `mutants.ps1` | 5 (2 initial + 3 more) | String literals + comments |
+| `check.ps1` | 3 | `Write-StepHeader` runtime strings |
+| `coverage.ps1` | 6 | `Desc = "..."` target descriptions + `Write-Status` |
+| `spec-archive.ps1` | 1 | `Write-Error` abort message |
+| `scripts/run-twitter-tests.ps1` | 1 | `Write-Host` RED test message |
+
+**mutants.ps1 Behavior Fix:**
+- Auto-tune no longer silently overrides explicit `-Jobs`/`-BuildThreads` parameters
+- Uses `$PSBoundParameters.ContainsKey()` for proper parameter detection
+- Both auto-tune modes work correctly
+
+**Coverage & Verification:**
+| Check | Result |
+|---|---|
+| Decision engine | 276/276 tests pass, all modules 91-100% coverage |
+| `check.ps1` | 8/8 steps pass |
+| Tests | 3,797 passing, 0 failed |
+| Bacon-pipeline investigation | 22 source files, 25 `#[cfg(test)]` markers (inline tests exist, separate crate) |
+| `cargo-mutants` Windows | Confirmed blocked by `nul` copy bug in v27.1.0 (166 mutants found but outcomes.json not written) |
+
+### Files Changed (27 files)
+
+**Modified (22):** `check.ps1`, `coverage.ps1`, `docs/JOURNAL.md`, `docs/TODO.md`, `mutants.ps1`, `scripts/run-twitter-tests.ps1`, `spec-archive.ps1`, `src/task/twitteractivity.rs`, `src/task/twitterquote.rs`, `src/task/twitterretweet.rs`, `src/utils/twitter/engagement/dispatch.rs`, `src/utils/twitter/engagement/mod.rs`, `src/utils/twitter/engagement/tests.rs`, `src/utils/twitter/sentiment/helpers.rs`, `src/utils/twitter/state/mod.rs`, `src/utils/twitter/state/types.rs`, `src/utils/twitter/twitteractivity_actions.rs`, `src/utils/twitter/twitteractivity_dive.rs`, `src/utils/twitter/twitteractivity_feed.rs`, `src/utils/twitter/twitteractivity_humanized.rs`, `src/utils/twitter/twitteractivity_interact.rs`, `src/utils/twitter/twitteractivity_llm_execute.rs`, `src/utils/twitter/twitteractivity_llm_validation.rs`, `src/utils/twitter/twitteractivity_navigation.rs`, `src/utils/twitter/twitteractivity_popup.rs`, `src/utils/twitter/twitteractivity_state.rs`, `src/utils/twitter/twitteractivity_types.rs`
+
+---
+
+## 2026-06-17 — Dead code annotations cleanup, RetryConfig unification, runtime test extraction, sentiment unit tests
+
+### Changes Made This Session
+
+#### Commit `21b6ea8` — `chore: remove stale dead_code annotations, unify RetryConfig construction, improve test coverage`
+
+**🧹 Dead code annotation cleanup (16 files)**
+Removed stale `#[allow(dead_code)]` from functions and types that are now used in production:
+
+| Area | Files |
+|---|---|
+| **Config** | `defaults.rs` (6 `Default` impls), `types.rs` (1 field) |
+| **Utils** | `keyboard.rs`, `math.rs`, `page_size.rs` (7 spots), `profile.rs` (4 spots), `scroll.rs` (2 spots), `timing.rs` (6 spots), `zoom.rs` (6 spots) |
+| **DSL** | `cache.rs` (5 spots), `debug.rs`, `profiling.rs` (2 spots) |
+| **Other** | `bacon-test.rs`, `logger.rs`, `twitterfollow.rs` |
+| **Mouse** | `adaptive.rs`, `overlay.rs` (3 enums consolidated) |
+| **Twitter decision** | `hybrid.rs`, `legacy.rs` |
+
+**🔧 RetryConfig construction unification**
+- `control_flow.rs`: Promoted `RetryConfig::from_action(action)` from dead code to active public method
+- `executor.rs`: Replaced inline `RetryConfig { … }` with `RetryConfig::from_action(action)`
+
+**✅ Test coverage — 5 runtime files with extracted pure functions**
+| File | Functions Extracted | Tests |
+|---|---|---|
+| `click.rs` | `compute_click_retry_backoff`, `compute_primary_click_attempt_delay` | 14 |
+| `clipboard.rs` | `compute_appended_clipboard` | 10 |
+| `dom_verify.rs` | `compute_post_interaction_timing` | 11 |
+| `interaction_pipeline.rs` | `interaction_needs_visibility` | 10 |
+| `page_nav.rs` | `compute_retry_delay`, `compute_navigate_settle_timing` | 13 |
+
+#### Commit `8ddee61` — `test: add comprehensive unit tests for sentiment types and BasicKeywordStrategy` (this session)
+
+**🧪 Sentiment test additions (2 files, +702 lines)**
+- `src/utils/twitter/sentiment/types.rs`: 53 tests covering `SentimentStats`, `Sentiment`, `SentimentConfig`, `ThreadContext`, `ConversationIndicator`, `UserReputation`, `TemporalFactors`, `ScoreBreakdown`, `EnhancedSentimentResult` (creation, defaults, cloning, debug, traits, dominance logic, ties)
+- `src/utils/twitter/sentiment/strategies/basic.rs`: 13 tests covering positive/negative/neutral sentiment, empty strings, mixed sentiment, intensifiers, negation, case insensitivity, exact word matching, multi-word magnitude, punctuation invariance
+
+### Verification
+
+| Check | Status |
+|-------|--------|
+| `check-fast.ps1` | ✅ Pass |
+| `cargo test utils::twitter::sentiment` (270 tests) | ✅ All passed |
+| `check.ps1` (8 steps, 3,643 tests) | ✅ All passed, 0 failed |
+| `cargo clippy --all-targets --all-features -D warnings` | ✅ Clean |
+| `cargo fmt --all -- --check` | ✅ Clean |
+| `spec-lint.ps1` | ✅ Pass |
+| Working tree | ✅ Clean on `v0.2.32` |
+
+### Files Changed (28 files)
+
+**Modified (26):** `bacon-test.rs`, `config/defaults.rs`, `config/types.rs`, `logger.rs`, `runtime/task_context/click.rs`, `clipboard.rs`, `dom_verify.rs`, `interaction_pipeline.rs`, `page_nav.rs`, `task/dsl/cache.rs`, `control_flow.rs`, `debug.rs`, `executor.rs`, `profiling.rs`, `twitterfollow.rs`, `utils/keyboard.rs`, `math.rs`, `page_size.rs`, `profile.rs`, `scroll.rs`, `timing.rs`, `zoom.rs`, `mouse/adaptive.rs`, `mouse/overlay.rs`, `twitter/decision/strategies/hybrid.rs`, `legacy.rs`
+
+**Modified (sentiment tests):** `utils/twitter/sentiment/strategies/basic.rs`, `utils/twitter/sentiment/types.rs`
+
+---
+
 ## 2026-06-16 - .ps1 script hardening: resource detection, output streaming, Start-Process removal
 
 ### Accomplished This Session:

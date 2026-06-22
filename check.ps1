@@ -123,7 +123,7 @@ if (-not $SkipClippy -and -not $failed) {
 
 # ---- CLIPPY: unwrap_used --------------------------------------------
 if (-not $SkipClippy -and -not $failed) {
-    Write-StepHeader $stepNum "Clippy — ban .unwrap() in production code (cargo clippy --lib -- -D clippy::unwrap_used)"
+    Write-StepHeader $stepNum "Clippy - ban .unwrap() in production code (cargo clippy --lib -- -D clippy::unwrap_used)"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     & cargo clippy --lib -- -D warnings -D clippy::unwrap_used
     $elapsed = $sw.Elapsed.TotalSeconds
@@ -136,7 +136,7 @@ if (-not $SkipClippy -and -not $failed) {
 
 # ---- CLIPPY: expect_used --------------------------------------------
 if (-not $SkipClippy -and -not $failed) {
-    Write-StepHeader $stepNum "Clippy — ban .expect() in production code (cargo clippy --lib -- -D clippy::expect_used)"
+    Write-StepHeader $stepNum "Clippy - ban .expect() in production code (cargo clippy --lib -- -D clippy::expect_used)"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     & cargo clippy --lib -- -D warnings -D clippy::expect_used
     $elapsed = $sw.Elapsed.TotalSeconds
@@ -149,7 +149,7 @@ if (-not $SkipClippy -and -not $failed) {
 
 # ---- CLIPPY: binary targets (unwrap + expect) ----------------------
 if (-not $SkipClippy -and -not $failed) {
-    Write-StepHeader $stepNum "Clippy — ban unwrap/expect in binary targets (cargo clippy --bins -- -D clippy::unwrap_used -D clippy::expect_used)"
+    Write-StepHeader $stepNum "Clippy - ban unwrap/expect in binary targets (cargo clippy --bins -- -D clippy::unwrap_used -D clippy::expect_used)"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     & cargo clippy --bins -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
     $elapsed = $sw.Elapsed.TotalSeconds

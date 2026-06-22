@@ -42,6 +42,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Extract tweet context
     info!("[twitterquote] Extracting tweet context...");
     let (author, tweet_text, replies) = extract_tweet_context(api).await?;
+    if tweet_text.is_empty() || author == "unknown" {
+        anyhow::bail!(
+            "[twitterquote] Failed to extract valid tweet context: empty text or unknown author (author={author})"
+        );
+    }
     info!(
         "[twitterquote] Tweet by @{}: {}",
         author,

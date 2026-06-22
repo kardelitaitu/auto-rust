@@ -6,36 +6,96 @@ use crate::prelude::TaskContext;
 use crate::utils::math::gaussian;
 use crate::utils::timing::clustered_pause;
 use rand::Rng;
-use serde_json::Value;
 use std::time::Duration;
 use tracing::instrument;
 
+use super::state::parse_button_coordinates;
 use super::twitteractivity_selectors::selector_close_button;
+
+// =========================================================================
+// Constants
+// =========================================================================
+
+/// Variance percentage for click-related pauses (30%).
+pub const CLICK_PAUSE_VARIANCE: u32 = 30;
+
+/// Jitter percentage for micro-pauses (±30%).
+pub const MICRO_PAUSE_JITTER_PCT: f64 = 0.3;
+
+/// Navigation pause range (1–3 seconds).
+pub const NAVIGATION_PAUSE_MIN_MS: u64 = 1000;
+pub const NAVIGATION_PAUSE_MAX_MS: u64 = 3000;
+
+// =========================================================================
+// Pure functions extracted from async helpers for testability
+// =========================================================================
+
+/// Computes the min/max range for a micro-pause given the average action delay.
+/// The range is avg ±30%, clamped to a minimum of 50ms.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn compute_micro_pause_range(avg: u64) -> (u64, u64) {
+    let jitter = ((avg as f64) * MICRO_PAUSE_JITTER_PCT) as u64;
+    let min = avg.saturating_sub(jitter).max(50);
+    let max = avg.saturating_add(jitter).max(min + 50);
+    (min, max)
+}
+
+/// Rounds a variance percentage `f64` to a `u32`, clamping to at least 0.
+#[must_use]
+#[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
+pub fn compute_human_pause_variance(variance_pct: f64) -> u32 {
+    variance_pct.round().max(0.0) as u32
+}
+
+/// Computes the base pause duration as `base_value * multiplier`.
+/// Simple helper to standardize the pattern used across all pause functions.
+#[must_use]
+pub fn compute_action_base(base_value: u64, multiplier: u64) -> u64 {
+    base_value * multiplier
+}
+
+/// Computes a timing range `(min, max)` from a base delay and variance.
+///
+/// - `base = min_ms * multiplier`
+/// - Range is `base ± variance%`, clamped to an absolute minimum of 500ms,
+///   with max at least `min + 500`.
+///
+/// Pure function — no browser required.
+#[must_use]
+#[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
+pub fn compute_timing_range(min_ms: u64, variance_pct: f64, multiplier: u64) -> (u64, u64) {
+    let base = (min_ms * multiplier) as f64;
+    let variance = variance_pct / 100.0;
+    let min = (base * (1.0 - variance)).max(500.0) as u64;
+    let max = (base * (1.0 + variance)).max((min + 500) as f64) as u64;
+    (min, max)
+}
+
+// =========================================================================
+// Async interaction helpers
+// =========================================================================
 
 /// Human pause with variance based on profile action delay behavior.
 #[instrument(skip(api))]
 pub async fn human_pause(api: &TaskContext, base_ms: u64) {
     let runtime = api.behavior_runtime();
-    api.pause_human(base_ms, runtime.action_delay.variance_pct.round() as u32)
-        .await;
+    let variance = compute_human_pause_variance(runtime.action_delay.variance_pct);
+    api.pause_human(base_ms, variance).await;
 }
 
 /// Short micro-pause typical of human hesitation between actions.
 #[allow(clippy::cast_precision_loss)]
 pub async fn micro_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let avg = runtime.action_delay.min_ms;
-    let jitter = ((avg as f64) * 0.3) as u64; // ±30%
-    let min = avg.saturating_sub(jitter).max(50);
-    let max = avg.saturating_add(jitter).max(min + 50);
+    let (min, max) = compute_micro_pause_range(runtime.action_delay.min_ms);
     let pause_ms = rand::thread_rng().gen_range(min..=max);
     api.pause(pause_ms).await;
 }
 
 /// Brief pause after a navigation-like action.
 pub async fn after_navigation_pause(api: &TaskContext) {
-    // Typical human pause after page load: 1–3 seconds
-    let ms = rand::thread_rng().gen_range(1000..3000);
+    let ms = rand::thread_rng().gen_range(NAVIGATION_PAUSE_MIN_MS..=NAVIGATION_PAUSE_MAX_MS);
     api.pause(ms).await;
 }
 
@@ -43,8 +103,7 @@ pub async fn after_navigation_pause(api: &TaskContext) {
 pub async fn after_click_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
     let base = runtime.click.reaction_delay_ms;
-    let variance = 30;
-    api.pause_human(base, variance).await;
+    api.pause_human(base, CLICK_PAUSE_VARIANCE).await;
 }
 
 /// Sleep using Tokio directly (blocking sleep for fixed periods).
@@ -68,25 +127,34 @@ pub fn random_duration(min_ms: u64, max_ms: u64) -> Duration {
 /// Action-specific pause for scroll operations.
 pub async fn scroll_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let base = runtime.action_delay.min_ms * 2;
-    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
-        .await;
+    let base = compute_action_base(runtime.action_delay.min_ms, 2);
+    api.pause_human(
+        base,
+        compute_human_pause_variance(runtime.action_delay.variance_pct),
+    )
+    .await;
 }
 
 /// Action-specific pause after an engagement action (like, retweet, follow).
 pub async fn engagement_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let base = runtime.action_delay.min_ms * 3;
-    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
-        .await;
+    let base = compute_action_base(runtime.action_delay.min_ms, 3);
+    api.pause_human(
+        base,
+        compute_human_pause_variance(runtime.action_delay.variance_pct),
+    )
+    .await;
 }
 
 /// Action-specific pause after a reply or quote tweet.
 pub async fn reply_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let base = runtime.action_delay.min_ms * 4;
-    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
-        .await;
+    let base = compute_action_base(runtime.action_delay.min_ms, 4);
+    api.pause_human(
+        base,
+        compute_human_pause_variance(runtime.action_delay.variance_pct),
+    )
+    .await;
 }
 
 /// Clustered pause with micro-movements between engagement actions.
@@ -94,9 +162,8 @@ pub async fn reply_pause(api: &TaskContext) {
 /// Ideal for transitions between different action types (like → retweet → reply).
 pub async fn clustered_engagement_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let base = runtime.action_delay.min_ms * 2;
-    let variance = runtime.action_delay.variance_pct.round() as u32;
-    // Use 2-3 clusters to break rhythmic patterns
+    let base = compute_action_base(runtime.action_delay.min_ms, 2);
+    let variance = compute_human_pause_variance(runtime.action_delay.variance_pct);
     clustered_pause(base, variance, 2, 3).await;
 }
 
@@ -104,26 +171,31 @@ pub async fn clustered_engagement_pause(api: &TaskContext) {
 /// Simulates human thinking time before/after composing a reply.
 pub async fn clustered_reply_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let base = runtime.action_delay.min_ms * 3;
-    let variance = runtime.action_delay.variance_pct.round() as u32;
-    // Use 1-3 clusters for reply (more variance = more human-like)
+    let base = compute_action_base(runtime.action_delay.min_ms, 3);
+    let variance = compute_human_pause_variance(runtime.action_delay.variance_pct);
     clustered_pause(base, variance, 1, 3).await;
 }
 
 /// Action-specific pause before clicking (move-to-click delay).
 pub async fn click_prep_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let base = runtime.click.reaction_delay_ms * 4;
-    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
-        .await;
+    let base = compute_action_base(runtime.click.reaction_delay_ms, 4);
+    api.pause_human(
+        base,
+        compute_human_pause_variance(runtime.action_delay.variance_pct),
+    )
+    .await;
 }
 
 /// Action-specific pause after clicking.
 pub async fn click_post_pause(api: &TaskContext) {
     let runtime = api.behavior_runtime();
-    let base = runtime.click.reaction_delay_ms * 8;
-    api.pause_human(base, runtime.action_delay.variance_pct.round() as u32)
-        .await;
+    let base = compute_action_base(runtime.click.reaction_delay_ms, 8);
+    api.pause_human(
+        base,
+        compute_human_pause_variance(runtime.action_delay.variance_pct),
+    )
+    .await;
 }
 
 /// Simulates a human closing a popup: move to X button and click.
@@ -132,24 +204,210 @@ pub async fn click_post_pause(api: &TaskContext) {
 pub async fn attempt_close_popup(api: &TaskContext) -> Result<bool, anyhow::Error> {
     let js = selector_close_button();
     let result = api.page().evaluate(js.to_string()).await?;
-    let value = result.value();
 
-    if let Some(v) = value {
-        if let Some(obj) = v.as_object() {
-            if let (Some(x), Some(y)) = (
-                obj.get("x").and_then(|v: &Value| v.as_f64()),
-                obj.get("y").and_then(|v: &Value| v.as_f64()),
-            ) {
-                api.move_mouse_to(x, y).await?;
-                human_pause(api, 150).await;
-                api.click_at(x, y).await?;
-                human_pause(api, 500).await;
-                return Ok(true);
-            }
-        }
+    if let Some((x, y)) = result.value().and_then(parse_button_coordinates) {
+        api.move_mouse_to(x, y).await?;
+        human_pause(api, 150).await;
+        api.click_at(x, y).await?;
+        human_pause(api, 500).await;
+        return Ok(true);
     }
 
     Ok(false)
+}
+
+#[cfg(test)]
+mod timing_computation_tests {
+    use super::*;
+
+    // ====================================================================
+    // compute_micro_pause_range
+    // ====================================================================
+
+    #[test]
+    fn micro_pause_normal_value() {
+        // avg=500 → jitter=150, min=350, max=650
+        let (min, max) = compute_micro_pause_range(500);
+        assert_eq!(min, 350);
+        assert_eq!(max, 650);
+    }
+
+    #[test]
+    fn micro_pause_zero_avg() {
+        // avg=0 → jitter=0, min=max(0,50)=50, max=max(0,100)=100
+        let (min, max) = compute_micro_pause_range(0);
+        assert_eq!(min, 50);
+        assert_eq!(max, 100);
+    }
+
+    #[test]
+    fn micro_pause_small_avg() {
+        // avg=10 → jitter=3, min=max(7,50)=50, max=max(13,100)=100
+        let (min, max) = compute_micro_pause_range(10);
+        assert_eq!(min, 50);
+        assert_eq!(max, 100);
+    }
+
+    #[test]
+    fn micro_pause_very_large_avg() {
+        // avg=1_000_000 → jitter=300_000, min=700_000, max=1_300_000
+        let (min, max) = compute_micro_pause_range(1_000_000);
+        assert_eq!(min, 700_000);
+        assert_eq!(max, 1_300_000);
+    }
+
+    #[test]
+    fn micro_pause_min_always_at_least_50() {
+        for avg in [0, 1, 5, 10, 50, 71] {
+            let (min, _) = compute_micro_pause_range(avg);
+            assert!(min >= 50, "avg={avg} produced min={min} < 50");
+        }
+    }
+
+    #[test]
+    fn micro_pause_max_at_least_min_plus_50() {
+        for avg in [0, 1, 10, 50, 100, 1000] {
+            let (min, max) = compute_micro_pause_range(avg);
+            assert!(max >= min + 50, "avg={avg} produced min={min}, max={max}");
+        }
+    }
+
+    #[test]
+    fn micro_pause_avg_167_gives_min_117_max_217() {
+        // avg=167 → jitter=trunc(167*0.3)=50, min=167-50=117, max=167+50=217
+        let (min, max) = compute_micro_pause_range(167);
+        assert_eq!(min, 117);
+        assert_eq!(max, 217);
+    }
+
+    // ====================================================================
+    // compute_human_pause_variance
+    // ====================================================================
+
+    #[test]
+    fn variance_rounds_normally() {
+        assert_eq!(compute_human_pause_variance(20.4), 20);
+        assert_eq!(compute_human_pause_variance(20.5), 21);
+        assert_eq!(compute_human_pause_variance(99.9), 100);
+        assert_eq!(compute_human_pause_variance(0.0), 0);
+    }
+
+    #[test]
+    fn variance_clamps_below_zero() {
+        assert_eq!(compute_human_pause_variance(-5.0), 0);
+        assert_eq!(compute_human_pause_variance(-0.1), 0);
+    }
+
+    #[test]
+    fn variance_handles_large_values() {
+        assert_eq!(compute_human_pause_variance(1_000_000.0), 1_000_000);
+    }
+
+    #[test]
+    fn variance_handles_fractional_values() {
+        assert_eq!(compute_human_pause_variance(33.33), 33);
+        assert_eq!(compute_human_pause_variance(66.66), 67);
+    }
+
+    // ====================================================================
+    // compute_action_base
+    // ====================================================================
+
+    #[test]
+    fn action_base_normal() {
+        assert_eq!(compute_action_base(500, 2), 1000);
+        assert_eq!(compute_action_base(500, 3), 1500);
+        assert_eq!(compute_action_base(500, 4), 2000);
+    }
+
+    #[test]
+    fn action_base_zero() {
+        assert_eq!(compute_action_base(0, 2), 0);
+        assert_eq!(compute_action_base(500, 0), 0);
+    }
+
+    #[test]
+    fn action_base_unit_multiplier() {
+        assert_eq!(compute_action_base(500, 1), 500);
+    }
+
+    #[test]
+    fn action_base_large_values() {
+        assert_eq!(compute_action_base(1_000_000, 8), 8_000_000);
+    }
+
+    // ====================================================================
+    // compute_timing_range
+    // ====================================================================
+
+    #[test]
+    fn timing_range_normal() {
+        // min_ms=500, variance=30%, multiplier=8
+        // base=4000, min=4000*0.7=2800, max=4000*1.3=5200
+        let (min, max) = compute_timing_range(500, 30.0, 8);
+        assert_eq!(min, 2800);
+        assert_eq!(max, 5200);
+    }
+
+    #[test]
+    fn timing_range_min_clamped_to_500() {
+        // min_ms=10, variance=30%, multiplier=2
+        // base=20, min=20*0.7=14 -> clamped to 500, max=500+500=1000
+        let (min, max) = compute_timing_range(10, 30.0, 2);
+        assert_eq!(min, 500);
+        assert_eq!(max, 1000);
+    }
+
+    #[test]
+    fn timing_range_zero_min_ms() {
+        // min_ms=0, variance=50%, multiplier=8
+        // base=0, min=0 -> clamped to 500, max=min+500=1000
+        let (min, max) = compute_timing_range(0, 50.0, 8);
+        assert_eq!(min, 500);
+        assert_eq!(max, 1000);
+    }
+
+    #[test]
+    fn timing_range_large_values() {
+        // min_ms=10_000, variance=20%, multiplier=8
+        // base=80_000, min=80_000*0.8=64_000, max=80_000*1.2=96_000
+        let (min, max) = compute_timing_range(10_000, 20.0, 8);
+        assert_eq!(min, 64_000);
+        assert_eq!(max, 96_000);
+    }
+
+    #[test]
+    fn timing_range_zero_variance() {
+        // min_ms=1000, variance=0%, multiplier=4
+        // base=4000, min=4000*1.0=4000, max=4000*1.0=4000 (but max >= min+500)
+        let (min, max) = compute_timing_range(1000, 0.0, 4);
+        assert_eq!(min, 4000);
+        assert_eq!(max, 4500);
+    }
+
+    #[test]
+    fn timing_range_high_variance() {
+        // min_ms=1000, variance=90%, multiplier=2
+        // base=2000, min=2000*0.1=200 -> clamped to 500, max=2000*1.9=3800
+        let (min, max) = compute_timing_range(1000, 90.0, 2);
+        assert_eq!(min, 500);
+        assert_eq!(max, 3800);
+    }
+
+    #[test]
+    fn timing_range_always_has_min_leq_max() {
+        for min_ms in [0, 1, 100, 500, 1000, 10_000] {
+            for variance in [0.0, 10.0, 30.0, 50.0, 100.0] {
+                for mult in [1, 2, 4, 8] {
+                    let (min, max) = compute_timing_range(min_ms, variance, mult);
+                    assert!(
+                        min <= max,
+                        "min_ms={min_ms} variance={variance} mult={mult}: min={min} > max={max}"
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

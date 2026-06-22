@@ -1,6 +1,8 @@
 //! Engagement logic for Twitter activity task.
 //! Contains `process_candidate()` and helper functions for tweet engagement.
 
+use super::state::parse_coordinates_with_default;
+use super::twitteractivity_humanized::compute_timing_range;
 use super::twitteractivity_retry::{retry_with_backoff, RetryConfig};
 use super::twitteractivity_state::{CandidateContext, CandidateResult, TaskConfig};
 use crate::metrics::{
@@ -11,7 +13,7 @@ use crate::prelude::TaskContext;
 use crate::utils::twitter::{
     decision::EngagementLevel,
     twitteractivity_dive::{dive_into_thread, identify_thread_replies},
-    twitteractivity_humanized::{human_pause, scroll_pause},
+    twitteractivity_humanized::{clustered_reply_pause, human_pause, scroll_pause},
     twitteractivity_limits::{EngagementCounters, EngagementLimits},
     twitteractivity_navigation::goto_home,
     twitteractivity_persona::{should_dive, PersonaWeights},
@@ -22,6 +24,57 @@ use rand::Rng;
 use std::time::{Duration, Instant};
 
 use super::twitteractivity_types::{EngagementOutcome, TweetId};
+
+/// A drop guard that navigates back to Twitter home if dropped while armed.
+///
+/// When a thread dive is in progress and the enclosing async task is dropped
+/// (e.g., by `run_with_timeout` timeout), this guard ensures the browser
+/// returns to the home feed instead of being left on a tweet detail page.
+///
+/// The guard is created right before a thread dive and disarmed after
+/// `goto_home()` succeeds in the normal flow. If dropped while still armed,
+/// it spawns a fire-and-forget tokio task to navigate back home.
+struct ThreadDiveGuard {
+    api: Option<TaskContext>,
+    armed: bool,
+}
+
+impl ThreadDiveGuard {
+    /// Create a new armed guard. The guard will navigate home on drop
+    /// unless [`disarm()`](Self::disarm) is called first.
+    fn new(api: &TaskContext) -> Self {
+        Self {
+            api: Some(api.clone()),
+            armed: true,
+        }
+    }
+
+    /// Disarm the guard so it does nothing on drop.
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ThreadDiveGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            if let Some(api) = self.api.take() {
+                tokio::spawn(async move {
+                    match goto_home(&api).await {
+                        Ok(()) => {
+                            log::info!(
+                                "ThreadDiveGuard: navigated back to home after cancellation"
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!("ThreadDiveGuard: goto_home failed: {e}");
+                        }
+                    }
+                });
+            }
+        }
+    }
+}
 
 // Submodules
 pub mod dispatch;
@@ -89,15 +142,8 @@ async fn engage_replies(
                 .await
                 {
                     if decision.score > 30 {
-                        if let Some(pos) = reply.get("like_pos").and_then(|v| v.as_object()) {
-                            let x = pos
-                                .get("x")
-                                .and_then(serde_json::Value::as_f64)
-                                .unwrap_or(0.0);
-                            let y = pos
-                                .get("y")
-                                .and_then(serde_json::Value::as_f64)
-                                .unwrap_or(0.0);
+                        if let Some(pos) = reply.get("like_pos") {
+                            let (x, y) = parse_coordinates_with_default(pos);
                             match retry_with_backoff(
                                 || like_at_position(api, x, y),
                                 &RetryConfig::aggressive(),
@@ -112,8 +158,8 @@ async fn engage_replies(
                                     *actions_this_scan += 1;
                                     replies_engaged += 1;
                                     api.increment_run_counter(RUN_COUNTER_LIKE_SUCCESS, 1);
-                                    // Human-like reading pause between replies
-                                    human_pause(api, 1500).await;
+                                    // Human-like reading pause between replies (profile-scaled)
+                                    clustered_reply_pause(api).await;
                                 }
                                 _ => {
                                     warn!("Failed to like reply");
@@ -240,6 +286,8 @@ pub async fn process_candidate(
     // Retweet, quote, reply, follow, and bookmark require a detail view; like does not.
     let need_dive = actions_to_do.iter().any(|&action| action != "like");
     let mut did_dive = false;
+    // Guard ensures navigation home if dropped mid-dive (e.g., task timeout)
+    let mut dive_guard: Option<ThreadDiveGuard> = None;
 
     if need_dive {
         // Dive into thread for non-like actions
@@ -275,6 +323,9 @@ pub async fn process_candidate(
                 dive_max_pause.as_secs()
             );
 
+            // Arm the drop guard — if dropped mid-dive, it navigates home
+            dive_guard = Some(ThreadDiveGuard::new(api));
+
             let dive_result = retry_with_backoff(
                 || dive_into_thread(api, status_url),
                 &RetryConfig::default(),
@@ -309,7 +360,11 @@ pub async fn process_candidate(
                     warn!("Scroll to top failed: {e}");
                     // Non-fatal, continue
                 }
-                human_pause(api, 800).await;
+                // Profile-scaled landing pause after thread open
+                {
+                    let rt = api.behavior_runtime();
+                    human_pause(api, rt.action_delay.min_ms * 3 / 2).await;
+                }
                 scroll_pause(api).await;
                 counters.increment_thread_dive();
                 actions_this_scan += 1;
@@ -376,8 +431,10 @@ pub async fn process_candidate(
 
     // Navigate back to home after dive
     if should_navigate_home_after_dive(did_dive, task_config) {
-        // Wait 3-5s after engagement before going home
-        let home_wait_ms: u64 = rand::thread_rng().gen_range(3000..5000);
+        // Profile-scaled wait before navigating home (derived from action_delay)
+        let ad = api.behavior_runtime().action_delay;
+        let (min, max) = compute_timing_range(ad.min_ms, ad.variance_pct, 8);
+        let home_wait_ms = rand::thread_rng().gen_range(min..=max);
         human_pause(api, home_wait_ms).await;
         info!("Navigating back to home after thread dive and engagement");
         if let Err(e) =
@@ -385,7 +442,12 @@ pub async fn process_candidate(
         {
             warn!("Navigation to home failed after retries: {e}");
             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-            // Continue anyway - not fatal
+            // Guard stays armed — cleanup on drop if the task is cancelled
+        } else {
+            // Navigation succeeded — disarm the drop guard
+            if let Some(ref mut g) = dive_guard {
+                g.disarm();
+            }
         }
         scroll_pause(api).await;
         // Resume continuous scrolling and candidate scanning

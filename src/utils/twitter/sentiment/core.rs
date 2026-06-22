@@ -966,30 +966,6 @@ mod tests {
     }
 
     // ========================================================================
-    // extract_tweet_text Tests
-    // ========================================================================
-
-    #[test]
-    fn test_extract_tweet_text_full_text_field() {
-        let tweet = json!({ "full_text": "This is the full tweet text" });
-        assert_eq!(extract_tweet_text(&tweet), "This is the full tweet text");
-    }
-
-    #[test]
-    fn test_extract_tweet_text_text_field() {
-        let tweet = json!({ "text": "Short tweet" });
-        assert_eq!(extract_tweet_text(&tweet), "Short tweet");
-    }
-
-    #[test]
-    fn test_extract_tweet_text_retweeted_status() {
-        let tweet = json!({
-            "retweeted_status": { "text": "Original tweet text" }
-        });
-        assert_eq!(extract_tweet_text(&tweet), "Original tweet text");
-    }
-
-    // ========================================================================
     // SentimentAnalyzer Tests
     // ========================================================================
 

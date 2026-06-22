@@ -78,10 +78,14 @@ $ramGB = [math]::Round($ramBytes / 1GB, 1)
 Write-Status "  Logical CPUs: $cpuCores" "Cyan"
 Write-Status "  Total RAM:    $ramGB GB" "Cyan"
 
-if ($AutoTune) {
+# Auto-tune only overrides default values, not explicitly passed parameters.
+# $PSBoundParameters contains only the params the caller explicitly passed.
+if ($AutoTune -and (-not $PSBoundParameters.ContainsKey('Jobs') -and -not $PSBoundParameters.ContainsKey('BuildThreads'))) {
     $Jobs = [math]::Min($cpuCores, 8)
     $BuildThreads = [math]::Min($cpuCores, 16)
     Write-Status "  Auto-tuned: Jobs=$Jobs, BuildThreads=$BuildThreads" "Green"
+} elseif ($AutoTune -and ($PSBoundParameters.ContainsKey('Jobs') -or $PSBoundParameters.ContainsKey('BuildThreads'))) {
+    Write-Status "  Auto-tune skipped: using explicit Jobs=$Jobs, BuildThreads=$BuildThreads" "Yellow"
 }
 
 # ---- Preflight ------------------------------------------------------
@@ -113,13 +117,13 @@ $targets = @()
 $targets += @{
     Name  = "limits"
     Files = @("src/utils/twitter/twitteractivity_limits.rs")
-    Desc  = "Limit enforcement — counters, increments, summary"
+    Desc  = "Limit enforcement - counters, increments, summary"
 }
 
 $targets += @{
     Name  = "decision-engine"
     Files = @("src/utils/twitter/decision/engine.rs")
-    Desc  = "Decision engine — handle_engagement_decision match arms"
+    Desc  = "Decision engine - handle_engagement_decision match arms"
 }
 
 $targets += @{
@@ -131,7 +135,7 @@ $targets += @{
         "src/utils/twitter/decision/strategies/legacy.rs",
         "src/utils/twitter/decision/strategies/unified.rs"
     )
-    Desc  = "Decision strategies — LLM, hybrid, persona, legacy, unified"
+    Desc  = "Decision strategies - LLM, hybrid, persona, legacy, unified"
 }
 
 $targets += @{
@@ -152,7 +156,7 @@ $targets += @{
 $targets += @{
     Name  = "errors"
     Files = @("src/utils/twitter/twitteractivity_errors.rs")
-    Desc  = "Error classification — transient vs permanent"
+    Desc  = "Error classification - transient vs permanent"
 }
 
 $targets += @{
@@ -243,7 +247,7 @@ foreach ($t in $targets) {
             }
         }
     } else {
-        Write-Status "  WARN: No outcomes.json found — check output manually" "Yellow"
+        Write-Status "  WARN: No outcomes.json found - check output manually" "Yellow"
     }
 
     $totalMutants += $total

@@ -90,69 +90,65 @@ pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Val
     let result = api.page().evaluate(js).await?;
     let value = result.value();
 
-    let mut candidates = Vec::new();
-    let mut total_found = 0;
-    let mut filtered_no_id = 0;
-    let mut filtered_viewport = 0;
-    let mut filtered_height = 0;
-    let viewport = match api.viewport().await {
-        Ok(vp) => vp,
-        Err(_) => {
-            // Fallback default viewport if query fails
-            crate::utils::page_size::Viewport {
-                width: 1920.0,
-                height: 1080.0,
-            }
-        }
+    let viewport_height = match api.viewport().await {
+        Ok(vp) => vp.height,
+        Err(_) => 1080.0,
     };
 
-    if let Some(arr) = value.and_then(|v: &serde_json::Value| v.as_array()) {
-        total_found = arr.len();
-        for tweet_val in arr {
-            if let Some(obj) = tweet_val.as_object() {
-                // Basic filter: tweet must have an id and be within viewport reasonably
-                let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                if id.is_empty() {
-                    filtered_no_id += 1;
-                    continue;
-                }
+    let candidates = match value.and_then(|v: &serde_json::Value| v.as_array()) {
+        Some(arr) => filter_candidates(arr, viewport_height),
+        None => Vec::new(),
+    };
 
-                let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
-                let height = obj
-                    .get("height")
-                    .and_then(|v: &Value| v.as_f64())
-                    .unwrap_or(0.0);
-
-                // Filter out tweets above viewport (negative y) or too small
-                if y < 0.0 || height <= 50.0 {
-                    if y < 0.0 {
-                        filtered_viewport += 1;
-                    } else {
-                        filtered_height += 1;
-                    }
-                    continue;
-                }
-
-                // Consider tweets in viewport as "candidate" (relaxed from 70% to 90%)
-                if y >= (viewport.height as f64 * 0.9) {
-                    filtered_viewport += 1;
-                    continue;
-                }
-
-                candidates.push(tweet_val.clone());
+    if candidates.is_empty() && value.is_some() {
+        if let Some(arr) = value.and_then(|v| v.as_array()) {
+            if arr.is_empty() {
+                log::warn!("[candidate_scan] No tweet elements found in DOM");
+            } else {
+                log::warn!(
+                    "[candidate_scan] Found {} tweets but all were filtered out",
+                    arr.len()
+                );
             }
         }
-    }
-
-    if total_found == 0 {
-        log::warn!("[candidate_scan] No tweet elements found in DOM");
-    } else if candidates.is_empty() {
-        log::warn!(
-            "[candidate_scan] Found {total_found} tweets but filtered: no_id={filtered_no_id}, viewport={filtered_viewport}, height={filtered_height}"
-        );
     }
 
     Ok(candidates)
+}
+
+/// Pure-function filter for engagement candidates.
+///
+/// Extracted from `identify_engagement_candidates` for testability.
+/// Takes a slice of tweet JSON objects and a viewport height,
+/// returns only tweets that pass all filter criteria:
+/// - Must have a non-empty string `id` field
+/// - `y` position must be >= 0
+/// - `height` must be > 50
+/// - `y` must be < `viewport_height * 0.9`
+#[must_use]
+pub fn filter_candidates(tweets: &[Value], viewport_height: f64) -> Vec<Value> {
+    let mut candidates = Vec::new();
+    for tweet_val in tweets {
+        if let Some(obj) = tweet_val.as_object() {
+            let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            if id.is_empty() {
+                continue;
+            }
+            let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
+            let height = obj
+                .get("height")
+                .and_then(|v: &Value| v.as_f64())
+                .unwrap_or(0.0);
+            if y < 0.0 || height <= 50.0 {
+                continue;
+            }
+            if y >= (viewport_height * 0.9) {
+                continue;
+            }
+            candidates.push(tweet_val.clone());
+        }
+    }
+    candidates
 }
 
 /// Checks if a given tweet (by center coordinates) currently shows "Following" state
@@ -324,36 +320,220 @@ mod tests {
 }
 
 #[cfg(test)]
+mod candidate_filter_tests {
+    use super::*;
+    use serde_json::json;
+
+    // Delegate to the production filter function
+    fn filter(tweets: &[Value], viewport_height: f64) -> usize {
+        super::filter_candidates(tweets, viewport_height).len()
+    }
+
+    // ====================================================================
+    // ID filter edge cases
+    // ====================================================================
+
+    #[test]
+    fn filter_empty_id_is_excluded() {
+        let tweets = vec![json!({"id": "", "y": 100.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_missing_id_field_is_excluded() {
+        let tweets = vec![json!({"y": 100.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_null_id_is_excluded() {
+        let tweets = vec![json!({"id": null, "y": 100.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_non_string_id_is_excluded() {
+        let tweets = vec![json!({"id": 12345, "y": 100.0, "height": 200.0})];
+        // non-string id becomes None from as_str(), falls to "", excluded
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    // ====================================================================
+    // Y position edge cases
+    // ====================================================================
+
+    #[test]
+    fn filter_negative_y_is_excluded() {
+        let tweets = vec![json!({"id": "t1", "y": -10.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_zero_y_is_included() {
+        let tweets = vec![json!({"id": "t1", "y": 0.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 1);
+    }
+
+    #[test]
+    fn filter_missing_y_defaults_to_zero() {
+        let tweets = vec![json!({"id": "t1", "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 1);
+    }
+
+    #[test]
+    fn filter_as_y_approaches_viewport_edge() {
+        // y = 970, viewport = 1080, threshold = 972 (1080*0.9)
+        // y = 970 < 972 → included
+        let tweets = vec![json!({"id": "t1", "y": 970.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 1);
+
+        // y = 973 >= 972 → excluded
+        let tweets = vec![json!({"id": "t1", "y": 973.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_y_at_exact_viewport_threshold_is_excluded() {
+        // viewport = 800, threshold = 720, y = 720 → excluded (>=)
+        let tweets = vec![json!({"id": "t1", "y": 720.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 800.0), 0);
+    }
+
+    #[test]
+    fn filter_y_just_below_threshold_is_included() {
+        // viewport = 800, threshold = 720, y = 719.999 → included
+        let tweets = vec![json!({"id": "t1", "y": 719.999, "height": 200.0})];
+        assert_eq!(filter(&tweets, 800.0), 1);
+    }
+
+    // ====================================================================
+    // Height edge cases
+    // ====================================================================
+
+    #[test]
+    fn filter_height_at_exact_50_is_excluded() {
+        let tweets = vec![json!({"id": "t1", "y": 100.0, "height": 50.0})];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_height_just_above_50_is_included() {
+        let tweets = vec![json!({"id": "t1", "y": 100.0, "height": 50.1})];
+        assert_eq!(filter(&tweets, 1080.0), 1);
+    }
+
+    #[test]
+    fn filter_missing_height_defaults_to_zero_and_excluded() {
+        let tweets = vec![json!({"id": "t1", "y": 100.0})];
+        // height defaults to 0.0, which is <= 50.0 → excluded
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_null_height_is_excluded() {
+        let tweets = vec![json!({"id": "t1", "y": 100.0, "height": null})];
+        // null → as_f64() returns None → falls to 0.0 → excluded
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_zero_height_is_excluded() {
+        let tweets = vec![json!({"id": "t1", "y": 100.0, "height": 0.0})];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    // ====================================================================
+    // Valid candidates
+    // ====================================================================
+
+    #[test]
+    fn filter_valid_tweet_is_included() {
+        let tweets = vec![json!({"id": "tweet_123", "y": 300.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 1080.0), 1);
+    }
+
+    #[test]
+    fn filter_multiple_valid_tweets_all_included() {
+        let tweets = vec![
+            json!({"id": "t1", "y": 100.0, "height": 200.0}),
+            json!({"id": "t2", "y": 350.0, "height": 180.0}),
+            json!({"id": "t3", "y": 600.0, "height": 220.0}),
+        ];
+        assert_eq!(filter(&tweets, 1080.0), 3);
+    }
+
+    #[test]
+    fn filter_mixed_valid_and_invalid_tweets() {
+        let tweets = vec![
+            json!({"id": "t1", "y": 100.0, "height": 200.0}), // valid
+            json!({"id": "", "y": 200.0, "height": 200.0}),   // empty id
+            json!({"id": "t3", "y": -50.0, "height": 200.0}), // negative y
+            json!({"id": "t4", "y": 500.0, "height": 30.0}),  // too short
+            json!({"id": "t5", "y": 1000.0, "height": 200.0}), // past 90% viewport
+        ];
+        assert_eq!(filter(&tweets, 1080.0), 1); // only t1 passes
+    }
+
+    // ====================================================================
+    // Edge cases with non-tweet JSON
+    // ====================================================================
+
+    #[test]
+    fn filter_empty_array_returns_zero() {
+        assert_eq!(filter(&[], 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_non_object_elements_are_skipped() {
+        let tweets = vec![json!("string_tweet"), json!(42), json!(null), json!(true)];
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    #[test]
+    fn filter_object_without_expected_fields_is_excluded() {
+        let tweets = vec![json!({"name": "random", "value": 100})];
+        // no id → excluded (empty id)
+        // no y → defaults to 0.0
+        // no height → defaults to 0.0 → excluded
+        assert_eq!(filter(&tweets, 1080.0), 0);
+    }
+
+    // ====================================================================
+    // Different viewport sizes
+    // ====================================================================
+
+    #[test]
+    fn filter_small_viewport_excludes_tweets_below_threshold() {
+        // viewport = 500, threshold = 450
+        let tweets = vec![json!({"id": "t1", "y": 400.0, "height": 100.0})];
+        assert_eq!(filter(&tweets, 500.0), 1); // y=400 < 450 → included
+
+        let tweets = vec![json!({"id": "t1", "y": 460.0, "height": 100.0})];
+        assert_eq!(filter(&tweets, 500.0), 0); // y=460 >= 450 → excluded
+    }
+
+    #[test]
+    fn filter_large_viewport_allows_more_tweets() {
+        // viewport = 2000, threshold = 1800
+        let tweets = vec![json!({"id": "t1", "y": 1500.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 2000.0), 1); // y=1500 < 1800 → included
+
+        let tweets = vec![json!({"id": "t1", "y": 1900.0, "height": 200.0})];
+        assert_eq!(filter(&tweets, 2000.0), 0); // y=1900 >= 1800 → excluded
+    }
+}
+
+#[cfg(test)]
 mod fuzz_tests {
     use proptest::prelude::*;
     use serde_json::Value;
 
-    /// Simulate the candidate filtering logic from identify_engagement_candidates.
+    /// Delegate to the production filter function.
     fn simulate_candidate_filtering(value: &Value, viewport_height: f64) -> usize {
-        let mut candidates = 0usize;
-        if let Some(arr) = value.as_array() {
-            for tweet_val in arr {
-                if let Some(obj) = tweet_val.as_object() {
-                    let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    if id.is_empty() {
-                        continue;
-                    }
-                    let y = obj.get("y").and_then(|v: &Value| v.as_f64()).unwrap_or(0.0);
-                    let height = obj
-                        .get("height")
-                        .and_then(|v: &Value| v.as_f64())
-                        .unwrap_or(0.0);
-                    if y < 0.0 || height <= 50.0 {
-                        continue;
-                    }
-                    if y >= (viewport_height * 0.9) {
-                        continue;
-                    }
-                    candidates += 1;
-                }
-            }
+        match value.as_array() {
+            Some(arr) => super::filter_candidates(arr, viewport_height).len(),
+            None => 0,
         }
-        candidates
     }
 
     fn val(s: &str) -> Value {

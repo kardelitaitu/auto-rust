@@ -14,137 +14,110 @@ pub struct PredictiveEngagementScorer {
     action_recommender: ActionRecommender,
 }
 
-/// Engagement prediction model.
-#[allow(dead_code)]
-struct EngagementModel {
-    // Trained model weights
-    weights: ModelWeights,
-    // Feature importance scores
-    feature_importance: HashMap<String, f32>,
-    // Model accuracy metrics
-    accuracy_metrics: ModelAccuracy,
-}
-
-/// Model weights for prediction.
-#[allow(dead_code)]
-struct ModelWeights {
-    // Linear model coefficients
-    coefficients: Vec<f32>,
-    // Bias term
-    bias: f32,
-}
-
-/// Model accuracy metrics.
-#[allow(dead_code)]
-struct ModelAccuracy {
-    // Overall accuracy
-    accuracy: f32,
-    // Precision for positive class
-    precision: f32,
-    // Recall for positive class
-    recall: f32,
-    // F1 score
-    f1_score: f32,
-    // Cross-validation scores
-    cv_scores: Vec<f32>,
-}
-
-/// Feature extractor for engagement prediction.
-#[allow(dead_code)]
-struct FeatureExtractor {
-    // Text-based features
-    text_features: TextFeatures,
-    // Temporal features
-    temporal_features: TemporalFeatures,
-    // User-based features
-    user_features: UserFeatures,
-    // Contextual features
-    context_features: ContextFeatures,
-}
-
 /// Text-based feature extraction.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 struct TextFeatures {
-    // Sentiment score
+    /// Sentiment score (reserved for future sentiment-weighted decisions)
+    #[allow(dead_code)]
     sentiment: f32,
-    // Text length
+    /// Text length (used by ActionRecommender::get_best_action)
     length: usize,
-    // Keyword presence
+    /// Keyword presence (reserved for future keyword matching)
+    #[allow(dead_code)]
     keywords: HashMap<String, f32>,
-    // Readability score
+    /// Readability score (reserved for future content quality scoring)
+    #[allow(dead_code)]
     readability: f32,
-    // Emotion score
+    /// Emotion score (reserved for future affect-aware engagement)
+    #[allow(dead_code)]
     emotion: f32,
 }
 
 /// Temporal feature extraction.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct TemporalFeatures {
-    // Hour of day (0-23)
+    /// Hour of day (0-23) — used by get_optimal_timing
     hour: u8,
-    // Day of week (0-6)
+    /// Day of week (0-6) — reserved for future day-aware decisions
+    #[allow(dead_code)]
     day_of_week: u8,
-    // Is peak hour
+    /// Is peak hour — used by get_best_action
     is_peak: bool,
-    // Time since last post
+    /// Time since last post (reserved for future rate limiting)
+    #[allow(dead_code)]
     time_since_last: f32,
-    // Posting frequency
+    /// Posting frequency (reserved for future cadence analysis)
+    #[allow(dead_code)]
     posting_frequency: f32,
 }
 
 /// User-based feature extraction.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct UserFeatures {
-    // User reputation score
+    /// User reputation score (reserved for future trust weighting)
+    #[allow(dead_code)]
     reputation: f32,
-    // Follower count
+    /// Follower count (reserved for future influence scoring)
+    #[allow(dead_code)]
     follower_count: u32,
-    // Following count
+    /// Following count (reserved for future follow-back analysis)
+    #[allow(dead_code)]
     following_count: u32,
-    // Account age in days
+    /// Account age in days (reserved for future account maturity scoring)
+    #[allow(dead_code)]
     account_age: u32,
-    // Engagement rate
+    /// Engagement rate — used by get_best_action
     engagement_rate: f32,
 }
 
 /// Contextual feature extraction.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 struct ContextFeatures {
-    // Thread depth
+    /// Thread depth (reserved for future thread-awareness)
+    #[allow(dead_code)]
     thread_depth: u32,
-    // Reply count
+    /// Reply count — used by get_best_action
     reply_count: u32,
-    // Has media
+    /// Has media (reserved for future media-aware decisions)
+    #[allow(dead_code)]
     has_media: bool,
-    // Topic category
+    /// Topic category (reserved for future topic analysis)
+    #[allow(dead_code)]
     topic_category: String,
-    // Trending score
+    /// Trending score (reserved for future trending detection)
+    #[allow(dead_code)]
     trending_score: f32,
 }
 
+/// Combined feature vector for prediction.
+struct FeatureVector {
+    text: TextFeatures,
+    user: UserFeatures,
+    temporal: TemporalFeatures,
+    context: ContextFeatures,
+}
+
 /// Action recommendation engine.
-#[allow(dead_code)]
 struct ActionRecommender {
-    // Action type rankings
+    /// Action type rankings (reserved for future ML integration)
+    #[allow(dead_code)]
     action_rankings: HashMap<String, f32>,
-    // Timing recommendations
+    /// Timing recommendations
     timing_recommendations: TimingRecommendations,
-    // Content suggestions
+    /// Content suggestions (reserved for future content generation)
+    #[allow(dead_code)]
     content_suggestions: Vec<String>,
 }
 
 /// Timing recommendations for engagement.
-#[allow(dead_code)]
 struct TimingRecommendations {
-    // Optimal posting times
+    /// Optimal posting times
     optimal_times: Vec<u8>,
-    // Recommended posting frequency
+    /// Recommended posting frequency (reserved for future frequency modulation)
+    #[allow(dead_code)]
     recommended_frequency: f32,
-    // Best days for engagement
+    /// Best days for engagement (reserved for future day-aware scheduling)
+    #[allow(dead_code)]
     best_days: Vec<u8>,
 }
 
@@ -165,6 +138,69 @@ pub struct EngagementPrediction {
     pub key_factors: Vec<String>,
 }
 
+// ============================================================================
+// Standalone extraction functions (formerly FeatureExtractor::static methods)
+// ============================================================================
+
+fn extract_text_features(text: &str) -> TextFeatures {
+    TextFeatures {
+        sentiment: 0.5,
+        length: text.len(),
+        keywords: HashMap::new(),
+        readability: 0.7,
+        emotion: 0.6,
+    }
+}
+
+fn extract_user_features(profile: &UserBehaviorProfile) -> UserFeatures {
+    UserFeatures {
+        reputation: 0.7,
+        follower_count: profile.successful_actions.get("like").copied().unwrap_or(0),
+        following_count: 100,
+        account_age: 365,
+        engagement_rate: 0.1,
+    }
+}
+
+fn extract_temporal_features(temporal: &TemporalFeatures) -> TemporalFeatures {
+    temporal.clone()
+}
+
+fn extract_context_features(context: &ContextFeatures) -> ContextFeatures {
+    context.clone()
+}
+
+fn combine_features(
+    text: TextFeatures,
+    user: UserFeatures,
+    temporal: TemporalFeatures,
+    context: ContextFeatures,
+) -> FeatureVector {
+    FeatureVector {
+        text,
+        user,
+        temporal,
+        context,
+    }
+}
+
+// ============================================================================
+// Prediction helper
+// ============================================================================
+
+/// Simplified prediction logic.
+/// In production, this would use actual ML model inference.
+fn predict_model(_features: &FeatureVector) -> (f32, f32, Vec<String>) {
+    let base_score = 0.5;
+    let confidence = 0.8;
+    let key_factors = vec!["sentiment".to_string(), "timing".to_string()];
+    (base_score, confidence, key_factors)
+}
+
+// ============================================================================
+// PredictiveEngagementScorer
+// ============================================================================
+
 impl PredictiveEngagementScorer {
     /// Create a new predictive engagement scorer.
     #[must_use]
@@ -183,16 +219,16 @@ impl PredictiveEngagementScorer {
         context_features: &ContextFeatures,
     ) -> EngagementPrediction {
         // Extract features
-        let text_features = FeatureExtractor::extract_text_features(tweet_text);
-        let all_features = FeatureExtractor::combine_features(
+        let text_features = extract_text_features(tweet_text);
+        let all_features = combine_features(
             text_features,
-            FeatureExtractor::extract_user_features(user_profile),
-            FeatureExtractor::extract_temporal_features(temporal_context),
-            FeatureExtractor::extract_context_features(context_features),
+            extract_user_features(user_profile),
+            extract_temporal_features(temporal_context),
+            extract_context_features(context_features),
         );
 
         // Make prediction
-        let (probability, confidence, key_factors) = EngagementModel::predict(&all_features);
+        let (probability, confidence, key_factors) = predict_model(&all_features);
 
         // Get action recommendation
         let recommended_action = ActionRecommender::get_best_action(&all_features);
@@ -235,120 +271,9 @@ impl Default for PredictiveEngagementScorer {
     }
 }
 
-impl EngagementModel {
-    fn new() -> Self {
-        Self {
-            weights: ModelWeights::default(),
-            feature_importance: HashMap::new(),
-            accuracy_metrics: ModelAccuracy::default(),
-        }
-    }
-
-    fn predict(_features: &FeatureVector) -> (f32, f32, Vec<String>) {
-        // Simplified prediction logic
-        // In production, this would use actual ML model inference
-        let base_score = 0.5;
-        let confidence = 0.8;
-        let key_factors = vec!["sentiment".to_string(), "timing".to_string()];
-
-        (base_score, confidence, key_factors)
-    }
-}
-
-impl Default for EngagementModel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl FeatureExtractor {
-    fn new() -> Self {
-        Self {
-            text_features: TextFeatures::default(),
-            temporal_features: TemporalFeatures::default(),
-            user_features: UserFeatures::default(),
-            context_features: ContextFeatures::default(),
-        }
-    }
-
-    fn extract_text_features(text: &str) -> TextFeatures {
-        // Simplified text feature extraction
-        TextFeatures {
-            sentiment: 0.5,
-            length: text.len(),
-            keywords: HashMap::new(),
-            readability: 0.7,
-            emotion: 0.6,
-        }
-    }
-
-    fn extract_user_features(profile: &UserBehaviorProfile) -> UserFeatures {
-        UserFeatures {
-            reputation: 0.7,
-            follower_count: profile.successful_actions.get("like").copied().unwrap_or(0),
-            following_count: 100,
-            account_age: 365,
-            engagement_rate: 0.1,
-        }
-    }
-
-    fn extract_temporal_features(temporal: &TemporalFeatures) -> TemporalFeatures {
-        temporal.clone()
-    }
-
-    fn extract_context_features(context: &ContextFeatures) -> ContextFeatures {
-        context.clone()
-    }
-
-    fn combine_features(
-        text: TextFeatures,
-        user: UserFeatures,
-        temporal: TemporalFeatures,
-        context: ContextFeatures,
-    ) -> FeatureVector {
-        FeatureVector {
-            text,
-            user,
-            temporal,
-            context,
-        }
-    }
-}
-
-/// Combined feature vector for prediction.
-struct FeatureVector {
-    text: TextFeatures,
-    user: UserFeatures,
-    temporal: TemporalFeatures,
-    context: ContextFeatures,
-}
-
-impl Default for FeatureExtractor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Default for ModelWeights {
-    fn default() -> Self {
-        Self {
-            coefficients: vec![0.1, 0.2, 0.3],
-            bias: 0.0,
-        }
-    }
-}
-
-impl Default for ModelAccuracy {
-    fn default() -> Self {
-        Self {
-            accuracy: 0.0,
-            precision: 0.0,
-            recall: 0.0,
-            f1_score: 0.0,
-            cv_scores: vec![],
-        }
-    }
-}
+// ============================================================================
+// Default impls for feature types
+// ============================================================================
 
 impl Default for TemporalFeatures {
     fn default() -> Self {
@@ -373,6 +298,10 @@ impl Default for UserFeatures {
         }
     }
 }
+
+// ============================================================================
+// ActionRecommender
+// ============================================================================
 
 impl ActionRecommender {
     fn new() -> Self {
@@ -426,6 +355,10 @@ impl Default for TimingRecommendations {
     }
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,8 +380,7 @@ mod tests {
 
     #[test]
     fn test_feature_extraction() {
-        let _extractor = FeatureExtractor::new();
-        let features = FeatureExtractor::extract_text_features("Hello world!");
+        let features = extract_text_features("Hello world!");
 
         assert_eq!(features.length, 12);
         assert!(features.sentiment >= 0.0);
@@ -521,18 +453,6 @@ mod tests {
     }
 
     #[test]
-    fn test_feature_extractor_new() {
-        let extractor = FeatureExtractor::new();
-        assert_eq!(extractor.text_features.length, 0);
-    }
-
-    #[test]
-    fn test_feature_extractor_default() {
-        let extractor = FeatureExtractor::default();
-        assert_eq!(extractor.text_features.length, 0);
-    }
-
-    #[test]
     fn test_text_features_default() {
         let features = TextFeatures::default();
         assert_eq!(features.length, 0);
@@ -561,26 +481,6 @@ mod tests {
     }
 
     #[test]
-    fn test_model_weights_default() {
-        let weights = ModelWeights::default();
-        assert_eq!(weights.coefficients.len(), 3);
-        assert_eq!(weights.bias, 0.0);
-    }
-
-    #[test]
-    fn test_model_accuracy_default() {
-        let accuracy = ModelAccuracy::default();
-        assert_eq!(accuracy.accuracy, 0.0);
-        assert_eq!(accuracy.precision, 0.0);
-    }
-
-    #[test]
-    fn test_engagement_model_new() {
-        let model = EngagementModel::new();
-        assert_eq!(model.accuracy_metrics.accuracy, 0.0);
-    }
-
-    #[test]
     fn test_action_recommender_new() {
         let recommender = ActionRecommender::new();
         assert!(recommender.action_rankings.is_empty());
@@ -595,45 +495,40 @@ mod tests {
 
     #[test]
     fn test_text_features_length_calculation() {
-        let _extractor = FeatureExtractor::new();
-        let features = FeatureExtractor::extract_text_features("Hello");
+        let features = extract_text_features("Hello");
         assert_eq!(features.length, 5);
     }
 
     #[test]
     fn test_user_features_extraction() {
-        let _extractor = FeatureExtractor::new();
         let profile = UserBehaviorProfile::default();
-        let features = FeatureExtractor::extract_user_features(&profile);
+        let features = extract_user_features(&profile);
         assert_eq!(features.account_age, 365);
     }
 
     #[test]
     fn test_temporal_features_extraction() {
-        let _extractor = FeatureExtractor::new();
         let temporal = TemporalFeatures {
             hour: 15,
             ..Default::default()
         };
-        let features = FeatureExtractor::extract_temporal_features(&temporal);
+        let features = extract_temporal_features(&temporal);
         assert_eq!(features.hour, 15);
     }
 
     #[test]
     fn test_context_features_extraction() {
-        let _extractor = FeatureExtractor::new();
         let context = ContextFeatures {
             reply_count: 10,
             ..Default::default()
         };
-        let features = FeatureExtractor::extract_context_features(&context);
+        let features = extract_context_features(&context);
         assert_eq!(features.reply_count, 10);
     }
 
     #[test]
     fn test_feature_combination() {
-        let _extractor = FeatureExtractor::new();
-        let vector = FeatureExtractor::combine_features(
+        let vector = combine_features(
             TextFeatures::default(),
             UserFeatures::default(),
             TemporalFeatures::default(),
@@ -656,38 +551,6 @@ mod property_tests {
         UserBehaviorProfile { successful_actions }
     }
 
-    fn build_temporal_features(
-        hour: u8,
-        day_of_week: u8,
-        is_peak: bool,
-        time_since_last: f32,
-        posting_frequency: f32,
-    ) -> TemporalFeatures {
-        TemporalFeatures {
-            hour,
-            day_of_week,
-            is_peak,
-            time_since_last,
-            posting_frequency,
-        }
-    }
-
-    fn build_context_features(
-        thread_depth: u32,
-        reply_count: u32,
-        has_media: bool,
-        topic_category: String,
-        trending_score: f32,
-    ) -> ContextFeatures {
-        ContextFeatures {
-            thread_depth,
-            reply_count,
-            has_media,
-            topic_category,
-            trending_score,
-        }
-    }
-
     proptest! {
         #[test]
         fn predict_engagement_stays_finite_and_bounded(
@@ -706,20 +569,20 @@ mod property_tests {
         ) {
             let scorer = PredictiveEngagementScorer::new();
             let user_profile = build_user_profile(like_count);
-            let temporal = build_temporal_features(
+            let temporal = TemporalFeatures {
                 hour,
                 day_of_week,
                 is_peak,
                 time_since_last,
                 posting_frequency,
-            );
-            let context = build_context_features(
+            };
+            let context = ContextFeatures {
                 thread_depth,
                 reply_count,
                 has_media,
                 topic_category,
                 trending_score,
-            );
+            };
 
             let prediction = scorer.predict_engagement(&tweet_text, &user_profile, &temporal, &context);
 
@@ -748,26 +611,26 @@ mod property_tests {
         ) {
             let _scorer = PredictiveEngagementScorer::new();
             let user_profile = build_user_profile(like_count);
-            let temporal = build_temporal_features(
+            let temporal = TemporalFeatures {
                 hour,
                 day_of_week,
                 is_peak,
                 time_since_last,
                 posting_frequency,
-            );
-            let context = build_context_features(
+            };
+            let context = ContextFeatures {
                 thread_depth,
                 reply_count,
                 has_media,
                 topic_category,
                 trending_score,
-            );
+            };
 
-            let text_features = FeatureExtractor::extract_text_features(&tweet_text);
-            let user_features = FeatureExtractor::extract_user_features(&user_profile);
-            let temporal_features = FeatureExtractor::extract_temporal_features(&temporal);
-            let context_features = FeatureExtractor::extract_context_features(&context);
-            let combined = FeatureExtractor::combine_features(
+            let text_features = extract_text_features(&tweet_text);
+            let user_features = extract_user_features(&user_profile);
+            let temporal_features = extract_temporal_features(&temporal);
+            let context_features = extract_context_features(&context);
+            let combined = combine_features(
                 text_features,
                 user_features,
                 temporal_features,
@@ -788,7 +651,7 @@ mod property_tests {
         let context = ContextFeatures::default();
 
         let prediction = scorer.predict_engagement("", &user_profile, &temporal, &context);
-        let features = FeatureExtractor::extract_text_features("");
+        let features = extract_text_features("");
 
         assert_eq!(features.length, 0);
         assert!(prediction.success_probability.is_finite());

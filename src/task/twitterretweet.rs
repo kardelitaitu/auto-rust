@@ -55,6 +55,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         } else if use_llm {
             info!("[twitterretweet] Generating LLM quote...");
             let (author, tweet_text) = extract_tweet_context(api).await?;
+            if tweet_text.is_empty() || author == "unknown" {
+                anyhow::bail!(
+                    "[twitterretweet] Failed to extract valid tweet context: empty text or unknown author (author={author})"
+                );
+            }
             info!("[twitterretweet] Tweet by @{author}");
 
             let llm = Llm::new()?;

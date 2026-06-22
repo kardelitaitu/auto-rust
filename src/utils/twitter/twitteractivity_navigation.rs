@@ -53,6 +53,7 @@ use std::time::Instant;
 use tracing::instrument;
 
 use super::{
+    state::parse_button_coordinates,
     twitteractivity_humanized::{after_navigation_pause, human_pause},
     twitteractivity_interact::is_on_home_feed,
     twitteractivity_popup::{close_active_popup, dismiss_cookie_banner},
@@ -117,13 +118,8 @@ async fn get_element_center(api: &TaskContext, selector: &str) -> Result<Option<
     );
 
     let result = api.page().evaluate(js).await?;
-    if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(serde_json::Value::as_f64),
-            obj.get("y").and_then(serde_json::Value::as_f64),
-        ) {
-            return Ok(Some((x, y)));
-        }
+    if let Some((x, y)) = result.value().and_then(parse_button_coordinates) {
+        return Ok(Some((x, y)));
     }
     Ok(None)
 }

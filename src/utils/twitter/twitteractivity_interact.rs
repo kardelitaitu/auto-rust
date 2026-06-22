@@ -53,12 +53,36 @@ use log::info;
 use rand::Rng;
 use tracing::instrument;
 
+use super::state::{parse_button_coordinates, parse_following_result, parse_reply_verification};
 use super::twitteractivity_humanized::human_pause;
 use super::twitteractivity_selectors::{
     js_find_reply_submit_button, js_find_reply_textarea, js_root_tweet_button_center,
     selector_follow_button, REPLY_BUTTON_SELECTOR,
 };
 use super::{EngagementOutcome, FollowOutcome};
+
+// =========================================================================
+// Pure functions extracted from async interaction helpers for testability
+// =========================================================================
+
+/// Checks if a URL indicates we're on the home feed.
+/// Pure function — no browser required.
+#[must_use]
+pub fn is_home_feed_url(url: &str) -> bool {
+    url.contains("x.com/home") || url.contains("twitter.com/home")
+}
+
+/// Checks if a URL indicates we're on a tweet detail page.
+/// Only checks the URL path for `/status/`.
+/// Pure function — no browser required.
+#[must_use]
+pub fn is_tweet_page_url(url: &str) -> bool {
+    url.contains("/status/")
+}
+
+// =========================================================================
+// Async interaction helpers
+// =========================================================================
 
 /// Gets the current page URL.
 #[instrument(skip(api))]
@@ -80,14 +104,14 @@ pub async fn get_current_url(api: &TaskContext) -> Result<String> {
 #[instrument(skip(api))]
 pub async fn is_on_home_feed(api: &TaskContext) -> Result<bool> {
     let url = get_current_url(api).await?;
-    Ok(url.contains("x.com/home") || url.contains("twitter.com/home"))
+    Ok(is_home_feed_url(&url))
 }
 
 /// Checks if we're on a tweet detail page.
 #[instrument(skip(api))]
 pub async fn is_on_tweet_page(api: &TaskContext) -> Result<bool> {
     let url = get_current_url(api).await?;
-    if url.contains("/status/") {
+    if is_tweet_page_url(&url) {
         return Ok(true);
     }
 
@@ -127,18 +151,13 @@ async fn click_root_tweet_button(
     let js = root_tweet_button_center_js(selector);
     let result = api.page().evaluate(js).await?;
 
-    if let Some(obj) = result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(serde_json::Value::as_f64),
-            obj.get("y").and_then(serde_json::Value::as_f64),
-        ) {
-            info!("Found root tweet {action_name} button at ({x:.1}, {y:.1})");
-            api.move_mouse_to(x, y).await?;
-            human_pause(api, 250).await;
-            api.click_at(x, y).await?;
-            human_pause(api, 500).await;
-            return Ok(EngagementOutcome::Completed);
-        }
+    if let Some((x, y)) = result.value().and_then(parse_button_coordinates) {
+        info!("Found root tweet {action_name} button at ({x:.1}, {y:.1})");
+        api.move_mouse_to(x, y).await?;
+        human_pause(api, 250).await;
+        api.click_at(x, y).await?;
+        human_pause(api, 500).await;
+        return Ok(EngagementOutcome::Completed);
     }
 
     info!("Root tweet {action_name} button not found");
@@ -418,39 +437,31 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
         return Ok(EngagementOutcome::Failed);
     };
 
-    if let Some(coords) = button_result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            coords.get("x").and_then(serde_json::Value::as_f64),
-            coords.get("y").and_then(serde_json::Value::as_f64),
-        ) {
-            info!("Found reply button at ({x:.1}, {y:.1})");
-            if timeout(
-                Duration::from_secs(TIMEOUT_SHORT_SECS),
-                api.move_mouse_to(x, y),
-            )
-            .await
-            .is_ok()
+    if let Some((x, y)) = button_result.value().and_then(parse_button_coordinates) {
+        info!("Found reply button at ({x:.1}, {y:.1})");
+        if timeout(
+            Duration::from_secs(TIMEOUT_SHORT_SECS),
+            api.move_mouse_to(x, y),
+        )
+        .await
+        .is_ok()
+        {
+            human_pause(api, 200).await;
+            if timeout(Duration::from_secs(TIMEOUT_SHORT_SECS), api.click_at(x, y))
+                .await
+                .is_ok()
             {
-                human_pause(api, 200).await;
-                if timeout(Duration::from_secs(TIMEOUT_SHORT_SECS), api.click_at(x, y))
-                    .await
-                    .is_ok()
-                {
-                    info!("Clicked Reply button successfully");
-                } else {
-                    info!("Timeout clicking reply button");
-                    return Ok(EngagementOutcome::Failed);
-                }
+                info!("Clicked Reply button successfully");
             } else {
-                info!("Timeout moving mouse to reply button");
+                info!("Timeout clicking reply button");
                 return Ok(EngagementOutcome::Failed);
             }
         } else {
-            info!("Reply button coordinates not found");
+            info!("Timeout moving mouse to reply button");
             return Ok(EngagementOutcome::Failed);
         }
     } else {
-        info!("Reply button not found");
+        info!("Reply button not found or invalid coordinates");
         return Ok(EngagementOutcome::Failed);
     }
 
@@ -468,27 +479,23 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     "#;
 
     let verify_result = api.page().evaluate(verify_js).await?;
-    if let Some(obj) = verify_result.value().and_then(|v| v.as_object()) {
-        if let Some(sent) = obj.get("sent").and_then(serde_json::Value::as_bool) {
-            if sent {
-                info!("Reply send completed and verified");
-                Ok(EngagementOutcome::Completed)
-            } else {
-                let reason = obj
-                    .get("reason")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                info!("Reply send verification failed: {reason}");
-                Ok(EngagementOutcome::Failed)
-            }
-        } else {
-            info!("Reply send completed (unable to verify)");
-            Ok(EngagementOutcome::Unverified)
+    let outcome = verify_result
+        .value()
+        .map(parse_reply_verification)
+        .unwrap_or(EngagementOutcome::Unverified);
+    match outcome {
+        EngagementOutcome::Completed => {
+            info!("Reply send completed and verified");
         }
-    } else {
-        info!("Reply send completed (verification failed)");
-        Ok(EngagementOutcome::Unverified)
+        EngagementOutcome::Failed => {
+            info!("Reply send verification failed");
+        }
+        EngagementOutcome::Unverified => {
+            info!("Reply send completed (unable to verify)");
+        }
+        _ => {}
     }
+    Ok(outcome)
 }
 
 /// Full reply flow: open composer, type text, send.
@@ -594,7 +601,7 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<FollowOutcome> {
     let following_result = api.page().evaluate(following_js).await?;
     if following_result
         .value()
-        .and_then(serde_json::Value::as_bool)
+        .map(parse_following_result)
         .unwrap_or(false)
     {
         info!("Already following tweet author");
@@ -602,18 +609,13 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<FollowOutcome> {
     }
 
     let follow_result = api.page().evaluate(selector_follow_button()).await?;
-    if let Some(obj) = follow_result.value().and_then(|v| v.as_object()) {
-        if let (Some(x), Some(y)) = (
-            obj.get("x").and_then(serde_json::Value::as_f64),
-            obj.get("y").and_then(serde_json::Value::as_f64),
-        ) {
-            info!("Found scoped follow button at ({x:.1}, {y:.1})");
-            api.move_mouse_to(x, y).await?;
-            human_pause(api, 250).await;
-            api.click_at(x, y).await?;
-            human_pause(api, 1000).await;
-            return Ok(FollowOutcome::Followed);
-        }
+    if let Some((x, y)) = follow_result.value().and_then(parse_button_coordinates) {
+        info!("Found scoped follow button at ({x:.1}, {y:.1})");
+        api.move_mouse_to(x, y).await?;
+        human_pause(api, 250).await;
+        api.click_at(x, y).await?;
+        human_pause(api, 1000).await;
+        return Ok(FollowOutcome::Followed);
     }
 
     info!("Scoped follow button not found");
@@ -724,5 +726,269 @@ mod tests {
         let js = root_tweet_button_center_js(r#"button[data-testid="reply"]"#);
         assert!(js.contains("document.querySelector('main')"));
         assert!(js.contains("document.body"));
+    }
+}
+
+#[cfg(test)]
+mod pure_function_tests {
+    use super::*;
+    use serde_json::json;
+
+    // ====================================================================
+    // is_home_feed_url
+    // ====================================================================
+
+    #[test]
+    fn home_feed_url_xcom() {
+        assert!(is_home_feed_url("https://x.com/home"));
+    }
+
+    #[test]
+    fn home_feed_url_twittercom() {
+        assert!(is_home_feed_url("https://twitter.com/home"));
+    }
+
+    #[test]
+    fn home_feed_url_with_query() {
+        assert!(is_home_feed_url("https://x.com/home?t=123&ref=src"));
+    }
+
+    #[test]
+    fn home_feed_url_tweet_page_is_not_home() {
+        assert!(!is_home_feed_url("https://x.com/user/status/12345"));
+    }
+
+    #[test]
+    fn home_feed_url_explore_is_not_home() {
+        assert!(!is_home_feed_url("https://x.com/explore"));
+    }
+
+    #[test]
+    fn home_feed_url_empty_string() {
+        assert!(!is_home_feed_url(""));
+    }
+
+    #[test]
+    fn home_feed_url_case_sensitive() {
+        // URLs are case-sensitive, /Home is different from /home
+        assert!(!is_home_feed_url("https://x.com/Home"));
+    }
+
+    // ====================================================================
+    // is_tweet_page_url
+    // ====================================================================
+
+    #[test]
+    fn tweet_page_url_xcom_status() {
+        assert!(is_tweet_page_url("https://x.com/user/status/123456789"));
+    }
+
+    #[test]
+    fn tweet_page_url_twittercom_status() {
+        assert!(is_tweet_page_url(
+            "https://twitter.com/user/status/123456789"
+        ));
+    }
+
+    #[test]
+    fn tweet_page_url_with_query() {
+        assert!(is_tweet_page_url("https://x.com/user/status/12345?t=abc"));
+    }
+
+    #[test]
+    fn tweet_page_url_home_is_not_tweet() {
+        assert!(!is_tweet_page_url("https://x.com/home"));
+    }
+
+    #[test]
+    fn tweet_page_url_explore_is_not_tweet() {
+        assert!(!is_tweet_page_url("https://x.com/explore"));
+    }
+
+    #[test]
+    fn tweet_page_url_empty_string() {
+        assert!(!is_tweet_page_url(""));
+    }
+
+    #[test]
+    fn tweet_page_url_path_contains_status_with_trailing_segment() {
+        // URL with /status/ prefix but no numeric ID — still matches on /status/
+        assert!(is_tweet_page_url("https://x.com/i/status/"));
+    }
+
+    // ====================================================================
+    // parse_button_coordinates
+    // ====================================================================
+
+    #[test]
+    fn parse_button_coords_valid() {
+        let value = json!({"x": 100.5, "y": 200.3});
+        assert_eq!(parse_button_coordinates(&value), Some((100.5, 200.3)));
+    }
+
+    #[test]
+    fn parse_button_coords_missing_x() {
+        let value = json!({"y": 200.3});
+        assert_eq!(parse_button_coordinates(&value), None);
+    }
+
+    #[test]
+    fn parse_button_coords_missing_y() {
+        let value = json!({"x": 100.5});
+        assert_eq!(parse_button_coordinates(&value), None);
+    }
+
+    #[test]
+    fn parse_button_coords_empty_object() {
+        let value = json!({});
+        assert_eq!(parse_button_coordinates(&value), None);
+    }
+
+    #[test]
+    fn parse_button_coords_null_values() {
+        let value = json!({"x": null, "y": 200.3});
+        assert_eq!(parse_button_coordinates(&value), None);
+    }
+
+    #[test]
+    fn parse_button_coords_non_numeric() {
+        let value = json!({"x": "abc", "y": 200.3});
+        assert_eq!(parse_button_coordinates(&value), None);
+    }
+
+    #[test]
+    fn parse_button_coords_non_object() {
+        assert_eq!(parse_button_coordinates(&json!(42)), None);
+        assert_eq!(parse_button_coordinates(&json!("string")), None);
+        assert_eq!(parse_button_coordinates(&json!(null)), None);
+    }
+
+    #[test]
+    fn parse_button_coords_integer_values() {
+        let value = json!({"x": 100, "y": 200});
+        let coords = parse_button_coordinates(&value);
+        assert!(coords.is_some());
+        let (x, y) = coords.unwrap();
+        assert!((x - 100.0).abs() < f64::EPSILON);
+        assert!((y - 200.0).abs() < f64::EPSILON);
+    }
+
+    // ====================================================================
+    // parse_reply_verification
+    // ====================================================================
+
+    #[test]
+    fn reply_verification_sent_true() {
+        let value = json!({"sent": true});
+        assert_eq!(
+            parse_reply_verification(&value),
+            EngagementOutcome::Completed
+        );
+    }
+
+    #[test]
+    fn reply_verification_sent_false() {
+        let value = json!({"sent": false});
+        assert_eq!(parse_reply_verification(&value), EngagementOutcome::Failed);
+    }
+
+    #[test]
+    fn reply_verification_with_reason() {
+        let value = json!({"sent": true, "reason": "composer closed"});
+        assert_eq!(
+            parse_reply_verification(&value),
+            EngagementOutcome::Completed
+        );
+    }
+
+    #[test]
+    fn reply_verification_sent_false_with_reason() {
+        let value = json!({"sent": false, "reason": "textarea still has text"});
+        assert_eq!(parse_reply_verification(&value), EngagementOutcome::Failed);
+    }
+
+    #[test]
+    fn reply_verification_missing_sent() {
+        let value = json!({"reason": "something"});
+        assert_eq!(
+            parse_reply_verification(&value),
+            EngagementOutcome::Unverified
+        );
+    }
+
+    #[test]
+    fn reply_verification_null_sent() {
+        let value = json!({"sent": null});
+        assert_eq!(
+            parse_reply_verification(&value),
+            EngagementOutcome::Unverified
+        );
+    }
+
+    #[test]
+    fn reply_verification_string_sent() {
+        let value = json!({"sent": "true"});
+        assert_eq!(
+            parse_reply_verification(&value),
+            EngagementOutcome::Unverified
+        );
+    }
+
+    #[test]
+    fn reply_verification_non_object() {
+        assert_eq!(
+            parse_reply_verification(&json!(42)),
+            EngagementOutcome::Unverified
+        );
+        assert_eq!(
+            parse_reply_verification(&json!("string")),
+            EngagementOutcome::Unverified
+        );
+        assert_eq!(
+            parse_reply_verification(&json!(null)),
+            EngagementOutcome::Unverified
+        );
+    }
+
+    #[test]
+    fn reply_verification_empty_object() {
+        assert_eq!(
+            parse_reply_verification(&json!({})),
+            EngagementOutcome::Unverified
+        );
+    }
+
+    // ====================================================================
+    // parse_following_result
+    // ====================================================================
+
+    #[test]
+    fn following_result_true() {
+        assert!(parse_following_result(&json!(true)));
+    }
+
+    #[test]
+    fn following_result_false() {
+        assert!(!parse_following_result(&json!(false)));
+    }
+
+    #[test]
+    fn following_result_null() {
+        assert!(!parse_following_result(&json!(null)));
+    }
+
+    #[test]
+    fn following_result_string() {
+        assert!(!parse_following_result(&json!("true")));
+    }
+
+    #[test]
+    fn following_result_number() {
+        assert!(!parse_following_result(&json!(1)));
+    }
+
+    #[test]
+    fn following_result_non_boolean() {
+        assert!(!parse_following_result(&json!({"following": true})));
     }
 }

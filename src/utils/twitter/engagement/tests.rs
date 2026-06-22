@@ -1,14 +1,12 @@
 //! Integration, statistical, property, and gap tests for engagement.
 
 use super::*;
-use crate::utils::twitter::twitteractivity_actions::extract_tweet_text;
 use crate::utils::twitter::TweetId;
 
 #[cfg(test)]
 mod integration_tests {
     use super::*;
     use crate::utils::twitter::twitteractivity_limits::{EngagementCounters, EngagementLimits};
-    use serde_json::json;
 
     /// Test action_allowed_by_limits for each action type
     #[test]
@@ -156,27 +154,6 @@ mod integration_tests {
         assert!(should_navigate_home_after_dive(true, &live));
     }
 
-    /// Test extract_tweet_text with text field
-    #[test]
-    fn extract_tweet_text_extracts_text_field() {
-        let tweet = json!({"text": "Hello world"});
-        assert_eq!(extract_tweet_text(&tweet), "Hello world");
-    }
-
-    /// Test extract_tweet_text with full_text field (fallback)
-    #[test]
-    fn extract_tweet_text_extracts_full_text_field() {
-        let tweet = json!({"full_text": "Full text content"});
-        assert_eq!(extract_tweet_text(&tweet), "Full text content");
-    }
-
-    /// Test extract_tweet_text returns empty for missing fields
-    #[test]
-    fn extract_tweet_text_returns_empty_for_missing() {
-        let tweet = json!({"id": "123"});
-        assert_eq!(extract_tweet_text(&tweet), "");
-    }
-
     /// Test generate_reply_text cycles through templates
     #[test]
     fn generate_reply_text_cycles_templates() {
@@ -210,6 +187,237 @@ mod integration_tests {
     #[test]
     fn calc_rate_handles_zero_total() {
         assert_eq!(calc_rate(5, 0), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod scoring_tests {
+    use super::*;
+    use crate::utils::twitter::twitteractivity_persona::PersonaWeights;
+    use serde_json::json;
+
+    // ====================================================================
+    // handle_engagement_decision — edge cases
+    // ====================================================================
+
+    #[tokio::test]
+    async fn handle_decision_missing_text_falls_back_to_empty() {
+        let tweet = json!({"id": "123", "author": "user"});
+        let config = TaskConfig {
+            smart_decision_enabled: true,
+            ..Default::default()
+        };
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
+        assert!(
+            result.is_some(),
+            "Should return a decision even without text"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_decision_missing_id_falls_back_to_unknown() {
+        let tweet = json!({"text": "Some tweet", "author": "user"});
+        let config = TaskConfig {
+            smart_decision_enabled: true,
+            ..Default::default()
+        };
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_decision_null_replies_does_not_panic() {
+        let tweet = json!({"text": "Tweet with null replies", "replies": null});
+        let config = TaskConfig {
+            smart_decision_enabled: true,
+            ..Default::default()
+        };
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_decision_empty_tweet_does_not_panic() {
+        let tweet = json!({});
+        let config = TaskConfig {
+            smart_decision_enabled: true,
+            ..Default::default()
+        };
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_decision_replies_mixed_types_does_not_panic() {
+        // Some replies are objects, some are not valid
+        let tweet = json!({
+            "text": "Main tweet",
+            "replies": [
+                {"author": "u1", "text": "valid"},
+                "not_an_object",
+                42,
+                null,
+                {"author": "u2", "text": "also valid"}
+            ]
+        });
+        let config = TaskConfig {
+            smart_decision_enabled: true,
+            ..Default::default()
+        };
+        let persona = PersonaWeights::default();
+        let result = handle_engagement_decision(&tweet, &config, &persona, None).await;
+        assert!(result.is_some());
+    }
+
+    // ====================================================================
+    // modulate_persona_by_sentiment — basic paths
+    // ====================================================================
+
+    #[tokio::test]
+    async fn modulate_sentiment_positive_increases_interest() {
+        let tweet = json!({"text": "This is amazing! I love this!"});
+        let config = TaskConfig::default();
+        let persona = PersonaWeights::default();
+        let (sentiment, modulated) = modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+        assert_eq!(
+            sentiment,
+            crate::utils::twitter::sentiment::Sentiment::Positive
+        );
+        assert!(
+            modulated.interest_multiplier > 1.0,
+            "Positive sentiment should boost interest, got {}",
+            modulated.interest_multiplier
+        );
+    }
+
+    #[tokio::test]
+    async fn modulate_sentiment_negative_decreases_interest() {
+        let tweet = json!({"text": "This is terrible. I hate it."});
+        let config = TaskConfig::default();
+        let persona = PersonaWeights::default();
+        let (sentiment, modulated) = modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+        assert_eq!(
+            sentiment,
+            crate::utils::twitter::sentiment::Sentiment::Negative
+        );
+        assert!(
+            modulated.interest_multiplier < 1.0,
+            "Negative sentiment should suppress interest, got {}",
+            modulated.interest_multiplier
+        );
+    }
+
+    #[tokio::test]
+    async fn modulate_sentiment_neutral_keeps_default_interest() {
+        let tweet = json!({"text": "The meeting is at 3pm tomorrow."});
+        let config = TaskConfig::default();
+        let persona = PersonaWeights::default();
+        let (sentiment, modulated) = modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+        assert_eq!(
+            sentiment,
+            crate::utils::twitter::sentiment::Sentiment::Neutral
+        );
+        assert!(
+            (modulated.interest_multiplier - 1.0).abs() < 0.1,
+            "Neutral sentiment should keep interest near 1.0, got {}",
+            modulated.interest_multiplier
+        );
+    }
+
+    #[tokio::test]
+    async fn modulate_sentiment_empty_text_does_not_panic() {
+        let tweet = json!({"text": ""});
+        let config = TaskConfig::default();
+        let persona = PersonaWeights::default();
+        // Should not panic and return valid sentiment
+        let (sentiment, _modulated) =
+            modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+        assert_eq!(
+            sentiment,
+            crate::utils::twitter::sentiment::Sentiment::Neutral
+        );
+    }
+
+    #[tokio::test]
+    async fn modulate_sentiment_missing_text_does_not_panic() {
+        let tweet = json!({});
+        let config = TaskConfig::default();
+        let persona = PersonaWeights::default();
+        // Should not panic
+        let (_sentiment, _modulated) =
+            modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+    }
+
+    #[tokio::test]
+    async fn modulate_sentiment_missing_text_field_does_not_panic() {
+        let tweet = json!({"id": "123"});
+        let config = TaskConfig::default();
+        let persona = PersonaWeights::default();
+        // Should not panic
+        let (_sentiment, _modulated) =
+            modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+    }
+
+    // ====================================================================
+    // modulate_persona_by_sentiment — enhanced path
+    // ====================================================================
+
+    #[tokio::test]
+    async fn modulate_sentiment_enhanced_path_uses_enhanced_analysis() {
+        let tweet = json!({
+            "text": "Great product, highly recommend!",
+            "author": "trusted_user",
+            "replies": [
+                {"text": "I agree!", "author": "user2"},
+                {"text": "Me too", "author": "user3"}
+            ]
+        });
+        let config = TaskConfig {
+            enhanced_sentiment_enabled: true,
+            ..Default::default()
+        };
+        let persona = PersonaWeights::default();
+        let (sentiment, modulated) = modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+        // Enhanced path should still produce valid sentiment and modulation
+        assert!(
+            matches!(
+                sentiment,
+                crate::utils::twitter::sentiment::Sentiment::Positive
+                    | crate::utils::twitter::sentiment::Sentiment::Neutral
+            ),
+            "Enhanced path should produce Positive or Neutral for positive text"
+        );
+        assert!(
+            modulated.interest_multiplier >= 0.3 && modulated.interest_multiplier <= 1.5,
+            "Interest multiplier should be in valid range, got {}",
+            modulated.interest_multiplier
+        );
+    }
+
+    #[tokio::test]
+    async fn modulate_sentiment_enhanced_with_negative_text() {
+        let tweet = json!({
+            "text": "This app is horrible, full of bugs and crashes constantly!",
+            "author": "critical_user"
+        });
+        let config = TaskConfig {
+            enhanced_sentiment_enabled: true,
+            ..Default::default()
+        };
+        let persona = PersonaWeights::default();
+        let (sentiment, modulated) = modulate_persona_by_sentiment(&tweet, &config, &persona).await;
+        // Negative text with enhanced analysis
+        assert!(
+            modulated.interest_multiplier <= 1.0,
+            "Negative content should not boost interest, got {}",
+            modulated.interest_multiplier
+        );
+        // Store for debugging if needed
+        let _ = sentiment;
     }
 }
 
@@ -424,29 +632,6 @@ mod property_tests {
         }
     }
 
-    /// Property: extract_tweet_text never panics on various JSON inputs
-    #[test]
-    fn extract_tweet_text_no_panic() {
-        use serde_json::json;
-
-        let test_cases = vec![
-            json!({"text": "test"}),
-            json!({"full_text": "full"}),
-            json!({"text": null}),
-            json!({"full_text": null}),
-            json!({}),
-            json!({"text": 123}),
-            json!({"text": ["array"]}),
-            json!({"text": {"nested": "object"}}),
-            json!(null),
-            json!("string"),
-        ];
-
-        for case in &test_cases {
-            let _result = extract_tweet_text(case);
-        }
-    }
-
     /// Property: generate_reply_text always returns non-empty for valid sentiment
     #[test]
     fn generate_reply_text_returns_non_empty() {
@@ -618,13 +803,6 @@ mod gap_tests {
     fn calc_rate_fractional() {
         let rate = calc_rate(1, 3);
         assert!((rate - 33.333333).abs() < 0.01);
-    }
-
-    // extract_tweet_text with truncated text (Twitter API v2 uses "text" with note_text)
-    #[test]
-    fn extract_tweet_text_handles_empty_string_value() {
-        let tweet = serde_json::json!({"text": ""});
-        assert_eq!(extract_tweet_text(&tweet), "");
     }
 
     // selected_candidate_actions with tracker blocking specific tweets

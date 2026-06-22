@@ -151,13 +151,9 @@ fn remove_emojis(text: &str) -> String {
 fn banned_words_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        let alts: Vec<String> = BANNED_WORDS
-            .iter()
-            .map(|w| regex::escape(w))
-            .collect();
+        let alts: Vec<String> = BANNED_WORDS.iter().map(|w| regex::escape(w)).collect();
         let pattern = format!("\\b(?:{})\\b", alts.join("|"));
-        regex::Regex::new(&pattern)
-            .expect("Failed to compile banned-words alternation regex")
+        regex::Regex::new(&pattern).expect("Failed to compile banned-words alternation regex")
     })
 }
 

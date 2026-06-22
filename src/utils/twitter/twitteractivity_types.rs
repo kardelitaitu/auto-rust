@@ -720,10 +720,7 @@ mod tests {
             EngagementOutcome::ElementNotFound,
             EngagementOutcome::Unverified
         );
-        assert_ne!(
-            EngagementOutcome::Unverified,
-            EngagementOutcome::Failed
-        );
+        assert_ne!(EngagementOutcome::Unverified, EngagementOutcome::Failed);
     }
 
     #[test]
@@ -744,10 +741,7 @@ mod tests {
             format!("{:?}", EngagementOutcome::ElementNotFound),
             "ElementNotFound"
         );
-        assert_eq!(
-            format!("{:?}", EngagementOutcome::Unverified),
-            "Unverified"
-        );
+        assert_eq!(format!("{:?}", EngagementOutcome::Unverified), "Unverified");
         assert_eq!(format!("{:?}", EngagementOutcome::Failed), "Failed");
     }
 

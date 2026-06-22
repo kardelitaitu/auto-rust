@@ -22,11 +22,11 @@ Before implementing, review these existing utilities you can leverage:
 | Page size | `src/utils/page_size.rs` | `get_viewport(page)`, `get_element_center(page, selector)` |
 | Block media | `src/utils/blockmedia.rs` | `block_heavy_resources(page)` — block images/videos for speed |
 | Profiles | `src/utils/profile.rs` | `BrowserProfile` (21 presets), `ProfileParam`, `randomize_profile()` |
-| Config | `src/config.rs` | `Config` struct, TOML loader, env overrides, validation |
+| Config | `src/config/` | `Config` struct, TOML loader, env overrides, validation (`src/config/mod.rs`, `src/config/validation.rs`) |
 | Task runner | `task/mod.rs` + `task/cookiebot.rs`, `task/pageview.rs` | How to register, `perform_task` retry loop, `TaskResult` |
 | Metrics | `src/metrics.rs` | `MetricsCollector`, `RunSummary` JSON export |
-| Validation | `src/validation/task.rs` | Payload validation per-task |
-| CLI | `src/cli.rs` | `cargo run twitterActivity`, or `cargo run twitterActivity cycles=7` |
+| Validation | `src/validation/` | Payload validation per-task (`src/validation/mod.rs`, `src/validation/task_registry.rs`) |
+| CLI | `src/cli/` | `cargo run twitterActivity`, or `cargo run twitterActivity cycles=7` (`src/cli/mod.rs`, `src/cli/parser.rs`) |
 
 ---
 

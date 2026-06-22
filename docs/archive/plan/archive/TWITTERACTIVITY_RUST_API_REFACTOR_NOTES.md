@@ -43,11 +43,12 @@ The cursor overlay never moves because many twitteractivity functions use direct
 ### Phase 3: Convert Engagement Functions
 - [ ] Convert `retweet_tweet` to use coordinate-based clicking
 - [ ] Convert `follow_from_tweet` to use coordinate-based clicking
-- [ ] Convert `like_at_position` (already uses Rust API - verify)
+- [x] ~~Convert `like_at_position`~~ → Renamed to `like_tweet` (uses Rust API)
 
 ### Phase 4: Convert Utility Functions
 - [ ] Convert popup dismissal functions if they use JavaScript clicks
-- [ ] Convert cookie banner dismissal if it uses JavaScript clicks
+- [x] ~~Convert cookie banner dismissal~~ → `dismiss_cookie_banner` already uses Rust API
+- [x] ~~Convert `dismiss_signup_nag`~~ → Removed (no longer exists in codebase)
 
 ### Phase 5: Testing
 - [ ] Test all converted functions with cursor overlay enabled

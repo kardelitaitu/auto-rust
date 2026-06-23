@@ -425,7 +425,11 @@ impl LocalBrowserConnector {
                 if let Ok(version_data) = resp.json::<serde_json::Value>().await {
                     if let Some(ws_url) = Self::extract_ws_url_from_version(&version_data) {
                         info!("Found {browser_type} browser on port {port}");
-                        return Some(Self::make_local_browser_capability(port, browser_type, &ws_url));
+                        return Some(Self::make_local_browser_capability(
+                            port,
+                            browser_type,
+                            &ws_url,
+                        ));
                     }
                 }
             }
@@ -707,7 +711,10 @@ mod tests {
 
     #[test]
     fn test_parse_port_value_valid_leading_zeros() {
-        assert_eq!(LocalBrowserConnector::parse_port_value("008080"), Some(8080));
+        assert_eq!(
+            LocalBrowserConnector::parse_port_value("008080"),
+            Some(8080)
+        );
     }
 
     #[test]
@@ -771,20 +778,15 @@ mod tests {
     fn test_parse_port_env_var_not_set_returns_default() {
         // When env var is not set, should return the default
         // Use a unique var name to avoid collision with real env
-        let result = LocalBrowserConnector::parse_port_env(
-            "_TEST_UNSET_VAR_SHOULD_NOT_EXIST_",
-            8080,
-        );
+        let result =
+            LocalBrowserConnector::parse_port_env("_TEST_UNSET_VAR_SHOULD_NOT_EXIST_", 8080);
         assert_eq!(result, 8080);
     }
 
     #[test]
     fn test_parse_port_env_var_empty_returns_default() {
         // When env var is set to empty, parse_port_value returns None -> default
-        let result = LocalBrowserConnector::parse_port_env(
-            "_TEST_EMPTY_PARSE_PORT_",
-            8080,
-        );
+        let result = LocalBrowserConnector::parse_port_env("_TEST_EMPTY_PARSE_PORT_", 8080);
         // This depends on whether the env var is actually set; it's fine to use default
         assert_eq!(result, 8080);
     }
@@ -874,7 +876,9 @@ mod tests {
     #[test]
     fn test_make_local_browser_capability_brave() {
         let caps = LocalBrowserConnector::make_local_browser_capability(
-            9001, "Brave", "ws://127.0.0.1:9001/devtools/page/ABC",
+            9001,
+            "Brave",
+            "ws://127.0.0.1:9001/devtools/page/ABC",
         );
         assert_eq!(caps.id, "Brave-9001");
         assert_eq!(caps.name, "Brave on port 9001");
@@ -886,7 +890,9 @@ mod tests {
     #[test]
     fn test_make_local_browser_capability_chrome() {
         let caps = LocalBrowserConnector::make_local_browser_capability(
-            9222, "Chrome", "ws://127.0.0.1:9222/devtools/page/DEF",
+            9222,
+            "Chrome",
+            "ws://127.0.0.1:9222/devtools/page/DEF",
         );
         assert_eq!(caps.id, "Chrome-9222");
         assert_eq!(caps.name, "Chrome on port 9222");
@@ -898,7 +904,9 @@ mod tests {
     #[test]
     fn test_make_local_browser_capability_edge_port() {
         let caps = LocalBrowserConnector::make_local_browser_capability(
-            1, "Edge", "ws://127.0.0.1:1/devtools",
+            1,
+            "Edge",
+            "ws://127.0.0.1:1/devtools",
         );
         assert_eq!(caps.id, "Edge-1");
         assert_eq!(caps.name, "Edge on port 1");
@@ -910,7 +918,9 @@ mod tests {
     #[test]
     fn test_make_local_browser_capability_max_port() {
         let caps = LocalBrowserConnector::make_local_browser_capability(
-            65535, "Chrome", "ws://127.0.0.1:65535/devtools",
+            65535,
+            "Chrome",
+            "ws://127.0.0.1:65535/devtools",
         );
         assert_eq!(caps.id, "Chrome-65535");
         assert_eq!(caps.name, "Chrome on port 65535");
@@ -922,7 +932,9 @@ mod tests {
     #[test]
     fn test_make_local_browser_capability_ws_url_special_chars() {
         let caps = LocalBrowserConnector::make_local_browser_capability(
-            9222, "Chrome", "ws://127.0.0.1:9222/devtools/page/abc-123_def",
+            9222,
+            "Chrome",
+            "ws://127.0.0.1:9222/devtools/page/abc-123_def",
         );
         assert_eq!(caps.ws_url, "ws://127.0.0.1:9222/devtools/page/abc-123_def");
     }

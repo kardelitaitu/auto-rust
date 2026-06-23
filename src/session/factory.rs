@@ -377,9 +377,7 @@ mod tests {
     #[test]
     fn test_factory_builder_partial_chain() {
         // Only set max_workers, verify defaults for others
-        let factory = SessionFactoryBuilder::new()
-            .max_workers(12)
-            .build();
+        let factory = SessionFactoryBuilder::new().max_workers(12).build();
 
         assert_eq!(factory.connection_timeout_ms(), 30000, "default timeout");
         assert_eq!(factory.max_workers(), 12, "overridden workers");
@@ -388,9 +386,7 @@ mod tests {
 
     #[test]
     fn test_factory_builder_cursor_overlay_independent() {
-        let factory = SessionFactoryBuilder::new()
-            .cursor_overlay_ms(150)
-            .build();
+        let factory = SessionFactoryBuilder::new().cursor_overlay_ms(150).build();
 
         assert_eq!(factory.connection_timeout_ms(), 30000, "default timeout");
         assert_eq!(factory.max_workers(), 3, "default workers");

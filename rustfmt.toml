@@ -10,14 +10,5 @@ use_small_heuristics = "Default"
 # Use spaces for indentation (4 spaces per tab)
 tab_spaces = 4
 
-# How imports should be grouped and sorted
-imports_granularity = "Module"
-
-# Binary and hexadecimal literals with separator (e.g., 0xDEAD_BEEF)
-hex_literal_case = "Upper"
-
-# Combine control flow expressions on one line when they fit
-combine_control_expr = true
-
 # Use field initializer shorthand when possible
 use_field_init_shorthand = true

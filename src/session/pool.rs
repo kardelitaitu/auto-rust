@@ -629,10 +629,7 @@ mod tests {
             normalize_browser_token("http://brave:8080/path"),
             "httpbrave8080path"
         );
-        assert_eq!(
-            normalize_browser_token("chrome.beta.1"),
-            "chromebeta1"
-        );
+        assert_eq!(normalize_browser_token("chrome.beta.1"), "chromebeta1");
     }
 
     #[test]

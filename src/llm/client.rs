@@ -818,20 +818,18 @@ mod tests {
     #[test]
     fn test_apply_all_env_vars_together() {
         let config = LlmConfig::default();
-        let result = apply_env_overrides(config, |key| {
-            match key {
-                "LLM_PROVIDER" => Some("openrouter".to_string()),
-                "OLLAMA_URL" => Some("http://ollama:11434".to_string()),
-                "OLLAMA_MODEL" => Some("llama3".to_string()),
-                "OPENROUTER_API_KEY" => Some("sk-key".to_string()),
-                "OPENROUTER_MODEL" => Some("gpt-4".to_string()),
-                "NVIDIA_API_KEY" => Some("nv-key".to_string()),
-                "NVIDIA_MODEL" => Some("nemotron".to_string()),
-                "NVIDIA_BASE_URL" => Some("https://nvidia.api".to_string()),
-                "OPENROUTER_MODEL_FALLBACK" => Some("gpt-3.5".to_string()),
-                "OPENROUTER_MODEL_FALLBACK_2" => Some("claude".to_string()),
-                _ => None,
-            }
+        let result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("openrouter".to_string()),
+            "OLLAMA_URL" => Some("http://ollama:11434".to_string()),
+            "OLLAMA_MODEL" => Some("llama3".to_string()),
+            "OPENROUTER_API_KEY" => Some("sk-key".to_string()),
+            "OPENROUTER_MODEL" => Some("gpt-4".to_string()),
+            "NVIDIA_API_KEY" => Some("nv-key".to_string()),
+            "NVIDIA_MODEL" => Some("nemotron".to_string()),
+            "NVIDIA_BASE_URL" => Some("https://nvidia.api".to_string()),
+            "OPENROUTER_MODEL_FALLBACK" => Some("gpt-3.5".to_string()),
+            "OPENROUTER_MODEL_FALLBACK_2" => Some("claude".to_string()),
+            _ => None,
         });
         assert_eq!(result.provider, LlmProvider::OpenRouter);
         assert_eq!(result.ollama.base_url, "http://ollama:11434");

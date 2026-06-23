@@ -25,7 +25,6 @@ use rand_distr::{Distribution, Normal};
 /// let roll = random_in_range(1, 6); // Returns a value between 1 and 6
 /// assert!(roll >= 1 && roll <= 6);
 /// ```
-#[allow(dead_code)]
 #[must_use]
 pub fn random_in_range(min: u64, max: u64) -> u64 {
     let mut rng = rand::thread_rng();
@@ -59,7 +58,6 @@ pub fn random_in_range(min: u64, max: u64) -> u64 {
 /// let val = gaussian(100.0, 10.0, 80.0, 120.0);
 /// assert!(val >= 80.0 && val <= 120.0);
 /// ```
-#[allow(dead_code)]
 #[cfg(test)]
 const MAX_GAUSSIAN_ITERATIONS: u32 = 1000;
 
@@ -75,6 +73,7 @@ pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
         return mean.clamp(min, max);
     }
 
+    #[allow(clippy::expect_used)]
     let normal = Normal::new(mean, std_dev)
         .expect("Failed to create normal distribution - standard deviation must be positive");
     let mut rng = rand::thread_rng();

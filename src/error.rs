@@ -16,7 +16,11 @@ pub type Result<T> = std::result::Result<T, OrchestratorError>;
 
 /// Central error type for the orchestrator framework.
 /// Categorizes errors by domain for better handling and reporting.
+///
+/// This enum is `#[non_exhaustive]` — new variants can be added without
+/// a breaking change. Use a wildcard arm (`_ =>`) in match statements.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum OrchestratorError {
     /// Browser automation errors (CDP, page control, element interaction)
     #[error("Browser error: {0}")]
@@ -48,7 +52,10 @@ pub enum OrchestratorError {
 }
 
 /// Browser automation errors.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum BrowserError {
     /// Failed to connect to browser CDP
     #[error("Failed to connect to browser: {0}")]
@@ -76,7 +83,10 @@ pub enum BrowserError {
 }
 
 /// Session management errors.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum SessionError {
     /// Session initialization failed
     #[error("Failed to initialize session: {0}")]
@@ -100,7 +110,10 @@ pub enum SessionError {
 }
 
 /// Task execution errors.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum TaskError {
     /// Task validation failed
     #[error("Task validation failed: {task_name} - {reason}")]
@@ -147,7 +160,10 @@ pub enum TaskError {
 }
 
 /// Configuration errors.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ConfigError {
     /// Failed to load config file
     #[error("Failed to load config from {path}: {reason}")]
@@ -175,7 +191,10 @@ pub enum ConfigError {
 }
 
 /// Network and API errors.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum NetworkError {
     /// HTTP request failed
     #[error("HTTP request failed: {url} - {status}")]

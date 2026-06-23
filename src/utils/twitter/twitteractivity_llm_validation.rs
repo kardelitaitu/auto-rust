@@ -101,11 +101,13 @@ fn truncate_to_word_boundary(text: &str, max_length: usize) -> String {
     format!("{}...", &text[..truncate_at])
 }
 
+#[allow(clippy::expect_used)]
 fn mentions_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"@\w+").expect("Failed to compile mentions regex"))
 }
 
+#[allow(clippy::expect_used)]
 fn hashtags_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"#(\w+)").expect("Failed to compile hashtags regex"))
@@ -141,15 +143,28 @@ fn remove_emojis(text: &str) -> String {
         .collect()
 }
 
-/// Checks if text contains banned AI words.
+/// Compiled regex for banned AI word detection (word-boundary matching).
+///
+/// Uses a single alternation regex to match any banned word at word boundaries.
+/// Pre-compiled via `OnceLock` to avoid re-compiling on every validation call.
+#[allow(clippy::expect_used)]
+fn banned_words_regex() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        let alts: Vec<String> = BANNED_WORDS.iter().map(|w| regex::escape(w)).collect();
+        let pattern = format!("\\b(?:{})\\b", alts.join("|"));
+        regex::Regex::new(&pattern).expect("Failed to compile banned-words alternation regex")
+    })
+}
+
+/// Checks if text contains banned AI words using word-boundary matching.
+///
+/// Uses `\b` word boundaries to avoid false positives on common substrings
+/// like `tapestry` matching inside longer words like `tapestries`.
 fn check_banned_words(text: &str) -> Option<String> {
     let text_lower = text.to_lowercase();
-    for word in BANNED_WORDS {
-        if text_lower.contains(word) {
-            return Some(word.to_string());
-        }
-    }
-    None
+    let re = banned_words_regex();
+    re.find(&text_lower).map(|m| m.as_str().to_string())
 }
 
 #[cfg(test)]

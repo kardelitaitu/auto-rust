@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 /*
 last audited 08-05-25 by RSA-Agent
 crate: auto-rust | status: SAFE | lint: CLEAN

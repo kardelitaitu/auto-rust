@@ -1,0 +1,4 @@
+[advisories]
+# async-std is a transitive dependency via chromiumoxide -> async-tungstenite
+# and cannot be removed. RUSTSEC-2025-0052: unmaintained.
+ignore = ["RUSTSEC-2025-0052"]

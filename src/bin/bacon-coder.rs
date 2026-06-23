@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 //! bacon-coder — Coder stage only.
 //!
 //! Reads an existing spec package and implements it using SEARCH/REPLACE blocks.

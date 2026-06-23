@@ -1,6 +1,6 @@
 # Auto
 
-last audited 16-06-26 by opencode
+last audited 23-06-26 by Buffy
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 ![Tokio](https://img.shields.io/badge/Tokio-000000?style=for-the-badge&logo=rust&logoColor=white)
@@ -738,10 +738,23 @@ This project is actively maintained and used in production environments.
 | Integration tests | ✅ |
 
 **Quality Metrics:**
-- **Extensive test coverage** across unit, integration, and doc test suites
+- **3,819 unit tests** — all passing, 0 failures, 6 skipped
+- **328 co-located tests** in `src/result/` — types.rs (57) + errors.rs (106), closing the pure-function coverage gap
+- **40 tests** for `twitteractivity_actions.rs` — `generate_quote_text` matches `generate_reply_text` coverage breadth
+- **8/8 check.ps1 steps** — spec-lint, build, format, clippy (4 passes), nextest — all green
 - **Feature-on validation**: `cargo check --features accessibility-locator` passing
 - **Pilot suite validation**: `cargo test --features accessibility-locator twitterfollow` passing
 - **Parser parity:** All edge cases verified vs Node.js reference
+
+**Miri (Undefined Behavior Detection):**
+
+```
+Target                 Status         Time
+--------------------- -------- ------------
+duration                 PASS          60s
+full                     PASS       2,496s
+No undefined behavior detected.
+```
 
 ### Browser Support
 

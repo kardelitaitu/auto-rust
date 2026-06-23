@@ -1,3 +1,10 @@
+#![deny(warnings)]
+#![deny(unsafe_code)]
+#![deny(clippy::unwrap_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+#![deny(clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::expect_used))]
+
 //! Portable gated-LLM automation pipeline.
 //!
 //! The bacon pipeline runs 4 stages: Observer → Strategist → Coder → Auditor.

@@ -13,18 +13,16 @@ use async_trait::async_trait;
 use log::info;
 
 /// Strategy for combining multiple engine decisions
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CombinationStrategy {
     /// Weighted average of all engine scores
     WeightedAverage,
     /// Pick the best (highest confidence) decision
-    #[allow(dead_code)]
     BestConfidence,
     /// Use LLM if available, fallback to Persona
-    #[allow(dead_code)]
     LLMPrimary,
     /// Always require Persona approval (conservative)
-    #[allow(dead_code)]
     Consensus,
 }
 

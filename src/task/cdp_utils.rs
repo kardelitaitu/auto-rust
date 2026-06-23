@@ -62,7 +62,7 @@ impl<T> CdpResultExt<T> for Result<T, CdpError> {
     }
 }
 
-/// Extension trait for Option<T> to provide context on None values.
+/// Extension trait for `Option<T>` to provide context on None values.
 ///
 /// Useful when a CDP operation returns None where a value was expected.
 ///

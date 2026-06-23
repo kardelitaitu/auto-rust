@@ -403,10 +403,9 @@ async fn is_already_following(api: &TaskContext, username: Option<&str>) -> Resu
         .unwrap_or(false))
 }
 
+#[allow(dead_code)]
 struct ButtonInfo {
-    #[allow(dead_code)]
     x: f64,
-    #[allow(dead_code)]
     y: f64,
     text: String,
     label: String,

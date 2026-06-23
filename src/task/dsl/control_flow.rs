@@ -32,7 +32,6 @@ impl Default for RetryConfig {
 }
 
 impl RetryConfig {
-    #[allow(dead_code)]
     pub fn from_action(action: &crate::task::dsl::Action) -> Self {
         match action {
             crate::task::dsl::Action::Retry {
@@ -675,9 +674,9 @@ mod tests {
             "item",
             &ForeachCollection::Array {
                 values: vec![
-                    serde_yml::Value::String("a".to_string()),
-                    serde_yml::Value::String("b".to_string()),
-                    serde_yml::Value::String("c".to_string()),
+                    serde_yaml::Value::String("a".to_string()),
+                    serde_yaml::Value::String("b".to_string()),
+                    serde_yaml::Value::String("c".to_string()),
                 ],
             },
             &[Action::Click {

@@ -8,6 +8,7 @@ use log::{info, warn};
 use std::time::Duration;
 use tokio::time::timeout;
 
+use super::state::parse_button_coordinates;
 use super::twitteractivity_humanized::human_pause;
 use super::twitteractivity_interact::click_retweet_button;
 use super::EngagementOutcome;
@@ -43,22 +44,12 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
         warn!("Timeout finding quote tweet button");
         return Ok(EngagementOutcome::Failed);
     };
-    let coords = result.value().and_then(|v| v.as_object());
-
-    let (x, y) = if let Some(obj) = coords {
-        (
-            obj.get("x").and_then(serde_json::Value::as_f64),
-            obj.get("y").and_then(serde_json::Value::as_f64),
-        )
-    } else {
-        (None, None)
-    };
-
-    let (x, y) = if let (Some(x), Some(y)) = (x, y) {
-        (x, y)
-    } else {
-        warn!("Quote tweet button not found");
-        return Ok(EngagementOutcome::ElementNotFound);
+    let (x, y) = match result.value().and_then(parse_button_coordinates) {
+        Some(coords) => coords,
+        None => {
+            warn!("Quote tweet button not found");
+            return Ok(EngagementOutcome::ElementNotFound);
+        }
     };
 
     // Human-like cursor movement then click
@@ -123,22 +114,12 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
         warn!("Timeout finding tweet button");
         return Ok(EngagementOutcome::Failed);
     };
-    let coords = button_result.value().and_then(|v| v.as_object());
-
-    let (tx, ty) = if let Some(obj) = coords {
-        (
-            obj.get("x").and_then(serde_json::Value::as_f64),
-            obj.get("y").and_then(serde_json::Value::as_f64),
-        )
-    } else {
-        (None, None)
-    };
-
-    let (tx, ty) = if let (Some(tx), Some(ty)) = (tx, ty) {
-        (tx, ty)
-    } else {
-        warn!("Tweet button not found");
-        return Ok(EngagementOutcome::ElementNotFound);
+    let (tx, ty) = match button_result.value().and_then(parse_button_coordinates) {
+        Some(coords) => coords,
+        None => {
+            warn!("Tweet button not found");
+            return Ok(EngagementOutcome::ElementNotFound);
+        }
     };
 
     // Human-like cursor movement then click

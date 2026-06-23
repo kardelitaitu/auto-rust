@@ -606,6 +606,75 @@ mod tests {
     }
 
     #[test]
+    fn tdd_green_normalize_control_and_whitespace() {
+        assert_eq!(normalize_browser_token("brave\tchrome"), "bravechrome");
+        assert_eq!(normalize_browser_token("brave\nchrome"), "bravechrome");
+        assert_eq!(normalize_browser_token("brave\0chrome"), "bravechrome");
+        assert_eq!(normalize_browser_token("brave chrome"), "bravechrome");
+        assert_eq!(normalize_browser_token("   "), "");
+        assert_eq!(normalize_browser_token("\t\n\r"), "");
+        assert_eq!(
+            normalize_browser_token("brave   chrome   beta"),
+            "bravechromebeta"
+        );
+    }
+
+    #[test]
+    fn tdd_green_normalize_url_like_input() {
+        assert_eq!(
+            normalize_browser_token("ws://localhost:9222"),
+            "wslocalhost9222"
+        );
+        assert_eq!(
+            normalize_browser_token("http://brave:8080/path"),
+            "httpbrave8080path"
+        );
+        assert_eq!(normalize_browser_token("chrome.beta.1"), "chromebeta1");
+    }
+
+    #[test]
+    fn tdd_green_normalize_already_normalized() {
+        assert_eq!(
+            normalize_browser_token("bravebrowser123"),
+            "bravebrowser123"
+        );
+        assert_eq!(normalize_browser_token("abc123"), "abc123");
+        assert_eq!(normalize_browser_token("a"), "a");
+    }
+
+    #[test]
+    fn tdd_green_normalize_all_special_chars() {
+        assert_eq!(
+            normalize_browser_token("!@#$%^&*()_+-=[]{}|;':\",./<>?~"),
+            ""
+        );
+        assert_eq!(
+            normalize_browser_token("!@#$%^&*()_+-=[]{}|;':\",./<>?~abc"),
+            "abc"
+        );
+    }
+
+    #[test]
+    fn tdd_green_normalize_leading_trailing_special() {
+        assert_eq!(normalize_browser_token("!!chrome!!"), "chrome");
+        assert_eq!(normalize_browser_token("___brave___"), "brave");
+        assert_eq!(normalize_browser_token("...firefox..."), "firefox");
+    }
+
+    #[test]
+    fn tdd_green_normalize_very_long_input() {
+        let long = "a".repeat(10_000);
+        let result = normalize_browser_token(&long);
+        assert_eq!(result.len(), 10_000);
+        assert_eq!(result, long);
+
+        let long_special = "a!".repeat(5_000); // 10k chars, half get filtered
+        let result = normalize_browser_token(&long_special);
+        assert_eq!(result.len(), 5_000);
+        assert!(result.chars().all(|c| c == 'a'));
+    }
+
+    #[test]
     fn tdd_green_capability_matches_special_chars_in_ids() {
         let manager = SessionPoolManager::default();
         let cap = BrowserCapabilities {

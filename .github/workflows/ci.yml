@@ -31,8 +31,17 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run clippy
+      - name: Run clippy (all targets)
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Clippy — ban .unwrap() in production code
+        run: cargo clippy --lib -- -D warnings -D clippy::unwrap_used
+
+      - name: Clippy — ban .expect() in production code
+        run: cargo clippy --lib -- -D warnings -D clippy::expect_used
+
+      - name: Clippy — ban unwrap/expect in binary targets
+        run: cargo clippy --bins -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
 
       - name: Run tests with nextest
         run: cargo nextest run --all-features --profile ci

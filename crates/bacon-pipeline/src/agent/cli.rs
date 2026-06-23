@@ -1,18 +1,21 @@
 use crate::core::PipelineConfig;
 use crate::llm::models::{LlmProvider, NvidiaConfig};
+
+#[cfg(test)]
 use std::ffi::OsString;
+#[cfg(test)]
 use std::sync::{LazyLock, Mutex};
 
-#[allow(dead_code)]
+#[cfg(test)]
 static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-#[allow(dead_code)]
+#[cfg(test)]
 struct EnvGuard {
     vars: Vec<(&'static str, Option<OsString>)>,
 }
 
+#[cfg(test)]
 impl EnvGuard {
-    #[allow(dead_code)]
     fn new(vars: &[(&'static str, Option<OsString>)]) -> Self {
         let mut collected = Vec::new();
         for &(name, ref value) in vars {
@@ -31,6 +34,7 @@ impl EnvGuard {
     }
 }
 
+#[cfg(test)]
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         for &(name, ref original) in &self.vars {

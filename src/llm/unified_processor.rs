@@ -18,24 +18,16 @@ pub struct UnifiedLLMProcessor {
     llm: crate::llm::Llm,
 }
 
-impl Default for UnifiedLLMProcessor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl UnifiedLLMProcessor {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            llm: crate::llm::Llm::new().expect("Failed to create LLM"),
-        }
-    }
-
-    pub fn try_new() -> anyhow::Result<Self> {
+    pub fn new() -> anyhow::Result<Self> {
         Ok(Self {
             llm: crate::llm::Llm::new()?,
         })
+    }
+
+    /// Deprecated alias for [`new()`].
+    pub fn try_new() -> anyhow::Result<Self> {
+        Self::new()
     }
 
     /// Process up to 20 tweet replies in a single LLM request.

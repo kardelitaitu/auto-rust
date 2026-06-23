@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 // bacon-test.rs - Comprehensive testing framework for Bacon autonomous coding system
 // Usage: cargo run --bin bacon-test [OPTIONS]
 
@@ -18,10 +20,10 @@ struct TestResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 enum TestStatus {
     Passed,
     Failed,
+    #[allow(dead_code)]
     Skipped,
     Warning,
 }

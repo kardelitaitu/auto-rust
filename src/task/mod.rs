@@ -123,17 +123,17 @@ async fn execute_single_attempt(
     let registry = registry::TaskRegistry::with_built_in_tasks();
     if let Some(task_def) = registry.get_task_definition(name) {
         // Execute as DSL task with parameters from CLI
-        // Convert serde_json::Value to serde_yml::Value for with_parameters
+        // Convert serde_json::Value to serde_yaml::Value for with_parameters
         // If conversion fails, log a warning and fall back to null payload
-        let payload_yaml = serde_yml::to_string(payload)
+        let payload_yaml = serde_yaml::to_string(payload)
             .map_err(|e| anyhow::anyhow!("Failed to convert payload: {e}"))
             .and_then(|s| {
-                serde_yml::from_str(&s).map_err(|e| anyhow::anyhow!("Failed to parse YAML: {e}"))
+                serde_yaml::from_str(&s).map_err(|e| anyhow::anyhow!("Failed to parse YAML: {e}"))
             })
             .inspect_err(|e| {
                 warn!("DSL payload conversion failed, using null payload: {e}");
             })
-            .unwrap_or(serde_yml::Value::Null);
+            .unwrap_or(serde_yaml::Value::Null);
         let mut executor =
             dsl::DslExecutor::new(api, task_def.clone()).with_parameters(&payload_yaml);
         return executor.execute().await;

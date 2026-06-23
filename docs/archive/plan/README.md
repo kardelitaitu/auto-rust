@@ -1,6 +1,6 @@
 # Plan Folder
 
-last audited 08-05-26 by Kilo
+last audited 08-05-26 by Kilo; refreshed 23-06-26 by Buffy — all references valid
 
 This folder is archive-only now.
 Active planning and proposals should go in `docs/specs/`.

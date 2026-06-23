@@ -27,7 +27,6 @@ use chromiumoxide::Page;
 /// The function simulates two touch points moving in opposite directions
 /// from a center point to create a realistic pinch gesture.
 /// Uses Bezier curves for natural finger movement trajectories.
-#[allow(dead_code)]
 pub async fn pinch_zoom(
     page: &Page,
     center_x: f64,
@@ -94,7 +93,6 @@ pub async fn pinch_zoom(
 ///
 /// # Returns
 /// Ok(()) if successful
-#[allow(dead_code)]
 async fn simulate_drag(
     page: &Page,
     start_x: f64,
@@ -157,7 +155,6 @@ async fn simulate_drag(
 ///
 /// # Returns
 /// Ok(()) if successful
-#[allow(dead_code)]
 pub async fn wheel_zoom(page: &Page, delta_y: f64, x: f64, y: f64) -> Result<()> {
     page.evaluate(format!(
         "const wheelEvent = new WheelEvent('wheel', {{ \
@@ -183,7 +180,6 @@ pub async fn wheel_zoom(page: &Page, delta_y: f64, x: f64, y: f64) -> Result<()>
 ///
 /// # Returns
 /// Ok(()) if successful
-#[allow(dead_code)]
 pub async fn set_zoom_level(page: &Page, scale: f64) -> Result<()> {
     page.evaluate(format!(
         "document.body.style.transform = 'scale({scale})'; \
@@ -205,7 +201,6 @@ pub async fn set_zoom_level(page: &Page, scale: f64) -> Result<()> {
 ///
 /// # Returns
 /// Ok(()) if successful
-#[allow(dead_code)]
 pub async fn reset_zoom(page: &Page) -> Result<()> {
     set_zoom_level(page, 1.0).await
 }
@@ -219,7 +214,6 @@ pub async fn reset_zoom(page: &Page) -> Result<()> {
 ///
 /// # Returns
 /// Ok(()) if successful
-#[allow(dead_code)]
 #[allow(clippy::cast_precision_loss)]
 pub async fn zoom_to(page: &Page, target_scale: f64, duration_ms: u64) -> Result<()> {
     // Get current zoom level (assuming we start at 1.0)

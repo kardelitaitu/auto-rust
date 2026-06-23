@@ -1,7 +1,7 @@
 //! Persistent run log — records pipeline execution outcomes.
 //!
 //! Writes to `.bacon/sessions/run-log.json` after each pipeline run.
-//! Uses JSON format to avoid `serde_yml` C-FFI U+2028/U+2029 panics.
+//! Uses JSON format to avoid `serde_yaml` C-FFI U+2028/U+2029 panics.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

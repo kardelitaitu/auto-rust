@@ -100,3 +100,125 @@ impl<'de> serde::Deserialize<'de> for DurationMs {
             .ok_or_else(|| serde::de::Error::custom("DurationMs must be non-zero"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_const_creates_valid_duration() {
+        let d = DurationMs::new_const(1);
+        assert_eq!(d.get(), 1);
+    }
+
+    #[test]
+    fn new_const_creates_large_value() {
+        let d = DurationMs::new_const(u64::MAX);
+        assert_eq!(d.get(), u64::MAX);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot be zero")]
+    fn new_const_panics_on_zero() {
+        let _ = DurationMs::new_const(0);
+    }
+
+    #[test]
+    fn new_returns_some_for_nonzero() {
+        assert!(DurationMs::new(1).is_some());
+        assert!(DurationMs::new(u64::MAX).is_some());
+    }
+
+    #[test]
+    fn new_returns_none_for_zero() {
+        assert!(DurationMs::new(0).is_none());
+    }
+
+    #[test]
+    fn mul_preserves_nonzero() {
+        let d = DurationMs::new(5).unwrap();
+        let r = d * 3;
+        assert_eq!(r.get(), 15);
+    }
+
+    #[test]
+    fn mul_by_one_returns_same() {
+        let d = DurationMs::new(100).unwrap();
+        assert_eq!((d * 1).get(), 100);
+    }
+
+    #[test]
+    fn mul_saturates_on_overflow() {
+        let d = DurationMs::new(u64::MAX).unwrap();
+        assert_eq!((d * 2).get(), u64::MAX);
+    }
+
+    #[test]
+    fn as_secs_converts_correctly() {
+        let d = DurationMs::new(5000).unwrap();
+        assert_eq!(d.as_secs(), 5);
+    }
+
+    #[test]
+    fn get_returns_raw_value() {
+        let d = DurationMs::new(42).unwrap();
+        assert_eq!(d.get(), 42);
+    }
+
+    #[test]
+    fn display_shows_raw_value() {
+        let d = DurationMs::new(777).unwrap();
+        assert_eq!(d.to_string(), "777");
+    }
+
+    #[test]
+    fn into_u64_converts() {
+        let d = DurationMs::new(999).unwrap();
+        let v: u64 = d.into();
+        assert_eq!(v, 999);
+    }
+
+    #[test]
+    fn into_std_duration_converts() {
+        let d = DurationMs::new(1500).unwrap();
+        let dur: std::time::Duration = d.into();
+        assert_eq!(dur.as_millis(), 1500);
+    }
+
+    #[test]
+    fn ord_works() {
+        let a = DurationMs::new(10).unwrap();
+        let b = DurationMs::new(20).unwrap();
+        assert!(a < b);
+        assert!(b > a);
+        assert_eq!(a, a);
+    }
+
+    #[test]
+    fn clone_is_equal() {
+        let a = DurationMs::new(55).unwrap();
+        assert_eq!(a, a.clone());
+    }
+
+    #[test]
+    fn mul_debug_assert_holds() {
+        let d = DurationMs::new(1).unwrap();
+        let r = d * 1;
+        assert_eq!(r.get(), 1);
+    }
+
+    #[test]
+    fn serde_roundtrip() {
+        let d = DurationMs::new(3000).unwrap();
+        let json = serde_json::to_string(&d).unwrap();
+        assert_eq!(json, "3000");
+        let back: DurationMs = serde_json::from_str(&json).unwrap();
+        assert_eq!(d, back);
+    }
+
+    #[test]
+    fn serde_rejects_zero() {
+        let result: Result<DurationMs, _> = serde_json::from_str("0");
+        assert!(result.is_err());
+    }
+}

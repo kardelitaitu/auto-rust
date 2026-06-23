@@ -1,6 +1,37 @@
 //! Click pipeline methods for TaskContext.
 
 use super::click_learning::{ClickAdaptation, ClickTimingContext};
+
+/// Total timeout for the entire click operation (primary + retries + fallback).
+pub(crate) const CLICK_TOTAL_TIMEOUT_SECS: u64 = 12;
+
+/// Maximum number of primary click attempts before fallback.
+pub(crate) const CLICK_MAX_ATTEMPTS: u32 = 3;
+
+/// Compute the backoff delay between click retry attempts.
+///
+/// Formula: `(150 + attempt * 180) + extra_stability_wait_ms / 2`, clamped to [100, 1000].
+/// The linear increase gives progressive backoff: 330ms, 510ms, 690ms for attempts 1..=3
+/// with zero extra stability wait.
+#[must_use]
+pub(crate) fn compute_click_retry_backoff(attempt: u32, extra_stability_wait_ms: u64) -> u64 {
+    (150 + (u64::from(attempt) * 180))
+        .saturating_add(extra_stability_wait_ms / 2)
+        .clamp(100, 1_000)
+}
+
+/// Compute the reaction delay for a specific click attempt.
+///
+/// Each subsequent attempt adds 18% more delay to give more settling time.
+/// Attempt 1: `reaction_delay_ms * 1.0`
+/// Attempt 2: `reaction_delay_ms * 1.18`
+/// Attempt 3: `reaction_delay_ms * 1.36`
+#[must_use]
+pub(crate) fn compute_primary_click_attempt_delay(reaction_delay_ms: u64, attempt: u32) -> u64 {
+    (reaction_delay_ms as f64 * (1.0 + (f64::from(attempt.saturating_sub(1)) * 0.18))).round()
+        as u64
+}
+
 use super::types::{ClickAndWaitOutcome, WaitForVisibleStatus};
 use super::{nativeclick_public_log_line, wrapper_timeout_context, TaskContext};
 use crate::capabilities::{dom, mouse, timing};
@@ -71,8 +102,6 @@ impl TaskContext {
     /// ```
     #[allow(clippy::cast_precision_loss)]
     pub async fn click(&self, selector: &str) -> Result<ClickOutcome> {
-        const CLICK_TOTAL_TIMEOUT_SECS: u64 = 12;
-        const CLICK_MAX_ATTEMPTS: u32 = 3;
         let click = &self.behavior_runtime.click;
         self.increment_run_counter(RUN_COUNTER_CLICK_ATTEMPTED, 1);
         if dom::selector_uses_accessibility_locator(selector) {
@@ -126,9 +155,8 @@ impl TaskContext {
             let mut last_error: Option<anyhow::Error> = None;
 
             for attempt in 1..=CLICK_MAX_ATTEMPTS {
-                let attempt_delay = (timing_profile.reaction_delay_ms as f64
-                    * (1.0 + (f64::from(attempt.saturating_sub(1)) * 0.18)))
-                    .round() as u64;
+                let attempt_delay =
+                    compute_primary_click_attempt_delay(timing_profile.reaction_delay_ms, attempt);
                 let attempt_offset = timing_profile.click_offset_px + (attempt as i32 - 1);
 
                 match self
@@ -145,9 +173,10 @@ impl TaskContext {
                     Err(err) => {
                         last_error = Some(err);
                         if attempt < CLICK_MAX_ATTEMPTS {
-                            let backoff_ms = (150 + (u64::from(attempt) * 180))
-                                .saturating_add(adaptation.extra_stability_wait_ms / 2)
-                                .clamp(100, 1_000);
+                            let backoff_ms = compute_click_retry_backoff(
+                                attempt,
+                                adaptation.extra_stability_wait_ms,
+                            );
                             timing::uniform_pause(backoff_ms, 30).await;
                         }
                     }
@@ -539,5 +568,139 @@ impl TaskContext {
         .await?;
         self.post_interaction_pause().await;
         Ok(outcome)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        compute_click_retry_backoff, compute_primary_click_attempt_delay, CLICK_MAX_ATTEMPTS,
+        CLICK_TOTAL_TIMEOUT_SECS,
+    };
+
+    // ========================================================================
+    // Constant Tests
+    // ========================================================================
+
+    #[test]
+    fn test_click_constants() {
+        assert_eq!(CLICK_TOTAL_TIMEOUT_SECS, 12);
+        assert_eq!(CLICK_MAX_ATTEMPTS, 3);
+    }
+
+    // ========================================================================
+    // compute_click_retry_backoff Tests
+    // ========================================================================
+
+    #[test]
+    fn test_backoff_attempt_1_no_extra_wait() {
+        let backoff = compute_click_retry_backoff(1, 0);
+        // (150 + 1*180) + 0/2 = 330, clamped [100, 1000] = 330
+        assert_eq!(backoff, 330);
+    }
+
+    #[test]
+    fn test_backoff_attempt_2_no_extra_wait() {
+        let backoff = compute_click_retry_backoff(2, 0);
+        // (150 + 2*180) + 0/2 = 510, clamped [100, 1000] = 510
+        assert_eq!(backoff, 510);
+    }
+
+    #[test]
+    fn test_backoff_attempt_3_no_extra_wait() {
+        let backoff = compute_click_retry_backoff(3, 0);
+        // (150 + 3*180) + 0/2 = 690, clamped [100, 1000] = 690
+        assert_eq!(backoff, 690);
+    }
+
+    #[test]
+    fn test_backoff_with_extra_stability_wait() {
+        let backoff = compute_click_retry_backoff(1, 200);
+        // (150 + 1*180) + 200/2 = 430, clamped [100, 1000] = 430
+        assert_eq!(backoff, 430);
+    }
+
+    #[test]
+    fn test_backoff_large_stability_wait_capped() {
+        let backoff = compute_click_retry_backoff(1, 5000);
+        // (150 + 1*180) + 5000/2 = 2830, clamped [100, 1000] = 1000
+        assert_eq!(backoff, 1000);
+    }
+
+    #[test]
+    fn test_backoff_attempt_0_returns_clamped() {
+        let backoff = compute_click_retry_backoff(0, 0);
+        // (150 + 0*180) + 0/2 = 150, clamped [100, 1000] = 150
+        assert_eq!(backoff, 150);
+    }
+
+    #[test]
+    fn test_backoff_minimum_clamp() {
+        // Use backoff_min to verify clamp floor (but formula always >= 150 for attempt >= 0)
+        let backoff = compute_click_retry_backoff(0, 0);
+        assert!(backoff >= 100);
+    }
+
+    // ========================================================================
+    // compute_primary_click_attempt_delay Tests
+    // ========================================================================
+
+    #[test]
+    fn test_attempt_delay_attempt_1_same_as_base() {
+        let delay = compute_primary_click_attempt_delay(300, 1);
+        // 300 * (1.0 + 0 * 0.18) = 300.0, rounded = 300
+        assert_eq!(delay, 300);
+    }
+
+    #[test]
+    fn test_attempt_delay_attempt_2_increased() {
+        let delay = compute_primary_click_attempt_delay(300, 2);
+        // 300 * (1.0 + 1 * 0.18) = 354.0, rounded = 354
+        assert_eq!(delay, 354);
+    }
+
+    #[test]
+    fn test_attempt_delay_attempt_3_further_increased() {
+        let delay = compute_primary_click_attempt_delay(300, 3);
+        // 300 * (1.0 + 2 * 0.18) = 408.0, rounded = 408
+        assert_eq!(delay, 408);
+    }
+
+    #[test]
+    fn test_attempt_delay_zero_base() {
+        let delay = compute_primary_click_attempt_delay(0, 1);
+        assert_eq!(delay, 0);
+    }
+
+    #[test]
+    fn test_attempt_delay_attempt_0_treated_as_attempt_1() {
+        // attempt 0: saturating_sub(1) = 0, so same as attempt 1
+        let delay = compute_primary_click_attempt_delay(300, 0);
+        assert_eq!(delay, 300);
+    }
+
+    #[test]
+    fn test_attempt_delay_rounding() {
+        // 100 * (1.0 + 1 * 0.18) = 118.0, rounded = 118
+        let delay = compute_primary_click_attempt_delay(100, 2);
+        assert_eq!(delay, 118);
+
+        // 100 * (1.0 + 2 * 0.18) = 136.0, rounded = 136
+        let delay = compute_primary_click_attempt_delay(100, 3);
+        assert_eq!(delay, 136);
+    }
+
+    #[test]
+    fn test_attempt_delay_larger_base() {
+        let delay = compute_primary_click_attempt_delay(500, 2);
+        // 500 * 1.18 = 590.0
+        assert_eq!(delay, 590);
+    }
+
+    #[test]
+    fn test_attempt_delay_high_attempt_still_reasonable() {
+        let delay = compute_primary_click_attempt_delay(200, 10);
+        // 200 * (1.0 + 9 * 0.18) = 200 * 2.62 = 524.0, rounded = 524
+        assert_eq!(delay, 524);
     }
 }

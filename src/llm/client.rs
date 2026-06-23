@@ -530,19 +530,18 @@ fn load_env_file() {
     }
 }
 
-pub fn create_llm_client_from_config() -> Result<LlmConfig> {
-    load_env_file();
-    let config_path = std::path::Path::new("config/llm.toml");
-
-    let mut config = if config_path.exists() {
-        let content = std::fs::read_to_string(config_path)?;
-        toml::from_str(&content)?
-    } else {
-        LlmConfig::default()
-    };
-
-    // Apply environment variable overrides
-    if let Ok(provider) = std::env::var("LLM_PROVIDER") {
+/// Apply environment variable overrides to an `LlmConfig`.
+///
+/// This is a pure function that takes a config and an environment lookup function,
+/// making it testable without touching real environment variables.
+/// The `get_env` callback receives an env var name and returns `Some(value)` if set.
+#[must_use]
+pub(crate) fn apply_env_overrides(
+    mut config: LlmConfig,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> LlmConfig {
+    // Provider override
+    if let Some(provider) = get_env("LLM_PROVIDER") {
         match provider.to_lowercase().as_str() {
             "openrouter" => config.provider = LlmProvider::OpenRouter,
             "nvidia" => config.provider = LlmProvider::Nvidia,
@@ -550,35 +549,34 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
         }
     }
 
-    if let Ok(url) = std::env::var("OLLAMA_URL") {
+    // Ollama overrides
+    if let Some(url) = get_env("OLLAMA_URL") {
         config.ollama.base_url = url;
     }
-
-    if let Ok(model) = std::env::var("OLLAMA_MODEL") {
+    if let Some(model) = get_env("OLLAMA_MODEL") {
         config.ollama.model = model;
     }
 
-    if let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") {
+    // OpenRouter overrides
+    if let Some(api_key) = get_env("OPENROUTER_API_KEY") {
         config.openrouter.api_key = api_key;
     }
-
-    if let Ok(model) = std::env::var("OPENROUTER_MODEL") {
+    if let Some(model) = get_env("OPENROUTER_MODEL") {
         config.openrouter.model = model;
     }
 
-    if let Ok(api_key) = std::env::var("NVIDIA_API_KEY") {
+    // NVIDIA overrides
+    if let Some(api_key) = get_env("NVIDIA_API_KEY") {
         config.nvidia.api_key = api_key;
     }
-
-    if let Ok(model) = std::env::var("NVIDIA_MODEL") {
+    if let Some(model) = get_env("NVIDIA_MODEL") {
         config.nvidia.model = model;
     }
-
-    if let Ok(base_url) = std::env::var("NVIDIA_BASE_URL") {
+    if let Some(base_url) = get_env("NVIDIA_BASE_URL") {
         config.nvidia.base_url = base_url;
     }
 
-    // Load fallback models from env vars
+    // Fallback models from env vars
     let mut fallbacks = Vec::new();
     for key in [
         "OPENROUTER_MODEL_FALLBACK",
@@ -586,13 +584,30 @@ pub fn create_llm_client_from_config() -> Result<LlmConfig> {
         "OPENROUTER_MODEL_FALLBACK_3",
         "OPENROUTER_MODEL_FALLBACK_4",
     ] {
-        if let Ok(fb_model) = std::env::var(key) {
+        if let Some(fb_model) = get_env(key) {
             if !fb_model.is_empty() {
                 fallbacks.push(fb_model);
             }
         }
     }
     config.openrouter.fallback_models = fallbacks;
+
+    config
+}
+
+pub fn create_llm_client_from_config() -> Result<LlmConfig> {
+    load_env_file();
+    let config_path = std::path::Path::new("config/llm.toml");
+
+    let config = if config_path.exists() {
+        let content = std::fs::read_to_string(config_path)?;
+        toml::from_str(&content)?
+    } else {
+        LlmConfig::default()
+    };
+
+    // Apply environment variable overrides
+    let config = apply_env_overrides(config, |key| std::env::var(key).ok());
 
     Ok(config)
 }
@@ -623,6 +638,243 @@ mod tests {
         let result = create_llm_client_from_config();
         // Either returns config or error due to missing file
         assert!(result.is_ok() || result.is_err());
+    }
+
+    // =========================================================================
+    // apply_env_overrides tests
+    // =========================================================================
+
+    #[test]
+    fn test_apply_no_env_vars_returns_config_unchanged() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config.clone(), |_| None);
+        assert_eq!(result.provider, config.provider);
+        assert_eq!(result.ollama.base_url, config.ollama.base_url);
+        assert_eq!(result.openrouter.api_key, config.openrouter.api_key);
+        assert!(result.openrouter.fallback_models.is_empty());
+    }
+
+    #[test]
+    fn test_apply_provider_openrouter() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("openrouter".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.provider, LlmProvider::OpenRouter);
+    }
+
+    #[test]
+    fn test_apply_provider_nvidia() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("nvidia".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.provider, LlmProvider::Nvidia);
+    }
+
+    #[test]
+    fn test_apply_provider_ollama() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("ollama".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.provider, LlmProvider::Ollama);
+    }
+
+    #[test]
+    fn test_apply_provider_case_insensitive() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("OpenRouter".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.provider, LlmProvider::OpenRouter);
+    }
+
+    #[test]
+    fn test_apply_provider_invalid_falls_back_to_ollama() {
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter, // Start as OpenRouter
+            ..LlmConfig::default()
+        };
+        let result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("invalid_provider".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.provider, LlmProvider::Ollama);
+    }
+
+    #[test]
+    fn test_apply_ollama_url() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "OLLAMA_URL" => Some("http://custom:11434".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.ollama.base_url, "http://custom:11434");
+    }
+
+    #[test]
+    fn test_apply_ollama_model() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "OLLAMA_MODEL" => Some("llama3.1:8b".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.ollama.model, "llama3.1:8b");
+    }
+
+    #[test]
+    fn test_apply_openrouter_api_key() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "OPENROUTER_API_KEY" => Some("sk-or-v1-abc123".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.openrouter.api_key, "sk-or-v1-abc123");
+    }
+
+    #[test]
+    fn test_apply_openrouter_model() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "OPENROUTER_MODEL" => Some("gpt-4o".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.openrouter.model, "gpt-4o");
+    }
+
+    #[test]
+    fn test_apply_nvidia_api_key() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "NVIDIA_API_KEY" => Some("nvapi-secret".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.nvidia.api_key, "nvapi-secret");
+    }
+
+    #[test]
+    fn test_apply_nvidia_model() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "NVIDIA_MODEL" => Some("meta/llama-3.1-8b".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.nvidia.model, "meta/llama-3.1-8b");
+    }
+
+    #[test]
+    fn test_apply_nvidia_base_url() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "NVIDIA_BASE_URL" => Some("https://custom.api.nvidia.com/v1".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.nvidia.base_url, "https://custom.api.nvidia.com/v1");
+    }
+
+    #[test]
+    fn test_apply_single_fallback_model() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "OPENROUTER_MODEL_FALLBACK" => Some("gpt-4o-mini".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.openrouter.fallback_models.len(), 1);
+        assert_eq!(result.openrouter.fallback_models[0], "gpt-4o-mini");
+    }
+
+    #[test]
+    fn test_apply_multiple_fallback_models() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "OPENROUTER_MODEL_FALLBACK" => Some("gpt-4o-mini".to_string()),
+            "OPENROUTER_MODEL_FALLBACK_2" => Some("claude-3-haiku".to_string()),
+            "OPENROUTER_MODEL_FALLBACK_3" => Some("gemini-1.5-flash".to_string()),
+            "OPENROUTER_MODEL_FALLBACK_4" => Some("mistral-small".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.openrouter.fallback_models.len(), 4);
+        assert_eq!(result.openrouter.fallback_models[0], "gpt-4o-mini");
+        assert_eq!(result.openrouter.fallback_models[1], "claude-3-haiku");
+        assert_eq!(result.openrouter.fallback_models[2], "gemini-1.5-flash");
+        assert_eq!(result.openrouter.fallback_models[3], "mistral-small");
+    }
+
+    #[test]
+    fn test_apply_empty_fallback_model_skipped() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "OPENROUTER_MODEL_FALLBACK" => Some("".to_string()),
+            _ => None,
+        });
+        assert!(result.openrouter.fallback_models.is_empty());
+    }
+
+    #[test]
+    fn test_apply_all_env_vars_together() {
+        let config = LlmConfig::default();
+        let result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("openrouter".to_string()),
+            "OLLAMA_URL" => Some("http://ollama:11434".to_string()),
+            "OLLAMA_MODEL" => Some("llama3".to_string()),
+            "OPENROUTER_API_KEY" => Some("sk-key".to_string()),
+            "OPENROUTER_MODEL" => Some("gpt-4".to_string()),
+            "NVIDIA_API_KEY" => Some("nv-key".to_string()),
+            "NVIDIA_MODEL" => Some("nemotron".to_string()),
+            "NVIDIA_BASE_URL" => Some("https://nvidia.api".to_string()),
+            "OPENROUTER_MODEL_FALLBACK" => Some("gpt-3.5".to_string()),
+            "OPENROUTER_MODEL_FALLBACK_2" => Some("claude".to_string()),
+            _ => None,
+        });
+        assert_eq!(result.provider, LlmProvider::OpenRouter);
+        assert_eq!(result.ollama.base_url, "http://ollama:11434");
+        assert_eq!(result.ollama.model, "llama3");
+        assert_eq!(result.openrouter.api_key, "sk-key");
+        assert_eq!(result.openrouter.model, "gpt-4");
+        assert_eq!(result.nvidia.api_key, "nv-key");
+        assert_eq!(result.nvidia.model, "nemotron");
+        assert_eq!(result.nvidia.base_url, "https://nvidia.api");
+        assert_eq!(result.openrouter.fallback_models.len(), 2);
+        assert_eq!(result.openrouter.fallback_models[0], "gpt-3.5");
+        assert_eq!(result.openrouter.fallback_models[1], "claude");
+    }
+
+    #[test]
+    fn test_apply_partial_env_vars() {
+        // Only set OpenRouter vars, leave others at default
+        let config = LlmConfig::default();
+        let default_url = config.ollama.base_url.clone();
+        let default_nvidia_key = config.nvidia.api_key.clone();
+
+        let result = apply_env_overrides(config, |key| match key {
+            "OPENROUTER_API_KEY" => Some("sk-key".to_string()),
+            "OPENROUTER_MODEL" => Some("gpt-4".to_string()),
+            _ => None,
+        });
+        // OpenRouter vars should be set
+        assert_eq!(result.openrouter.api_key, "sk-key");
+        assert_eq!(result.openrouter.model, "gpt-4");
+        // Other vars should remain at default
+        assert_eq!(result.ollama.base_url, default_url);
+        assert_eq!(result.nvidia.api_key, default_nvidia_key);
+        assert!(result.openrouter.fallback_models.is_empty());
+    }
+
+    #[test]
+    fn test_apply_does_not_mutate_input() {
+        let config = LlmConfig::default();
+        let original = config.clone();
+        let _result = apply_env_overrides(config, |key| match key {
+            "LLM_PROVIDER" => Some("nvidia".to_string()),
+            _ => None,
+        });
+        // Original should still have default provider
+        assert_eq!(original.provider, LlmProvider::Ollama);
     }
 
     #[test]

@@ -1,0 +1,14 @@
+# Rust Codebase Formatting Configuration
+# See https://rust-lang.github.io/rustfmt/ for details
+
+# Maximum width of each line
+max_width = 100
+
+# Preferred width of a single line, used for heuristics
+use_small_heuristics = "Default"
+
+# Use spaces for indentation (4 spaces per tab)
+tab_spaces = 4
+
+# Use field initializer shorthand when possible
+use_field_init_shorthand = true

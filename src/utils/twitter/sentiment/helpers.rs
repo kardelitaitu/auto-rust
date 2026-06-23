@@ -3,8 +3,10 @@
 //! Extracted from `sentiment/analyzer.rs` — spec 0020.
 
 use super::types::*;
-use crate::internal::text::truncate_chars;
 use serde_json::Value;
+
+// Re-export the canonical extract_tweet_text from actions module.
+pub(crate) use crate::utils::twitter::twitteractivity_actions::extract_tweet_text;
 
 // ============================================================================
 // Strategy Constants
@@ -358,21 +360,6 @@ pub(crate) fn score_to_sentiment(score: f32) -> Sentiment {
 // ============================================================================
 // Tweet-Level Analysis
 // ============================================================================
-
-pub(crate) fn extract_tweet_text(tweet_obj: &Value) -> String {
-    if let Some(text) = tweet_obj.get("text").and_then(|v| v.as_str()) {
-        return text.to_string();
-    }
-    if let Some(full) = tweet_obj.get("full_text").and_then(|v| v.as_str()) {
-        return full.to_string();
-    }
-    if let Some(obj) = tweet_obj.as_object() {
-        if let Some(rt) = obj.get("retweeted_status") {
-            return extract_tweet_text(rt);
-        }
-    }
-    truncate_chars(&tweet_obj.to_string(), 280)
-}
 
 // ============================================================================
 // Feed-Level Analysis
@@ -761,109 +748,10 @@ fn day_of_week_from_date(year: i32, month: u32, day: u32) -> u8 {
     ((epoch_days + 4).rem_euclid(7)) as u8
 }
 
-/// Compute a trending bias (-1.0 to 1.0) from tweet engagement signals.
-fn compute_trending_bias(tweet_obj: &Value) -> f32 {
-    let likes = tweet_obj
-        .get("metrics")
-        .and_then(|m| m.get("likes"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0) as f32;
-    let retweets = tweet_obj
-        .get("metrics")
-        .and_then(|m| m.get("retweets"))
-        .and_then(|v| v.as_f64())
-        .or_else(|| tweet_obj.get("retweet_count").and_then(|v| v.as_f64()))
-        .unwrap_or(0.0) as f32;
-    let replies = tweet_obj
-        .get("metrics")
-        .and_then(|m| m.get("replies"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0) as f32;
-
-    // Log-scale trending: higher engagement = more trending
-    let total = likes + retweets * 2.0 + replies * 1.5;
-    if total <= 0.0 {
-        return 0.0;
-    }
-
-    // Map engagement to a -1..1 scale via log
-    // 0 → 0.0, 10 → 0.3, 100 → 0.6, 1000 → 0.9
-    let log_score = (total + 1.0).ln() / 7.0; // ln(1)=0, ln(1000)≈6.9
-    log_score.clamp(-1.0_f32, 1.0_f32)
-}
-
-// ============================================================================
-// Conversation Pattern Detection
-// ============================================================================
-
-#[must_use]
-pub fn detect_conversation_indicators(text: &str) -> Vec<ConversationIndicator> {
-    let lower = text.to_lowercase();
-    let mut indicators = Vec::new();
-    if AGREEMENT_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Agreement);
-    }
-    if DISAGREEMENT_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Disagreement);
-    }
-    if QUESTION_PATTERNS.iter().any(|&p| lower.contains(p)) || text.contains('?') {
-        indicators.push(ConversationIndicator::Question);
-    }
-    if CLARIFICATION_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Clarification);
-    }
-    if HUMOR_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Humor);
-    }
-    if SUPPORT_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Support);
-    }
-    if CRITICISM_PATTERNS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Criticism);
-    }
-    if SARCASM_INDICATORS.iter().any(|&p| lower.contains(p)) {
-        indicators.push(ConversationIndicator::Sarcasm);
-    }
-    indicators
-}
-
-const AGREEMENT_PATTERNS: &[&str] = &[
-    "i agree",
-    "totally agree",
-    "absolutely",
-    "exactly",
-    "you're right",
-    "well said",
-];
-const DISAGREEMENT_PATTERNS: &[&str] = &[
-    "i disagree",
-    "totally disagree",
-    "you're wrong",
-    "not sure",
-    "doubt it",
-];
-const QUESTION_PATTERNS: &[&str] = &[
-    "what if",
-    "how come",
-    "why is",
-    "what do you",
-    "can you explain",
-];
-const CLARIFICATION_PATTERNS: &[&str] = &[
-    "to clarify",
-    "let me explain",
-    "what i mean",
-    "in other words",
-];
-const HUMOR_PATTERNS: &[&str] = &["lol", "haha", "😂", "🤣", "joke", "funny"];
-const SUPPORT_PATTERNS: &[&str] = &["i support", "good luck", "keep going", "you're doing great"];
-const CRITICISM_PATTERNS: &[&str] = &[
-    "that's bad",
-    "you shouldn't",
-    "that's wrong",
-    "disappointing",
-];
-const SARCASM_INDICATORS: &[&str] = &["oh sure", "yeah right", "as if", "oh please", "oh come on"];
+// Re-export the canonical compute_trending_bias and detect_conversation_indicators
+// from the shared state module (re-exported from state::types).
+pub(crate) use crate::utils::twitter::state::compute_trending_bias;
+pub use crate::utils::twitter::state::detect_conversation_indicators;
 
 // ============================================================================
 // Tests

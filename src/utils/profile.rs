@@ -145,7 +145,6 @@ impl ProfileParam {
 
     /// Returns randomized value within deviation range.
     /// Uses uniform distribution: base * (1 ± `deviation_pct/100`)
-    #[allow(dead_code)]
     #[must_use]
     pub fn random(&self) -> f64 {
         if self.deviation_pct == 0.0 {
@@ -157,7 +156,6 @@ impl ProfileParam {
     }
 
     /// Returns randomized value as u64.
-    #[allow(dead_code)]
     #[must_use]
     #[allow(clippy::cast_precision_loss)]
     pub fn random_u64(&self) -> u64 {
@@ -165,14 +163,12 @@ impl ProfileParam {
     }
 
     /// Returns randomized value as u32.
-    #[allow(dead_code)]
     #[must_use]
     pub fn random_u32(&self) -> u32 {
         self.random() as u32
     }
 
     /// Returns randomized value clamped to range.
-    #[allow(dead_code)]
     #[must_use]
     pub fn random_clamped(&self, min: f64, max: f64) -> f64 {
         self.random().clamp(min, max)

@@ -152,7 +152,7 @@ pub async fn generate_quote_commentary(
 pub async fn extract_tweet_context(
     api: &TaskContext,
 ) -> Result<(String, String, Vec<(String, String)>)> {
-    let js = twitteractivity_selectors::js_extract_tweet_context();
+    let js = twitteractivity_selectors::js_extract_all_tweets();
 
     let result = api.page().evaluate(js.to_string()).await?;
     let value = result.value().context("Failed to extract tweet context")?;

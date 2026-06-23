@@ -43,7 +43,7 @@ if (-not (Test-Path $specLint)) {
 Write-Host "Running spec-lint on $PackagePath..."
 $lintOutput = & pwsh -NoProfile -NonInteractive -File $specLint -Directory $packagePath 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "spec-lint failed for $PackagePath — aborting archive:`n$lintOutput"
+    Write-Error "spec-lint failed for $PackagePath - aborting archive:`n$lintOutput"
     exit 1
 }
 Write-Host "spec-lint passed"

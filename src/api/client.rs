@@ -297,7 +297,10 @@ fn is_retryable_status(status: StatusCode) -> bool {
 /// States of a circuit breaker for fault tolerance.
 /// Circuit breakers prevent cascading failures by temporarily stopping
 /// requests to services that are failing repeatedly.
+///
+/// `#[non_exhaustive]` — match with wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CircuitState {
     /// Circuit is closed - requests are allowed through normally
     Closed,
@@ -1060,7 +1063,9 @@ impl RetryPolicy {
                     if attempt >= self.max_retries {
                         break;
                     }
-                    if !is_retryable(last_error.as_ref().expect("last_error was just set")) {
+                    if !is_retryable(last_error.as_ref().unwrap_or_else(|| {
+                        unreachable!("last_error was just set in the branch above")
+                    })) {
                         break;
                     }
                     let delay = self.delay_for_attempt(attempt + 1);
@@ -1069,6 +1074,9 @@ impl RetryPolicy {
             }
         }
 
-        Err(last_error.expect("last_error must be Some if we reach here"))
+        // last_error is always Some at this point — the loop sets it on every failure
+        // and breaks only if max_retries exhausted or non-retryable error encountered
+        #[allow(clippy::expect_used)]
+        Err(last_error.expect("last_error must be Some if retry loop exhausted"))
     }
 }

@@ -155,7 +155,7 @@ mod tests {
             implementer: "pending".to_string(),
             priority: "medium".to_string(),
         };
-        let yaml = serde_yml::to_string(&meta).unwrap();
+        let yaml = serde_yaml::to_string(&meta).unwrap();
         std::fs::write(spec_dir.join("spec.yaml"), &yaml).unwrap();
         spec_dir
     }

@@ -202,9 +202,9 @@ pub struct MetricsCollector {
     task_history: Arc<RwLock<VecDeque<TaskMetrics>>>,
     /// Breakdown of failures by error kind
     failure_breakdown: Arc<RwLock<FxHashMap<TaskErrorKind, usize>>>,
-    /// Outcome breakdown by task name (Arc<String> for O(1) clone)
+    /// Outcome breakdown by task name (`Arc<String>` for O(1) clone)
     task_breakdown: Arc<RwLock<FxHashMap<Arc<String>, OutcomeBreakdown>>>,
-    /// Outcome breakdown by session id (Arc<String> for O(1) clone)
+    /// Outcome breakdown by session id (`Arc<String>` for O(1) clone)
     session_breakdown: Arc<RwLock<FxHashMap<Arc<String>, OutcomeBreakdown>>>,
     /// Structured run counters emitted by tasks during execution
     run_counters: Arc<RwLock<FxHashMap<String, usize>>>,
@@ -246,6 +246,7 @@ impl MetricsCollector {
             crate::bacon_core::Confidence::High => RUN_COUNTER_CONFIDENCE_HIGH,
             crate::bacon_core::Confidence::Medium => RUN_COUNTER_CONFIDENCE_MEDIUM,
             crate::bacon_core::Confidence::Low => RUN_COUNTER_CONFIDENCE_LOW,
+            _ => return, // future confidence levels (non_exhaustive)
         };
         self.increment_run_counter(name, 1);
     }
@@ -579,9 +580,9 @@ pub struct MetricsSnapshot {
     pub total_duration_ms: u64,
     /// Failure counts grouped by error kind
     pub failure_breakdown: FxHashMap<String, usize>,
-    /// Outcome counts grouped by task name (converted from Arc<String>)
+    /// Outcome counts grouped by task name (converted from `Arc<String>`)
     pub task_breakdown: FxHashMap<String, OutcomeBreakdown>,
-    /// Outcome counts grouped by session id (converted from Arc<String>)
+    /// Outcome counts grouped by session id (converted from `Arc<String>`)
     pub session_breakdown: FxHashMap<String, OutcomeBreakdown>,
 }
 
@@ -620,9 +621,9 @@ pub struct RunSummary {
     pub total_duration_ms: usize,
     /// Failure counts grouped by error kind
     pub failure_breakdown: FxHashMap<String, usize>,
-    /// Outcome counts grouped by task name (converted from Arc<String>)
+    /// Outcome counts grouped by task name (converted from `Arc<String>`)
     pub task_breakdown: FxHashMap<String, OutcomeBreakdown>,
-    /// Outcome counts grouped by session id (converted from Arc<String>)
+    /// Outcome counts grouped by session id (converted from `Arc<String>`)
     pub session_breakdown: FxHashMap<String, OutcomeBreakdown>,
     /// Optional task-specific metadata records
     #[serde(skip_serializing_if = "Vec::is_empty")]

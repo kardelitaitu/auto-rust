@@ -1,3 +1,5 @@
+<!-- last audited 23-06-26 by Buffy — archived implementation plan. Referenced files (twitteractivity_sentiment_domains.rs, twitteractivity_sentiment_llm.rs) were consolidated into src/utils/twitter/sentiment/ instead. Drift expected for archived docs. -->
+
 # TwitterActivity Sentiment Phase 3 & 4 Implemented
 
 **Status:** Implemented  

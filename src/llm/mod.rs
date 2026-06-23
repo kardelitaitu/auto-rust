@@ -60,12 +60,6 @@ impl Llm {
     }
 }
 
-impl Default for Llm {
-    fn default() -> Self {
-        Self::new().expect("Failed to create LLM client")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

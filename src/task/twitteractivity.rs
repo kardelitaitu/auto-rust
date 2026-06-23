@@ -265,19 +265,7 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
     while should_continue_feed_loop(&session, scrolls_performed, &task_config) {
         let now = Instant::now();
 
-        // Sleep if not yet time for a candidate scan
-        if now < next_candidate_scan {
-            let sleep_duration = next_candidate_scan - now;
-            let max_sleep = Duration::from_millis(250);
-            let remaining = session.remaining_time();
-            let chunk = sleep_duration.min(max_sleep).min(remaining);
-            if chunk > Duration::from_millis(0) {
-                tokio::time::sleep(chunk).await;
-            }
-            continue;
-        }
-
-        // Scroll to load new content
+        // Scroll to load new content — checked every iteration, independent of candidate scan timing
         if now >= next_scroll {
             if !scroll_feed(
                 api,
@@ -296,26 +284,37 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
             next_scroll = Instant::now() + scroll_interval;
         }
 
-        // Identify and process candidate tweets
-        next_candidate_scan = Instant::now() + candidate_scan_interval;
-        if scan_and_process_candidates(
-            api,
-            &persona,
-            &task_config,
-            &mut session,
-            scroll_interval,
-            &mut next_scroll,
-            &mut next_candidate_scan,
-        )
-        .await?
-        {
-            consecutive_empty_scans = 0;
+        // Check if it's time for a candidate scan
+        if now >= next_candidate_scan {
+            next_candidate_scan = Instant::now() + candidate_scan_interval;
+            if scan_and_process_candidates(
+                api,
+                &persona,
+                &task_config,
+                &mut session,
+                scroll_interval,
+                &mut next_scroll,
+                &mut next_candidate_scan,
+            )
+            .await?
+            {
+                consecutive_empty_scans = 0;
+            } else {
+                consecutive_empty_scans += 1;
+                warn!("[twitter] No candidates found (attempt {consecutive_empty_scans})");
+                if consecutive_empty_scans >= config.twitter_activity.max_consecutive_empty_scans {
+                    error!("[twitter] Too many empty scans, stopping task");
+                    break;
+                }
+            }
         } else {
-            consecutive_empty_scans += 1;
-            warn!("[twitter] No candidates found (attempt {consecutive_empty_scans})");
-            if consecutive_empty_scans >= config.twitter_activity.max_consecutive_empty_scans {
-                error!("[twitter] Too many empty scans, stopping task");
-                break;
+            // Brief sleep if not yet time for candidate scan, to avoid busy-waiting
+            let sleep_duration = next_candidate_scan - now;
+            let max_sleep = Duration::from_millis(250);
+            let remaining = session.remaining_time();
+            let chunk = sleep_duration.min(max_sleep).min(remaining);
+            if chunk > Duration::from_millis(0) {
+                tokio::time::sleep(chunk).await;
             }
         }
 

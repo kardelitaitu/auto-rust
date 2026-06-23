@@ -31,7 +31,10 @@ use log::{info, warn};
 use serde_json::Value;
 
 fn engagement_success(outcome: &EngagementOutcome) -> bool {
-    matches!(outcome, EngagementOutcome::Completed)
+    matches!(
+        outcome,
+        EngagementOutcome::Completed | EngagementOutcome::Unverified
+    )
 }
 
 fn follow_success(outcome: &FollowOutcome) -> bool {
@@ -154,32 +157,41 @@ pub async fn dispatch_action(
             if !validate_tweet_page(api, did_dive, "quote", tweet_id).await {
                 false
             } else {
-                let quote_text = if task_config.llm_enabled {
-                    let (author, text, replies) =
-                        extract_tweet_context(api).await.unwrap_or_else(|e| {
-                            warn!("Failed to extract tweet context for quote: {e}");
-                            ("unknown".to_string(), String::new(), Vec::new())
-                        });
-                    match generate_quote_commentary(api, &author, &text, replies).await {
-                        Ok(commentary) => {
-                            info!("Generated LLM quote: {commentary}");
-                            commentary
-                        }
-                        Err(e) => {
-                            warn!("LLM quote failed, using template: {e}");
-                            generate_quote_text(
-                                sentiment,
-                                counters.quote_tweets(),
-                                &task_config.sentiment_templates,
-                            )
-                        }
-                    }
-                } else {
+                let template_quote = || {
                     generate_quote_text(
                         sentiment,
                         counters.quote_tweets(),
                         &task_config.sentiment_templates,
                     )
+                };
+                let quote_text = if task_config.llm_enabled {
+                    match extract_tweet_context(api).await {
+                        Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
+                            match generate_quote_commentary(api, &author, &text, replies).await {
+                                Ok(commentary) => {
+                                    info!("Generated LLM quote: {commentary}");
+                                    commentary
+                                }
+                                Err(e) => {
+                                    warn!("LLM quote failed, using template: {e}");
+                                    template_quote()
+                                }
+                            }
+                        }
+                        Ok((_, ref text, _)) => {
+                            warn!(
+                                "Skipping LLM quote: extracted context is empty/unknown (text_len={}), using template",
+                                text.len()
+                            );
+                            template_quote()
+                        }
+                        Err(e) => {
+                            warn!("Failed to extract tweet context for quote: {e}, using template");
+                            template_quote()
+                        }
+                    }
+                } else {
+                    template_quote()
                 };
                 match quote_tweet(api, &quote_text).await {
                     Ok(outcome) => {
@@ -222,32 +234,41 @@ pub async fn dispatch_action(
             if !validate_tweet_page(api, did_dive, "reply", tweet_id).await {
                 false
             } else {
-                let reply_text = if task_config.llm_enabled {
-                    let (author, text, replies) =
-                        extract_tweet_context(api).await.unwrap_or_else(|e| {
-                            warn!("Failed to extract tweet context for reply: {e}");
-                            ("unknown".to_string(), String::new(), Vec::new())
-                        });
-                    match generate_reply(api, &author, &text, replies).await {
-                        Ok(reply) => {
-                            info!("Generated LLM reply: {reply}");
-                            reply
-                        }
-                        Err(e) => {
-                            warn!("LLM reply failed, using template: {e}");
-                            generate_reply_text(
-                                sentiment,
-                                counters.replies(),
-                                &task_config.sentiment_templates,
-                            )
-                        }
-                    }
-                } else {
+                let template_reply = || {
                     generate_reply_text(
                         sentiment,
                         counters.replies(),
                         &task_config.sentiment_templates,
                     )
+                };
+                let reply_text = if task_config.llm_enabled {
+                    match extract_tweet_context(api).await {
+                        Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
+                            match generate_reply(api, &author, &text, replies).await {
+                                Ok(reply) => {
+                                    info!("Generated LLM reply: {reply}");
+                                    reply
+                                }
+                                Err(e) => {
+                                    warn!("LLM reply failed, using template: {e}");
+                                    template_reply()
+                                }
+                            }
+                        }
+                        Ok((_, ref text, _)) => {
+                            warn!(
+                                "Skipping LLM reply: extracted context is empty/unknown (text_len={}), using template",
+                                text.len()
+                            );
+                            template_reply()
+                        }
+                        Err(e) => {
+                            warn!("Failed to extract tweet context for reply: {e}, using template");
+                            template_reply()
+                        }
+                    }
+                } else {
+                    template_reply()
                 };
                 match retry_with_backoff(
                     || reply_to_tweet(api, &reply_text),
@@ -351,4 +372,62 @@ pub async fn dispatch_action(
     }
 
     Ok(success)
+}
+
+#[cfg(test)]
+mod pure_function_tests {
+    use super::*;
+
+    // ====================================================================
+    // engagement_success
+    // ====================================================================
+
+    #[test]
+    fn engagement_success_completed() {
+        assert!(engagement_success(&EngagementOutcome::Completed));
+    }
+
+    #[test]
+    fn engagement_success_unverified() {
+        assert!(engagement_success(&EngagementOutcome::Unverified));
+    }
+
+    #[test]
+    fn engagement_success_failed() {
+        assert!(!engagement_success(&EngagementOutcome::Failed));
+    }
+
+    #[test]
+    fn engagement_success_element_not_found() {
+        assert!(!engagement_success(&EngagementOutcome::ElementNotFound));
+    }
+
+    #[test]
+    fn engagement_success_skipped() {
+        assert!(!engagement_success(&EngagementOutcome::AlreadyDone));
+    }
+
+    // ====================================================================
+    // follow_success
+    // ====================================================================
+
+    #[test]
+    fn follow_success_followed() {
+        assert!(follow_success(&FollowOutcome::Followed));
+    }
+
+    #[test]
+    fn follow_success_already_following() {
+        assert!(!follow_success(&FollowOutcome::AlreadyFollowing));
+    }
+
+    #[test]
+    fn follow_success_button_not_found() {
+        assert!(!follow_success(&FollowOutcome::ButtonNotFound));
+    }
+
+    #[test]
+    fn follow_success_failed() {
+        assert!(!follow_success(&FollowOutcome::Failed));
+    }
 }

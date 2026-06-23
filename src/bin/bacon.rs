@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 use auto::bacon_agent_nvidia::pipeline::Pipeline;
 use auto::bacon_core::cli_types::{Cli, Command, RunArgs, TestArgs};
 use clap::Parser;

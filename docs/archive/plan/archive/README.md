@@ -1,3 +1,5 @@
+*last audited 23-06-26 by Buffy — all 7 referenced files exist, `docs/specs/` path valid*
+
 # Archived Planning Docs
 
 These docs are historical reference only.

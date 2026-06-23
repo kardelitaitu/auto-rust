@@ -109,13 +109,18 @@ impl Hash for TweetId {
     }
 }
 
+// Note: These From impls panic on empty strings. Prefer `TweetId::new()` (returns Result)
+// or `from_unchecked()` for trusted input. `#[deprecated]` is not supported on trait impls,
+// but these are intentionally kept for backward compatibility with existing `.into()` callers.
 impl From<String> for TweetId {
+    #[allow(clippy::expect_used)]
     fn from(s: String) -> Self {
         Self::new(s).expect("TweetId::from called with empty string")
     }
 }
 
 impl From<&str> for TweetId {
+    #[allow(clippy::expect_used)]
     fn from(s: &str) -> Self {
         Self::new(s).expect("TweetId::from called with empty string")
     }
@@ -230,12 +235,14 @@ impl Hash for StatusUrl {
 }
 
 impl From<String> for StatusUrl {
+    #[allow(clippy::expect_used)]
     fn from(s: String) -> Self {
         Self::new(s).expect("StatusUrl::from called with empty string")
     }
 }
 
 impl From<&str> for StatusUrl {
+    #[allow(clippy::expect_used)]
     fn from(s: &str) -> Self {
         Self::new(s).expect("StatusUrl::from called with empty string")
     }
@@ -475,6 +482,7 @@ fn require_state(actual: ReplyFlowState, expected: ReplyFlowState) -> Result<(),
 ///     EngagementOutcome::Completed => println!("action done"),
 ///     EngagementOutcome::AlreadyDone => println!("was already done"),
 ///     EngagementOutcome::ElementNotFound => println!("button missing"),
+///     EngagementOutcome::Unverified => println!("action may have succeeded but could not confirm"),
 ///     EngagementOutcome::Failed => println!("action failed"),
 /// }
 /// ```
@@ -486,6 +494,12 @@ pub enum EngagementOutcome {
     AlreadyDone,
     /// Required UI element not found (button, composer, etc.).
     ElementNotFound,
+    /// Action may have been performed but verification could not confirm.
+    ///
+    /// This distinguishes "definitely failed" from "probably succeeded but
+    /// couldn't verify" — useful when the DOM shape after an action is
+    /// unexpected but not necessarily a failure.
+    Unverified,
     /// Action failed after attempt (network, timing, etc.).
     Failed,
 }
@@ -683,12 +697,14 @@ mod tests {
         let completed = EngagementOutcome::Completed;
         let already_done = EngagementOutcome::AlreadyDone;
         let not_found = EngagementOutcome::ElementNotFound;
+        let unverified = EngagementOutcome::Unverified;
         let failed = EngagementOutcome::Failed;
 
         // Verify Debug/Display for each variant
         assert!(!format!("{completed:?}").is_empty());
         assert!(!format!("{already_done:?}").is_empty());
         assert!(!format!("{not_found:?}").is_empty());
+        assert!(!format!("{unverified:?}").is_empty());
         assert!(!format!("{failed:?}").is_empty());
     }
 
@@ -702,8 +718,9 @@ mod tests {
         );
         assert_ne!(
             EngagementOutcome::ElementNotFound,
-            EngagementOutcome::Failed
+            EngagementOutcome::Unverified
         );
+        assert_ne!(EngagementOutcome::Unverified, EngagementOutcome::Failed);
     }
 
     #[test]
@@ -724,6 +741,7 @@ mod tests {
             format!("{:?}", EngagementOutcome::ElementNotFound),
             "ElementNotFound"
         );
+        assert_eq!(format!("{:?}", EngagementOutcome::Unverified), "Unverified");
         assert_eq!(format!("{:?}", EngagementOutcome::Failed), "Failed");
     }
 

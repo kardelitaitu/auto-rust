@@ -74,7 +74,7 @@ impl LlmStrategy {
             client: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
-                .expect("Failed to create HTTP client"),
+                .unwrap_or_default(),
         }
     }
 

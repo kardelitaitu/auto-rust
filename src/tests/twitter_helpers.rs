@@ -517,7 +517,7 @@ pub fn fatal_error(message: &str) -> String {
 
 /// Run an async block synchronously for tests that need it.
 /// Uses `tokio::runtime::Runtime` for single-threaded execution.
-#[allow(dead_code)]
+#[allow(dead_code, clippy::expect_used)]
 pub fn run_async<F, T>(future: F) -> T
 where
     F: std::future::Future<Output = T>,

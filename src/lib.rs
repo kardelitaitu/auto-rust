@@ -4,6 +4,13 @@ crate: auto-rust | status: SAFE | lint: CLEAN
 findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
 */
 
+#![deny(warnings)]
+#![deny(clippy::unwrap_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+#![deny(clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::expect_used))]
+#![deny(unsafe_op_in_unsafe_fn)]
+
 //! Public browser automation framework surface.
 //!
 //! Task-api verbs live on `TaskContext` and follow the short `api.*`

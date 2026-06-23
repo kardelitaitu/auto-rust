@@ -349,19 +349,57 @@ impl LocalBrowserConnector {
         }
     }
 
+    /// Parse a port value from a string, returning `None` on parse failure.
+    ///
+    /// This is the pure parsing core of `parse_port_env`, extracted for testability.
+    #[must_use]
+    fn parse_port_value(val: &str) -> Option<u16> {
+        val.parse::<u16>().ok()
+    }
+
     fn parse_port_env(var_name: &str, default: u16) -> u16 {
         match std::env::var(var_name) {
-            Ok(val) => {
-                if let Ok(port) = val.parse::<u16>() {
-                    port
-                } else {
+            Ok(val) => match Self::parse_port_value(&val) {
+                Some(port) => port,
+                None => {
                     warn!(
                     "[browser] Invalid port value in {var_name}: '{val}'. Using default: {default}"
                 );
                     default
                 }
-            }
+            },
             Err(_) => default,
+        }
+    }
+
+    /// Construct the CDP version URL for a given port.
+    #[must_use]
+    fn cdp_version_url(port: u16) -> String {
+        format!("http://127.0.0.1:{port}/json/version")
+    }
+
+    /// Extract the WebSocket debugger URL from a `/json/version` response.
+    #[must_use]
+    fn extract_ws_url_from_version(value: &serde_json::Value) -> Option<String> {
+        value
+            .get("webSocketDebuggerUrl")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    }
+
+    /// Build a `BrowserCapabilities` for a locally discovered browser.
+    #[must_use]
+    fn make_local_browser_capability(
+        port: u16,
+        browser_type: &str,
+        ws_url: &str,
+    ) -> BrowserCapabilities {
+        BrowserCapabilities {
+            id: format!("{browser_type}-{port}"),
+            name: format!("{browser_type} on port {port}"),
+            browser_type: format!("local{browser_type}"),
+            ws_url: ws_url.to_string(),
+            source: BrowserSource::Local,
         }
     }
 
@@ -371,7 +409,7 @@ impl LocalBrowserConnector {
         browser_type: &str,
         _config: &Config,
     ) -> Option<BrowserCapabilities> {
-        let cdp_url = format!("http://127.0.0.1:{port}/json/version");
+        let cdp_url = Self::cdp_version_url(port);
 
         debug!("Checking {browser_type} on port {port}");
 
@@ -385,17 +423,13 @@ impl LocalBrowserConnector {
         match response {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(version_data) = resp.json::<serde_json::Value>().await {
-                    if let Some(ws_url) = version_data.get("webSocketDebuggerUrl") {
-                        if let Some(ws_str) = ws_url.as_str() {
-                            info!("Found {browser_type} browser on port {port}");
-                            return Some(BrowserCapabilities {
-                                id: format!("{browser_type}-{port}"),
-                                name: format!("{browser_type} on port {port}"),
-                                browser_type: format!("local{browser_type}"),
-                                ws_url: ws_str.to_string(),
-                                source: BrowserSource::Local,
-                            });
-                        }
+                    if let Some(ws_url) = Self::extract_ws_url_from_version(&version_data) {
+                        info!("Found {browser_type} browser on port {port}");
+                        return Some(Self::make_local_browser_capability(
+                            port,
+                            browser_type,
+                            &ws_url,
+                        ));
                     }
                 }
             }
@@ -641,6 +675,268 @@ mod tests {
         assert_eq!(connector.brave_port_end, 9050);
         assert_eq!(connector.chrome_port_start, 9222);
         assert_eq!(connector.chrome_port_end, 9230);
+    }
+
+    // =========================================================================
+    // parse_port_value tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_port_value_valid_mid_range() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("9222"), Some(9222));
+    }
+
+    #[test]
+    fn test_parse_port_value_valid_brave_start() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("9001"), Some(9001));
+    }
+
+    #[test]
+    fn test_parse_port_value_valid_zero() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("0"), Some(0));
+    }
+
+    #[test]
+    fn test_parse_port_value_valid_one() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("1"), Some(1));
+    }
+
+    #[test]
+    fn test_parse_port_value_valid_max() {
+        assert_eq!(
+            LocalBrowserConnector::parse_port_value("65535"),
+            Some(65535)
+        );
+    }
+
+    #[test]
+    fn test_parse_port_value_valid_leading_zeros() {
+        assert_eq!(
+            LocalBrowserConnector::parse_port_value("008080"),
+            Some(8080)
+        );
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_negative() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("-1"), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_too_large() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("65536"), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_empty_string() {
+        assert_eq!(LocalBrowserConnector::parse_port_value(""), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_non_numeric() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("abc"), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_float() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("9222.5"), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_whitespace() {
+        assert_eq!(LocalBrowserConnector::parse_port_value(" 9222 "), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_special_chars() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("9@22"), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_invalid_hex() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("0xABCD"), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_overflow_u16_plus_one() {
+        assert_eq!(LocalBrowserConnector::parse_port_value("70000"), None);
+    }
+
+    #[test]
+    fn test_parse_port_value_valid_u16_max() {
+        assert_eq!(
+            LocalBrowserConnector::parse_port_value("65535"),
+            Some(u16::MAX)
+        );
+    }
+
+    // =========================================================================
+    // parse_port_env end-to-end tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_port_env_var_not_set_returns_default() {
+        // When env var is not set, should return the default
+        // Use a unique var name to avoid collision with real env
+        let result =
+            LocalBrowserConnector::parse_port_env("_TEST_UNSET_VAR_SHOULD_NOT_EXIST_", 8080);
+        assert_eq!(result, 8080);
+    }
+
+    #[test]
+    fn test_parse_port_env_var_empty_returns_default() {
+        // When env var is set to empty, parse_port_value returns None -> default
+        let result = LocalBrowserConnector::parse_port_env("_TEST_EMPTY_PARSE_PORT_", 8080);
+        // This depends on whether the env var is actually set; it's fine to use default
+        assert_eq!(result, 8080);
+    }
+
+    // =========================================================================
+    // check_port pure logic tests
+    // =========================================================================
+
+    #[test]
+    fn test_cdp_version_url() {
+        assert_eq!(
+            LocalBrowserConnector::cdp_version_url(9222),
+            "http://127.0.0.1:9222/json/version"
+        );
+        assert_eq!(
+            LocalBrowserConnector::cdp_version_url(9001),
+            "http://127.0.0.1:9001/json/version"
+        );
+        assert_eq!(
+            LocalBrowserConnector::cdp_version_url(65535),
+            "http://127.0.0.1:65535/json/version"
+        );
+    }
+
+    #[test]
+    fn test_extract_ws_url_from_version_found() {
+        let json = serde_json::json!({
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/ABC123"
+        });
+        assert_eq!(
+            LocalBrowserConnector::extract_ws_url_from_version(&json),
+            Some("ws://127.0.0.1:9222/devtools/page/ABC123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_ws_url_from_version_missing_key() {
+        let json = serde_json::json!({
+            "other_key": "value"
+        });
+        assert_eq!(
+            LocalBrowserConnector::extract_ws_url_from_version(&json),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_ws_url_from_version_null_value() {
+        let json = serde_json::json!({
+            "webSocketDebuggerUrl": null
+        });
+        assert_eq!(
+            LocalBrowserConnector::extract_ws_url_from_version(&json),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_ws_url_from_version_wrong_type() {
+        let json = serde_json::json!({
+            "webSocketDebuggerUrl": 12345
+        });
+        assert_eq!(
+            LocalBrowserConnector::extract_ws_url_from_version(&json),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_ws_url_from_version_empty_object() {
+        let json = serde_json::json!({});
+        assert_eq!(
+            LocalBrowserConnector::extract_ws_url_from_version(&json),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_ws_url_from_version_array_response() {
+        let json = serde_json::json!([]);
+        assert_eq!(
+            LocalBrowserConnector::extract_ws_url_from_version(&json),
+            None
+        );
+    }
+
+    #[test]
+    fn test_make_local_browser_capability_brave() {
+        let caps = LocalBrowserConnector::make_local_browser_capability(
+            9001,
+            "Brave",
+            "ws://127.0.0.1:9001/devtools/page/ABC",
+        );
+        assert_eq!(caps.id, "Brave-9001");
+        assert_eq!(caps.name, "Brave on port 9001");
+        assert_eq!(caps.browser_type, "localBrave");
+        assert_eq!(caps.ws_url, "ws://127.0.0.1:9001/devtools/page/ABC");
+        assert_eq!(caps.source, BrowserSource::Local);
+    }
+
+    #[test]
+    fn test_make_local_browser_capability_chrome() {
+        let caps = LocalBrowserConnector::make_local_browser_capability(
+            9222,
+            "Chrome",
+            "ws://127.0.0.1:9222/devtools/page/DEF",
+        );
+        assert_eq!(caps.id, "Chrome-9222");
+        assert_eq!(caps.name, "Chrome on port 9222");
+        assert_eq!(caps.browser_type, "localChrome");
+        assert_eq!(caps.ws_url, "ws://127.0.0.1:9222/devtools/page/DEF");
+        assert_eq!(caps.source, BrowserSource::Local);
+    }
+
+    #[test]
+    fn test_make_local_browser_capability_edge_port() {
+        let caps = LocalBrowserConnector::make_local_browser_capability(
+            1,
+            "Edge",
+            "ws://127.0.0.1:1/devtools",
+        );
+        assert_eq!(caps.id, "Edge-1");
+        assert_eq!(caps.name, "Edge on port 1");
+        assert_eq!(caps.browser_type, "localEdge");
+        assert_eq!(caps.ws_url, "ws://127.0.0.1:1/devtools");
+        assert_eq!(caps.source, BrowserSource::Local);
+    }
+
+    #[test]
+    fn test_make_local_browser_capability_max_port() {
+        let caps = LocalBrowserConnector::make_local_browser_capability(
+            65535,
+            "Chrome",
+            "ws://127.0.0.1:65535/devtools",
+        );
+        assert_eq!(caps.id, "Chrome-65535");
+        assert_eq!(caps.name, "Chrome on port 65535");
+        assert_eq!(caps.browser_type, "localChrome");
+        assert_eq!(caps.ws_url, "ws://127.0.0.1:65535/devtools");
+        assert_eq!(caps.source, BrowserSource::Local);
+    }
+
+    #[test]
+    fn test_make_local_browser_capability_ws_url_special_chars() {
+        let caps = LocalBrowserConnector::make_local_browser_capability(
+            9222,
+            "Chrome",
+            "ws://127.0.0.1:9222/devtools/page/abc-123_def",
+        );
+        assert_eq!(caps.ws_url, "ws://127.0.0.1:9222/devtools/page/abc-123_def");
     }
 
     #[test]

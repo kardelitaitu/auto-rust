@@ -89,7 +89,6 @@ pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
 /// # Details
 /// The delay is uniformly distributed between `min_ms` and `max_ms`.
 /// This function is asynchronous and uses Tokio's sleep timer.
-#[allow(dead_code)]
 pub async fn random_delay(min_ms: u64, max_ms: u64) {
     let delay = random_in_range(min_ms, max_ms);
     sleep(Duration::from_millis(delay)).await;
@@ -115,13 +114,11 @@ pub async fn random_delay(min_ms: u64, max_ms: u64) {
 /// human_pause(500, 20).await;
 /// # });
 /// ```
-#[allow(dead_code)]
 pub async fn human_pause(base_ms: u64, variance_pct: u32) {
     human_pause_with_cancel(None, base_ms, variance_pct).await;
 }
 
 /// Gaussian pause (same distribution as [`human_pause`]) with optional cooperative cancel.
-#[allow(dead_code)]
 #[allow(clippy::cast_precision_loss)]
 pub async fn human_pause_with_cancel(
     cancel: Option<&CancellationToken>,
@@ -141,13 +138,11 @@ pub async fn human_pause_with_cancel(
 ///
 /// The final delay is sampled uniformly from:
 /// `base_ms * (1 - variance_pct)` .. `base_ms * (1 + variance_pct)`
-#[allow(dead_code)]
 pub async fn uniform_pause(base_ms: u64, variance_pct: u32) {
     uniform_pause_with_cancel(None, base_ms, variance_pct).await;
 }
 
 /// Uniform random pause (same distribution as [`uniform_pause`]) with optional cooperative cancel.
-#[allow(dead_code)]
 #[allow(clippy::cast_precision_loss)]
 pub async fn uniform_pause_with_cancel(
     cancel: Option<&CancellationToken>,
@@ -173,7 +168,6 @@ pub async fn uniform_pause_with_cancel(
 /// # Details
 /// Creates 1-3 pause clusters with micro-jitters between them.
 /// This reduces rhythmic detection patterns that pure delays exhibit.
-#[allow(dead_code)]
 pub async fn clustered_pause(
     base_ms: u64,
     variance_pct: u32,
@@ -312,8 +306,12 @@ mod tests {
         let start = std::time::Instant::now();
         human_pause(20, 0).await;
         let elapsed = start.elapsed();
-        // Should be approximately 20ms (with tolerance)
-        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 50);
+        // Should be approximately 20ms (with tolerance for scheduler jitter under parallel load)
+        assert!(
+            (10..100).contains(&elapsed.as_millis()),
+            "human_pause(20, 0) took {}ms, expected ~20ms",
+            elapsed.as_millis()
+        );
     }
 
     #[tokio::test]

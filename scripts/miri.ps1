@@ -10,21 +10,24 @@
       - Unaligned pointer access
 
     Primary targets:
-      1. session/duration.rs — uses unsafe NonZeroU64::new_unchecked (2 call sites)
-      2. Full test suite — catch any UB from dependencies or transitive unsafe
+       1. session/duration.rs — uses unsafe NonZeroU64::new_unchecked (2 call sites)
+       2. Full test suite (include-list) — only pure-computation modules that don't
+          use tokio, temp dirs, or FFI. On Windows, Miri can't intercept syscalls
+          like CreateIoCompletionPort or GetTempPathW, so async/filesystem modules
+          are excluded. See the $includePatterns list for the current set.
 
     Miri requires the nightly toolchain. This script installs it if needed.
 
     Optimized for high-core-count machines (32+ threads, 64GB+ RAM).
 .EXAMPLE
-    .\miri.ps1                             # Run all targets (duration + full)
-    .\miri.ps1 -Target duration            # Only session/duration.rs tests (fast)
-    .\miri.ps1 -Target full                # Full suite under miri (slow, thorough)
-    .\miri.ps1 -MiriCpus 8                # Simulate 8 CPUs in miri (default: 4)
-    .\miri.ps1 -TestThreads 8             # Run 8 tests in parallel (default: 4)
-    .\miri.ps1 -FastMode                  # Skip slow checks (stacked borrows, leaks)
-    .\miri.ps1 -SkipInstall               # Skip nightly + miri install check
-    .\miri.ps1 -AutoTune:$false           # Disable auto-tuning (use default 4/4)
+    .\scripts\miri.ps1                    # Run all targets (duration + full)
+    .\scripts\miri.ps1 -Target duration   # Only session/duration.rs tests (fast)
+    .\scripts\miri.ps1 -Target full       # Full suite under miri (slow, thorough)
+    .\scripts\miri.ps1 -MiriCpus 8       # Simulate 8 CPUs in miri (default: 4)
+    .\scripts\miri.ps1 -TestThreads 8    # Run 8 tests in parallel (default: 4)
+    .\scripts\miri.ps1 -FastMode         # Skip slow checks (stacked borrows, leaks)
+    .\scripts\miri.ps1 -SkipInstall      # Skip nightly + miri install check
+    .\scripts\miri.ps1 -AutoTune:$false  # Disable auto-tuning (use default 4/4)
 #>
 [CmdletBinding()]
 param(
@@ -39,14 +42,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 $startTime = Get-Date
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $root) { $root = (Get-Location).Path }
-Set-Location $root
-
-if (-not (Test-Path "Cargo.toml")) {
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (-not $scriptDir) { $scriptDir = (Get-Location).Path }
+# Walk up from script directory to find project root (Cargo.toml)
+$root = $scriptDir
+while ($root -and -not (Test-Path (Join-Path $root "Cargo.toml"))) {
+    $root = Split-Path -Parent $root
+}
+if (-not $root -or -not (Test-Path (Join-Path $root "Cargo.toml"))) {
     Write-Error "ERROR: Must run from project root (where Cargo.toml is)"
     exit 1
 }
+Set-Location $root
 
 # ---- Helpers --------------------------------------------------------
 $colors = @{
@@ -135,6 +142,10 @@ if ($FastMode) {
 $env:MIRIFLAGS = $miriFlags -join " "
 Write-Status "  MIRIFLAGS: $env:MIRIFLAGS"
 
+# ---- Clean old logs ------------------------------------------------
+$logDir = $scriptDir
+Remove-Item -Path (Join-Path $logDir "miri-*.log") -Force -ErrorAction SilentlyContinue
+
 # ---- Define targets ------------------------------------------------
 $results = @()
 
@@ -150,14 +161,28 @@ function Invoke-MiriTest {
     Write-Status "  Running: cargo $($MiriArgs -join ' ')" "Yellow"
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $logFile = Join-Path $logDir "miri-$Name-$timestamp.log"
 
-    & cargo @MiriArgs 2>&1 | ForEach-Object { $_ }
+    # Tee output to both console and log file
+    & cargo @MiriArgs 2>&1 | Tee-Object -FilePath $logFile
     $exitCode = $LASTEXITCODE
     $elapsed = $sw.Elapsed.TotalSeconds
+
+    # Extract failure summary from log
+    $failures = @()
+    if ($exitCode -ne 0) {
+        $failures = Select-String -Path $logFile -Pattern "^test .+ FAILED" | ForEach-Object { $_.Line }
+    }
 
     $passed = $exitCode -eq 0
     $col = if ($passed) { "Green" } else { "Red" }
     Write-Status ("  {0} in {1:N0}s" -f $(if ($passed) { "PASS" } else { "FAIL (exit $exitCode)" }), $elapsed) $col
+    if ($failures.Count -gt 0) {
+        Write-Status "  Failed tests ($($failures.Count)):" "Red"
+        foreach ($f in $failures) { Write-Status "    $f" "Red" }
+    }
+    Write-Status "  Log: $logFile" "Cyan"
 
     return @{
         Name     = $Name
@@ -165,6 +190,7 @@ function Invoke-MiriTest {
         Passed   = $passed
         ExitCode = $exitCode
         Duration = $elapsed
+        LogFile  = $logFile
     }
 }
 
@@ -176,32 +202,59 @@ Write-Status "  Target: $Target" "Cyan"
 if ($Target -eq "duration" -or $Target -eq "both") {
     Write-Status "  Running duration target..." "Yellow"
     # Fast focused run on the only real unsafe code
-    $args = @("+nightly", "miri", "test", "--lib", "-j", $TestThreads.ToString(), "--", "session::duration")
-    $results += Invoke-MiriTest -Name "duration" -Desc "session::duration tests (unsafe NonZeroU64)" -MiriArgs $args
+    $miriArgs = @("+nightly", "miri", "test", "--lib", "-j", $TestThreads.ToString(), "--", "session::duration")
+    $results += Invoke-MiriTest -Name "duration" -Desc "session::duration tests (unsafe NonZeroU64)" -MiriArgs $miriArgs
 }
 
 if ($Target -eq "full" -or $Target -eq "both") {
     Write-Status "  Running full target..." "Yellow"
-    # Full suite — slow but thorough
-    # Skip tests that are known to be slow or use FFI/async that miri can't handle
-    $skipPatterns = @(
-        "api_client",           # HTTP/wiremock tests
-        "twitteractivity_",     # Browser automation (FFI)
-        "integration",          # Integration tests with external deps
-        "retry",                # Retry tests with real timeouts
-        "session::io",          # Session I/O with browser
-        "concurrent"            # Concurrency tests (miri is single-threaded)
+    # Only pure-computation modules — no async (tokio), no filesystem FFI, no IO.
+    # On Windows, ANY tokio runtime or filesystem op triggers FFI that Miri
+    # cannot intercept (CreateIoCompletionPort, GetTempPathW, etc.).
+    #
+    # Uses include-list (positional filters) for pure modules, plus --skip
+    # for any impure module that collides with an include pattern via
+    # substring matching. For example "logger::" matches health_logger::*,
+    # so health_logger:: is explicitly skipped.
+    $includePatterns = @(
+        "capabilities::"
+        "cli::"
+        "error::"
+        "logger::"          # also matches health_logger::* (skipped below)
+        "result::"
+        "state::"           # also matches adaptive::*state, orchestrator::state::*, session::state::* (all skipped)
+        "validation::"
     )
 
-    $skipArgs = @("--")
-    foreach ($pattern in $skipPatterns) {
-        $skipArgs += "--skip"
-        $skipArgs += $pattern
+    # Collision skips: modules that collide with an include pattern via
+    # substring match AND use tokio/filesystem FFI.
+    $collisionSkips = @(
+        "adaptive::"        # collides with state::; filesystem FFI
+        "health_logger::"   # collides with logger::; tokio
+        "logger::tests::test_file_logger_"  # collides with logger::; tempfile (GetTempPathW)
+        "orchestrator::"    # collides with state::; tokio
+        "session::"         # collides with state::; tokio
+        "state::overlay::"  # MSVC CRT triggers GetModuleHandleA on Windows
+    )
+
+    # Miri-incompatible skips: tests that fail under Miri's simulated clock
+    # (global clock is shared across threads — sleep in one test advances
+    # the clock for all, breaking Instant::elapsed() timing assertions).
+    $miriSkips = @(
+        "utils::twitter::state::tracking::tdd_tests::tdd_green_action_tracker_cooldown_expires"
+    )
+
+    $filterArgs = @("--") + $includePatterns
+    foreach ($pattern in ($collisionSkips + $miriSkips)) {
+        $filterArgs += "--skip"
+        $filterArgs += $pattern
     }
 
-    Write-Status "  Skipping FFI/async tests: $($skipPatterns -join ', ')" "Yellow"
-    $args = @("+nightly", "miri", "test", "--lib", "-j", $TestThreads.ToString()) + $skipArgs
-    $results += Invoke-MiriTest -Name "full" -Desc "Full test suite (excluding FFI/async)" -MiriArgs $args
+    Write-Status "  Including: $($includePatterns -join ', ')" "Yellow"
+    Write-Status "  Collision skips: $($collisionSkips -join ', ')" "Yellow"
+    Write-Status "  Miri-incompatible skips: $($miriSkips -join ', ')" "Yellow"
+    $miriArgs = @("+nightly", "miri", "test", "--lib", "-j", $TestThreads.ToString()) + $filterArgs
+    $results += Invoke-MiriTest -Name "full" -Desc "Pure-computation modules (~502 tests)" -MiriArgs $miriArgs
 }
 
 # ---- Report ---------------------------------------------------------
@@ -230,7 +283,12 @@ if ($allPassed -and $results.Count -gt 0) {
     Write-Status "No undefined behavior detected." "Green"
     exit 0
 } else {
-    Write-Status "MIRI DETECTED ISSUES — see output above." "Red"
+    Write-Status "MIRI DETECTED ISSUES" "Red"
+    foreach ($r in $results) {
+        if (-not $r.Passed) {
+            Write-Status "  Target '$($r.Name)' failed -- log: $($r.LogFile)" "Red"
+        }
+    }
     exit 1
 }
 

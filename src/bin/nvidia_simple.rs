@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 //! Simple NVIDIA AI agent for Bacon pipeline
 //!
 //! This agent calls the NVIDIA AI API endpoint using reqwest directly.

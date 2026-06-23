@@ -267,6 +267,7 @@ impl TaskContext {
     }
 
     #[must_use]
+    #[allow(clippy::expect_used)]
     pub fn metrics(&self) -> &MetricsCollector {
         self.metrics
             .as_ref()

@@ -25,7 +25,6 @@ pub struct ActionProfiler {
 
 impl ActionProfiler {
     /// Record an action execution.
-    #[allow(dead_code)]
     pub fn record(&mut self, duration: Duration, success: bool) {
         self.total_executions += 1;
         self.total_duration += duration;
@@ -119,7 +118,6 @@ impl ActionMetrics {
 }
 
 /// Record action execution in profiler (extracted from executor).
-#[allow(dead_code)]
 pub fn record_profile(
     profilers: &mut HashMap<String, ActionProfiler>,
     action_type: &str,

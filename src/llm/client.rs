@@ -696,8 +696,10 @@ mod tests {
 
     #[test]
     fn test_apply_provider_invalid_falls_back_to_ollama() {
-        let mut config = LlmConfig::default();
-        config.provider = LlmProvider::OpenRouter; // Start as OpenRouter
+        let config = LlmConfig {
+            provider: LlmProvider::OpenRouter, // Start as OpenRouter
+            ..LlmConfig::default()
+        };
         let result = apply_env_overrides(config, |key| match key {
             "LLM_PROVIDER" => Some("invalid_provider".to_string()),
             _ => None,

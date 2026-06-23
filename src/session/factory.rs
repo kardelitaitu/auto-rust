@@ -302,6 +302,7 @@ mod tests {
         let factory = builder.build();
         assert_eq!(factory.connection_timeout_ms(), 30000);
         assert_eq!(factory.max_workers(), 3);
+        assert_eq!(factory.cursor_overlay_ms(), 0);
     }
 
     #[test]
@@ -324,5 +325,86 @@ mod tests {
             .build();
 
         assert_eq!(factory.connection_timeout_ms(), 5000);
+    }
+
+    // ========================================================================
+    // Extended edge case tests
+    // ========================================================================
+
+    #[test]
+    fn test_factory_from_config_min_timeout() {
+        // DurationMs minimum (1ms) should be clamped to 5000
+        let config = crate::config::Config {
+            browser: crate::config::BrowserConfig {
+                connection_timeout_ms: DurationMs::new_const(1),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let factory = SessionFactory::from_config(&config);
+        assert_eq!(factory.connection_timeout_ms(), 5000);
+    }
+
+    #[test]
+    fn test_factory_from_config_large_timeout() {
+        let config = crate::config::Config {
+            browser: crate::config::BrowserConfig {
+                connection_timeout_ms: DurationMs::new_const(u64::MAX / 2),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let factory = SessionFactory::from_config(&config);
+        assert_eq!(factory.connection_timeout_ms(), u64::MAX / 2);
+    }
+
+    #[test]
+    fn test_factory_getters() {
+        let factory = SessionFactory::new(
+            15000,
+            8,
+            250,
+            crate::config::CircuitBreakerConfig::default(),
+        );
+
+        assert_eq!(factory.connection_timeout_ms(), 15000);
+        assert_eq!(factory.max_workers(), 8);
+        assert_eq!(factory.cursor_overlay_ms(), 250);
+    }
+
+    #[test]
+    fn test_factory_builder_partial_chain() {
+        // Only set max_workers, verify defaults for others
+        let factory = SessionFactoryBuilder::new()
+            .max_workers(12)
+            .build();
+
+        assert_eq!(factory.connection_timeout_ms(), 30000, "default timeout");
+        assert_eq!(factory.max_workers(), 12, "overridden workers");
+        assert_eq!(factory.cursor_overlay_ms(), 0, "default overlay");
+    }
+
+    #[test]
+    fn test_factory_builder_cursor_overlay_independent() {
+        let factory = SessionFactoryBuilder::new()
+            .cursor_overlay_ms(150)
+            .build();
+
+        assert_eq!(factory.connection_timeout_ms(), 30000, "default timeout");
+        assert_eq!(factory.max_workers(), 3, "default workers");
+        assert_eq!(factory.cursor_overlay_ms(), 150, "overridden overlay");
+    }
+
+    #[test]
+    fn test_factory_builder_debug_trait() {
+        let builder = SessionFactoryBuilder::default();
+        let debug_str = format!("{:?}", builder);
+        assert!(debug_str.contains("SessionFactoryBuilder"));
+        assert!(debug_str.contains("connection_timeout_ms"));
+        assert!(debug_str.contains("max_workers"));
+        assert!(debug_str.contains("cursor_overlay_ms"));
+        assert!(debug_str.contains("circuit_breaker_config"));
     }
 }

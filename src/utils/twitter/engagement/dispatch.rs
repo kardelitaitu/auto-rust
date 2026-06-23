@@ -41,6 +41,36 @@ fn follow_success(outcome: &FollowOutcome) -> bool {
     matches!(outcome, FollowOutcome::Followed)
 }
 
+fn log_engagement_failure(outcome: &EngagementOutcome, action: &str, tweet_id: &TweetId) {
+    match outcome {
+        EngagementOutcome::AlreadyDone => {
+            info!("Skipping {action} for {tweet_id}: already performed");
+        }
+        EngagementOutcome::ElementNotFound => {
+            warn!("Failed {action} for {tweet_id}: required UI element not found");
+        }
+        EngagementOutcome::Failed => {
+            warn!("Failed {action} for {tweet_id}: action execution failed");
+        }
+        _ => {}
+    }
+}
+
+fn log_follow_failure(outcome: &FollowOutcome, tweet_id: &TweetId) {
+    match outcome {
+        FollowOutcome::AlreadyFollowing => {
+            info!("Skipping follow for {tweet_id}: already following");
+        }
+        FollowOutcome::ButtonNotFound => {
+            warn!("Failed follow for {tweet_id}: follow button not found");
+        }
+        FollowOutcome::Failed => {
+            warn!("Failed follow for {tweet_id}: follow action failed");
+        }
+        _ => {}
+    }
+}
+
 /// Dispatch a single engagement action with full retry, validation, and metrics tracking.
 #[allow(clippy::too_many_arguments)]
 pub async fn dispatch_action(
@@ -82,7 +112,13 @@ pub async fn dispatch_action(
                 )
                 .await
                 {
-                    Ok(outcome) => engagement_success(&outcome),
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "like", tweet_id);
+                        }
+                        ok
+                    }
                     Err(e) => {
                         warn!("Like failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -101,7 +137,13 @@ pub async fn dispatch_action(
                     )
                     .await
                     {
-                        Ok(outcome) => engagement_success(&outcome),
+                        Ok(outcome) => {
+                            let ok = engagement_success(&outcome);
+                            if !ok {
+                                log_engagement_failure(&outcome, "like_at_position", tweet_id);
+                            }
+                            ok
+                        }
                         Err(e) => {
                             warn!("Like at position failed after retries: {e}");
                             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -120,7 +162,13 @@ pub async fn dispatch_action(
                     )
                     .await
                     {
-                        Ok(outcome) => engagement_success(&outcome),
+                        Ok(outcome) => {
+                            let ok = engagement_success(&outcome);
+                            if !ok {
+                                log_engagement_failure(&outcome, "selector_like", tweet_id);
+                            }
+                            ok
+                        }
                         Err(e) => {
                             warn!("Selector-based like failed after retries: {e}");
                             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -143,7 +191,13 @@ pub async fn dispatch_action(
                 )
                 .await
                 {
-                    Ok(outcome) => engagement_success(&outcome),
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "retweet", tweet_id);
+                        }
+                        ok
+                    }
                     Err(e) => {
                         warn!("retweet_tweet failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -198,6 +252,8 @@ pub async fn dispatch_action(
                         let success = engagement_success(&outcome);
                         if success {
                             info!("Quote tweeted with commentary: {quote_text}");
+                        } else {
+                            log_engagement_failure(&outcome, "quote", tweet_id);
                         }
                         success
                     }
@@ -220,7 +276,13 @@ pub async fn dispatch_action(
                 )
                 .await
                 {
-                    Ok(outcome) => follow_success(&outcome),
+                    Ok(outcome) => {
+                        let ok = follow_success(&outcome);
+                        if !ok {
+                            log_follow_failure(&outcome, tweet_id);
+                        }
+                        ok
+                    }
                     Err(e) => {
                         warn!("Follow failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -278,7 +340,13 @@ pub async fn dispatch_action(
                 )
                 .await
                 {
-                    Ok(outcome) => engagement_success(&outcome),
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "reply", tweet_id);
+                        }
+                        ok
+                    }
                     Err(e) => {
                         warn!("Reply failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
@@ -300,7 +368,13 @@ pub async fn dispatch_action(
                 )
                 .await
                 {
-                    Ok(outcome) => engagement_success(&outcome),
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "bookmark", tweet_id);
+                        }
+                        ok
+                    }
                     Err(e) => {
                         warn!("bookmark_tweet failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);

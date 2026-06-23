@@ -207,12 +207,13 @@ impl TaskContext {
             let mut attempt = 0;
             while std::time::Instant::now() < deadline {
                 attempt += 1;
-                let escaped = selector_str.replace('\"', "\\\"");
+                let selector_js =
+                    serde_json::to_string(selector_str).unwrap_or_else(|_| "null".to_string());
                 // Check visibility: width > 0 AND height > 0 via getBoundingClientRect
                 let visible = self.with_retry(|| async {
                     self.page.evaluate(format!(
-                        "(function() {{ const el = document.querySelector('{}'); if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }})()",
-                        escaped
+                        "(function() {{ const el = document.querySelector({}); if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }})()",
+                        selector_js
                     )).await.map_err(anyhow::Error::from)
                 }).await?;
                 if visible.value().and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -236,19 +237,19 @@ impl TaskContext {
             x: f64,
             y: f64,
         }
-        let escaped = selector.replace('\"', "\\\"");
+        let selector_js = serde_json::to_string(selector).unwrap_or_else(|_| "null".to_string());
         let rect: Option<Rect> = self.with_retry(|| async {
             self.page.evaluate(format!(
-                "(function() {{ const el = document.querySelector('{}'); if (!el) return null; const r = el.getBoundingClientRect(); return {{ x: r.left + r.width/2, y: r.top + r.height/2 }}; }})()",
-                escaped
+                "(function() {{ const el = document.querySelector({}); if (!el) return null; const r = el.getBoundingClientRect(); return {{ x: r.left + r.width/2, y: r.top + r.height/2 }}; }})()",
+                selector_js
             )).await.map_err(anyhow::Error::from)
         }).await?.value().and_then(|v| serde_json::from_value(v.clone()).ok());
         match rect {
             Some(r) => {
                 self.with_retry(|| async {
                     self.page.evaluate(format!(
-                        "(function() {{ const el = document.querySelector('{}'); if (el) el.focus(); }})()",
-                        escaped
+                        "(function() {{ const el = document.querySelector({}); if (el) el.focus(); }})()",
+                        selector_js
                     )).await.map_err(anyhow::Error::from)
                 }).await?;
                 Ok(FocusOutcome {

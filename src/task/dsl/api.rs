@@ -197,15 +197,6 @@ pub(crate) mod mock {
                 .insert(selector.to_string(), visible);
         }
 
-        /// Set a custom return value for `count_elements()` on a specific selector.
-        #[allow(dead_code)]
-        pub fn set_count_result(&self, selector: &str, count: usize) {
-            self.count_results
-                .lock()
-                .unwrap()
-                .insert(selector.to_string(), count);
-        }
-
         /// Make all mutating actions (click, type, etc.) fail with an error.
         pub fn set_fail_all(&self, fail: bool) {
             *self.fail_all.lock().unwrap() = fail;

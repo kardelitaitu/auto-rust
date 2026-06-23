@@ -1,0 +1,23 @@
+version: 1
+id: remove_viewport_edge_filter
+title: Remove Viewport Edge Filter from Candidate Selection
+status: done
+owner: spec-agent
+implementer: implementer-agent
+priority: P3
+area:
+  - twitter
+files:
+  code:
+    - src/utils/twitter/twitteractivity_feed.rs
+  docs:
+    - docs/specs/_done/remove_viewport_edge_filter/plan.md
+    - docs/specs/_done/remove_viewport_edge_filter/validation.md
+acceptance:
+  - "The `y >= (viewport_height * 0.9)` check is removed from `filter_candidates` in `twitteractivity_feed.rs`."
+  - "Unit tests in `twitteractivity_feed.rs` are updated or removed to match the new filtering behavior."
+  - "All unit tests pass successfully."
+non_goals:
+  - "Do not alter any other candidate filter criteria (like negative y or height <= 50)."
+risks:
+  - "None."

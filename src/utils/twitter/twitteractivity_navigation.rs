@@ -47,7 +47,7 @@
 use crate::prelude::TaskContext;
 use crate::utils::timing::{DEFAULT_NAVIGATION_TIMEOUT_MS, TIMEOUT_MEDIUM_MS};
 use anyhow::Result;
-use log::{info, warn};
+use log::{error, info, warn};
 use serde_json::Value;
 use std::time::Instant;
 use tracing::instrument;
@@ -246,7 +246,10 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
     info!("🎲 Rolled entry point: {entry_name} → {entry_url}");
 
     // Navigate to entry point
-    api.navigate(entry_url, 60000).await?;
+    if let Err(e) = api.navigate(entry_url, 60000).await {
+        error!("Navigation to entry point {} failed: {e}", entry_url);
+        return Err(e);
+    }
     human_pause(api, 2000).await;
 
     // Check if on home feed
@@ -277,7 +280,10 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
         }
 
         info!("✅ Finished reading, navigating to home...");
-        goto_home(api).await?;
+        if let Err(e) = goto_home(api).await {
+            error!("Navigation to home failed: {e}");
+            return Err(e);
+        }
         human_pause(api, 500).await;
     }
 

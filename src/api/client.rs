@@ -319,7 +319,7 @@ pub struct CircuitBreaker {
     /// Number of consecutive successes needed to close the circuit
     success_threshold: u32,
     /// Time to wait before trying to close the circuit again (milliseconds)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     half_open_timeout_ms: DurationMs,
     /// Current count of consecutive failures
     failures: u32,

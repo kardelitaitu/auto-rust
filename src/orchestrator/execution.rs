@@ -221,10 +221,7 @@ async fn execute_task_on_session(
                 "[{}][{}] Failed: {}",
                 session_id,
                 task_def.name,
-                task_result
-                    .last_error
-                    .as_deref()
-                    .unwrap_or("Unknown error")
+                task_result.last_error.as_deref().unwrap_or("Unknown error")
             );
             failed_sessions.push(session_id);
         }

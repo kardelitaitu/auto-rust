@@ -10,8 +10,8 @@ use crate::session::WorkerPermit;
 use crate::state::{bind_page_overlay, unbind_page_overlay};
 use log::{info, warn};
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Duration;
 
 impl super::Session {
@@ -35,8 +35,7 @@ impl super::Session {
         .await
         {
             Ok(Ok(permit)) => {
-                self.active_workers
-                    .fetch_add(1, Ordering::SeqCst);
+                self.active_workers.fetch_add(1, Ordering::SeqCst);
                 Some(WorkerPermit::new(permit, &self.active_workers))
             }
             Ok(Err(_)) => {

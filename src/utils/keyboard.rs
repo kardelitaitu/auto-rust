@@ -186,7 +186,13 @@ pub async fn natural_typing_profiled(
     for (i, ch) in text.chars().enumerate() {
         let typo_rate = behavior.typo_rate_pct.clamp(0.0, 100.0) / 100.0;
         if (random_in_range(0, 100) as f64 / 100.0) < typo_rate && i > 0 {
-            typo_correction_profiled(page, ch, behavior).await?;
+            // Typo occurred — decide whether to correct it or leave it
+            let recovery_chance = behavior.typo_recovery_chance_pct.clamp(0.0, 100.0) / 100.0;
+            if (random_in_range(0, 100) as f64 / 100.0) < recovery_chance {
+                typo_correction_profiled(page, ch, behavior).await?;
+            } else {
+                typo_without_correction_profiled(page, ch, behavior).await?;
+            }
         } else {
             type_character_profiled(page, ch, behavior).await?;
         }
@@ -195,8 +201,80 @@ pub async fn natural_typing_profiled(
     Ok(())
 }
 
+/// Type a wrong character and leave it — simulates an unnoticed typo.
+/// No Backspace, no correction — just a nearby wrong key and move on.
+async fn typo_without_correction_profiled(
+    page: &Page,
+    correct_char: char,
+    behavior: &TypingBehavior,
+) -> Result<()> {
+    let wrong_char = get_similar_char(correct_char);
+    type_character_profiled(page, wrong_char, behavior).await
+}
+
 async fn dispatch_key_event(page: &Page, event_type: &str, key: &str) -> Result<()> {
     let key_json = serde_json::to_string(key)?;
+    // For Backspace on keydown, also delete the preceding character from the DOM.
+    // Synthetic KeyboardEvents do not trigger default browser backspace behavior,
+    // so without this DOM manipulation typo correction (which types a wrong char,
+    // presses Backspace, then types the correct char) would leave both characters.
+    //
+    // Uses InputEvent + Selection API instead of execCommand('delete') because
+    // execCommand is deprecated and unreliable on React-managed contentEditables
+    // (Twitter's composer uses React + contentEditable). The InputEvent pattern
+    // (beforeinput → Selection API → input) matches what the browser fires on a
+    // real Backspace press and is what React listens to for state management.
+    let backspace_delete = if key == "Backspace" && event_type == "keydown" {
+        r#"
+            const el = document.activeElement;
+            if (el && !el.readOnly && !el.disabled) {
+                if (el.isContentEditable) {
+                    // Dispatch beforeinput — React listens for this
+                    const beforeinput = new InputEvent('beforeinput', {
+                        inputType: 'deleteContentBackward',
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    el.dispatchEvent(beforeinput);
+                    if (!beforeinput.defaultPrevented) {
+                        // Use Selection API to actually delete the preceding character
+                        const sel = window.getSelection();
+                        if (sel && sel.rangeCount > 0) {
+                            const range = sel.getRangeAt(0);
+                            if (!range.collapsed) {
+                                // Delete selected text
+                                range.deleteContents();
+                            } else if (range.startOffset > 0) {
+                                // Delete one character backward
+                                range.setStart(range.startContainer, range.startOffset - 1);
+                                range.deleteContents();
+                            }
+                        }
+                        // Dispatch input event to notify React of the DOM change
+                        el.dispatchEvent(new InputEvent('input', {
+                            inputType: 'deleteContentBackward',
+                            bubbles: true
+                        }));
+                    }
+                } else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                    const start = el.selectionStart;
+                    const end = el.selectionEnd;
+                    if (start !== null && start > 0 && start === end) {
+                        el.value = el.value.slice(0, start - 1) + el.value.slice(end);
+                        el.setSelectionRange(start - 1, start - 1);
+                        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+                    } else if (start !== null && end !== null && start !== end) {
+                        el.value = el.value.slice(0, start) + el.value.slice(end);
+                        el.setSelectionRange(start, start);
+                        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+                    }
+                }
+            }
+        "#
+        .to_string()
+    } else {
+        String::new()
+    };
     let js = format!(
         "(function() {{
             const event = new KeyboardEvent('{event_type}', {{
@@ -207,6 +285,7 @@ async fn dispatch_key_event(page: &Page, event_type: &str, key: &str) -> Result<
             }});
             const el = document.activeElement || document.body;
             el.dispatchEvent(event);
+            {backspace_delete}
         }})();"
     );
 
@@ -229,7 +308,36 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
 
             const text = {text_json};
             if (el.isContentEditable) {{
-                document.execCommand('insertText', false, text);
+                // Dispatch beforeinput — React listens for this
+                const beforeinput = new InputEvent('beforeinput', {{
+                    inputType: 'insertText',
+                    data: text,
+                    bubbles: true,
+                    cancelable: true
+                }});
+                el.dispatchEvent(beforeinput);
+                if (!beforeinput.defaultPrevented) {{
+                    // Use Selection API to insert text at cursor position.
+                    // Mirrors what the browser does natively: create a text node,
+                    // insert it at cursor, advance cursor past inserted text.
+                    const sel = window.getSelection();
+                    if (sel && sel.rangeCount > 0) {{
+                        const range = sel.getRangeAt(0);
+                        range.deleteContents();
+                        const textNode = document.createTextNode(text);
+                        range.insertNode(textNode);
+                        range.setStartAfter(textNode);
+                        range.setEndAfter(textNode);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }}
+                    // Dispatch input event to notify React of the DOM change
+                    el.dispatchEvent(new InputEvent('input', {{
+                        inputType: 'insertText',
+                        data: text,
+                        bubbles: true
+                    }}));
+                }}
             }} else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {{
                 const hasSelectionApi =
                     typeof el.selectionStart === 'number' &&
@@ -259,15 +367,6 @@ async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
 }
 
 #[allow(clippy::cast_precision_loss)]
-#[allow(dead_code)]
-async fn type_character(page: &Page, ch: char) -> Result<()> {
-    let key_delay = gaussian(120.0, 40.0, 50.0, 300.0) as u64;
-    dispatch_input_event(page, ch).await?;
-    human_pause(key_delay, 30).await;
-    Ok(())
-}
-
-#[allow(clippy::cast_precision_loss)]
 async fn type_character_profiled(page: &Page, ch: char, behavior: &TypingBehavior) -> Result<()> {
     let key_delay = gaussian(
         behavior.keystroke_mean_ms as f64,
@@ -277,18 +376,6 @@ async fn type_character_profiled(page: &Page, ch: char, behavior: &TypingBehavio
     ) as u64;
     dispatch_input_event(page, ch).await?;
     human_pause(key_delay, 30).await;
-    Ok(())
-}
-
-#[allow(dead_code)]
-async fn typo_correction(page: &Page, correct_char: char) -> Result<()> {
-    let wrong_char = get_similar_char(correct_char);
-    type_character(page, wrong_char).await?;
-
-    human_pause(300, 50).await;
-    press(page, "Backspace").await?;
-    human_pause(200, 50).await;
-    type_character(page, correct_char).await?;
     Ok(())
 }
 
@@ -628,5 +715,57 @@ mod tests {
         assert_eq!(get_similar_char('i'), 'o');
         assert_eq!(get_similar_char('n'), 'm');
         assert_eq!(get_similar_char('m'), 'n');
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// For mapped characters, get_similar_char is self-inverse (applying it twice
+        /// returns the original character).
+        /// Note: 'i' maps to 'o', but 'o' maps to 'p', so 'i' is NOT self-inverse.
+        ///       All other mappings are self-inverse (a<->s, d<->f, e<->r, w<->q, t<->y,
+        ///       o<->p, n<->m).
+        fn is_self_inverse(ch: char) -> bool {
+            matches!(
+                ch.to_ascii_lowercase(),
+                'a' | 's' | 'd' | 'f' | 'e' | 'r' | 'w' | 'q' | 't' | 'y' | 'o' | 'p' | 'n' | 'm'
+            ) && !ch.eq_ignore_ascii_case(&'i') // i->o but o->p, not inverse
+        }
+
+        proptest! {
+            /// For self-inverse characters, applying get_similar_char twice returns the original.
+            #[test]
+            fn proptest_get_similar_char_self_inverse(
+                ch in proptest::char::range('a', 'z'),
+            ) {
+                prop_assume!(is_self_inverse(ch));
+                let roundtrip = get_similar_char(get_similar_char(ch));
+                prop_assert_eq!(roundtrip, ch);
+            }
+
+            /// For unmapped characters, get_similar_char is identity.
+            #[test]
+            fn proptest_get_similar_char_unmapped_identity(
+                ch in proptest::char::range('a', 'z'),
+            ) {
+                let mapped = get_similar_char(ch);
+                prop_assume!(mapped == ch);
+                let second = get_similar_char(mapped);
+                prop_assert_eq!(second, ch);
+            }
+
+            /// get_similar_char always returns a valid single char (guaranteed by type system).
+            /// This is a sanity-check that the function doesn't panic on any input.
+            #[test]
+            fn proptest_get_similar_char_no_panic(
+                ch in any::<char>(),
+            ) {
+                let _result = get_similar_char(ch);
+                // If we reach here without panic, the test passes.
+                // The type system guarantees the result is a valid char.
+                prop_assert!(true);
+            }
+        }
     }
 }

@@ -46,15 +46,13 @@ impl PersonaStrategy {
     }
 
     /// Check if text contains any keywords from list.
-    #[allow(clippy::unused_self)]
-    fn contains_any(&self, text: &str, keywords: &[impl AsRef<str>]) -> bool {
+    fn contains_any(text: &str, keywords: &[impl AsRef<str>]) -> bool {
         let text_lower = text.to_lowercase();
         keywords.iter().any(|kw| text_lower.contains(kw.as_ref()))
     }
 
     /// Calculate base score from persona weights.
-    #[allow(clippy::unused_self)]
-    fn calculate_base_score(&self, ctx: &TweetContext) -> f64 {
+    fn calculate_base_score(ctx: &TweetContext) -> f64 {
         let persona = &ctx.persona;
 
         // Average of engagement probabilities as base quality indicator
@@ -128,7 +126,7 @@ impl DecisionStrategyImpl for PersonaStrategy {
         let combined_text = format!("{text} {replies_combined}");
 
         // 1. CRITICAL: Check for tragedy (NEVER engage)
-        if self.contains_any(&combined_text, &self.tragedy_keywords) {
+        if Self::contains_any(&combined_text, &self.tragedy_keywords) {
             info!("PersonaStrategy: Tragedy detected, skipping");
             return EngagementDecision {
                 level: EngagementLevel::None,
@@ -140,8 +138,8 @@ impl DecisionStrategyImpl for PersonaStrategy {
         }
 
         // 2. CRITICAL: Check for spam/crypto (NEVER engage)
-        if self.contains_any(&combined_text, &self.crypto_keywords)
-            || self.contains_any(&combined_text, &self.spam_patterns)
+        if Self::contains_any(&combined_text, &self.crypto_keywords)
+            || Self::contains_any(&combined_text, &self.spam_patterns)
         {
             info!("PersonaStrategy: Spam/crypto detected, skipping");
             return EngagementDecision {
@@ -154,7 +152,7 @@ impl DecisionStrategyImpl for PersonaStrategy {
         }
 
         // 3. Check for controversial topics
-        if self.contains_any(&combined_text, &self.controversial_keywords) {
+        if Self::contains_any(&combined_text, &self.controversial_keywords) {
             info!("PersonaStrategy: Controversial topic detected, low engagement");
             return EngagementDecision {
                 level: EngagementLevel::Minimal,
@@ -166,7 +164,7 @@ impl DecisionStrategyImpl for PersonaStrategy {
         }
 
         // 4. Calculate scores
-        let base_score = self.calculate_base_score(ctx);
+        let base_score = Self::calculate_base_score(ctx);
         let reply_score = self.analyze_replies(ctx);
         let final_score = (base_score * 0.4 + reply_score * 0.6).min(100.0);
 
@@ -295,33 +293,34 @@ mod tests {
 
     #[test]
     fn test_contains_any_match() {
-        let strategy = PersonaStrategy::new();
-        assert!(strategy.contains_any("this is a scam", &["scam", "spam"]));
+        assert!(PersonaStrategy::contains_any(
+            "this is a scam",
+            &["scam", "spam"]
+        ));
     }
 
     #[test]
     fn test_contains_any_no_match() {
-        let strategy = PersonaStrategy::new();
-        assert!(!strategy.contains_any("hello world", &["scam", "spam"]));
+        assert!(!PersonaStrategy::contains_any(
+            "hello world",
+            &["scam", "spam"]
+        ));
     }
 
     #[test]
     fn test_contains_any_empty_text() {
-        let strategy = PersonaStrategy::new();
-        assert!(!strategy.contains_any("", &["test"]));
+        assert!(!PersonaStrategy::contains_any("", &["test"]));
     }
 
     #[test]
     fn test_contains_any_empty_keywords() {
-        let strategy = PersonaStrategy::new();
-        assert!(!strategy.contains_any("test", &[] as &[&str]));
+        assert!(!PersonaStrategy::contains_any("test", &[] as &[&str]));
     }
 
     #[test]
     fn test_contains_any_case_insensitive() {
-        let strategy = PersonaStrategy::new();
-        assert!(strategy.contains_any("ELECTION", &["election"]));
-        assert!(strategy.contains_any("Election", &["election"]));
+        assert!(PersonaStrategy::contains_any("ELECTION", &["election"]));
+        assert!(PersonaStrategy::contains_any("Election", &["election"]));
     }
 
     // ========================================================================
@@ -330,9 +329,8 @@ mod tests {
 
     #[test]
     fn test_calculate_base_score_default() {
-        let strategy = PersonaStrategy::new();
         let context = ctx("text", vec![], PersonaWeights::default());
-        let score = strategy.calculate_base_score(&context);
+        let score = PersonaStrategy::calculate_base_score(&context);
         // Default weights: like=0.3, retweet=0.1, quote=0.05, follow=0.05, reply=0.02, bookmark=0.0
         // sum = 0.52, avg = 0.0867, *100 = 8.67
         assert!((score - 8.67).abs() < 0.1, "expected ~8.67, got {}", score);
@@ -340,29 +338,26 @@ mod tests {
 
     #[test]
     fn test_calculate_base_score_high_engagement() {
-        let strategy = PersonaStrategy::new();
         let weights = persona_with_probs(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
         let context = ctx("text", vec![], weights);
-        let score = strategy.calculate_base_score(&context);
+        let score = PersonaStrategy::calculate_base_score(&context);
         assert!((score - 100.0).abs() < 0.01);
     }
 
     #[test]
     fn test_calculate_base_score_zero_engagement() {
-        let strategy = PersonaStrategy::new();
         let weights = persona_with_probs(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         let context = ctx("text", vec![], weights);
-        let score = strategy.calculate_base_score(&context);
+        let score = PersonaStrategy::calculate_base_score(&context);
         assert!((score - 0.0).abs() < 0.01);
     }
 
     #[test]
     fn test_calculate_base_score_capped_at_100() {
-        let strategy = PersonaStrategy::new();
         // All probabilities at 2.0 (over 1.0) → avg = 2.0 → *100 = 200 → capped at 100
         let weights = persona_with_probs(2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 1.0);
         let context = ctx("text", vec![], weights);
-        let score = strategy.calculate_base_score(&context);
+        let score = PersonaStrategy::calculate_base_score(&context);
         assert!((score - 100.0).abs() < 0.01);
     }
 
@@ -556,11 +551,10 @@ mod tests {
 
     #[test]
     fn test_calculate_base_score_single_high_prob() {
-        let strategy = PersonaStrategy::new();
         // One probability high, rest zero
         let weights = persona_with_probs(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         let context = ctx("text", vec![], weights);
-        let score = strategy.calculate_base_score(&context);
+        let score = PersonaStrategy::calculate_base_score(&context);
         // (1.0 + 0 + 0 + 0 + 0 + 0) / 6 * 100 = 16.67
         assert!(
             (score - 16.67).abs() < 0.1,
@@ -629,9 +623,8 @@ mod proptests {
             0.0f64..5.0,
         );
         let result = runner.run(&strat, |(like, rt, quote, follow, reply, bm)| {
-            let s = PersonaStrategy::new();
             let p = make_persona(like, rt, quote, follow, reply, bm, 1.0);
-            let score = s.calculate_base_score(&make_ctx("t", vec![], p));
+            let score = PersonaStrategy::calculate_base_score(&make_ctx("t", vec![], p));
             prop_assert!((0.0..=100.0).contains(&score));
             Ok(())
         });
@@ -640,9 +633,8 @@ mod proptests {
 
     #[test]
     fn pt_base_zero() {
-        let s = PersonaStrategy::new();
         let p = make_persona(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-        let score = s.calculate_base_score(&make_ctx("t", vec![], p));
+        let score = PersonaStrategy::calculate_base_score(&make_ctx("t", vec![], p));
         assert!((score - 0.0).abs() < f64::EPSILON);
     }
 
@@ -650,9 +642,8 @@ mod proptests {
     fn pt_base_capped() {
         let mut runner = TestRunner::new(Config::default());
         let result = runner.run(&(1.0f64..10.0), |v| {
-            let s = PersonaStrategy::new();
             let p = make_persona(v, v, v, v, v, v, 1.0);
-            let score = s.calculate_base_score(&make_ctx("t", vec![], p));
+            let score = PersonaStrategy::calculate_base_score(&make_ctx("t", vec![], p));
             prop_assert!((score - 100.0).abs() < 0.01);
             Ok(())
         });
@@ -713,9 +704,8 @@ mod proptests {
         let mut runner = TestRunner::new(Config::default());
         let strat = (any::<String>(), any::<String>());
         let result = runner.run(&strat, |(prefix, suffix)| {
-            let s = PersonaStrategy::new();
             let text = format!("{}x{}", prefix, suffix);
-            prop_assert!(s.contains_any(&text, &["x"]));
+            prop_assert!(PersonaStrategy::contains_any(&text, &["x"]));
             Ok(())
         });
         assert!(result.is_ok(), "proptest failed: {:?}", result);
@@ -726,9 +716,8 @@ mod proptests {
         let mut runner = TestRunner::new(Config::default());
         let strat = (any::<String>(), any::<String>());
         let result = runner.run(&strat, |(prefix, suffix)| {
-            let s = PersonaStrategy::new();
             let text = format!("{}X{}", prefix, suffix);
-            prop_assert!(s.contains_any(&text, &["x"]));
+            prop_assert!(PersonaStrategy::contains_any(&text, &["x"]));
             Ok(())
         });
         assert!(result.is_ok(), "proptest failed: {:?}", result);
@@ -736,14 +725,14 @@ mod proptests {
 
     #[test]
     fn pt_contains_empty_text() {
-        assert!(!PersonaStrategy::new().contains_any("", &["a", "b"]));
+        assert!(!PersonaStrategy::contains_any("", &["a", "b"]));
     }
 
     #[test]
     fn pt_contains_empty_kw() {
         let mut runner = TestRunner::new(Config::default());
         let result = runner.run(&any::<String>(), |text| {
-            prop_assert!(!PersonaStrategy::new().contains_any(&text, &[] as &[&str]));
+            prop_assert!(!PersonaStrategy::contains_any(&text, &[] as &[&str]));
             Ok(())
         });
         assert!(result.is_ok(), "proptest failed: {:?}", result);

@@ -113,16 +113,14 @@ impl Hash for TweetId {
 // or `from_unchecked()` for trusted input. `#[deprecated]` is not supported on trait impls,
 // but these are intentionally kept for backward compatibility with existing `.into()` callers.
 impl From<String> for TweetId {
-    #[allow(clippy::expect_used)]
     fn from(s: String) -> Self {
-        Self::new(s).expect("TweetId::from called with empty string")
+        Self::new(s).unwrap_or_else(|_| panic!("TweetId::from called with empty string"))
     }
 }
 
 impl From<&str> for TweetId {
-    #[allow(clippy::expect_used)]
     fn from(s: &str) -> Self {
-        Self::new(s).expect("TweetId::from called with empty string")
+        Self::new(s).unwrap_or_else(|_| panic!("TweetId::from called with empty string"))
     }
 }
 
@@ -235,16 +233,14 @@ impl Hash for StatusUrl {
 }
 
 impl From<String> for StatusUrl {
-    #[allow(clippy::expect_used)]
     fn from(s: String) -> Self {
-        Self::new(s).expect("StatusUrl::from called with empty string")
+        Self::new(s).unwrap_or_else(|_| panic!("StatusUrl::from called with empty string"))
     }
 }
 
 impl From<&str> for StatusUrl {
-    #[allow(clippy::expect_used)]
     fn from(s: &str) -> Self {
-        Self::new(s).expect("StatusUrl::from called with empty string")
+        Self::new(s).unwrap_or_else(|_| panic!("StatusUrl::from called with empty string"))
     }
 }
 

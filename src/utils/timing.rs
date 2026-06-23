@@ -47,7 +47,7 @@ pub const TIMEOUT_EXTRA_SECS: u64 = 60;
 pub const TIMEOUT_EXTRA_MS: u64 = 60_000;
 
 // Re-exported from the canonical location in `session`.
-pub use crate::session::{duration_with_variance, duration_ms};
+pub use crate::session::{duration_ms, duration_with_variance};
 
 /// Sleep for `ms` milliseconds; returns early if `cancel` is triggered.
 pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
@@ -1124,5 +1124,4 @@ mod tests {
             elapsed.as_millis()
         );
     }
-
 }

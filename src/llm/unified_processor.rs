@@ -5,8 +5,8 @@
 //! This module now only contains the async orchestration that depends on `self.llm`.
 
 use crate::llm::models::ChatMessage;
-use crate::llm::reply_strategies;
 use crate::llm::processor;
+use crate::llm::reply_strategies;
 
 pub struct UnifiedLLMProcessor {
     llm: crate::llm::Llm,

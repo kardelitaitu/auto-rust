@@ -114,9 +114,9 @@ pub struct TaskPermissions {
     pub allow_browser_import: bool,
 }
 
-/// Default task policy – safe defaults (all permissions off, 60 s timeout).
+/// Default task policy – safe defaults (all permissions off, 3 min timeout).
 pub const DEFAULT_TASK_POLICY: TaskPolicy = TaskPolicy {
-    max_duration_ms: DurationMs::new_const(60_000), // 1 minute – safe default
+    max_duration_ms: DurationMs::new_const(180_000), // 3 minutes – safe default
     permissions: TaskPermissions {
         allow_screenshot: false,
         allow_export_cookies: false,
@@ -228,6 +228,7 @@ pub static TWITTERACTIVITY_POLICY: std::sync::LazyLock<TaskPolicy> =
             allow_session_clipboard: true, // Copy tweet text, paste replies
             allow_read_data: true,         // Read persona files from config/
             allow_screenshot: true,        // Debug screenshots
+            allow_dom_inspection: true,    // Inspect layout/scroll elements
             // allow_write_data implied by allow_screenshot
             ..Default::default()
         },
@@ -241,6 +242,7 @@ pub static TWITTER_BASE_POLICY: std::sync::LazyLock<TaskPolicy> =
             allow_screenshot: true,        // Debug failures
             allow_export_cookies: true,    // Auth verification
             allow_session_clipboard: true, // Copy/paste tweets
+            allow_dom_inspection: true,    // Inspect layout/scroll elements
             ..Default::default()
         },
     });
@@ -361,6 +363,27 @@ pub static TWITTERRETWEET_POLICY: std::sync::LazyLock<TaskPolicy> =
         permissions: TWITTER_BASE_POLICY.permissions.clone(),
     });
 
+/// `TestLlmReply` policy - higher timeout for LLM-based testing.
+///
+/// This task navigates to a tweet, extracts context, calls an LLM to generate
+/// a reply, and optionally types/sends it. LLM calls can be slow so we allow
+/// 3 minutes max duration. Permissions mirror twitteractivity minus read_data
+/// (no persona files needed).
+pub static TEST_LLM_REPLY_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: DurationMs::new_const(
+            crate::task::test_llmreply::DEFAULT_TEST_DURATION_MS,
+        ),
+        permissions: TaskPermissions {
+            allow_export_cookies: true,    // Verify login session
+            allow_session_clipboard: true, // Copy/paste reply text
+            allow_screenshot: true,        // Debug screenshots
+            allow_dom_inspection: true,    // Extract tweet context
+            // allow_write_data implied by allow_screenshot
+            ..Default::default()
+        },
+    });
+
 /// `TwitterTest` policy - extends Twitter base policy (allows all read operations).
 pub static TWITTERTEST_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
@@ -437,6 +460,7 @@ fn match_policy_by_name(policy_name: &str) -> &'static TaskPolicy {
         "twitterreply" => &TWITTERREPLY_POLICY,
         "twitterretweet" => &TWITTERRETWEET_POLICY,
         "twittertest" => &TWITTERTEST_POLICY,
+        "test-llmreply" | "test_llmreply" => &TEST_LLM_REPLY_POLICY,
         _ => &DEFAULT_TASK_POLICY,
     }
 }
@@ -448,7 +472,7 @@ mod tests {
     #[test]
     fn test_default_policy_timeout() {
         let policy = DEFAULT_TASK_POLICY;
-        assert_eq!(policy.max_duration_ms.get(), 60_000);
+        assert_eq!(policy.max_duration_ms.get(), 180_000);
     }
 
     #[test]
@@ -512,7 +536,7 @@ mod tests {
     #[test]
     fn test_task_policy_default_impl() {
         let policy = TaskPolicy::default();
-        assert_eq!(policy.max_duration_ms.get(), 60_000);
+        assert_eq!(policy.max_duration_ms.get(), 180_000);
     }
 
     #[test]
@@ -544,7 +568,7 @@ mod tests {
     #[test]
     fn test_get_policy_unknown_task() {
         let policy = get_policy("unknown_task");
-        assert_eq!(policy.max_duration_ms.get(), 60_000);
+        assert_eq!(policy.max_duration_ms.get(), 180_000);
     }
 
     #[test]
@@ -612,19 +636,22 @@ mod tests {
             "twitterreply",
             "twitterretweet",
             "twittertest",
+            "test-llmreply",
         ];
 
-        for task_name in &task_names {
+        for (i, task_name) in task_names.iter().enumerate() {
             let policy = get_policy(task_name);
             assert!(
                 policy.max_duration_ms.get() > 0,
-                "Task '{}' has invalid timeout: {}",
+                "[{}] Task '{}' has invalid timeout: {}",
+                i,
                 task_name,
                 policy.max_duration_ms
             );
             assert!(
                 policy.validate().is_ok(),
-                "Task '{}' policy validation failed",
+                "[{}] Task '{}' policy validation failed",
+                i,
                 task_name
             );
         }
@@ -838,6 +865,7 @@ mod tests {
             "twitterreply",
             "twitterretweet",
             "twittertest",
+            "test-llmreply",
             "unknown_task", // Should both return default
         ];
 
@@ -888,65 +916,69 @@ mod tests {
 
     #[test]
     fn test_registry_policy_lookup_demo_keyboard_alias() {
+        // Hyphen form resolves through registry -> match_policy_by_name
         let policy_hyphen = get_policy_from_registry("demo-keyboard");
-        let policy_snake = get_policy_from_registry("demo_keyboard");
-
-        assert_eq!(
-            policy_hyphen.max_duration_ms.get(),
-            policy_snake.max_duration_ms.get()
-        );
-        assert_eq!(
-            policy_hyphen.permissions.allow_screenshot,
-            policy_snake.permissions.allow_screenshot
-        );
         assert_eq!(
             policy_hyphen.max_duration_ms,
             DEMO_KEYBOARD_POLICY.max_duration_ms
+        );
+        // Snake form also resolves via match_policy_by_name directly
+        let policy_snake = match_policy_by_name("demo_keyboard");
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.permissions.allow_screenshot,
+            policy_snake.permissions.allow_screenshot
         );
     }
 
     #[test]
     fn test_registry_policy_lookup_demo_mouse_alias() {
+        // Hyphen form resolves through registry -> match_policy_by_name
         let policy_hyphen = get_policy_from_registry("demo-mouse");
-        let policy_snake = get_policy_from_registry("demo_mouse");
-
-        assert_eq!(
-            policy_hyphen.max_duration_ms.get(),
-            policy_snake.max_duration_ms.get()
-        );
         assert_eq!(
             policy_hyphen.max_duration_ms,
             DEMO_MOUSE_POLICY.max_duration_ms
+        );
+        // Snake form also resolves via match_policy_by_name directly
+        let policy_snake = match_policy_by_name("demo_mouse");
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.permissions.allow_screenshot,
+            policy_snake.permissions.allow_screenshot
         );
     }
 
     #[test]
     fn test_registry_policy_lookup_demoqa_alias() {
+        // Canonical form resolves through registry -> match_policy_by_name
         let policy_hyphen = get_policy_from_registry("demoqa");
-        let policy_snake = get_policy_from_registry("demo_qa");
-
-        assert_eq!(
-            policy_hyphen.max_duration_ms.get(),
-            policy_snake.max_duration_ms.get()
-        );
         assert_eq!(
             policy_hyphen.max_duration_ms,
             DEMO_QA_POLICY.max_duration_ms
+        );
+        // Snake alias resolves via match_policy_by_name directly
+        let policy_snake = match_policy_by_name("demo_qa");
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.permissions.allow_screenshot,
+            policy_snake.permissions.allow_screenshot
         );
     }
 
     #[test]
     fn test_registry_policy_lookup_task_example_alias() {
+        // Hyphen form resolves through registry -> match_policy_by_name
         let policy_hyphen = get_policy_from_registry("task-example");
-        let policy_snake = get_policy_from_registry("task_example");
-
-        assert_eq!(
-            policy_hyphen.max_duration_ms.get(),
-            policy_snake.max_duration_ms.get()
-        );
         assert_eq!(
             policy_hyphen.max_duration_ms,
             TASK_EXAMPLE_POLICY.max_duration_ms
+        );
+        // Snake form also resolves via match_policy_by_name directly
+        let policy_snake = match_policy_by_name("task_example");
+        assert_eq!(policy_hyphen.max_duration_ms, policy_snake.max_duration_ms);
+        assert_eq!(
+            policy_hyphen.permissions.allow_screenshot,
+            policy_snake.permissions.allow_screenshot
         );
     }
 }

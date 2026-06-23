@@ -23,7 +23,7 @@ mod permits;
 mod state;
 mod worker;
 
-pub use duration::{DurationMs, duration_ms, duration_with_variance};
+pub use duration::{duration_ms, duration_with_variance, DurationMs};
 pub use permits::WorkerPermit;
 pub use state::{is_circuit_breaker_open_pure, SessionState};
 
@@ -259,7 +259,6 @@ impl Session {
             cb_last_failure_time: Arc::new(AtomicUsize::new(0)),
         }
     }
-
 } // end of impl Session block (new() only; lifecycle methods moved to lifecycle.rs)
 
 // Worker, page, and circuit breaker logic moved to worker.rs

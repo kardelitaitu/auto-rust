@@ -137,9 +137,7 @@ impl HybridStrategy {
     }
 
     /// LLM primary strategy - use LLM if available and confident
-    #[allow(clippy::unused_self)]
     fn combine_llm_primary(
-        &self,
         persona_decision: &EngagementDecision,
         llm_decision: &EngagementDecision,
     ) -> EngagementDecision {
@@ -230,7 +228,7 @@ impl DecisionStrategyImpl for HybridStrategy {
 
             // LLM primary
             (CombinationStrategy::LLMPrimary, Some(llm)) => {
-                self.combine_llm_primary(&persona_decision, &llm)
+                Self::combine_llm_primary(&persona_decision, &llm)
             }
 
             // Consensus
@@ -442,30 +440,27 @@ mod tests {
 
     #[test]
     fn test_combine_llm_primary_high_confidence_uses_llm() {
-        let strategy = HybridStrategy::persona_only();
         let p = persona_decision(30, EngagementLevel::Minimal, 0.5);
         let l = llm_decision(80, EngagementLevel::Full, 0.8);
-        let result = strategy.combine_llm_primary(&p, &l);
+        let result = HybridStrategy::combine_llm_primary(&p, &l);
         assert_eq!(result.score, 80);
         assert!(result.reason.contains("LLM primary"));
     }
 
     #[test]
     fn test_combine_llm_primary_low_confidence_falls_back() {
-        let strategy = HybridStrategy::persona_only();
         let p = persona_decision(70, EngagementLevel::Full, 0.7);
         let l = llm_decision(80, EngagementLevel::Full, 0.5);
-        let result = strategy.combine_llm_primary(&p, &l);
+        let result = HybridStrategy::combine_llm_primary(&p, &l);
         assert_eq!(result.score, 70);
         assert!(result.reason.contains("Persona fallback"));
     }
 
     #[test]
     fn test_combine_llm_primary_low_score_falls_back() {
-        let strategy = HybridStrategy::persona_only();
         let p = persona_decision(70, EngagementLevel::Full, 0.7);
         let l = llm_decision(10, EngagementLevel::None, 0.9);
-        let result = strategy.combine_llm_primary(&p, &l);
+        let result = HybridStrategy::combine_llm_primary(&p, &l);
         assert_eq!(result.score, 70);
         assert!(result.reason.contains("Persona fallback"));
     }
@@ -752,10 +747,9 @@ mod proptests {
         fn pt_llm_primary_uses_llm_when_confident(
             lc in 0.7000001f64..=1.0, ls in 21i32..=100,
         ) {
-            let s = HybridStrategy::persona_only();
             let p = make_dec(10, EngagementLevel::None, 0.3);
             let l = make_dec(ls, EngagementLevel::Full, lc);
-            let r = s.combine_llm_primary(&p, &l);
+            let r = HybridStrategy::combine_llm_primary(&p, &l);
             prop_assert_eq!(r.score, l.score);
             prop_assert!(r.reason.contains("LLM primary"));
         }
@@ -764,10 +758,9 @@ mod proptests {
         fn pt_llm_primary_falls_back_when_low_confidence(
             lc in 0.0f64..=0.7, ls in -200i32..=100,
         ) {
-            let s = HybridStrategy::persona_only();
             let p = make_dec(70, EngagementLevel::Full, 0.7);
             let l = make_dec(ls, EngagementLevel::Full, lc);
-            let r = s.combine_llm_primary(&p, &l);
+            let r = HybridStrategy::combine_llm_primary(&p, &l);
             prop_assert_eq!(r.score, p.score);
             prop_assert!(r.reason.contains("Persona fallback"));
         }
@@ -776,10 +769,9 @@ mod proptests {
         fn pt_llm_primary_falls_back_when_low_score(
             lc in 0.7000001f64..=1.0, ls in -200i32..=20,
         ) {
-            let s = HybridStrategy::persona_only();
             let p = make_dec(70, EngagementLevel::Full, 0.7);
             let l = make_dec(ls, EngagementLevel::Full, lc);
-            let r = s.combine_llm_primary(&p, &l);
+            let r = HybridStrategy::combine_llm_primary(&p, &l);
             prop_assert_eq!(r.score, p.score);
             prop_assert!(r.reason.contains("Persona fallback"));
         }

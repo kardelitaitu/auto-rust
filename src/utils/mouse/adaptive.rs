@@ -268,6 +268,9 @@ fn calculate_adaptive_cursor_config(
     }
 }
 
+/// User experience level for adaptive speed calibration.
+/// `Intermediate` is the default; `Novice` and `Expert` are reserved
+/// for future profile-integration support (matched but never constructed).
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 enum ExperienceLevel {
@@ -276,6 +279,9 @@ enum ExperienceLevel {
     Expert,
 }
 
+/// Target element priority for adaptive speed calibration.
+/// `Normal` is the default; `Critical` and `Optional` are reserved
+/// for future selector-integration support (matched but never constructed).
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 enum ElementPriority {

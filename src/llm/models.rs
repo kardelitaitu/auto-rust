@@ -37,6 +37,14 @@ impl From<f64> for Temperature {
 pub struct MaxTokens(NonZeroU32);
 
 impl MaxTokens {
+    /// Create MaxTokens in a const context. Panics at compile time if value is zero.
+    pub const fn new_const(value: u32) -> Self {
+        match NonZeroU32::new(value) {
+            Some(nz) => Self(nz),
+            None => panic!("MaxTokens value must be non-zero"),
+        }
+    }
+
     pub fn new(value: u32) -> Option<Self> {
         NonZeroU32::new(value).map(Self)
     }
@@ -48,9 +56,8 @@ impl MaxTokens {
 }
 
 impl Default for MaxTokens {
-    #[allow(clippy::expect_used)]
     fn default() -> Self {
-        Self(NonZeroU32::new(2048).expect("2048 is non-zero"))
+        Self::new_const(2048)
     }
 }
 
@@ -179,14 +186,13 @@ pub struct OllamaConfig {
 }
 
 impl Default for OllamaConfig {
-    #[allow(clippy::expect_used)]
     fn default() -> Self {
         Self {
             base_url: "http://localhost:11434".into(),
             model: "llama3.2:3b".into(),
             timeout_ms: 240000,
             temperature: Temperature::new(0.7),
-            max_tokens: MaxTokens::new(2048).expect("2048 is non-zero"),
+            max_tokens: MaxTokens::new_const(2048),
         }
     }
 }
@@ -206,7 +212,6 @@ pub struct OpenRouterConfig {
 }
 
 impl Default for OpenRouterConfig {
-    #[allow(clippy::expect_used)]
     fn default() -> Self {
         Self {
             api_key: String::new(),
@@ -214,7 +219,7 @@ impl Default for OpenRouterConfig {
             model: "anthropic/claude-3-haiku".into(),
             timeout_ms: 120000,
             temperature: Temperature::new(0.7),
-            max_tokens: MaxTokens::new(4096).expect("4096 is non-zero"),
+            max_tokens: MaxTokens::new_const(4096),
             fallback_models: Vec::new(),
         }
     }
@@ -233,7 +238,6 @@ pub struct NvidiaConfig {
 }
 
 impl Default for NvidiaConfig {
-    #[allow(clippy::expect_used)]
     fn default() -> Self {
         Self {
             api_key: "nvapi-placeholder-key".to_string(),
@@ -242,7 +246,7 @@ impl Default for NvidiaConfig {
             timeout_ms: 600000,
             temperature: Temperature::new(1.0),
             top_p: 0.95,
-            max_tokens: MaxTokens::new(16384).expect("16384 is non-zero"),
+            max_tokens: MaxTokens::new_const(16384),
         }
     }
 }

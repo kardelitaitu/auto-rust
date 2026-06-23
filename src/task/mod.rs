@@ -25,6 +25,7 @@ pub mod policy;
 pub mod registry;
 pub mod security;
 pub mod task_example;
+pub mod test_llmreply;
 pub mod twitteractivity;
 pub mod twitterdive;
 pub mod twitterfollow;
@@ -57,6 +58,7 @@ pub const TASK_NAMES: &[&str] = &[
     "twitterquote",
     "twitterreply",
     "twitterretweet",
+    "test-llmreply",
     "twittertest",
 ];
 
@@ -157,6 +159,7 @@ async fn execute_single_attempt(
         "twitterquote" => twitterquote::run(api, payload.clone()).await,
         "twitterreply" => twitterreply::run(api, payload.clone()).await,
         "twitterretweet" => twitterretweet::run(api, payload.clone()).await,
+        "test-llmreply" => test_llmreply::run(api, payload.clone()).await,
         "twittertest" => twittertest::run(api, payload.clone()).await,
         _ => Err(anyhow::anyhow!("Unknown task: {name}")),
     }
@@ -201,7 +204,7 @@ mod tests {
 
     #[test]
     fn test_task_names_constant() {
-        assert_eq!(TASK_NAMES.len(), 15);
+        assert_eq!(TASK_NAMES.len(), 16);
         assert!(TASK_NAMES.contains(&"cookiebot"));
         assert!(TASK_NAMES.contains(&"pageview"));
         assert!(TASK_NAMES.contains(&"twitterintent"));

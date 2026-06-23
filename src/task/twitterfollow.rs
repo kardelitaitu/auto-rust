@@ -403,7 +403,6 @@ async fn is_already_following(api: &TaskContext, username: Option<&str>) -> Resu
         .unwrap_or(false))
 }
 
-#[allow(dead_code)]
 struct ButtonInfo {
     x: f64,
     y: f64,
@@ -466,6 +465,11 @@ async fn poll_for_follow_success(api: &TaskContext, username: &str) -> Result<bo
 async fn check_follow_button_says_following(api: &TaskContext) -> Result<bool> {
     match get_follow_button_info(api).await {
         Ok(Some(info)) => {
+            log::debug!(
+                "[twitterfollow] Button coordinates: x={}, y={}",
+                info.x,
+                info.y
+            );
             let t = info.text.to_lowercase();
             let l = info.label.to_lowercase();
             Ok(t.contains("following") || l.contains("following"))

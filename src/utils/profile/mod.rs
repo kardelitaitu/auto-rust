@@ -38,7 +38,10 @@ impl ProfileParam {
     /// Creates a new profile parameter.
     #[must_use]
     pub fn new(base: f64, deviation_pct: f64) -> Self {
-        Self { base, deviation_pct }
+        Self {
+            base,
+            deviation_pct,
+        }
     }
 
     /// Returns randomized value within deviation range.
@@ -664,21 +667,32 @@ mod tests {
 
     #[test]
     fn test_scroll_behavior_creation() {
-        let scroll = ScrollBehavior { amount: 300, pause_ms: 100, smooth: true, back_scroll: false };
+        let scroll = ScrollBehavior {
+            amount: 300,
+            pause_ms: 100,
+            smooth: true,
+            back_scroll: false,
+        };
         assert_eq!(scroll.amount, 300);
         assert_eq!(scroll.pause_ms, 100);
     }
 
     #[test]
     fn test_cursor_behavior_creation() {
-        let cursor = CursorBehavior { interval_min_ms: 10, interval_max_ms: 20 };
+        let cursor = CursorBehavior {
+            interval_min_ms: 10,
+            interval_max_ms: 20,
+        };
         assert_eq!(cursor.interval_min_ms, 10);
         assert_eq!(cursor.interval_max_ms, 20);
     }
 
     #[test]
     fn test_cursor_behavior_to_movement_config() {
-        let cursor = CursorBehavior { interval_min_ms: 10, interval_max_ms: 20 };
+        let cursor = CursorBehavior {
+            interval_min_ms: 10,
+            interval_max_ms: 20,
+        };
         let config = cursor.to_movement_config();
         assert_eq!(config.min_step_delay_ms, 10);
     }
@@ -700,7 +714,11 @@ mod tests {
 
     #[test]
     fn test_click_behavior_creation() {
-        let click = ClickBehavior { reaction_delay_ms: 200, reaction_delay_variance_pct: 20.0, offset_px: 5 };
+        let click = ClickBehavior {
+            reaction_delay_ms: 200,
+            reaction_delay_variance_pct: 20.0,
+            offset_px: 5,
+        };
         assert_eq!(click.reaction_delay_ms, 200);
         assert_eq!(click.reaction_delay_variance_pct, 20.0);
         assert_eq!(click.offset_px, 5);
@@ -708,7 +726,10 @@ mod tests {
 
     #[test]
     fn test_action_delay_behavior_creation() {
-        let delay = ActionDelayBehavior { min_ms: 100, variance_pct: 20.0 };
+        let delay = ActionDelayBehavior {
+            min_ms: 100,
+            variance_pct: 20.0,
+        };
         assert_eq!(delay.min_ms, 100);
         assert_eq!(delay.variance_pct, 20.0);
     }
@@ -783,21 +804,30 @@ mod tests {
 
     #[test]
     fn test_cursor_behavior_fast_interval() {
-        let cursor = CursorBehavior { interval_min_ms: 5, interval_max_ms: 10 };
+        let cursor = CursorBehavior {
+            interval_min_ms: 5,
+            interval_max_ms: 10,
+        };
         let config = cursor.to_movement_config();
         assert_eq!(config.speed, Speed::Fast);
     }
 
     #[test]
     fn test_cursor_behavior_slow_interval() {
-        let cursor = CursorBehavior { interval_min_ms: 25, interval_max_ms: 30 };
+        let cursor = CursorBehavior {
+            interval_min_ms: 25,
+            interval_max_ms: 30,
+        };
         let config = cursor.to_movement_config();
         assert_eq!(config.speed, Speed::Slow);
     }
 
     #[test]
     fn test_cursor_behavior_normal_interval() {
-        let cursor = CursorBehavior { interval_min_ms: 15, interval_max_ms: 20 };
+        let cursor = CursorBehavior {
+            interval_min_ms: 15,
+            interval_max_ms: 20,
+        };
         let config = cursor.to_movement_config();
         assert_eq!(config.speed, Speed::Normal);
     }
@@ -826,7 +856,10 @@ mod tests {
                 break;
             }
         }
-        assert!(found_variation, "ProfileParam::random() should produce variation across calls");
+        assert!(
+            found_variation,
+            "ProfileParam::random() should produce variation across calls"
+        );
     }
 
     #[test]

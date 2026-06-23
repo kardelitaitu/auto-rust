@@ -57,9 +57,9 @@ max_total_actions = 10               # Total engagement actions cap per session
 
 # LLM Configuration (V2 - for smart replies & quote tweets)
 [twitter_activity.llm]
-enabled = false                      # Set true to enable LLM features
+enabled = true                      # Set true to enable LLM features
 provider = "ollama"                  # "ollama" or "openrouter"
-model = "llama3.2:latest"            # Ollama model name
+model = "hf.co/unsloth/gemma-4-E4B-it-qat-GGUF:UD-Q4_K_XL"            # Ollama model name
 temperature = 0.7                    # Creativity (0.0-1.0)
 max_tokens = 100                     # Max reply length
 timeout_ms = 30000                   # 30s timeout for generation

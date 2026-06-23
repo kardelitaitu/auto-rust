@@ -55,6 +55,7 @@ impl TaskPayload {
             "twitterquote" => self.validate_twitterquote(),
             "twitterreply" => self.validate_twitterreply(),
             "twitterretweet" => self.validate_object_payload("twitterretweet"),
+            "test-llmreply" => self.validate_test_llmreply(),
             "twittertest" => self.validate_object_payload("twittertest"),
             "twitteractivity" => self.validate_twitteractivity(),
             "demoqa" => self.validate_demoqa(),
@@ -211,6 +212,35 @@ impl TaskPayload {
         }
         Ok(())
     }
+
+    fn validate_test_llmreply(&self) -> Result<()> {
+        if !self.payload.is_object() {
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "test-llmreply".to_string(),
+                reason: "payload must be an object".to_string(),
+            }));
+        }
+
+        let has_url = self
+            .payload
+            .get("url")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
+        let has_value = self
+            .payload
+            .get("value")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
+
+        if !(has_url || has_value) {
+            return Err(OrchestratorError::Task(TaskError::ValidationFailed {
+                task_name: "test-llmreply".to_string(),
+                reason: "requires url or value pointing to a tweet".to_string(),
+            }));
+        }
+
+        Ok(())
+    }
 }
 
 pub fn validate_task(name: &str, payload: Value) -> Result<()> {
@@ -306,6 +336,16 @@ pub fn get_task_validation_info(task_name: &str) -> Option<TaskValidationInfo> {
             ],
             required_fields: vec![],
             optional_fields: vec!["task-specific fields".to_string()],
+        }),
+        "test-llmreply" => Some(TaskValidationInfo {
+            description: "Test LLM reply generation pipeline. Runs phase 1 navigation, extracts tweet context, calls LLM, and optionally sends the reply.".to_string(),
+            examples: vec![
+                "test-llmreply url=https://x.com/user/status/123".to_string(),
+                "test-llmreply url=https://x.com/user/status/123 dry_run=true".to_string(),
+                "test-llmreply={\"url\":\"...\",\"dry_run\":true}".to_string(),
+            ],
+            required_fields: vec!["url or value".to_string()],
+            optional_fields: vec!["dry_run (bool, default false — skip sending when true)".to_string()],
         }),
         _ => None,
     }

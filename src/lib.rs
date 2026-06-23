@@ -55,7 +55,7 @@ pub mod cli;
 pub mod config;
 pub mod error;
 pub mod health_logger;
-pub mod internal;
+pub(crate) mod internal;
 pub mod llm;
 pub mod logger;
 pub mod metrics;

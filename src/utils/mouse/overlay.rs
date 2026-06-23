@@ -300,7 +300,7 @@ pub async fn sync_cursor_overlay_force(page: &Page) -> Result<()> {
     sync_cursor_overlay_with_mode(page, true).await
 }
 
-pub async fn run_cursor_overlay_background(
+pub(crate) async fn run_cursor_overlay_background(
     overlay_state: Arc<SessionOverlayState>,
     interval_ms: u64,
     session_id: String,

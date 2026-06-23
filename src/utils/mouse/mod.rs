@@ -54,9 +54,10 @@ pub use native::{
 };
 pub use overlay::{
     cursor_move_to, cursor_move_to_immediate, cursor_move_to_with_config, is_overlay_enabled,
-    run_cursor_overlay_background, set_overlay_enabled, sync_cursor_overlay,
-    sync_cursor_overlay_force, CursorMovementConfig, PathStyle, Precision, Speed,
+    set_overlay_enabled, sync_cursor_overlay, sync_cursor_overlay_force, CursorMovementConfig,
+    PathStyle, Precision, Speed,
 };
+pub(crate) use overlay::run_cursor_overlay_background;
 pub use trajectory::Point;
 pub use types::{
     ClickOutcome, ClickStatus, HoverOutcome, HoverStatus, MouseButton, NativeCursorOutcome,

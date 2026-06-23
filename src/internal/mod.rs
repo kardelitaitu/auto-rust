@@ -10,10 +10,6 @@ pub mod mouse {
     pub use crate::utils::mouse::*;
 }
 
-pub mod geometry {
-    pub use crate::utils::geometry::*;
-}
-
 pub mod keyboard {
     pub use crate::utils::keyboard::*;
 }

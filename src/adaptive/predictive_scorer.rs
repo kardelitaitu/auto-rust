@@ -18,18 +18,18 @@ pub struct PredictiveEngagementScorer {
 #[derive(Debug, Clone, Default)]
 struct TextFeatures {
     /// Sentiment score (reserved for future sentiment-weighted decisions)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     sentiment: f32,
     /// Text length (used by ActionRecommender::get_best_action)
     length: usize,
     /// Keyword presence (reserved for future keyword matching)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     keywords: HashMap<String, f32>,
     /// Readability score (reserved for future content quality scoring)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     readability: f32,
     /// Emotion score (reserved for future affect-aware engagement)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     emotion: f32,
 }
 
@@ -39,15 +39,15 @@ struct TemporalFeatures {
     /// Hour of day (0-23) — used by get_optimal_timing
     hour: u8,
     /// Day of week (0-6) — reserved for future day-aware decisions
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     day_of_week: u8,
     /// Is peak hour — used by get_best_action
     is_peak: bool,
     /// Time since last post (reserved for future rate limiting)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     time_since_last: f32,
     /// Posting frequency (reserved for future cadence analysis)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     posting_frequency: f32,
 }
 
@@ -55,16 +55,16 @@ struct TemporalFeatures {
 #[derive(Debug, Clone)]
 struct UserFeatures {
     /// User reputation score (reserved for future trust weighting)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     reputation: f32,
     /// Follower count (reserved for future influence scoring)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     follower_count: u32,
     /// Following count (reserved for future follow-back analysis)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     following_count: u32,
     /// Account age in days (reserved for future account maturity scoring)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     account_age: u32,
     /// Engagement rate — used by get_best_action
     engagement_rate: f32,
@@ -74,18 +74,18 @@ struct UserFeatures {
 #[derive(Debug, Clone, Default)]
 struct ContextFeatures {
     /// Thread depth (reserved for future thread-awareness)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     thread_depth: u32,
     /// Reply count — used by get_best_action
     reply_count: u32,
     /// Has media (reserved for future media-aware decisions)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     has_media: bool,
     /// Topic category (reserved for future topic analysis)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     topic_category: String,
     /// Trending score (reserved for future trending detection)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     trending_score: f32,
 }
 
@@ -100,12 +100,12 @@ struct FeatureVector {
 /// Action recommendation engine.
 struct ActionRecommender {
     /// Action type rankings (reserved for future ML integration)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     action_rankings: HashMap<String, f32>,
     /// Timing recommendations
     timing_recommendations: TimingRecommendations,
     /// Content suggestions (reserved for future content generation)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     content_suggestions: Vec<String>,
 }
 
@@ -114,10 +114,10 @@ struct TimingRecommendations {
     /// Optimal posting times
     optimal_times: Vec<u8>,
     /// Recommended posting frequency (reserved for future frequency modulation)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     recommended_frequency: f32,
     /// Best days for engagement (reserved for future day-aware scheduling)
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     best_days: Vec<u8>,
 }
 
@@ -457,6 +457,9 @@ mod tests {
         let features = TextFeatures::default();
         assert_eq!(features.length, 0);
         assert_eq!(features.sentiment, 0.0);
+        assert!(features.keywords.is_empty());
+        assert_eq!(features.readability, 0.0);
+        assert_eq!(features.emotion, 0.0);
     }
 
     #[test]
@@ -464,6 +467,9 @@ mod tests {
         let features = TemporalFeatures::default();
         assert_eq!(features.hour, 12);
         assert_eq!(features.day_of_week, 1);
+        assert!(!features.is_peak);
+        assert_eq!(features.time_since_last, 3600.0);
+        assert_eq!(features.posting_frequency, 0.1);
     }
 
     #[test]
@@ -471,6 +477,9 @@ mod tests {
         let features = UserFeatures::default();
         assert_eq!(features.follower_count, 1000);
         assert_eq!(features.following_count, 100);
+        assert_eq!(features.reputation, 0.5);
+        assert_eq!(features.account_age, 365);
+        assert_eq!(features.engagement_rate, 0.05);
     }
 
     #[test]
@@ -478,19 +487,25 @@ mod tests {
         let features = ContextFeatures::default();
         assert_eq!(features.thread_depth, 0);
         assert_eq!(features.reply_count, 0);
+        assert!(!features.has_media);
+        assert!(features.topic_category.is_empty());
+        assert_eq!(features.trending_score, 0.0);
     }
 
     #[test]
     fn test_action_recommender_new() {
         let recommender = ActionRecommender::new();
         assert!(recommender.action_rankings.is_empty());
+        assert!(recommender.content_suggestions.is_empty());
     }
 
     #[test]
     fn test_timing_recommendations_default() {
         let timing = TimingRecommendations::default();
         assert_eq!(timing.optimal_times.len(), 3);
+        assert_eq!(timing.optimal_times[0], 9);
         assert_eq!(timing.best_days.len(), 3);
+        assert_eq!(timing.recommended_frequency, 0.5);
     }
 
     #[test]

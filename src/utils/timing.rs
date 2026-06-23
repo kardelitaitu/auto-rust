@@ -46,22 +46,8 @@ pub const TIMEOUT_LONG_MS: u64 = 30_000;
 pub const TIMEOUT_EXTRA_SECS: u64 = 60;
 pub const TIMEOUT_EXTRA_MS: u64 = 60_000;
 
-/// Returns a randomized duration around a base value using a uniform spread.
-///
-/// Example: `duration_with_variance(300_000, 20)` yields a value in
-/// `240_000..=360_000`.
-#[must_use]
-pub fn duration_with_variance(base_ms: u64, variance_pct: u32) -> u64 {
-    if base_ms == 0 {
-        return 0;
-    }
-
-    let variance_pct = variance_pct.min(100);
-    let delta = base_ms.saturating_mul(u64::from(variance_pct)) / 100;
-    let min_ms = base_ms.saturating_sub(delta);
-    let max_ms = base_ms.saturating_add(delta);
-    random_in_range(min_ms, max_ms)
-}
+// Re-exported from the canonical location in `session`.
+pub use crate::session::{duration_with_variance, duration_ms};
 
 /// Sleep for `ms` milliseconds; returns early if `cancel` is triggered.
 pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
@@ -216,15 +202,6 @@ where
     timeout(Duration::from_millis(duration_ms), future)
         .await
         .map_err(|_| anyhow!("[{task_name}] Task exceeded duration budget of {duration_ms}ms"))?
-}
-
-/// Converts a [`Duration`] to milliseconds as a [`u64`].
-///
-/// Uses a saturating cast from `u128` to `u64`. In practice the truncation
-/// only matters for durations longer than ~584 million years.
-#[must_use]
-pub fn duration_ms(d: Duration) -> u64 {
-    d.as_millis() as u64
 }
 
 #[cfg(test)]
@@ -1148,14 +1125,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn duration_with_variance_zero_returns_base() {
-        assert_eq!(duration_with_variance(120_000, 0), 120_000);
-    }
-
-    #[test]
-    fn duration_with_variance_stays_within_bounds() {
-        let value = duration_with_variance(300_000, 20);
-        assert!((240_000..=360_000).contains(&value));
-    }
 }

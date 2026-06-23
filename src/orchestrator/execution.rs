@@ -223,8 +223,8 @@ async fn execute_task_on_session(
                 task_def.name,
                 task_result
                     .last_error
-                    .clone()
-                    .unwrap_or_else(|| "Unknown error".to_string())
+                    .as_deref()
+                    .unwrap_or("Unknown error")
             );
             failed_sessions.push(session_id);
         }

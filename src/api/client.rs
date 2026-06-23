@@ -1076,7 +1076,9 @@ impl RetryPolicy {
 
         // last_error is always Some at this point — the loop sets it on every failure
         // and breaks only if max_retries exhausted or non-retryable error encountered
-        #[allow(clippy::expect_used)]
-        Err(last_error.expect("last_error must be Some if retry loop exhausted"))
+        Err(match last_error {
+            Some(err) => err,
+            None => unreachable!("last_error must be Some if retry loop exhausted"),
+        })
     }
 }

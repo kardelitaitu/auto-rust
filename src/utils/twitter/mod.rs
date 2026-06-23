@@ -35,8 +35,6 @@ pub mod twitteractivity_selectors;
 pub mod twitteractivity_simulation;
 pub mod twitteractivity_state;
 pub mod twitteractivity_types;
-pub mod unified_processor;
-
 pub use twitteractivity_types::{
     ComposerFlow, EngagementOutcome, FlowError, FollowOutcome, PostOutcome, ReplyFlowState,
     StatusUrl, TweetId,
@@ -77,8 +75,6 @@ pub use twitteractivity_retry::*;
 pub use twitteractivity_selectors::*;
 #[allow(unused_imports)]
 pub use twitteractivity_simulation::*;
-#[allow(unused_imports)]
-pub use unified_processor::*;
 
 #[allow(unused_imports)]
 pub use twitteractivity_state::*;

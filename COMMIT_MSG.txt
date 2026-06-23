@@ -1,0 +1,8 @@
+fix: add 2-3s pre-typing delay and typing verification loop in send_reply
+
+- Add randomized 2-3s delay after focusing textarea, before typing starts
+  (gives React time to render the composer and position the cursor)
+- Replace blind 400ms pause after typing with active verification loop
+  (reads back textarea content via JS, retries up to 10x at 500ms intervals)
+- Prevents submit button lookup from starting before React has processed
+  all InputEvents from natural typing

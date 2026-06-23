@@ -405,7 +405,9 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     }
 
     info!("Reply textarea focused");
-    human_pause(api, 300).await;
+    // Wait 2-3s before typing to let React render the composer and position cursor
+    let pause_ms = rand::thread_rng().gen_range(2000..3001);
+    human_pause(api, pause_ms).await;
 
     // Type the reply text with natural typing (includes typos and corrections)
     info!("Typing reply text (with typos)");
@@ -425,7 +427,49 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
         info!("Timeout typing reply text");
         return Ok(EngagementOutcome::Failed);
     }
-    human_pause(api, 400).await;
+    // Verify typing completed by reading back the textarea content.
+    // This waits for React to process all queued InputEvents before we
+    // attempt to find the submit button (which is disabled while empty).
+    info!("Verifying typed content...");
+    {
+        let check_js = r#"
+            (function() {
+                const el = document.querySelector('[data-testid="tweetTextarea_0"]');
+                if (!el) return '';
+                return el.textContent || el.innerText || '';
+            })()
+        "#;
+        let mut received = String::new();
+        for attempt in 1..=10 {
+            if let Ok(result) = timeout(
+                Duration::from_secs(TIMEOUT_SHORT_SECS),
+                api.page().evaluate(check_js),
+            )
+            .await
+            {
+                if let Ok(val) = result {
+                    if let Some(text) = val.value().and_then(|v| v.as_str()) {
+                        received = text.trim().to_string();
+                        if !received.is_empty() && reply_text.contains(&received) {
+                            info!(
+                                "Typing verified (attempt {}/10): {} chars received",
+                                attempt,
+                                received.len()
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
+            info!("Content not ready yet (attempt {}/10), waiting...", attempt);
+            human_pause(api, 500).await;
+        }
+        if received.is_empty() {
+            info!(
+                "Typing verification: no content detected after 10 attempts, proceeding anyway..."
+            );
+        }
+    }
 
     // Click the Reply submit button in the composer.
     // Retry up to 3 times with short pauses to allow React to process the input

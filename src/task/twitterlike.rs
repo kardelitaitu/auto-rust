@@ -85,7 +85,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                     let result = api.page().evaluate(like_js.to_string()).await?;
                     if result.value().is_some() {
                         info!(
-                            "[twitterlike] Liked tweet {}/{}",
+                            "💖 [SUCCESS] [twitterlike] Liked tweet {}/{}",
                             likes_count + 1,
                             max_likes
                         );
@@ -141,7 +141,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                 .unwrap_or(false);
 
             if clicked {
-                info!("[twitterlike] Like clicked successfully");
+                info!("💖 [SUCCESS] [twitterlike] Like clicked successfully");
                 likes_count += 1;
 
                 if i < max_likes - 1 {

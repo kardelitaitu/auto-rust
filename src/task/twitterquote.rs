@@ -110,7 +110,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     match post_quote_with_retry(api, 3).await? {
         PostOutcome::Posted => {
             flow.record_posted()?;
-            info!("[twitterquote] Quote posted successfully!");
+            info!("💬 [SUCCESS] [twitterquote] Quote posted successfully!");
         }
         PostOutcome::ComposerNotFound => warn!("[twitterquote] Composer not found"),
         PostOutcome::Failed => warn!("[twitterquote] Failed to post quote"),

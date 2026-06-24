@@ -90,7 +90,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     match post_reply_with_retry(api, 3).await? {
         PostOutcome::Posted => {
             flow.record_posted()?;
-            info!("Reply posted successfully!");
+            info!("✍️ [SUCCESS] Reply posted successfully!");
         }
         PostOutcome::ComposerNotFound => warn!("Composer not found"),
         PostOutcome::Failed => warn!("Failed to post reply"),

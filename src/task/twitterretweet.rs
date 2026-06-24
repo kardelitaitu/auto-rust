@@ -99,7 +99,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         match post_quote_with_retry(api, 3).await? {
             PostOutcome::Posted => {
                 flow.record_posted()?;
-                info!("[twitterretweet] Quote posted successfully!");
+                info!("💬 [SUCCESS] [twitterretweet] Quote posted successfully!");
             }
             PostOutcome::ComposerNotFound => warn!("[twitterretweet] Composer not found"),
             PostOutcome::Failed => warn!("[twitterretweet] Failed to post quote"),
@@ -146,7 +146,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false)
             {
-                info!("[twitterretweet] Retweet confirmed!");
+                info!("🔁 [SUCCESS] [twitterretweet] Retweet confirmed!");
             } else {
                 warn!("[twitterretweet] Failed to confirm retweet");
             }

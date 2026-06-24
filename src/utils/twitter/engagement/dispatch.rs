@@ -254,7 +254,10 @@ pub async fn dispatch_action(
                     Ok(outcome) => {
                         let success = engagement_success(&outcome);
                         if success {
-                            info!("Quote tweeted with commentary: {quote_text}");
+                            info!(
+                                "💬 [SUCCESS] Quote tweeted tweet {} with commentary: {}",
+                                tweet_id, quote_text
+                            );
                         } else {
                             log_engagement_failure(&outcome, "quote", tweet_id);
                         }
@@ -348,7 +351,12 @@ pub async fn dispatch_action(
                 {
                     Ok(outcome) => {
                         let ok = engagement_success(&outcome);
-                        if !ok {
+                        if ok {
+                            info!(
+                                "✍️ [SUCCESS] Replied to tweet {} with sentiment {:?}: {}",
+                                tweet_id, sentiment, reply_text
+                            );
+                        } else {
                             log_engagement_failure(&outcome, "reply", tweet_id);
                         }
                         ok
@@ -397,31 +405,32 @@ pub async fn dispatch_action(
         // Update counters and record action
         match action {
             "like" => {
-                info!("Liked tweet");
+                info!("💖 [SUCCESS] Liked tweet {}", tweet_id);
                 counters.increment_like();
                 api.increment_run_counter(RUN_COUNTER_LIKE_SUCCESS, 1);
             }
             "retweet" => {
-                info!("Retweeted");
+                info!("🔁 [SUCCESS] Retweeted tweet {}", tweet_id);
                 counters.increment_retweet();
                 api.increment_run_counter(RUN_COUNTER_RETWEET_SUCCESS, 1);
             }
             "quote" => {
+                // Logged in detail with commentary text above
                 counters.increment_quote_tweet();
                 api.increment_run_counter(RUN_COUNTER_QUOTE_SUCCESS, 1);
             }
             "follow" => {
-                info!("Followed user");
+                info!("👤 [SUCCESS] Followed user from tweet {}", tweet_id);
                 counters.increment_follow();
                 api.increment_run_counter(RUN_COUNTER_FOLLOW_SUCCESS, 1);
             }
             "reply" => {
-                info!("Replied with sentiment {sentiment:?}");
+                // Logged in detail with text above
                 counters.increment_reply();
                 api.increment_run_counter(RUN_COUNTER_REPLY_SUCCESS, 1);
             }
             "bookmark" => {
-                info!("Bookmarked tweet");
+                info!("🔖 [SUCCESS] Bookmarked tweet {}", tweet_id);
                 counters.increment_bookmark();
                 api.increment_run_counter(RUN_COUNTER_BOOKMARK_SUCCESS, 1);
             }

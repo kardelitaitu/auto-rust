@@ -185,9 +185,30 @@ fn main() {
         eprintln!("Warning: Failed to set working directory: {e}");
     }
 
-    if let Err(e) = run() {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
+    // Spawn a thread with a larger stack size (4MB) to run the Tokio runtime.
+    // This prevents stack overflows on Windows in debug mode where async future
+    // state machines are unoptimized and call stacks can be very deep.
+    let runtime_thread = std::thread::Builder::new()
+        .name("main-runtime".to_string())
+        .stack_size(4 * 1024 * 1024) // 4MB
+        .spawn(|| {
+            if let Err(e) = run() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        });
+
+    match runtime_thread {
+        Ok(handle) => {
+            if handle.join().is_err() {
+                eprintln!("Error: Main runtime thread panicked");
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: Failed to spawn main runtime thread: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

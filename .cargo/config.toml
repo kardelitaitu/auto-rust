@@ -10,9 +10,9 @@ t = "test --all-features"
 f = "fmt --all -- --check"
 
 [build]
-# Use physical cores for CPU-intensive compilation (16 physical = 16 jobs)
-# Logical processors (32) can cause context switching overhead
-jobs = 16
+# Use physical cores for CPU-intensive compilation (8 threads = 8 jobs)
+# Over-allocating jobs can cause context switching overhead and memory pressure
+jobs = 8
 
 # sccache intentionally not configured in this repository.
 # Keep builds on plain Cargo incremental compilation for reliability.
@@ -37,7 +37,7 @@ debug = "none"                   # 0, 1, 2, "none", "limited", "full", "line-tab
 split-debuginfo = "unpacked"     # Helps reduce linking time (works on Windows)
 incremental = true               # Keep this for fast edit-compile cycles
 lto = "off"                      # Disable all LTO for dev speed
-codegen-units = 16               # Optimal for 16-32 threads (256 was too high)
+codegen-units = 8                # Optimal for 8 threads
 overflow-checks = false          # Small extra speedup (optional)
 
 # Minimal debug info for all dependencies (big win!)
@@ -50,14 +50,14 @@ opt-level = 0
 # Compile them with optimizations for faster builds
 [profile.dev.build-override]
 opt-level = 3
-codegen-units = 16
+codegen-units = 8
 
 # ========================================
 # Release profiles (kept reasonable)
 [profile.release]
 opt-level = 3
 lto = "thin"                     # Best balance for most projects (fast compile + good perf)
-codegen-units = 16               # Parallel codegen units for faster compilation
+codegen-units = 8                # Parallel codegen units for faster compilation
 incremental = true               # Enable incremental compilation for release builds
 debug = false
 strip = "debuginfo"              # Or change to `true` for smaller binaries
@@ -66,11 +66,11 @@ overflow-checks = false          # Default, but good to be explicit
 
 [profile.release.build-override]
 opt-level = 3
-codegen-units = 16
+codegen-units = 8
 
 # Fast but lighter release (for quick testing)
 [profile.fast-release]
 inherits = "release"
 lto = "off"
-codegen-units = 64
+codegen-units = 8
 opt-level = 2

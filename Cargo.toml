@@ -134,7 +134,7 @@ lto = false                   # Disable LTO for dev
 [profile.release]
 incremental = true            # Enable incremental compilation for release builds
 lto = "thin"                  # Thin link-time optimization (much faster compile times)
-codegen-units = 16            # Parallel codegen units for faster compilation
+codegen-units = 8             # Parallel codegen units for faster compilation
 opt-level = 3                 # Max optimization
 overflow-checks = true        # Keep safety checks in release
 strip = "symbols"             # Remove debug symbols for smaller binary

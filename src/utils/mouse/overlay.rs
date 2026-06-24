@@ -300,6 +300,30 @@ pub async fn sync_cursor_overlay_force(page: &Page) -> Result<()> {
     sync_cursor_overlay_with_mode(page, true).await
 }
 
+pub async fn trigger_click_flash(page: &Page) -> Result<()> {
+    let eval = page.evaluate(
+        "(function() {
+            const dot = document.getElementById('__auto_rust_mouse_overlay');
+            if (!dot) return;
+            dot.style.transition = 'transform 80ms ease, border-color 80ms ease, box-shadow 80ms ease';
+            dot.style.transform = 'scale(1.8)';
+            dot.style.borderColor = '#ff0000';
+            dot.style.boxShadow = '0 0 16px rgba(255,0,0,0.9)';
+            setTimeout(function() {
+                dot.style.transition = 'transform 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out';
+                dot.style.transform = 'scale(1)';
+                dot.style.borderColor = '#ff6600';
+                dot.style.boxShadow = 'none';
+            }, 120);
+        })();"
+    );
+
+    timeout(Duration::from_millis(500), eval)
+        .await
+        .map_err(|_| anyhow::anyhow!("trigger_click_flash timed out"))??;
+    Ok(())
+}
+
 pub(crate) async fn run_cursor_overlay_background(
     overlay_state: Arc<SessionOverlayState>,
     interval_ms: u64,

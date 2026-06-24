@@ -218,6 +218,9 @@ pub async fn dispatch_action(
                         &task_config.sentiment_templates,
                     )
                 };
+                if did_dive && task_config.llm_enabled {
+                    read_replies_for_context(api, did_dive).await;
+                }
                 let quote_text = if task_config.llm_enabled {
                     match extract_tweet_context(api).await {
                         Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
@@ -303,6 +306,9 @@ pub async fn dispatch_action(
                         &task_config.sentiment_templates,
                     )
                 };
+                if did_dive && task_config.llm_enabled {
+                    read_replies_for_context(api, did_dive).await;
+                }
                 let reply_text = if task_config.llm_enabled {
                     match extract_tweet_context(api).await {
                         Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
@@ -446,6 +452,19 @@ pub async fn dispatch_action(
     }
 
     Ok(success)
+}
+async fn read_replies_for_context(api: &TaskContext, did_dive: bool) {
+    if did_dive {
+        info!("Reading replies to build conversation context...");
+        // Scroll down to load and read replies (pauses=2, scroll=500px, variable_speed=true, back_scroll=true)
+        if let Err(e) = api.scroll_read(2, 500, true, true).await {
+            warn!("Failed to scroll read replies: {e}");
+        }
+        // Make sure we are at the top to access the tweet/buttons
+        if let Err(e) = api.scroll_to_top().await {
+            warn!("Failed to scroll back to top: {e}");
+        }
+    }
 }
 
 #[cfg(test)]

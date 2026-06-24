@@ -63,5 +63,8 @@ pub async fn dispatch_click(page: &Page, x: f64, y: f64, button: MouseButton) ->
     // Fire pointerout after click (cleanup)
     let _ = super::cdp::dispatch_pointer_event(page, "pointerout", x, y, button).await;
 
+    // Visual feedback: flash the cursor overlay dot
+    super::overlay::trigger_click_flash(page).await.ok();
+
     Ok(())
 }

@@ -258,7 +258,7 @@ fn registry_based_task_validation() {
     // Known tasks should be in registry
     assert!(registry.is_known("cookiebot"));
     assert!(registry.is_known("pageview"));
-    assert_eq!(registry.task_count(), 15);
+    assert_eq!(registry.task_count(), 16);
 
     // Unknown tasks should not be in registry
     assert!(!registry.is_known("unknown_task"));

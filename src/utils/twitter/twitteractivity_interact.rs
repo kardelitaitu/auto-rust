@@ -522,7 +522,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
         info!("Found reply button at ({x:.1}, {y:.1})");
         // Scroll button into view before interacting
         let scroll_js = r#"(function() {
-                const btn = document.querySelector('button[data-testid="tweetButtonInline"]');
+                const btn = document.querySelector('button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]');
                 if (btn) btn.scrollIntoView({ block: 'center', behavior: 'instant' });
             })()"#
             .to_string();

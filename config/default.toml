@@ -37,8 +37,8 @@ retry_delay_ms = 500
 
 [twitter_activity]
 # Feed scanning settings
-feed_scan_duration_ms = 120000      # 2 minutes
-feed_scroll_count = 12               # Number of scroll actions per scan
+feed_scan_duration_ms = 600000      # 10 minutes
+feed_scroll_count = 100              # Number of scroll actions per scan
 engagement_candidate_count = 5       # Number of tweets to consider for engagement
 
 # Guard thresholds (stop conditions for feed loop)

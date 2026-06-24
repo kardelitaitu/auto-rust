@@ -614,10 +614,6 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
 /// - Clicks the send button to post the reply
 #[instrument(skip(api))]
 pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<EngagementOutcome> {
-    match click_reply_button(api).await? {
-        EngagementOutcome::Completed => {}
-        other => return Ok(other),
-    }
     send_reply(api, reply_text).await
 }
 

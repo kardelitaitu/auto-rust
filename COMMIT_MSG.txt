@@ -1,9 +1,0 @@
-fix: reply submit button selector, click flash overlay, and reply context reading
-
-- Fix reply submit button selector: try tweetButtonInline (old) then
-  tweetButton (new Twitter layout); update scroll fallback in send_reply
-- Add trigger_click_flash() — cursor dot pulses red+scale on each click
-- Wire click flash into dispatch_click() for all CDP-based clicks
-- Add read_replies_for_context() for LLM-based reply/quote generation
-  (scrolls to load replies, builds conversation context)
-- Bump registry test count 15→16 (catch-up from earlier test-llmreply addition)

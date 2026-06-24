@@ -284,11 +284,12 @@ pub async fn click_selector_human(
     if !wait_for_element_stability(page, selector, 5000).await? {
         return Err(anyhow::anyhow!("Element '{selector}' not stable within 5s"));
     }
+
+    scroll::scroll_into_view(page, selector).await?;
+
     if !is_element_clickable(page, selector).await? {
         return Err(anyhow::anyhow!("Element '{selector}' not clickable"));
     }
-
-    scroll::scroll_into_view(page, selector).await?;
 
     if !is_in_viewport_internal(page, selector).await? {
         return Err(anyhow::anyhow!(
@@ -351,11 +352,6 @@ pub async fn native_click_selector_human(
     if !wait_for_element_stability(page, selector, stability_wait_ms).await? {
         return Err(anyhow::anyhow!("trace={trace_id} nativeclick element '{selector}' not stable within {stability_wait_ms}ms"));
     }
-    if !is_element_clickable(page, selector).await? {
-        return Err(anyhow::anyhow!(
-            "trace={trace_id} nativeclick element '{selector}' not clickable"
-        ));
-    }
 
     let settle_ms = (reaction_delay_ms / 4)
         .clamp(40, 200)
@@ -370,6 +366,12 @@ pub async fn native_click_selector_human(
     human_pause(attention_pause_ms, reaction_delay_variance_pct.min(45)).await;
     nativeclick_debug(session_id, trace_id, selector, "scroll-into-view", "start");
     scroll::scroll_into_view(page, selector).await?;
+
+    if !is_element_clickable(page, selector).await? {
+        return Err(anyhow::anyhow!(
+            "trace={trace_id} nativeclick element '{selector}' not clickable"
+        ));
+    }
 
     if !is_in_viewport_internal(page, selector).await? {
         return Err(anyhow::anyhow!(

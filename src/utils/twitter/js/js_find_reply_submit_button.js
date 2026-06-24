@@ -8,7 +8,7 @@
             if (rect.width <= 0 || rect.height <= 0) continue;
             if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
             var text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
-            if (text !== 'reply') continue;
+            if (text !== 'reply' && text !== 'post' && text !== 'reply all' && text !== 'post reply') continue;
             return { x: rect.x + rect.width/2, y: rect.y + rect.height/2 };
         }
     }

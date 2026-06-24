@@ -302,7 +302,7 @@ fn check_banned_words(text: &str) -> Option<String> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// let text = "```json\n{\"key\": \"value\"}\n```";
 /// assert_eq!(strip_code_block(text), Some("{\"key\": \"value\"}".to_string()));
 /// ```

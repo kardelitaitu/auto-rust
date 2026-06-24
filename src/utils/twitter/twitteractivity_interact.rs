@@ -485,7 +485,16 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
         }
     }
 
-    // Click the Reply submit button in the composer.
+    // 1. Scroll the reply submit button into view so its coordinates are stable.
+    let scroll_js = r#"(function() {
+             const btn = document.querySelector('button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]');
+             if (btn) btn.scrollIntoView({ block: 'center', behavior: 'instant' });
+         })()"#
+        .to_string();
+    let _ = api.page().evaluate(scroll_js).await;
+    human_pause(api, 300).await;
+
+    // 2. Click the Reply submit button by evaluating its actual post-scroll coordinates.
     // Retry up to 3 times with short pauses to allow React to process the input
     // and enable the button (it starts disabled when composer is empty).
     let reply_button_js = js_find_reply_submit_button();
@@ -520,14 +529,6 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
 
     if let Some((x, y)) = button_coords {
         info!("Found reply button at ({x:.1}, {y:.1})");
-        // Scroll button into view before interacting
-        let scroll_js = r#"(function() {
-                const btn = document.querySelector('button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]');
-                if (btn) btn.scrollIntoView({ block: 'center', behavior: 'instant' });
-            })()"#
-            .to_string();
-        let _ = api.page().evaluate(scroll_js).await;
-        human_pause(api, 300).await;
 
         if timeout(
             Duration::from_secs(TIMEOUT_SHORT_SECS),

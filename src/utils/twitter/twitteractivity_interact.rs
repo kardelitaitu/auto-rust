@@ -47,7 +47,7 @@
 //! - Random variation in timing to avoid patterns
 
 use crate::prelude::TaskContext;
-use crate::utils::timing::{TIMEOUT_MEDIUM_SECS, TIMEOUT_SHORT_SECS};
+use crate::utils::timing::TIMEOUT_SHORT_SECS;
 use anyhow::Result;
 use log::info;
 use rand::Rng;
@@ -412,8 +412,11 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     // Type the reply text with natural typing (includes typos and corrections)
     info!("Typing reply text (with typos)");
     let typing = api.behavior_runtime().typing;
-    if timeout(
-        Duration::from_secs(TIMEOUT_MEDIUM_SECS),
+    // Calculate dynamic timeout: allow up to 1.5 seconds per character for natural typing, plus base medium timeout
+    let typing_timeout_secs =
+        crate::utils::timing::TIMEOUT_MEDIUM_SECS + (reply_text.len() as u64 * 1500 / 1000);
+    match timeout(
+        Duration::from_secs(typing_timeout_secs),
         crate::utils::keyboard::natural_typing_profiled(
             api.page(),
             "[data-testid=\"tweetTextarea_0\"]",
@@ -422,10 +425,16 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
         ),
     )
     .await
-    .is_err()
     {
-        info!("Timeout typing reply text");
-        return Ok(EngagementOutcome::Failed);
+        Ok(Err(e)) => {
+            info!("Typing failed due to error: {e}");
+            return Ok(EngagementOutcome::Failed);
+        }
+        Err(_) => {
+            info!("Timeout typing reply text");
+            return Ok(EngagementOutcome::Failed);
+        }
+        Ok(Ok(())) => {}
     }
     // Verify typing completed by reading back the textarea content.
     // This waits for React to process all queued InputEvents before we
@@ -436,28 +445,33 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
             (function() {
                 const el = document.querySelector('[data-testid="tweetTextarea_0"]');
                 if (!el) return '';
-                return el.textContent || el.innerText || '';
+                return el.innerText || el.textContent || '';
             })()
         "#;
         let mut received = String::new();
         for attempt in 1..=10 {
-            if let Ok(result) = timeout(
+            if let Ok(Ok(val)) = timeout(
                 Duration::from_secs(TIMEOUT_SHORT_SECS),
                 api.page().evaluate(check_js),
             )
             .await
             {
-                if let Ok(val) = result {
-                    if let Some(text) = val.value().and_then(|v| v.as_str()) {
-                        received = text.trim().to_string();
-                        if !received.is_empty() && reply_text.contains(&received) {
-                            info!(
-                                "Typing verified (attempt {}/10): {} chars received",
-                                attempt,
-                                received.len()
-                            );
-                            break;
-                        }
+                if let Some(text) = val.value().and_then(|v| v.as_str()) {
+                    let normalized_received: String =
+                        text.chars().filter(|c| !c.is_whitespace()).collect();
+                    let normalized_expected: String =
+                        reply_text.chars().filter(|c| !c.is_whitespace()).collect();
+
+                    received = text.trim().to_string();
+                    if !normalized_received.is_empty()
+                        && normalized_expected.contains(&normalized_received)
+                    {
+                        info!(
+                            "Typing verified (attempt {}/10): {} chars received",
+                            attempt,
+                            received.len()
+                        );
+                        break;
                     }
                 }
             }

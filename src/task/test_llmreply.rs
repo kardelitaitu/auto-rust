@@ -18,8 +18,8 @@ use crate::utils::twitter::twitteractivity_navigation::{phase1_navigation, verif
 use std::time::Duration;
 use tokio::time::timeout;
 
-/// Default task duration in milliseconds (180s = 3 minutes to allow for LLM calls).
-pub const DEFAULT_TEST_DURATION_MS: u64 = 180_000;
+/// Default task duration in milliseconds (600s = 10 minutes to allow for LLM calls and slow humanized typing).
+pub const DEFAULT_TEST_DURATION_MS: u64 = 600_000;
 
 /// Payload key for dry-run mode (skip actual sending).
 pub const DRY_RUN_KEY: &str = "dry_run";

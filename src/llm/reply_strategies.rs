@@ -355,6 +355,7 @@ pub fn build_reply_prompt(
     author: &str,
     replies: &[(String, String)],
     context: &StrategyContext,
+    batch_mode: bool,
 ) -> String {
     let tweet_snippet = if tweet_text.len() > 500 {
         &tweet_text[..500]
@@ -405,7 +406,11 @@ pub fn build_reply_prompt(
         }
     }
 
-    prompt.push_str("\n\nGenerate one reply for each reply above. Respond with a JSON array of objects, each with a 'content' field containing the reply.");
+    if batch_mode {
+        prompt.push_str("\n\nGenerate ONE reply for each reply above. Respond with a JSON array of objects, each with a 'content' field containing the reply text.");
+    } else {
+        prompt.push_str("\n\nGenerate ONE single reply to the original tweet, taking the context of the other replies into account. Keep it strictly to 1 or 2 sentences maximum. Respond with ONLY the raw response text. DO NOT output JSON or any labels.");
+    }
     prompt
 }
 
@@ -457,13 +462,13 @@ mod tests {
             ("user2".to_string(), "I agree".to_string()),
         ];
 
-        let prompt = build_reply_prompt("Test tweet", "testuser", &replies, &context);
+        let prompt = build_reply_prompt("Test tweet", "testuser", &replies, &context, false);
 
         assert!(prompt.contains("Tweet by @testuser:"));
         assert!(prompt.contains("Test tweet"));
         assert!(prompt.contains("Replies:"));
         assert!(prompt.contains("@user1: Great point!"));
-        assert!(prompt.contains("Generate one reply for each reply above"));
+        assert!(prompt.contains("Generate ONE single reply to the original tweet"));
     }
 
     #[test]
@@ -471,7 +476,7 @@ mod tests {
         let context = StrategyContext::default();
         let long_tweet = "a".repeat(600);
 
-        let prompt = build_reply_prompt(&long_tweet, "user", &[], &context);
+        let prompt = build_reply_prompt(&long_tweet, "user", &[], &context, false);
 
         // Should be truncated to 500 chars
         assert!(prompt.contains(&"a".repeat(500)));
@@ -519,7 +524,7 @@ mod tests {
     #[test]
     fn test_build_reply_prompt_no_replies() {
         let context = StrategyContext::default();
-        let prompt = build_reply_prompt("Test tweet", "user", &[], &context);
+        let prompt = build_reply_prompt("Test tweet", "user", &[], &context, false);
 
         assert!(prompt.contains("(no other replies visible)"));
     }
@@ -529,7 +534,7 @@ mod tests {
         let context = StrategyContext::default();
         let replies = vec![("user1".to_string(), "Great! 😂🎉".to_string())];
 
-        let prompt = build_reply_prompt("Test", "user", &replies, &context);
+        let prompt = build_reply_prompt("Test", "user", &replies, &context, false);
 
         // Emoji should be filtered out
         assert!(!prompt.contains("😂"));
@@ -542,7 +547,7 @@ mod tests {
         let context = StrategyContext::default();
         let replies = vec![("user1".to_string(), "Great #test #hashtag".to_string())];
 
-        let prompt = build_reply_prompt("Test", "user", &replies, &context);
+        let prompt = build_reply_prompt("Test", "user", &replies, &context, false);
 
         // Hashtags should be removed
         assert!(!prompt.contains("#test"));
@@ -557,7 +562,7 @@ mod tests {
             .map(|i| (format!("user{}", i), format!("Reply {}", i)))
             .collect();
 
-        let prompt = build_reply_prompt("Test", "user", &many_replies, &context);
+        let prompt = build_reply_prompt("Test", "user", &many_replies, &context, false);
 
         // Should only include first 20 replies
         assert!(prompt.contains("@user0:"));

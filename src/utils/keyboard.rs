@@ -10,7 +10,10 @@ use crate::internal::profile::TypingBehavior;
 use crate::utils::math::{gaussian, random_in_range};
 use crate::utils::timing::human_pause;
 use anyhow::Result;
+use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventParams, DispatchKeyEventType};
 use chromiumoxide::Page;
+use std::time::Duration;
+use tokio::time::timeout;
 
 #[derive(Debug, Clone)]
 pub struct PressOptions {
@@ -213,68 +216,16 @@ async fn typo_without_correction_profiled(
 }
 
 async fn dispatch_key_event(page: &Page, event_type: &str, key: &str) -> Result<()> {
+    // For Backspace, use CDP dispatchKeyEvent which fires trusted browser-level
+    // events (isTrusted=true). Synthetic JavaScript KeyboardEvents do not trigger
+    // default backspace behavior in React-managed contentEditables (Twitter's
+    // composer), and the previous InputEvent+SelectionAPI fallback was rejected
+    // by React via preventDefault() on beforeinput.
+    if key == "Backspace" {
+        return dispatch_backspace_cdp(page, event_type).await;
+    }
+
     let key_json = serde_json::to_string(key)?;
-    // For Backspace on keydown, also delete the preceding character from the DOM.
-    // Synthetic KeyboardEvents do not trigger default browser backspace behavior,
-    // so without this DOM manipulation typo correction (which types a wrong char,
-    // presses Backspace, then types the correct char) would leave both characters.
-    //
-    // Uses InputEvent + Selection API instead of execCommand('delete') because
-    // execCommand is deprecated and unreliable on React-managed contentEditables
-    // (Twitter's composer uses React + contentEditable). The InputEvent pattern
-    // (beforeinput → Selection API → input) matches what the browser fires on a
-    // real Backspace press and is what React listens to for state management.
-    let backspace_delete = if key == "Backspace" && event_type == "keydown" {
-        r#"
-            const el = document.activeElement;
-            if (el && !el.readOnly && !el.disabled) {
-                if (el.isContentEditable) {
-                    // Dispatch beforeinput — React listens for this
-                    const beforeinput = new InputEvent('beforeinput', {
-                        inputType: 'deleteContentBackward',
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    el.dispatchEvent(beforeinput);
-                    if (!beforeinput.defaultPrevented) {
-                        // Use Selection API to actually delete the preceding character
-                        const sel = window.getSelection();
-                        if (sel && sel.rangeCount > 0) {
-                            const range = sel.getRangeAt(0);
-                            if (!range.collapsed) {
-                                // Delete selected text
-                                range.deleteContents();
-                            } else if (range.startOffset > 0) {
-                                // Delete one character backward
-                                range.setStart(range.startContainer, range.startOffset - 1);
-                                range.deleteContents();
-                            }
-                        }
-                        // Dispatch input event to notify React of the DOM change
-                        el.dispatchEvent(new InputEvent('input', {
-                            inputType: 'deleteContentBackward',
-                            bubbles: true
-                        }));
-                    }
-                } else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-                    const start = el.selectionStart;
-                    const end = el.selectionEnd;
-                    if (start !== null && start > 0 && start === end) {
-                        el.value = el.value.slice(0, start - 1) + el.value.slice(end);
-                        el.setSelectionRange(start - 1, start - 1);
-                        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-                    } else if (start !== null && end !== null && start !== end) {
-                        el.value = el.value.slice(0, start) + el.value.slice(end);
-                        el.setSelectionRange(start, start);
-                        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-                    }
-                }
-            }
-        "#
-        .to_string()
-    } else {
-        String::new()
-    };
     let js = format!(
         "(function() {{
             const event = new KeyboardEvent('{event_type}', {{
@@ -285,7 +236,6 @@ async fn dispatch_key_event(page: &Page, event_type: &str, key: &str) -> Result<
             }});
             const el = document.activeElement || document.body;
             el.dispatchEvent(event);
-            {backspace_delete}
         }})();"
     );
 
@@ -293,77 +243,153 @@ async fn dispatch_key_event(page: &Page, event_type: &str, key: &str) -> Result<
     Ok(())
 }
 
-async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
-    let text_json = serde_json::to_string(&ch.to_string())?;
-    let js = format!(
-        "(function() {{
-            const el = document.activeElement;
-            if (!el || el.tagName === 'IFRAME') return;
-
-            // Phase2: Check readonly/disabled before attempting to type
-            if (el.readOnly || el.disabled) {{
-                console.warn('dispatch_input_event: element is readonly or disabled');
-                return;
-            }}
-
-            const text = {text_json};
-            if (el.isContentEditable) {{
-                // Dispatch beforeinput — React listens for this
-                const beforeinput = new InputEvent('beforeinput', {{
-                    inputType: 'insertText',
-                    data: text,
-                    bubbles: true,
-                    cancelable: true
-                }});
-                el.dispatchEvent(beforeinput);
-                if (!beforeinput.defaultPrevented) {{
-                    // Use Selection API to insert text at cursor position.
-                    // Mirrors what the browser does natively: create a text node,
-                    // insert it at cursor, advance cursor past inserted text.
-                    const sel = window.getSelection();
-                    if (sel && sel.rangeCount > 0) {{
-                        const range = sel.getRangeAt(0);
-                        range.deleteContents();
-                        const textNode = document.createTextNode(text);
-                        range.insertNode(textNode);
-                        range.setStartAfter(textNode);
-                        range.setEndAfter(textNode);
-                        sel.removeAllRanges();
-                        sel.addRange(range);
-                    }}
-                    // Dispatch input event to notify React of the DOM change
-                    el.dispatchEvent(new InputEvent('input', {{
-                        inputType: 'insertText',
-                        data: text,
-                        bubbles: true
-                    }}));
-                }}
-            }} else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {{
-                const hasSelectionApi =
-                    typeof el.selectionStart === 'number' &&
-                    typeof el.selectionEnd === 'number' &&
-                    typeof el.setSelectionRange === 'function';
-                if (hasSelectionApi) {{
-                    const start = el.selectionStart ?? el.value.length;
-                    const end = el.selectionEnd ?? start;
-                    el.value = el.value.slice(0, start) + text + el.value.slice(end);
-                    const next = start + text.length;
-                    try {{
-                        el.setSelectionRange(next, next);
-                    }} catch (_) {{
-                        // Some input types (for example email) do not support selection ranges.
-                    }}
-                }} else {{
-                    el.value = (el.value || '') + text;
-                }}
-                const opts = {{ bubbles: true, data: text }};
-                el.dispatchEvent(new InputEvent('input', opts));
-            }}
-        }})();"
-    );
-
-    page.evaluate(js).await?;
+/// Dispatch a Backspace key via CDP `Input.dispatchKeyEvent`.
+/// Fires trusted rawKeyDown + keyUp that the browser processes natively.
+async fn dispatch_backspace_cdp(page: &Page, event_type: &str) -> Result<()> {
+    if event_type == "keydown" {
+        let params = DispatchKeyEventParams {
+            r#type: DispatchKeyEventType::RawKeyDown,
+            modifiers: None,
+            timestamp: None,
+            text: None,
+            unmodified_text: None,
+            key_identifier: None,
+            code: Some("Backspace".to_string()),
+            key: Some("Backspace".to_string()),
+            windows_virtual_key_code: Some(8),
+            native_virtual_key_code: None,
+            auto_repeat: None,
+            is_keypad: None,
+            is_system_key: None,
+            location: None,
+            commands: None,
+        };
+        timeout(Duration::from_secs(2), page.execute(params))
+            .await
+            .map_err(|_| anyhow::anyhow!("CDP Backspace rawKeyDown timed out"))??;
+    } else {
+        // keyup
+        let params = DispatchKeyEventParams {
+            r#type: DispatchKeyEventType::KeyUp,
+            modifiers: None,
+            timestamp: None,
+            text: None,
+            unmodified_text: None,
+            key_identifier: None,
+            code: Some("Backspace".to_string()),
+            key: Some("Backspace".to_string()),
+            windows_virtual_key_code: Some(8),
+            native_virtual_key_code: None,
+            auto_repeat: None,
+            is_keypad: None,
+            is_system_key: None,
+            location: None,
+            commands: None,
+        };
+        timeout(Duration::from_secs(2), page.execute(params))
+            .await
+            .map_err(|_| anyhow::anyhow!("CDP Backspace keyUp timed out"))??;
+    }
     Ok(())
+}
+
+/// Dispatch a character via CDP `Input.dispatchKeyEvent`.
+///
+/// Fires trusted browser-level events (`isTrusted = true`) that React
+/// cannot distinguish from real user input. Synthetic JavaScript events
+/// have `isTrusted = false` and Twitter's React composer rejects them
+/// by calling `preventDefault()` on `beforeinput`.
+///
+/// Fires rawKeyDown → char → keyUp per character, matching what the
+/// browser produces on a real keystroke.
+async fn dispatch_char_cdp(page: &Page, ch: char) -> Result<()> {
+    let is_enter = ch == '\n' || ch == '\r';
+    let ch_str = if is_enter {
+        "\r".to_string()
+    } else {
+        ch.to_string()
+    };
+    let code = if is_enter {
+        Some("Enter".to_string())
+    } else {
+        None
+    };
+    let key = if is_enter {
+        Some("Enter".to_string())
+    } else {
+        Some(ch_str.clone())
+    };
+    let text_val = Some(ch_str.clone());
+    let windows_virtual_key_code = if is_enter { Some(13) } else { None };
+
+    let params = DispatchKeyEventParams {
+        r#type: DispatchKeyEventType::RawKeyDown,
+        modifiers: None,
+        timestamp: None,
+        text: if is_enter { text_val.clone() } else { None },
+        unmodified_text: if is_enter { text_val.clone() } else { None },
+        key_identifier: None,
+        code: code.clone(),
+        key: key.clone(),
+        windows_virtual_key_code,
+        native_virtual_key_code: None,
+        auto_repeat: None,
+        is_keypad: None,
+        is_system_key: None,
+        location: None,
+        commands: None,
+    };
+    timeout(Duration::from_secs(2), page.execute(params))
+        .await
+        .map_err(|_| anyhow::anyhow!("CDP rawKeyDown timed out for '{ch}'"))??;
+
+    let params = DispatchKeyEventParams {
+        r#type: DispatchKeyEventType::Char,
+        modifiers: None,
+        timestamp: None,
+        text: text_val.clone(),
+        unmodified_text: text_val.clone(),
+        key_identifier: None,
+        code: code.clone(),
+        key: key.clone(),
+        windows_virtual_key_code,
+        native_virtual_key_code: None,
+        auto_repeat: None,
+        is_keypad: None,
+        is_system_key: None,
+        location: None,
+        commands: None,
+    };
+    timeout(Duration::from_secs(2), page.execute(params))
+        .await
+        .map_err(|_| anyhow::anyhow!("CDP char timed out for '{ch}'"))??;
+
+    let params = DispatchKeyEventParams {
+        r#type: DispatchKeyEventType::KeyUp,
+        modifiers: None,
+        timestamp: None,
+        text: None,
+        unmodified_text: None,
+        key_identifier: None,
+        code: code.clone(),
+        key: key.clone(),
+        windows_virtual_key_code,
+        native_virtual_key_code: None,
+        auto_repeat: None,
+        is_keypad: None,
+        is_system_key: None,
+        location: None,
+        commands: None,
+    };
+    timeout(Duration::from_secs(2), page.execute(params))
+        .await
+        .map_err(|_| anyhow::anyhow!("CDP keyUp timed out for '{ch}'"))??;
+
+    Ok(())
+}
+
+async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
+    dispatch_char_cdp(page, ch).await
 }
 
 #[allow(clippy::cast_precision_loss)]

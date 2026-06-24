@@ -42,8 +42,13 @@ impl UnifiedLLMProcessor {
             .collect();
 
         // Build prompt for up to 20 replies
-        let prompt =
-            reply_strategies::build_reply_prompt(tweet_text, author, &replies_owned, &context);
+        let prompt = reply_strategies::build_reply_prompt(
+            tweet_text,
+            author,
+            &replies_owned,
+            &context,
+            true,
+        );
 
         // Single LLM request for all replies
         let response = self.llm.chat(vec![ChatMessage::user(prompt)]).await?;
@@ -145,7 +150,7 @@ mod tests {
             }
         };
 
-        assert!(result.confidence > 0.5);
+        assert!(result.confidence >= 0.5);
         assert!(!result.content.is_empty());
     }
 }

@@ -673,24 +673,17 @@ impl MetricsCollector {
             "run-summary.json",
             active_sessions,
             healthy_sessions,
-            0,
-            0,
-            0,
-            0,
+            &FanOutMetrics::default(),
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::cast_precision_loss)]
     pub fn export_summary_to<P: AsRef<Path>>(
         &self,
         path: P,
         active_sessions: usize,
         healthy_sessions: usize,
-        planned_groups: usize,
-        completed_groups: usize,
-        planned_executions: usize,
-        actual_executions: usize,
+        fan_out_metrics: &FanOutMetrics,
     ) -> Result<(), std::io::Error> {
         let path_display = path.as_ref().display().to_string();
         let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
@@ -760,18 +753,20 @@ impl MetricsCollector {
                 .collect::<Vec<_>>()
         };
 
-        // Calculate fan-out efficiency
-        let fan_out_efficiency = if planned_executions > 0 {
-            (actual_executions as f64 / planned_executions as f64) * 100.0
+        // Calculate fan-out efficiency (or use existing from passed metrics)
+        let fan_out_efficiency = if fan_out_metrics.planned_executions > 0 {
+            (fan_out_metrics.actual_executions as f64 / fan_out_metrics.planned_executions as f64)
+                * 100.0
         } else {
             0.0
         };
 
+        // Clone the passed metrics but ensure efficiency is computed
         let fan_out_metrics = FanOutMetrics {
-            planned_groups,
-            completed_groups,
-            planned_executions,
-            actual_executions,
+            planned_groups: fan_out_metrics.planned_groups,
+            completed_groups: fan_out_metrics.completed_groups,
+            planned_executions: fan_out_metrics.planned_executions,
+            actual_executions: fan_out_metrics.actual_executions,
             fan_out_efficiency,
         };
 
@@ -1079,8 +1074,15 @@ mod tests {
         );
         let path = std::env::temp_dir().join(unique);
 
+        let fan_out = FanOutMetrics {
+            planned_groups: 5,
+            completed_groups: 5,
+            planned_executions: 10,
+            actual_executions: 10,
+            fan_out_efficiency: 0.0,
+        };
         collector
-            .export_summary_to(&path, 3, 2, 5, 5, 10, 10)
+            .export_summary_to(&path, 3, 2, &fan_out)
             .expect("export summary");
 
         let json = std::fs::read_to_string(&path).expect("read summary");
@@ -1149,8 +1151,15 @@ mod tests {
         );
         let path = std::env::temp_dir().join(unique);
 
+        let fan_out = FanOutMetrics {
+            planned_groups: 5,
+            completed_groups: 5,
+            planned_executions: 10,
+            actual_executions: 10,
+            fan_out_efficiency: 0.0,
+        };
         collector
-            .export_summary_to(&path, 3, 2, 5, 5, 10, 10)
+            .export_summary_to(&path, 3, 2, &fan_out)
             .expect("export summary");
 
         let json = std::fs::read_to_string(&path).expect("read summary");

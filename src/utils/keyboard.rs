@@ -10,7 +10,10 @@ use crate::internal::profile::TypingBehavior;
 use crate::utils::math::{gaussian, random_in_range};
 use crate::utils::timing::human_pause;
 use anyhow::Result;
+use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventParams, DispatchKeyEventType};
 use chromiumoxide::Page;
+use std::time::Duration;
+use tokio::time::timeout;
 
 #[derive(Debug, Clone)]
 pub struct PressOptions {
@@ -186,7 +189,13 @@ pub async fn natural_typing_profiled(
     for (i, ch) in text.chars().enumerate() {
         let typo_rate = behavior.typo_rate_pct.clamp(0.0, 100.0) / 100.0;
         if (random_in_range(0, 100) as f64 / 100.0) < typo_rate && i > 0 {
-            typo_correction_profiled(page, ch, behavior).await?;
+            // Typo occurred — decide whether to correct it or leave it
+            let recovery_chance = behavior.typo_recovery_chance_pct.clamp(0.0, 100.0) / 100.0;
+            if (random_in_range(0, 100) as f64 / 100.0) < recovery_chance {
+                typo_correction_profiled(page, ch, behavior).await?;
+            } else {
+                typo_without_correction_profiled(page, ch, behavior).await?;
+            }
         } else {
             type_character_profiled(page, ch, behavior).await?;
         }
@@ -195,7 +204,27 @@ pub async fn natural_typing_profiled(
     Ok(())
 }
 
+/// Type a wrong character and leave it — simulates an unnoticed typo.
+/// No Backspace, no correction — just a nearby wrong key and move on.
+async fn typo_without_correction_profiled(
+    page: &Page,
+    correct_char: char,
+    behavior: &TypingBehavior,
+) -> Result<()> {
+    let wrong_char = get_similar_char(correct_char);
+    type_character_profiled(page, wrong_char, behavior).await
+}
+
 async fn dispatch_key_event(page: &Page, event_type: &str, key: &str) -> Result<()> {
+    // For Backspace, use CDP dispatchKeyEvent which fires trusted browser-level
+    // events (isTrusted=true). Synthetic JavaScript KeyboardEvents do not trigger
+    // default backspace behavior in React-managed contentEditables (Twitter's
+    // composer), and the previous InputEvent+SelectionAPI fallback was rejected
+    // by React via preventDefault() on beforeinput.
+    if key == "Backspace" {
+        return dispatch_backspace_cdp(page, event_type).await;
+    }
+
     let key_json = serde_json::to_string(key)?;
     let js = format!(
         "(function() {{
@@ -214,57 +243,153 @@ async fn dispatch_key_event(page: &Page, event_type: &str, key: &str) -> Result<
     Ok(())
 }
 
-async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
-    let text_json = serde_json::to_string(&ch.to_string())?;
-    let js = format!(
-        "(function() {{
-            const el = document.activeElement;
-            if (!el || el.tagName === 'IFRAME') return;
-
-            // Phase2: Check readonly/disabled before attempting to type
-            if (el.readOnly || el.disabled) {{
-                console.warn('dispatch_input_event: element is readonly or disabled');
-                return;
-            }}
-
-            const text = {text_json};
-            if (el.isContentEditable) {{
-                document.execCommand('insertText', false, text);
-            }} else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {{
-                const hasSelectionApi =
-                    typeof el.selectionStart === 'number' &&
-                    typeof el.selectionEnd === 'number' &&
-                    typeof el.setSelectionRange === 'function';
-                if (hasSelectionApi) {{
-                    const start = el.selectionStart ?? el.value.length;
-                    const end = el.selectionEnd ?? start;
-                    el.value = el.value.slice(0, start) + text + el.value.slice(end);
-                    const next = start + text.length;
-                    try {{
-                        el.setSelectionRange(next, next);
-                    }} catch (_) {{
-                        // Some input types (for example email) do not support selection ranges.
-                    }}
-                }} else {{
-                    el.value = (el.value || '') + text;
-                }}
-                const opts = {{ bubbles: true, data: text }};
-                el.dispatchEvent(new InputEvent('input', opts));
-            }}
-        }})();"
-    );
-
-    page.evaluate(js).await?;
+/// Dispatch a Backspace key via CDP `Input.dispatchKeyEvent`.
+/// Fires trusted rawKeyDown + keyUp that the browser processes natively.
+async fn dispatch_backspace_cdp(page: &Page, event_type: &str) -> Result<()> {
+    if event_type == "keydown" {
+        let params = DispatchKeyEventParams {
+            r#type: DispatchKeyEventType::RawKeyDown,
+            modifiers: None,
+            timestamp: None,
+            text: None,
+            unmodified_text: None,
+            key_identifier: None,
+            code: Some("Backspace".to_string()),
+            key: Some("Backspace".to_string()),
+            windows_virtual_key_code: Some(8),
+            native_virtual_key_code: None,
+            auto_repeat: None,
+            is_keypad: None,
+            is_system_key: None,
+            location: None,
+            commands: None,
+        };
+        timeout(Duration::from_secs(2), page.execute(params))
+            .await
+            .map_err(|_| anyhow::anyhow!("CDP Backspace rawKeyDown timed out"))??;
+    } else {
+        // keyup
+        let params = DispatchKeyEventParams {
+            r#type: DispatchKeyEventType::KeyUp,
+            modifiers: None,
+            timestamp: None,
+            text: None,
+            unmodified_text: None,
+            key_identifier: None,
+            code: Some("Backspace".to_string()),
+            key: Some("Backspace".to_string()),
+            windows_virtual_key_code: Some(8),
+            native_virtual_key_code: None,
+            auto_repeat: None,
+            is_keypad: None,
+            is_system_key: None,
+            location: None,
+            commands: None,
+        };
+        timeout(Duration::from_secs(2), page.execute(params))
+            .await
+            .map_err(|_| anyhow::anyhow!("CDP Backspace keyUp timed out"))??;
+    }
     Ok(())
 }
 
-#[allow(clippy::cast_precision_loss)]
-#[allow(dead_code)]
-async fn type_character(page: &Page, ch: char) -> Result<()> {
-    let key_delay = gaussian(120.0, 40.0, 50.0, 300.0) as u64;
-    dispatch_input_event(page, ch).await?;
-    human_pause(key_delay, 30).await;
+/// Dispatch a character via CDP `Input.dispatchKeyEvent`.
+///
+/// Fires trusted browser-level events (`isTrusted = true`) that React
+/// cannot distinguish from real user input. Synthetic JavaScript events
+/// have `isTrusted = false` and Twitter's React composer rejects them
+/// by calling `preventDefault()` on `beforeinput`.
+///
+/// Fires rawKeyDown → char → keyUp per character, matching what the
+/// browser produces on a real keystroke.
+async fn dispatch_char_cdp(page: &Page, ch: char) -> Result<()> {
+    let is_enter = ch == '\n' || ch == '\r';
+    let ch_str = if is_enter {
+        "\r".to_string()
+    } else {
+        ch.to_string()
+    };
+    let code = if is_enter {
+        Some("Enter".to_string())
+    } else {
+        None
+    };
+    let key = if is_enter {
+        Some("Enter".to_string())
+    } else {
+        Some(ch_str.clone())
+    };
+    let text_val = Some(ch_str.clone());
+    let windows_virtual_key_code = if is_enter { Some(13) } else { None };
+
+    let params = DispatchKeyEventParams {
+        r#type: DispatchKeyEventType::RawKeyDown,
+        modifiers: None,
+        timestamp: None,
+        text: if is_enter { text_val.clone() } else { None },
+        unmodified_text: if is_enter { text_val.clone() } else { None },
+        key_identifier: None,
+        code: code.clone(),
+        key: key.clone(),
+        windows_virtual_key_code,
+        native_virtual_key_code: None,
+        auto_repeat: None,
+        is_keypad: None,
+        is_system_key: None,
+        location: None,
+        commands: None,
+    };
+    timeout(Duration::from_secs(2), page.execute(params))
+        .await
+        .map_err(|_| anyhow::anyhow!("CDP rawKeyDown timed out for '{ch}'"))??;
+
+    let params = DispatchKeyEventParams {
+        r#type: DispatchKeyEventType::Char,
+        modifiers: None,
+        timestamp: None,
+        text: text_val.clone(),
+        unmodified_text: text_val.clone(),
+        key_identifier: None,
+        code: code.clone(),
+        key: key.clone(),
+        windows_virtual_key_code,
+        native_virtual_key_code: None,
+        auto_repeat: None,
+        is_keypad: None,
+        is_system_key: None,
+        location: None,
+        commands: None,
+    };
+    timeout(Duration::from_secs(2), page.execute(params))
+        .await
+        .map_err(|_| anyhow::anyhow!("CDP char timed out for '{ch}'"))??;
+
+    let params = DispatchKeyEventParams {
+        r#type: DispatchKeyEventType::KeyUp,
+        modifiers: None,
+        timestamp: None,
+        text: None,
+        unmodified_text: None,
+        key_identifier: None,
+        code: code.clone(),
+        key: key.clone(),
+        windows_virtual_key_code,
+        native_virtual_key_code: None,
+        auto_repeat: None,
+        is_keypad: None,
+        is_system_key: None,
+        location: None,
+        commands: None,
+    };
+    timeout(Duration::from_secs(2), page.execute(params))
+        .await
+        .map_err(|_| anyhow::anyhow!("CDP keyUp timed out for '{ch}'"))??;
+
     Ok(())
+}
+
+async fn dispatch_input_event(page: &Page, ch: char) -> Result<()> {
+    dispatch_char_cdp(page, ch).await
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -277,18 +402,6 @@ async fn type_character_profiled(page: &Page, ch: char, behavior: &TypingBehavio
     ) as u64;
     dispatch_input_event(page, ch).await?;
     human_pause(key_delay, 30).await;
-    Ok(())
-}
-
-#[allow(dead_code)]
-async fn typo_correction(page: &Page, correct_char: char) -> Result<()> {
-    let wrong_char = get_similar_char(correct_char);
-    type_character(page, wrong_char).await?;
-
-    human_pause(300, 50).await;
-    press(page, "Backspace").await?;
-    human_pause(200, 50).await;
-    type_character(page, correct_char).await?;
     Ok(())
 }
 
@@ -628,5 +741,57 @@ mod tests {
         assert_eq!(get_similar_char('i'), 'o');
         assert_eq!(get_similar_char('n'), 'm');
         assert_eq!(get_similar_char('m'), 'n');
+    }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// For mapped characters, get_similar_char is self-inverse (applying it twice
+        /// returns the original character).
+        /// Note: 'i' maps to 'o', but 'o' maps to 'p', so 'i' is NOT self-inverse.
+        ///       All other mappings are self-inverse (a<->s, d<->f, e<->r, w<->q, t<->y,
+        ///       o<->p, n<->m).
+        fn is_self_inverse(ch: char) -> bool {
+            matches!(
+                ch.to_ascii_lowercase(),
+                'a' | 's' | 'd' | 'f' | 'e' | 'r' | 'w' | 'q' | 't' | 'y' | 'o' | 'p' | 'n' | 'm'
+            ) && !ch.eq_ignore_ascii_case(&'i') // i->o but o->p, not inverse
+        }
+
+        proptest! {
+            /// For self-inverse characters, applying get_similar_char twice returns the original.
+            #[test]
+            fn proptest_get_similar_char_self_inverse(
+                ch in proptest::char::range('a', 'z'),
+            ) {
+                prop_assume!(is_self_inverse(ch));
+                let roundtrip = get_similar_char(get_similar_char(ch));
+                prop_assert_eq!(roundtrip, ch);
+            }
+
+            /// For unmapped characters, get_similar_char is identity.
+            #[test]
+            fn proptest_get_similar_char_unmapped_identity(
+                ch in proptest::char::range('a', 'z'),
+            ) {
+                let mapped = get_similar_char(ch);
+                prop_assume!(mapped == ch);
+                let second = get_similar_char(mapped);
+                prop_assert_eq!(second, ch);
+            }
+
+            /// get_similar_char always returns a valid single char (guaranteed by type system).
+            /// This is a sanity-check that the function doesn't panic on any input.
+            #[test]
+            fn proptest_get_similar_char_no_panic(
+                ch in any::<char>(),
+            ) {
+                let _result = get_similar_char(ch);
+                // If we reach here without panic, the test passes.
+                // The type system guarantees the result is a valid char.
+                prop_assert!(true);
+            }
+        }
     }
 }

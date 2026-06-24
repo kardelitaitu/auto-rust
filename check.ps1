@@ -169,7 +169,7 @@ if (-not $SkipTests -and -not $failed) {
     }
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    & cargo nextest run --all-features --lib 2>&1 | ForEach-Object { $_ }
+    & cargo nextest run --all-features --lib
     $exitCode = $LASTEXITCODE
     $elapsed = $sw.Elapsed.TotalSeconds
 

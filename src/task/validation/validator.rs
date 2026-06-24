@@ -144,7 +144,6 @@ impl TaskValidator {
         }
     }
 
-    #[allow(clippy::unused_self)]
     fn validate_action(
         &self,
         action: &Action,

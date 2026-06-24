@@ -226,8 +226,9 @@ pub(super) async fn execute_task_with_retry(
                 drop(task_ctx);
                 let error = task_result
                     .last_error
-                    .clone()
-                    .unwrap_or_else(|| "Unknown error".to_string());
+                    .as_deref()
+                    .unwrap_or("Unknown error")
+                    .to_string();
                 let kind = task_result
                     .error_kind
                     .unwrap_or_else(|| TaskErrorKind::classify(&error));

@@ -47,7 +47,7 @@ $rsFiles = Get-ChildItem -Path $projectRoot -Recurse -Filter "*.rs" |
 
 if ($rsFiles) {
     foreach ($f in $rsFiles) {
-        $rel = [System.IO.Path]::GetRelativePath($projectRoot, $f.FullName)
+        $rel = $f.FullName.Substring($projectRoot.Length + 1)
         Write-Status "  $rel" "Yellow"
         Write-Output "    LastWrite: $($f.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))"
         Write-Output "    Size: $($f.Length) bytes"
@@ -74,7 +74,7 @@ $mdFiles = Get-ChildItem -Path $projectRoot -Recurse -Filter "*.md" |
 
 if ($mdFiles) {
     foreach ($f in $mdFiles) {
-        $rel = [System.IO.Path]::GetRelativePath($projectRoot, $f.FullName)
+        $rel = $f.FullName.Substring($projectRoot.Length + 1)
         Write-Status "  $rel" "Yellow"
         Write-Output "    LastWrite: $($f.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))"
         Write-Output "    Size: $($f.Length) bytes"

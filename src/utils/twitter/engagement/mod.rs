@@ -19,7 +19,7 @@ use crate::utils::twitter::{
     twitteractivity_persona::{should_dive, PersonaWeights},
 };
 use anyhow::Result;
-use log::{info, warn};
+use log::{error, info, warn};
 use rand::Rng;
 use std::time::{Duration, Instant};
 
@@ -412,7 +412,10 @@ pub async fn process_candidate(
             Ok(true) => {
                 root_action_success = true;
             }
-            _ => { /* Error or false returned */ }
+            Ok(false) => {}
+            Err(e) => {
+                error!("Action dispatch failed with error: {e}");
+            }
         }
     }
 

@@ -25,6 +25,12 @@ const COMPOSER_WAIT_MS: u64 = 1000;
 pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<EngagementOutcome> {
     info!("Executing quote tweet with {} chars", commentary.len());
 
+    // Scroll to top to ensure root tweet is visible and mounted
+    if let Err(e) = api.scroll_to_top().await {
+        warn!("Failed to scroll to top before quote: {e}");
+    }
+    human_pause(api, 500).await;
+
     if click_retweet_button(api).await? != EngagementOutcome::Completed {
         warn!("Unable to open retweet menu before quote tweet");
         return Ok(EngagementOutcome::ElementNotFound);

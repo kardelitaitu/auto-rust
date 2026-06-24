@@ -30,7 +30,7 @@ pub struct UnifiedAnalysis {
     /// Whether to engage at all
     pub engage: bool,
     /// Generated content (for quote or reply), null otherwise
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub reply: Option<String>,
 }
 

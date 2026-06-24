@@ -37,8 +37,8 @@ retry_delay_ms = 500
 
 [twitter_activity]
 # Feed scanning settings
-feed_scan_duration_ms = 120000      # 2 minutes
-feed_scroll_count = 12               # Number of scroll actions per scan
+feed_scan_duration_ms = 600000      # 10 minutes
+feed_scroll_count = 100              # Number of scroll actions per scan
 engagement_candidate_count = 5       # Number of tweets to consider for engagement
 
 # Guard thresholds (stop conditions for feed loop)
@@ -57,9 +57,9 @@ max_total_actions = 10               # Total engagement actions cap per session
 
 # LLM Configuration (V2 - for smart replies & quote tweets)
 [twitter_activity.llm]
-enabled = false                      # Set true to enable LLM features
+enabled = true                      # Set true to enable LLM features
 provider = "ollama"                  # "ollama" or "openrouter"
-model = "llama3.2:latest"            # Ollama model name
+model = "hf.co/unsloth/gemma-4-E4B-it-qat-GGUF:UD-Q4_K_XL"            # Ollama model name
 temperature = 0.7                    # Creativity (0.0-1.0)
 max_tokens = 100                     # Max reply length
 timeout_ms = 30000                   # 30s timeout for generation

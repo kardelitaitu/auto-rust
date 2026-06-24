@@ -380,14 +380,23 @@ async fn run_async() -> Result<()> {
     let planned_executions = groups.iter().map(std::vec::Vec::len).sum::<usize>() * sessions.len();
     let actual_executions = metrics.get_stats().total_tasks;
 
-    if let Err(e) = metrics.export_summary_to(
-        "run-summary.json",
-        sessions.len(),
-        healthy_sessions,
+    let fan_out_metrics = auto::metrics::FanOutMetrics {
         planned_groups,
         completed_groups,
         planned_executions,
         actual_executions,
+        fan_out_efficiency: if planned_executions > 0 {
+            (actual_executions as f64 / planned_executions as f64) * 100.0
+        } else {
+            0.0
+        },
+    };
+
+    if let Err(e) = metrics.export_summary_to(
+        "run-summary.json",
+        sessions.len(),
+        healthy_sessions,
+        &fan_out_metrics,
     ) {
         warn!("Failed to export run summary: {e}");
     }

@@ -162,7 +162,7 @@ pub fn build_reply_messages(
 
     // Use strategy-based prompt
     let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
@@ -183,7 +183,7 @@ pub fn build_quote_messages(
 
     // Use strategy-based prompt for quote tweets too
     let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }

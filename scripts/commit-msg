@@ -1,0 +1,71 @@
+#!/bin/sh
+# commit-msg hook: reject commits with non-conventional commit messages.
+# Installed by scripts/setup-hooks.sh — do not edit .git/hooks/commit-msg directly.
+# Edit this source file instead, then re-run setup-hooks.sh to apply changes.
+#
+# Enforces the Conventional Commits format used by this project:
+#   type(scope): subject       ← scope is optional
+#   type: subject
+#
+# Recognized types: feat, fix, docs, chore, test, refactor, ci, perf, style, revert, build
+
+commit_msg_file="$1"
+
+if [ ! -f "$commit_msg_file" ]; then
+    exit 0
+fi
+
+# Read the first line (subject line)
+subject=$(head -n 1 "$commit_msg_file")
+
+# Skip empty messages (allow editor to save empty draft)
+if [ -z "$subject" ]; then
+    exit 0
+fi
+
+# Skip merge commits and fixup!/squash! commits
+case "$subject" in
+    Merge*) exit 0 ;;
+    fixup!*) exit 0 ;;
+    squash!*) exit 0 ;;
+    WIP*) exit 0 ;;
+esac
+
+# Validate: type(scope): subject  or  type: subject
+# Scope is alphanumeric + hyphens. Subject is non-empty.
+valid_type="feat|fix|docs|chore|test|refactor|ci|perf|style|revert|build"
+pattern="^($valid_type)(\([a-zA-Z0-9_.-]+\))?!?: .+"
+
+if ! echo "$subject" | grep -qE "$pattern"; then
+    echo ""
+    echo "❌  Invalid commit message format. Commit rejected."
+    echo ""
+    echo "    Expected: type(scope): subject"
+    echo "    Expected: type: subject"
+    echo ""
+    echo "    Types: feat, fix, docs, chore, test, refactor, ci, perf, style, revert, build"
+    echo "    Scope (optional): identifier like 'connector', 'session', 'cli', etc."
+    echo ""
+    echo "    Examples:"
+    echo "      feat: add twitterquote task (reuse LLM reply flow)"
+    echo "      fix(session): handle rate limits in connector"
+    echo "      docs: trim README TOC (faster first read)"
+    echo "      chore: normalize formatting after test additions"
+    echo ""
+    echo "    Your message was:"
+    echo "      $subject"
+    echo ""
+    exit 1
+fi
+
+# Check subject line length (standard: 72 chars max, relaxed to 100 for this project)
+subject_length=${#subject}
+if [ "$subject_length" -gt 100 ]; then
+    echo ""
+    echo "⚠️  Subject line is $subject_length characters (max 100)."
+    echo "    Consider shortening it for readability."
+    echo ""
+    # Warning only — don't reject
+fi
+
+exit 0

@@ -44,8 +44,11 @@ use crate::utils::twitter::{
 /// # Timeout
 /// The timeout wrapper ensures the task cannot exceed `duration_ms` milliseconds. This is the correct boundary for timeout enforcement.
 pub async fn run(api: &TaskContext, payload: Value, config: &Config) -> Result<()> {
-    let task_config = TaskConfig::from_payload(&payload, &config.twitter_activity)
-        .map_err(|e| anyhow::anyhow!("Payload validation failed: {e}"))?;
+    let task_config =
+        TaskConfig::from_payload(&payload, &config.twitter_activity).map_err(|e| {
+            error!("[twitter] Payload validation failed: {e}");
+            anyhow::anyhow!("Payload validation failed: {e}")
+        })?;
     if task_config.simulate_only {
         return run_simulation(&task_config, config);
     }
@@ -204,7 +207,15 @@ async fn scan_and_process_candidates(
         };
 
         let result =
-            process_candidate(ctx, actions_this_scan, *next_scroll, *next_candidate_scan).await?;
+            match process_candidate(ctx, actions_this_scan, *next_scroll, *next_candidate_scan)
+                .await
+            {
+                Ok(res) => res,
+                Err(e) => {
+                    error!("[twitter] Error processing candidate tweet: {e}");
+                    continue;
+                }
+            };
         let crate::utils::twitter::twitteractivity_state::CandidateResult {
             should_break,
             next_scroll: new_next_scroll,
@@ -235,7 +246,10 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
     let mut session = init_session(config, &task_config);
 
     // Phase 1: Navigation & authentication check
-    phase1_navigation(api).await?;
+    if let Err(e) = phase1_navigation(api).await {
+        error!("[twitter] Phase 1 navigation failed: {e}");
+        return Err(e);
+    }
 
     // Phase 2: Feed scanning and engagement
     info!("Phase 2: Scanning feed for {} ms", task_config.duration_ms);

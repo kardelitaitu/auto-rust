@@ -2,11 +2,11 @@
 //! Quotes a tweet with LLM-generated commentary.
 
 use crate::internal::text::{preview_chars, truncate_with_ellipsis};
+use crate::llm::unified_processor::UnifiedLLMProcessor;
 use crate::prelude::TaskContext;
 use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
-use crate::utils::twitter::unified_processor::UnifiedLLMProcessor;
 use crate::utils::twitter::{ComposerFlow, PostOutcome, StatusUrl};
 use anyhow::Result;
 use log::{info, warn};
@@ -71,7 +71,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .map(|(a, t)| (a.as_str(), t.as_str()))
             .collect();
 
-        let reply_texts: crate::utils::twitter::unified_processor::UnifiedQuoteResponse = processor
+        let reply_texts: crate::llm::processor::UnifiedQuoteResponse = processor
             .process_quote_with_sentiment(&tweet_text, &reply_tuples)
             .await
             .map_err(|e| {

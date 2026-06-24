@@ -1,8 +1,8 @@
 //! Constants for Twitter activity task.
 //! Contains timing constants and other configuration values.
 
-/// Default feed scan duration budget (ms): 5 minutes.
-pub const DEFAULT_TWITTERACTIVITY_DURATION_MS: u64 = 300_000;
+/// Default feed scan duration budget (ms): 10 minutes.
+pub const DEFAULT_TWITTERACTIVITY_DURATION_MS: u64 = 600_000;
 
 /// Minimum delay between feed candidate scans (ms).
 pub const MIN_CANDIDATE_SCAN_INTERVAL_MS: u64 = 2500;

@@ -115,6 +115,14 @@ const POSITIVE_WORDS: &[&str] = &[
 use crate::utils::twitter::decision::strategies::DecisionStrategyImpl;
 use crate::utils::twitter::decision::types::DecisionStrategy;
 
+/// Results of analyzing replies to a tweet.
+#[allow(dead_code)]
+struct ReplyAnalysis {
+    positive_ratio: f64,
+    negative_ratio: f64,
+    spam_ratio: f64,
+}
+
 /// Legacy rule-based strategy implementation.
 pub(crate) struct LegacyStrategy;
 
@@ -338,15 +346,6 @@ impl LegacyStrategy {
         (0x2600..=0x26FF).contains(&cp) ||    // Misc symbols
         (0x2700..=0x27BF).contains(&cp) // Dingbats
     }
-}
-
-/// Analysis results for tweet replies.
-#[allow(dead_code)]
-#[derive(Debug)]
-struct ReplyAnalysis {
-    positive_ratio: f64,
-    negative_ratio: f64,
-    spam_ratio: f64,
 }
 
 #[cfg(test)]

@@ -17,7 +17,7 @@ React to the tweet and replies naturally but assertively.
 - **NO @mentions**, **NO #hashtags**, **NO emojis**, **NO asterisks** — NEVER, under any circumstance
 - **NO quotes** around your reply
 - **NO asterisk emphasis** — do NOT write *word* or **word** for emphasis
-- **KEEP IT SHORT** — preferably one punchy sentence or phrase.
+- **KEEP IT SHORT** — strictly 1 or 2 sentences maximum. NEVER write 3 or more sentences.
 - No period at end. Lowercase start preferred.
 
 ## BANNED WORDS (sound like AI — never use)
@@ -74,7 +74,7 @@ Your job is to read the tweet AND the replies from other people, then add YOUR o
 ## FORMATTING (CRITICAL)
 - NO @mentions, NO #hashtags, NO emojis, NO asterisks
 - NO quotes around your reply
-- KEEP IT SHORT - preferably one punchy sentence or phrase
+- KEEP IT SHORT - strictly 1 or 2 sentences maximum. NEVER write 3 or more sentences.
 - Lowercase start preferred
 
 ## WHAT TO AVOID
@@ -162,7 +162,7 @@ pub fn build_reply_messages(
 
     // Use strategy-based prompt
     let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
@@ -183,7 +183,7 @@ pub fn build_quote_messages(
 
     // Use strategy-based prompt for quote tweets too
     let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }

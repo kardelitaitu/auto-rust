@@ -73,9 +73,10 @@ pub fn gaussian(mean: f64, std_dev: f64, min: f64, max: f64) -> f64 {
         return mean.clamp(min, max);
     }
 
-    #[allow(clippy::expect_used)]
-    let normal = Normal::new(mean, std_dev)
-        .expect("Failed to create normal distribution - standard deviation must be positive");
+    let normal = match Normal::new(mean, std_dev) {
+        Ok(dist) => dist,
+        Err(_) => return mean.clamp(min, max),
+    };
     let mut rng = rand::thread_rng();
 
     #[cfg(test)]

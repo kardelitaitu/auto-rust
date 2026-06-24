@@ -10,7 +10,7 @@ static PAGE_OVERLAY_REGISTRY: std::sync::LazyLock<DashMap<String, Arc<SessionOve
     std::sync::LazyLock::new(DashMap::new);
 
 #[derive(Debug)]
-pub struct SessionOverlayState {
+pub(crate) struct SessionOverlayState {
     enabled: AtomicBool,
     cursor_initialized: AtomicBool,
     cursor_x: AtomicU64,
@@ -21,7 +21,7 @@ pub struct SessionOverlayState {
 
 impl SessionOverlayState {
     #[must_use]
-    pub fn new(enabled: bool) -> Self {
+    pub(crate) fn new(enabled: bool) -> Self {
         Self {
             enabled: AtomicBool::new(enabled),
             cursor_initialized: AtomicBool::new(false),
@@ -32,21 +32,21 @@ impl SessionOverlayState {
         }
     }
 
-    pub fn is_enabled(&self) -> bool {
+    pub(crate) fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::Relaxed)
     }
 
-    pub fn set_enabled(&self, enabled: bool) {
+    pub(crate) fn set_enabled(&self, enabled: bool) {
         self.enabled.store(enabled, Ordering::Relaxed);
     }
 
-    pub fn set_cursor_position(&self, x: f64, y: f64) {
+    pub(crate) fn set_cursor_position(&self, x: f64, y: f64) {
         self.cursor_x.store(x.to_bits(), Ordering::Relaxed);
         self.cursor_y.store(y.to_bits(), Ordering::Relaxed);
         self.cursor_initialized.store(true, Ordering::Relaxed);
     }
 
-    pub fn cursor_position_snapshot(&self) -> Option<(f64, f64)> {
+    pub(crate) fn cursor_position_snapshot(&self) -> Option<(f64, f64)> {
         if !self.cursor_initialized.load(Ordering::Relaxed) {
             return None;
         }
@@ -57,7 +57,7 @@ impl SessionOverlayState {
         ))
     }
 
-    pub fn cursor_start_position(&self, viewport: &Viewport) -> (f64, f64) {
+    pub(crate) fn cursor_start_position(&self, viewport: &Viewport) -> (f64, f64) {
         if let Some((x, y)) = self.cursor_position_snapshot() {
             if x.is_finite()
                 && y.is_finite()
@@ -73,7 +73,7 @@ impl SessionOverlayState {
         (viewport.width / 2.0, viewport.height / 2.0)
     }
 
-    pub fn claim_sync_slot(&self, now_ms: u64, force: bool, min_interval_ms: u64) -> bool {
+    pub(crate) fn claim_sync_slot(&self, now_ms: u64, force: bool, min_interval_ms: u64) -> bool {
         loop {
             let last = self.last_sync_ms.load(Ordering::Relaxed);
             if !force && now_ms.saturating_sub(last) < min_interval_ms {
@@ -90,11 +90,11 @@ impl SessionOverlayState {
         }
     }
 
-    pub fn set_active_page(&self, page: Arc<Page>) {
+    pub(crate) fn set_active_page(&self, page: Arc<Page>) {
         *self.active_page.lock() = Some(page);
     }
 
-    pub fn clear_active_page_if(&self, page_id: &str) {
+    pub(crate) fn clear_active_page_if(&self, page_id: &str) {
         let mut active = self.active_page.lock();
         if active
             .as_ref()
@@ -104,26 +104,26 @@ impl SessionOverlayState {
         }
     }
 
-    pub fn active_page(&self) -> Option<Arc<Page>> {
+    pub(crate) fn active_page(&self) -> Option<Arc<Page>> {
         self.active_page.lock().as_ref().cloned()
     }
 }
 
-pub fn bind_page_overlay(page_id: String, overlay_state: Arc<SessionOverlayState>) {
+pub(crate) fn bind_page_overlay(page_id: String, overlay_state: Arc<SessionOverlayState>) {
     PAGE_OVERLAY_REGISTRY.insert(page_id, overlay_state);
 }
 
-pub fn unbind_page_overlay(page_id: &str) {
+pub(crate) fn unbind_page_overlay(page_id: &str) {
     PAGE_OVERLAY_REGISTRY.remove(page_id);
 }
 
-pub fn overlay_for_page(page_id: &str) -> Option<Arc<SessionOverlayState>> {
+pub(crate) fn overlay_for_page(page_id: &str) -> Option<Arc<SessionOverlayState>> {
     PAGE_OVERLAY_REGISTRY
         .get(page_id)
         .map(|entry| Arc::clone(entry.value()))
 }
 
-pub fn set_overlay_enabled_for_all(enabled: bool) {
+pub(crate) fn set_overlay_enabled_for_all(enabled: bool) {
     let mut seen = HashSet::new();
     for entry in PAGE_OVERLAY_REGISTRY.iter() {
         let overlay_state = Arc::clone(entry.value());
@@ -134,7 +134,7 @@ pub fn set_overlay_enabled_for_all(enabled: bool) {
     }
 }
 
-pub fn are_all_overlays_enabled() -> bool {
+pub(crate) fn are_all_overlays_enabled() -> bool {
     let mut seen = HashSet::new();
 
     for entry in PAGE_OVERLAY_REGISTRY.iter() {

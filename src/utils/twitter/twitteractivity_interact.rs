@@ -47,7 +47,7 @@
 //! - Random variation in timing to avoid patterns
 
 use crate::prelude::TaskContext;
-use crate::utils::timing::{TIMEOUT_MEDIUM_SECS, TIMEOUT_SHORT_SECS};
+use crate::utils::timing::TIMEOUT_SHORT_SECS;
 use anyhow::Result;
 use log::info;
 use rand::Rng;
@@ -405,40 +405,131 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     }
 
     info!("Reply textarea focused");
+    // Wait 2-3s before typing to let React render the composer and position cursor
+    let pause_ms = rand::thread_rng().gen_range(2000..3001);
+    human_pause(api, pause_ms).await;
+
+    // Type the reply text with natural typing (includes typos and corrections)
+    info!("Typing reply text (with typos)");
+    let typing = api.behavior_runtime().typing;
+    // Calculate dynamic timeout: allow up to 1.5 seconds per character for natural typing, plus base medium timeout
+    let typing_timeout_secs =
+        crate::utils::timing::TIMEOUT_MEDIUM_SECS + (reply_text.len() as u64 * 1500 / 1000);
+    match timeout(
+        Duration::from_secs(typing_timeout_secs),
+        crate::utils::keyboard::natural_typing_profiled(
+            api.page(),
+            "[data-testid=\"tweetTextarea_0\"]",
+            reply_text,
+            &typing,
+        ),
+    )
+    .await
+    {
+        Ok(Err(e)) => {
+            info!("Typing failed due to error: {e}");
+            return Ok(EngagementOutcome::Failed);
+        }
+        Err(_) => {
+            info!("Timeout typing reply text");
+            return Ok(EngagementOutcome::Failed);
+        }
+        Ok(Ok(())) => {}
+    }
+    // Verify typing completed by reading back the textarea content.
+    // This waits for React to process all queued InputEvents before we
+    // attempt to find the submit button (which is disabled while empty).
+    info!("Verifying typed content...");
+    {
+        let check_js = r#"
+            (function() {
+                const el = document.querySelector('[data-testid="tweetTextarea_0"]');
+                if (!el) return '';
+                return el.innerText || el.textContent || '';
+            })()
+        "#;
+        let mut received = String::new();
+        for attempt in 1..=10 {
+            if let Ok(Ok(val)) = timeout(
+                Duration::from_secs(TIMEOUT_SHORT_SECS),
+                api.page().evaluate(check_js),
+            )
+            .await
+            {
+                if let Some(text) = val.value().and_then(|v| v.as_str()) {
+                    let normalized_received: String =
+                        text.chars().filter(|c| !c.is_whitespace()).collect();
+                    let normalized_expected: String =
+                        reply_text.chars().filter(|c| !c.is_whitespace()).collect();
+
+                    received = text.trim().to_string();
+                    if !normalized_received.is_empty()
+                        && normalized_expected.contains(&normalized_received)
+                    {
+                        info!(
+                            "Typing verified (attempt {}/10): {} chars received",
+                            attempt,
+                            received.len()
+                        );
+                        break;
+                    }
+                }
+            }
+            info!("Content not ready yet (attempt {}/10), waiting...", attempt);
+            human_pause(api, 500).await;
+        }
+        if received.is_empty() {
+            info!(
+                "Typing verification: no content detected after 10 attempts, proceeding anyway..."
+            );
+        }
+    }
+
+    // 1. Scroll the reply submit button into view so its coordinates are stable.
+    let scroll_js = r#"(function() {
+             const btn = document.querySelector('button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]');
+             if (btn) btn.scrollIntoView({ block: 'center', behavior: 'instant' });
+         })()"#
+        .to_string();
+    let _ = api.page().evaluate(scroll_js).await;
     human_pause(api, 300).await;
 
-    // Type the reply text
-    info!("Typing reply text");
-    if timeout(
-        Duration::from_secs(TIMEOUT_MEDIUM_SECS),
-        api.type_text(reply_text),
-    )
-    .await
-    .is_err()
-    {
-        info!("Timeout typing reply text");
-        return Ok(EngagementOutcome::Failed);
-    }
-    human_pause(api, 400).await;
-
-    // Click the Reply submit button in the composer.
+    // 2. Click the Reply submit button by evaluating its actual post-scroll coordinates.
+    // Retry up to 3 times with short pauses to allow React to process the input
+    // and enable the button (it starts disabled when composer is empty).
     let reply_button_js = js_find_reply_submit_button();
 
-    info!("Finding reply button");
-    let button_result = if let Ok(result) = timeout(
-        Duration::from_secs(TIMEOUT_SHORT_SECS),
-        api.page().evaluate(reply_button_js),
-    )
-    .await
-    {
-        result?
-    } else {
-        info!("Timeout finding reply button");
-        return Ok(EngagementOutcome::Failed);
+    let button_coords = {
+        let mut coords = None;
+        for attempt in 1..=3 {
+            info!("Finding reply button (attempt {}/3)", attempt);
+            let button_result = match timeout(
+                Duration::from_secs(TIMEOUT_SHORT_SECS),
+                api.page().evaluate(reply_button_js),
+            )
+            .await
+            {
+                Ok(r) => r?,
+                Err(_) => {
+                    info!("Timeout finding reply button on attempt {}", attempt);
+                    human_pause(api, 300).await;
+                    continue;
+                }
+            };
+
+            if let Some((x, y)) = button_result.value().and_then(parse_button_coordinates) {
+                coords = Some((x, y));
+                break;
+            }
+            info!("Reply button not ready on attempt {}, retrying...", attempt);
+            human_pause(api, 300).await;
+        }
+        coords
     };
 
-    if let Some((x, y)) = button_result.value().and_then(parse_button_coordinates) {
+    if let Some((x, y)) = button_coords {
         info!("Found reply button at ({x:.1}, {y:.1})");
+
         if timeout(
             Duration::from_secs(TIMEOUT_SHORT_SECS),
             api.move_mouse_to(x, y),
@@ -461,7 +552,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
             return Ok(EngagementOutcome::Failed);
         }
     } else {
-        info!("Reply button not found or invalid coordinates");
+        info!("Reply button not found after 3 attempts");
         return Ok(EngagementOutcome::Failed);
     }
 
@@ -524,10 +615,6 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
 /// - Clicks the send button to post the reply
 #[instrument(skip(api))]
 pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<EngagementOutcome> {
-    match click_reply_button(api).await? {
-        EngagementOutcome::Completed => {}
-        other => return Ok(other),
-    }
     send_reply(api, reply_text).await
 }
 
@@ -670,7 +757,7 @@ mod tests {
 
         assert!(js.contains("article[data-testid=\"tweet\"]"));
         assert!(js.contains("targetStatusId"));
-        assert!(js.contains("articles[0]"));
+        assert!(js.contains("visibleArticles[0]"));
         assert!(js.contains(r#"button[data-testid=\"reply\"]"#));
     }
 
@@ -866,6 +953,56 @@ mod pure_function_tests {
     #[test]
     fn parse_button_coords_integer_values() {
         let value = json!({"x": 100, "y": 200});
+        let coords = parse_button_coordinates(&value);
+        assert!(coords.is_some());
+        let (x, y) = coords.unwrap();
+        assert!((x - 100.0).abs() < f64::EPSILON);
+        assert!((y - 200.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_button_coords_negative() {
+        // Negative coordinates should still parse (coordinates can be off-screen)
+        let value = json!({"x": -50.0, "y": -100.0});
+        let coords = parse_button_coordinates(&value);
+        assert!(coords.is_some());
+        let (x, y) = coords.unwrap();
+        assert!((x - -50.0).abs() < f64::EPSILON);
+        assert!((y - -100.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_button_coords_zero() {
+        // Zero is valid (element at origin)
+        let value = json!({"x": 0.0, "y": 0.0});
+        assert!(parse_button_coordinates(&value).is_some());
+    }
+
+    #[test]
+    fn parse_button_coords_nan_and_infinity_via_null() {
+        // Note: serde_json cannot represent NaN/Infinity — f64::NAN and f64::INFINITY
+        // both serialize to Value::Null via the json!() macro. So these tests verify
+        // that null-like poison values are rejected (the actual NaN/Infinity case is
+        // impossible to construct with default serde_json).
+        let value = json!({"x": null, "y": 100.0});
+        assert_eq!(parse_button_coordinates(&value), None);
+        let value = json!({"x": 100.0, "y": null});
+        assert_eq!(parse_button_coordinates(&value), None);
+        let value = json!({"x": null, "y": null});
+        assert_eq!(parse_button_coordinates(&value), None);
+    }
+
+    #[test]
+    fn parse_button_coords_large_values() {
+        // Very large but finite values should still parse
+        let value = json!({"x": 1e8, "y": 1e8});
+        assert!(parse_button_coordinates(&value).is_some());
+    }
+
+    #[test]
+    fn parse_button_coords_extra_fields() {
+        // Extra fields beyond x,y should be ignored
+        let value = json!({"x": 100.0, "y": 200.0, "width": 50, "height": 30, "found": true});
         let coords = parse_button_coordinates(&value);
         assert!(coords.is_some());
         let (x, y) = coords.unwrap();

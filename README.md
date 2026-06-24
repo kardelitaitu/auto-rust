@@ -22,6 +22,7 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Documentation](#documentation)
+- [Git Hooks](#git-hooks)
 - [Contributing](#contributing)
 
 ## Why Auto?
@@ -738,7 +739,7 @@ This project is actively maintained and used in production environments.
 | Integration tests | ✅ |
 
 **Quality Metrics:**
-- **3,819 unit tests** — all passing, 0 failures, 6 skipped
+- **4,040 unit tests** — all passing, 0 failures, 6 skipped
 - **328 co-located tests** in `src/result/` — types.rs (57) + errors.rs (106), closing the pure-function coverage gap
 - **40 tests** for `twitteractivity_actions.rs` — `generate_quote_text` matches `generate_reply_text` coverage breadth
 - **8/8 check.ps1 steps** — spec-lint, build, format, clippy (4 passes), nextest — all green
@@ -921,6 +922,52 @@ export MAX_GLOBAL_CONCURRENCY=10
 - `twitterreply` - Reply to tweets with LLM
 - `twitterretweet` - Retweet specific tweets
 - `twittertest` - Twitter automation smoke tests
+
+## Git Hooks
+
+This project ships two git hooks to enforce code quality on every commit.
+Hooks live in `scripts/` (version-controlled) and are installed via:
+
+```bash
+bash scripts/setup-hooks.sh        # Install all hooks
+bash scripts/setup-hooks.sh --list # Show installed vs available
+```
+
+### Pre-commit: Formatting check
+
+Runs `cargo fmt --check` on staged `.rs` files. Rejects the commit if any
+formatting issues are found, showing the diff so you can fix with
+`cargo fmt`. Skips automatically when no Rust files are staged.
+
+### Commit-msg: Conventional commits
+
+Validates the commit message follows the conventional commits format:
+
+```text
+feat: add twitterquote task (reuse LLM reply flow)
+fix(session): handle rate limits in connector
+docs: trim README TOC (faster first read)
+chore: normalize formatting after test additions
+```
+
+**Allowed types:** `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `ci`,
+`perf`, `style`, `revert`, `build`
+
+**Scope** (optional): identifier like `session`, `connector`, `cli`
+
+**Breaking changes:** Use `!` before the colon: `feat!: ...`, `feat(scope)!: ...`
+
+Merge commits, `fixup!`/`squash!`, `WIP`, and empty (draft) messages are
+allowed through without validation.
+
+### Updating hooks
+
+Edit the source files in `scripts/`, then re-run `setup-hooks.sh`:
+
+```bash
+vim scripts/pre-commit    # Edit hook logic
+bash scripts/setup-hooks.sh   # Re-install to .git/hooks/
+```
 
 ## Contributing
 

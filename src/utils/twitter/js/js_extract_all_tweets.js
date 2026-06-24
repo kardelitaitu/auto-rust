@@ -8,9 +8,24 @@
         var el = articles[i];
         var textEl = el.querySelector('[data-testid="tweetText"]');
         var elText = textEl ? textEl.textContent.trim() : '';
-        var authorEl = el.querySelector('[dir="auto"]');
-        var elAuthor = authorEl ? authorEl.textContent.trim() : 'unknown';
-
+        var authorEl = el.querySelector('[data-testid="User-Name"]');
+        var elAuthor = 'unknown';
+        if (authorEl) {
+            // Find the @handle if present, otherwise fallback to the display name
+            var handleEl = Array.from(authorEl.querySelectorAll('*')).find(function(n) { 
+                return n.textContent && n.textContent.trim().startsWith('@'); 
+            });
+            if (handleEl) {
+                elAuthor = handleEl.textContent.trim().replace('@', '');
+            } else {
+                var firstDir = authorEl.querySelector('[dir="auto"]');
+                elAuthor = firstDir ? firstDir.textContent.trim() : authorEl.textContent.trim();
+            }
+        } else {
+            // Fallback for weird layouts (e.g., ads or truncated views)
+            var backupEl = el.querySelector('[dir="auto"] span:first-child');
+            if (backupEl) elAuthor = backupEl.textContent.trim();
+        }
         if (i === 0) {
             author = elAuthor;
             text = elText;

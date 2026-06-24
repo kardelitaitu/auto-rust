@@ -1,0 +1,28 @@
+version: 1
+id: twitter_activity_logging
+title: Enhance Twitter Activity Logging and Robustness
+status: done
+owner: spec-agent
+implementer: implementer-agent
+priority: P2
+area:
+  - twitter
+files:
+  code:
+    - src/task/twitteractivity.rs
+    - src/utils/twitter/engagement/mod.rs
+    - src/utils/twitter/engagement/dispatch.rs
+    - src/utils/twitter/twitteractivity_navigation.rs
+  docs:
+    - docs/specs/_done/twitter_activity_logging/plan.md
+    - docs/specs/_done/twitter_activity_logging/validation.md
+acceptance:
+  - "Errors during payload validation in `twitteractivity.rs` are logged with `error!`."
+  - "Errors during Phase 1 navigation in `twitteractivity_navigation.rs` are logged with `error!`."
+  - "Errors or failures during single candidate processing in `scan_and_process_candidates` are caught and logged with `error!`, allowing the loop to continue with other candidates."
+  - "Engagement action failures (like, retweet, etc.) returning unsuccessful outcomes (such as `ElementNotFound` or `Failed`) are logged with descriptive `warn!` logs showing the specific failure reason."
+non_goals:
+  - "Do not change the public API or task definitions in `src/task/mod.rs`."
+  - "Do not alter the behavior of successful path runs."
+risks:
+  - "Cluttering logs with excessive/unnecessary details (addressed by logging only on actual failure/warning conditions)."

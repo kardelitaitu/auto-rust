@@ -4,6 +4,7 @@
         var ta = textboxes[i];
         var rect = ta.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) continue;
+        ta.scrollIntoView({ block: 'center', behavior: 'instant' });
         ta.focus();
         ta.click();
         return { found: true };

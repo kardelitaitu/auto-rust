@@ -130,11 +130,10 @@ debug = "line-tables-only"    # Minimal debug info for faster linking
 overflow-checks = false       # Disable overflow checks for speed
 lto = false                   # Disable LTO for dev
 
-# Release profile: maximum runtime performance, smaller binaries
+# Release profile: optimized runtime performance with faster compile times
 [profile.release]
-# Note: inherits not used — this IS the release profile
-lto = true                    # Full link-time optimization (fat LTO)
-codegen-units = 1             # Single codegen unit for maximum optimization
+lto = "thin"                  # Thin link-time optimization (much faster compile times)
+codegen-units = 16            # Parallel codegen units for faster compilation
 opt-level = 3                 # Max optimization
 overflow-checks = true        # Keep safety checks in release
 strip = "symbols"             # Remove debug symbols for smaller binary

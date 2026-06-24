@@ -757,7 +757,7 @@ mod tests {
 
         assert!(js.contains("article[data-testid=\"tweet\"]"));
         assert!(js.contains("targetStatusId"));
-        assert!(js.contains("articles[0]"));
+        assert!(js.contains("visibleArticles[0]"));
         assert!(js.contains(r#"button[data-testid=\"reply\"]"#));
     }
 

@@ -18,7 +18,7 @@ jobs = 16
 # Keep builds on plain Cargo incremental compilation for reliability.
 # Explicitly disable sccache even if RUSTC_WRAPPER is set in the environment
 # (sccache fails on /mnt/c/ in WSL due to Unix permission issues on Windows FS)
-rustc-wrapper = ""
+# rustc-wrapper = ""
 
 # Faster linker on Windows (lld-link is usually the best stable choice)
 [target.x86_64-pc-windows-msvc]
@@ -57,7 +57,8 @@ codegen-units = 16
 [profile.release]
 opt-level = 3
 lto = "thin"                     # Best balance for most projects (fast compile + good perf)
-codegen-units = 1                # Best optimizations with LTO
+codegen-units = 16               # Parallel codegen units for faster compilation
+incremental = true               # Enable incremental compilation for release builds
 debug = false
 strip = "debuginfo"              # Or change to `true` for smaller binaries
 panic = "unwind"                 # Explicit (default); change to "abort" if you don't need unwinding

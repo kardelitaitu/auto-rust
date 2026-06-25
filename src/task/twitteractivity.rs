@@ -44,11 +44,22 @@ use crate::utils::twitter::{
 /// # Timeout
 /// The timeout wrapper ensures the task cannot exceed `duration_ms` milliseconds. This is the correct boundary for timeout enforcement.
 pub async fn run(api: &TaskContext, payload: Value, config: &Config) -> Result<()> {
-    let task_config =
+    let mut task_config =
         TaskConfig::from_payload(&payload, &config.twitter_activity).map_err(|e| {
             error!("[twitter] Payload validation failed: {e}");
             anyhow::anyhow!("Payload validation failed: {e}")
         })?;
+
+    // If duration_ms is not explicitly provided in the payload, randomize it between 7 and 10 minutes (420,000 - 600,000 ms)
+    if payload.get("duration_ms").is_none() {
+        let random_duration = crate::utils::math::random_in_range(420_000, 600_000);
+        info!(
+            "[twitter] Randomizing max duration to {} ms (7-10 minutes)",
+            random_duration
+        );
+        task_config.duration_ms = random_duration;
+    }
+
     if task_config.simulate_only {
         return run_simulation(&task_config, config);
     }

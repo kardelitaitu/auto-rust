@@ -264,6 +264,13 @@ pub fn js_verify_quote_posted() -> &'static str {
     include_str!("js/js_verify_quote_posted.js")
 }
 
+/// Returns JS to find the retweet confirm button in the dropdown.
+/// Returns `{x, y}` or `null` if not found.
+#[must_use]
+pub fn js_find_retweet_confirm_button() -> &'static str {
+    include_str!("js/js_find_retweet_confirm_button.js")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

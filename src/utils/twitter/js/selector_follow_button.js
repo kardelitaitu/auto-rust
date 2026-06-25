@@ -15,6 +15,10 @@
             label.toLowerCase() === 'follow' ||
             text.toLowerCase() === 'follow' ||
             dataTestId.toLowerCase().includes('follow')) {
+            var rectBefore = btn.getBoundingClientRect();
+            if (rectBefore.width <= 0 || rectBefore.height <= 0) {
+                btn.scrollIntoView({ block: 'center', behavior: 'instant' });
+            }
             var rect = btn.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
                 return {

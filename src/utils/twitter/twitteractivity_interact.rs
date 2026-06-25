@@ -49,7 +49,7 @@
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_SHORT_SECS;
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
 use rand::Rng;
 use tracing::instrument;
 
@@ -281,19 +281,31 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
     let pause_ms = rand::thread_rng().gen_range(1000..2000);
     human_pause(api, pause_ms).await;
 
-    // Scroll retweet confirm button into view before clicking
+    // Find retweet confirm button coordinates
+    let confirm_btn_js = super::twitteractivity_selectors::js_find_retweet_confirm_button();
+    let result = api.page().evaluate(confirm_btn_js).await?;
+
+    if let Some((x, y)) = result.value().and_then(parse_button_coordinates) {
+        info!("Found retweet confirm button at ({x:.1}, {y:.1})");
+        api.move_mouse_to(x, y).await?;
+        human_pause(api, 250).await;
+        api.click_at(x, y).await?;
+        info!("Retweet confirmed");
+        human_pause(api, 800).await;
+        return Ok(EngagementOutcome::Completed);
+    }
+
+    // Fallback: direct click using selector
+    warn!("Coordinate search failed, attempting fallback selector click...");
     if let Err(e) = api.scroll_into_view(RETWEET_CONFIRM_SELECTOR).await {
         info!("Failed to scroll retweet confirm button into view: {e}");
         return Ok(EngagementOutcome::Failed);
     }
-    // Click confirm button
     if let Err(e) = api.click(RETWEET_CONFIRM_SELECTOR).await {
         info!("Failed to click retweet confirm: {e}");
         return Ok(EngagementOutcome::Failed);
     }
-    info!("Retweet confirmed");
-
-    // Wait for action to complete
+    info!("Retweet confirmed via fallback");
     human_pause(api, 800).await;
     Ok(EngagementOutcome::Completed)
 }

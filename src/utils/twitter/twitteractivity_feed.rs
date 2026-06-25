@@ -43,9 +43,43 @@
 use crate::prelude::TaskContext;
 use anyhow::Result;
 use serde_json::Value;
+use std::time::Duration;
 use tracing::instrument;
 
 use super::twitteractivity_selectors::js_identify_engagement_candidates;
+
+/// Wait for the page scroll to settle/stop moving.
+async fn wait_for_scroll_stability(api: &TaskContext, timeout_ms: u64) -> Result<()> {
+    let page = api.page();
+    let start_time = std::time::Instant::now();
+    let check_interval = Duration::from_millis(100);
+    let mut last_y: f64 = -1.0;
+    let mut stable_count = 0;
+    let required_stable_checks = 2;
+
+    while start_time.elapsed().as_millis() < u128::from(timeout_ms) {
+        let get_y_js =
+            "window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0";
+        let curr_y = match page.evaluate(get_y_js).await {
+            Ok(res) => res.value().and_then(|v| v.as_f64()).unwrap_or(0.0),
+            Err(_) => 0.0,
+        };
+
+        if last_y >= 0.0 && (curr_y - last_y).abs() <= 2.0 {
+            stable_count += 1;
+            if stable_count >= required_stable_checks {
+                break;
+            }
+        } else {
+            stable_count = 0;
+        }
+
+        last_y = curr_y;
+        tokio::time::sleep(check_interval).await;
+    }
+
+    Ok(())
+}
 
 /// Scans the current viewport for tweet articles that are good engagement candidates.
 ///
@@ -86,6 +120,10 @@ use super::twitteractivity_selectors::js_identify_engagement_candidates;
 /// - Reply button: `[data-testid="reply"]`
 #[instrument(skip(api))]
 pub async fn identify_engagement_candidates(api: &TaskContext) -> Result<Vec<Value>> {
+    if let Err(e) = wait_for_scroll_stability(api, 1500).await {
+        log::warn!("[feed] Scroll stability check failed: {e}");
+    }
+
     let js = js_identify_engagement_candidates();
     let result = api.page().evaluate(js).await?;
     let value = result.value();

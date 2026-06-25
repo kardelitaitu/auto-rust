@@ -465,7 +465,7 @@ pub async fn process_candidate(
     }
 
     Ok(CandidateResult {
-        should_break: false,
+        should_break: did_dive,
         next_scroll,
         next_candidate_scan,
         actions_this_scan,

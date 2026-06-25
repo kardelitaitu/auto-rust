@@ -977,13 +977,17 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for:
 - Code style guidelines
 - Task authoring guide
 
-Quick checks before submitting:
+Verification workflow before submitting:
 
-```bash
-cargo test
-cargo clippy --all-targets --all-features
-cargo fmt
-```
+- **Before Commit**: Run a fast compilation check to ensure there are no build errors:
+  ```bash
+  cargo check
+  ```
+
+- **Before Push**: Run the full validation/CI suite to guarantee everything is green:
+  ```powershell
+  .\check.ps1
+  ```
 
 ## License
 

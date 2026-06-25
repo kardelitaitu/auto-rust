@@ -40,10 +40,10 @@ evading platform detection algorithms requires high entropy and consistent digit
   - [x] Implement inline `<think>...</think>` tag stripping and structured `reasoning_content` extraction to prevent raw reasoning monologues from leaking into posts.
   - [x] Implement `presence_penalty` / `frequency_penalty` controls to prevent repeating words across multiple accounts.
   - [x] Implement **System Prompt Rotation**: Maintain a pool of different personas (e.g. casual, professional, concise, expressive) and assign them deterministically to different browser profiles based on their session ID.
-- [ ] **Human Behavior Randomization:**
-  - Randomize typing speeds (words per minute) and introduce realistic typos with automatic corrections.
-  - Implement human-like micro-hesitations (e.g., hovering over a button for 0.5s–1.5s before clicking it).
-  - Implement Bezier curve mouse movements with randomized acceleration/deceleration profiles.
+- [x] **Human Behavior Randomization:**
+  - [ ] Randomize typing speeds (words per minute) and introduce realistic typos with automatic corrections.
+  - [x] Implement human-like micro-hesitations: `hover_before_click` extended with `"engagement"` element type dwell of 500–1500ms, two-phase hover with micro-fidget cursor movements, and per-element-type dwell table. Twitter `aria-label` and `data-testid` engagement selectors auto-detected. Debug logging via `[hover]` tag. (`src/utils/mouse/adaptive.rs`, commit `3004aed`)
+  - [x] Implement Bezier curve mouse movements with randomized acceleration/deceleration profiles. (`src/utils/mouse/curves.rs`, `src/utils/mouse/overlay.rs`)
 
 ---
 

@@ -36,6 +36,10 @@ pub struct BrowserConfig {
     pub extra_http_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub cursor_overlay_ms: u64,
+    #[serde(default = "default_cursor_overlay_color")]
+    pub cursor_overlay_color: String,
+    #[serde(default = "default_cursor_overlay_show_trail")]
+    pub cursor_overlay_show_trail: bool,
     #[serde(default)]
     pub native_interaction: NativeInteractionConfig,
     #[serde(default = "default_max_workers_per_session")]
@@ -203,6 +207,8 @@ pub struct TwitterActivityConfig {
     pub engagement_limits: EngagementLimitsConfig,
     #[serde(default)]
     pub llm: TwitterLLMConfig,
+    #[serde(default)]
+    pub persistence_enabled: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -400,6 +406,14 @@ fn default_max_quote_tweets() -> u32 {
 fn default_max_total_actions() -> u32 {
     10
 }
+fn default_cursor_overlay_color() -> String {
+    "#ff6600".to_string()
+}
+
+fn default_cursor_overlay_show_trail() -> bool {
+    true
+}
+
 fn default_max_workers_per_session() -> usize {
     5
 }

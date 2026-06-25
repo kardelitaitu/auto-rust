@@ -51,6 +51,31 @@ pub async fn human_scroll(page: &Page, direction: &str, amount: i32) -> Result<(
     smooth_scroll_by(page, signed, duration).await
 }
 
+/// Simulates a human mouse jittering slightly on the page to mimic real mouse activity.
+pub async fn jitter_cursor(page: &Page) -> Result<()> {
+    let viewport = match crate::utils::page_size::get_viewport(page).await {
+        Ok(v) => v,
+        Err(_) => return Ok(()),
+    };
+
+    let (current_x, current_y) =
+        crate::utils::mouse::overlay::cursor_start_position(page, &viewport);
+
+    // Generate small random offset (jitter) using Gaussian distribution
+    let dx = gaussian(0.0, 15.0, -45.0, 45.0);
+    let dy = gaussian(0.0, 15.0, -45.0, 45.0);
+
+    // Check if the change is significant enough to simulate micro-movement
+    if dx.abs().max(dy.abs()) >= 2.0 {
+        let target_x = (current_x + dx).clamp(10.0, viewport.width - 10.0);
+        let target_y = (current_y + dy).clamp(10.0, viewport.height - 10.0);
+
+        crate::utils::mouse::cursor_move_to(page, target_x, target_y).await?;
+    }
+
+    Ok(())
+}
+
 pub async fn read(
     page: &Page,
     pauses: u32,
@@ -79,6 +104,10 @@ pub async fn read(
         .await?;
 
         if i + 1 < pauses {
+            // Periodically jitter the cursor during scroll pauses with a 45% chance
+            if random_in_range(0, 100) < 45 {
+                let _ = jitter_cursor(page).await;
+            }
             human_pause(random_in_range(500, 1100), 45).await;
             if back_scroll && random_in_range(0, 100) < 8 {
                 let backtrack = gaussian(28.0, 14.0, 8.0, 70.0) as i32;
@@ -87,6 +116,10 @@ pub async fn read(
         }
     }
 
+    // Periodically jitter the cursor at the end of the scroll sequence with a 40% chance
+    if random_in_range(0, 100) < 40 {
+        let _ = jitter_cursor(page).await;
+    }
     human_pause(random_in_range(300, 900), 35).await;
     Ok(())
 }
@@ -140,7 +173,7 @@ pub async fn scroll_read_to(
 
 pub async fn scroll_to_top(page: &Page) -> Result<()> {
     smooth_scroll_to_y(page, 0.0, random_in_range(650, 1100)).await?;
-    human_pause(120, 60).await;
+    human_pause(850, 20).await;
     Ok(())
 }
 
@@ -152,7 +185,7 @@ pub async fn scroll_to_bottom(page: &Page) -> Result<()> {
         .and_then(serde_json::Value::as_f64)
         .ok_or_else(|| anyhow::anyhow!("Failed to read document height"))?;
     smooth_scroll_to_y(page, bottom, random_in_range(650, 1100)).await?;
-    human_pause(120, 60).await;
+    human_pause(850, 20).await;
     Ok(())
 }
 

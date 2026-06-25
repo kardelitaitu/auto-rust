@@ -99,7 +99,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 4: Call the LLM
     info!("[test-llmreply] Step 4: Calling LLM to generate reply...");
     let raw_reply = match crate::utils::twitter::twitteractivity_llm::generate_reply(
-        api, &author, &text, replies,
+        api,
+        &author,
+        &text,
+        replies,
+        crate::utils::twitter::sentiment::Sentiment::Neutral,
     )
     .await
     {

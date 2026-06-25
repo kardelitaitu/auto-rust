@@ -1,4 +1,4 @@
-last audited 16-06-26 by opencode
+last audited 24-06-26 by Buffy
 # API Reference
 
 Complete reference for the TaskContext API and interaction patterns.
@@ -177,6 +177,18 @@ Environment variables for native interaction:
 |----------|---------|-------------|
 | `NATIVE_INPUT_BACKEND` | `enigo` | Backend for native input (`enigo` only for now) |
 | `NATIVE_INTERACTION_STABILITY_WAIT_MS` | 1000 | Wait for element stabilization |
+
+### Cursor Overlay
+
+Environment variables for the visual cursor overlay (injected into browser pages):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CURSOR_OVERLAY_MS` | `0` | Sync interval in ms (`0` = disabled, `50` = ~20fps) |
+| `CURSOR_OVERLAY_COLOR` | `#ff6600` | Accent color for cursor dot, ring, and ripple (CSS hex: `#rgb`, `#rrggbb`, `#rgba`, `#rrggbbaa`) |
+| `CURSOR_OVERLAY_SHOW_TRAIL` | `true` | Show/hide fading ghost trail dots behind the cursor |
+
+**Validation:** `cursor_overlay_color` is validated as a hex color at startup when `cursor_overlay_ms > 0`. Invalid formats produce a validation warning.
 
 ### Twitter Activity — Consecutive Failure Thresholds
 

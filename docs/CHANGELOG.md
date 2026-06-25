@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **cursor overlay**: Enhanced visual cursor with circle+ring dot, 3-dot ghost trail, expanding-ring ripple click effect, native cursor hiding
+- **cursor overlay**: Configurable `cursor_overlay_color` (CSS hex `#rgb`/`#rrggbb`/`#rgba`/`#rrggbbaa`) and `cursor_overlay_show_trail` via TOML or `CURSOR_OVERLAY_COLOR`/`CURSOR_OVERLAY_SHOW_TRAIL` env vars
+- **cursor overlay**: Hex color format validation in `BrowserConfig::validate()` (only when `ms>0`) — warns on invalid formats
+
 - **lint**: `#![deny(clippy::unwrap_used)]` + `#![deny(clippy::expect_used)]` in both `src/lib.rs` and `crates/bacon-pipeline/src/lib.rs`; CI + `check.ps1` enforcement for `--lib` and `--bins` targets
 - **lint**: `#![deny(unsafe_code)]` in `crates/bacon-pipeline/src/lib.rs` (0 unsafe blocks; forward-looking guard)
 - **lint**: `#![deny(unsafe_op_in_unsafe_fn)]` in `src/lib.rs` (0 `unsafe fn` definitions; forward-looking guard)

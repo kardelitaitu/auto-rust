@@ -5,7 +5,9 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use super::LlmClient;
-use crate::llm::models::{ChatChoice, ChatMessage, ChatResponse, LlmProvider, OpenRouterResponse};
+use crate::llm::models::{
+    ChatChoice, ChatMessage, ChatResponse, LlmProvider, OpenRouterResponse, Role,
+};
 
 pub(crate) fn is_retryable_nvidia_status(status: StatusCode) -> bool {
     status == StatusCode::TOO_MANY_REQUESTS
@@ -48,6 +50,22 @@ fn parse_retry_after(response: &reqwest::Response) -> Option<Duration> {
     Some(Duration::from_secs(seconds))
 }
 
+/// Cleans output by removing any inline reasoning/thinking blocks wrapped in `<think>` tags.
+/// Also handles partial/cutoff thinking blocks gracefully.
+#[must_use]
+pub fn strip_thinking_tags(text: &str) -> String {
+    let mut cleaned = text.to_string();
+    while let Some(start_idx) = cleaned.find("<think>") {
+        if let Some(end_idx) = cleaned.find("</think>") {
+            cleaned.replace_range(start_idx..end_idx + 8, "");
+        } else {
+            cleaned.replace_range(start_idx.., "");
+            break;
+        }
+    }
+    cleaned.trim().to_string()
+}
+
 /// Brief computed delay before an OpenRouter fallback attempt.
 /// Uses the same exponential backoff as NVIDIA (attempt 1 ~1s) to space out
 /// fallback requests and avoid consecutive rate-limit rejections.
@@ -73,6 +91,10 @@ impl LlmClient {
     }
 
     pub async fn chat_with_fallback(&self, messages: Vec<ChatMessage>) -> Result<String> {
+        if let Some(ref limiter) = self.rate_limiter {
+            limiter.acquire().await;
+        }
+
         match self.config.provider {
             LlmProvider::Ollama => match self.ollama_chat(messages.clone()).await {
                 Ok(response) => Ok(response),
@@ -95,7 +117,7 @@ impl LlmClient {
     async fn nvidia_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
         let url = format!("{}/chat/completions", self.config.nvidia.base_url);
 
-        let request = serde_json::json!({
+        let mut request = serde_json::json!({
             "model": self.config.nvidia.model,
             "messages": messages,
             "temperature": self.config.nvidia.temperature,
@@ -107,6 +129,12 @@ impl LlmClient {
                 "reasoning_effort": "high"
             }
         });
+        if let Some(val) = self.config.nvidia.presence_penalty {
+            request["presence_penalty"] = serde_json::json!(val);
+        }
+        if let Some(val) = self.config.nvidia.frequency_penalty {
+            request["frequency_penalty"] = serde_json::json!(val);
+        }
 
         info!(
             "Calling NVIDIA API (High Thinking): {}...",
@@ -205,6 +233,7 @@ impl LlmClient {
             }
 
             let content = message["content"].as_str().unwrap_or_default().to_string();
+            let content = strip_thinking_tags(&content);
 
             if content.is_empty() {
                 let reason = body["choices"][0]["finish_reason"]
@@ -222,11 +251,21 @@ impl LlmClient {
     async fn ollama_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
         let url = format!("{}/api/chat", self.config.ollama.base_url);
 
+        let mut options = serde_json::json!({
+            "temperature": self.config.ollama.temperature,
+            "num_predict": self.config.ollama.max_tokens,
+        });
+        if let Some(val) = self.config.ollama.presence_penalty {
+            options["presence_penalty"] = serde_json::json!(val);
+        }
+        if let Some(val) = self.config.ollama.frequency_penalty {
+            options["frequency_penalty"] = serde_json::json!(val);
+        }
+
         let request = serde_json::json!({
             "model": self.config.ollama.model,
             "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 2048,
+            "options": options,
             "stream": false,
         });
 
@@ -257,7 +296,17 @@ impl LlmClient {
             anyhow::bail!("Ollama error: {err}");
         }
 
-        let content = chat_response.message.map(|m| m.content).unwrap_or_default();
+        let message = chat_response.message.unwrap_or_else(|| ChatMessage {
+            role: Role::Assistant,
+            content: String::new(),
+            reasoning_content: None,
+        });
+
+        if let Some(ref reasoning) = message.reasoning_content {
+            info!("[thinking] Ollama reasoning trace: {}", reasoning);
+        }
+
+        let content = strip_thinking_tags(&message.content);
 
         Ok(content)
     }
@@ -286,11 +335,17 @@ impl LlmClient {
                 info!("Calling OpenRouter: {model}");
             }
 
-            let request = serde_json::json!({
+            let mut request = serde_json::json!({
                 "model": model,
                 "messages": &messages,
-                "temperature": 0.7,
+                "temperature": self.config.openrouter.temperature,
             });
+            if let Some(val) = self.config.openrouter.presence_penalty {
+                request["presence_penalty"] = serde_json::json!(val);
+            }
+            if let Some(val) = self.config.openrouter.frequency_penalty {
+                request["frequency_penalty"] = serde_json::json!(val);
+            }
 
             let result = self
                 .http
@@ -330,14 +385,25 @@ impl LlmClient {
                                     }
 
                                     // Extract content from successful response
-                                    let content = openrouter_response
+                                    let (content, reasoning) = openrouter_response
                                         .choices
                                         .and_then(|choices| choices.into_iter().next())
                                         .map(|choice| match choice {
-                                            ChatChoice::WithMessage { message } => message.content,
-                                            ChatChoice::WithContent { content } => content,
+                                            ChatChoice::WithMessage { message } => {
+                                                (message.content, message.reasoning_content)
+                                            }
+                                            ChatChoice::WithContent { content } => (content, None),
                                         })
-                                        .unwrap_or_default();
+                                        .unwrap_or_else(|| (String::new(), None));
+
+                                    if let Some(ref reasoning) = reasoning {
+                                        info!(
+                                            "[thinking] OpenRouter reasoning trace: {}",
+                                            reasoning
+                                        );
+                                    }
+
+                                    let content = strip_thinking_tags(&content);
 
                                     if content.is_empty() {
                                         warn!(

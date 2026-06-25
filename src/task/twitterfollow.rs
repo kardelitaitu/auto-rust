@@ -73,7 +73,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     let outcome = robust_follow(api, &username).await?;
     match outcome {
-        FollowOutcome::Followed => info!("[twitterfollow] ✅ Successfully followed @{username}"),
+        FollowOutcome::Followed => {
+            info!("👤 [SUCCESS] [twitterfollow] Successfully followed @{username}")
+        }
         FollowOutcome::AlreadyFollowing => {
             info!("[twitterfollow] ℹ️ Already following @{username}")
         }

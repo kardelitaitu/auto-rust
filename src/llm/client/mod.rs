@@ -1,18 +1,82 @@
 use anyhow::Result;
 use reqwest::Client;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
-use crate::llm::models::{LlmConfig, LlmProvider};
+use crate::llm::models::{LlmConfig, LlmProvider, Temperature};
 
 pub mod fallback;
 
 #[cfg(test)]
 mod tests;
 
+#[derive(Debug)]
+pub struct LlmRateLimiter {
+    capacity: f64,
+    tokens: f64,
+    refill_rate_per_sec: f64,
+    last_refill: Instant,
+}
+
+impl LlmRateLimiter {
+    pub fn new(capacity: f64, refill_rate_per_sec: f64) -> Self {
+        Self {
+            capacity,
+            tokens: capacity,
+            refill_rate_per_sec,
+            last_refill: Instant::now(),
+        }
+    }
+
+    pub fn refill(&mut self) {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
+        self.tokens = (self.tokens + elapsed * self.refill_rate_per_sec).min(self.capacity);
+        self.last_refill = now;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SharedRateLimiter {
+    inner: Arc<Mutex<LlmRateLimiter>>,
+}
+
+impl SharedRateLimiter {
+    #[must_use]
+    pub fn new(capacity: f64, refill_rate_per_sec: f64) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(LlmRateLimiter::new(
+                capacity,
+                refill_rate_per_sec,
+            ))),
+        }
+    }
+
+    pub async fn acquire(&self) {
+        loop {
+            let mut inner = self.inner.lock().await;
+            inner.refill();
+            if inner.tokens >= 1.0 {
+                inner.tokens -= 1.0;
+                return;
+            }
+
+            // Calculate time to wait for 1 token
+            let tokens_needed = 1.0 - inner.tokens;
+            let wait_secs = tokens_needed / inner.refill_rate_per_sec;
+            drop(inner);
+
+            tokio::time::sleep(Duration::from_secs_f64(wait_secs)).await;
+        }
+    }
+}
+
 pub struct LlmClient {
     pub(crate) config: LlmConfig,
     pub(crate) http: Client,
     pub(crate) fallback_config: Option<LlmConfig>,
+    pub(crate) rate_limiter: Option<SharedRateLimiter>,
 }
 
 impl LlmClient {
@@ -28,10 +92,28 @@ impl LlmClient {
             .build()
             .unwrap_or_default();
 
+        let capacity = std::env::var("LLM_RATE_LIMIT_CAPACITY")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok());
+        let refill_rate = std::env::var("LLM_RATE_LIMIT_REFILL_RATE")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok());
+
+        let rate_limiter = if let (Some(cap), Some(rate)) = (capacity, refill_rate) {
+            if cap > 0.0 && rate > 0.0 {
+                Some(SharedRateLimiter::new(cap, rate))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Self {
             config: config.clone(),
             http,
             fallback_config: Some(config),
+            rate_limiter,
         }
     }
 }
@@ -82,6 +164,25 @@ pub(crate) fn apply_env_overrides(
     if let Some(model) = get_env("OLLAMA_MODEL") {
         config.ollama.model = model;
     }
+    if let Some(temp_str) = get_env("OLLAMA_TEMPERATURE").or_else(|| get_env("LLM_TEMPERATURE")) {
+        if let Ok(temp_val) = temp_str.parse::<f64>() {
+            config.ollama.temperature = Temperature::new(temp_val);
+        }
+    }
+    if let Some(presence_str) =
+        get_env("OLLAMA_PRESENCE_PENALTY").or_else(|| get_env("LLM_PRESENCE_PENALTY"))
+    {
+        if let Ok(val) = presence_str.parse::<f64>() {
+            config.ollama.presence_penalty = Some(val);
+        }
+    }
+    if let Some(freq_str) =
+        get_env("OLLAMA_FREQUENCY_PENALTY").or_else(|| get_env("LLM_FREQUENCY_PENALTY"))
+    {
+        if let Ok(val) = freq_str.parse::<f64>() {
+            config.ollama.frequency_penalty = Some(val);
+        }
+    }
 
     // OpenRouter overrides
     if let Some(api_key) = get_env("OPENROUTER_API_KEY") {
@@ -89,6 +190,26 @@ pub(crate) fn apply_env_overrides(
     }
     if let Some(model) = get_env("OPENROUTER_MODEL") {
         config.openrouter.model = model;
+    }
+    if let Some(temp_str) = get_env("OPENROUTER_TEMPERATURE").or_else(|| get_env("LLM_TEMPERATURE"))
+    {
+        if let Ok(temp_val) = temp_str.parse::<f64>() {
+            config.openrouter.temperature = Temperature::new(temp_val);
+        }
+    }
+    if let Some(presence_str) =
+        get_env("OPENROUTER_PRESENCE_PENALTY").or_else(|| get_env("LLM_PRESENCE_PENALTY"))
+    {
+        if let Ok(val) = presence_str.parse::<f64>() {
+            config.openrouter.presence_penalty = Some(val);
+        }
+    }
+    if let Some(freq_str) =
+        get_env("OPENROUTER_FREQUENCY_PENALTY").or_else(|| get_env("LLM_FREQUENCY_PENALTY"))
+    {
+        if let Ok(val) = freq_str.parse::<f64>() {
+            config.openrouter.frequency_penalty = Some(val);
+        }
     }
 
     // NVIDIA overrides
@@ -100,6 +221,25 @@ pub(crate) fn apply_env_overrides(
     }
     if let Some(base_url) = get_env("NVIDIA_BASE_URL") {
         config.nvidia.base_url = base_url;
+    }
+    if let Some(temp_str) = get_env("NVIDIA_TEMPERATURE").or_else(|| get_env("LLM_TEMPERATURE")) {
+        if let Ok(temp_val) = temp_str.parse::<f64>() {
+            config.nvidia.temperature = Temperature::new(temp_val);
+        }
+    }
+    if let Some(presence_str) =
+        get_env("NVIDIA_PRESENCE_PENALTY").or_else(|| get_env("LLM_PRESENCE_PENALTY"))
+    {
+        if let Ok(val) = presence_str.parse::<f64>() {
+            config.nvidia.presence_penalty = Some(val);
+        }
+    }
+    if let Some(freq_str) =
+        get_env("NVIDIA_FREQUENCY_PENALTY").or_else(|| get_env("LLM_FREQUENCY_PENALTY"))
+    {
+        if let Ok(val) = freq_str.parse::<f64>() {
+            config.nvidia.frequency_penalty = Some(val);
+        }
     }
 
     // Fallback models from env vars

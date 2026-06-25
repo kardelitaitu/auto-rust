@@ -12,10 +12,13 @@ use log::info;
 use std::sync::OnceLock;
 use tracing::instrument;
 
+use crate::llm::reply_strategies::sentiment_to_strategy_context;
+// StrategyContext is used in tests via crate::llm::reply_strategies::StrategyContext
+use crate::llm::reply_engine::{build_quote_messages, build_reply_messages, TwitterPersona};
 use crate::llm::Llm;
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_LONG_SECS;
-use crate::utils::twitter::reply_engine::{build_quote_messages, build_reply_messages};
+use crate::utils::twitter::sentiment::Sentiment;
 use crate::utils::twitter::twitteractivity_retry::{retry_with_backoff, RetryConfig};
 use crate::utils::twitter::twitteractivity_selectors;
 
@@ -38,12 +41,16 @@ pub async fn generate_reply(
     tweet_author: &str,
     tweet_text: &str,
     top_replies: Vec<(String, String)>,
+    sentiment: Sentiment,
 ) -> Result<String> {
     info!(
         "Generating LLM reply for tweet by @{} ({} longest replies for context)",
         tweet_author,
         top_replies.len()
     );
+
+    // Build StrategyContext from detected sentiment and tweet content
+    let strategy_context = sentiment_to_strategy_context(sentiment, tweet_text);
 
     // Build prompt with tweet context
     let messages = build_reply_messages(
@@ -53,6 +60,8 @@ pub async fn generate_reply(
             .iter()
             .map(|(a, t)| (a.as_str(), t.as_str()))
             .collect::<Vec<_>>(),
+        &strategy_context,
+        TwitterPersona::select_for_session(api.session_id()),
     );
 
     // Generate with retry and timeout (each attempt gets its own 30s window)
@@ -95,12 +104,16 @@ pub async fn generate_quote_commentary(
     tweet_author: &str,
     tweet_text: &str,
     top_replies: Vec<(String, String)>,
+    sentiment: Sentiment,
 ) -> Result<String> {
     info!(
         "Generating LLM quote commentary for tweet by @{} ({} longest replies for context)",
         tweet_author,
         top_replies.len()
     );
+
+    // Build StrategyContext from detected sentiment and tweet content
+    let strategy_context = sentiment_to_strategy_context(sentiment, tweet_text);
 
     let messages = build_quote_messages(
         tweet_author,
@@ -109,6 +122,8 @@ pub async fn generate_quote_commentary(
             .iter()
             .map(|(a, t)| (a.as_str(), t.as_str()))
             .collect::<Vec<_>>(),
+        &strategy_context,
+        TwitterPersona::select_for_session(api.session_id()),
     );
 
     // Generate with retry and timeout (each attempt gets its own 30s window)
@@ -297,7 +312,9 @@ mod tests {
     #[test]
     fn test_build_reply_messages_is_accessible() {
         // Verify the function is accessible from the crate
-        let messages = build_reply_messages("author", "tweet", &[]);
+        let context = crate::llm::reply_strategies::StrategyContext::default();
+        let messages =
+            build_reply_messages("author", "tweet", &[], &context, TwitterPersona::Default);
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);
@@ -305,7 +322,9 @@ mod tests {
 
     #[test]
     fn test_build_quote_messages_is_accessible() {
-        let messages = build_quote_messages("author", "tweet", &[]);
+        let context = crate::llm::reply_strategies::StrategyContext::default();
+        let messages =
+            build_quote_messages("author", "tweet", &[], &context, TwitterPersona::Default);
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);

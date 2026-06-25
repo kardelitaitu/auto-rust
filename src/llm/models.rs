@@ -79,6 +79,8 @@ pub enum Role {
 pub struct ChatMessage {
     pub role: Role,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 impl ChatMessage {
@@ -86,6 +88,7 @@ impl ChatMessage {
         Self {
             role: Role::User,
             content: content.into(),
+            reasoning_content: None,
         }
     }
 
@@ -93,6 +96,7 @@ impl ChatMessage {
         Self {
             role: Role::System,
             content: content.into(),
+            reasoning_content: None,
         }
     }
 
@@ -100,6 +104,7 @@ impl ChatMessage {
         Self {
             role: Role::Assistant,
             content: content.into(),
+            reasoning_content: None,
         }
     }
 }
@@ -183,6 +188,10 @@ pub struct OllamaConfig {
     pub timeout_ms: u64,
     pub temperature: Temperature,
     pub max_tokens: MaxTokens,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f64>,
 }
 
 impl Default for OllamaConfig {
@@ -193,6 +202,8 @@ impl Default for OllamaConfig {
             timeout_ms: 240000,
             temperature: Temperature::new(0.7),
             max_tokens: MaxTokens::new_const(2048),
+            presence_penalty: None,
+            frequency_penalty: None,
         }
     }
 }
@@ -209,6 +220,10 @@ pub struct OpenRouterConfig {
     /// Fallback models to try if primary fails (timeout or error)
     #[serde(default)]
     pub fallback_models: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f64>,
 }
 
 impl Default for OpenRouterConfig {
@@ -221,6 +236,8 @@ impl Default for OpenRouterConfig {
             temperature: Temperature::new(0.7),
             max_tokens: MaxTokens::new_const(4096),
             fallback_models: Vec::new(),
+            presence_penalty: None,
+            frequency_penalty: None,
         }
     }
 }
@@ -235,6 +252,10 @@ pub struct NvidiaConfig {
     pub temperature: Temperature,
     pub top_p: f64,
     pub max_tokens: MaxTokens,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f64>,
 }
 
 impl Default for NvidiaConfig {
@@ -247,6 +268,8 @@ impl Default for NvidiaConfig {
             temperature: Temperature::new(1.0),
             top_p: 0.95,
             max_tokens: MaxTokens::new_const(16384),
+            presence_penalty: None,
+            frequency_penalty: None,
         }
     }
 }

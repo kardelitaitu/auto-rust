@@ -64,6 +64,16 @@ impl IntentType {
             IntentType::Post | IntentType::Quote => "[data-testid=\"tweetButton\"]",
         }
     }
+
+    fn emoji_prefix(&self) -> &'static str {
+        match self {
+            IntentType::Follow => "👤",
+            IntentType::Like => "💖",
+            IntentType::Post => "📝",
+            IntentType::Quote => "💬",
+            IntentType::Retweet => "🔁",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -101,7 +111,11 @@ async fn run_inner(api: &TaskContext, payload: Value, duration_ms: u64) -> Resul
 
     if click_success {
         let intent_info = parse_intent_info(&url, intent_type);
-        info!("[twitterintent] SUCCESS {}", intent_info.description);
+        info!(
+            "{} [SUCCESS] [twitterintent] {}",
+            intent_type.emoji_prefix(),
+            intent_info.description
+        );
         if let Some(path) = screenshot_path {
             info!("[twitterintent] Proof screenshot: {path}");
         }

@@ -185,9 +185,30 @@ fn main() {
         eprintln!("Warning: Failed to set working directory: {e}");
     }
 
-    if let Err(e) = run() {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
+    // Spawn a thread with a larger stack size (4MB) to run the Tokio runtime.
+    // This prevents stack overflows on Windows in debug mode where async future
+    // state machines are unoptimized and call stacks can be very deep.
+    let runtime_thread = std::thread::Builder::new()
+        .name("main-runtime".to_string())
+        .stack_size(4 * 1024 * 1024) // 4MB
+        .spawn(|| {
+            if let Err(e) = run() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        });
+
+    match runtime_thread {
+        Ok(handle) => {
+            if handle.join().is_err() {
+                eprintln!("Error: Main runtime thread panicked");
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: Failed to spawn main runtime thread: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -266,16 +287,25 @@ async fn run_validate_tasks(config: &config::Config) -> Result<()> {
 }
 
 async fn run_async() -> Result<()> {
+    // Parse args first so the --debug flag can influence logger setup
+    let args = cli::parse_args();
+
     let logger = logger::FileLogger::new("log")?;
     log::set_boxed_logger(Box::new(logger))?;
-    log::set_max_level(LevelFilter::Info);
+    let log_level = if args.debug {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    };
+    log::set_max_level(log_level);
 
     info!("Rust Orchestrator - Starting up...");
+    if args.debug {
+        info!("[main] Debug logging enabled");
+    }
 
     let shutdown = ShutdownManager::new();
     let _shutdown_signal_handle = shutdown.spawn_ctrl_c_listener();
-
-    let args = cli::parse_args();
 
     match select_startup_mode(&args) {
         StartupMode::HelpTask => {
@@ -495,6 +525,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ListTasks);
@@ -511,6 +542,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::DryRun);
@@ -527,6 +559,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::Execute);
@@ -543,6 +576,7 @@ mod tests {
             validate_tasks: true,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ValidateTasks);
@@ -559,6 +593,7 @@ mod tests {
             validate_tasks: true,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         // ValidateTasks comes before DryRun in the if-else chain
@@ -576,6 +611,7 @@ mod tests {
             validate_tasks: true,
             watch: false,
             help_task: Some("cookiebot".to_string()),
+            debug: false,
         };
 
         // HelpTask should take precedence over all other flags
@@ -593,6 +629,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: Some("pageview".to_string()),
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::HelpTask);
@@ -631,6 +668,8 @@ mod tests {
                 user_agent: None,
                 extra_http_headers: std::collections::BTreeMap::new(),
                 cursor_overlay_ms: 0,
+                cursor_overlay_color: "#ff6600".to_string(),
+                cursor_overlay_show_trail: true,
                 native_interaction: auto::config::NativeInteractionConfig::default(),
                 max_workers_per_session: 1,
                 enable_learning_persistence: false,

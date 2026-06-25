@@ -1334,6 +1334,7 @@ duration_ms = 200
     /// entry points to verify they never panic — only return Err gracefully.
     mod fuzz_tests {
         use super::*;
+        #[cfg(feature = "bacon")]
         use bacon_pipeline::core::spec_io::SpecMeta;
         use proptest::prelude::*;
 
@@ -1396,6 +1397,7 @@ duration_ms = 200
             /// Tests the spec.yaml parser with unknown keys, wrong types,
             /// missing fields, and completely random garbage.
             #[test]
+            #[cfg(feature = "bacon")]
             fn fuzz_spec_meta_yaml_deserialize(
                 content in any::<String>(),
             ) {
@@ -1458,7 +1460,7 @@ status: {}
 {}: {}"#,
                     id_val, title_val, status_val, extra_key, extra_val
                 );
-                let _result: Result<SpecMeta, _> = serde_yaml::from_str(&yaml);
+                let _result: Result<serde_yaml::Value, _> = serde_yaml::from_str(&yaml);
             }
 
             /// Fuzz: TaskDefinition with deeply nested, empty, or extreme structures.

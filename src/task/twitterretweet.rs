@@ -1,12 +1,12 @@
 //! Twitter retweet task.
 //! Retweets a tweet with optional quote commentary.
 
+use crate::llm::reply_engine::reply_engine_system_prompt;
 use crate::llm::{ChatMessage, Llm};
 use crate::prelude::TaskContext;
 use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
-use crate::utils::twitter::reply_engine::reply_engine_system_prompt;
 use crate::utils::twitter::twitteractivity_llm::validate_reply;
 use crate::utils::twitter::{ComposerFlow, PostOutcome, StatusUrl};
 use anyhow::Result;
@@ -63,7 +63,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             info!("[twitterretweet] Tweet by @{author}");
 
             let llm = Llm::new()?;
-            let messages = build_quote_messages(&author, &tweet_text);
+            let messages = build_quote_messages(&author, &tweet_text, api.session_id());
 
             match llm.chat(messages).await {
                 Ok(text) => {
@@ -99,7 +99,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         match post_quote_with_retry(api, 3).await? {
             PostOutcome::Posted => {
                 flow.record_posted()?;
-                info!("[twitterretweet] Quote posted successfully!");
+                info!("💬 [SUCCESS] [twitterretweet] Quote posted successfully!");
             }
             PostOutcome::ComposerNotFound => warn!("[twitterretweet] Composer not found"),
             PostOutcome::Failed => warn!("[twitterretweet] Failed to post quote"),
@@ -146,7 +146,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false)
             {
-                info!("[twitterretweet] Retweet confirmed!");
+                info!("🔁 [SUCCESS] [twitterretweet] Retweet confirmed!");
             } else {
                 warn!("[twitterretweet] Failed to confirm retweet");
             }
@@ -287,8 +287,13 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<Po
     Ok(last_outcome)
 }
 
-fn build_quote_messages(tweet_author: &str, tweet_text: &str) -> Vec<ChatMessage> {
-    let system = reply_engine_system_prompt();
+fn build_quote_messages(
+    tweet_author: &str,
+    tweet_text: &str,
+    session_id: &str,
+) -> Vec<ChatMessage> {
+    let persona = crate::llm::reply_engine::TwitterPersona::select_for_session(session_id);
+    let system = reply_engine_system_prompt(persona);
     let user = format!(
         "Quote this tweet by @{tweet_author}:\n{tweet_text}\n\nGenerate a short, engaging quote commentary (max 280 chars):"
     );

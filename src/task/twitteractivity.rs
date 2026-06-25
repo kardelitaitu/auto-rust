@@ -8,7 +8,7 @@
 //! - `twitteractivity_state.rs` - `TaskConfig`, `CandidateContext`, `CandidateResult`
 
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
@@ -44,11 +44,22 @@ use crate::utils::twitter::{
 /// # Timeout
 /// The timeout wrapper ensures the task cannot exceed `duration_ms` milliseconds. This is the correct boundary for timeout enforcement.
 pub async fn run(api: &TaskContext, payload: Value, config: &Config) -> Result<()> {
-    let task_config =
+    let mut task_config =
         TaskConfig::from_payload(&payload, &config.twitter_activity).map_err(|e| {
             error!("[twitter] Payload validation failed: {e}");
             anyhow::anyhow!("Payload validation failed: {e}")
         })?;
+
+    // If duration_ms is not explicitly provided in the payload, randomize it between 7 and 10 minutes (420,000 - 600,000 ms)
+    if payload.get("duration_ms").is_none() {
+        let random_duration = crate::utils::math::random_in_range(420_000, 600_000);
+        info!(
+            "[twitter] Randomizing max duration to {} ms (7-10 minutes)",
+            random_duration
+        );
+        task_config.duration_ms = random_duration;
+    }
+
     if task_config.simulate_only {
         return run_simulation(&task_config, config);
     }
@@ -91,7 +102,7 @@ async fn build_persona(
     persona = apply_behavior_profile(persona, profile, 0.0);
 
     info!(
-        "Persona weights: like={:.2}, rt={:.2}, follow={:.2}, reply={:.2}",
+        "[twitter] Persona weights: like={:.2}, rt={:.2}, follow={:.2}, reply={:.2}",
         persona.like_prob, persona.retweet_prob, persona.follow_prob, persona.reply_prob
     );
     persona
@@ -116,7 +127,7 @@ fn init_session(config: &Config, task_config: &TaskConfig) -> SessionState {
     );
 
     info!(
-        "Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
+        "[twitter] Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
         session.counters.likes(),
         session.limits.max_likes,
         session.counters.retweets(),
@@ -181,7 +192,7 @@ async fn scan_and_process_candidates(
     next_candidate_scan: &mut Instant,
 ) -> Result<bool> {
     let candidates = identify_engagement_candidates(api).await?;
-    info!("Candidate scan | candidates={}", candidates.len());
+    debug!("[twitter] Candidate scan | candidates={}", candidates.len());
 
     if candidates.is_empty() {
         return Ok(false);
@@ -237,13 +248,26 @@ async fn scan_and_process_candidates(
 
 /// Main task logic — thin orchestrator that delegates to utility modules.
 async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) -> Result<()> {
-    info!("Task started");
+    info!("[twitter] Task started");
 
     // Build persona weights from behavior profile
     let persona = build_persona(api.behavior_profile(), &task_config, config).await;
 
     // Initialize session state
     let mut session = init_session(config, &task_config);
+
+    // Load inter-session persistence if enabled
+    if config.twitter_activity.persistence_enabled {
+        let persisted =
+            crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::load();
+        if let Some(mins) = persisted.minutes_since_last_session() {
+            info!("[twitter] Persistence: {} min since last session", mins);
+        }
+        info!(
+            "[twitter] Persistence: daily actions so far = {:?}",
+            persisted.daily_action_counts
+        );
+    }
 
     // Phase 1: Navigation & authentication check
     if let Err(e) = phase1_navigation(api).await {
@@ -252,7 +276,10 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
     }
 
     // Phase 2: Feed scanning and engagement
-    info!("Phase 2: Scanning feed for {} ms", task_config.duration_ms);
+    info!(
+        "[twitter] Phase 2: Scanning feed for {} ms",
+        task_config.duration_ms
+    );
     let mut consecutive_scroll_failures = 0u32;
     let mut consecutive_empty_scans = 0u32;
     let mut scrolls_performed = 0u32;
@@ -339,6 +366,38 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
 
     // Final summary
     log_summary(&session, &task_config, config);
+
+    // Persist inter-session state if enabled
+    if config.twitter_activity.persistence_enabled {
+        let update_result = crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::update_async(|persisted| {
+            persisted.record_session_end();
+            // Aggregate session counters into daily action counts
+            for _ in 0..session.counters.likes() {
+                persisted.record_action("like");
+            }
+            for _ in 0..session.counters.retweets() {
+                persisted.record_action("retweet");
+            }
+            for _ in 0..session.counters.follows() {
+                persisted.record_action("follow");
+            }
+            for _ in 0..session.counters.replies() {
+                persisted.record_action("reply");
+            }
+            for _ in 0..session.counters.quote_tweets() {
+                persisted.record_action("quote");
+            }
+            for _ in 0..session.counters.bookmarks() {
+                persisted.record_action("bookmark");
+            }
+        }).await;
+
+        match update_result {
+            Ok(()) => info!("[twitter] Persistence: saved session state"),
+            Err(e) => error!("[twitter] Persistence failed to update: {e}"),
+        }
+    }
+
     Ok(())
 }
 

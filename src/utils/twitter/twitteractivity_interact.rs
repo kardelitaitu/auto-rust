@@ -49,7 +49,7 @@
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_SHORT_SECS;
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
 use rand::Rng;
 use tracing::instrument;
 
@@ -152,7 +152,7 @@ async fn click_root_tweet_button(
     let result = api.page().evaluate(js).await?;
 
     if let Some((x, y)) = result.value().and_then(parse_button_coordinates) {
-        info!("Found root tweet {action_name} button at ({x:.1}, {y:.1})");
+        info!("[{action_name}] Found root tweet {action_name} button at ({x:.1}, {y:.1})");
         api.move_mouse_to(x, y).await?;
         human_pause(api, 250).await;
         api.click_at(x, y).await?;
@@ -160,7 +160,7 @@ async fn click_root_tweet_button(
         return Ok(EngagementOutcome::Completed);
     }
 
-    info!("Root tweet {action_name} button not found");
+    info!("[{action_name}] Root tweet {action_name} button not found");
     Ok(EngagementOutcome::ElementNotFound)
 }
 
@@ -198,7 +198,7 @@ pub async fn like_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
 
     let outcome = click_root_tweet_button(api, LIKE_BUTTON_SELECTOR, "like").await?;
     if matches!(outcome, EngagementOutcome::Completed) {
-        info!("Clicked root tweet like button");
+        info!("[like] Clicked root tweet like button");
     }
     Ok(outcome)
 }
@@ -269,31 +269,43 @@ pub async fn retweet_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
     use super::twitteractivity_selectors::RETWEET_BUTTON_SELECTOR;
     use super::twitteractivity_selectors::RETWEET_CONFIRM_SELECTOR;
 
-    info!("Starting retweet action");
+    info!("[retweet] Starting retweet action");
     if click_root_tweet_button(api, RETWEET_BUTTON_SELECTOR, "retweet").await?
         != EngagementOutcome::Completed
     {
         return Ok(EngagementOutcome::ElementNotFound);
     }
-    info!("Clicked retweet button, waiting for menu...");
+    info!("[retweet] Clicked retweet button, waiting for menu...");
 
     // Random pause 1-2s before confirming
     let pause_ms = rand::thread_rng().gen_range(1000..2000);
     human_pause(api, pause_ms).await;
 
-    // Scroll retweet confirm button into view before clicking
-    if let Err(e) = api.scroll_into_view(RETWEET_CONFIRM_SELECTOR).await {
-        info!("Failed to scroll retweet confirm button into view: {e}");
-        return Ok(EngagementOutcome::Failed);
-    }
-    // Click confirm button
-    if let Err(e) = api.click(RETWEET_CONFIRM_SELECTOR).await {
-        info!("Failed to click retweet confirm: {e}");
-        return Ok(EngagementOutcome::Failed);
-    }
-    info!("Retweet confirmed");
+    // Find retweet confirm button coordinates
+    let confirm_btn_js = super::twitteractivity_selectors::js_find_retweet_confirm_button();
+    let result = api.page().evaluate(confirm_btn_js).await?;
 
-    // Wait for action to complete
+    if let Some((x, y)) = result.value().and_then(parse_button_coordinates) {
+        info!("[retweet] Found retweet confirm button at ({x:.1}, {y:.1})");
+        api.move_mouse_to(x, y).await?;
+        human_pause(api, 250).await;
+        api.click_at(x, y).await?;
+        info!("[retweet] Retweet confirmed");
+        human_pause(api, 800).await;
+        return Ok(EngagementOutcome::Completed);
+    }
+
+    // Fallback: direct click using selector
+    warn!("[retweet] Coordinate search failed, attempting fallback selector click...");
+    if let Err(e) = api.scroll_into_view(RETWEET_CONFIRM_SELECTOR).await {
+        info!("[retweet] Failed to scroll retweet confirm button into view: {e}");
+        return Ok(EngagementOutcome::Failed);
+    }
+    if let Err(e) = api.click(RETWEET_CONFIRM_SELECTOR).await {
+        info!("[retweet] Failed to click retweet confirm: {e}");
+        return Ok(EngagementOutcome::Failed);
+    }
+    info!("[retweet] Retweet confirmed via fallback");
     human_pause(api, 800).await;
     Ok(EngagementOutcome::Completed)
 }
@@ -375,12 +387,12 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     use tokio::time::timeout;
     // Timeout constants imported from crate::utils::timing
 
-    info!("Starting send_reply with text: '{reply_text}'");
+    info!("[reply] Starting send_reply with text: '{reply_text}'");
 
     // Focus the specific reply textarea.
     let textarea_js = js_find_reply_textarea();
 
-    info!("Focusing reply textarea");
+    info!("[reply] Focusing reply textarea");
     if let Ok(result) = timeout(
         Duration::from_secs(TIMEOUT_SHORT_SECS),
         api.page().evaluate(textarea_js),
@@ -396,21 +408,21 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
             .unwrap_or(false);
 
         if !found {
-            info!("Reply textarea not found");
+            info!("[reply] Reply textarea not found");
             return Ok(EngagementOutcome::ElementNotFound);
         }
     } else {
-        info!("Timeout focusing reply textarea");
+        info!("[reply] Timeout focusing reply textarea");
         return Ok(EngagementOutcome::Failed);
     }
 
-    info!("Reply textarea focused");
+    info!("[reply] Reply textarea focused");
     // Wait 2-3s before typing to let React render the composer and position cursor
     let pause_ms = rand::thread_rng().gen_range(2000..3001);
     human_pause(api, pause_ms).await;
 
     // Type the reply text with natural typing (includes typos and corrections)
-    info!("Typing reply text (with typos)");
+    info!("[reply] Typing reply text (with typos)");
     let typing = api.behavior_runtime().typing;
     // Calculate dynamic timeout: allow up to 1.5 seconds per character for natural typing, plus base medium timeout
     let typing_timeout_secs =
@@ -427,11 +439,11 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     .await
     {
         Ok(Err(e)) => {
-            info!("Typing failed due to error: {e}");
+            info!("[reply] Typing failed due to error: {e}");
             return Ok(EngagementOutcome::Failed);
         }
         Err(_) => {
-            info!("Timeout typing reply text");
+            info!("[reply] Timeout typing reply text");
             return Ok(EngagementOutcome::Failed);
         }
         Ok(Ok(())) => {}
@@ -439,7 +451,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     // Verify typing completed by reading back the textarea content.
     // This waits for React to process all queued InputEvents before we
     // attempt to find the submit button (which is disabled while empty).
-    info!("Verifying typed content...");
+    info!("[reply] Verifying typed content...");
     {
         let check_js = r#"
             (function() {
@@ -467,7 +479,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
                         && normalized_expected.contains(&normalized_received)
                     {
                         info!(
-                            "Typing verified (attempt {}/10): {} chars received",
+                            "[reply] Typing verified (attempt {}/10): {} chars received",
                             attempt,
                             received.len()
                         );
@@ -475,12 +487,15 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
                     }
                 }
             }
-            info!("Content not ready yet (attempt {}/10), waiting...", attempt);
+            info!(
+                "[reply] Content not ready yet (attempt {}/10), waiting...",
+                attempt
+            );
             human_pause(api, 500).await;
         }
         if received.is_empty() {
             info!(
-                "Typing verification: no content detected after 10 attempts, proceeding anyway..."
+                "[reply] Typing verification: no content detected after 10 attempts, proceeding anyway..."
             );
         }
     }
@@ -502,7 +517,7 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
     let button_coords = {
         let mut coords = None;
         for attempt in 1..=3 {
-            info!("Finding reply button (attempt {}/3)", attempt);
+            info!("[reply] Finding reply button (attempt {}/3)", attempt);
             let button_result = match timeout(
                 Duration::from_secs(TIMEOUT_SHORT_SECS),
                 api.page().evaluate(reply_button_js),
@@ -511,7 +526,10 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
             {
                 Ok(r) => r?,
                 Err(_) => {
-                    info!("Timeout finding reply button on attempt {}", attempt);
+                    info!(
+                        "[reply] Timeout finding reply button on attempt {}",
+                        attempt
+                    );
                     human_pause(api, 300).await;
                     continue;
                 }
@@ -521,14 +539,17 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
                 coords = Some((x, y));
                 break;
             }
-            info!("Reply button not ready on attempt {}, retrying...", attempt);
+            info!(
+                "[reply] Reply button not ready on attempt {}, retrying...",
+                attempt
+            );
             human_pause(api, 300).await;
         }
         coords
     };
 
     if let Some((x, y)) = button_coords {
-        info!("Found reply button at ({x:.1}, {y:.1})");
+        info!("[reply] Found reply button at ({x:.1}, {y:.1})");
 
         if timeout(
             Duration::from_secs(TIMEOUT_SHORT_SECS),
@@ -542,17 +563,17 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
                 .await
                 .is_ok()
             {
-                info!("Clicked Reply button successfully");
+                info!("[reply] Clicked Reply button successfully");
             } else {
-                info!("Timeout clicking reply button");
+                info!("[reply] Timeout clicking reply button");
                 return Ok(EngagementOutcome::Failed);
             }
         } else {
-            info!("Timeout moving mouse to reply button");
+            info!("[reply] Timeout moving mouse to reply button");
             return Ok(EngagementOutcome::Failed);
         }
     } else {
-        info!("Reply button not found after 3 attempts");
+        info!("[reply] Reply button not found after 3 attempts");
         return Ok(EngagementOutcome::Failed);
     }
 
@@ -576,13 +597,13 @@ pub async fn send_reply(api: &TaskContext, reply_text: &str) -> Result<Engagemen
         .unwrap_or(EngagementOutcome::Unverified);
     match outcome {
         EngagementOutcome::Completed => {
-            info!("Reply send completed and verified");
+            info!("[reply] Reply send completed and verified");
         }
         EngagementOutcome::Failed => {
-            info!("Reply send verification failed");
+            info!("[reply] Reply send verification failed");
         }
         EngagementOutcome::Unverified => {
-            info!("Reply send completed (unable to verify)");
+            info!("[reply] Reply send completed (unable to verify)");
         }
         _ => {}
     }
@@ -653,12 +674,12 @@ pub async fn reply_to_tweet(api: &TaskContext, reply_text: &str) -> Result<Engag
 #[instrument(skip(api))]
 pub async fn follow_from_tweet(api: &TaskContext) -> Result<FollowOutcome> {
     // Simulate reading replies by scrolling down a bit more
-    info!("Simulating reading replies before following...");
+    info!("[follow] Simulating reading replies before following...");
     api.scroll_read(1, 200, true, false).await?;
     human_pause(api, 2000).await; // Pause to "read"
 
     // Scroll to top to bring follow button into view
-    info!("Scrolling to top to access follow button...");
+    info!("[follow] Scrolling to top to access follow button...");
     api.scroll_to_top().await?;
     human_pause(api, 1000).await;
 
@@ -675,9 +696,9 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<FollowOutcome> {
                 var label = (btn.getAttribute('aria-label') || '').toLowerCase();
                 var dataTestId = (btn.getAttribute('data-testid') || '').toLowerCase();
                 if (text === 'following' ||
-                    label.includes('following @') ||
-                    label.includes('unfollow @') ||
-                    dataTestId.includes('unfollow')) {
+                     label.includes('following @') ||
+                     label.includes('unfollow @') ||
+                     dataTestId.includes('unfollow')) {
                     return true;
                 }
             }
@@ -691,13 +712,13 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<FollowOutcome> {
         .map(parse_following_result)
         .unwrap_or(false)
     {
-        info!("Already following tweet author");
+        info!("[follow] Already following tweet author");
         return Ok(FollowOutcome::AlreadyFollowing);
     }
 
     let follow_result = api.page().evaluate(selector_follow_button()).await?;
     if let Some((x, y)) = follow_result.value().and_then(parse_button_coordinates) {
-        info!("Found scoped follow button at ({x:.1}, {y:.1})");
+        info!("[follow] Found scoped follow button at ({x:.1}, {y:.1})");
         api.move_mouse_to(x, y).await?;
         human_pause(api, 250).await;
         api.click_at(x, y).await?;
@@ -705,7 +726,7 @@ pub async fn follow_from_tweet(api: &TaskContext) -> Result<FollowOutcome> {
         return Ok(FollowOutcome::Followed);
     }
 
-    info!("Scoped follow button not found");
+    info!("[follow] Scoped follow button not found");
     Ok(FollowOutcome::ButtonNotFound)
 }
 
@@ -742,7 +763,7 @@ pub async fn bookmark_tweet(api: &TaskContext) -> Result<EngagementOutcome> {
 
     let outcome = click_root_tweet_button(api, BOOKMARK_BUTTON_SELECTOR, "bookmark").await?;
     if matches!(outcome, EngagementOutcome::Completed) {
-        info!("Clicked root tweet bookmark button");
+        info!("[bookmark] Clicked root tweet bookmark button");
     }
     Ok(outcome)
 }

@@ -2,6 +2,9 @@
 //!
 //! Manages the visual cursor overlay injected into browser pages, along with
 //! cursor movement configuration types and path-style enums.
+//!
+//! The overlay renders as a circle dot with a crosshair ring, optional ghost trail,
+//! and a click ripple effect — all configurable via env vars.
 
 use super::trajectory::{self, Point};
 use super::types::MouseButton;
@@ -21,6 +24,7 @@ const OVERLAY_SYNC_INTERVAL_MS: u64 = 50;
 const DEFAULT_OVERLAY_SIZE_PX: f64 = 12.0;
 const MIN_OVERLAY_SIZE_PX: f64 = 4.0;
 const MAX_OVERLAY_SIZE_PX: f64 = 64.0;
+const RING_SIZE_PX: f64 = 24.0;
 
 static OVERLAY_SIZE_PX: std::sync::LazyLock<f64> = std::sync::LazyLock::new(|| {
     std::env::var("MOUSE_OVERLAY_SIZE_PX")
@@ -29,6 +33,24 @@ static OVERLAY_SIZE_PX: std::sync::LazyLock<f64> = std::sync::LazyLock::new(|| {
         .map_or(DEFAULT_OVERLAY_SIZE_PX, |value| {
             value.clamp(MIN_OVERLAY_SIZE_PX, MAX_OVERLAY_SIZE_PX)
         })
+});
+
+/// Accent color for the cursor overlay. Defaults to `#ff6600` (orange).
+/// Override with the `CURSOR_OVERLAY_COLOR` environment variable.
+static OVERLAY_COLOR: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    std::env::var("CURSOR_OVERLAY_COLOR")
+        .ok()
+        .and_then(|v| if v.is_empty() { None } else { Some(v) })
+        .unwrap_or_else(|| "#ff6600".to_string())
+});
+
+/// Whether to show ghost trail dots behind the cursor. Defaults to `true`.
+/// Override with the `CURSOR_OVERLAY_SHOW_TRAIL` environment variable.
+static OVERLAY_SHOW_TRAIL: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    std::env::var("CURSOR_OVERLAY_SHOW_TRAIL")
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(true)
 });
 
 /// Internal helper for logging within nativeclick context.
@@ -300,23 +322,55 @@ pub async fn sync_cursor_overlay_force(page: &Page) -> Result<()> {
     sync_cursor_overlay_with_mode(page, true).await
 }
 
+/// Enhanced click flash: scales dot + shows a ripple expanding ring.
 pub async fn trigger_click_flash(page: &Page) -> Result<()> {
-    let eval = page.evaluate(
-        "(function() {
-            const dot = document.getElementById('__auto_rust_mouse_overlay');
-            if (!dot) return;
-            dot.style.transition = 'transform 80ms ease, border-color 80ms ease, box-shadow 80ms ease';
-            dot.style.transform = 'scale(1.8)';
-            dot.style.borderColor = '#ff0000';
-            dot.style.boxShadow = '0 0 16px rgba(255,0,0,0.9)';
-            setTimeout(function() {
-                dot.style.transition = 'transform 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out';
-                dot.style.transform = 'scale(1)';
-                dot.style.borderColor = '#ff6600';
-                dot.style.boxShadow = 'none';
-            }, 120);
-        })();"
-    );
+    let color = &*OVERLAY_COLOR;
+    let eval = page.evaluate(format!(
+        r#"(function() {{
+            const color = '{color}';
+
+            // Scale the dot briefly
+            const dot = document.getElementById('__auto_rust_mouse_overlay_dot');
+            if (dot) {{
+                dot.style.transition = 'transform 80ms ease, border-color 80ms ease, box-shadow 80ms ease';
+                dot.style.transform = 'translate(-50%,-50%) scale(1.8)';
+                dot.style.borderColor = '#ff0000';
+                dot.style.boxShadow = '0 0 16px rgba(255,0,0,0.9)';
+                setTimeout(function() {{
+                    dot.style.transition = 'transform 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out';
+                    dot.style.transform = 'translate(-50%,-50%) scale(1)';
+                    dot.style.borderColor = color;
+                    dot.style.boxShadow = '0 0 6px rgba(0,0,0,0.3)';
+                }}, 120);
+            }}
+
+            // Create ripple expanding ring
+            const dotEl = document.getElementById('__auto_rust_mouse_overlay_dot');
+            if (dotEl) {{
+                const rect = dotEl.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+
+                const ripple = document.createElement('div');
+                ripple.id = '__auto_rust_mouse_overlay_ripple_active';
+                ripple.style.cssText = 'position:fixed;border-radius:50%;pointer-events:none;z-index:2147483646;left:' + cx + 'px;top:' + cy + 'px;width:4px;height:4px;border:2px solid ' + color + ';background:transparent;opacity:0.6;transform:translate(-50%,-50%) scale(0.5);transition:none;';
+                document.body.appendChild(ripple);
+
+                // Force reflow
+                void ripple.offsetWidth;
+
+                ripple.style.transition = 'transform 400ms ease-out, opacity 400ms ease-out';
+                ripple.style.transform = 'translate(-50%,-50%) scale(3)';
+                ripple.style.opacity = '0';
+
+                setTimeout(function() {{
+                    if (ripple.parentNode) {{
+                        ripple.parentNode.removeChild(ripple);
+                    }}
+                }}, 450);
+            }}
+        }})();"#
+    ));
 
     timeout(Duration::from_millis(500), eval)
         .await
@@ -379,33 +433,128 @@ async fn sync_cursor_overlay_with_mode(page: &Page, force: bool) -> Result<()> {
     };
     let now_ms = now_unix_ms();
     if !overlay_state.claim_sync_slot(now_ms, force, OVERLAY_SYNC_INTERVAL_MS) {
-        log::debug!("Overlay sync skipped (throttled)");
         return Ok(());
     }
 
-    log::debug!("Syncing cursor overlay to ({x}, {y})");
+    let color = &*OVERLAY_COLOR;
+    let show_trail = *OVERLAY_SHOW_TRAIL;
+    let dot_size = *OVERLAY_SIZE_PX;
+    let ring_size = RING_SIZE_PX;
+
     let eval = page.evaluate(format!(
-        "(function() {{
-            let dot = document.getElementById('__auto_rust_mouse_overlay');
-            if (!dot) {{
-                dot = document.createElement('div');
-                dot.id = '__auto_rust_mouse_overlay';
-                dot.style.position = 'fixed';
-                dot.style.width = '{}px';
-                dot.style.height = '{}px';
-                dot.style.background = '#ffffff';
-                dot.style.border = '4px solid #ff6600';
-                dot.style.pointerEvents = 'none';
-                dot.style.zIndex = '2147483647';
-                document.body.appendChild(dot);
+        r#"(function() {{
+            const color = '{color}';
+            const dotSize = {dot_size};
+            const ringSize = {ring_size};
+            const x = {x};
+            const y = {y};
+            const showTrail = {show_trail};
+
+            // Hide native cursor
+            if (!document.getElementById('__auto_rust_overlay_style')) {{
+                const s = document.createElement('style');
+                s.id = '__auto_rust_overlay_style';
+                s.textContent = 'body, body * {{ cursor: none !important; }}';
+                document.head.appendChild(s);
             }}
-            dot.style.left = '{}px';
-            dot.style.top = '{}px';
-        }})();",
-        *OVERLAY_SIZE_PX,
-        *OVERLAY_SIZE_PX,
-        x - (*OVERLAY_SIZE_PX / 2.0),
-        y - (*OVERLAY_SIZE_PX / 2.0)
+
+            // Get or create overlay container
+            let container = document.getElementById('__auto_rust_mouse_overlay');
+            if (!container) {{
+                container = document.createElement('div');
+                container.id = '__auto_rust_mouse_overlay';
+                container.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647;';
+                document.body.appendChild(container);
+
+                // Ring (crosshair outer circle)
+                const ring = document.createElement('div');
+                ring.id = '__auto_rust_mouse_overlay_ring';
+                ring.style.cssText = 'position:absolute;border-radius:50%;background:transparent;box-shadow:0 0 8px rgba(0,0,0,0.15);';
+                container.appendChild(ring);
+
+                // Dot (inner filled circle)
+                const dot = document.createElement('div');
+                dot.id = '__auto_rust_mouse_overlay_dot';
+                dot.style.cssText = 'position:absolute;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.3);transition:transform 80ms ease, background 80ms ease;';
+                container.appendChild(dot);
+
+                // Ghost trail dots
+                for (let i = 1; i <= 3; i++) {{
+                    const ghost = document.createElement('div');
+                    ghost.id = '__auto_rust_mouse_overlay_ghost_' + i;
+                    ghost.style.cssText = 'position:absolute;border-radius:50%;pointer-events:none;transition:all 120ms ease-out;';
+                    container.appendChild(ghost);
+                }}
+
+                // Initialize trail data
+                container.dataset.trail = '[]';
+            }}
+
+            // Update dot position and style
+            const dot = document.getElementById('__auto_rust_mouse_overlay_dot');
+            const halfDot = dotSize / 2;
+            dot.style.width = dotSize + 'px';
+            dot.style.height = dotSize + 'px';
+            dot.style.background = '#ffffff';
+            dot.style.border = '2px solid ' + color;
+            dot.style.left = x + 'px';
+            dot.style.top = y + 'px';
+            dot.style.transform = 'translate(-50%, -50%)';
+
+            // Update ring (crosshair)
+            const ring = document.getElementById('__auto_rust_mouse_overlay_ring');
+            const halfRing = ringSize / 2;
+            ring.style.width = ringSize + 'px';
+            ring.style.height = ringSize + 'px';
+            ring.style.border = '2px solid ' + color;
+            ring.style.left = x + 'px';
+            ring.style.top = y + 'px';
+            ring.style.transform = 'translate(-50%, -50%)';
+
+            // Update ghost trail
+            if (showTrail) {{
+                // Read previous trail positions from data attribute
+                let trail = [];
+                try {{
+                    trail = JSON.parse(container.dataset.trail || '[]');
+                }} catch(e) {{
+                    trail = [];
+                }}
+                // Prepend current position, keep last 3
+                trail.unshift([x, y]);
+                if (trail.length > 3) trail = trail.slice(0, 3);
+                container.dataset.trail = JSON.stringify(trail);
+
+                // Render ghost dots
+                for (let i = 0; i < trail.length; i++) {{
+                    const ghost = document.getElementById('__auto_rust_mouse_overlay_ghost_' + (i + 1));
+                    if (ghost) {{
+                        const opacities = [0.35, 0.2, 0.1];
+                        const sizes = [8, 6, 5];
+                        const opacity = opacities[i] || 0.05;
+                        const size = sizes[i] || 4;
+                        const [gx, gy] = trail[i];
+                        ghost.style.width = size + 'px';
+                        ghost.style.height = size + 'px';
+                        ghost.style.background = color;
+                        ghost.style.opacity = opacity;
+                        ghost.style.left = gx + 'px';
+                        ghost.style.top = gy + 'px';
+                        ghost.style.transform = 'translate(-50%, -50%)';
+                    }}
+                }}
+                // Hide unused ghosts
+                for (let i = trail.length; i < 3; i++) {{
+                    const ghost = document.getElementById('__auto_rust_mouse_overlay_ghost_' + (i + 1));
+                    if (ghost) ghost.style.opacity = '0';
+                }}
+            }} else {{
+                for (let i = 1; i <= 3; i++) {{
+                    const ghost = document.getElementById('__auto_rust_mouse_overlay_ghost_' + i);
+                    if (ghost) ghost.style.opacity = '0';
+                }}
+            }}
+        }})();"#
     ));
 
     timeout(Duration::from_millis(500), eval)

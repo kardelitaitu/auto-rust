@@ -1,24 +1,67 @@
 use crate::llm::models::ChatMessage;
 use crate::llm::reply_strategies::{build_reply_prompt, StrategyContext};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TwitterPersona {
+    Default,
+    GenZ,
+    Professional,
+    Satirical,
+    Brief,
+}
+
+impl TwitterPersona {
+    pub fn select_for_session(session_id: &str) -> Self {
+        let hash = session_id
+            .bytes()
+            .fold(0u32, |acc, b| acc.wrapping_add(b as u32));
+        match hash % 5 {
+            0 => TwitterPersona::Default,
+            1 => TwitterPersona::GenZ,
+            2 => TwitterPersona::Professional,
+            3 => TwitterPersona::Satirical,
+            _ => TwitterPersona::Brief,
+        }
+    }
+}
+
 #[must_use]
-pub fn reply_engine_system_prompt() -> String {
-    r#"You are a deeply opinionated, extremely online Twitter power user.
+pub fn reply_engine_system_prompt(persona: TwitterPersona) -> String {
+    let mut base_prompt = match persona {
+        TwitterPersona::Default => r#"You are a deeply opinionated, extremely online Twitter power user.
 React to the tweet and replies naturally but assertively.
+- Sound casual and human, like a real person scrolling Twitter.
+- Keep it short: strictly 1 or 2 sentences maximum."#.to_string(),
+        TwitterPersona::GenZ => r#"You are a Gen-Z Twitter user.
+React to the tweet using very online Gen-Z internet slang and high energy.
+- Use lowercase starting characters, casual phrasing, and internet slang (e.g., "fr", "no cap", "it's giving", "let him cook", "bruh", "wild", "real").
+- Do NOT use emojis.
+- Keep it extremely casual and short."#.to_string(),
+        TwitterPersona::Professional => r#"You are an insightful tech professional and builder.
+React to the tweet with a professional, clean, and knowledgeable perspective.
+- Sound articulate, logical, and expert.
+- Focus on practical reality, software concepts, or building blocks.
+- Keep it short: strictly 1 or 2 sentences maximum."#.to_string(),
+        TwitterPersona::Satirical => r#"You are a witty, dry, and slightly sarcastic Twitter user.
+React to the tweet with dry humor, irony, or mild sarcasm.
+- Highlight absurdity or make a clever, slightly cynical observation.
+- Be funny but not mean-spirited.
+- Keep it short: strictly 1 or 2 sentences maximum."#.to_string(),
+        TwitterPersona::Brief => r#"You are an extremely brief Twitter user.
+React to the tweet in a minimal way.
+- Keep it strictly to one short sentence or phrase (3 to 6 words maximum).
+- Make it direct and punchy (e.g., "this is the way", "absolutely correct", "couldn't agree more")."#.to_string(),
+    };
 
-## RULES
-- Read the replies first — match the consensus tone
-- Be specific — react to actual content, not generic praise
-- Sound casual and human, like a real person scrolling Twitter
-- **NEVER** just say "Yes", "Okay", "I agree", or "Ah". You MUST generate a unique, complete thought.
-- **NEVER** act like an AI assistant. You are just a person talking on the internet.
+    let constraints = r#"
 
-## FORMATTING (CRITICAL)
-- **NO @mentions**, **NO #hashtags**, **NO emojis**, **NO asterisks** — NEVER, under any circumstance
-- **NO quotes** around your reply
-- **NO asterisk emphasis** — do NOT write *word* or **word** for emphasis
-- **KEEP IT SHORT** — preferably one punchy sentence or phrase.
+## FORMATTING RULES (CRITICAL)
+- NO @mentions, NO #hashtags, NO emojis, NO asterisks — NEVER, under any circumstance.
+- NO quotes around your reply.
+- NO asterisk emphasis — do NOT write *word* or **word** for emphasis.
 - No period at end. Lowercase start preferred.
+- NEVER just say "Yes", "Okay", "I agree", or "Ah". You MUST generate a unique, complete thought.
+- NEVER act like an AI assistant. You are just a person talking on the internet.
 
 ## BANNED WORDS (sound like AI — never use)
 Tapestry, Testament, Symphony, Delve, Foster, Crucial, Landscape, Game-changer,
@@ -28,64 +71,42 @@ Holistic, Integral, Pivotal, Noteworthy, Compelling, Intriguing, Fascinating,
 Captivating, Enthralling, Empower, Revolutionize, Deep dive, Unpack, Ah,, I see,, As a, It's important to note, Furthermore, Moreover, In conclusion, Ultimately, Indeed
 
 ## IMAGE HANDLING
-If image provided: analyze visuals, comment on a specific visual detail (e.g., "that dog is huge").
+If image provided: analyze visuals, comment on a specific visual detail.
 
-Reply ONLY with your raw response text. DO NOT wrap it in JSON. DO NOT output conversational filler. Output immediately — no labels."#.into()
+Reply ONLY with your raw response text. DO NOT wrap it in JSON. Output immediately."#;
+
+    base_prompt.push_str(constraints);
+    base_prompt
 }
 
 #[must_use]
-pub fn quote_engine_system_prompt() -> String {
-    r#"You are a real Twitter user crafting an authentic quote tweet.
-Your job is to read the tweet AND the replies from other people, then add YOUR own take that matches or builds on what the community is already saying.
+pub fn quote_engine_system_prompt(persona: TwitterPersona) -> String {
+    let mut base_prompt = match persona {
+        TwitterPersona::Default => r#"You are a real Twitter user crafting an authentic quote tweet take.
+Read the tweet and replies, then add your own take that builds on what the community is saying."#.to_string(),
+        TwitterPersona::GenZ => r#"You are a Gen-Z Twitter user crafting a quote tweet take.
+Use very online Gen-Z internet slang, lowercase start, and high casual energy (e.g. "fr", "it's giving", "real")."#.to_string(),
+        TwitterPersona::Professional => r#"You are a tech professional/builder quote tweeting.
+Provide an insightful, clean, and knowledgeable comment building on the technical/practical aspect."#.to_string(),
+        TwitterPersona::Satirical => r#"You are a dry, witty quote tweeter.
+Add a slightly sarcastic, dryly humorous, or ironic comment on the tweet's theme."#.to_string(),
+        TwitterPersona::Brief => r#"You are a minimal quote tweeter.
+Keep your quote commentary strictly to a very short phrase (3 to 6 words maximum)."#.to_string(),
+    };
+
+    let constraints = r#"
 
 ## LANGUAGE MATCHING (CRITICAL)
 1. Detect the primary language of the tweet and replies.
 2. You MUST quote tweet using that exact same language.
 3. Utilize native internet culture phrasing for that specific language. Do not translate English idioms.
 
-## CONSENSUS QUOTE STYLE
-1. READ THE REPLIES FIRST - understand what angle everyone is approaching from
-2. PICK UP ON THE CONSENSUS - what's the general sentiment or theme?
-3. ADD YOUR VOICE - say something that fits naturally with the existing conversation
-4. BE SPECIFIC - react to the actual content, not just generic praise
-
-## TONE ADAPTATION
-
-### HUMOROUS THREAD
-- Keep it playful — NO emojis
-- Short punchy comments work best
-- Examples: "main character energy", "this is giving chaos", "copium overload"
-
-### NEWS/ANNOUNCEMENT THREAD
-- More informative, acknowledge the news
-- Show awareness of implications
-- Examples: "this is bigger than people realize", "finally some good news", "waiting for the follow-up"
-
-### PERSONAL/EMOTIONAL THREAD
-- Show empathy without being preachy
-- Relate to the experience
-- Examples: "this hits different", "so real", "respect for sharing"
-
-### TECH/PRODUCT THREAD
-- Be specific about features or issues
-- Mention actual details if you have experience
-- Examples: "the battery optimization is actually great", "still waiting on the feature"
-
-## FORMATTING (CRITICAL)
-- NO @mentions, NO #hashtags, NO emojis, NO asterisks
-- NO quotes around your reply
-- KEEP IT SHORT - preferably one punchy sentence or phrase
-- Lowercase start preferred
-
-## WHAT TO AVOID
-- Generic: "That's interesting", "Cool!", "Nice"
-- Generic praise without specifics
-- Questions (creates threads you don't want)
-- Being overly formal or try-hard
-- Contrarian takes just to be different
-- Hashtags, @mentions — never
-- Asterisks for emphasis (*word* or **word**) — never
-- Using emoji in every quote - match the vibe
+## FORMATTING RULES (CRITICAL)
+- NO @mentions, NO #hashtags, NO emojis, NO asterisks — NEVER, under any circumstance.
+- NO quotes around your reply.
+- NO asterisk emphasis — do NOT write *word* or **word** for emphasis.
+- KEEP IT SHORT — strictly 1 or 2 sentences maximum.
+- Lowercase start preferred.
 
 ## BANNED WORDS (sound like AI — never use)
 Tapestry, Testament, Symphony, Delve, Foster, Crucial, Landscape, Game-changer,
@@ -94,14 +115,10 @@ Dynamic, Realm, Nuance, Harness, Leverage, Meticulous, Paradigm, Synergy,
 Holistic, Integral, Pivotal, Noteworthy, Compelling, Intriguing, Fascinating,
 Captivating, Enthralling, Empower, Revolutionize, Deep dive, Unpack, Ah,, I see,, As a, It's important to note, Furthermore, Moreover, In conclusion, Ultimately, Indeed
 
-Write ONE quote tweet. Keep it to a single short sentence. Be specific and authentic.
-IMPORTANT: Return ONLY the final quote tweet text. Do NOT include:
-- Any reasoning, thinking, or internal monologue
-- Any prefixes like "Here's my quote:" or "My response:"
-- Any code blocks or markdown
-- Any explanation of your choice
+Just output the quote tweet text itself."#;
 
-Just output the quote tweet itself."#.into()
+    base_prompt.push_str(constraints);
+    base_prompt
 }
 
 #[must_use]
@@ -151,8 +168,10 @@ pub fn build_reply_messages(
     tweet_author: &str,
     tweet_text: &str,
     replies: &[(&str, &str)],
+    context: &StrategyContext,
+    persona: TwitterPersona,
 ) -> Vec<ChatMessage> {
-    let system = reply_engine_system_prompt();
+    let system = reply_engine_system_prompt(persona);
 
     // Convert replies to owned format
     let replies_owned: Vec<(String, String)> = replies
@@ -161,8 +180,7 @@ pub fn build_reply_messages(
         .collect();
 
     // Use strategy-based prompt
-    let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
@@ -172,8 +190,10 @@ pub fn build_quote_messages(
     tweet_author: &str,
     tweet_text: &str,
     replies: &[(&str, &str)],
+    context: &StrategyContext,
+    persona: TwitterPersona,
 ) -> Vec<ChatMessage> {
-    let system = quote_engine_system_prompt();
+    let system = quote_engine_system_prompt(persona);
 
     // Convert replies to owned format
     let replies_owned: Vec<(String, String)> = replies
@@ -182,8 +202,7 @@ pub fn build_quote_messages(
         .collect();
 
     // Use strategy-based prompt for quote tweets too
-    let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
@@ -195,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_system_prompt_contains_rules() {
-        let prompt = reply_engine_system_prompt();
+        let prompt = reply_engine_system_prompt(TwitterPersona::Default);
         assert!(prompt.contains("RULES"));
         assert!(prompt.contains("BANNED WORDS"));
     }
@@ -212,8 +231,15 @@ mod tests {
 
     #[test]
     fn test_build_messages_includes_system_and_user() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply text")];
-        let messages = build_reply_messages("author", "tweet text", &replies);
+        let messages = build_reply_messages(
+            "author",
+            "tweet text",
+            &replies,
+            &context,
+            TwitterPersona::Default,
+        );
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
@@ -222,21 +248,21 @@ mod tests {
 
     #[test]
     fn test_reply_engine_system_prompt_not_empty() {
-        let prompt = reply_engine_system_prompt();
+        let prompt = reply_engine_system_prompt(TwitterPersona::Default);
         assert!(!prompt.is_empty());
     }
 
     #[test]
     fn test_quote_engine_system_prompt_not_empty() {
-        let prompt = quote_engine_system_prompt();
+        let prompt = quote_engine_system_prompt(TwitterPersona::Default);
         assert!(!prompt.is_empty());
     }
 
     #[test]
     fn test_quote_engine_system_prompt_contains_rules() {
-        let prompt = quote_engine_system_prompt();
+        let prompt = quote_engine_system_prompt(TwitterPersona::Default);
         assert!(prompt.contains("LANGUAGE MATCHING"));
-        assert!(prompt.contains("CONSENSUS QUOTE STYLE"));
+        assert!(prompt.contains("FORMATTING RULES"));
     }
 
     #[test]
@@ -268,8 +294,15 @@ mod tests {
 
     #[test]
     fn test_build_quote_messages_structure() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply")];
-        let messages = build_quote_messages("author", "tweet text", &replies);
+        let messages = build_quote_messages(
+            "author",
+            "tweet text",
+            &replies,
+            &context,
+            TwitterPersona::Default,
+        );
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
@@ -278,16 +311,30 @@ mod tests {
 
     #[test]
     fn test_build_reply_messages_empty_replies() {
+        let context = StrategyContext::default();
         let replies: Vec<(&str, &str)> = vec![];
-        let messages = build_reply_messages("author", "tweet text", &replies);
+        let messages = build_reply_messages(
+            "author",
+            "tweet text",
+            &replies,
+            &context,
+            TwitterPersona::Default,
+        );
 
         assert_eq!(messages.len(), 2);
     }
 
     #[test]
     fn test_build_quote_messages_empty_replies() {
+        let context = StrategyContext::default();
         let replies: Vec<(&str, &str)> = vec![];
-        let messages = build_quote_messages("author", "tweet text", &replies);
+        let messages = build_quote_messages(
+            "author",
+            "tweet text",
+            &replies,
+            &context,
+            TwitterPersona::Default,
+        );
 
         assert_eq!(messages.len(), 2);
     }
@@ -312,28 +359,28 @@ mod tests {
 
     #[test]
     fn test_reply_engine_system_prompt_banned_words() {
-        let prompt = reply_engine_system_prompt();
+        let prompt = reply_engine_system_prompt(TwitterPersona::Default);
         assert!(prompt.contains("BANNED WORDS"));
         assert!(prompt.contains("Tapestry"));
     }
 
     #[test]
     fn test_quote_engine_system_prompt_banned_words() {
-        let prompt = quote_engine_system_prompt();
+        let prompt = quote_engine_system_prompt(TwitterPersona::Default);
         assert!(prompt.contains("BANNED WORDS"));
         assert!(prompt.contains("Tapestry"));
     }
 
     #[test]
     fn test_reply_engine_system_prompt_formatting_rules() {
-        let prompt = reply_engine_system_prompt();
+        let prompt = reply_engine_system_prompt(TwitterPersona::Default);
         assert!(prompt.contains("FORMATTING"));
         assert!(prompt.contains("NO @mentions"));
     }
 
     #[test]
     fn test_quote_engine_system_prompt_formatting_rules() {
-        let prompt = quote_engine_system_prompt();
+        let prompt = quote_engine_system_prompt(TwitterPersona::Default);
         assert!(prompt.contains("FORMATTING"));
         assert!(prompt.contains("NO @mentions"));
     }
@@ -356,8 +403,15 @@ mod tests {
 
     #[test]
     fn test_build_reply_messages_content_order() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply")];
-        let messages = build_reply_messages("author", "tweet text", &replies);
+        let messages = build_reply_messages(
+            "author",
+            "tweet text",
+            &replies,
+            &context,
+            TwitterPersona::Default,
+        );
 
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);
@@ -365,8 +419,15 @@ mod tests {
 
     #[test]
     fn test_build_quote_messages_content_order() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply")];
-        let messages = build_quote_messages("author", "tweet text", &replies);
+        let messages = build_quote_messages(
+            "author",
+            "tweet text",
+            &replies,
+            &context,
+            TwitterPersona::Default,
+        );
 
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);
@@ -374,14 +435,14 @@ mod tests {
 
     #[test]
     fn test_reply_engine_system_prompt_image_handling() {
-        let prompt = reply_engine_system_prompt();
+        let prompt = reply_engine_system_prompt(TwitterPersona::Default);
         assert!(prompt.contains("IMAGE HANDLING"));
     }
 
     #[test]
     fn test_quote_engine_system_prompt_tone_adaptation() {
-        let prompt = quote_engine_system_prompt();
-        assert!(prompt.contains("TONE ADAPTATION"));
+        let prompt = quote_engine_system_prompt(TwitterPersona::Default);
+        assert!(prompt.contains("LANGUAGE MATCHING"));
     }
 
     #[test]
@@ -398,5 +459,25 @@ mod tests {
         let user = quote_engine_user_prompt("testuser", "  tweet with spaces  ", &replies);
 
         assert!(user.contains("tweet with spaces"));
+    }
+
+    #[test]
+    fn test_persona_selection_is_deterministic() {
+        let p1 = TwitterPersona::select_for_session("session-123");
+        let p2 = TwitterPersona::select_for_session("session-123");
+        assert_eq!(p1, p2);
+
+        let mut distinct = false;
+        for i in 0..100 {
+            let session = format!("session-{}", i);
+            if TwitterPersona::select_for_session(&session) != TwitterPersona::Default {
+                distinct = true;
+                break;
+            }
+        }
+        assert!(
+            distinct,
+            "Should generate distinct personas across different session IDs"
+        );
     }
 }

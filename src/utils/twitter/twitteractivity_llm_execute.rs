@@ -23,16 +23,19 @@ const COMPOSER_WAIT_MS: u64 = 1000;
 
 /// Performs a quote tweet with AI-generated commentary.
 pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<EngagementOutcome> {
-    info!("Executing quote tweet with {} chars", commentary.len());
+    info!(
+        "[quote] Executing quote tweet with {} chars",
+        commentary.len()
+    );
 
     // Scroll to top to ensure root tweet is visible and mounted
     if let Err(e) = api.scroll_to_top().await {
-        warn!("Failed to scroll to top before quote: {e}");
+        warn!("[quote] Failed to scroll to top before quote: {e}");
     }
     human_pause(api, 500).await;
 
     if click_retweet_button(api).await? != EngagementOutcome::Completed {
-        warn!("Unable to open retweet menu before quote tweet");
+        warn!("[quote] Unable to open retweet menu before quote tweet");
         return Ok(EngagementOutcome::ElementNotFound);
     }
 
@@ -47,13 +50,13 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
     {
         r?
     } else {
-        warn!("Timeout finding quote tweet button");
+        warn!("[quote] Timeout finding quote tweet button");
         return Ok(EngagementOutcome::Failed);
     };
     let (x, y) = match result.value().and_then(parse_button_coordinates) {
         Some(coords) => coords,
         None => {
-            warn!("Quote tweet button not found");
+            warn!("[quote] Quote tweet button not found");
             return Ok(EngagementOutcome::ElementNotFound);
         }
     };
@@ -78,7 +81,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
     {
         r?
     } else {
-        warn!("Timeout focusing composer textarea");
+        warn!("[quote] Timeout focusing composer textarea");
         return Ok(EngagementOutcome::Failed);
     };
     if !focused
@@ -86,22 +89,23 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
     {
-        warn!("Composer textarea not found");
+        warn!("[quote] Composer textarea not found");
         return Ok(EngagementOutcome::ElementNotFound);
     }
 
     api.pause(500).await;
 
     // Type the commentary
+    let typing_timeout_secs = TIMEOUT_MEDIUM_SECS + (commentary.len() as u64 * 1500 / 1000);
     if let Ok(r) = timeout(
-        Duration::from_secs(TIMEOUT_MEDIUM_SECS),
+        Duration::from_secs(typing_timeout_secs),
         api.keyboard("[data-testid='tweetTextarea_0']", commentary),
     )
     .await
     {
         r?
     } else {
-        warn!("Timeout typing commentary");
+        warn!("[quote] Timeout typing commentary");
         return Ok(EngagementOutcome::Failed);
     }
     api.pause(COMPOSER_WAIT_MS).await;
@@ -117,13 +121,13 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
     {
         r?
     } else {
-        warn!("Timeout finding tweet button");
+        warn!("[quote] Timeout finding tweet button");
         return Ok(EngagementOutcome::Failed);
     };
     let (tx, ty) = match button_result.value().and_then(parse_button_coordinates) {
         Some(coords) => coords,
         None => {
-            warn!("Tweet button not found");
+            warn!("[quote] Tweet button not found");
             return Ok(EngagementOutcome::ElementNotFound);
         }
     };
@@ -136,7 +140,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
     .await
     .is_err()
     {
-        warn!("Timeout moving mouse to tweet button");
+        warn!("[quote] Timeout moving mouse to tweet button");
         return Ok(EngagementOutcome::Failed);
     }
     human_pause(api, QUOTE_CLICK_PAUSE_SHORT_MS).await;
@@ -147,7 +151,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
     .await
     .is_err()
     {
-        warn!("Timeout clicking tweet button");
+        warn!("[quote] Timeout clicking tweet button");
         return Ok(EngagementOutcome::Failed);
     }
 
@@ -167,9 +171,9 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
             .and_then(|value| value.as_str())
             .unwrap_or("unknown");
         if posted {
-            info!("Quote tweet posted successfully ({reason})");
+            info!("[quote] Quote tweet posted successfully ({reason})");
         } else {
-            warn!("Quote tweet verification failed: {reason}");
+            warn!("[quote] Quote tweet verification failed: {reason}");
         }
         return if posted {
             Ok(EngagementOutcome::Completed)
@@ -178,7 +182,7 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
         };
     }
 
-    warn!("Quote tweet verification returned an unexpected result");
+    warn!("[quote] Quote tweet verification returned an unexpected result");
     Ok(EngagementOutcome::Failed)
 }
 

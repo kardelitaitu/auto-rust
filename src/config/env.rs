@@ -84,6 +84,8 @@ pub(crate) fn load_code_config() -> Result<Config> {
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
+            cursor_overlay_color: "#ff6600".to_string(),
+            cursor_overlay_show_trail: true,
             native_interaction: NativeInteractionConfig::default(),
             max_workers_per_session: 5,
             enable_learning_persistence: true,
@@ -143,6 +145,16 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.browser.cursor_overlay_ms = overlay_ms
             .parse()
             .unwrap_or(config.browser.cursor_overlay_ms);
+    }
+    if let Ok(color) = env::var("CURSOR_OVERLAY_COLOR") {
+        if !color.is_empty() {
+            config.browser.cursor_overlay_color = color;
+        }
+    }
+    if let Ok(show_trail) = env::var("CURSOR_OVERLAY_SHOW_TRAIL") {
+        config.browser.cursor_overlay_show_trail = show_trail
+            .parse()
+            .unwrap_or(config.browser.cursor_overlay_show_trail);
     }
     if let Ok(mode) = env::var("native_click_calibration") {
         config.browser.native_interaction.calibration_mode =

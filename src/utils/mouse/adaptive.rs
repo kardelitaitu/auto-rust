@@ -14,12 +14,35 @@ use crate::utils::page_size::get_viewport;
 use crate::utils::timing::human_pause;
 use anyhow::Result;
 use chromiumoxide::Page;
+use log::debug;
 use tokio::time::{timeout, Duration};
 
 /// Detects element type from selector for hover duration customization.
 /// This is a heuristic-based detection.
 pub(crate) fn detect_element_type(selector: &str) -> String {
     let sel_lower = selector.to_lowercase();
+
+    // Twitter-specific engagement action buttons (aria-label based selectors).
+    // These warrant longer hover dwell to simulate deliberate user intent.
+    let twitter_engagement_labels = [
+        "like", "retweet", "bookmark", "follow", "unfollow", "share", "reply",
+    ];
+    if sel_lower.contains("aria-label") {
+        for label in &twitter_engagement_labels {
+            if sel_lower.contains(label) {
+                return "engagement".to_string();
+            }
+        }
+    }
+    // Twitter data-testid engagement selectors
+    let twitter_testid_engagement = ["like", "retweet", "bookmark", "follow", "reply"];
+    if sel_lower.contains("data-testid") {
+        for id in &twitter_testid_engagement {
+            if sel_lower.contains(id) {
+                return "engagement".to_string();
+            }
+        }
+    }
 
     // Input elements
     if sel_lower.contains("input") {
@@ -154,29 +177,45 @@ pub(crate) async fn wait_for_element_stability(
 }
 
 pub async fn hover_before_click(page: &Page, x: f64, y: f64, element_type: &str) -> Result<()> {
-    // Different elements have different natural hover times based on human behavior
+    // Different elements have different natural hover times based on human behavior.
+    // Engagement buttons (like, retweet, follow) warrant longer dwell — humans
+    // visually confirm the button before committing to the action.
     let base_hover_ms: u64 = match element_type {
-        "button" => random_in_range(80, 200),
-        "link" => random_in_range(100, 350),
-        "input" => random_in_range(50, 150),
-        "checkbox" => random_in_range(120, 280),
-        "radio" => random_in_range(100, 250),
-        "dropdown" | "select" => random_in_range(150, 400),
-        "menu" | "nav" => random_in_range(60, 180),
-        _ => random_in_range(60, 180),
+        "engagement" => random_in_range(500, 1500), // deliberate intent — like, retweet, follow
+        "button" => random_in_range(300, 800),      // general buttons — less deliberate
+        "link" => random_in_range(400, 900),        // links — read before clicking
+        "input" => random_in_range(50, 150),        // text fields — fast, no hesitation
+        "checkbox" => random_in_range(200, 500),
+        "radio" => random_in_range(150, 400),
+        "dropdown" | "select" => random_in_range(200, 500),
+        "menu" | "nav" => random_in_range(80, 250),
+        _ => random_in_range(80, 300),
     };
+
+    debug!("[hover] element_type={element_type} dwell={base_hover_ms}ms at ({x:.1}, {y:.1})");
 
     // Fire pointerenter at hover start
     let _ = cdp::dispatch_pointer_event(page, "pointerenter", x, y, MouseButton::Left).await;
 
-    // Variable hover duration with variance
-    let variance = random_in_range(20, 40) as u32;
-    human_pause(base_hover_ms, variance).await;
+    // Phase 1: initial hover dwell — wait before doing anything
+    let variance = random_in_range(15, 35) as u32;
+    let half_dwell = base_hover_ms / 2;
+    human_pause(half_dwell, variance).await;
 
-    // Subtle position shift during hover (humans aren't perfectly still)
-    let hover_shift_x = gaussian(0.0, 1.5, -4.0, 4.0);
-    let hover_shift_y = gaussian(0.0, 1.5, -4.0, 4.0);
-    dispatch_mousemove(page, x + hover_shift_x, y + hover_shift_y).await?;
+    // Micro-fidget: small cursor shift mid-hover (humans aren't perfectly still).
+    // Fire 1 or 2 small movements to simulate settling.
+    let fidget_count = if base_hover_ms > 600 { 2 } else { 1 };
+    for _ in 0..fidget_count {
+        let shift_x = gaussian(0.0, 1.5, -4.0, 4.0);
+        let shift_y = gaussian(0.0, 1.5, -4.0, 4.0);
+        dispatch_mousemove(page, x + shift_x, y + shift_y).await?;
+        // Brief pause between fidget steps
+        human_pause(random_in_range(30, 80), 20).await;
+    }
+
+    // Phase 2: remaining dwell after fidget — cursor returns to target area
+    dispatch_mousemove(page, x, y).await?;
+    human_pause(base_hover_ms - half_dwell, variance).await;
 
     // Fire pointerleave before click (to properly balance pointerenter)
     let _ = cdp::dispatch_pointer_event(page, "pointerleave", x, y, MouseButton::Left).await;
@@ -495,4 +534,104 @@ pub async fn is_element_clickable(page: &Page, selector: &str) -> Result<bool> {
         .value()
         .and_then(serde_json::Value::as_bool)
         .ok_or_else(|| anyhow::anyhow!("Failed to evaluate clickability"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::detect_element_type;
+
+    // Twitter engagement — aria-label
+    #[test]
+    fn detects_like_aria_label() {
+        assert_eq!(detect_element_type("[aria-label='Like']"), "engagement");
+    }
+
+    #[test]
+    fn detects_retweet_aria_label() {
+        assert_eq!(detect_element_type("[aria-label*='Retweet']"), "engagement");
+    }
+
+    #[test]
+    fn detects_bookmark_aria_label() {
+        assert_eq!(detect_element_type("[aria-label='Bookmark']"), "engagement");
+    }
+
+    #[test]
+    fn detects_follow_aria_label() {
+        assert_eq!(
+            detect_element_type("[aria-label='Follow @user']"),
+            "engagement"
+        );
+    }
+
+    #[test]
+    fn detects_unfollow_aria_label() {
+        assert_eq!(
+            detect_element_type("[aria-label='Unfollow @user']"),
+            "engagement"
+        );
+    }
+
+    // Twitter engagement — data-testid
+    #[test]
+    fn detects_like_testid() {
+        assert_eq!(detect_element_type("[data-testid='like']"), "engagement");
+    }
+
+    #[test]
+    fn detects_retweet_testid() {
+        assert_eq!(detect_element_type("[data-testid='retweet']"), "engagement");
+    }
+
+    #[test]
+    fn detects_reply_testid() {
+        assert_eq!(detect_element_type("[data-testid='reply']"), "engagement");
+    }
+
+    #[test]
+    fn detects_follow_testid() {
+        assert_eq!(detect_element_type("[data-testid='follow']"), "engagement");
+    }
+
+    // Standard element types
+    #[test]
+    fn detects_button() {
+        assert_eq!(detect_element_type("button.submit"), "button");
+    }
+
+    #[test]
+    fn detects_submit() {
+        assert_eq!(detect_element_type("input[type='submit']"), "input");
+    }
+
+    #[test]
+    fn detects_checkbox() {
+        assert_eq!(detect_element_type("input[type='checkbox']"), "checkbox");
+    }
+
+    #[test]
+    fn detects_radio() {
+        assert_eq!(detect_element_type("input[type='radio']"), "radio");
+    }
+
+    #[test]
+    fn detects_link_from_nav() {
+        assert_eq!(detect_element_type("nav a"), "link");
+    }
+
+    #[test]
+    fn detects_dropdown() {
+        assert_eq!(detect_element_type("select.dropdown"), "dropdown");
+    }
+
+    #[test]
+    fn detects_default_for_unknown() {
+        assert_eq!(detect_element_type(".some-random-class"), "default");
+    }
+
+    #[test]
+    fn engagement_check_is_case_insensitive() {
+        assert_eq!(detect_element_type("[aria-label='LIKE']"), "engagement");
+        assert_eq!(detect_element_type("[data-testid='LIKE']"), "engagement");
+    }
 }

@@ -4,7 +4,9 @@
 //! without requiring a live browser.
 
 use auto::config::{TwitterActivityConfig, TwitterProbabilitiesConfig};
-use auto::llm::{build_quote_messages, build_reply_messages, Role};
+use auto::llm::{
+    build_quote_messages, build_reply_messages, Role, StrategyContext, TwitterPersona,
+};
 use auto::task::{select_entry_point, TweetActionTracker, MIN_ACTION_CHAIN_DELAY_MS};
 use auto::utils::twitter::{
     sentiment::{analyze_tweet_sentiment_sync, sentiment_score, Sentiment, SentimentAnalyzer},
@@ -726,7 +728,13 @@ fn twitteractivity_auth_error_detection() {
 /// Tests that build_reply_messages returns correctly structured messages.
 #[test]
 fn twitteractivity_llm_build_reply_messages_structure() {
-    let messages = build_reply_messages("author", "tweet text", &[]);
+    let messages = build_reply_messages(
+        "author",
+        "tweet text",
+        &[],
+        &StrategyContext::default(),
+        TwitterPersona::Default,
+    );
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].role, Role::System);
     assert_eq!(messages[1].role, Role::User);
@@ -738,7 +746,13 @@ fn twitteractivity_llm_build_reply_messages_structure() {
 #[test]
 fn twitteractivity_llm_build_reply_messages_with_replies() {
     let replies = vec![("reply_author", "reply content")];
-    let messages = build_reply_messages("author", "tweet text", &replies);
+    let messages = build_reply_messages(
+        "author",
+        "tweet text",
+        &replies,
+        &StrategyContext::default(),
+        TwitterPersona::Default,
+    );
     assert_eq!(messages.len(), 2);
     assert!(messages[1].content.contains("reply content"));
 }
@@ -746,7 +760,13 @@ fn twitteractivity_llm_build_reply_messages_with_replies() {
 /// Tests that build_reply_messages handles empty replies gracefully.
 #[test]
 fn twitteractivity_llm_build_reply_messages_empty_replies() {
-    let messages = build_reply_messages("author", "tweet", &[]);
+    let messages = build_reply_messages(
+        "author",
+        "tweet",
+        &[],
+        &StrategyContext::default(),
+        TwitterPersona::Default,
+    );
     assert_eq!(messages.len(), 2);
     // Should not crash or produce garbage
     assert!(!messages[1].content.is_empty());
@@ -755,7 +775,13 @@ fn twitteractivity_llm_build_reply_messages_empty_replies() {
 /// Tests that build_quote_messages returns correctly structured messages.
 #[test]
 fn twitteractivity_llm_build_quote_messages_structure() {
-    let messages = build_quote_messages("author", "tweet text", &[]);
+    let messages = build_quote_messages(
+        "author",
+        "tweet text",
+        &[],
+        &StrategyContext::default(),
+        TwitterPersona::Default,
+    );
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].role, Role::System);
     assert_eq!(messages[1].role, Role::User);
@@ -766,7 +792,13 @@ fn twitteractivity_llm_build_quote_messages_structure() {
 #[test]
 fn twitteractivity_llm_build_quote_messages_with_replies() {
     let replies = vec![("reply_author", "reply text")];
-    let messages = build_quote_messages("author", "tweet text", &replies);
+    let messages = build_quote_messages(
+        "author",
+        "tweet text",
+        &replies,
+        &StrategyContext::default(),
+        TwitterPersona::Default,
+    );
     assert_eq!(messages.len(), 2);
     assert!(messages[1].content.contains("reply text"));
 }
@@ -774,7 +806,13 @@ fn twitteractivity_llm_build_quote_messages_with_replies() {
 /// Tests that build_quote_messages handles empty replies gracefully.
 #[test]
 fn twitteractivity_llm_build_quote_messages_empty_replies() {
-    let messages = build_quote_messages("author", "tweet", &[]);
+    let messages = build_quote_messages(
+        "author",
+        "tweet",
+        &[],
+        &StrategyContext::default(),
+        TwitterPersona::Default,
+    );
     assert_eq!(messages.len(), 2);
     assert!(!messages[1].content.is_empty());
 }

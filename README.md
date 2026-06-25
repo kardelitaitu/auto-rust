@@ -595,6 +595,9 @@ cargo run -- --watch my_task
 
 # Dry run
 cargo run -- --dry-run my_task
+
+# Debug logging (shows debug-level logs without setting RUST_LOG)
+cargo run --release --bin auto -- --debug twitteractivity
 ```
 
 ### API Quick Examples (v0.1.0)
@@ -626,7 +629,7 @@ See [API Usage Guide](docs/API_USAGE_GUIDE.md) for complete examples.
 cargo run cookiebot then pageview=reddit.com then twitteractivity
 
 # Debug mode
-RUST_LOG=debug cargo run pageview=example.com
+cargo run --release --bin auto -- --debug twitteractivity
 
 # Custom config
 cargo run -- --config path/to/config.toml cookiebot
@@ -884,7 +887,7 @@ export MAX_GLOBAL_CONCURRENCY=10
 
 ### Getting Help
 
-1. `RUST_LOG=debug cargo run ...` - detailed logs
+1. `cargo run --release --bin auto -- --debug twitteractivity` - enable debug-level logs
 2. Check `run-summary.json` - failure breakdown
 3. Review health logs - session issues
 4. Open an issue with logs and config

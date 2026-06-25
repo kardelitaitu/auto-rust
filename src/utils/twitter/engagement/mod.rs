@@ -67,7 +67,7 @@ impl Drop for ThreadDiveGuard {
                             );
                         }
                         Err(e) => {
-                            log::warn!("ThreadDiveGuard: goto_home failed: {e}");
+                            log::warn!("[dive] ThreadDiveGuard: goto_home failed: {e}");
                         }
                     }
                 });
@@ -120,7 +120,7 @@ async fn engage_replies(
             let max_replies: u32 = rand::thread_rng().gen_range(1..=2);
             for reply in replies {
                 if task_config.dry_run_actions {
-                    info!("Dry-run: would like reply...");
+                    info!("[like] Dry-run: would like reply...");
                     continue;
                 }
                 if replies_engaged >= max_replies {
@@ -153,7 +153,7 @@ async fn engage_replies(
                             .await
                             {
                                 Ok(EngagementOutcome::Completed) => {
-                                    info!("Successfully liked reply");
+                                    info!("[like] Successfully liked reply");
                                     counters.increment_like();
                                     *actions_this_scan += 1;
                                     replies_engaged += 1;
@@ -162,7 +162,7 @@ async fn engage_replies(
                                     clustered_reply_pause(api).await;
                                 }
                                 _ => {
-                                    warn!("Failed to like reply");
+                                    warn!("[like] Failed to like reply");
                                 }
                             }
                         }
@@ -171,7 +171,7 @@ async fn engage_replies(
             }
         }
         Err(e) => {
-            warn!("Depth-First: Failed to identify replies: {e}");
+            warn!("[like] Depth-First: Failed to identify replies: {e}");
         }
     }
     Ok(())
@@ -414,7 +414,7 @@ pub async fn process_candidate(
             }
             Ok(false) => {}
             Err(e) => {
-                error!("Action dispatch failed with error: {e}");
+                error!("[{action}] Action dispatch failed with error: {e}");
             }
         }
     }

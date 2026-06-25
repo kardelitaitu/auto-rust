@@ -102,7 +102,7 @@ async fn build_persona(
     persona = apply_behavior_profile(persona, profile, 0.0);
 
     info!(
-        "Persona weights: like={:.2}, rt={:.2}, follow={:.2}, reply={:.2}",
+        "[twitter] Persona weights: like={:.2}, rt={:.2}, follow={:.2}, reply={:.2}",
         persona.like_prob, persona.retweet_prob, persona.follow_prob, persona.reply_prob
     );
     persona
@@ -127,7 +127,7 @@ fn init_session(config: &Config, task_config: &TaskConfig) -> SessionState {
     );
 
     info!(
-        "Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
+        "[twitter] Engagement limits: likes={}/{}, retweets={}/{}, follows={}/{}, total={}/{}",
         session.counters.likes(),
         session.limits.max_likes,
         session.counters.retweets(),
@@ -192,7 +192,7 @@ async fn scan_and_process_candidates(
     next_candidate_scan: &mut Instant,
 ) -> Result<bool> {
     let candidates = identify_engagement_candidates(api).await?;
-    info!("Candidate scan | candidates={}", candidates.len());
+    info!("[twitter] Candidate scan | candidates={}", candidates.len());
 
     if candidates.is_empty() {
         return Ok(false);
@@ -248,7 +248,7 @@ async fn scan_and_process_candidates(
 
 /// Main task logic — thin orchestrator that delegates to utility modules.
 async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) -> Result<()> {
-    info!("Task started");
+    info!("[twitter] Task started");
 
     // Build persona weights from behavior profile
     let persona = build_persona(api.behavior_profile(), &task_config, config).await;
@@ -263,7 +263,10 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
     }
 
     // Phase 2: Feed scanning and engagement
-    info!("Phase 2: Scanning feed for {} ms", task_config.duration_ms);
+    info!(
+        "[twitter] Phase 2: Scanning feed for {} ms",
+        task_config.duration_ms
+    );
     let mut consecutive_scroll_failures = 0u32;
     let mut consecutive_empty_scans = 0u32;
     let mut scrolls_performed = 0u32;

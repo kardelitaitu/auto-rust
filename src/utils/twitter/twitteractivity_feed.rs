@@ -149,7 +149,7 @@ pub fn filter_candidates(tweets: &[Value]) -> Vec<Value> {
 pub async fn is_following_user_at_position(api: &TaskContext, x: f64, y: f64) -> Result<bool> {
     // Move mouse near the tweet to expose any hover-only indicators
     if let Err(e) = api.move_mouse_to(x, y).await {
-        log::warn!("Failed to move mouse for hover indicators: {e}");
+        log::warn!("[feed] Failed to move mouse for hover indicators: {e}");
     }
     // Use elementFromPoint to scope the query to the tweet at this position
     let js = format!(

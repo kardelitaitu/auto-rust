@@ -74,13 +74,13 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
         .wait_for_any_visible_selector(&[selector], timeout_ms)
         .await?
     {
-        warn!("Home logo not found, falling back to URL navigation");
+        warn!("[nav] Home logo not found, falling back to URL navigation");
         return goto_home_fallback(api).await;
     }
 
     // Get position of home logo for logging
     if let Some((x, y)) = get_element_center(api, selector).await? {
-        info!("Navigated to home ({x:.1}, {y:.1})");
+        info!("[nav] Navigated to home ({x:.1}, {y:.1})");
     }
 
     // Click the home logo
@@ -94,7 +94,7 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
     }
 
     // If feed not visible, fallback to URL navigation
-    warn!("Feed not visible after home logo click, falling back to URL navigation");
+    warn!("[nav] Feed not visible after home logo click, falling back to URL navigation");
     goto_home_fallback(api).await
 }
 
@@ -243,11 +243,11 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
         &entry_name
     };
 
-    info!("🎲 Rolled entry point: {entry_name} → {entry_url}");
+    info!("[nav] 🎲 Rolled entry point: {entry_name} → {entry_url}");
 
     // Navigate to entry point
     if let Err(e) = api.navigate(entry_url, 60000).await {
-        error!("Navigation to entry point {} failed: {e}", entry_url);
+        error!("[nav] Navigation to entry point {} failed: {e}", entry_url);
         return Err(e);
     }
     human_pause(api, 2000).await;
@@ -279,9 +279,9 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
             human_pause(api, rand::random::<u64>() % 300 + 200).await;
         }
 
-        info!("✅ Finished reading, navigating to home...");
+        info!("[nav] ✅ Finished reading, navigating to home...");
         if let Err(e) = goto_home(api).await {
-            error!("Navigation to home failed: {e}");
+            error!("[nav] Navigation to home failed: {e}");
             return Err(e);
         }
         human_pause(api, 500).await;
@@ -291,7 +291,7 @@ pub async fn navigate_and_read(api: &TaskContext, entry_url: &str) -> Result<()>
 }
 
 pub async fn phase1_navigation(api: &TaskContext) -> Result<()> {
-    info!("Phase 1: Navigation to entry point");
+    info!("[nav] Phase 1: Navigation to entry point");
     let entry_url = select_entry_point();
     navigate_and_read(api, entry_url).await?;
 
@@ -299,18 +299,18 @@ pub async fn phase1_navigation(api: &TaskContext) -> Result<()> {
     // Popups (cookie banners, overlays) can obscure the feed and cause
     // false-negative login detection
     match dismiss_cookie_banner(api).await {
-        Ok(true) => info!("Cookie banner dismissed"),
+        Ok(true) => info!("[nav] Cookie banner dismissed"),
         Ok(false) => {}
-        Err(e) => warn!("Cookie banner dismissal failed: {e}"),
+        Err(e) => warn!("[nav] Cookie banner dismissal failed: {e}"),
     }
     if let Err(e) = close_active_popup(api).await {
-        warn!("Popup close failed: {e}");
+        warn!("[nav] Popup close failed: {e}");
     }
 
     if verify_login(api).await? {
-        info!("User is logged in - proceeding");
+        info!("[nav] User is logged in - proceeding");
     } else {
-        warn!("User appears not logged in; task may fail");
+        warn!("[nav] User appears not logged in; task may fail");
     }
 
     Ok(())

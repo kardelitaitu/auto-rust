@@ -122,7 +122,7 @@ pub async fn dispatch_action(
                         ok
                     }
                     Err(e) => {
-                        warn!("Like failed after retries: {e}");
+                        warn!("[like] Like failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                         api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
                         false
@@ -147,14 +147,14 @@ pub async fn dispatch_action(
                             ok
                         }
                         Err(e) => {
-                            warn!("Like at position failed after retries: {e}");
+                            warn!("[like] Like at position failed after retries: {e}");
                             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                             api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
                             false
                         }
                     }
                 } else {
-                    warn!("Like button position not found in tweet payload for {tweet_id}, falling back to selector-based like");
+                    warn!("[like] Like button position not found in tweet payload for {tweet_id}, falling back to selector-based like");
                     // Fallback to selector-based like (works on feed too)
                     match retry_with_backoff(
                         || like_tweet(api),
@@ -172,7 +172,7 @@ pub async fn dispatch_action(
                             ok
                         }
                         Err(e) => {
-                            warn!("Selector-based like failed after retries: {e}");
+                            warn!("[like] Selector-based like failed after retries: {e}");
                             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                             api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
                             false
@@ -201,7 +201,7 @@ pub async fn dispatch_action(
                         ok
                     }
                     Err(e) => {
-                        warn!("retweet_tweet failed after retries: {e}");
+                        warn!("[retweet] retweet_tweet failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                         api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
                         false
@@ -266,7 +266,7 @@ pub async fn dispatch_action(
                         success
                     }
                     Err(e) => {
-                        warn!("Quote tweet error: {e}");
+                        warn!("[quote] Quote tweet error: {e}");
                         false
                     }
                 }
@@ -292,7 +292,7 @@ pub async fn dispatch_action(
                         ok
                     }
                     Err(e) => {
-                        warn!("Follow failed after retries: {e}");
+                        warn!("[follow] Follow failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                         api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
                         false
@@ -364,7 +364,7 @@ pub async fn dispatch_action(
                         ok
                     }
                     Err(e) => {
-                        warn!("Reply failed after retries: {e}");
+                        warn!("[reply] Reply failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                         api.increment_run_counter(RUN_COUNTER_REPLY_FAILURE, 1);
                         false
@@ -392,7 +392,7 @@ pub async fn dispatch_action(
                         ok
                     }
                     Err(e) => {
-                        warn!("bookmark_tweet failed after retries: {e}");
+                        warn!("[bookmark] bookmark_tweet failed after retries: {e}");
                         api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                         api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
                         false
@@ -466,14 +466,14 @@ pub async fn dispatch_action(
 }
 async fn read_replies_for_context(api: &TaskContext, did_dive: bool) {
     if did_dive {
-        info!("Reading replies to build conversation context...");
+        info!("[context] Reading replies to build conversation context...");
         // Scroll down to load and read replies (pauses=2, scroll=500px, variable_speed=true, back_scroll=true)
         if let Err(e) = api.scroll_read(2, 500, true, true).await {
-            warn!("Failed to scroll read replies: {e}");
+            warn!("[context] Failed to scroll read replies: {e}");
         }
         // Make sure we are at the top to access the tweet/buttons
         if let Err(e) = api.scroll_to_top().await {
-            warn!("Failed to scroll back to top: {e}");
+            warn!("[context] Failed to scroll back to top: {e}");
         }
     }
 }

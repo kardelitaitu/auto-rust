@@ -49,7 +49,7 @@ pub async fn handle_engagement_decision(
     }
 
     info!(
-        "Smart decision: tweet_id={} author=@{} replies={}",
+        "[twitter] Smart decision: tweet_id={} author=@{} replies={}",
         tweet_id,
         author,
         replies.len()

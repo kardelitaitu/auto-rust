@@ -32,12 +32,14 @@ pub mod api;
 ///
 /// To use the pipeline directly (without the auto-rust re-exports),
 /// depend on `bacon-pipeline` and call `bacon_pipeline::config::init()`.
+#[cfg(feature = "bacon")]
 pub mod bacon_core {
     pub use bacon_pipeline::core::*;
     // Re-export modules explicitly for binary access
     pub use bacon_pipeline::core::cli_types;
     pub use bacon_pipeline::core::spec_io;
 }
+#[cfg(feature = "bacon")]
 pub mod bacon_agent_nvidia {
     // Re-export agent submodules explicitly (glob doesn't bring in submodules)
     pub use bacon_pipeline::agent::auditor;
@@ -71,6 +73,7 @@ pub mod validation;
 pub mod task;
 
 /// Re-export Key types from bacon-pipeline.
+#[cfg(feature = "bacon")]
 pub use bacon_pipeline::ProjectConfig;
 pub use llm::{ChatMessage, Llm, LlmClient, LlmProvider};
 pub use runtime::task_context::TaskContext;

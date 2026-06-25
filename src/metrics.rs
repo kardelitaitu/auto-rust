@@ -241,6 +241,7 @@ impl MetricsCollector {
 
     /// Record a confidence level observed in pipeline output.
     /// Increments the appropriate run counter (high/medium/low).
+    #[cfg(feature = "bacon")]
     pub fn record_confidence(&self, confidence: &crate::bacon_core::Confidence) {
         let name = match confidence {
             crate::bacon_core::Confidence::High => RUN_COUNTER_CONFIDENCE_HIGH,

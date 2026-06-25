@@ -353,7 +353,7 @@ pub async fn dispatch_action(
                         let ok = engagement_success(&outcome);
                         if ok {
                             info!(
-                                "✍️ [SUCCESS] Replied to tweet {} with sentiment {:?}: {}",
+                                "📝 [SUCCESS] Replied to tweet {} with sentiment {:?}: {}",
                                 tweet_id, sentiment, reply_text
                             );
                         } else {

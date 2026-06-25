@@ -69,7 +69,7 @@ impl IntentType {
         match self {
             IntentType::Follow => "👤",
             IntentType::Like => "💖",
-            IntentType::Post => "✍️",
+            IntentType::Post => "📝",
             IntentType::Quote => "💬",
             IntentType::Retweet => "🔁",
         }

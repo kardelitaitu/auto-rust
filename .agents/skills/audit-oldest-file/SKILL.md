@@ -2,14 +2,14 @@
 
 Trigger: User says "audit oldest files", "find stale files", "run oldest audit", or provides a file list to audit.
 
-**Purpose:** Identify the 5 oldest `.rs` and 5 oldest `.md` files by `LastWriteTime`, read and compare them against current codebase conventions, then "stamp" them with an audit note or create fix issues. Designed to be **loop-able** — each run stamps the oldest files, newer files surface next time.
+**Purpose:** Identify the 2 oldest `.rs` and 2 oldest `.md` files by `LastWriteTime`, read and compare them against current codebase conventions, then "stamp" them with an audit note. Designed to be **loop-able** — each run stamps the oldest files, newer files surface next time. Both `.md` and `.rs` files get stamped so the loop progresses through all file types.
 
 ---
 
 ## 1. Workflow
 
 ```
-find-oldest-files.ps1                   # Step 1: discover (5 per type, exits 0 if all current)
+find-oldest-files.ps1                   # Step 1: discover (2 per type, exits 0 if all current)
     ↓
 Read each file                          # Step 2: study
     ↓
@@ -33,8 +33,8 @@ From the project root:
 ```
 
 This outputs:
-- **5 oldest `.rs` files** by `LastWriteTime` (excludes `target/`, `.git/`, `crates/`, `build.rs`, `fuzz/`, `.opencode/`)
-- **5 oldest `.md` files** by `LastWriteTime` (same exclusions)
+- **2 oldest `.rs` files** by `LastWriteTime` (excludes `target/`, `.git/`, `crates/`, `build.rs`, `fuzz/`, `.opencode/`)
+- **2 oldest `.md` files** by `LastWriteTime` (same exclusions)
 - Each entry shows relative path, timestamp, and byte size
 - **Exit code:** `0` if the oldest `.md` was modified within 24h (all files current); `1` if audit is needed
 
@@ -79,7 +79,8 @@ For each file, produce one of:
 | Outcome | Action |
 |---|---|
 | **Re-stamp** | If the file already has an audit stamp — **always re-stamp it**. Update the date and agent name. Do not skip, flag, or ask. |
-| **Stamp** | Add a new `> *Last audited: <DD-MM-YY> by <agent-name>*` on line 3 of markdown files that have no stamp yet |
+| **Stamp (.md)** | Add `> *Last audited: <DD-MM-YY> by <agent-name>*` on line 3 of markdown files |
+| **Stamp (.rs)** | Add `// last audited <DD-MM-YY> by <agent-name>` on line 2 of Rust source files (after `//!` doc comments, before `use` statements) |
 | **Fix** | Update the file to match current conventions and stamp it |
 | **Delete** | Remove dead/unused files after confirming with user |
 | **Archive** | Move to `docs/_archive/` if the content is historical but worth keeping |
@@ -173,6 +174,26 @@ Example:
 
 For the agent name, use the name of the agent performing the audit (e.g., `Buffy`, `Kilo`, or the spawned agent's name).
 
+### Rust Source Files (`.rs`)
+
+Use this format for Rust source files:
+
+```rust
+// last audited <DD-MM-YY> by <agent-name>
+```
+
+Place it on **line 2** (right after the opening `//!` module doc comment, before any `use` statements).
+
+Example:
+```rust
+//! Click learning engine for adaptive automation.
+// last audited 26-06-26 by Buffy
+
+use crate::runtime::task_context::click_learning::...
+```
+
+If the file has no `//!` doc comment, place the stamp on **line 1** instead.
+
 ---
 
 ## 4. Conventions Reference
@@ -224,6 +245,7 @@ fn test_normalize_modifier_ctrl() { ... }
 | **Archived planning docs** | `docs/archive/plan/` | Always re-stamp — they already have stamps from the previous audit |
 | **Comment-only files** | Any | Check if the comments are still accurate |
 | **Dead modules** | `src/` files | Use `git grep <module_name>` to verify nothing imports them |
+| **Rust source files** | `src/` files | Stamp with `// last audited` comment — this lets the loop progress to deeper .rs files |
 
 ---
 
@@ -239,3 +261,5 @@ fn test_normalize_modifier_ctrl() { ... }
 | 6 | **Stamp without reading** | Always read the full file before stamping — a stamp implies the content was verified |
 | 7 | **Ignore file size** | Very large files (>15KB) may need deeper review; very small files may be trivial |
 | 8 | **Skip `docs/archive/`** | Archived docs are often the oldest by timestamp — they deserve audit too |
+
+> last audited 26-06-26 by docs-auditor

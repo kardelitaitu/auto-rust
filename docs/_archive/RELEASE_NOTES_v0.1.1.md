@@ -1,5 +1,7 @@
 # Release v0.1.1 - Enhanced DSL Features
 
+> *Last audited: 26-06-26 by Buffy*
+
 **Release Date:** May 5, 2026  
 **Tag:** `v0.1.1`
 

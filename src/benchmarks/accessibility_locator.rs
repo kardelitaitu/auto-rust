@@ -2,6 +2,8 @@
 //!
 //! Run with: `cargo bench --bench accessibility_locator --features accessibility-locator`
 
+// last audited 26-06-26 by Buffy
+
 use auto::utils::accessibility_locator::parse_selector_input;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 

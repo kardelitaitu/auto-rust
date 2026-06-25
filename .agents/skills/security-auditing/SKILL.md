@@ -136,7 +136,7 @@ ignore = [
 - Only 2 advisories ignored (both tracked for resolution)
 
 ### License Allowlist
-**Allowed licenses** (14): MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, CC0-1.0, Unlicense, MPL-2.0, OpenSSL, CDLA-Permissive-2.0, Apache-2.0 WITH LLVM-exception
+**Allowed licenses** (13): MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, CC0-1.0, Unlicense, MPL-2.0, OpenSSL, CDLA-Permissive-2.0, Apache-2.0 WITH LLVM-exception
 
 - Confidence threshold: 0.8
 - Private crate check: enabled (no ignoring)
@@ -155,9 +155,9 @@ ignore = [
 
 ## cargo audit Configuration (`.cargo/audit.toml`)
 
-Advisory exceptions for known unmaintained/unsound transitive dependencies:
+Advisory exception for unmaintained transitive dependency:
 - `async-std` (unmaintained, transitive via chromiumoxide)
-- `serde_yml` (unsound, replaced by `serde_yaml` migration tracked in TODO.md)
+> `serde_yml` is only in `deny.toml`, not in `audit.toml` — the two files have separate ignore lists.
 
 ---
 
@@ -183,6 +183,8 @@ Advisory exceptions for known unmaintained/unsound transitive dependencies:
 - `cargo deny check` run as part of CI
 - Only 2 ignored advisories (both documented with resolution tracking)
 - Miri test suite passes (no undefined behavior in safe code paths)
+
+> last audited 26-06-26 by docs-auditor
 
 ---
 

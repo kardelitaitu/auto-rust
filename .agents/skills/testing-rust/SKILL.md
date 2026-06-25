@@ -589,3 +589,5 @@ Test failed: assertion failed: ...; minimal failing input: ...
 6. **Missing serde_json import** — `use serde_json::json;` is needed for `json!({...})` macro
 7. **No duration test for new task modules** — every task with a `DEFAULT_*_DURATION_MS` constant must have `task_duration_stays_within_bounds()`
 8. **Writing integration tests for things that could be unit tests** — prefer inline `#[cfg(test)]` tests. Only use `tests/` when you need a real browser or cross-module orchestration.
+
+> last audited 26-06-26 by docs-auditor

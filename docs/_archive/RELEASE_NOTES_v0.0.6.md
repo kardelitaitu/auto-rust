@@ -1,5 +1,7 @@
 # Release v0.0.6 - DSL Task System & Hot Reload
 
+> *Last audited: 26-06-26 by Buffy*
+
 **Release Date:** May 4, 2026  
 **Tag:** `v0.0.6`
 

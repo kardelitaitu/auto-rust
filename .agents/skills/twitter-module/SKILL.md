@@ -548,3 +548,5 @@ Without escaping, a status URL containing a single quote would break the CSS sel
 8. **Add tests** — unit test per new function + update existing
 9. **Add task** if standalone — new file in `src/task/` + register in `mod.rs` + policy in `policy.rs`
 10. **Run validation** — `cargo check && cargo test --lib twitterlike twitterfollow`
+
+> last audited 26-06-26 by docs-auditor

@@ -8,6 +8,8 @@
 //! Usage:
 //!   bacon-spec [--prompt "scan for X"] [--dry-run] [--auto] [--fast] [--max-attempts N] [--spec N]
 
+// last audited 26-06-26 by Buffy
+
 use anyhow::Result;
 use auto::bacon_agent_nvidia::{observer, strategist};
 use auto::bacon_core::cli_types::RunArgs;

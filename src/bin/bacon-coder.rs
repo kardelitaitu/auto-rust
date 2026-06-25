@@ -9,6 +9,8 @@
 //! Usage:
 //!   bacon-coder --spec-path <PATH> [--dry-run] [--auto] [--max-attempts N] [--auto-apply]
 
+// last audited 26-06-26 by Buffy
+
 use anyhow::Result;
 use clap::Parser;
 use log::info;

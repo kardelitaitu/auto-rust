@@ -1,5 +1,7 @@
 //! Health monitoring for self-healing.
 
+// last audited 26-06-26 by Buffy
+
 use super::strategy::RecoveryActionType;
 use std::time::Instant;
 

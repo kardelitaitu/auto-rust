@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Find the 5 oldest .rs and 5 oldest .md files by LastWriteTime for audit targeting.
+    Find the 2 oldest .rs and 2 oldest .md files by LastWriteTime for audit targeting.
 .DESCRIPTION
     Scans the project tree (excluding target/, .git/, .bacon/, crates/, build.rs, fuzz/)
-    and prints the 5 oldest .rs source files and 5 oldest .md docs files
+    and prints the 2 oldest .rs source files and 2 oldest .md docs files
     by LastWriteTime, so you know which files are most stale and likely need audit.
 .EXAMPLE
     .\find-oldest-files.ps1
@@ -47,7 +47,7 @@ $rsFiles = Get-ChildItem -Path $projectRoot -Recurse -Filter "*.rs" |
         $_.FullName -notmatch '[/\\]fuzz[/\\]'
     } |
     Sort-Object LastWriteTime |
-    Select-Object -First 5
+    Select-Object -First 2
 
 if ($rsFiles) {
     foreach ($f in $rsFiles) {
@@ -76,7 +76,7 @@ $mdFiles = Get-ChildItem -Path $projectRoot -Recurse -Filter "*.md" |
         $_.FullName -notmatch '[/\\]fuzz[/\\]'
     } |
     Sort-Object LastWriteTime |
-    Select-Object -First 5
+    Select-Object -First 2
 
 if ($mdFiles) {
     foreach ($f in $mdFiles) {

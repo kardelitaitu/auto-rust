@@ -226,3 +226,5 @@ bash scripts/setup-hooks.sh
 |---|---|
 | `pre-commit` | `cargo fmt --check` on staged `.rs` files |
 | `commit-msg` | Validates conventional commits format |
+
+> last audited 26-06-26 by docs-auditor

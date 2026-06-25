@@ -29,6 +29,7 @@ See [docs/_archive/BACON_IMPROVEMENT_ROADMAP.md](docs/_archive/BACON_IMPROVEMENT
 | specs, handoff rules, or checkpoint/restore flow | [docs/specs/README.md](docs/specs/README.md) |
 | overall repo orientation | [README.md](README.md) |
 | Bacon pipeline usage | [.bacon/README.md](.bacon/README.md), [.bacon/workflow.md](.bacon/workflow.md) |
+| Skills to load (`skill` tool) | first use `skill: "onboarding-guide"` for the router, or browse `.agents/skills/` directly |
 
 ## Operating rules
 

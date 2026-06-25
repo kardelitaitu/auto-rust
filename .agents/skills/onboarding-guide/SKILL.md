@@ -137,3 +137,7 @@ git push origin v0.2.32
 **Commit format reminder:** `type: short summary (reason/impact)`
 - Good: `feat: add twitterquote task (reuse LLM reply flow)`
 - Bad: `update`, `fix`, `changes`
+
+> **Note:** `orchestrator-pipeline`, `result-system`, and `validation` are listed in the router table above but no corresponding skill files exist under `.agents/skills/`. These entries are placeholders for future skills.
+
+> last audited 26-06-26 by docs-auditor

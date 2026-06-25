@@ -352,3 +352,5 @@ Healthy → Degraded → Critical → Offline
 | 8 | **Benchmarks use default features** | Benchmarks use `UserBehaviorProfile::default()` and `TemporalFeatures::default()`, not real data profiles. |
 | 9 | **ActionRecommender is rule-based** | The recommender is a simple if/else chain, not ML. Rules are based on hardcoded thresholds (140 chars, 5 replies, 0.15 engagement rate). |
 | 10 | **self_healing/system is skeletal** | `record_adaptation()` is empty, `check_health()` always returns Passed unless >5 failures, recovery is always successful. This is a framework, not a complete system. |
+
+> last audited 26-06-26 by docs-auditor

@@ -403,3 +403,5 @@ pub trait ShutdownSession {
 | 8 | **duration_with_variance variance clamped** | `variance_pct` is clamped to `min(100)`. 200% variance behaves the same as 100%. |
 | 9 | **DurationMs checked_sub returns None at zero** | Unlike `checked_add` (which allows zero), `checked_sub` returns `None` when the result would be zero because `DurationMs` is `NonZeroU64`. |
 | 10 | **Browser close timeout is hardcoded** | The 10s timeout in `graceful_shutdown()` is NOT configurable — it's hardcoded in `worker.rs`. |
+
+> last audited 26-06-26 by docs-auditor

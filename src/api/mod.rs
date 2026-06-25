@@ -1,3 +1,5 @@
+// last audited 26-06-26 by Buffy
+
 pub mod client;
 pub use client::{ApiClient, CircuitBreaker, CircuitState, RetryPolicy};
 

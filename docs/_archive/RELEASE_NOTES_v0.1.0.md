@@ -1,5 +1,7 @@
 # Release v0.1.0 - DSL Task System Complete
 
+> *Last audited: 26-06-26 by Buffy*
+
 **Release Date:** May 4, 2026  
 **Tag:** `v0.1.0`
 

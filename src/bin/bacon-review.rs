@@ -9,6 +9,8 @@
 //! Usage:
 //!   bacon-review --spec-path <PATH> [--dry-run] [--auto]
 
+// last audited 26-06-26 by Buffy
+
 use anyhow::Result;
 use clap::Parser;
 use log::info;

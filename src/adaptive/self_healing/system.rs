@@ -1,5 +1,7 @@
 //! Self-healing system orchestration.
 
+// last audited 26-06-26 by Buffy
+
 use crate::metrics::TwitterActivityRunCounters;
 use std::time::{Duration, Instant};
 

@@ -253,7 +253,7 @@ Each strategy has a `CRITICAL INSTRUCTION` that is injected into the prompt, inc
 ### Conversation Type Classification
 
 `classify_conversation_type()` detects 9 topics from tweet text using keyword matching:
-- tech (34 keywords), politics (20), gaming (20), food (23), science (20), finance (20), entertainment (22), news (9), debate (8)
+- tech (34 keywords), politics (20), gaming (21), food (23), science (20), finance (20), entertainment (22), news (10), debate (8)
 - Case-insensitive matching
 - Wins by keyword count (most keyword hits determines topic)
 - Returns empty string if no keywords match
@@ -437,3 +437,5 @@ timeout_ms = 60000
 | Unified processor (requires LLM) | `cargo test --lib unified_processor::tests -- --ignored --nocapture` |
 
 Notable: Unified processor tests (`test_process_replies_batch`, `test_process_quote_with_sentiment`) are **not** marked `#[ignore]` but skip gracefully if LLM config is unavailable via early return.
+
+> last audited 26-06-26 by docs-auditor

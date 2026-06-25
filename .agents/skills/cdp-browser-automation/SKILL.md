@@ -1,5 +1,7 @@
 # CDP Browser Automation
 
+> last audited 26-06-26 by docs-auditor
+
 Skill for understanding and modifying the browser automation layer — the core abstraction that connects `TaskContext` (task-facing API) to Chrome DevTools Protocol (CDP) for mouse, keyboard, scroll, navigation, and native OS input.
 
 ## Architecture Overview
@@ -117,7 +119,7 @@ Every task action goes through a `TaskContext` method. The full API surface:
 
 **Scroll methods:**
 - `scroll_to(selector)`, `scroll_into_view(selector)`
-- `scroll_read(pauses, amount, variable_speed, back_scroll)`
+- `scroll_read(pauses, scroll_amount, variable_speed, back_scroll)`
 - `scrollread(duration_ms)`
 - `scroll_to_top()`, `scroll_to_bottom()`
 - `scroll_back(distance)`
@@ -338,6 +340,8 @@ with_retry(op)
       - Temporary ✓
       - Network ✓
       - RateLimited ✓
+      - Cancelled ✓
+      - Disconnected ✓
       - NOT_FOUND ✗ (permanent)
       - PERMISSION_DENIED ✗ (permanent)
       - TARGET_TERMINATED ✗ (permanent)

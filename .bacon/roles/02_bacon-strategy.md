@@ -2,6 +2,8 @@
 # VERSION: 3.2
 # INPUT: Improvement description from Observer (or user prompt)
 # OUTPUT: Structured markdown plan used as the spec package
+#
+> *Last audited: 26-06-26 by Buffy*
 
 For system context, see [AGENTS.md](../../AGENTS.md).
 

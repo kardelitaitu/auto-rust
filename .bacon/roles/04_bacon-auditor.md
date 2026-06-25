@@ -2,6 +2,8 @@
 # VERSION: 3.2
 # INPUT: Spec metadata (title, status) + approved patch content from Coder
 # OUTPUT: PASS/FAIL decision — first word determines the pipeline action
+#
+> *Last audited: 26-06-26 by Buffy*
 
 For system context, see [AGENTS.md](../../AGENTS.md).
 

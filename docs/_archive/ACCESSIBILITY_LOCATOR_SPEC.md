@@ -1,6 +1,6 @@
 # Accessibility Locator Spec (v1)
 
-last audited 08-05-26 by Kilo
+last audited 26-06-26 by Buffy
 
 Status: Approved for implementation (2026-04-29), implementation in progress (feature-gated parser + shared resolver with action-path wiring)
 Owner: Runtime/Task API maintainers

@@ -1,5 +1,7 @@
 # create-new-task-rs
 
+> last audited 26-06-26 by docs-auditor
+
 Expert skill for creating a new built-in Rust task in the auto-rust framework.
 
 ## When to use

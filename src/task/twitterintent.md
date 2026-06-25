@@ -1,5 +1,7 @@
 # Twitter Intent Task
 
+> *Last audited: 26-06-26 by Buffy*
+
 ## Overview
 
 The `twitterintent` task handles Twitter/X intent URLs for automated actions including follow, like, post, quote, and retweet. It automatically detects the intent type from the URL and performs the appropriate action with human-like timing.

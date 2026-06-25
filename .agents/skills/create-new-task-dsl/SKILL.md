@@ -1,5 +1,7 @@
 # create-new-task-dsl
 
+> last audited 26-06-26 by docs-auditor
+
 Expert skill for creating new DSL (external) task files in the auto-rust framework.
 
 ## When to use
@@ -210,8 +212,8 @@ at startup by `TaskRegistry::load_external_tasks()`.
 After creating a DSL task:
 
 ```powershell
-# Check the task file parses correctly
-auto-rust --validate-task path/to/my-task.task
+# Validate all external task files
+cargo run -- --validate-tasks
 
 # Full validation
 cargo check

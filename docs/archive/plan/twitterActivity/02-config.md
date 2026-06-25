@@ -1,6 +1,6 @@
 # Twitter Activity — Configuration & Profile
 
-> *Last audited: 08-05-26 by Kilo*
+> *Last audited: 26-06-26 by Buffy*
 
 This document covers all configuration-related aspects of the Twitter activity task:
 - Config schema extensions (`[twitter]` section in `config/default.toml`)

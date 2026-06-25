@@ -1,5 +1,7 @@
 # Comprehensive Implementation Plans
 
+> *Last audited: 26-06-26 by Buffy*
+
 > Generated: 2026-05-01
 > Based on TODO.md Priorities - Sorted by Impact
 

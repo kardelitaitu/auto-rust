@@ -3,6 +3,8 @@ name: docs-auditor
 description: Audit technical documentation against verified implementation state, identify drift, and keep docs aligned with code or approved specs.
 ---
 
+> last audited 26-06-26 by docs-auditor
+
 # Documentation-Code Audit & Sync (DCAS)
 
 ## 1. Objective

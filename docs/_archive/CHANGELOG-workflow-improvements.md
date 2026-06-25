@@ -1,5 +1,7 @@
 # Bacon Workflow Improvements - Implementation Summary
 
+> *Last audited: 26-06-26 by Buffy*
+
 ## Overview
 Comprehensive improvements to the Bacon autonomous coding workflow including enhanced documentation, configuration, security, and monitoring.
 

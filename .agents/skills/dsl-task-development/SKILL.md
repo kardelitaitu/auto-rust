@@ -1,5 +1,7 @@
 # DSL Task Development — Executor Internals
 
+> last audited 26-06-26 by docs-auditor
+
 Teaches agents about the DslExecutor internals — how actions are dispatched, how control flow works, variable substitution lifecycle, the include system, selector caching, and profiling.
 
 ## Architecture Overview

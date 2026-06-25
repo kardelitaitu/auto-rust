@@ -188,6 +188,12 @@ is_transient_error(err) → bool:
     ├── NotFound ✗
     ├── PermissionDenied ✗
     └── TargetTerminated ✗ ("node is disconnected", "target closed")
+
+  ADDITIONAL (all resolve to transient per code at page_nav.rs:63-68):
+    ├── Validation ✓   (orchestrator-level, unlikely in CDP context)
+    ├── Navigation ✓
+    ├── SessionChannel ✓
+    └── Unknown ✓       (safe default — retry for unclassified errors)
 ```
 
 Used only in `page_nav.rs` for CDP eval retry. Other CDP calls fail immediately.
@@ -421,3 +427,5 @@ result.is_success() → bool
 7. **Policy lookup uses the registry** — `get_policy()` calls `registry.lookup()` which normalizes task names. If you add a task without registering it, the policy falls back to `DEFAULT_TASK_POLICY`.
 8. **`effective_permissions()` implies permissions transitively** — `allow_screenshot` implies `allow_write_data`, `allow_export_session` implies `allow_export_cookies`. Don't check raw permissions; always use `effective_permissions()`.
 9. **`classify_error_pattern` ordering matters** — More specific patterns must come before general ones. "node is disconnected" before "disconnected". "element not found" before generic "not found". Always add new patterns in the correct priority position.
+
+> last audited 26-06-26 by docs-auditor

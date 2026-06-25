@@ -17,10 +17,10 @@ Do **not** use this skill when creating a brand-new DSL task (`create-new-task-d
 
 ```yaml
 # Read the task file itself
-./tasks/<task-name>.task                 # or wherever the task lives
+<task-file>.task                         # e.g., docs/tutorials/intermediate/handle-errors.task
 
-# Also read any included files
-./lib/shared-setup.task                  # if referenced in `include:`
+# Also read any included files — check the include: path in the task header
+# (there is no global lib/ directory; includes are task-relative)
 
 # Read the policy definition (in Rust)
 src/task/policy.rs                       # to verify policy: name is valid
@@ -120,8 +120,8 @@ DSL tasks are validated at load time — `cargo test --lib` will catch many issu
 ### Step 5: Validation
 
 ```powershell
-# 1. Validate the task file specifically
-auto-rust --validate-task ./tasks/<my-task>.task
+# 1. Validate all external task files (boolean flag, no path arg)
+auto-rust --validate-tasks
 
 # 2. Run the DSL integration tests (catches most structural issues)
 cargo test dsl_integration
@@ -168,3 +168,5 @@ cargo check
 6. **Cyclic includes** — If task A includes task B and task B includes task A, loading panics. Always check the include graph.
 7. **Removing an `extract` that downstream actions depend on** — The downstream action won't error, it'll just use an empty string.
 8. **Breaking `try`/`retry` pyramids** — If you remove the action that `retry` is supposed to retry, the block becomes empty and the task will stall.
+
+> last audited 26-06-26 by docs-auditor

@@ -1,5 +1,7 @@
 # Configuration System
 
+> last audited 26-06-26 by docs-auditor
+
 Teaches agents how the Auto-Rust configuration system works — the 3-layer overlay (TOML → .env → explicit env vars), config struct types, validation, CLI parsing, and how to add new config options.
 
 ## Architecture Overview
@@ -355,7 +357,6 @@ Parses CLI args into `Vec<Vec<CliTaskDefinition>>`:
 | `MAX_GLOBAL_CONCURRENCY` | usize | `orchestrator.max_global_concurrency` |
 | `TASK_TIMEOUT_MS` | u64 → DurationMs | `orchestrator.task_timeout_ms` |
 | `MAX_RETRIES` | u32 | `orchestrator.max_retries` |
-| `RETRY_DELAY_MS` | u64 → DurationMs | `orchestrator.retry_delay_ms` |
 
 ### Twitter Activity
 | Env Var | Type | Config Field |
@@ -364,8 +365,7 @@ Parses CLI args into `Vec<Vec<CliTaskDefinition>>`:
 | `TWITTER_MAX_RETWEETS` | u32 | `twitter_activity.engagement_limits.max_retweets` |
 | `TWITTER_MAX_FOLLOWS` | u32 | `twitter_activity.engagement_limits.max_follows` |
 | `TWITTER_MAX_REPLIES` | u32 | `twitter_activity.engagement_limits.max_replies` |
-| `TWITTER_MAX_THREAD_DIVES` | u32 | `twitter_activity.engagement_limits.max_thread_dives` |
-| `TWITTER_MAX_BOOKMARKS` | u32 | `twitter_activity.engagement_limits.max_bookmarks` |
+
 | `TWITTER_MAX_TOTAL_ACTIONS` | u32 | `twitter_activity.engagement_limits.max_total_actions` |
 | `TWITTER_LIKE_PROBABILITY` | f64 | `twitter_activity.probabilities.like_probability` |
 | `TWITTER_RETWEET_PROBABILITY` | f64 | `twitter_activity.probabilities.retweet_probability` |
@@ -390,13 +390,6 @@ Parses CLI args into `Vec<Vec<CliTaskDefinition>>`:
 | `TASK_DISCOVERY_ENABLED` | bool | `task_discovery.enabled` |
 | `TASK_DISCOVERY_ROOTS` | paths (;) | `task_discovery.roots` |
 | `TASK_DISCOVERY_EXTENSIONS` | extensions (;) | `task_discovery.extensions` |
-
-### Tracing
-| Env Var | Type | Config Field |
-|---|---|---|
-| `TRACING_ENABLED` | bool | `tracing.enabled` |
-| `TRACING_OTLP_ENDPOINT` | String | `tracing.otlp_endpoint` |
-| `TRACING_SERVICE_NAME` | String | `tracing.service_name` |
 
 ## Testing Your Config Changes
 

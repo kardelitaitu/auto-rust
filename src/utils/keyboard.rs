@@ -157,6 +157,11 @@ pub async fn release_all(page: &Page) -> Result<()> {
     Ok(())
 }
 
+#[deprecated(
+    since = "0.2.32",
+    note = "Use `natural_typing_profiled` with the session profile's `typing_behavior()` \
+            to get per-account speed variation. This wrapper hardcodes keystroke_mean_ms=120."
+)]
 pub async fn natural_typing(page: &Page, selector: &str, text: &str, typo_rate: f64) -> Result<()> {
     let behavior = TypingBehavior {
         keystroke_mean_ms: 120,
@@ -198,6 +203,14 @@ pub async fn natural_typing_profiled(
             }
         } else {
             type_character_profiled(page, ch, behavior).await?;
+        }
+
+        // Word pause: after typing any character (space), pause to simulate
+        // the natural break between words. Placed after the entire character
+        // dispatch block so it fires regardless of which path was taken.
+        if ch == ' ' {
+            let word_pause = behavior.word_pause_ms.clamp(0, 1500);
+            human_pause(word_pause, 30).await;
         }
     }
 
@@ -438,6 +451,20 @@ fn get_similar_char(ch: char) -> char {
         'i' => 'o',
         'n' => 'm',
         'm' => 'n',
+        // === Bottom row ===
+        'z' => 'x',
+        'x' => 'z',
+        'c' => 'v',
+        'v' => 'c',
+        'b' => 'v',
+        // === Home row (middle) ===
+        'g' => 'h',
+        'h' => 'g',
+        'j' => 'k',
+        'k' => 'j',
+        'l' => 'k',
+        // === Top row ===
+        'u' => 'y',
         _ => ch,
     }
 }
@@ -515,8 +542,8 @@ mod tests {
 
     #[test]
     fn test_get_similar_char_no_match() {
-        assert_eq!(get_similar_char('z'), 'z');
         assert_eq!(get_similar_char('1'), '1');
+        assert_eq!(get_similar_char('@'), '@');
     }
 
     #[test]
@@ -741,6 +768,108 @@ mod tests {
         assert_eq!(get_similar_char('i'), 'o');
         assert_eq!(get_similar_char('n'), 'm');
         assert_eq!(get_similar_char('m'), 'n');
+        // New bottom-row mappings
+        assert_eq!(get_similar_char('z'), 'x');
+        assert_eq!(get_similar_char('x'), 'z');
+        assert_eq!(get_similar_char('c'), 'v');
+        assert_eq!(get_similar_char('v'), 'c');
+        assert_eq!(get_similar_char('b'), 'v');
+        // New home-row mappings
+        assert_eq!(get_similar_char('g'), 'h');
+        assert_eq!(get_similar_char('h'), 'g');
+        assert_eq!(get_similar_char('j'), 'k');
+        assert_eq!(get_similar_char('k'), 'j');
+        assert_eq!(get_similar_char('l'), 'k');
+        // New top-row mapping
+        assert_eq!(get_similar_char('u'), 'y');
+    }
+
+    // =========================================================================
+    // New mapping tests for spec 0030-typing-realism
+    // =========================================================================
+
+    #[test]
+    fn test_word_pause_ms_clamp_upper_bound() {
+        // Verify that word_pause_ms is clamped at 1500ms (not 2000ms from profile).
+        let behavior = TypingBehavior {
+            word_pause_ms: 2000,
+            keystroke_mean_ms: 100,
+            keystroke_stddev_ms: 20,
+            typo_rate_pct: 0.0,
+            typo_notice_delay_ms: 300,
+            typo_retry_delay_ms: 200,
+            typo_recovery_chance_pct: 80.0,
+        };
+        let clamped = behavior.word_pause_ms.clamp(0, 1500);
+        assert_eq!(clamped, 1500);
+    }
+
+    #[test]
+    fn test_word_pause_ms_clamp_lower_bound() {
+        // Verify that word_pause_ms is clamped at 0 (not negative).
+        let clamped = 0u64.clamp(0, 1500);
+        assert_eq!(clamped, 0);
+    }
+
+    #[test]
+    fn test_word_pause_space_is_identity() {
+        // Space should pass through get_similar_char unchanged.
+        assert_eq!(get_similar_char(' '), ' ');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_bottom_row_z() {
+        assert_eq!(get_similar_char('z'), 'x');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_bottom_row_x() {
+        assert_eq!(get_similar_char('x'), 'z');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_bottom_row_c() {
+        assert_eq!(get_similar_char('c'), 'v');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_bottom_row_v() {
+        assert_eq!(get_similar_char('v'), 'c');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_bottom_row_b() {
+        assert_eq!(get_similar_char('b'), 'v');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_home_row_g() {
+        assert_eq!(get_similar_char('g'), 'h');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_home_row_h() {
+        assert_eq!(get_similar_char('h'), 'g');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_home_row_j() {
+        assert_eq!(get_similar_char('j'), 'k');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_home_row_k() {
+        assert_eq!(get_similar_char('k'), 'j');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_home_row_l() {
+        assert_eq!(get_similar_char('l'), 'k');
+    }
+
+    #[test]
+    fn test_get_similar_char_new_top_row_u() {
+        assert_eq!(get_similar_char('u'), 'y');
     }
 
     mod proptests {
@@ -749,13 +878,34 @@ mod tests {
 
         /// For mapped characters, get_similar_char is self-inverse (applying it twice
         /// returns the original character).
-        /// Note: 'i' maps to 'o', but 'o' maps to 'p', so 'i' is NOT self-inverse.
-        ///       All other mappings are self-inverse (a<->s, d<->f, e<->r, w<->q, t<->y,
-        ///       o<->p, n<->m).
+        ///
+        /// Self-inverse pairs: a<->s, d<->f, e<->r, w<->q, t<->y, o<->p, n<->m,
+        ///                      z<->x, c<->v, g<->h, j<->k.
+        /// Non-self-inverse (one-way): i->o (o->p), b->v (v->c), l->k (k->j), u->y (y->t).
         fn is_self_inverse(ch: char) -> bool {
             matches!(
                 ch.to_ascii_lowercase(),
-                'a' | 's' | 'd' | 'f' | 'e' | 'r' | 'w' | 'q' | 't' | 'y' | 'o' | 'p' | 'n' | 'm'
+                'a' | 's'
+                    | 'd'
+                    | 'f'
+                    | 'e'
+                    | 'r'
+                    | 'w'
+                    | 'q'
+                    | 't'
+                    | 'y'
+                    | 'o'
+                    | 'p'
+                    | 'n'
+                    | 'm'
+                    | 'z'
+                    | 'x'
+                    | 'c'
+                    | 'v'
+                    | 'g'
+                    | 'h'
+                    | 'j'
+                    | 'k'
             ) && !ch.eq_ignore_ascii_case(&'i') // i->o but o->p, not inverse
         }
 
@@ -770,10 +920,10 @@ mod tests {
                 prop_assert_eq!(roundtrip, ch);
             }
 
-            /// For unmapped characters, get_similar_char is identity.
+            /// For unmapped characters (digits, symbols, non-ASCII), get_similar_char is identity.
             #[test]
             fn proptest_get_similar_char_unmapped_identity(
-                ch in proptest::char::range('a', 'z'),
+                ch in proptest::char::range(' ', '~'),
             ) {
                 let mapped = get_similar_char(ch);
                 prop_assume!(mapped == ch);

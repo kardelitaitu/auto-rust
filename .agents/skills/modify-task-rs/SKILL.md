@@ -164,3 +164,5 @@ After all checks pass, do a final review:
 6. **Forgetting to update the test assertion after changing logic** — the old test expects the old behavior. Always run the tests.
 7. **Changing a selector/locator** — the locator might be referenced by multiple code paths (e.g., `find_and_click_follow_button` and `is_already_following`). Search for the selector string across the codebase.
 8. **Not running `cargo fmt`** — CI will fail on formatting issues later.
+
+> last audited 26-06-26 by docs-auditor

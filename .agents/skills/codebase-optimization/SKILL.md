@@ -1,5 +1,7 @@
 # codebase-optimization
 
+> last audited 26-06-26 by docs-auditor
+
 Expert skill for **optimizing Rust code** in the auto-rust codebase. Covers profiling, benchmarking, linting, build tuning, memory, async performance, and dependency hygiene. Designed to produce reliable, measurable improvements with minimal risk.
 
 ## When to use
@@ -237,13 +239,19 @@ fn process(data: &[u8]) {
 
 ### 3c. Cache hot computations
 
-**Selector parsing** — the `SelectorCache` in `src/task/dsl/cache.rs` already caches parsed selectors with LRU eviction. When adding selector parsing, always route through the cache.
+**DOM query results** — the `SelectorCache` in `src/task/dsl/cache.rs` caches DOM query results (exists, visible, text, count) with LRU eviction and TTL. When performing repeated selector queries, always route through the cache.
 
 ```rust
 // Good — uses the existing SelectorCache
-use crate::task::dsl::cache::SelectorCache;
-let cache = SelectorCache::new();
-let parsed = cache.get_or_parse(selector, || parse_selector(selector));
+use crate::task::dsl::cache::{SelectorCache, SelectorCacheEntry};
+let mut cache = SelectorCache::new();
+let entry = cache.get(selector).unwrap_or_else(|| {
+    let result = query_element(selector);
+    cache.insert(selector.to_string(), SelectorCacheEntry::new(
+        result.exists, result.visible, result.text, result.count,
+    ));
+    cache.get(selector).unwrap()
+});
 ```
 
 **Predictive scoring** — `PredictiveEngagementScorer` in `src/adaptive/` creates fresh instances. If called in a loop, consider caching the scorer.

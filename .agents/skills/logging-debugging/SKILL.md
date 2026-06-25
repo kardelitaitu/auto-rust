@@ -542,3 +542,5 @@ cargo test --lib orchestrator::health::tests
 9. **`run-summary.json` overwrites**: The metrics `export_summary_to()` writes to a fixed path. Consecutive runs overwrite the file. For historical analysis, rename the file between runs.
 
 10. **Memory snapshots are platform-specific**: `get_allocated_memory()` returns `None` on Windows, reads `/proc/self/status` on Linux. Memory monitoring accuracy varies by OS.
+
+> last audited 26-06-26 by docs-auditor

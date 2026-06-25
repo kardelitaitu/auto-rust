@@ -173,7 +173,7 @@ pub async fn scroll_read_to(
 
 pub async fn scroll_to_top(page: &Page) -> Result<()> {
     smooth_scroll_to_y(page, 0.0, random_in_range(650, 1100)).await?;
-    human_pause(120, 60).await;
+    human_pause(850, 20).await;
     Ok(())
 }
 
@@ -185,7 +185,7 @@ pub async fn scroll_to_bottom(page: &Page) -> Result<()> {
         .and_then(serde_json::Value::as_f64)
         .ok_or_else(|| anyhow::anyhow!("Failed to read document height"))?;
     smooth_scroll_to_y(page, bottom, random_in_range(650, 1100)).await?;
-    human_pause(120, 60).await;
+    human_pause(850, 20).await;
     Ok(())
 }
 

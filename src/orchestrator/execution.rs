@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use super::guards::acquire_global_execution_slot;
 use super::health::broadcast_execution_count;
 use super::retry::execute_task_with_retry;
+use crate::result::{TaskErrorKind, TaskResult};
 
 /// Execute a group of tasks with an external cancellation token.
 pub(super) async fn execute_group_with_cancel(
@@ -174,7 +175,8 @@ async fn execute_task_on_session(
     // Create parallel tasks for each session
     let session_futures: Vec<_> = sessions
         .iter()
-        .map(|session| {
+        .enumerate()
+        .map(|(idx, session)| {
             let task_def = task_def.clone();
             let config = config.clone();
             let metrics = metrics.clone();
@@ -182,6 +184,29 @@ async fn execute_task_on_session(
             let global_active_tasks = global_active_tasks.clone();
             let global_semaphore = global_semaphore.clone();
             async move {
+                let stagger_delay_ms = std::env::var("SESSION_STAGGER_DELAY_MS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(config.orchestrator.task_stagger_delay_ms);
+
+                if idx > 0 && stagger_delay_ms > 0 {
+                    let stagger_ms = idx as u64 * stagger_delay_ms;
+                    info!(
+                        "[stagger] Session {} will start task {} after {}ms stagger delay",
+                        session.id, task_def.name, stagger_ms
+                    );
+                    tokio::select! {
+                        () = cancel_token.cancelled() => {
+                            return (session.id.clone(), TaskResult::cancelled(
+                                0,
+                                "Task cancelled during stagger delay".to_string(),
+                                TaskErrorKind::Timeout,
+                            ));
+                        }
+                        () = tokio::time::sleep(Duration::from_millis(stagger_ms)) => {}
+                    }
+                }
+
                 let queue_start = std::time::Instant::now();
                 let _slot = match acquire_global_execution_slot(
                     &task_def.name,

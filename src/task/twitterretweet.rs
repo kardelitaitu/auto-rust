@@ -63,7 +63,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             info!("[twitterretweet] Tweet by @{author}");
 
             let llm = Llm::new()?;
-            let messages = build_quote_messages(&author, &tweet_text);
+            let messages = build_quote_messages(&author, &tweet_text, api.session_id());
 
             match llm.chat(messages).await {
                 Ok(text) => {
@@ -287,8 +287,13 @@ async fn post_quote_with_retry(api: &TaskContext, max_retries: u32) -> Result<Po
     Ok(last_outcome)
 }
 
-fn build_quote_messages(tweet_author: &str, tweet_text: &str) -> Vec<ChatMessage> {
-    let system = reply_engine_system_prompt();
+fn build_quote_messages(
+    tweet_author: &str,
+    tweet_text: &str,
+    session_id: &str,
+) -> Vec<ChatMessage> {
+    let persona = crate::llm::reply_engine::TwitterPersona::select_for_session(session_id);
+    let system = reply_engine_system_prompt(persona);
     let user = format!(
         "Quote this tweet by @{tweet_author}:\n{tweet_text}\n\nGenerate a short, engaging quote commentary (max 280 chars):"
     );

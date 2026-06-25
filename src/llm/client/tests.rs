@@ -283,6 +283,7 @@ fn test_chat_message_creation() {
     let message = ChatMessage {
         role: Role::User,
         content: "test".to_string(),
+        reasoning_content: None,
     };
     assert_eq!(message.role, Role::User);
     assert_eq!(message.content, "test");
@@ -316,6 +317,7 @@ fn test_chat_message_struct() {
     let message = ChatMessage {
         role: Role::System,
         content: "You are helpful".to_string(),
+        reasoning_content: None,
     };
     assert_eq!(message.role, Role::System);
 }
@@ -346,6 +348,7 @@ fn test_chat_choice_with_message() {
         message: ChatMessage {
             role: Role::Assistant,
             content: "Hello".to_string(),
+            reasoning_content: None,
         },
     };
     if let ChatChoice::WithMessage { message } = choice {
@@ -390,10 +393,12 @@ fn test_multiple_chat_messages() {
         ChatMessage {
             role: Role::System,
             content: "System prompt".to_string(),
+            reasoning_content: None,
         },
         ChatMessage {
             role: Role::User,
             content: "User message".to_string(),
+            reasoning_content: None,
         },
     ];
     assert_eq!(messages.len(), 2);
@@ -404,6 +409,7 @@ fn test_chat_request_with_messages() {
     let messages = vec![ChatMessage {
         role: Role::User,
         content: "test".to_string(),
+        reasoning_content: None,
     }];
     let request = ChatRequest {
         model: "llama3".to_string(),
@@ -430,6 +436,7 @@ fn test_chat_response_with_message() {
         message: Some(ChatMessage {
             role: Role::Assistant,
             content: "Response".to_string(),
+            reasoning_content: None,
         }),
         done: None,
         error: None,
@@ -454,6 +461,7 @@ fn test_ollama_config_custom() {
         timeout_ms: 60000,
         temperature: Temperature::new(0.7),
         max_tokens: MaxTokens::new(2048).unwrap(),
+        ..OllamaConfig::default()
     };
     assert_eq!(config.base_url, "http://custom:11434");
 }
@@ -521,6 +529,7 @@ impl LlmClient {
             config: config.clone(),
             http,
             fallback_config: Some(config),
+            rate_limiter: None,
         }
     }
 }
@@ -1318,5 +1327,117 @@ async fn test_openrouter_malformed_json_response() {
             || err_msg.contains("All OpenRouter models failed"),
         "Error should indicate JSON parse failure: {}",
         err_msg
+    );
+}
+
+#[test]
+fn test_strip_thinking_tags_handling() {
+    use super::fallback::strip_thinking_tags;
+
+    // Case 1: Normal text without any tags
+    assert_eq!(strip_thinking_tags("Hello world"), "Hello world");
+
+    // Case 2: Complete think block
+    assert_eq!(
+        strip_thinking_tags("<think>I want to be helpful.</think> Hello user!"),
+        "Hello user!"
+    );
+
+    // Case 3: Cutoff think block
+    assert_eq!(
+        strip_thinking_tags("<think>I want to be helpful. This is cut off"),
+        ""
+    );
+
+    // Case 4: Multiple think blocks (though rare)
+    assert_eq!(
+        strip_thinking_tags("<think>Block 1</think> Hello <think>Block 2</think> world"),
+        "Hello  world"
+    );
+
+    // Case 5: Text around tag
+    assert_eq!(
+        strip_thinking_tags("   <think>monologue</think>\n\n   trimmed output   "),
+        "trimmed output"
+    );
+}
+
+#[test]
+fn test_apply_env_overrides_penalties() {
+    let config = LlmConfig::default();
+
+    // Test Ollama overrides
+    let get_env_ollama = |key: &str| match key {
+        "OLLAMA_PRESENCE_PENALTY" => Some("1.5".to_string()),
+        "OLLAMA_FREQUENCY_PENALTY" => Some("2.0".to_string()),
+        _ => None,
+    };
+    let config = apply_env_overrides(config, get_env_ollama);
+    assert_eq!(config.ollama.presence_penalty, Some(1.5));
+    assert_eq!(config.ollama.frequency_penalty, Some(2.0));
+
+    // Test OpenRouter overrides
+    let config = LlmConfig::default();
+    let get_env_openrouter = |key: &str| match key {
+        "OPENROUTER_PRESENCE_PENALTY" => Some("-0.5".to_string()),
+        "OPENROUTER_FREQUENCY_PENALTY" => Some("0.5".to_string()),
+        _ => None,
+    };
+    let config = apply_env_overrides(config, get_env_openrouter);
+    assert_eq!(config.openrouter.presence_penalty, Some(-0.5));
+    assert_eq!(config.openrouter.frequency_penalty, Some(0.5));
+
+    // Test NVIDIA overrides
+    let config = LlmConfig::default();
+    let get_env_nvidia = |key: &str| match key {
+        "NVIDIA_PRESENCE_PENALTY" => Some("0.0".to_string()),
+        "NVIDIA_FREQUENCY_PENALTY" => Some("1.0".to_string()),
+        _ => None,
+    };
+    let config = apply_env_overrides(config, get_env_nvidia);
+    assert_eq!(config.nvidia.presence_penalty, Some(0.0));
+    assert_eq!(config.nvidia.frequency_penalty, Some(1.0));
+
+    // Test generic LLM overrides
+    let config = LlmConfig::default();
+    let get_env_generic = |key: &str| match key {
+        "LLM_PRESENCE_PENALTY" => Some("1.23".to_string()),
+        "LLM_FREQUENCY_PENALTY" => Some("4.56".to_string()),
+        _ => None,
+    };
+    let config = apply_env_overrides(config, get_env_generic);
+    assert_eq!(config.ollama.presence_penalty, Some(1.23));
+    assert_eq!(config.ollama.frequency_penalty, Some(4.56));
+    assert_eq!(config.openrouter.presence_penalty, Some(1.23));
+    assert_eq!(config.openrouter.frequency_penalty, Some(4.56));
+    assert_eq!(config.nvidia.presence_penalty, Some(1.23));
+    assert_eq!(config.nvidia.frequency_penalty, Some(4.56));
+}
+
+#[tokio::test]
+async fn test_rate_limiter_instant_acquisition() {
+    let limiter = SharedRateLimiter::new(2.0, 10.0);
+    let start = std::time::Instant::now();
+    limiter.acquire().await;
+    limiter.acquire().await;
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_millis() < 50,
+        "Should acquire first two tokens immediately"
+    );
+}
+
+#[tokio::test]
+async fn test_rate_limiter_blocking_refill() {
+    let limiter = SharedRateLimiter::new(1.0, 5.0);
+    limiter.acquire().await;
+
+    let start = std::time::Instant::now();
+    limiter.acquire().await;
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_millis() >= 150,
+        "Should have waited for refill, took {}ms",
+        elapsed.as_millis()
     );
 }

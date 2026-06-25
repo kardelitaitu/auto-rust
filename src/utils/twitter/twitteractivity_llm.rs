@@ -14,7 +14,7 @@ use tracing::instrument;
 
 use crate::llm::reply_strategies::sentiment_to_strategy_context;
 // StrategyContext is used in tests via crate::llm::reply_strategies::StrategyContext
-use crate::llm::reply_engine::{build_quote_messages, build_reply_messages};
+use crate::llm::reply_engine::{build_quote_messages, build_reply_messages, TwitterPersona};
 use crate::llm::Llm;
 use crate::prelude::TaskContext;
 use crate::utils::timing::TIMEOUT_LONG_SECS;
@@ -61,6 +61,7 @@ pub async fn generate_reply(
             .map(|(a, t)| (a.as_str(), t.as_str()))
             .collect::<Vec<_>>(),
         &strategy_context,
+        TwitterPersona::select_for_session(api.session_id()),
     );
 
     // Generate with retry and timeout (each attempt gets its own 30s window)
@@ -122,6 +123,7 @@ pub async fn generate_quote_commentary(
             .map(|(a, t)| (a.as_str(), t.as_str()))
             .collect::<Vec<_>>(),
         &strategy_context,
+        TwitterPersona::select_for_session(api.session_id()),
     );
 
     // Generate with retry and timeout (each attempt gets its own 30s window)
@@ -311,7 +313,8 @@ mod tests {
     fn test_build_reply_messages_is_accessible() {
         // Verify the function is accessible from the crate
         let context = crate::llm::reply_strategies::StrategyContext::default();
-        let messages = build_reply_messages("author", "tweet", &[], &context);
+        let messages =
+            build_reply_messages("author", "tweet", &[], &context, TwitterPersona::Default);
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);
@@ -320,7 +323,8 @@ mod tests {
     #[test]
     fn test_build_quote_messages_is_accessible() {
         let context = crate::llm::reply_strategies::StrategyContext::default();
-        let messages = build_quote_messages("author", "tweet", &[], &context);
+        let messages =
+            build_quote_messages("author", "tweet", &[], &context, TwitterPersona::Default);
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);

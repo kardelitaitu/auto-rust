@@ -51,7 +51,7 @@ pub fn extract_tweet_button_position(tweet: &Value, button: &str) -> Option<(f64
 /// Helper: click like at a specific coordinate with profile-aware timing and hover
 pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
     let page = api.page();
-    let element_type = "button";
+    let element_type = "engagement";
     hover_before_click(page, x, y, element_type).await?;
     click_prep_pause(api).await;
     api.click_at(x, y).await?;
@@ -84,7 +84,7 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<Engag
 /// Works from the feed without needing a thread dive.
 pub async fn retweet_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
     let page = api.page();
-    let element_type = "button";
+    let element_type = "engagement";
 
     // Step 1: Click retweet button at position
     hover_before_click(page, x, y, element_type).await?;
@@ -117,7 +117,7 @@ pub async fn retweet_at_position(api: &TaskContext, x: f64, y: f64) -> Result<En
 /// at the scraped coordinates. Works from the feed without a thread dive.
 pub async fn follow_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
     let page = api.page();
-    let element_type = "button";
+    let element_type = "engagement";
 
     hover_before_click(page, x, y, element_type).await?;
     click_prep_pause(api).await;
@@ -133,7 +133,7 @@ pub async fn follow_at_position(api: &TaskContext, x: f64, y: f64) -> Result<Eng
 /// at the scraped coordinates. Works from the feed without a thread dive.
 pub async fn bookmark_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
     let page = api.page();
-    let element_type = "button";
+    let element_type = "engagement";
 
     hover_before_click(page, x, y, element_type).await?;
     click_prep_pause(api).await;

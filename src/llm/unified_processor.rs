@@ -70,6 +70,7 @@ impl UnifiedLLMProcessor {
         tweet_text: &str,
         author: &str,
         replies: &[(&str, &str)],
+        persona: reply_engine::TwitterPersona,
     ) -> Result<processor::UnifiedQuoteResponse, anyhow::Error> {
         // Use the proper build_quote_messages() which includes the quote system prompt
         // with language matching, tone adaptation, and the strategy-based user prompt.
@@ -78,7 +79,8 @@ impl UnifiedLLMProcessor {
             conversation_type: reply_strategies::classify_conversation_type(tweet_text),
             engagement_level: String::new(),
         };
-        let messages = reply_engine::build_quote_messages(author, tweet_text, replies, &context);
+        let messages =
+            reply_engine::build_quote_messages(author, tweet_text, replies, &context, persona);
 
         // Single LLM request
         let response = self.llm.chat(messages).await?;
@@ -146,7 +148,12 @@ mod tests {
         let replies = vec![("user1", "Great post!")];
 
         let result = match processor
-            .process_quote_with_sentiment("Original tweet", "author", &replies)
+            .process_quote_with_sentiment(
+                "Original tweet",
+                "author",
+                &replies,
+                reply_engine::TwitterPersona::Default,
+            )
             .await
         {
             Ok(r) => r,

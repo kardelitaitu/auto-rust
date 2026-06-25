@@ -369,30 +369,33 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
 
     // Persist inter-session state if enabled
     if config.twitter_activity.persistence_enabled {
-        let mut persisted =
-            crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::load();
-        persisted.record_session_end();
-        // Aggregate session counters into daily action counts
-        for _ in 0..session.counters.likes() {
-            persisted.record_action("like");
+        let update_result = crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::update_async(|persisted| {
+            persisted.record_session_end();
+            // Aggregate session counters into daily action counts
+            for _ in 0..session.counters.likes() {
+                persisted.record_action("like");
+            }
+            for _ in 0..session.counters.retweets() {
+                persisted.record_action("retweet");
+            }
+            for _ in 0..session.counters.follows() {
+                persisted.record_action("follow");
+            }
+            for _ in 0..session.counters.replies() {
+                persisted.record_action("reply");
+            }
+            for _ in 0..session.counters.quote_tweets() {
+                persisted.record_action("quote");
+            }
+            for _ in 0..session.counters.bookmarks() {
+                persisted.record_action("bookmark");
+            }
+        }).await;
+
+        match update_result {
+            Ok(()) => info!("[twitter] Persistence: saved session state"),
+            Err(e) => error!("[twitter] Persistence failed to update: {e}"),
         }
-        for _ in 0..session.counters.retweets() {
-            persisted.record_action("retweet");
-        }
-        for _ in 0..session.counters.follows() {
-            persisted.record_action("follow");
-        }
-        for _ in 0..session.counters.replies() {
-            persisted.record_action("reply");
-        }
-        for _ in 0..session.counters.quote_tweets() {
-            persisted.record_action("quote");
-        }
-        for _ in 0..session.counters.bookmarks() {
-            persisted.record_action("bookmark");
-        }
-        persisted.save();
-        info!("[twitter] Persistence: saved session state");
     }
 
     Ok(())

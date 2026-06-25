@@ -71,8 +71,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .map(|(a, t)| (a.as_str(), t.as_str()))
             .collect();
 
+        let persona =
+            crate::llm::reply_engine::TwitterPersona::select_for_session(api.session_id());
         let reply_texts: crate::llm::processor::UnifiedQuoteResponse = processor
-            .process_quote_with_sentiment(&tweet_text, &author, &reply_tuples)
+            .process_quote_with_sentiment(&tweet_text, &author, &reply_tuples, persona)
             .await
             .map_err(|e| {
                 warn!("[twitterquote] Unified processor failed: {e}, using fallback");

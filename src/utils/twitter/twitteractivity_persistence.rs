@@ -52,16 +52,91 @@ impl TwitterPersistenceState {
             .unwrap_or_default()
     }
 
-    /// Save current state to disk. Creates parent directories if needed.
-    /// Silently ignores write errors.
+    /// Save current state to disk atomically using a temp file + rename.
+    /// Creates parent directories if needed. Silently ignores write errors.
     pub fn save(&self) {
         let path = Self::state_path();
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(&path, &json);
+            let temp_path = path.with_extension("tmp");
+            if std::fs::write(&temp_path, &json).is_ok() {
+                let _ = std::fs::rename(&temp_path, &path);
+            }
         }
+    }
+
+    /// Path to the lock file: `~/.config/auto-rust/twitter-state.json.lock`
+    fn lock_path() -> PathBuf {
+        Self::state_path().with_extension("json.lock")
+    }
+
+    /// Try to acquire the lock. Auto-recovers if lock is stale (older than 15s).
+    fn acquire_lock() -> bool {
+        let lock_path = Self::lock_path();
+        if let Some(parent) = lock_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        // Auto-recover stale lock file (older than 15 seconds)
+        if let Ok(metadata) = std::fs::metadata(&lock_path) {
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(elapsed) = modified.elapsed() {
+                    if elapsed.as_secs() > 15 {
+                        log::warn!("[persistence-lock] Stale lock file found ({}s old), removing to auto-recover", elapsed.as_secs());
+                        let _ = std::fs::remove_file(&lock_path);
+                    }
+                }
+            }
+        }
+
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+            .is_ok()
+    }
+
+    /// Release the lock file.
+    fn release_lock() {
+        let _ = std::fs::remove_file(Self::lock_path());
+    }
+
+    /// Update the state atomically. Blocks until the lock can be acquired or times out.
+    pub async fn update_async<F>(f: F) -> Result<(), anyhow::Error>
+    where
+        F: FnOnce(&mut Self),
+    {
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(5);
+
+        while !Self::acquire_lock() {
+            if start.elapsed() > timeout {
+                return Err(anyhow::anyhow!(
+                    "Timeout waiting for twitter-state.json lock"
+                ));
+            }
+            // Sleep briefly and retry (randomize to prevent thundering herd)
+            let sleep_ms = 50 + rand::random::<u64>() % 100;
+            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
+        }
+
+        // LockGuard ensures that the lock is released even if F panics or we return early.
+        struct LockGuard;
+        impl Drop for LockGuard {
+            fn drop(&mut self) {
+                TwitterPersistenceState::release_lock();
+            }
+        }
+
+        let _guard = LockGuard;
+
+        let mut state = Self::load();
+        f(&mut state);
+        state.save();
+
+        Ok(())
     }
 
     /// Record a single action, incrementing the daily counter for this action type.

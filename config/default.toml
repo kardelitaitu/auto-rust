@@ -42,8 +42,8 @@ feed_scroll_count = 100              # Number of scroll actions per scan
 engagement_candidate_count = 5       # Number of tweets to consider for engagement
 
 # Guard thresholds (stop conditions for feed loop)
-max_consecutive_scroll_failures = 3  # Max scroll failures before aborting
-max_consecutive_empty_scans = 3      # Max empty candidate scans before aborting
+max_consecutive_scroll_failures = 30  # Max scroll failures before aborting
+max_consecutive_empty_scans = 30      # Max empty candidate scans before aborting
 
 # Engagement limits (prevent rate limits and account restrictions)
 [twitter_activity.engagement_limits]

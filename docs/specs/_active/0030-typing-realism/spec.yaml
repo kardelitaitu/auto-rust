@@ -1,0 +1,35 @@
+version: 1
+id: 0030-typing-realism
+title: Activate word pauses, expand keyboard adjacency map, and enforce profile-driven typing
+status: draft
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - anti-detection
+  - human behavior
+  - twitter engagement
+files:
+  code:
+    - src/utils/keyboard.rs
+    - src/utils/twitter/twitteractivity_interact.rs
+  docs:
+    - docs/specs/_active/0030-typing-realism/plan.md
+    - docs/specs/_active/0030-typing-realism/validation.md
+acceptance:
+  - "`natural_typing_profiled` inserts a pause drawn from `behavior.word_pause_ms` (±30% variance) after every space character"
+  - "`get_similar_char` covers the full QWERTY keyboard adjacency — at minimum: `z,x,c,v,b,g,h,j,k,l,u` and their adjacent keys"
+  - "`natural_typing` (the public wrapper in `keyboard.rs`) is replaced or rerouted so it cannot silently hardcode `keystroke_mean_ms: 120` — callers must supply a `TypingBehavior`"
+  - "Twitter reply/quote typing in `twitteractivity_interact.rs` uses `natural_typing_profiled` with the session profile's `typing_behavior()`, not the hardcoded wrapper"
+  - "`cargo check` passes with zero warnings"
+  - "`cargo test utils::keyboard` passes with zero regressions"
+  - "New unit tests verify: word pause fires on space, `get_similar_char` returns an adjacent key for every newly added character"
+non_goals:
+  - Do NOT change the CDP dispatch path (`dispatch_char_cdp`, `dispatch_backspace_cdp`)
+  - Do NOT alter `TypingBehavior` struct fields or add new fields
+  - Do NOT change `type_text` or `type_text_with_options` — these are fast-path helpers, not natural typing
+  - Do NOT introduce per-session state or side effects in `get_similar_char`
+risks:
+  - Word pause adds cumulative latency: a 200-char reply with 40 spaces at 300ms each = +12s. Clamp `word_pause_ms` to a safe ceiling (e.g. 1500ms max) to avoid timeout risk.
+  - Deprecating the `natural_typing` wrapper may break callers outside Twitter — audit all call sites before removing.
+  - Expanded adjacency map must avoid mapping special chars or spaces (typo on space would produce a wrong character mid-word — confusing and hard to detect).

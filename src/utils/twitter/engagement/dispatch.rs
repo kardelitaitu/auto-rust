@@ -88,11 +88,13 @@ pub async fn dispatch_action(
     if task_config.dry_run_actions {
         if action != "like" && !did_dive {
             info!(
-                "Dry-run: would skip {action} on tweet {tweet_id} because thread detail did not open"
+                "[{action}] Dry-run: would skip {action} on tweet {tweet_id} because thread detail did not open"
             );
             return Ok(false);
         }
-        info!("Dry-run: would perform {action} on tweet {tweet_id} (did_dive={did_dive})");
+        info!(
+            "[{action}] Dry-run: would perform {action} on tweet {tweet_id} (did_dive={did_dive})"
+        );
         counters.increment(action);
         *actions_this_scan += 1;
         action_tracker.record_action(tweet_id.clone(), action);
@@ -226,24 +228,24 @@ pub async fn dispatch_action(
                         Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
                             match generate_quote_commentary(api, &author, &text, replies).await {
                                 Ok(commentary) => {
-                                    info!("Generated LLM quote: {commentary}");
+                                    info!("[quote] Generated LLM quote: {commentary}");
                                     commentary
                                 }
                                 Err(e) => {
-                                    warn!("LLM quote failed, using template: {e}");
+                                    warn!("[quote] LLM quote failed, using template: {e}");
                                     template_quote()
                                 }
                             }
                         }
                         Ok((_, ref text, _)) => {
                             warn!(
-                                "Skipping LLM quote: extracted context is empty/unknown (text_len={}), using template",
+                                "[quote] Skipping LLM quote: extracted context is empty/unknown (text_len={}), using template",
                                 text.len()
                             );
                             template_quote()
                         }
                         Err(e) => {
-                            warn!("Failed to extract tweet context for quote: {e}, using template");
+                            warn!("[quote] Failed to extract tweet context for quote: {e}, using template");
                             template_quote()
                         }
                     }
@@ -317,24 +319,24 @@ pub async fn dispatch_action(
                         Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
                             match generate_reply(api, &author, &text, replies).await {
                                 Ok(reply) => {
-                                    info!("Generated LLM reply: {reply}");
+                                    info!("[reply] Generated LLM reply: {reply}");
                                     reply
                                 }
                                 Err(e) => {
-                                    warn!("LLM reply failed, using template: {e}");
+                                    warn!("[reply] LLM reply failed, using template: {e}");
                                     template_reply()
                                 }
                             }
                         }
                         Ok((_, ref text, _)) => {
                             warn!(
-                                "Skipping LLM reply: extracted context is empty/unknown (text_len={}), using template",
+                                "[reply] Skipping LLM reply: extracted context is empty/unknown (text_len={}), using template",
                                 text.len()
                             );
                             template_reply()
                         }
                         Err(e) => {
-                            warn!("Failed to extract tweet context for reply: {e}, using template");
+                            warn!("[reply] Failed to extract tweet context for reply: {e}, using template");
                             template_reply()
                         }
                     }

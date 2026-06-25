@@ -119,24 +119,24 @@ pub async fn dive_into_thread(
     status_url: &str,
 ) -> Result<DiveIntoThreadOutcome> {
     if status_url.is_empty() {
-        info!("Dive skipped: empty status_url");
+        info!("[dive] Dive skipped: empty status_url");
         return Ok(DiveIntoThreadOutcome {
             opened: false,
             used_fallback_target: false,
         });
     }
 
-    info!("Attempting to dive into thread: {}", status_url);
+    info!("[dive] Attempting to dive into thread: {}", status_url);
 
     // Click the tweet link using the high-level API (handles scrolling, movement, clicking)
     // Escape special CSS characters in the URL attribute value to prevent injection
     let escaped_url = css_escape_attr_value(status_url);
     let link_selector = format!("a[href='{escaped_url}']");
-    info!("Clicking tweet link selector: {}", link_selector);
+    info!("[dive] Clicking tweet link selector: {}", link_selector);
     api.click(&link_selector)
         .await
         .context("Dive failed: click on link failed")?;
-    info!("Clicked tweet link, waiting for thread view...");
+    info!("[dive] Clicked tweet link, waiting for thread view...");
 
     // Wait for thread/modal view to open (tweet detail or thread)
     let selectors = [
@@ -172,10 +172,10 @@ pub async fn dive_into_thread(
     let thread_opened = url_matches && (detail_visible || tweet_article_visible);
 
     if thread_opened {
-        info!("Thread view opened successfully");
+        info!("[dive] Thread view opened successfully");
     } else {
         info!(
-            "Thread view did not open within timeout or URL mismatch (detail_visible={detail_visible}, tweet_article_visible={tweet_article_visible}, url_matches={url_matches}, current_url={current_url})"
+            "[dive] Thread view did not open within timeout or URL mismatch (detail_visible={detail_visible}, tweet_article_visible={tweet_article_visible}, url_matches={url_matches}, current_url={current_url})"
         );
     }
 

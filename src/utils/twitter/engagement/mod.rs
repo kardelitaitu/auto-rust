@@ -265,10 +265,10 @@ pub async fn process_candidate(
         let has_status_url = status_url.is_some();
         let dive_allowed = has_status_url && should_dive(&candidate_persona);
         if !has_status_url {
-            info!("Skipping detail-only actions for tweet {tweet_id}: missing status URL");
+            info!("[dive] Skipping detail-only actions for tweet {tweet_id}: missing status URL");
         } else if !dive_allowed {
             info!(
-                "Skipping detail-only actions for tweet {tweet_id}: thread dive gate did not pass"
+                "[dive] Skipping detail-only actions for tweet {tweet_id}: thread dive gate did not pass"
             );
         }
         filter_detail_actions_for_gate(&mut actions_to_do, has_status_url, dive_allowed);
@@ -301,12 +301,12 @@ pub async fn process_candidate(
         }
         if !limits.can_dive(counters) {
             info!(
-                "Skipping dive: limit reached ({}/{})",
+                "[dive] Skipping dive: limit reached ({}/{})",
                 counters.thread_dives(),
                 limits.max_thread_dives
             );
         } else if task_config.dry_run_actions {
-            info!("Dry-run: would dive into thread for tweet {tweet_id}");
+            info!("[dive] Dry-run: would dive into thread for tweet {tweet_id}");
             counters.increment_thread_dive();
             actions_this_scan += 1;
             action_tracker.record_action(tweet_id.clone(), "dive");
@@ -319,7 +319,7 @@ pub async fn process_candidate(
             let dive_max_pause = Duration::from_secs(60);
             next_scroll = Instant::now() + dive_max_pause;
             info!(
-                "Paused continuous scrolling for thread dive (max {}s)",
+                "[dive] Paused continuous scrolling for thread dive (max {}s)",
                 dive_max_pause.as_secs()
             );
 
@@ -337,7 +337,7 @@ pub async fn process_candidate(
             let dive_outcome = match dive_result {
                 Ok(outcome) => outcome,
                 Err(e) => {
-                    warn!("Thread dive failed after retries: {e}");
+                    warn!("[dive] Thread dive failed after retries: {e}");
                     api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
                     api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
                     // Resume scrolling if dive failed and skip this candidate
@@ -357,7 +357,7 @@ pub async fn process_candidate(
                 api.increment_run_counter(RUN_COUNTER_DIVE_SUCCESS, 1);
                 // Read thread context for LLM use (not cached, extracted fresh when needed)
                 if let Err(e) = api.scroll_to_top().await {
-                    warn!("Scroll to top failed: {e}");
+                    warn!("[dive] Scroll to top failed: {e}");
                     // Non-fatal, continue
                 }
                 // Profile-scaled landing pause after thread open
@@ -372,7 +372,7 @@ pub async fn process_candidate(
                 action_tracker.record_action(tweet_id.clone(), "dive");
                 did_dive = true;
             } else {
-                info!("Thread dive failed: no valid target resolved");
+                info!("[dive] Thread dive failed: no valid target resolved");
                 // Resume scrolling if dive failed
                 next_scroll = original_next_scroll;
                 api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
@@ -385,13 +385,13 @@ pub async fn process_candidate(
     for action in actions_to_do {
         if actions_this_scan >= task_config.max_actions_per_scan {
             info!(
-                "Skipping {}: per-scan action budget reached after dive ({}/{})",
-                action, actions_this_scan, task_config.max_actions_per_scan
+                "[{action}] Skipping {action}: per-scan action budget reached after dive ({}/{})",
+                actions_this_scan, task_config.max_actions_per_scan
             );
             continue;
         }
         if !action_allowed_by_limits(action, limits, counters) {
-            info!("Skipping {action}: engagement limit reached after dive");
+            info!("[{action}] Skipping {action}: engagement limit reached after dive");
             continue;
         }
 
@@ -439,11 +439,11 @@ pub async fn process_candidate(
         let (min, max) = compute_timing_range(ad.min_ms, ad.variance_pct, 8);
         let home_wait_ms = rand::thread_rng().gen_range(min..=max);
         human_pause(api, home_wait_ms).await;
-        info!("Navigating back to home after thread dive and engagement");
+        info!("[dive] Navigating back to home after thread dive and engagement");
         if let Err(e) =
             retry_with_backoff(|| goto_home(api), &RetryConfig::default(), api, "goto_home").await
         {
-            warn!("Navigation to home failed after retries: {e}");
+            warn!("[dive] Navigation to home failed after retries: {e}");
             api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
             // Guard stays armed — cleanup on drop if the task is cancelled
         } else {
@@ -456,7 +456,7 @@ pub async fn process_candidate(
         // Resume continuous scrolling and candidate scanning
         next_scroll = Instant::now() + scroll_interval;
         next_candidate_scan = Instant::now() + scroll_interval;
-        info!("Resumed continuous scrolling after thread dive");
+        info!("[dive] Resumed continuous scrolling after thread dive");
     }
 
     Ok(CandidateResult {

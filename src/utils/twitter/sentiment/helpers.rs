@@ -404,12 +404,68 @@ pub fn extract_thread_context(tweet_obj: &Value) -> Option<ThreadContext> {
         reply_scores.iter().sum::<f32>() / reply_scores.len() as f32
     };
     let tweet_text = extract_tweet_text(tweet_obj);
+
+    // Parse thread metadata from tweet JSON instead of hardcoding defaults.
+    // Field names vary: the Twitter scraper may use `_str` suffixes or raw numeric fields.
+    let is_reply = tweet_obj
+        .get("in_reply_to_status_id")
+        .and_then(|v| v.as_u64())
+        .or_else(|| {
+            tweet_obj
+                .get("in_reply_to_status_id_str")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<u64>().ok())
+        })
+        .or_else(|| {
+            // Some scrapers include a boolean is_reply field
+            tweet_obj
+                .get("is_reply")
+                .and_then(|v| v.as_bool())
+                .map(|b| if b { 1 } else { 0 })
+        })
+        .is_some();
+
+    let is_quote = tweet_obj
+        .get("is_quote")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Simple thread depth heuristic: if conversation_id differs from tweet_id,
+    // the tweet is a reply within a thread (depth ≥ 1). Otherwise it's depth 0.
+    let thread_depth = {
+        let conv_id = tweet_obj
+            .get("conversation_id")
+            .and_then(|v| v.as_u64())
+            .or_else(|| {
+                tweet_obj
+                    .get("conversation_id_str")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<u64>().ok())
+            });
+        let tweet_id = tweet_obj.get("id").and_then(|v| v.as_u64()).or_else(|| {
+            tweet_obj
+                .get("id_str")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<u64>().ok())
+        });
+        // If conversation_id exists and differs from tweet_id, the tweet is in a reply chain
+        if let (Some(conv), Some(tid)) = (conv_id, tweet_id) {
+            if conv != tid {
+                1
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    };
+
     Some(ThreadContext {
         reply_count,
         avg_reply_sentiment,
-        is_reply: false,
-        is_quote: false,
-        thread_depth: 0,
+        is_reply,
+        is_quote,
+        thread_depth,
         conversation_indicators: detect_conversation_indicators(&tweet_text),
     })
 }

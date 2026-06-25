@@ -18,7 +18,7 @@ jobs = 8
 # Keep builds on plain Cargo incremental compilation for reliability.
 # Explicitly disable sccache even if RUSTC_WRAPPER is set in the environment
 # (sccache fails on /mnt/c/ in WSL due to Unix permission issues on Windows FS)
-# rustc-wrapper = ""
+rustc-wrapper = ""
 
 # Faster linker on Windows (lld-link is usually the best stable choice)
 [target.x86_64-pc-windows-msvc]

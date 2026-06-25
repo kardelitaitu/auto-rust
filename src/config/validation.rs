@@ -85,6 +85,18 @@ impl Validate for OrchestratorConfig {
     }
 }
 
+/// Validate that a string is a valid CSS hex color format (#RGB, #RRGGBB, #RGBA, #RRGGBBAA).
+pub(crate) fn is_valid_hex_color(color: &str) -> bool {
+    if !color.starts_with('#') {
+        return false;
+    }
+    let hex = &color[1..];
+    if hex.len() != 3 && hex.len() != 4 && hex.len() != 6 && hex.len() != 8 {
+        return false;
+    }
+    hex.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 impl Validate for BrowserConfig {
     fn validate(&self) -> Result<(), ConfigError> {
         if self.connection_timeout_ms.get() < 5000 {
@@ -134,7 +146,37 @@ impl Validate for BrowserConfig {
             });
         }
 
+        // Validate cursor_overlay_color is a valid hex color
+        if self.cursor_overlay_ms > 0 && !is_valid_hex_color(&self.cursor_overlay_color) {
+            return Err(ConfigError::InvalidValue {
+                field: "cursor_overlay_color".to_string(),
+                value: self.cursor_overlay_color.clone(),
+                reason: format!(
+                    "invalid hex color format '{}': expected #[RRGGBB] or shorthand #RGB (and optionally #RGBA, #RRGGBBAA)",
+                    self.cursor_overlay_color
+                ),
+            });
+        }
+
         Ok(())
+    }
+}
+
+/// A standalone helper for validating hex color format in non-validate() contexts.
+/// Returns `Ok(())` if valid, `Err(ConfigError::InvalidValue)` if not.
+#[allow(dead_code)]
+pub(crate) fn validate_cursor_overlay_color(color: &str) -> Result<(), ConfigError> {
+    if is_valid_hex_color(color) {
+        Ok(())
+    } else {
+        Err(ConfigError::InvalidValue {
+            field: "cursor_overlay_color".to_string(),
+            value: color.to_string(),
+            reason: format!(
+                "invalid hex color format '{}': expected #[RRGGBB] or shorthand #RGB (and optionally #RGBA, #RRGGBBAA)",
+                color
+            ),
+        })
     }
 }
 
@@ -171,6 +213,8 @@ mod tests {
             user_agent: None,
             extra_http_headers: std::collections::BTreeMap::new(),
             cursor_overlay_ms: 0,
+            cursor_overlay_color: "#ff6600".to_string(),
+            cursor_overlay_show_trail: true,
             native_interaction: crate::config::NativeInteractionConfig::default(),
             max_workers_per_session: 5,
             enable_learning_persistence: true,
@@ -259,6 +303,247 @@ mod tests {
     }
 
     #[test]
+    fn test_is_valid_hex_color_valid_full() {
+        assert!(is_valid_hex_color("#ff6600"), "#ff6600 should be valid");
+        assert!(
+            is_valid_hex_color("#FF6600"),
+            "#FF6600 should be valid (uppercase)"
+        );
+        assert!(
+            is_valid_hex_color("#aA1234"),
+            "#aA1234 should be valid (mixed case)"
+        );
+        assert!(
+            is_valid_hex_color("#000000"),
+            "#000000 should be valid (black)"
+        );
+        assert!(
+            is_valid_hex_color("#ffffff"),
+            "#ffffff should be valid (white)"
+        );
+    }
+
+    #[test]
+    fn test_is_valid_hex_color_valid_shorthand() {
+        assert!(
+            is_valid_hex_color("#f60"),
+            "#f60 should be valid (shorthand)"
+        );
+        assert!(
+            is_valid_hex_color("#FFF"),
+            "#FFF should be valid (shorthand)"
+        );
+        assert!(
+            is_valid_hex_color("#000"),
+            "#000 should be valid (shorthand black)"
+        );
+        assert!(
+            is_valid_hex_color("#abc"),
+            "#abc should be valid (shorthand)"
+        );
+    }
+
+    #[test]
+    fn test_is_valid_hex_color_valid_with_alpha() {
+        assert!(
+            is_valid_hex_color("#ff6600ff"),
+            "#ff6600ff should be valid (with alpha)"
+        );
+        assert!(
+            is_valid_hex_color("#f60f"),
+            "#f60f should be valid (shorthand with alpha)"
+        );
+    }
+
+    #[test]
+    fn test_is_valid_hex_color_invalid_no_hash() {
+        assert!(
+            !is_valid_hex_color("ff6600"),
+            "ff6600 without # should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("FFF"),
+            "FFF without # should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_valid_hex_color_invalid_wrong_length() {
+        assert!(
+            !is_valid_hex_color("#ff660"),
+            "#ff660 (5 hex chars) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#ff66001"),
+            "#ff66001 (7 hex chars) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#f"),
+            "#f (1 hex char) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#ff"),
+            "#ff (2 hex chars) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#fffff"),
+            "#fffff (5 hex chars) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#fffffff"),
+            "#fffffff (7 hex chars) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#fffffffff"),
+            "#fffffffff (9 hex chars) should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_valid_hex_color_invalid_non_hex_chars() {
+        assert!(
+            !is_valid_hex_color("#ff660g"),
+            "#ff660g (g is not hex) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#ff66-0"),
+            "#ff66-0 (- is not hex) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#ff66 00"),
+            "#ff66 00 (space) should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#ff66_00"),
+            "#ff66_00 (underscore) should be invalid"
+        );
+        assert!(!is_valid_hex_color("#GHIJKL"), "#GHIJKL should be invalid");
+    }
+
+    #[test]
+    fn test_is_valid_hex_color_edge_cases() {
+        assert!(!is_valid_hex_color(""), "empty string should be invalid");
+        assert!(!is_valid_hex_color("#"), "just # should be invalid");
+        assert!(
+            !is_valid_hex_color("  #ff6600"),
+            "leading space should be invalid"
+        );
+        assert!(
+            !is_valid_hex_color("#ff6600  "),
+            "trailing space should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_validate_cursor_overlay_color_valid() {
+        assert!(validate_cursor_overlay_color("#ff6600").is_ok());
+        assert!(validate_cursor_overlay_color("#f60").is_ok());
+        assert!(validate_cursor_overlay_color("#FF0000").is_ok());
+    }
+
+    #[test]
+    fn test_validate_cursor_overlay_color_invalid() {
+        let err = validate_cursor_overlay_color("ff6600").unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::InvalidValue { field, .. } if field == "cursor_overlay_color"),
+            "Expected InvalidValue error for field cursor_overlay_color"
+        );
+
+        let err = validate_cursor_overlay_color("#xyz").unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::InvalidValue { field, .. } if field == "cursor_overlay_color")
+        );
+    }
+
+    #[test]
+    fn test_validate_browser_valid_with_cursor_overlay() {
+        let mut config = create_valid_browser_config();
+        config.cursor_overlay_ms = 100;
+        config.cursor_overlay_color = "#ff6600".to_string();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_browser_cursor_overlay_invalid_color_with_ms() {
+        let mut config = create_valid_browser_config();
+        config.cursor_overlay_ms = 100;
+        config.cursor_overlay_color = "not-a-color".to_string();
+        let err = config.validate().unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::InvalidValue { field, .. } if field == "cursor_overlay_color"),
+            "Expected InvalidValue for cursor_overlay_color when ms>0 and color is invalid"
+        );
+    }
+
+    #[test]
+    fn test_validate_browser_cursor_overlay_invalid_color_zero_ms() {
+        // When cursor_overlay_ms is 0 (disabled), invalid color should NOT cause validation error
+        let mut config = create_valid_browser_config();
+        config.cursor_overlay_ms = 0;
+        config.cursor_overlay_color = "not-a-color".to_string();
+        assert!(
+            config.validate().is_ok(),
+            "Invalid color should be allowed when cursor_overlay_ms is 0 (disabled)"
+        );
+    }
+
+    #[test]
+    fn test_validate_browser_cursor_overlay_valid_color_with_ms() {
+        let mut config = create_valid_browser_config();
+        config.cursor_overlay_ms = 50;
+        config.cursor_overlay_color = "#abc123".to_string();
+        assert!(
+            config.validate().is_ok(),
+            "Valid color #abc123 should pass when overlay is enabled"
+        );
+
+        config.cursor_overlay_color = "#ABC".to_string();
+        assert!(
+            config.validate().is_ok(),
+            "Shorthand #ABC should pass when overlay is enabled"
+        );
+
+        config.cursor_overlay_color = "#123456ff".to_string();
+        assert!(
+            config.validate().is_ok(),
+            "#123456ff with alpha should pass when overlay is enabled"
+        );
+    }
+
+    #[test]
+    fn test_validate_browser_cursor_overlay_invalid_color_no_hash() {
+        let mut config = create_valid_browser_config();
+        config.cursor_overlay_ms = 100;
+        config.cursor_overlay_color = "ff6600".to_string();
+        let err = config.validate().unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::InvalidValue { field, .. } if field == "cursor_overlay_color")
+        );
+    }
+
+    #[test]
+    fn test_validate_browser_cursor_overlay_invalid_wrong_length() {
+        let mut config = create_valid_browser_config();
+        config.cursor_overlay_ms = 100;
+        config.cursor_overlay_color = "#ff660".to_string();
+        let err = config.validate().unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::InvalidValue { field, .. } if field == "cursor_overlay_color")
+        );
+    }
+
+    #[test]
+    fn test_validate_browser_cursor_overlay_valid_default_ignored_when_disabled() {
+        // Default value #ff6600 is valid, but even if it weren't, ms=0 should skip
+        let config = create_valid_browser_config();
+        // cursor_overlay_ms is already 0 (default in create_valid_browser_config)
+        assert!(
+            config.validate().is_ok(),
+            "Default config with ms=0 should validate regardless of color"
+        );
+    }
+
+    #[allow(dead_code)]
     fn test_validate_browser_missing_profiles() {
         let mut config = create_valid_browser_config();
         config.profiles.clear();

@@ -72,7 +72,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .collect();
 
         let reply_texts: crate::llm::processor::UnifiedQuoteResponse = processor
-            .process_quote_with_sentiment(&tweet_text, &reply_tuples)
+            .process_quote_with_sentiment(&tweet_text, &author, &reply_tuples)
             .await
             .map_err(|e| {
                 warn!("[twitterquote] Unified processor failed: {e}, using fallback");

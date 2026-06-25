@@ -12,7 +12,6 @@ findings: 0 unsafe, all unwrap/expect in test code, clean clippy, 4 files >1kLoC
 
 pub mod decision;
 pub mod engagement;
-pub mod reply_engine;
 pub mod sentiment;
 pub mod state;
 pub mod twitteractivity_actions;
@@ -28,6 +27,7 @@ pub mod twitteractivity_llm;
 pub mod twitteractivity_llm_execute;
 pub mod twitteractivity_llm_validation;
 pub mod twitteractivity_navigation;
+pub mod twitteractivity_persistence;
 pub mod twitteractivity_persona;
 pub mod twitteractivity_popup;
 pub mod twitteractivity_retry;
@@ -44,7 +44,6 @@ pub use twitteractivity_types::{
 pub use decision::*;
 #[allow(unused_imports)]
 pub use engagement::*;
-pub use reply_engine::*;
 #[allow(unused_imports)]
 pub use sentiment::*;
 #[allow(unused_imports)]

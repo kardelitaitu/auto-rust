@@ -17,7 +17,7 @@ React to the tweet and replies naturally but assertively.
 - **NO @mentions**, **NO #hashtags**, **NO emojis**, **NO asterisks** — NEVER, under any circumstance
 - **NO quotes** around your reply
 - **NO asterisk emphasis** — do NOT write *word* or **word** for emphasis
-- **KEEP IT SHORT** — preferably one punchy sentence or phrase.
+- **KEEP IT SHORT** — strictly 1 or 2 sentences maximum. NEVER write 3 or more sentences.
 - No period at end. Lowercase start preferred.
 
 ## BANNED WORDS (sound like AI — never use)
@@ -74,7 +74,7 @@ Your job is to read the tweet AND the replies from other people, then add YOUR o
 ## FORMATTING (CRITICAL)
 - NO @mentions, NO #hashtags, NO emojis, NO asterisks
 - NO quotes around your reply
-- KEEP IT SHORT - preferably one punchy sentence or phrase
+- KEEP IT SHORT - strictly 1 or 2 sentences maximum. NEVER write 3 or more sentences.
 - Lowercase start preferred
 
 ## WHAT TO AVOID
@@ -151,6 +151,7 @@ pub fn build_reply_messages(
     tweet_author: &str,
     tweet_text: &str,
     replies: &[(&str, &str)],
+    context: &StrategyContext,
 ) -> Vec<ChatMessage> {
     let system = reply_engine_system_prompt();
 
@@ -161,8 +162,7 @@ pub fn build_reply_messages(
         .collect();
 
     // Use strategy-based prompt
-    let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
@@ -172,6 +172,7 @@ pub fn build_quote_messages(
     tweet_author: &str,
     tweet_text: &str,
     replies: &[(&str, &str)],
+    context: &StrategyContext,
 ) -> Vec<ChatMessage> {
     let system = quote_engine_system_prompt();
 
@@ -182,8 +183,7 @@ pub fn build_quote_messages(
         .collect();
 
     // Use strategy-based prompt for quote tweets too
-    let context = StrategyContext::default();
-    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, &context, false);
+    let user = build_reply_prompt(tweet_text, tweet_author, &replies_owned, context, false);
 
     vec![ChatMessage::system(system), ChatMessage::user(user)]
 }
@@ -212,8 +212,9 @@ mod tests {
 
     #[test]
     fn test_build_messages_includes_system_and_user() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply text")];
-        let messages = build_reply_messages("author", "tweet text", &replies);
+        let messages = build_reply_messages("author", "tweet text", &replies, &context);
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
@@ -268,8 +269,9 @@ mod tests {
 
     #[test]
     fn test_build_quote_messages_structure() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply")];
-        let messages = build_quote_messages("author", "tweet text", &replies);
+        let messages = build_quote_messages("author", "tweet text", &replies, &context);
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, Role::System);
@@ -278,16 +280,18 @@ mod tests {
 
     #[test]
     fn test_build_reply_messages_empty_replies() {
+        let context = StrategyContext::default();
         let replies: Vec<(&str, &str)> = vec![];
-        let messages = build_reply_messages("author", "tweet text", &replies);
+        let messages = build_reply_messages("author", "tweet text", &replies, &context);
 
         assert_eq!(messages.len(), 2);
     }
 
     #[test]
     fn test_build_quote_messages_empty_replies() {
+        let context = StrategyContext::default();
         let replies: Vec<(&str, &str)> = vec![];
-        let messages = build_quote_messages("author", "tweet text", &replies);
+        let messages = build_quote_messages("author", "tweet text", &replies, &context);
 
         assert_eq!(messages.len(), 2);
     }
@@ -356,8 +360,9 @@ mod tests {
 
     #[test]
     fn test_build_reply_messages_content_order() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply")];
-        let messages = build_reply_messages("author", "tweet text", &replies);
+        let messages = build_reply_messages("author", "tweet text", &replies, &context);
 
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);
@@ -365,8 +370,9 @@ mod tests {
 
     #[test]
     fn test_build_quote_messages_content_order() {
+        let context = StrategyContext::default();
         let replies = vec![("user1", "reply")];
-        let messages = build_quote_messages("author", "tweet text", &replies);
+        let messages = build_quote_messages("author", "tweet text", &replies, &context);
 
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[1].role, Role::User);

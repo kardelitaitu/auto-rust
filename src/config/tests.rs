@@ -613,6 +613,968 @@ fn test_browser_config_cursor_overlay_ms() {
 }
 
 #[test]
+fn test_browser_config_cursor_overlay_defaults() {
+    let config = BrowserConfig::default();
+    assert_eq!(
+        config.cursor_overlay_color, "#ff6600",
+        "cursor_overlay_color should default to #ff6600"
+    );
+    assert!(
+        config.cursor_overlay_show_trail,
+        "cursor_overlay_show_trail should default to true"
+    );
+}
+
+#[test]
+fn test_browser_config_cursor_overlay_custom_values() {
+    let config = BrowserConfig {
+        cursor_overlay_color: "#00ff00".to_string(),
+        cursor_overlay_show_trail: false,
+        ..Default::default()
+    };
+    assert_eq!(
+        config.cursor_overlay_color, "#00ff00",
+        "cursor_overlay_color should be overridden to #00ff00"
+    );
+    assert!(
+        !config.cursor_overlay_show_trail,
+        "cursor_overlay_show_trail should be overridden to false"
+    );
+}
+
+#[test]
+fn test_cursor_overlay_color_env_override() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let keys = ["CURSOR_OVERLAY_COLOR"];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    env::set_var("CURSOR_OVERLAY_COLOR", "#ff0000");
+    let config = apply_env_overrides(Config::default()).unwrap();
+    assert_eq!(
+        config.browser.cursor_overlay_color, "#ff0000",
+        "CURSOR_OVERLAY_COLOR env var should override default (#ff6600 -> #ff0000)"
+    );
+
+    env::remove_var("CURSOR_OVERLAY_COLOR");
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+}
+
+#[test]
+fn test_cursor_overlay_color_env_override_empty_string_preserves_default() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let keys = ["CURSOR_OVERLAY_COLOR"];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    // Empty string should not override (preserve default)
+    env::set_var("CURSOR_OVERLAY_COLOR", "");
+    let config = apply_env_overrides(Config::default()).unwrap();
+    assert_eq!(
+        config.browser.cursor_overlay_color, "#ff6600",
+        "Empty CURSOR_OVERLAY_COLOR should preserve default (#ff6600)"
+    );
+
+    env::remove_var("CURSOR_OVERLAY_COLOR");
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+}
+
+#[test]
+fn test_cursor_overlay_show_trail_env_override() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let keys = ["CURSOR_OVERLAY_SHOW_TRAIL"];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    env::set_var("CURSOR_OVERLAY_SHOW_TRAIL", "false");
+    let config = apply_env_overrides(Config::default()).unwrap();
+    assert!(
+        !config.browser.cursor_overlay_show_trail,
+        "CURSOR_OVERLAY_SHOW_TRAIL=false should override default (true -> false)"
+    );
+
+    env::remove_var("CURSOR_OVERLAY_SHOW_TRAIL");
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+}
+
+#[test]
+fn test_cursor_overlay_show_trail_invalid_env_falls_back() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let keys = ["CURSOR_OVERLAY_SHOW_TRAIL"];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    // Start with a config that has show_trail=false
+    let config = Config {
+        browser: BrowserConfig {
+            cursor_overlay_show_trail: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    // Invalid env var value should fall back to the config value (false)
+    env::set_var("CURSOR_OVERLAY_SHOW_TRAIL", "not-a-boolean");
+    let config = apply_env_overrides(config).unwrap();
+    assert!(
+        !config.browser.cursor_overlay_show_trail,
+        "Invalid CURSOR_OVERLAY_SHOW_TRAIL should fall back to existing value (false)"
+    );
+
+    env::remove_var("CURSOR_OVERLAY_SHOW_TRAIL");
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+}
+
+#[test]
+fn test_load_config_applies_cursor_overlay_env_overrides() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let temp_dir = TempDir::new().unwrap();
+    let config_dir = temp_dir.path().join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+
+    // TOML with explicit cursor overlay values
+    // (use r## delimiter to avoid colliding with hex color "# in raw string)
+    let toml = r##"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 100
+cursor_overlay_color = "#00ff00"
+cursor_overlay_show_trail = false
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"##;
+
+    fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+    let keys = [
+        "CURSOR_OVERLAY_COLOR",
+        "CURSOR_OVERLAY_SHOW_TRAIL",
+        "CURSOR_OVERLAY_MS",
+    ];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    // Set env vars that should override TOML values
+    env::set_var("CURSOR_OVERLAY_COLOR", "#ff0000");
+    env::set_var("CURSOR_OVERLAY_SHOW_TRAIL", "true");
+    env::set_var("CURSOR_OVERLAY_MS", "250");
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    let config = load_config().unwrap();
+
+    env::set_current_dir(cwd).unwrap();
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+
+    // Env vars should override TOML values
+    assert_eq!(
+        config.browser.cursor_overlay_ms, 250,
+        "CURSOR_OVERLAY_MS env var should override TOML (100 -> 250)"
+    );
+    assert_eq!(
+        config.browser.cursor_overlay_color, "#ff0000",
+        "CURSOR_OVERLAY_COLOR env var should override TOML (#00ff00 -> #ff0000)"
+    );
+    assert!(
+        config.browser.cursor_overlay_show_trail,
+        "CURSOR_OVERLAY_SHOW_TRAIL=true env var should override TOML (false -> true)"
+    );
+}
+
+#[test]
+fn test_load_config_applies_cursor_overlay_invalid_env_falls_back_to_toml() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let temp_dir = TempDir::new().unwrap();
+    let config_dir = temp_dir.path().join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+
+    // TOML with explicit non-default cursor overlay values to verify fallback
+    let toml = r##"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 999
+cursor_overlay_color = "#999999"
+cursor_overlay_show_trail = true
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"##;
+
+    fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+    let keys = [
+        "CURSOR_OVERLAY_COLOR",
+        "CURSOR_OVERLAY_SHOW_TRAIL",
+        "CURSOR_OVERLAY_MS",
+    ];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    // Set invalid env vars that cannot be parsed
+    env::set_var("CURSOR_OVERLAY_MS", "not-a-number");
+    // Color is a string so it can't really be "invalid" — any non-empty string is valid
+    // But for show_trail, an unparseable bool should fall back
+    env::set_var("CURSOR_OVERLAY_SHOW_TRAIL", "invalid-bool");
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    let config = load_config().unwrap();
+
+    env::set_current_dir(cwd).unwrap();
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+
+    // Invalid env vars should fall back to TOML file values
+    assert_eq!(
+        config.browser.cursor_overlay_ms, 999,
+        "Invalid CURSOR_OVERLAY_MS should fall back to TOML value (999)"
+    );
+    assert!(
+        config.browser.cursor_overlay_show_trail,
+        "Invalid CURSOR_OVERLAY_SHOW_TRAIL should fall back to TOML value (true)"
+    );
+}
+
+#[test]
+fn test_load_config_cursor_overlay_color_env_override_empty_string_keeps_toml() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let temp_dir = TempDir::new().unwrap();
+    let config_dir = temp_dir.path().join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+
+    // TOML with a custom color
+    let toml = r##"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 0
+cursor_overlay_color = "#abc123"
+cursor_overlay_show_trail = false
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"##;
+
+    fs::write(config_dir.join("default.toml"), toml).unwrap();
+
+    let keys = ["CURSOR_OVERLAY_COLOR"];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    // Empty string should preserve TOML value
+    env::set_var("CURSOR_OVERLAY_COLOR", "");
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    let config = load_config().unwrap();
+
+    env::set_current_dir(cwd).unwrap();
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+
+    // Empty string should not override TOML value
+    assert_eq!(
+        config.browser.cursor_overlay_color, "#abc123",
+        "Empty CURSOR_OVERLAY_COLOR env var should not override TOML value (#abc123)"
+    );
+}
+
+// ---- Direct load_dotenv_defaults() tests for cursor overlay env vars ----
+
+/// Helper to create a temp dir with a .env file for direct load_dotenv_defaults() testing.
+/// Returns the TempDir so it stays alive for the test, and the previously saved env values.
+fn setup_dotenv_test(content: &str, keys: &[&str]) -> (TempDir, Vec<(String, Option<OsString>)>) {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join(".env"), content).unwrap();
+
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    (temp_dir, saved_env)
+}
+
+/// Helper to restore env vars after a load_dotenv_defaults() test.
+fn teardown_dotenv_test(saved_env: Vec<(String, Option<OsString>)>) {
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+}
+
+#[test]
+fn test_load_dotenv_defaults_basic_cursor_overlay() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let dotenv =
+        "CURSOR_OVERLAY_COLOR=#ff0000\nCURSOR_OVERLAY_SHOW_TRAIL=false\nCURSOR_OVERLAY_MS=250\n";
+    let keys = [
+        "CURSOR_OVERLAY_COLOR",
+        "CURSOR_OVERLAY_SHOW_TRAIL",
+        "CURSOR_OVERLAY_MS",
+    ];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#ff0000",
+        "CURSOR_OVERLAY_COLOR should be set from .env"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_SHOW_TRAIL").unwrap_or_default(),
+        "false",
+        "CURSOR_OVERLAY_SHOW_TRAIL should be set from .env"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "250",
+        "CURSOR_OVERLAY_MS should be set from .env"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_double_quoted_values() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Double-quoted values should have quotes stripped
+    let dotenv = "CURSOR_OVERLAY_COLOR=\"#ff0000\"\nCURSOR_OVERLAY_MS=\"500\"\n";
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#ff0000",
+        "Double-quoted color should have quotes stripped"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "500",
+        "Double-quoted ms should have quotes stripped"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_single_quoted_values() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Single-quoted values should have quotes stripped
+    let dotenv = "CURSOR_OVERLAY_COLOR='#00ff00'\nCURSOR_OVERLAY_MS='100'\n";
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#00ff00",
+        "Single-quoted color should have quotes stripped"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "100",
+        "Single-quoted ms should have quotes stripped"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_partial_quote_not_stripped() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Single opening quote without closing quote should NOT be stripped
+    let dotenv = "CURSOR_OVERLAY_COLOR=\"#ff0000\nCURSOR_OVERLAY_MS=250'\n";
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "\"#ff0000",
+        "Unmatched double-quote should NOT be stripped (leading quote only)"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "250'",
+        "Unmatched single-quote should NOT be stripped (trailing quote only)"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_skips_existing_env_vars() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Pre-set an env var - .env should NOT override it
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    // Set CURSOR_OVERLAY_COLOR before loading .env
+    env::set_var("CURSOR_OVERLAY_COLOR", "#already-set");
+
+    let dotenv = "CURSOR_OVERLAY_COLOR=#ff0000\nCURSOR_OVERLAY_MS=250\n";
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join(".env"), dotenv).unwrap();
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    // Should keep the pre-set value, not the .env value
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#already-set",
+        "Pre-set env var should NOT be overridden by .env"
+    );
+    // CURSOR_OVERLAY_MS was not pre-set, so it should come from .env
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "250",
+        "Unset env var should be set from .env"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_skips_comments_and_empty_lines() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let dotenv = "# This is a comment\n   \n\nCURSOR_OVERLAY_COLOR=#ff0000\n# Another comment\nCURSOR_OVERLAY_MS=250\n";
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#ff0000",
+        "Should skip comments and load color"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "250",
+        "Should skip empty lines and load ms"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_skips_malformed_lines() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Lines without '=' should be skipped
+    let dotenv = "CURSOR_OVERLAY_COLOR\nCURSOR_OVERLAY_MS=250\nJUST_A_KEY\n";
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    // CURSOR_OVERLAY_COLOR without = should NOT be set
+    assert!(
+        env::var_os("CURSOR_OVERLAY_COLOR").is_none(),
+        "Malformed line without '=' should not set env var"
+    );
+    // CURSOR_OVERLAY_MS has = so should be set
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "250",
+        "Well-formed line should still be loaded"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_empty_value() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let dotenv = "CURSOR_OVERLAY_COLOR=\nCURSOR_OVERLAY_MS=\n";
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "",
+        "Empty value should be set as empty string"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "",
+        "Empty value should be set as empty string"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_whitespace_trimming() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Whitespace around key and value should be trimmed
+    let dotenv = "  CURSOR_OVERLAY_COLOR  =  #ff0000  \n  CURSOR_OVERLAY_MS=250  \n";
+    let keys = ["CURSOR_OVERLAY_COLOR", "CURSOR_OVERLAY_MS"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#ff0000",
+        "Whitespace around key/value should be trimmed"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "250",
+        "Trailing whitespace on value should be trimmed"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_missing_file_no_crash() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // No .env file in this temp dir - should not crash
+    let temp_dir = TempDir::new().unwrap();
+    let keys: [&str; 0] = [];
+    let (_, saved_env) = setup_dotenv_test("", &keys);
+
+    // Delete the .env file that setup_dotenv_test created
+    let _ = fs::remove_file(temp_dir.path().join(".env"));
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    // Should not panic
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_empty_file() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Empty .env file should not set anything
+    let keys: [&str; 0] = [];
+    let (temp_dir, saved_env) = setup_dotenv_test("", &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    // No env vars should have been set (we didn't save any keys)
+    // Just verify no crash
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_mixed_content() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Mix cursor overlay vars with other vars
+    let dotenv = "CURSOR_OVERLAY_COLOR=#ff6600\nCURSOR_OVERLAY_SHOW_TRAIL=true\nBROWSER_USER_AGENT=TestBrowser\nCURSOR_OVERLAY_MS=100\n";
+    let keys = [
+        "CURSOR_OVERLAY_COLOR",
+        "CURSOR_OVERLAY_SHOW_TRAIL",
+        "BROWSER_USER_AGENT",
+        "CURSOR_OVERLAY_MS",
+    ];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#ff6600",
+        "Cursor overlay color from mixed .env"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_SHOW_TRAIL").unwrap_or_default(),
+        "true",
+        "Cursor overlay show trail from mixed .env"
+    );
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_MS").unwrap_or_default(),
+        "100",
+        "Cursor overlay ms from mixed .env"
+    );
+    assert_eq!(
+        env::var("BROWSER_USER_AGENT").unwrap_or_default(),
+        "TestBrowser",
+        "Browser user agent from mixed .env"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_dotenv_defaults_empty_key_skipped() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // Line with empty key should be skipped
+    let dotenv = "=value\nCURSOR_OVERLAY_COLOR=#ff0000\n";
+    let keys = ["CURSOR_OVERLAY_COLOR"];
+    let (temp_dir, saved_env) = setup_dotenv_test(dotenv, &keys);
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    load_dotenv_defaults();
+    env::set_current_dir(cwd).unwrap();
+
+    assert_eq!(
+        env::var("CURSOR_OVERLAY_COLOR").unwrap_or_default(),
+        "#ff0000",
+        "Valid line after empty key should still be loaded"
+    );
+
+    teardown_dotenv_test(saved_env);
+}
+
+#[test]
+fn test_load_config_applies_cursor_overlay_env_overrides_from_dotenv() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let temp_dir = TempDir::new().unwrap();
+    let config_dir = temp_dir.path().join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+
+    // TOML with explicit cursor overlay values that the .env should override
+    let toml = r##"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 100
+cursor_overlay_color = "#00ff00"
+cursor_overlay_show_trail = false
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"##;
+    // .env with cursor overlay env vars (uses quoted values to test strip-quotes logic)
+    let dotenv =
+        "CURSOR_OVERLAY_COLOR=\"#ff0000\"\nCURSOR_OVERLAY_SHOW_TRAIL=true\nCURSOR_OVERLAY_MS=250\n";
+
+    fs::write(config_dir.join("default.toml"), toml).unwrap();
+    fs::write(temp_dir.path().join(".env"), dotenv).unwrap();
+
+    let keys = [
+        "CURSOR_OVERLAY_COLOR",
+        "CURSOR_OVERLAY_SHOW_TRAIL",
+        "CURSOR_OVERLAY_MS",
+    ];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    let config = load_config().unwrap();
+
+    env::set_current_dir(cwd).unwrap();
+    for (key, value) in saved_env {
+        match value {
+            Some(value) => env::set_var(key, value),
+            None => env::remove_var(key),
+        }
+    }
+
+    // .env values should override TOML values
+    assert_eq!(
+        config.browser.cursor_overlay_ms, 250,
+        "CURSOR_OVERLAY_MS from .env should override TOML (100 -> 250)"
+    );
+    assert_eq!(
+        config.browser.cursor_overlay_color, "#ff0000",
+        "CURSOR_OVERLAY_COLOR from .env should override TOML (#00ff00 -> #ff0000)"
+    );
+    assert!(
+        config.browser.cursor_overlay_show_trail,
+        "CURSOR_OVERLAY_SHOW_TRAIL from .env should override TOML (false -> true)"
+    );
+}
+
+#[test]
+fn test_load_config_prefers_explicit_env_over_dotenv_for_cursor_overlay() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let temp_dir = TempDir::new().unwrap();
+    let config_dir = temp_dir.path().join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+
+    // TOML with cursor overlay values
+    let toml = r##"
+[browser]
+connection_timeout_ms = 30000
+max_discovery_retries = 3
+discovery_retry_delay_ms = 500
+circuit_breaker = { enabled = true, failure_threshold = 5, success_threshold = 3, half_open_time_ms = 30000 }
+profiles = []
+roxybrowser = { enabled = false, api_url = "http://localhost:4444", api_key = "" }
+cursor_overlay_ms = 100
+cursor_overlay_color = "#00ff00"
+cursor_overlay_show_trail = false
+native_interaction = { calibration_mode = "windows", native_input_backend = "enigo", stability_wait_ms = 5000, resolve_timeout_ms = 2000, settle_ms = 0 }
+max_workers_per_session = 5
+enable_learning_persistence = true
+learning_ttl_days = 30
+
+[orchestrator]
+max_global_concurrency = 5
+task_timeout_ms = 60000
+group_timeout_ms = 300000
+worker_wait_timeout_ms = 10000
+task_stagger_delay_ms = 500
+max_retries = 3
+retry_delay_ms = 2000
+"##;
+    // .env with one set of values
+    let dotenv = "CURSOR_OVERLAY_COLOR=\"#999999\"\nCURSOR_OVERLAY_SHOW_TRAIL=false\nCURSOR_OVERLAY_MS=999\n";
+
+    fs::write(config_dir.join("default.toml"), toml).unwrap();
+    fs::write(temp_dir.path().join(".env"), dotenv).unwrap();
+
+    let keys = [
+        "CURSOR_OVERLAY_COLOR",
+        "CURSOR_OVERLAY_SHOW_TRAIL",
+        "CURSOR_OVERLAY_MS",
+    ];
+    let saved_env: Vec<(String, Option<OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+
+    // Set explicit env vars (these should take precedence over .env)
+    env::set_var("CURSOR_OVERLAY_COLOR", "#ff0000");
+    env::set_var("CURSOR_OVERLAY_SHOW_TRAIL", "true");
+    env::set_var("CURSOR_OVERLAY_MS", "250");
+
+    let cwd = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    let config = load_config().unwrap();
+
+    env::set_current_dir(cwd).unwrap();
+    for (key, value) in saved_env {
+        match value {
+            Some(value) => env::set_var(key, value),
+            None => env::remove_var(key),
+        }
+    }
+
+    // Explicit env vars should win over .env values
+    assert_eq!(
+        config.browser.cursor_overlay_ms, 250,
+        "Explicit env var should override .env (999 -> 250)"
+    );
+    assert_eq!(
+        config.browser.cursor_overlay_color, "#ff0000",
+        "Explicit env var should override .env (#999999 -> #ff0000)"
+    );
+    assert!(
+        config.browser.cursor_overlay_show_trail,
+        "Explicit env var should override .env (false -> true)"
+    );
+}
+
+#[test]
 fn test_browser_config_max_workers_per_session() {
     let config = BrowserConfig::default();
     assert_eq!(config.max_workers_per_session, 5);

@@ -256,6 +256,19 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
     // Initialize session state
     let mut session = init_session(config, &task_config);
 
+    // Load inter-session persistence if enabled
+    if config.twitter_activity.persistence_enabled {
+        let persisted =
+            crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::load();
+        if let Some(mins) = persisted.minutes_since_last_session() {
+            info!("[twitter] Persistence: {} min since last session", mins);
+        }
+        info!(
+            "[twitter] Persistence: daily actions so far = {:?}",
+            persisted.daily_action_counts
+        );
+    }
+
     // Phase 1: Navigation & authentication check
     if let Err(e) = phase1_navigation(api).await {
         error!("[twitter] Phase 1 navigation failed: {e}");
@@ -353,6 +366,35 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
 
     // Final summary
     log_summary(&session, &task_config, config);
+
+    // Persist inter-session state if enabled
+    if config.twitter_activity.persistence_enabled {
+        let mut persisted =
+            crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::load();
+        persisted.record_session_end();
+        // Aggregate session counters into daily action counts
+        for _ in 0..session.counters.likes() {
+            persisted.record_action("like");
+        }
+        for _ in 0..session.counters.retweets() {
+            persisted.record_action("retweet");
+        }
+        for _ in 0..session.counters.follows() {
+            persisted.record_action("follow");
+        }
+        for _ in 0..session.counters.replies() {
+            persisted.record_action("reply");
+        }
+        for _ in 0..session.counters.quote_tweets() {
+            persisted.record_action("quote");
+        }
+        for _ in 0..session.counters.bookmarks() {
+            persisted.record_action("bookmark");
+        }
+        persisted.save();
+        info!("[twitter] Persistence: saved session state");
+    }
+
     Ok(())
 }
 

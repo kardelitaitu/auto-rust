@@ -299,6 +299,279 @@ pub struct StrategyContext {
     pub engagement_level: String,  // e.g., "high", "viral"
 }
 
+/// Map a keyword topic to the matching CONTEXT_BOOSTS key.
+const TOPIC_KEYWORDS: &[(&str, &[&str])] = &[
+    (
+        "tech",
+        &[
+            "programming",
+            "software",
+            "coding",
+            "developer",
+            "engineer",
+            "ai",
+            "artificial intelligence",
+            "machine learning",
+            "llm",
+            "gpt",
+            "python",
+            "rust",
+            "javascript",
+            "typescript",
+            "react",
+            "api",
+            "github",
+            "open source",
+            "startup",
+            "saas",
+            "cloud",
+            "server",
+            "database",
+            "backend",
+            "frontend",
+            "deploy",
+            "docker",
+            "kubernetes",
+            "linux",
+            "terminal",
+            "cli",
+            "debug",
+            "algorithm",
+            "data science",
+        ],
+    ),
+    (
+        "politics",
+        &[
+            "biden",
+            "trump",
+            "election",
+            "vote",
+            "senate",
+            "congress",
+            "democracy",
+            "republican",
+            "democrat",
+            "gop",
+            "political",
+            "government",
+            "policy",
+            "legislation",
+            "supreme court",
+            "protest",
+            "campaign",
+            "president",
+            "governor",
+            "senator",
+        ],
+    ),
+    (
+        "gaming",
+        &[
+            "game",
+            "gaming",
+            "playstation",
+            "ps5",
+            "xbox",
+            "nintendo",
+            "switch",
+            "steam",
+            "pc gaming",
+            "rpg",
+            "fps",
+            "open world",
+            "minecraft",
+            "fortnite",
+            "valorant",
+            "league of legends",
+            "esports",
+            "game dev",
+            "indie game",
+            "console",
+            "gpu",
+        ],
+    ),
+    (
+        "food",
+        &[
+            "food",
+            "recipe",
+            "cooking",
+            "restaurant",
+            "chef",
+            "cuisine",
+            "pizza",
+            "pasta",
+            "sushi",
+            "burger",
+            "coffee",
+            "wine",
+            "dinner",
+            "lunch",
+            "breakfast",
+            "baking",
+            "grill",
+            "spicy",
+            "dessert",
+            "vegan",
+            "vegetarian",
+            "delicious",
+            "tasty",
+        ],
+    ),
+    (
+        "science",
+        &[
+            "science",
+            "research",
+            "study",
+            "nasa",
+            "space",
+            "physics",
+            "biology",
+            "chemistry",
+            "astronomy",
+            "quantum",
+            "dna",
+            "genome",
+            "climate",
+            "vaccine",
+            "experiment",
+            "laboratory",
+            "scientist",
+            "discovery",
+            "evolution",
+            "particle",
+        ],
+    ),
+    (
+        "finance",
+        &[
+            "finance",
+            "crypto",
+            "bitcoin",
+            "ethereum",
+            "stock",
+            "investment",
+            "market",
+            "money",
+            "trading",
+            "wall street",
+            "economy",
+            "inflation",
+            "recession",
+            "dividend",
+            "portfolio",
+            "etf",
+            "interest rate",
+            "federal reserve",
+            "banking",
+            "ipo",
+        ],
+    ),
+    (
+        "entertainment",
+        &[
+            "movie",
+            "film",
+            "cinema",
+            "tv",
+            "television",
+            "music",
+            "celebrity",
+            "show",
+            "netflix",
+            "hbo",
+            "disney",
+            "actor",
+            "actress",
+            "director",
+            "album",
+            "song",
+            "concert",
+            "tour",
+            "series",
+            "streaming",
+            "oscar",
+            "grammy",
+        ],
+    ),
+    (
+        "news",
+        &[
+            "breaking",
+            "news",
+            "report",
+            "update",
+            "just in",
+            "now",
+            "announcement",
+            "breaking news",
+            "headline",
+            "developing story",
+        ],
+    ),
+    (
+        "debate",
+        &[
+            "debate",
+            "argument",
+            "disagree",
+            "actually",
+            "well actually",
+            "controversial",
+            "hot take",
+            "unpopular opinion",
+        ],
+    ),
+];
+
+/// Detect the conversation type from tweet text using keyword matching.
+///
+/// Returns one of: "tech", "politics", "gaming", "food", "science",
+/// "finance", "entertainment", "news", "debate", or empty string if unknown.
+///
+/// Uses the topic with the most keyword hits; ties broken by order of the list.
+#[must_use]
+pub fn classify_conversation_type(tweet_text: &str) -> String {
+    let lower = tweet_text.to_lowercase();
+
+    let mut best_topic: &str = "";
+    let mut best_count: usize = 0;
+
+    for (topic, keywords) in TOPIC_KEYWORDS {
+        let count = keywords.iter().filter(|kw| lower.contains(*kw)).count();
+        if count > best_count {
+            best_count = count;
+            best_topic = topic;
+        }
+    }
+
+    best_topic.to_string()
+}
+
+/// Build a full `StrategyContext` from sentiment and tweet text.
+///
+/// - `sentiment` → sets `sentiment` field (positive→"wholesome", negative→"critical")
+/// - `tweet_text` → auto-detects `conversation_type` (tech/politics/gaming/etc.)
+#[must_use]
+pub fn sentiment_to_strategy_context(
+    sentiment: crate::utils::twitter::sentiment::Sentiment,
+    tweet_text: &str,
+) -> StrategyContext {
+    let sentiment_tag = match sentiment {
+        crate::utils::twitter::sentiment::Sentiment::Positive => "wholesome".to_string(),
+        crate::utils::twitter::sentiment::Sentiment::Neutral => String::new(),
+        crate::utils::twitter::sentiment::Sentiment::Negative => "critical".to_string(),
+    };
+    let conversation_type = classify_conversation_type(tweet_text);
+    StrategyContext {
+        sentiment: sentiment_tag,
+        conversation_type,
+        engagement_level: String::new(),
+    }
+}
+
 /// Pick a strategy using weighted random selection.
 /// All strategies start at base weight 1; context boosts multiply specific keys.
 #[must_use]
@@ -346,6 +619,36 @@ pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
 
     // Fallback to last strategy
     STRATEGY_INSTRUCTIONS.last().map_or("", |(_, i)| *i)
+}
+
+/// Compute the weighted pool for a given context without random selection.
+/// Exposed for deterministic testing of weight distributions.
+#[must_use]
+#[cfg(test)]
+pub fn get_weighted_pool(context: &StrategyContext) -> Vec<(&'static str, u32)> {
+    let mut boost_map: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+
+    let context_keys = [
+        &context.sentiment,
+        &context.conversation_type,
+        &context.engagement_level,
+    ];
+
+    for key in &context_keys {
+        for (ctx_key, boosts) in CONTEXT_BOOSTS {
+            if ctx_key == key {
+                for (strategy, multiplier) in *boosts {
+                    let entry = boost_map.entry(*strategy).or_insert(1);
+                    *entry = (*entry).max(*multiplier);
+                }
+            }
+        }
+    }
+
+    STRATEGY_POOL
+        .iter()
+        .map(|(key, base)| (*key, base * boost_map.get(key).copied().unwrap_or(1)))
+        .collect()
 }
 
 /// Build reply prompt with strategy selection
@@ -417,6 +720,7 @@ pub fn build_reply_prompt(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::twitter::sentiment::Sentiment;
 
     #[test]
     fn test_strategy_pool_has_32_strategies() {
@@ -641,5 +945,431 @@ mod tests {
 
         let instruction = get_strategy_instruction(&context);
         assert!(instruction.contains("CRITICAL INSTRUCTION"));
+    }
+
+    // ── Sentiment-Driven Strategy Selection Tests ────────────────────────
+
+    #[test]
+    fn test_default_context_all_weights_equal() {
+        let context = StrategyContext::default();
+        let pool = get_weighted_pool(&context);
+
+        assert_eq!(pool.len(), 32);
+        for (strategy, weight) in &pool {
+            assert_eq!(
+                *weight, 1,
+                "Strategy {strategy} should have weight 1 with default context, got {weight}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_positive_sentiment_boosts_wholesome_strategies() {
+        let context = StrategyContext {
+            sentiment: "wholesome".to_string(),
+            conversation_type: String::new(),
+            engagement_level: String::new(),
+        };
+        let pool = get_weighted_pool(&context);
+
+        let find = |name: &str| -> u32 {
+            pool.iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, w)| *w)
+                .unwrap_or(0)
+        };
+
+        // Boosted strategies
+        assert_eq!(
+            find("WHOLEsome"),
+            4,
+            "WHOLEsome should get 4x boost with wholesome context"
+        );
+        assert_eq!(
+            find("COMPLIMENT"),
+            2,
+            "COMPLIMENT should get 2x boost with wholesome context"
+        );
+        assert_eq!(
+            find("RELATABLE"),
+            2,
+            "RELATABLE should get 2x boost with wholesome context"
+        );
+        assert_eq!(
+            find("HYPE_REPLY"),
+            2,
+            "HYPE_REPLY should get 2x boost with wholesome context"
+        );
+
+        // Should be higher than contrast strategies
+        assert!(
+            find("WHOLEsome") > find("CALLOUT"),
+            "WHOLEsome weight ({}) should exceed CALLOUT weight ({}) with positive sentiment",
+            find("WHOLEsome"),
+            find("CALLOUT")
+        );
+        assert!(
+            find("WHOLEsome") > find("SARCASTIC"),
+            "WHOLEsome weight should exceed SARCASTIC weight with positive sentiment"
+        );
+
+        // Non-boosted strategies should stay at 1
+        assert_eq!(find("BOOMER"), 1, "BOOMER should stay at weight 1");
+        assert_eq!(find("ZEN"), 1, "ZEN should stay at weight 1");
+    }
+
+    #[test]
+    fn test_negative_sentiment_boosts_critical_strategies() {
+        let context = StrategyContext {
+            sentiment: "critical".to_string(),
+            conversation_type: String::new(),
+            engagement_level: String::new(),
+        };
+        let pool = get_weighted_pool(&context);
+
+        let find = |name: &str| -> u32 {
+            pool.iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, w)| *w)
+                .unwrap_or(0)
+        };
+
+        // Boosted strategies
+        assert_eq!(
+            find("CALLOUT"),
+            3,
+            "CALLOUT should get 3x boost with critical context"
+        );
+        assert_eq!(
+            find("CONTRARIAN"),
+            2,
+            "CONTRARIAN should get 2x boost with critical context"
+        );
+        assert_eq!(
+            find("NITPICK"),
+            2,
+            "NITPICK should get 2x boost with critical context"
+        );
+        assert_eq!(
+            find("SARCASTIC"),
+            2,
+            "SARCASTIC should get 2x boost with critical context"
+        );
+        assert_eq!(
+            find("DRY_WIT"),
+            2,
+            "DRY_WIT should get 2x boost with critical context"
+        );
+
+        // Should be higher than wholesome strategies
+        assert!(
+            find("CALLOUT") > find("WHOLEsome"),
+            "CALLOUT weight ({}) should exceed WHOLEsome weight ({}) with negative sentiment",
+            find("CALLOUT"),
+            find("WHOLEsome")
+        );
+        assert!(
+            find("CALLOUT") > find("COMPLIMENT"),
+            "CALLOUT weight should exceed COMPLIMENT weight with negative sentiment"
+        );
+
+        // Non-boosted strategies should stay at 1
+        assert_eq!(find("NPC"), 1, "NPC should stay at weight 1");
+        assert_eq!(find("SLANG"), 1, "SLANG should stay at weight 1");
+    }
+
+    #[test]
+    fn test_neutral_sentiment_no_boosts() {
+        let ctx = sentiment_to_strategy_context(Sentiment::Neutral, "just a random tweet");
+        assert_eq!(
+            ctx.sentiment, "",
+            "Neutral sentiment should produce empty context string"
+        );
+
+        let pool = get_weighted_pool(&ctx);
+        for (_, w) in &pool {
+            assert_eq!(
+                *w, 1,
+                "All strategies should stay at weight 1 with neutral sentiment"
+            );
+        }
+    }
+
+    #[test]
+    fn test_positive_sentiment_maps_to_wholesome() {
+        let ctx = sentiment_to_strategy_context(Sentiment::Positive, "just a random tweet");
+        assert_eq!(ctx.sentiment, "wholesome");
+    }
+
+    #[test]
+    fn test_negative_sentiment_maps_to_critical() {
+        let ctx = sentiment_to_strategy_context(Sentiment::Negative, "just a random tweet");
+        assert_eq!(ctx.sentiment, "critical");
+    }
+
+    // ── Conversation Type Detection Tests ──────────────────────────────
+
+    #[test]
+    fn test_classify_tech_tweet() {
+        let topic =
+            classify_conversation_type("Just shipped a new Python API for our cloud startup");
+        assert_eq!(topic, "tech", "Tech keywords should classify as tech");
+    }
+
+    #[test]
+    fn test_classify_politics_tweet() {
+        let topic = classify_conversation_type("The election results show democracy at work");
+        assert_eq!(
+            topic, "politics",
+            "Politics keywords should classify as politics"
+        );
+    }
+
+    #[test]
+    fn test_classify_gaming_tweet() {
+        let topic = classify_conversation_type(
+            "Just finished that new PS5 game, the open world is incredible",
+        );
+        assert_eq!(topic, "gaming", "Gaming keywords should classify as gaming");
+    }
+
+    #[test]
+    fn test_classify_food_tweet() {
+        let topic =
+            classify_conversation_type("Made a delicious vegan pasta recipe for dinner tonight");
+        assert_eq!(topic, "food", "Food keywords should classify as food");
+    }
+
+    #[test]
+    fn test_classify_science_tweet() {
+        let topic =
+            classify_conversation_type("New physics research from NASA shows quantum breakthrough");
+        assert_eq!(
+            topic, "science",
+            "Science keywords should classify as science"
+        );
+    }
+
+    #[test]
+    fn test_classify_finance_tweet() {
+        let topic = classify_conversation_type("Bitcoin and crypto stocks are crashing today");
+        assert_eq!(
+            topic, "finance",
+            "Finance keywords should classify as finance"
+        );
+    }
+
+    #[test]
+    fn test_classify_entertainment_tweet() {
+        let topic =
+            classify_conversation_type("That new Netflix movie is the best film of the year");
+        assert_eq!(
+            topic, "entertainment",
+            "Entertainment keywords should classify as entertainment"
+        );
+    }
+
+    #[test]
+    fn test_classify_news_tweet() {
+        let topic =
+            classify_conversation_type("Breaking news: major announcement from the president");
+        assert_eq!(topic, "news", "News keywords should classify as news");
+    }
+
+    #[test]
+    fn test_classify_debate_tweet() {
+        let topic = classify_conversation_type(
+            "Unpopular opinion but I actually disagree with this hot take",
+        );
+        assert_eq!(topic, "debate", "Debate keywords should classify as debate");
+    }
+
+    #[test]
+    fn test_classify_unknown_tweet_returns_empty() {
+        let topic = classify_conversation_type("Just had a wonderful walk in the park today");
+        assert_eq!(topic, "", "Non-matching tweet should return empty string");
+    }
+
+    #[test]
+    fn test_classify_short_tweet_no_false_positives() {
+        // Short text shouldn't accidentally match keywords
+        let topic = classify_conversation_type("Hello world");
+        assert_eq!(topic, "", "Short casual text should return empty string");
+    }
+
+    #[test]
+    fn test_classify_case_insensitive() {
+        let topic = classify_conversation_type("I love PYTHON programming and AI");
+        assert_eq!(topic, "tech", "Keyword matching should be case-insensitive");
+    }
+
+    #[test]
+    fn test_classify_empty_text_returns_empty() {
+        let topic = classify_conversation_type("");
+        assert_eq!(topic, "", "Empty text should return empty string");
+    }
+
+    #[test]
+    fn test_classify_wins_by_keyword_count() {
+        // Mix of tech and food keywords — tech has more matches
+        let topic = classify_conversation_type(
+            "Built a Python API for my startup, then cooked pasta for dinner",
+        );
+        assert_eq!(
+            topic, "tech",
+            "Should pick topic with most keyword hits (tech > food)"
+        );
+    }
+
+    // ── Sentiment + Conversation Type Integration Tests ─────────────────
+
+    #[test]
+    fn test_sentiment_with_conversation_type_sets_both_fields() {
+        let ctx = sentiment_to_strategy_context(
+            Sentiment::Positive,
+            "This AI startup just shipped an amazing Python API",
+        );
+        assert_eq!(
+            ctx.sentiment, "wholesome",
+            "Sentiment should map to wholesome"
+        );
+        assert_eq!(
+            ctx.conversation_type, "tech",
+            "Tweet should classify as tech"
+        );
+    }
+
+    #[test]
+    fn test_sentiment_with_conversation_type_boosts_combined_weights() {
+        // Positive sentiment (wholesome) + tech conversation type
+        let ctx = sentiment_to_strategy_context(
+            Sentiment::Positive,
+            "This AI startup just shipped an amazing Python API",
+        );
+        let pool = get_weighted_pool(&ctx);
+
+        let find = |name: &str| -> u32 {
+            pool.iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, w)| *w)
+                .unwrap_or(0)
+        };
+
+        // From wholesome sentiment
+        assert_eq!(
+            find("WHOLEsome"),
+            4,
+            "WHOLEsome should be 4x from sentiment"
+        );
+        // From tech conversation type
+        assert_eq!(find("CURIOUS"), 3, "CURIOUS should be 3x from tech context");
+        // From both
+        assert_eq!(
+            find("COMPLIMENT"),
+            2,
+            "COMPLIMENT should be 2x from sentiment"
+        );
+    }
+
+    #[test]
+    fn test_negative_politics_boosts_observation_and_contrarian() {
+        // Negative sentiment (critical) + politics
+        let ctx = sentiment_to_strategy_context(
+            Sentiment::Negative,
+            "The election results are terrible for democracy",
+        );
+        let pool = get_weighted_pool(&ctx);
+
+        let find = |name: &str| -> u32 {
+            pool.iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, w)| *w)
+                .unwrap_or(0)
+        };
+
+        // From critical: CALLOUT 3, CONTRARIAN 2
+        assert_eq!(find("CALLOUT"), 3, "CALLOUT should be 3x from critical");
+        // From politics: OBSERVATION 3, CONTRARIAN 3
+        assert_eq!(
+            find("OBSERVATION"),
+            3,
+            "OBSERVATION should be 3x from politics context"
+        );
+        // Combined: CONTRARIAN gets max(2 from critical, 3 from politics) = 3
+        assert_eq!(
+            find("CONTRARIAN"),
+            3,
+            "CONTRARIAN should be 3x (max of critical 2 and politics 3)"
+        );
+    }
+
+    /// Statistical test: runs many random selections to verify that positive vs negative
+    /// sentiment produces measurably different strategy selections.
+    #[test]
+    fn test_positive_vs_negative_sentiment_measurably_different_selections() {
+        use std::collections::HashMap;
+
+        // Use generic tweet text that doesn't match any conversation type
+        let positive_ctx = sentiment_to_strategy_context(
+            Sentiment::Positive,
+            "just a random tweet with no keywords",
+        );
+        let negative_ctx = sentiment_to_strategy_context(
+            Sentiment::Negative,
+            "just a random tweet with no keywords",
+        );
+
+        // Run many random selections for each sentiment
+        let mut pos_counts: HashMap<&str, u32> = HashMap::new();
+        let mut neg_counts: HashMap<&str, u32> = HashMap::new();
+
+        let iterations = 2000;
+        for _ in 0..iterations {
+            let pos_instruction = get_strategy_instruction(&positive_ctx);
+            let neg_instruction = get_strategy_instruction(&negative_ctx);
+
+            for (name, instr) in STRATEGY_INSTRUCTIONS {
+                if *instr == pos_instruction {
+                    *pos_counts.entry(*name).or_insert(0) += 1;
+                }
+                if *instr == neg_instruction {
+                    *neg_counts.entry(*name).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let pos_wholesome = pos_counts.get("WHOLEsome").copied().unwrap_or(0);
+        let neg_wholesome = neg_counts.get("WHOLEsome").copied().unwrap_or(0);
+
+        // WHOLEsome has weight 4/38 (~10.5%) with positive, 1/38 (~2.6%) with negative
+        // Expect ~210 vs ~52 out of 2000. Use 1.5x margin to avoid flaky failures.
+        assert!(
+            pos_wholesome > neg_wholesome * 2,
+            "Positive sentiment should pick WHOLEsome much more often than negative. \
+             Positive: {pos_wholesome}/{iterations}, Negative: {neg_wholesome}/{iterations}"
+        );
+
+        let pos_callout = pos_counts.get("CALLOUT").copied().unwrap_or(0);
+        let neg_callout = neg_counts.get("CALLOUT").copied().unwrap_or(0);
+
+        // CALLOUT has weight 3/38 (~7.9%) with negative, 1/38 (~2.6%) with positive
+        // Expect ~158 vs ~52 out of 2000.
+        assert!(
+            neg_callout > pos_callout * 2,
+            "Negative sentiment should pick CALLOUT much more often than positive. \
+             Negative: {neg_callout}/{iterations}, Positive: {pos_callout}/{iterations}"
+        );
+
+        // Verify total selections match expected
+        let pos_total: u32 = pos_counts.values().sum();
+        let neg_total: u32 = neg_counts.values().sum();
+        assert_eq!(
+            pos_total, iterations,
+            "All positive selections should be accounted for"
+        );
+        assert_eq!(
+            neg_total, iterations,
+            "All negative selections should be accounted for"
+        );
     }
 }

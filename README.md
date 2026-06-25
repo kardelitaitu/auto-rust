@@ -1,6 +1,6 @@
 # Auto
 
-last audited 23-06-26 by Buffy
+last audited 24-06-26 by Buffy
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 ![Tokio](https://img.shields.io/badge/Tokio-000000?style=for-the-badge&logo=rust&logoColor=white)
@@ -779,6 +779,11 @@ Create `config/default.toml`:
 max_discovery_retries = 3
 discovery_retry_delay_ms = 5000
 
+# Cursor overlay (visual cursor feedback in browser pages)
+cursor_overlay_ms = 0               # Sync interval in ms (0 = disabled, 50 = ~20fps)
+cursor_overlay_color = "#ff6600"     # Accent color for cursor dot, ring, and ripple
+cursor_overlay_show_trail = true     # Show fading ghost dots trailing the cursor
+
 [[browser.profiles]]
 name = "brave-local"
 type = "brave"
@@ -806,9 +811,13 @@ export ROXYBROWSER_API_KEY="your-api-key"
 
 # Orchestrator
 export MAX_GLOBAL_CONCURRENCY="10"
-export TASK_TIMEOUT_MS="300000"
+export TASK_TIMEOUT_MS="300000"# Cursor Overlay
+
+export CURSOR_OVERLAY_COLOR="#ff6600"   # Accent color (CSS hex or named color)
+export CURSOR_OVERLAY_SHOW_TRAIL=true   # Show/hide ghost trail dots
 
 # Logging
+
 export RUST_LOG="info,orchestrator=debug"
 ```
 
@@ -817,6 +826,9 @@ export RUST_LOG="info,orchestrator=debug"
 | Setting | Valid Range | Default |
 |---------|-------------|---------|
 | `max_global_concurrency` | 1-100 | 20 |
+| `cursor_overlay_ms` | ≥0 | 0 (disabled) |
+| `cursor_overlay_color` | Valid CSS hex color (`#RGB`, `#RRGGBB`, `#RGBA`, `#RRGGBBAA`) | `#ff6600` |
+| `cursor_overlay_show_trail` | `true` / `false` | `true` |
 | `task_timeout_ms` | >5000 | 600000 |
 | `max_retries` | 0-10 | 2 |
 

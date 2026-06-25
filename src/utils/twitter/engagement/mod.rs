@@ -260,7 +260,9 @@ pub async fn process_candidate(
 
     let status_url = tweet.get("status_url").and_then(|v| v.as_str());
 
-    let needs_detail_view = actions_to_do.iter().any(|&action| action != "like");
+    let needs_detail_view = actions_to_do
+        .iter()
+        .any(|&a| a == "reply" || a == "quote" || a == "follow");
     if needs_detail_view {
         let has_status_url = status_url.is_some();
         let dive_allowed = has_status_url && should_dive(&candidate_persona);
@@ -284,7 +286,9 @@ pub async fn process_candidate(
     }
 
     // Retweet, quote, reply, follow, and bookmark require a detail view; like does not.
-    let need_dive = actions_to_do.iter().any(|&action| action != "like");
+    let need_dive = actions_to_do
+        .iter()
+        .any(|&a| a == "reply" || a == "quote" || a == "follow");
     let mut did_dive = false;
     // Guard ensures navigation home if dropped mid-dive (e.g., task timeout)
     let mut dive_guard: Option<ThreadDiveGuard> = None;
@@ -375,6 +379,7 @@ pub async fn process_candidate(
                 info!("[dive] Thread dive failed: no valid target resolved");
                 // Resume scrolling if dive failed
                 next_scroll = original_next_scroll;
+                next_candidate_scan = Instant::now() + scroll_interval;
                 api.increment_run_counter(RUN_COUNTER_DIVE_FAILURE, 1);
             }
         }
@@ -453,7 +458,7 @@ pub async fn process_candidate(
             }
         }
         scroll_pause(api).await;
-        // Resume continuous scrolling and candidate scanning
+        // Resume continuous scrolling and candidate scanning — unconditional after navigation attempt
         next_scroll = Instant::now() + scroll_interval;
         next_candidate_scan = Instant::now() + scroll_interval;
         info!("[dive] Resumed continuous scrolling after thread dive");

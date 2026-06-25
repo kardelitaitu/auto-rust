@@ -80,7 +80,7 @@ mod integration_tests {
 
         filter_detail_actions_for_gate(&mut actions, true, should_dive(&persona));
 
-        assert_eq!(actions, vec!["like"]);
+        assert_eq!(actions, vec!["like", "retweet"]);
     }
 
     #[test]
@@ -726,17 +726,18 @@ mod gap_tests {
 
     // filter_detail_actions_for_gate edge cases
     #[test]
-    fn filter_detail_actions_no_status_url_keeps_only_like() {
+    fn filter_detail_actions_no_status_url_keeps_feed_actions() {
         let mut actions = vec!["like", "retweet", "reply"];
         filter_detail_actions_for_gate(&mut actions, false, true);
-        assert_eq!(actions, vec!["like"]);
+        // retweet is a feed action (no dive needed), only reply is stripped
+        assert_eq!(actions, vec!["like", "retweet"]);
     }
 
     #[test]
-    fn filter_detail_actions_dive_not_allowed_keeps_only_like() {
+    fn filter_detail_actions_dive_not_allowed_keeps_feed_actions() {
         let mut actions = vec!["like", "retweet", "reply"];
         filter_detail_actions_for_gate(&mut actions, true, false);
-        assert_eq!(actions, vec!["like"]);
+        assert_eq!(actions, vec!["like", "retweet"]);
     }
 
     #[test]

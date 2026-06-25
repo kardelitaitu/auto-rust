@@ -525,6 +525,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ListTasks);
@@ -541,6 +542,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::DryRun);
@@ -557,6 +559,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::Execute);
@@ -573,6 +576,7 @@ mod tests {
             validate_tasks: true,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::ValidateTasks);
@@ -589,6 +593,7 @@ mod tests {
             validate_tasks: true,
             watch: false,
             help_task: None,
+            debug: false,
         };
 
         // ValidateTasks comes before DryRun in the if-else chain
@@ -606,6 +611,7 @@ mod tests {
             validate_tasks: true,
             watch: false,
             help_task: Some("cookiebot".to_string()),
+            debug: false,
         };
 
         // HelpTask should take precedence over all other flags
@@ -623,6 +629,7 @@ mod tests {
             validate_tasks: false,
             watch: false,
             help_task: Some("pageview".to_string()),
+            debug: false,
         };
 
         assert_eq!(select_startup_mode(&args), StartupMode::HelpTask);
@@ -661,6 +668,8 @@ mod tests {
                 user_agent: None,
                 extra_http_headers: std::collections::BTreeMap::new(),
                 cursor_overlay_ms: 0,
+                cursor_overlay_color: "#ff6600".to_string(),
+                cursor_overlay_show_trail: true,
                 native_interaction: auto::config::NativeInteractionConfig::default(),
                 max_workers_per_session: 1,
                 enable_learning_persistence: false,

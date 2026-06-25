@@ -1,12 +1,12 @@
 //! Twitter retweet task.
 //! Retweets a tweet with optional quote commentary.
 
+use crate::llm::reply_engine::reply_engine_system_prompt;
 use crate::llm::{ChatMessage, Llm};
 use crate::prelude::TaskContext;
 use crate::utils::timing::{
     duration_with_variance, run_with_timeout, DEFAULT_NAVIGATION_TIMEOUT_MS,
 };
-use crate::utils::twitter::reply_engine::reply_engine_system_prompt;
 use crate::utils::twitter::twitteractivity_llm::validate_reply;
 use crate::utils::twitter::{ComposerFlow, PostOutcome, StatusUrl};
 use anyhow::Result;

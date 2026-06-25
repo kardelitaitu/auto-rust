@@ -6,6 +6,7 @@
 
 use crate::llm::models::ChatMessage;
 use crate::llm::processor;
+use crate::llm::reply_engine;
 use crate::llm::reply_strategies;
 
 pub struct UnifiedLLMProcessor {
@@ -32,8 +33,12 @@ impl UnifiedLLMProcessor {
         author: &str,
         replies: &[(&str, &str)], // (author, text)
     ) -> Result<Vec<processor::UnifiedReplyResponse>, anyhow::Error> {
-        // Build context with all replies
-        let context = reply_strategies::StrategyContext::default();
+        // Build context with sentiment and tweet topic
+        let context = reply_strategies::StrategyContext {
+            sentiment: String::new(), // batch mode doesn't have sentiment
+            conversation_type: reply_strategies::classify_conversation_type(tweet_text),
+            engagement_level: String::new(),
+        };
 
         // Convert replies to owned format for build_reply_prompt
         let replies_owned: Vec<(String, String)> = replies
@@ -63,16 +68,17 @@ impl UnifiedLLMProcessor {
     pub async fn process_quote_with_sentiment(
         &self,
         tweet_text: &str,
-        _replies: &[(&str, &str)],
+        author: &str,
+        replies: &[(&str, &str)],
     ) -> Result<processor::UnifiedQuoteResponse, anyhow::Error> {
-        let _context = reply_strategies::StrategyContext::default();
-
-        // Build prompt
-        let system = crate::llm::reply_engine::reply_engine_system_prompt();
-        let user = format!(
-            "Quote this tweet:\n{tweet_text}\n\nGenerate a short, engaging quote commentary (max 280 chars):"
-        );
-        let messages = vec![ChatMessage::system(system), ChatMessage::user(user)];
+        // Use the proper build_quote_messages() which includes the quote system prompt
+        // with language matching, tone adaptation, and the strategy-based user prompt.
+        let context = reply_strategies::StrategyContext {
+            sentiment: String::new(), // unified processor doesn't have sentiment
+            conversation_type: reply_strategies::classify_conversation_type(tweet_text),
+            engagement_level: String::new(),
+        };
+        let messages = reply_engine::build_quote_messages(author, tweet_text, replies, &context);
 
         // Single LLM request
         let response = self.llm.chat(messages).await?;
@@ -140,7 +146,7 @@ mod tests {
         let replies = vec![("user1", "Great post!")];
 
         let result = match processor
-            .process_quote_with_sentiment("Original tweet", &replies)
+            .process_quote_with_sentiment("Original tweet", "author", &replies)
             .await
         {
             Ok(r) => r,

@@ -1460,7 +1460,7 @@ status: {}
 {}: {}"#,
                     id_val, title_val, status_val, extra_key, extra_val
                 );
-                let _result: Result<SpecMeta, _> = serde_yaml::from_str(&yaml);
+                let _result: Result<serde_yaml::Value, _> = serde_yaml::from_str(&yaml);
             }
 
             /// Fuzz: TaskDefinition with deeply nested, empty, or extreme structures.

@@ -121,8 +121,14 @@ pub fn filter_detail_actions_for_gate(
     has_status_url: bool,
     dive_allowed: bool,
 ) {
-    if actions_to_do.iter().any(|&action| action != "like") && (!has_status_url || !dive_allowed) {
-        actions_to_do.retain(|&action| action == "like");
+    // Reply, quote, and follow need the detail view to work reliably — filter them
+    // out when the dive gate doesn't pass.
+    let detail_needed = actions_to_do
+        .iter()
+        .any(|&a| a == "reply" || a == "quote" || a == "follow");
+    if detail_needed && (!has_status_url || !dive_allowed) {
+        actions_to_do
+            .retain(|&action| action != "reply" && action != "quote" && action != "follow");
     }
 }
 

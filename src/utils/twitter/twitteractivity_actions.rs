@@ -6,12 +6,13 @@ use crate::prelude::TaskContext;
 use crate::utils::mouse::hover_before_click;
 use crate::utils::twitter::{
     sentiment::Sentiment,
-    twitteractivity_humanized::{click_post_pause, click_prep_pause},
+    twitteractivity_humanized::{click_post_pause, click_prep_pause, human_pause},
     twitteractivity_selectors,
     twitteractivity_state::SentimentTemplates,
     EngagementOutcome,
 };
 use anyhow::Result;
+use rand::Rng;
 use serde_json::Value;
 
 /// Helper: extract tweet text from tweet object
@@ -74,6 +75,80 @@ pub async fn like_at_position(api: &TaskContext, x: f64, y: f64) -> Result<Engag
 
     // Verification failed - assume like was not registered
     Ok(EngagementOutcome::Failed)
+}
+
+/// Click retweet at a specific coordinate, then confirm in the popup.
+///
+/// This is the position-based equivalent of `retweet_tweet()` — clicks the retweet
+/// button at the scraped coordinates, waits for the confirm dialog, then clicks confirm.
+/// Works from the feed without needing a thread dive.
+pub async fn retweet_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
+    let page = api.page();
+    let element_type = "button";
+
+    // Step 1: Click retweet button at position
+    hover_before_click(page, x, y, element_type).await?;
+    click_prep_pause(api).await;
+    api.click_at(x, y).await?;
+    click_post_pause(api).await;
+
+    // Step 2: Random pause 1-2s before confirming (matches retweet_tweet behavior)
+    let pause_ms = rand::thread_rng().gen_range(1000..2000);
+    human_pause(api, pause_ms).await;
+
+    // Step 3: Find and click the retweet confirm button
+    let confirm_js = twitteractivity_selectors::js_find_retweet_confirm_button();
+    let result = page.evaluate(confirm_js).await?;
+
+    if let Some((cx, cy)) = result.value().and_then(parse_button_coords) {
+        api.move_mouse_to(cx, cy).await?;
+        human_pause(api, 250).await;
+        api.click_at(cx, cy).await?;
+        human_pause(api, 800).await;
+        return Ok(EngagementOutcome::Completed);
+    }
+
+    Ok(EngagementOutcome::Failed)
+}
+
+/// Click follow at a specific coordinate.
+///
+/// Position-based equivalent of `follow_from_tweet()`. Clicks the follow button
+/// at the scraped coordinates. Works from the feed without a thread dive.
+pub async fn follow_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
+    let page = api.page();
+    let element_type = "button";
+
+    hover_before_click(page, x, y, element_type).await?;
+    click_prep_pause(api).await;
+    api.click_at(x, y).await?;
+    click_post_pause(api).await;
+
+    Ok(EngagementOutcome::Completed)
+}
+
+/// Click bookmark at a specific coordinate.
+///
+/// Position-based equivalent of `bookmark_tweet()`. Clicks the bookmark button
+/// at the scraped coordinates. Works from the feed without a thread dive.
+pub async fn bookmark_at_position(api: &TaskContext, x: f64, y: f64) -> Result<EngagementOutcome> {
+    let page = api.page();
+    let element_type = "button";
+
+    hover_before_click(page, x, y, element_type).await?;
+    click_prep_pause(api).await;
+    api.click_at(x, y).await?;
+    click_post_pause(api).await;
+
+    Ok(EngagementOutcome::Completed)
+}
+
+/// Helper to parse `{x, y}` coordinates from a JS evaluation result.
+fn parse_button_coords(value: &serde_json::Value) -> Option<(f64, f64)> {
+    let obj = value.as_object()?;
+    let x = obj.get("x").and_then(|v| v.as_f64())?;
+    let y = obj.get("y").and_then(|v| v.as_f64())?;
+    Some((x, y))
 }
 
 /// Select a template string from a sentiment-indexed set.

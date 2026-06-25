@@ -197,7 +197,16 @@
 
 ## 24-06-26 (late)
 
-### Typing pipeline overhaul — InputEvent + Selection API fixes ✅
+### Cursor overlay enhancement — circle+ring, ghost trail, ripple click, configurable color/trail ✅
+- **`src/utils/mouse/overlay.rs`**: Replaced basic dot with circle+ring design, 3-dot fading ghost trail managed via JS `dataset.trail`, expanding-ring ripple click effect, native cursor hiding via `body * { cursor: none !important; }`, GPU-composited transform positioning
+- **`src/config/types.rs`**: Added `cursor_overlay_color: String` (default `#ff6600`) and `cursor_overlay_show_trail: bool` (default `true`) to `BrowserConfig`
+- **`src/config/defaults.rs`**, **`src/config/env.rs`**: Default values and `CURSOR_OVERLAY_COLOR` / `CURSOR_OVERLAY_SHOW_TRAIL` env var overrides
+- **`config/default.toml`**: Added inline config fields + env var documentation
+- **`src/config/validation.rs`**: Added `is_valid_hex_color()` (validates `#RGB`, `#RRGGBB`, `#RGBA`, `#RRGGBBAA`), `BrowserConfig::validate()` checks color when `ms>0`, `validate_cursor_overlay_color()` standalone helper
+- **Tests**: 13 hex color validation tests, 9 config unit tests (defaults/env/TOML integration), 2 `.env` pipeline tests, 13 direct `load_dotenv_defaults()` edge case tests
+- All construction sites updated; `cargo check` clean
+
+### Typing pipeline overhaul — InputEvent + Selection API fixes ✅ — InputEvent + Selection API fixes ✅
 - **Root cause**: `execCommand('insertText')` and `execCommand('delete')` are deprecated and unreliable on React-managed contentEditables (Twitter's composer). They would fire incorrect events, causing garbled output where typo-corrected text showed corrupted characters.
 - **`src/utils/keyboard.rs`**:
   - `dispatch_input_event`: Replaced `execCommand('insertText')` with InputEvent + Selection API (`beforeinput({insertText})` → `range.insertNode()` → `input({insertText})`)

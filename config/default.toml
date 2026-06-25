@@ -6,6 +6,11 @@ discovery_retry_delay_ms = 5000
 connectors = []
 connection_timeout_ms = 60000
 
+# Cursor overlay (visual cursor feedback in browser pages)
+cursor_overlay_ms = 0               # Sync interval in ms (0 = disabled, 50 = ~20fps)
+cursor_overlay_color = "#ff6600"     # Accent color for cursor dot, ring, and ripple
+cursor_overlay_show_trail = true     # Show fading ghost dots trailing the cursor
+
 [browser.circuit_breaker]
 enabled = true
 failure_threshold = 5
@@ -42,8 +47,8 @@ feed_scroll_count = 100              # Number of scroll actions per scan
 engagement_candidate_count = 5       # Number of tweets to consider for engagement
 
 # Guard thresholds (stop conditions for feed loop)
-max_consecutive_scroll_failures = 30  # Max scroll failures before aborting
-max_consecutive_empty_scans = 30      # Max empty candidate scans before aborting
+max_consecutive_scroll_failures = 100  # Max scroll failures before aborting
+max_consecutive_empty_scans = 100      # Max empty candidate scans before aborting
 
 # Engagement limits (prevent rate limits and account restrictions)
 [twitter_activity.engagement_limits]
@@ -81,3 +86,8 @@ quote_tweet_probability = 0.15       # 15% of retweets become quote tweets
 # TWITTER_LLM_MODEL=llama3.2:latest
 # TWITTER_LLM_REPLY_PROBABILITY=0.05
 # TWITTER_LLM_QUOTE_PROBABILITY=0.15
+
+# Cursor overlay settings:
+# CURSOR_OVERLAY_MS=50              # Enable overlay with 50ms sync interval
+# CURSOR_OVERLAY_COLOR=#ff6600       # Accent color (CSS hex, rgb, or named color)
+# CURSOR_OVERLAY_SHOW_TRAIL=true     # Show/hide ghost trail dots

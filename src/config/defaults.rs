@@ -29,6 +29,7 @@ impl Default for TwitterActivityConfig {
             probabilities: TwitterProbabilitiesConfig::default(),
             engagement_limits: EngagementLimitsConfig::default(),
             llm: TwitterLLMConfig::default(),
+            persistence_enabled: false,
         }
     }
 }
@@ -45,6 +46,8 @@ impl Default for BrowserConfig {
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
+            cursor_overlay_color: "#ff6600".to_string(),
+            cursor_overlay_show_trail: true,
             native_interaction: NativeInteractionConfig::default(),
             max_workers_per_session: 5,
             enable_learning_persistence: true,

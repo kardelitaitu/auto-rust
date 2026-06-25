@@ -14,7 +14,8 @@ use crate::utils::twitter::twitteractivity_types::{EngagementOutcome, FollowOutc
 use crate::utils::twitter::{
     sentiment::Sentiment,
     twitteractivity_actions::{
-        extract_tweet_button_position, generate_quote_text, generate_reply_text, like_at_position,
+        bookmark_at_position, extract_tweet_button_position, follow_at_position,
+        generate_quote_text, generate_reply_text, like_at_position, retweet_at_position,
     },
     twitteractivity_helpers::validate_tweet_page,
     twitteractivity_humanized::{clustered_engagement_pause, clustered_reply_pause},
@@ -182,30 +183,44 @@ pub async fn dispatch_action(
             }
         }
         "retweet" => {
-            if !validate_tweet_page(api, did_dive, "retweet", tweet_id).await {
-                false
-            } else {
-                match retry_with_backoff(
-                    || retweet_tweet(api),
-                    &RetryConfig::default(),
-                    api,
-                    "retweet_tweet",
-                )
-                .await
-                {
-                    Ok(outcome) => {
-                        let ok = engagement_success(&outcome);
-                        if !ok {
-                            log_engagement_failure(&outcome, "retweet", tweet_id);
+            if !did_dive {
+                // Position-based retweet from feed (no thread dive needed)
+                if let Some(btn_pos) = extract_tweet_button_position(tweet, "retweet") {
+                    match retry_with_backoff(
+                        || retweet_at_position(api, btn_pos.0, btn_pos.1),
+                        &RetryConfig::default(),
+                        api,
+                        "retweet_at_position",
+                    )
+                    .await
+                    {
+                        Ok(outcome) => {
+                            let ok = engagement_success(&outcome);
+                            if !ok {
+                                log_engagement_failure(&outcome, "retweet", tweet_id);
+                            }
+                            ok
                         }
-                        ok
+                        Err(e) => {
+                            warn!("[retweet] Feed retweet failed after retries: {e}");
+                            api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
+                            false
+                        }
                     }
-                    Err(e) => {
-                        warn!("[retweet] retweet_tweet failed after retries: {e}");
-                        api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                        api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
+                } else {
+                    // No position data — try selector-based (will likely fail gracefully)
+                    if !validate_tweet_page(api, did_dive, "retweet", tweet_id).await {
                         false
+                    } else {
+                        selector_retweet(api, tweet_id).await
                     }
+                }
+            } else {
+                // In detail view, use selector-based retweet
+                if !validate_tweet_page(api, did_dive, "retweet", tweet_id).await {
+                    false
+                } else {
+                    selector_retweet(api, tweet_id).await
                 }
             }
         }
@@ -226,7 +241,9 @@ pub async fn dispatch_action(
                 let quote_text = if task_config.llm_enabled {
                     match extract_tweet_context(api).await {
                         Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
-                            match generate_quote_commentary(api, &author, &text, replies).await {
+                            match generate_quote_commentary(api, &author, &text, replies, sentiment)
+                                .await
+                            {
                                 Ok(commentary) => {
                                     info!("[quote] Generated LLM quote: {commentary}");
                                     commentary
@@ -273,30 +290,43 @@ pub async fn dispatch_action(
             }
         }
         "follow" => {
-            if !validate_tweet_page(api, did_dive, "follow", tweet_id).await {
-                false
-            } else {
-                match retry_with_backoff(
-                    || follow_from_tweet(api),
-                    &RetryConfig::default(),
-                    api,
-                    "follow_from_tweet",
-                )
-                .await
-                {
-                    Ok(outcome) => {
-                        let ok = follow_success(&outcome);
-                        if !ok {
-                            log_follow_failure(&outcome, tweet_id);
+            if !did_dive {
+                // Position-based follow from feed
+                if let Some(btn_pos) = extract_tweet_button_position(tweet, "follow") {
+                    match retry_with_backoff(
+                        || follow_at_position(api, btn_pos.0, btn_pos.1),
+                        &RetryConfig::default(),
+                        api,
+                        "follow_at_position",
+                    )
+                    .await
+                    {
+                        Ok(outcome) => {
+                            let ok = engagement_success(&outcome);
+                            if !ok {
+                                log_engagement_failure(&outcome, "follow", tweet_id);
+                            }
+                            ok
                         }
-                        ok
+                        Err(e) => {
+                            warn!("[follow] Feed follow failed after retries: {e}");
+                            api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
+                            false
+                        }
                     }
-                    Err(e) => {
-                        warn!("[follow] Follow failed after retries: {e}");
-                        api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                        api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
+                } else {
+                    // Fallback to selector-based follow
+                    if !validate_tweet_page(api, did_dive, "follow", tweet_id).await {
                         false
+                    } else {
+                        retry_follow(api, tweet_id).await
                     }
+                }
+            } else {
+                if !validate_tweet_page(api, did_dive, "follow", tweet_id).await {
+                    false
+                } else {
+                    retry_follow(api, tweet_id).await
                 }
             }
         }
@@ -317,7 +347,7 @@ pub async fn dispatch_action(
                 let reply_text = if task_config.llm_enabled {
                     match extract_tweet_context(api).await {
                         Ok((author, text, replies)) if !text.is_empty() && author != "unknown" => {
-                            match generate_reply(api, &author, &text, replies).await {
+                            match generate_reply(api, &author, &text, replies, sentiment).await {
                                 Ok(reply) => {
                                     info!("[reply] Generated LLM reply: {reply}");
                                     reply
@@ -373,30 +403,43 @@ pub async fn dispatch_action(
             }
         }
         "bookmark" => {
-            if !validate_tweet_page(api, did_dive, "bookmark", tweet_id).await {
-                false
-            } else {
-                match retry_with_backoff(
-                    || bookmark_tweet(api),
-                    &RetryConfig::aggressive(),
-                    api,
-                    "bookmark_tweet",
-                )
-                .await
-                {
-                    Ok(outcome) => {
-                        let ok = engagement_success(&outcome);
-                        if !ok {
-                            log_engagement_failure(&outcome, "bookmark", tweet_id);
+            if !did_dive {
+                // Position-based bookmark from feed
+                if let Some(btn_pos) = extract_tweet_button_position(tweet, "bookmark") {
+                    match retry_with_backoff(
+                        || bookmark_at_position(api, btn_pos.0, btn_pos.1),
+                        &RetryConfig::aggressive(),
+                        api,
+                        "bookmark_at_position",
+                    )
+                    .await
+                    {
+                        Ok(outcome) => {
+                            let ok = engagement_success(&outcome);
+                            if !ok {
+                                log_engagement_failure(&outcome, "bookmark", tweet_id);
+                            }
+                            ok
                         }
-                        ok
+                        Err(e) => {
+                            warn!("[bookmark] Feed bookmark failed after retries: {e}");
+                            api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
+                            false
+                        }
                     }
-                    Err(e) => {
-                        warn!("[bookmark] bookmark_tweet failed after retries: {e}");
-                        api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                        api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
+                } else {
+                    // Fallback to selector-based bookmark
+                    if !validate_tweet_page(api, did_dive, "bookmark", tweet_id).await {
                         false
+                    } else {
+                        selector_bookmark(api, tweet_id).await
                     }
+                }
+            } else {
+                if !validate_tweet_page(api, did_dive, "bookmark", tweet_id).await {
+                    false
+                } else {
+                    selector_bookmark(api, tweet_id).await
                 }
             }
         }
@@ -464,6 +507,82 @@ pub async fn dispatch_action(
 
     Ok(success)
 }
+
+/// Selector-based retweet logic (used from detail view or as position fallback).
+async fn selector_retweet(api: &TaskContext, tweet_id: &TweetId) -> bool {
+    match retry_with_backoff(
+        || retweet_tweet(api),
+        &RetryConfig::default(),
+        api,
+        "retweet_tweet",
+    )
+    .await
+    {
+        Ok(outcome) => {
+            let ok = engagement_success(&outcome);
+            if !ok {
+                log_engagement_failure(&outcome, "retweet", tweet_id);
+            }
+            ok
+        }
+        Err(e) => {
+            warn!("[retweet] retweet_tweet failed after retries: {e}");
+            api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
+            false
+        }
+    }
+}
+
+/// Selector-based follow logic (used from detail view or as position fallback).
+async fn retry_follow(api: &TaskContext, tweet_id: &TweetId) -> bool {
+    match retry_with_backoff(
+        || follow_from_tweet(api),
+        &RetryConfig::default(),
+        api,
+        "follow_from_tweet",
+    )
+    .await
+    {
+        Ok(outcome) => {
+            let ok = follow_success(&outcome);
+            if !ok {
+                log_follow_failure(&outcome, tweet_id);
+            }
+            ok
+        }
+        Err(e) => {
+            warn!("[follow] Follow failed after retries: {e}");
+            api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
+            false
+        }
+    }
+}
+
+/// Selector-based bookmark logic (used from detail view or as position fallback).
+async fn selector_bookmark(api: &TaskContext, tweet_id: &TweetId) -> bool {
+    match retry_with_backoff(
+        || bookmark_tweet(api),
+        &RetryConfig::aggressive(),
+        api,
+        "bookmark_tweet",
+    )
+    .await
+    {
+        Ok(outcome) => {
+            let ok = engagement_success(&outcome);
+            if !ok {
+                log_engagement_failure(&outcome, "bookmark", tweet_id);
+            }
+            ok
+        }
+        Err(e) => {
+            warn!("[bookmark] bookmark_tweet failed after retries: {e}");
+            api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
+            false
+        }
+    }
+}
+
 async fn read_replies_for_context(api: &TaskContext, did_dive: bool) {
     if did_dive {
         info!("[context] Reading replies to build conversation context...");

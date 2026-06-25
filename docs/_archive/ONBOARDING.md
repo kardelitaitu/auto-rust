@@ -1,6 +1,6 @@
 # Onboarding Guide
 
-last audited 13-05-26 by Buffy
+last audited 26-06-26 by Buffy
 
 > **Welcome to auto-rust!**  
 > This guide will help you get started with development in ~30 minutes.

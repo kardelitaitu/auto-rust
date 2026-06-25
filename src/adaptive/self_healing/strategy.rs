@@ -1,5 +1,7 @@
 //! Recovery strategies and classification.
 
+// last audited 26-06-26 by Buffy
+
 use super::health::SystemHealth;
 use std::time::{Duration, Instant};
 

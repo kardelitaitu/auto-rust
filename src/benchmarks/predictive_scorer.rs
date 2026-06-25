@@ -2,6 +2,8 @@
 //!
 //! Run with: `cargo bench --bench predictive_scorer`
 
+// last audited 26-06-26 by Buffy
+
 use auto::adaptive::predictive_scorer::PredictiveEngagementScorer;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 

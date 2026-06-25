@@ -1,5 +1,7 @@
 //! Current recovery state.
 
+// last audited 26-06-26 by Buffy
+
 use std::time::{Duration, Instant};
 
 /// Recovery mode.

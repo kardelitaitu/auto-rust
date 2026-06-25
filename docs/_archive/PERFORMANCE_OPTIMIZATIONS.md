@@ -1,5 +1,7 @@
 # Performance Optimization Checklist
 
+> *Last audited: 26-06-26 by Buffy*
+
 ## Phase 2: Code-Level Optimizations
 
 - [ ] **2.1 Metrics Lock Contention** ⏸️ Deferred

@@ -197,6 +197,17 @@
 
 ## 24-06-26 (late)
 
+## 26-06-26
+
+### Spec 0030: Typing Realism — word pauses, full keyboard adjacency, profile-driven speed ✅
+- **`src/utils/keyboard.rs`**:
+  - Activated `word_pause_ms` in `natural_typing_profiled` — inserts `human_pause(word_pause, 30)` after every space character, clamped to [0, 1500]ms, placed after the entire character-dispatch block (not inside one branch) so it fires regardless of typo path
+  - Expanded `get_similar_char` with 11 new QWERTY-adjacent mappings: `z↔x, c↔v, b→v, g↔h, j↔k, l→k, u→y` (all 26 letters now mapped)
+  - Added `#[deprecated(since = "0.2.32")]` to `natural_typing` wrapper (hardcodes keystroke_mean_ms=120) directing callers to `natural_typing_profiled` — wrapper has zero actual callers, safe deprecation
+- **Tests**: +14 new unit tests (3 word-pause logic, 11 per-character mapping). Updated proptest char range `'a'..='z'` → `' '..='~'` since all letters are now mapped. Updated `is_self_inverse` to include new reciprocal pairs.
+- **Verification**: cargo check ✅ (zero errors, zero warnings), cargo test utils::keyboard ✅ (53/53 passed), cargo fmt ✅
+- **Spec archived** to `docs/specs/_done/0030-typing-realism/`
+
 ### Cursor overlay enhancement — circle+ring, ghost trail, ripple click, configurable color/trail ✅
 - **`src/utils/mouse/overlay.rs`**: Replaced basic dot with circle+ring design, 3-dot fading ghost trail managed via JS `dataset.trail`, expanding-ring ripple click effect, native cursor hiding via `body * { cursor: none !important; }`, GPU-composited transform positioning
 - **`src/config/types.rs`**: Added `cursor_overlay_color: String` (default `#ff6600`) and `cursor_overlay_show_trail: bool` (default `true`) to `BrowserConfig`

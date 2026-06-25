@@ -4,6 +4,8 @@
 //!
 //! This agent calls the NVIDIA AI API endpoint using reqwest directly.
 
+// last audited 26-06-26 by Buffy
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use log::{debug, info};

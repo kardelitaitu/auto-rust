@@ -1,6 +1,6 @@
 # Tutorial: Getting Started with Auto-Rust
 
-last audited 08-05-26 by Kilo
+last audited 26-06-26 by Buffy
 
 A comprehensive video tutorial script for new users.
 

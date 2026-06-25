@@ -1,5 +1,7 @@
 //! Self-healing subsystem for automatic recovery and resilience.
 
+// last audited 26-06-26 by Buffy
+
 pub mod health;
 pub mod history;
 pub mod state;

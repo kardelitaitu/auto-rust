@@ -1,9 +1,9 @@
 version: 1
 id: 0030-typing-realism
 title: Activate word pauses, expand keyboard adjacency map, and enforce profile-driven typing
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: implementation-agent
 priority: P2
 area:
   - anti-detection
@@ -14,8 +14,8 @@ files:
     - src/utils/keyboard.rs
     - src/utils/twitter/twitteractivity_interact.rs
   docs:
-    - docs/specs/_active/0030-typing-realism/plan.md
-    - docs/specs/_active/0030-typing-realism/validation.md
+    - docs/specs/_done/0030-typing-realism/plan.md
+    - docs/specs/_done/0030-typing-realism/validation.md
 acceptance:
   - "`natural_typing_profiled` inserts a pause drawn from `behavior.word_pause_ms` (±30% variance) after every space character"
   - "`get_similar_char` covers the full QWERTY keyboard adjacency — at minimum: `z,x,c,v,b,g,h,j,k,l,u` and their adjacent keys"

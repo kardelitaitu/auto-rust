@@ -1,6 +1,6 @@
 # Task Runner Proposal: Registry-First Task System
 
-last audited 08-05-26 by Kilo
+last audited 26-06-26 by Buffy
 
 **Status:** Draft  
 **Date:** 2026-05-03  

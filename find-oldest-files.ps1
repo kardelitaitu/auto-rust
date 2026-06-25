@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Find the 3 oldest .rs and 3 oldest .md files by LastWriteTime for audit targeting.
+    Find the 2 oldest .rs and 2 oldest .md files by LastWriteTime for audit targeting.
 .DESCRIPTION
-    Scans the project tree (excluding target/, .git/, .bacon/, crates/)
-    and prints the 3 oldest .rs source files and 3 oldest .md docs files
+    Scans the project tree (excluding target/, .git/, .bacon/, crates/, build.rs, fuzz/)
+    and prints the 2 oldest .rs source files and 2 oldest .md docs files
     by LastWriteTime, so you know which files are most stale and likely need audit.
 .EXAMPLE
     .\find-oldest-files.ps1
@@ -40,10 +40,14 @@ $rsFiles = Get-ChildItem -Path $projectRoot -Recurse -Filter "*.rs" |
         $_.FullName -notmatch '[/\\]crates[/\\]' -and
         $_.FullName -notmatch '[/\\]node_modules[/\\]' -and
         $_.FullName -notmatch '[/\\]\.bacon[/\\]snapshots[/\\]' -and
-        $_.FullName -notmatch '[/\\]\.nodejs-reference[/\\]'
+        $_.FullName -notmatch '[/\\]\.nodejs-reference[/\\]' -and
+        $_.FullName -notmatch '[/\\]\.opencode[/\\]' -and
+        # Skip build.rs (always minimal/fn main() {}) and fuzz/ (gitignored)
+        $_.Name -ne 'build.rs' -and
+        $_.FullName -notmatch '[/\\]fuzz[/\\]'
     } |
     Sort-Object LastWriteTime |
-    Select-Object -First 3
+    Select-Object -First 2
 
 if ($rsFiles) {
     foreach ($f in $rsFiles) {
@@ -67,10 +71,12 @@ $mdFiles = Get-ChildItem -Path $projectRoot -Recurse -Filter "*.md" |
         $_.FullName -notmatch '[/\\]crates[/\\]' -and
         $_.FullName -notmatch '[/\\]node_modules[/\\]' -and
         $_.FullName -notmatch '[/\\]\.bacon[/\\]snapshots[/\\]' -and
-        $_.FullName -notmatch '[/\\]\.nodejs-reference[/\\]'
+        $_.FullName -notmatch '[/\\]\.nodejs-reference[/\\]' -and
+        $_.FullName -notmatch '[/\\]\.opencode[/\\]' -and
+        $_.FullName -notmatch '[/\\]fuzz[/\\]'
     } |
     Sort-Object LastWriteTime |
-    Select-Object -First 3
+    Select-Object -First 2
 
 if ($mdFiles) {
     foreach ($f in $mdFiles) {
@@ -83,5 +89,27 @@ if ($mdFiles) {
     Write-Status "  (none found)" "Red"
 }
 
+# ── Exit condition: if the oldest .md file was modified within 24h, everything is current ──
+$exitCode = 0
+if ($mdFiles) {
+    $oldestMd = $mdFiles | Select-Object -First 1
+    $age = (Get-Date) - $oldestMd.LastWriteTime
+    $hours = [math]::Round($age.TotalHours, 1)
+    if ($age.TotalHours -le 24) {
+        Write-Output ""
+        Write-Status ("All files are current - oldest .md modified ${hours}h ago") "Green"
+        $exitCode = 0
+    } else {
+        Write-Output ""
+        Write-Status ("Oldest .md is ${hours}h old - audit needed") "Yellow"
+        $exitCode = 1
+    }
+} elseif (-not $rsFiles) {
+    Write-Output ""
+    Write-Status "No files found to audit - all caught up!" "Green"
+    $exitCode = 0
+}
+
 Write-Output ""
 Write-Status "Done. Use 'git log --oneline -- <path>' to see commit history for each file." "Green"
+exit $exitCode

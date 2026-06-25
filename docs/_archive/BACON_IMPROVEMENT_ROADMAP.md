@@ -1,5 +1,7 @@
 # Bacon Pipeline Improvement Roadmap
 
+> *Last audited: 26-06-26 by Buffy*
+
 > **Status**: Planning document  
 > **Scope**: All `.bacon/` role prompts, `src/bacon_agent_pi/`, `src/bacon_agent_nvidia/`, configuration, tests, and documentation  
 > **Audience**: Developers maintaining and extending the Bacon pipeline  

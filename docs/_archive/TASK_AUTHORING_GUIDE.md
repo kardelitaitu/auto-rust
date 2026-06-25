@@ -1,5 +1,7 @@
 # Task Authoring Guide
 
+> *Last audited: 26-06-26 by Buffy*
+
 This page is a compatibility entry for older links.
 
 The detailed task-authoring walkthrough now lives in [Tutorial: Building Your First Task](TUTORIAL_BUILDING_FIRST_TASK.md).

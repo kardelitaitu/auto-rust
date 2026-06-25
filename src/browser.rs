@@ -1,5 +1,5 @@
 /*
-last audited 08-05-25 by RSA-Agent
+last audited 26-06-26 by Buffy
 crate: auto-rust | status: SAFE | lint: CLEAN
 findings: Zero unsafe blocks, concurrency patterns appropriate, 3 minor dependency concerns | next: clean test imports / verify notify+enigo platform compat | perf: Arc/RwLock for metrics is good; static Mutexes in native.rs are low-risk
 */

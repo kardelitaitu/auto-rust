@@ -1,6 +1,8 @@
 # ROLE: Pipeline Coder — SEARCH/REPLACE Block Generator
 # VERSION: 3.3
 # INPUT: Spec package files (plan.md, validation.md)
+#
+> *Last audited: 26-06-26 by Buffy*
 # OUTPUT: SEARCH/REPLACE blocks validated by check-fast.ps1
 
 For system context, see [AGENTS.md](../../AGENTS.md).

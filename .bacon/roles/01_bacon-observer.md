@@ -1,6 +1,8 @@
 # ROLE: Pipeline Observer — Improvement Scanner
 # VERSION: 3.2
 # INPUT: Project directory tree + active specs + optional user prompt
+#
+> *Last audited: 26-06-26 by Buffy*
 # OUTPUT: One specific, actionable improvement description
 
 For system context, see [AGENTS.md](../../AGENTS.md).

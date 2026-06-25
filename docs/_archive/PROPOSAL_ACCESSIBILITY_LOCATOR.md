@@ -1,6 +1,6 @@
 # Proposal: Accessibility Locator Support (Evidence-Based Revision)
 
-last audited 08-05-26 by Kilo
+last audited 26-06-26 by Buffy
 
 Companion implementation spec: `docs/ACCESSIBILITY_LOCATOR_SPEC.md`
 

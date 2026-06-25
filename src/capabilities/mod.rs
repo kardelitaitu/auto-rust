@@ -1,5 +1,7 @@
 //! Stable browser action helpers exposed to tasks.
 
+// last audited 26-06-26 by Buffy
+
 pub mod mouse {
     pub use crate::internal::mouse::*;
 }

@@ -1,5 +1,7 @@
 # Release v0.0.3 - Browser Management APIs
 
+> *Last audited: 26-06-26 by Buffy*
+
 **⚠️ SUPERSEDED:** This release is superseded by [v0.1.0](../RELEASE_NOTES_v0.1.0.md) and [v0.1.1](../RELEASE_NOTES_v0.1.1.md).
 
 **Release Date:** April 27, 2026  

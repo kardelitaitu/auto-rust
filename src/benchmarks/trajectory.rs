@@ -2,6 +2,8 @@
 //!
 //! Run with: `cargo bench --bench trajectory`
 
+// last audited 26-06-26 by Buffy
+
 use auto::utils::mouse::trajectory::{
     generate_arc_curve, generate_bezier_curve_with_config, generate_muscle_path, Point,
 };

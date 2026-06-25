@@ -1,6 +1,6 @@
 # Twitter Activity — Implementation Plan
 
-> *Last audited: 08-05-26 by Kilo*
+> *Last audited: 26-06-26 by Buffy*
 
 This document covers implementation milestones, rollout strategy, known gaps, references, and decisions log.
 

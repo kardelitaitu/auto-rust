@@ -1,5 +1,7 @@
 //! Failure history tracking.
 
+// last audited 26-06-26 by Buffy
+
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 

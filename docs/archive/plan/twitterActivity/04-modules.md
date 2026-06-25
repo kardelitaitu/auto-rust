@@ -1,6 +1,6 @@
 # Twitter Activity — Helper Modules Specification
 
-> *Last audited: 08-05-26 by Kilo*
+> *Last audited: 26-06-26 by Buffy*
 
 This document specifies all helper modules that support the `twitteractivity` task. All helper modules reside in `src/utils/twitter/` as a cohesive utility layer. The main task (`task/twitteractivity.rs`) imports and uses these helpers via `crate::utils::twitter::...`.
 

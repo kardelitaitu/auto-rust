@@ -19,7 +19,7 @@ use crate::utils::twitter::{
     twitteractivity_persona::{should_dive, PersonaWeights},
 };
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use rand::Rng;
 use std::time::{Duration, Instant};
 
@@ -265,9 +265,9 @@ pub async fn process_candidate(
         let has_status_url = status_url.is_some();
         let dive_allowed = has_status_url && should_dive(&candidate_persona);
         if !has_status_url {
-            info!("[dive] Skipping detail-only actions for tweet {tweet_id}: missing status URL");
+            debug!("[dive] Skipping detail-only actions for tweet {tweet_id}: missing status URL");
         } else if !dive_allowed {
-            info!(
+            debug!(
                 "[dive] Skipping detail-only actions for tweet {tweet_id}: thread dive gate did not pass"
             );
         }

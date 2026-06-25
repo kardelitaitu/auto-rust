@@ -8,7 +8,7 @@
 //! - `twitteractivity_state.rs` - `TaskConfig`, `CandidateContext`, `CandidateResult`
 
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
@@ -192,7 +192,7 @@ async fn scan_and_process_candidates(
     next_candidate_scan: &mut Instant,
 ) -> Result<bool> {
     let candidates = identify_engagement_candidates(api).await?;
-    info!("[twitter] Candidate scan | candidates={}", candidates.len());
+    debug!("[twitter] Candidate scan | candidates={}", candidates.len());
 
     if candidates.is_empty() {
         return Ok(false);

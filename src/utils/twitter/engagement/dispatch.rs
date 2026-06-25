@@ -44,13 +44,13 @@ fn follow_success(outcome: &FollowOutcome) -> bool {
 fn log_engagement_failure(outcome: &EngagementOutcome, action: &str, tweet_id: &TweetId) {
     match outcome {
         EngagementOutcome::AlreadyDone => {
-            info!("Skipping {action} for {tweet_id}: already performed");
+            info!("[{action}] Skipping {action} for {tweet_id}: already performed");
         }
         EngagementOutcome::ElementNotFound => {
-            warn!("Failed {action} for {tweet_id}: required UI element not found");
+            warn!("[{action}] Failed {action} for {tweet_id}: required UI element not found");
         }
         EngagementOutcome::Failed => {
-            warn!("Failed {action} for {tweet_id}: action execution failed");
+            warn!("[{action}] Failed {action} for {tweet_id}: action execution failed");
         }
         _ => {}
     }
@@ -59,13 +59,13 @@ fn log_engagement_failure(outcome: &EngagementOutcome, action: &str, tweet_id: &
 fn log_follow_failure(outcome: &FollowOutcome, tweet_id: &TweetId) {
     match outcome {
         FollowOutcome::AlreadyFollowing => {
-            info!("Skipping follow for {tweet_id}: already following");
+            info!("[follow] Skipping follow for {tweet_id}: already following");
         }
         FollowOutcome::ButtonNotFound => {
-            warn!("Failed follow for {tweet_id}: follow button not found");
+            warn!("[follow] Failed follow for {tweet_id}: follow button not found");
         }
         FollowOutcome::Failed => {
-            warn!("Failed follow for {tweet_id}: follow action failed");
+            warn!("[follow] Failed follow for {tweet_id}: follow action failed");
         }
         _ => {}
     }

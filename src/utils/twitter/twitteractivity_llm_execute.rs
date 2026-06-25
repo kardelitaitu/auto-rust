@@ -93,8 +93,9 @@ pub async fn quote_tweet(api: &TaskContext, commentary: &str) -> Result<Engageme
     api.pause(500).await;
 
     // Type the commentary
+    let typing_timeout_secs = TIMEOUT_MEDIUM_SECS + (commentary.len() as u64 * 1500 / 1000);
     if let Ok(r) = timeout(
-        Duration::from_secs(TIMEOUT_MEDIUM_SECS),
+        Duration::from_secs(typing_timeout_secs),
         api.keyboard("[data-testid='tweetTextarea_0']", commentary),
     )
     .await

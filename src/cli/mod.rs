@@ -73,6 +73,13 @@ pub struct Args {
         help = "Watch external task directories for changes and auto-reload tasks"
     )]
     pub watch: bool,
+
+    /// Enable debug-level logging
+    #[arg(
+        long,
+        help = "Enable debug-level logging (equivalent to RUST_LOG=debug)"
+    )]
+    pub debug: bool,
 }
 
 /// Parses command-line arguments using clap.

@@ -287,16 +287,25 @@ async fn run_validate_tasks(config: &config::Config) -> Result<()> {
 }
 
 async fn run_async() -> Result<()> {
+    // Parse args first so the --debug flag can influence logger setup
+    let args = cli::parse_args();
+
     let logger = logger::FileLogger::new("log")?;
     log::set_boxed_logger(Box::new(logger))?;
-    log::set_max_level(LevelFilter::Info);
+    let log_level = if args.debug {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    };
+    log::set_max_level(log_level);
 
     info!("Rust Orchestrator - Starting up...");
+    if args.debug {
+        info!("[main] Debug logging enabled");
+    }
 
     let shutdown = ShutdownManager::new();
     let _shutdown_signal_handle = shutdown.spawn_ctrl_c_listener();
-
-    let args = cli::parse_args();
 
     match select_startup_mode(&args) {
         StartupMode::HelpTask => {

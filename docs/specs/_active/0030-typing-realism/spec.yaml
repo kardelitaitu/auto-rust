@@ -1,7 +1,7 @@
 version: 1
 id: 0030-typing-realism
 title: Activate word pauses, expand keyboard adjacency map, and enforce profile-driven typing
-status: draft
+status: approved
 owner: spec-agent
 implementer: pending
 priority: P2

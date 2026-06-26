@@ -271,6 +271,12 @@ pub fn js_find_retweet_confirm_button() -> &'static str {
     include_str!("js/js_find_retweet_confirm_button.js")
 }
 
+/// Returns JS to scroll a tweet into view and find a button's center coordinates.
+#[must_use]
+pub fn js_scroll_and_get_tweet_button() -> &'static str {
+    include_str!("js/js_scroll_and_get_tweet_button.js")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,5 +426,13 @@ mod tests {
         assert!(js.contains("feed_visible"));
         assert!(js.contains("tweets_found"));
         assert!(js.contains("engagement_buttons"));
+    }
+
+    #[test]
+    fn test_js_scroll_and_get_tweet_button_returns_js_template() {
+        let js = js_scroll_and_get_tweet_button();
+        assert!(js.contains("{TWEET_ID}"));
+        assert!(js.contains("{BUTTON_NAME}"));
+        assert!(js.contains("scrollIntoView"));
     }
 }

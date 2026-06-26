@@ -108,7 +108,24 @@ pub async fn retweet_at_position(api: &TaskContext, x: f64, y: f64) -> Result<En
         return Ok(EngagementOutcome::Completed);
     }
 
-    Ok(EngagementOutcome::Failed)
+    // Fallback: direct click using selector
+    log::warn!("[retweet] Coordinate confirm search failed, attempting fallback selector click...");
+    if let Err(e) = api
+        .scroll_into_view(twitteractivity_selectors::RETWEET_CONFIRM_SELECTOR)
+        .await
+    {
+        log::info!("[retweet] Failed to scroll retweet confirm button into view: {e}");
+        return Ok(EngagementOutcome::Failed);
+    }
+    if let Err(e) = api
+        .click(twitteractivity_selectors::RETWEET_CONFIRM_SELECTOR)
+        .await
+    {
+        log::info!("[retweet] Failed to click retweet confirm: {e}");
+        return Ok(EngagementOutcome::Failed);
+    }
+    human_pause(api, 800).await;
+    Ok(EngagementOutcome::Completed)
 }
 
 /// Click follow at a specific coordinate.

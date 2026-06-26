@@ -143,6 +143,9 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<CliTaskDefinition>> {
                         current_payload.insert("value".to_string(), parse_scalar_value(value));
                     } else if key == "url" {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
+                    } else if is_full_url(value) {
+                        // Full URL (contains query params with =) — treat as single value
+                        current_payload.insert("url".to_string(), Value::String(value.to_string()));
                     } else if value.contains('=') {
                         if let Some(eq_pos) = value.find('=') {
                             let param_key = &value[..eq_pos];
@@ -171,6 +174,9 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<CliTaskDefinition>> {
                         current_payload.insert("value".to_string(), parse_scalar_value(value));
                     } else if key == "url" {
                         current_payload.insert("url".to_string(), Value::String(format_url(value)));
+                    } else if is_full_url(value) {
+                        // Full URL (contains query params with =) — treat as single value
+                        current_payload.insert("url".to_string(), Value::String(value.to_string()));
                     } else if value.contains('=') {
                         if let Some(eq_pos) = value.find('=') {
                             let param_key = &value[..eq_pos];
@@ -216,6 +222,10 @@ pub fn parse_task_groups(task_args: &[String]) -> Vec<Vec<CliTaskDefinition>> {
     }
 
     groups
+}
+
+fn is_full_url(value: &str) -> bool {
+    value.starts_with("https://") || value.starts_with("http://")
 }
 
 fn format_url(value: &str) -> String {
@@ -521,5 +531,39 @@ mod tests {
         ]];
         let formatted = format_task_groups(&groups);
         assert_eq!(formatted, "2 task(s) [cookiebot, pageview]");
+    }
+
+    #[test]
+    fn test_parse_intent_url_with_query_params() {
+        // URL with query params containing = signs should not be split
+        let args = vec!["twitterintent=https://x.com/intent/tweet?text=%40prabowo+aaaa%0Ahttps%3A%2F%2Fx.com%2FLummox_eth%2Fstatus%2F2070127552048353403%0A".to_string()];
+        let result = parse_task_groups(&args);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].len(), 1);
+        assert_eq!(result[0][0].name, "twitterintent");
+        let url = result[0][0]
+            .payload
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert!(url.contains("/intent/tweet"));
+        assert!(url.contains("text="));
+        assert!(url.contains("Lummox_eth"));
+        assert!(!url.is_empty());
+    }
+
+    #[test]
+    fn test_parse_intent_url_plain_url_still_works() {
+        // Plain URLs without query params should still work
+        let args = vec!["pageview=https://example.com/path".to_string()];
+        let result = parse_task_groups(&args);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0][0].name, "pageview");
+        assert_eq!(
+            result[0][0].payload.get("url"),
+            Some(&serde_json::json!("https://example.com/path"))
+        );
     }
 }

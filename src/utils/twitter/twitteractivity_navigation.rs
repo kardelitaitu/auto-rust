@@ -98,6 +98,37 @@ pub async fn goto_home(api: &TaskContext) -> Result<()> {
     goto_home_fallback(api).await
 }
 
+/// Ensures the browser is on the home feed.
+///
+/// This fail-safe checks the current URL and navigates back to home if we've
+/// accidentally landed on a tweet detail page or other non-home page.
+/// Called periodically during the feed scanning loop.
+///
+/// Returns `true` if a recovery navigation was performed, `false` if already
+/// on home or the check could not determine.
+pub async fn ensure_home_feed(api: &TaskContext) -> bool {
+    match is_on_home_feed(api).await {
+        Ok(true) => false,
+        Ok(false) => {
+            warn!("[nav] Not on home feed — navigating back to home (fail-safe)");
+            match goto_home(api).await {
+                Ok(()) => {
+                    info!("[nav] Fail-safe: successfully returned to home feed");
+                    true
+                }
+                Err(e) => {
+                    error!("[nav] Fail-safe: goto_home failed: {e}");
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            warn!("[nav] Fail-safe: URL check failed: {e}");
+            false
+        }
+    }
+}
+
 /// Gets the center coordinates of an element matching the selector.
 /// Returns None if element not found or rect invalid.
 async fn get_element_center(api: &TaskContext, selector: &str) -> Result<Option<(f64, f64)>> {

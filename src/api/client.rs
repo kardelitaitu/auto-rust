@@ -180,10 +180,40 @@ impl ApiClient {
             .await
     }
 
+    /// Performs a POST request and deserializes the JSON response.
+    /// Appends the path to the base URL and handles HTTP errors.
+    /// Checks circuit breaker before executing and records success/failure.
+    pub async fn post<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        self.request_json(Method::POST, path, None).await
+    }
+
+    /// Performs a POST request with a JSON body and deserializes the JSON response.
+    /// Appends the path to the base URL and handles HTTP errors.
+    /// Checks circuit breaker before executing and records success/failure.
+    pub async fn post_json<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let body_val = serde_json::to_value(body)?;
+        self.request_json_impl(Method::POST, path, Some(body_val), None)
+            .await
+    }
+
     async fn request_json<T: DeserializeOwned>(
         &self,
         method: Method,
         path: &str,
+        api_key: Option<String>,
+    ) -> Result<T> {
+        self.request_json_impl(method, path, None, api_key).await
+    }
+
+    async fn request_json_impl<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<serde_json::Value>,
         api_key: Option<String>,
     ) -> Result<T> {
         if !self.can_execute() {
@@ -195,6 +225,7 @@ impl ApiClient {
         let circuit_breaker = self.circuit_breaker.clone();
         let retry_policy = self.retry_policy.clone();
         let method_for_attempt = method;
+        let body_for_attempt = body;
 
         let result = retry_policy
             .execute(
@@ -204,6 +235,7 @@ impl ApiClient {
                     let api_key = api_key.clone();
                     let circuit_breaker = circuit_breaker.clone();
                     let method = method_for_attempt.clone();
+                    let body = body_for_attempt.clone();
 
                     async move {
                         if let Some(cb) = &circuit_breaker {
@@ -217,6 +249,9 @@ impl ApiClient {
                         let mut request = client.request(method, &url);
                         if let Some(key) = api_key {
                             request = request.header("X-API-Key", key);
+                        }
+                        if let Some(b) = body {
+                            request = request.json(&b);
                         }
 
                         let response = request.send().await.map_err(|e| {

@@ -188,6 +188,12 @@ pub struct OllamaConfig {
     pub timeout_ms: u64,
     pub temperature: Temperature,
     pub max_tokens: MaxTokens,
+    /// When false (default), system messages are merged into user messages
+    /// with "System Instructions:" / "User Request:" prefixes for compatibility
+    /// with older models. Set to true to send system role messages natively
+    /// (required for models with proper chat templates, e.g. Gemma 4 via Modelfile).
+    #[serde(default)]
+    pub no_system_merge: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -202,6 +208,7 @@ impl Default for OllamaConfig {
             timeout_ms: 240000,
             temperature: Temperature::new(0.7),
             max_tokens: MaxTokens::new_const(2048),
+            no_system_merge: false,
             presence_penalty: None,
             frequency_penalty: None,
         }

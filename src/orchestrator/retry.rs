@@ -97,13 +97,16 @@ pub(super) async fn execute_task_with_retry(
         );
     }
 
-    if !session.is_idle() {
+    if !session.has_available_workers() {
         return TaskResult::failure(
             duration_ms(start.elapsed()),
             format!(
-                "Session {} is not idle (state: {:?}), skipping task",
+                "Session {} has no available workers ({} of {} busy), skipping task",
                 session.id,
-                session.state()
+                session
+                    .active_workers
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                session.max_workers
             ),
             TaskErrorKind::Session,
         );

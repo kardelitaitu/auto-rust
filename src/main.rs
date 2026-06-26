@@ -665,6 +665,7 @@ mod tests {
                     api_url: String::new(),
                     api_key: String::new(),
                 },
+                ixbrowser: auto::config::IxbrowserConfig::default(),
                 user_agent: None,
                 extra_http_headers: std::collections::BTreeMap::new(),
                 cursor_overlay_ms: 0,

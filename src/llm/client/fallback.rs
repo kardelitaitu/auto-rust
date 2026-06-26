@@ -262,9 +262,49 @@ impl LlmClient {
             options["frequency_penalty"] = serde_json::json!(val);
         }
 
+        // Merge system instructions into the first user message for better compatibility
+        // with local models (like older Gemma) which can loop/fail on standard system role formats.
+        // Skip merging when `no_system_merge` is set (e.g. for Gemma 4+ with proper chat templates).
+        let processed_messages = if self.config.ollama.no_system_merge {
+            // Send messages as-is — system role preserved for models with proper templates
+            messages
+        } else {
+            let mut merged = Vec::new();
+            let mut system_contents = Vec::new();
+
+            for msg in &messages {
+                match msg.role {
+                    Role::System => {
+                        system_contents.push(msg.content.clone());
+                    }
+                    Role::User => {
+                        let mut user_content = msg.content.clone();
+                        if !system_contents.is_empty() {
+                            let system_merged = system_contents.join("\n\n");
+                            user_content = format!(
+                                "System Instructions:\n{}\n\nUser Request:\n{}",
+                                system_merged, user_content
+                            );
+                            system_contents.clear();
+                        }
+                        merged.push(ChatMessage::user(user_content));
+                    }
+                    Role::Assistant => {
+                        merged.push(msg.clone());
+                    }
+                }
+            }
+
+            if !system_contents.is_empty() {
+                let system_merged = system_contents.join("\n\n");
+                merged.push(ChatMessage::user(system_merged));
+            }
+            merged
+        };
+
         let request = serde_json::json!({
             "model": self.config.ollama.model,
-            "messages": messages,
+            "messages": processed_messages,
             "options": options,
             "stream": false,
         });
@@ -307,6 +347,26 @@ impl LlmClient {
         }
 
         let content = strip_thinking_tags(&message.content);
+
+        // Verify that the response contains actual content rather than only tokenizer junk.
+        // Uses a regex to strip <unused\d+> tokens (common when Ollama applies wrong chat template).
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re = RE.get_or_init(|| {
+            regex::Regex::new(r"<unused\d*>|<unused\d+>|<unuse$|<unus$|<unu$|<un$|<u$|<$")
+                .unwrap_or_else(|e| {
+                    error!(
+                        "Failed to compile unused-token regex: {e}. Falling back to simple pattern."
+                    );
+                    match regex::Regex::new(r"<unused\d+>") {
+                        Ok(r) => r,
+                        Err(_) => unreachable!("simple fallback regex must compile"),
+                    }
+                })
+        });
+        let cleaned = re.replace_all(&content, "").to_string();
+        if cleaned.trim().is_empty() {
+            anyhow::bail!("Ollama returned an empty response or only tokenizer junk");
+        }
 
         Ok(content)
     }

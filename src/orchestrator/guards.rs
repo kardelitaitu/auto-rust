@@ -5,7 +5,7 @@
 //! and `acquire_global_execution_slot()` — extracted from orchestrator.rs.
 
 use crate::result::{TaskErrorKind, TaskResult};
-use crate::session::{Session, SessionState};
+use crate::session::Session;
 use crate::utils::duration_ms;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -33,36 +33,32 @@ impl Drop for GlobalExecutionSlot {
     }
 }
 
-pub(super) struct SessionExecutionGuard<'a> {
-    session: &'a Session,
+pub(super) struct SessionExecutionGuard {
     active: bool,
 }
 
-impl<'a> SessionExecutionGuard<'a> {
-    pub(super) fn new(session: &'a Session) -> Self {
-        session.set_state(SessionState::Busy);
-        Self {
-            session,
-            active: true,
-        }
+impl SessionExecutionGuard {
+    /// Creates a guard that tracks task execution for cleanup.
+    /// Note: Session state (Idle/Busy) is now derived from `active_workers` count,
+    /// so this guard no longer sets session state. It exists for future cleanup hooks
+    /// and maintains the existing guard-based error-handling patterns.
+    pub(super) fn new(_session: &Session) -> Self {
+        Self { active: true }
     }
 
     pub(super) fn mark_idle(&mut self) {
-        self.session.set_state(SessionState::Idle);
         self.active = false;
     }
 
     pub(super) fn mark_failed(&mut self) {
-        self.session.set_state(SessionState::Failed);
         self.active = false;
     }
 }
 
-impl Drop for SessionExecutionGuard<'_> {
+impl Drop for SessionExecutionGuard {
     fn drop(&mut self) {
-        if self.active {
-            self.session.set_state(SessionState::Idle);
-        }
+        // Guard exists for future cleanup hooks.
+        // Session state is managed by worker permits (active_workers count).
     }
 }
 

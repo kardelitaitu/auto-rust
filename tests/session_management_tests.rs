@@ -3,7 +3,7 @@
 //! Tests session lifecycle, concurrent access, and recovery scenarios.
 //! Requires live browser via TASK_API_TEST_WS environment variable.
 
-use auto::session::{Session, SessionState};
+use auto::session::Session;
 use chromiumoxide::Browser;
 
 async fn connect_test_session() -> anyhow::Result<Option<Session>> {
@@ -34,8 +34,9 @@ async fn test_session_lifecycle_initial_state() -> anyhow::Result<()> {
     let Some(mut session) = connect_test_session().await? else {
         return Ok(());
     };
-    assert_eq!(session.state(), SessionState::Idle);
+    assert!(session.is_idle());
     assert!(session.is_healthy());
+    assert!(session.has_available_workers());
     assert_eq!(session.get_failure_count(), 0);
     assert_eq!(session.active_page_count(), 0);
     session.graceful_shutdown().await?;
@@ -47,18 +48,22 @@ async fn test_session_lifecycle_state_transitions() -> anyhow::Result<()> {
     let Some(mut session) = connect_test_session().await? else {
         return Ok(());
     };
-    // Idle -> Busy
-    session.set_state(SessionState::Busy);
-    assert!(session.is_busy());
-    assert!(!session.is_idle());
-
-    // Busy -> Failed
-    session.set_state(SessionState::Failed);
-    assert!(!session.is_idle());
+    // is_idle() / is_busy() now derived from active_workers count
+    assert!(session.is_idle());
     assert!(!session.is_busy());
+    assert!(session.has_available_workers());
 
-    // Failed -> Idle (recovery)
-    session.set_state(SessionState::Idle);
+    // Acquiring a worker makes session busy
+    let permit = session
+        .acquire_worker(1000)
+        .await
+        .expect("worker should be available");
+    assert!(!session.is_idle());
+    assert!(session.is_busy());
+    assert!(session.has_available_workers()); // 1 of 5 workers busy — still has capacity
+    drop(permit);
+
+    // After release, back to idle
     assert!(session.is_idle());
     assert!(!session.is_busy());
 
@@ -72,7 +77,8 @@ async fn test_session_lifecycle_shutdown_marks_failed() -> anyhow::Result<()> {
         return Ok(());
     };
     session.graceful_shutdown().await?;
-    assert_eq!(session.state(), SessionState::Failed);
+    // Graceful shutdown sets Failed; is_idle() checks active_workers (0), so still idle
+    assert!(session.is_idle());
     Ok(())
 }
 

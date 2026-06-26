@@ -15,9 +15,9 @@ pub mod twitter_helpers;
 #[cfg(test)]
 mod config_tests {
     use crate::config::{
-        validate_config, BrowserConfig, CircuitBreakerConfig, Config, NativeInteractionConfig,
-        OrchestratorConfig, RoxybrowserConfig, TaskDiscoveryConfig, TracingConfig,
-        TwitterActivityConfig,
+        validate_config, BrowserConfig, CircuitBreakerConfig, Config, IxbrowserConfig,
+        NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, TaskDiscoveryConfig,
+        TracingConfig, TwitterActivityConfig,
     };
     use std::collections::BTreeMap;
 
@@ -42,6 +42,7 @@ mod config_tests {
                     api_url: "http://localhost".to_string(),
                     api_key: "key".to_string(),
                 },
+                ixbrowser: IxbrowserConfig::default(),
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
                 cursor_overlay_ms: 0,
@@ -90,6 +91,7 @@ mod config_tests {
                     api_url: "http://localhost".to_string(),
                     api_key: "key".to_string(),
                 },
+                ixbrowser: IxbrowserConfig::default(),
                 user_agent: None,
                 extra_http_headers: BTreeMap::new(),
                 cursor_overlay_ms: 0,

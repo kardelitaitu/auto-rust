@@ -37,6 +37,8 @@ pub enum BrowserSource {
     Configured,
     /// From `RoxyBrowser` API
     RoxyBrowser,
+    /// From `IxBrowser` API
+    IxBrowser,
     /// Auto-discovered local browser
     Local,
 }
@@ -46,6 +48,7 @@ impl std::fmt::Display for BrowserSource {
         match self {
             BrowserSource::Configured => write!(f, "configured"),
             BrowserSource::RoxyBrowser => write!(f, "roxybrowser"),
+            BrowserSource::IxBrowser => write!(f, "ixbrowser"),
             BrowserSource::Local => write!(f, "local"),
         }
     }
@@ -310,6 +313,301 @@ impl BrowserConnector for RoxyBrowserConnector {
     }
 }
 
+/// Helper to resolve a WebSocket debugger URL from a host:port or URL string.
+async fn resolve_ws_url(address: &str) -> Option<String> {
+    let address = address.trim();
+    if address.is_empty() {
+        return None;
+    }
+
+    // If it's already a ws/wss URL, return it
+    if address.starts_with("ws://") || address.starts_with("wss://") {
+        return Some(address.to_string());
+    }
+
+    // Prepare HTTP URL for json/version
+    let http_url = if address.starts_with("http://") || address.starts_with("https://") {
+        if address.ends_with("/json/version") {
+            address.to_string()
+        } else if address.ends_with('/') {
+            format!("{}json/version", address)
+        } else {
+            format!("{}/json/version", address)
+        }
+    } else {
+        format!("http://{}/json/version", address)
+    };
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&http_url)
+        .timeout(Duration::from_millis(1500))
+        .send()
+        .await
+        .ok()?;
+
+    if response.status().is_success() {
+        if let Ok(version_data) = response.json::<serde_json::Value>().await {
+            if let Some(ws_url) = version_data
+                .get("webSocketDebuggerUrl")
+                .and_then(serde_json::Value::as_str)
+            {
+                return Some(ws_url.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Connector for `IxBrowser` instances.
+pub struct IxBrowserConnector;
+
+impl IxBrowserConnector {
+    /// Creates a new `IxBrowser` connector.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for IxBrowserConnector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn get_running_ixbrowser_ports() -> std::collections::HashMap<String, String> {
+    let mut ports = std::collections::HashMap::new();
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | Where-Object { $_.CommandLine -like '*--protected-userid=*' } | Select-Object -ExpandProperty CommandLine"
+        ])
+        .output();
+    if let Ok(out) = output {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.contains("--protected-userid=") && line.contains("--remote-debugging-port=") {
+                let mut uid = None;
+                let mut port = None;
+                if let Some(idx) = line.find("--protected-userid=") {
+                    let sub = &line[idx + "--protected-userid=".len()..];
+                    let end = sub.find(' ').unwrap_or(sub.len());
+                    uid = Some(sub[..end].trim_matches('"').to_string());
+                }
+                if let Some(idx) = line.find("--remote-debugging-port=") {
+                    let sub = &line[idx + "--remote-debugging-port=".len()..];
+                    let end = sub.find(' ').unwrap_or(sub.len());
+                    port = Some(sub[..end].trim_matches('"').to_string());
+                }
+                if let (Some(u), Some(p)) = (uid, port) {
+                    ports.insert(u, p);
+                }
+            }
+        }
+    }
+    ports
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_running_ixbrowser_ports() -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::new()
+}
+
+#[async_trait]
+impl BrowserConnector for IxBrowserConnector {
+    fn is_available(&self, config: &Config) -> bool {
+        config.browser.ixbrowser.enabled && !config.browser.ixbrowser.api_url.is_empty()
+    }
+
+    async fn discover(&self, config: &Config) -> Result<Vec<BrowserCapabilities>> {
+        let api_url = &config.browser.ixbrowser.api_url;
+
+        // Normalize base URL to ensure trailing slash and include /api/v2/ if not present
+        let mut base_url = api_url.clone();
+        if !base_url.ends_with('/') {
+            base_url.push('/');
+        }
+        let base_url = if base_url.contains("/api/v2") {
+            base_url
+        } else {
+            format!("{}api/v2/", base_url)
+        };
+
+        info!("Discovering IxBrowser from: {base_url}");
+
+        let client = crate::api::ApiClient::new(base_url.clone());
+
+        #[derive(serde::Deserialize)]
+        struct IxBrowserError {
+            code: i64,
+            message: Option<String>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct IxBrowserResponse {
+            error: IxBrowserError,
+            data: Option<serde_json::Value>,
+        }
+
+        // Hit the "profile-opened-list" POST endpoint to get active profiles
+        let response: IxBrowserResponse = match client.post("profile-opened-list").await {
+            Ok(resp) => resp,
+            Err(e) => {
+                warn!("IxBrowser API request failed: {}", e);
+                return Ok(vec![]);
+            }
+        };
+
+        if response.error.code != 0 && response.error.code != 200 {
+            let msg = response.error.message.as_deref().unwrap_or("unknown");
+            warn!(
+                "IxBrowser API error: {} (code: {})",
+                msg, response.error.code
+            );
+            return Ok(vec![]);
+        }
+
+        let profiles = match response.data {
+            Some(serde_json::Value::Array(arr)) => arr,
+            Some(serde_json::Value::Object(obj)) => {
+                if let Some(serde_json::Value::Array(arr)) =
+                    obj.get("list").or_else(|| obj.get("data"))
+                {
+                    arr.clone()
+                } else {
+                    vec![]
+                }
+            }
+            _ => vec![],
+        };
+
+        if profiles.is_empty() {
+            info!("No active/opened IxBrowser profiles found");
+            return Ok(vec![]);
+        }
+
+        info!("Found {} active/opened IxBrowser profiles", profiles.len());
+
+        let process_ports = get_running_ixbrowser_ports();
+
+        let mut capabilities = Vec::new();
+
+        for (i, profile) in profiles.iter().enumerate() {
+            let profile_id_opt = profile
+                .get("profile_id")
+                .or_else(|| profile.get("profileId"))
+                .or_else(|| profile.get("id"));
+
+            let profile_id = match profile_id_opt {
+                Some(serde_json::Value::Number(num)) => num.to_string(),
+                Some(serde_json::Value::String(s)) => s.clone(),
+                _ => format!("ixbrowser-{}", i),
+            };
+
+            let profile_id_val = if let Ok(id_int) = profile_id.parse::<i64>() {
+                serde_json::Value::Number(id_int.into())
+            } else {
+                serde_json::Value::String(profile_id.clone())
+            };
+
+            // Only proceed if this profile is actually running locally
+            let Some(port) = process_ports.get(&profile_id) else {
+                info!("Profile ID {} is not running locally, skipping", profile_id);
+                continue;
+            };
+
+            // Query profile details from profile-list to get the profile's user-friendly name
+            let mut profile_name = format!("IxBrowserProfile-{}", profile_id);
+            #[derive(serde::Serialize)]
+            struct ListRequest {
+                profile_id: serde_json::Value,
+            }
+            let list_req = ListRequest {
+                profile_id: profile_id_val.clone(),
+            };
+            if let Ok(list_resp) = client
+                .post_json::<_, IxBrowserResponse>("profile-list", &list_req)
+                .await
+            {
+                if list_resp.error.code == 0 || list_resp.error.code == 200 {
+                    if let Some(list_data) = list_resp.data {
+                        if let Some(serde_json::Value::Array(arr)) = list_data.get("data") {
+                            if let Some(profile_obj) = arr.first() {
+                                if let Some(name_str) =
+                                    profile_obj.get("name").and_then(serde_json::Value::as_str)
+                                {
+                                    profile_name = name_str.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Resolve WebSocket URL from the debugging port
+            let ws_url = resolve_ws_url(&format!("127.0.0.1:{}", port)).await;
+
+            let Some(ws_url) = ws_url else {
+                warn!(
+                    "Profile '{}' has no active debugging address or WebSocket URL, skipping",
+                    profile_name
+                );
+                continue;
+            };
+
+            capabilities.push(BrowserCapabilities {
+                id: format!("ixbrowser-{}", profile_id),
+                name: profile_name,
+                browser_type: "ixbrowser".to_string(),
+                ws_url,
+                source: BrowserSource::IxBrowser,
+            });
+        }
+
+        Ok(capabilities)
+    }
+
+    async fn connect(&self, capability: &BrowserCapabilities, config: &Config) -> Result<Session> {
+        let connect_timeout =
+            Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
+
+        match tokio::time::timeout(
+            connect_timeout,
+            chromiumoxide::Browser::connect(&capability.ws_url),
+        )
+        .await
+        {
+            Ok(Ok((browser, handler))) => {
+                info!("Connected to IxBrowser: {}", capability.name);
+                Ok(Session::new(
+                    capability.id.clone(),
+                    capability.name.clone(),
+                    capability.browser_type.clone(),
+                    browser,
+                    handler,
+                    config.browser.max_workers_per_session,
+                    config.browser.cursor_overlay_ms,
+                    Some(config.browser.circuit_breaker.clone()),
+                ))
+            }
+            Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+                format!("Failed to connect to IxBrowser {}: {}", capability.name, e),
+            ))),
+            Err(_) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+                format!(
+                    "Connection timeout to IxBrowser {} after {}ms",
+                    capability.name,
+                    connect_timeout.as_millis()
+                ),
+            ))),
+        }
+    }
+}
+
 /// Connector for local browser auto-discovery.
 pub struct LocalBrowserConnector {
     brave_port_start: u16,
@@ -543,6 +841,7 @@ impl ConnectorRegistry {
             connectors: vec![
                 Box::new(ConfiguredProfileConnector::new()),
                 Box::new(RoxyBrowserConnector::new()),
+                Box::new(IxBrowserConnector::new()),
                 Box::new(LocalBrowserConnector::from_env()),
             ],
         }
@@ -595,6 +894,7 @@ mod tests {
     fn test_browser_source_display() {
         assert_eq!(BrowserSource::Configured.to_string(), "configured");
         assert_eq!(BrowserSource::RoxyBrowser.to_string(), "roxybrowser");
+        assert_eq!(BrowserSource::IxBrowser.to_string(), "ixbrowser");
         assert_eq!(BrowserSource::Local.to_string(), "local");
     }
 
@@ -607,7 +907,7 @@ mod tests {
     #[test]
     fn test_connector_registry_standard() {
         let registry = ConnectorRegistry::standard();
-        assert_eq!(registry.all().len(), 3);
+        assert_eq!(registry.all().len(), 4);
     }
 
     #[test]

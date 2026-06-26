@@ -210,6 +210,7 @@ mod tests {
                 ws_endpoint: "ws://localhost:9222".to_string(),
             }],
             roxybrowser: crate::config::RoxybrowserConfig::default(),
+            ixbrowser: crate::config::IxbrowserConfig::default(),
             user_agent: None,
             extra_http_headers: std::collections::BTreeMap::new(),
             cursor_overlay_ms: 0,

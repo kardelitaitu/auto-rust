@@ -415,6 +415,14 @@ mod tests {
         let config = crate::config::Config {
             browser: crate::config::BrowserConfig {
                 profiles: vec![],
+                roxybrowser: crate::config::RoxybrowserConfig {
+                    enabled: false,
+                    ..Default::default()
+                },
+                ixbrowser: crate::config::IxbrowserConfig {
+                    enabled: false,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -500,6 +508,14 @@ mod tests {
                         ws_endpoint: "ws://b:9222".to_string(),
                     },
                 ],
+                roxybrowser: crate::config::RoxybrowserConfig {
+                    enabled: false,
+                    ..Default::default()
+                },
+                ixbrowser: crate::config::IxbrowserConfig {
+                    enabled: false,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Default::default()

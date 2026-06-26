@@ -12,9 +12,9 @@ use std::fs;
 use std::path::Path;
 
 use super::types::{
-    BrowserConfig, CircuitBreakerConfig, Config, NativeClickCalibrationMode, NativeInputBackend,
-    NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, TaskDiscoveryConfig,
-    TracingConfig, TwitterActivityConfig,
+    BrowserConfig, CircuitBreakerConfig, Config, IxbrowserConfig, NativeClickCalibrationMode,
+    NativeInputBackend, NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig,
+    TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig,
 };
 
 /// Load `.env` defaults into the environment (only for keys not already set).
@@ -63,6 +63,8 @@ pub(crate) fn load_code_config() -> Result<Config> {
         env::var("ROXYBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:50000/".to_string());
     let roxybrowser_key = env::var("ROXYBROWSER_API_KEY")
         .unwrap_or_else(|_| "c6ae203adfe0327a63ccc9174c178dec".to_string());
+    let ixbrowser_url =
+        env::var("IXBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:53200".to_string());
 
     Ok(Config {
         browser: BrowserConfig {
@@ -80,6 +82,10 @@ pub(crate) fn load_code_config() -> Result<Config> {
                 enabled: true,
                 api_url: roxybrowser_url,
                 api_key: roxybrowser_key,
+            },
+            ixbrowser: IxbrowserConfig {
+                enabled: true,
+                api_url: ixbrowser_url,
             },
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
@@ -114,6 +120,9 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
     if let Ok(key) = env::var("ROXYBROWSER_API_KEY") {
         config.browser.roxybrowser.api_key = key;
+    }
+    if let Ok(url) = env::var("IXBROWSER_API_URL") {
+        config.browser.ixbrowser.api_url = url;
     }
     if let Ok(user_agent) = env::var("BROWSER_USER_AGENT") {
         config.browser.user_agent = Some(user_agent);

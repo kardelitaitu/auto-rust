@@ -262,9 +262,42 @@ impl LlmClient {
             options["frequency_penalty"] = serde_json::json!(val);
         }
 
+        // Merge system instructions into the first user message for better compatibility
+        // with local models (like Gemma) which can loop/fail on standard system role formats.
+        let mut processed_messages = Vec::new();
+        let mut system_contents = Vec::new();
+
+        for msg in messages {
+            match msg.role {
+                Role::System => {
+                    system_contents.push(msg.content);
+                }
+                Role::User => {
+                    let mut user_content = msg.content;
+                    if !system_contents.is_empty() {
+                        let system_merged = system_contents.join("\n\n");
+                        user_content = format!(
+                            "System Instructions:\n{}\n\nUser Request:\n{}",
+                            system_merged, user_content
+                        );
+                        system_contents.clear();
+                    }
+                    processed_messages.push(ChatMessage::user(user_content));
+                }
+                Role::Assistant => {
+                    processed_messages.push(msg);
+                }
+            }
+        }
+
+        if !system_contents.is_empty() {
+            let system_merged = system_contents.join("\n\n");
+            processed_messages.push(ChatMessage::user(system_merged));
+        }
+
         let request = serde_json::json!({
             "model": self.config.ollama.model,
-            "messages": messages,
+            "messages": processed_messages,
             "options": options,
             "stream": false,
         });
@@ -307,6 +340,22 @@ impl LlmClient {
         }
 
         let content = strip_thinking_tags(&message.content);
+
+        // Verify that the response contains actual content rather than only tokenizer junk
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re = RE.get_or_init(|| {
+            match regex::Regex::new(r"<unused\d*>|<unused\d+>|<unuse$|<unus$|<unu$|<un$|<u$|<$") {
+                Ok(r) => r,
+                Err(_) => match regex::Regex::new("") {
+                    Ok(r) => r,
+                    Err(_) => unreachable!("Empty regex pattern failed to compile"),
+                },
+            }
+        });
+        let cleaned = re.replace_all(&content, "").to_string();
+        if cleaned.trim().is_empty() {
+            anyhow::bail!("Ollama returned an empty response or only tokenizer junk");
+        }
 
         Ok(content)
     }

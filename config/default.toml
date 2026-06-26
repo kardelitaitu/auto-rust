@@ -27,6 +27,10 @@ enabled = true
 api_url = "http://127.0.0.1:50000/"
 api_key = "c6ae203adfe0327a63ccc9174c178dec"
 
+[browser.ixbrowser]
+enabled = true
+api_url = "http://127.0.0.1:53200"
+
 [orchestrator]
 max_global_concurrency = 20
 task_timeout_ms = 1200000

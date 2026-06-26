@@ -299,6 +299,25 @@ impl ConfigValidationReport {
             }
         }
 
+        // IxBrowser API URL format validation
+        if !config.ixbrowser.api_url.is_empty() {
+            let url = &config.ixbrowser.api_url;
+            if !url.starts_with("http://") && !url.starts_with("https://") {
+                return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                    field: "ixbrowser.api_url".to_string(),
+                    value: url.clone(),
+                    reason: "must start with http:// or https://".to_string(),
+                }));
+            }
+            if url.parse::<reqwest::Url>().is_err() {
+                return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                    field: "ixbrowser.api_url".to_string(),
+                    value: url.clone(),
+                    reason: "invalid URL format".to_string(),
+                }));
+            }
+        }
+
         // API key validation (warn if empty but don't fail - might not be using RoxyBrowser)
         if config.roxybrowser.enabled && config.roxybrowser.api_key.is_empty() {
             warn!("RoxyBrowser is enabled but api_key is empty. API requests will fail.");

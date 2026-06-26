@@ -29,7 +29,10 @@ pub struct BrowserConfig {
     pub discovery_retry_delay_ms: DurationMs,
     pub circuit_breaker: CircuitBreakerConfig,
     pub profiles: Vec<BrowserProfile>,
+    #[serde(default)]
     pub roxybrowser: RoxybrowserConfig,
+    #[serde(default)]
+    pub ixbrowser: IxbrowserConfig,
     #[serde(default)]
     pub user_agent: Option<String>,
     #[serde(default)]
@@ -168,6 +171,14 @@ pub struct RoxybrowserConfig {
     pub enabled: bool,
     pub api_url: String,
     pub api_key: String,
+}
+
+/// Configuration for `IxBrowser` API integration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct IxbrowserConfig {
+    pub enabled: bool,
+    #[serde(alias = "apiBaseUrl", alias = "api_base_url")]
+    pub api_url: String,
 }
 
 /// Configuration for task orchestration and execution behavior.

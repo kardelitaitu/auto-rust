@@ -9,7 +9,7 @@ use crate::session::DurationMs;
 use std::collections::BTreeMap;
 
 use super::types::{
-    BrowserConfig, BrowserProfile, CircuitBreakerConfig, EngagementLimitsConfig,
+    BrowserConfig, BrowserProfile, CircuitBreakerConfig, EngagementLimitsConfig, IxbrowserConfig,
     NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, TwitterActivityConfig,
     TwitterLLMConfig, TwitterProbabilitiesConfig,
 };
@@ -43,6 +43,7 @@ impl Default for BrowserConfig {
             circuit_breaker: CircuitBreakerConfig::default(),
             profiles: vec![],
             roxybrowser: RoxybrowserConfig::default(),
+            ixbrowser: IxbrowserConfig::default(),
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
@@ -87,6 +88,15 @@ impl Default for RoxybrowserConfig {
             enabled: false,
             api_url: "http://localhost:4444".to_string(),
             api_key: String::new(),
+        }
+    }
+}
+
+impl Default for IxbrowserConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            api_url: "http://127.0.0.1:53200".to_string(),
         }
     }
 }

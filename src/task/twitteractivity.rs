@@ -23,7 +23,7 @@ use crate::utils::twitter::{
     engagement::process_candidate,
     twitteractivity_feed::identify_engagement_candidates,
     twitteractivity_limits::EngagementLimits,
-    twitteractivity_navigation::phase1_navigation,
+    twitteractivity_navigation::{ensure_home_feed, phase1_navigation},
     twitteractivity_persona::{apply_behavior_profile, select_persona_weights},
     twitteractivity_simulation::run_simulation,
     twitteractivity_state::{CandidateContext, SessionState, TaskConfig},
@@ -328,6 +328,10 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
         // Check if it's time for a candidate scan
         if now >= next_candidate_scan {
             next_candidate_scan = Instant::now() + candidate_scan_interval;
+
+            // Fail-safe: ensure we're still on the home feed before scanning
+            // (misclicks or failed dives can leave us on a tweet detail page)
+            ensure_home_feed(api).await;
             if scan_and_process_candidates(
                 api,
                 &persona,

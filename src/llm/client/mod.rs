@@ -183,6 +183,9 @@ pub(crate) fn apply_env_overrides(
             config.ollama.frequency_penalty = Some(val);
         }
     }
+    if let Some(val) = get_env("OLLAMA_NO_SYSTEM_MERGE") {
+        config.ollama.no_system_merge = matches!(val.to_lowercase().as_str(), "1" | "true" | "yes");
+    }
 
     // OpenRouter overrides
     if let Some(api_key) = get_env("OPENROUTER_API_KEY") {

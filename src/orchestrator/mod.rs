@@ -387,10 +387,9 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("before worker acquisition"));
-        assert!(
-            session.is_idle(),
-            "session should return to idle after cancellation"
-        );
+        // Worker still held by _held_worker — session is not idle, but has capacity
+        assert!(!session.is_idle());
+        assert!(session.has_available_workers());
 
         Ok(())
     }

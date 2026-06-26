@@ -99,6 +99,8 @@ pub struct Session {
 
     /// Semaphore controlling concurrent page access within this session
     worker_semaphore: Arc<Semaphore>,
+    /// Maximum number of concurrent workers/pages for this session
+    pub max_workers: usize,
     /// Number of currently active worker threads/pages
     pub active_workers: std::sync::atomic::AtomicUsize,
 
@@ -248,6 +250,7 @@ impl Session {
             overlay_state,
             overlay_task,
             worker_semaphore: Arc::new(Semaphore::new(max_workers)),
+            max_workers,
             active_workers: std::sync::atomic::AtomicUsize::new(0),
             failure_count: std::sync::atomic::AtomicUsize::new(0),
             is_healthy: std::sync::atomic::AtomicBool::new(true),

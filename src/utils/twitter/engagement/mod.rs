@@ -424,6 +424,12 @@ pub async fn process_candidate(
         }
     }
 
+    // After feed-level engagement, delay next scroll to let actions (retweet/like) complete.
+    // Without this, the main loop can scroll while a retweet confirmation menu is still open.
+    if root_action_success && !did_dive {
+        next_scroll = Instant::now() + scroll_interval;
+    }
+
     // Depth-First Engagement: Engage with replies if we dived and root engagement was successful
     if should_engage_replies_after_root_action(did_dive, root_action_success, task_config) {
         engage_replies(

@@ -19,9 +19,7 @@ use crate::utils::twitter::{
     },
     twitteractivity_helpers::validate_tweet_page,
     twitteractivity_humanized::{clustered_engagement_pause, clustered_reply_pause},
-    twitteractivity_interact::{
-        bookmark_tweet, follow_from_tweet, like_tweet, reply_to_tweet, retweet_tweet,
-    },
+    twitteractivity_interact::{bookmark_tweet, follow_from_tweet, like_tweet, reply_to_tweet},
     twitteractivity_limits::EngagementCounters,
     twitteractivity_llm::{
         extract_tweet_context, generate_quote_commentary, generate_reply, quote_tweet,
@@ -208,20 +206,14 @@ pub async fn dispatch_action(
                         }
                     }
                 } else {
-                    // No position data — try selector-based (will likely fail gracefully)
-                    if !validate_tweet_page(api, did_dive, "retweet", tweet_id).await {
-                        false
-                    } else {
-                        selector_retweet(api, tweet_id).await
-                    }
+                    // No position data — can't retweet from feed without coordinates
+                    warn!("[retweet] Retweet button position not found for {tweet_id}");
+                    false
                 }
             } else {
-                // In detail view, use selector-based retweet
-                if !validate_tweet_page(api, did_dive, "retweet", tweet_id).await {
-                    false
-                } else {
-                    selector_retweet(api, tweet_id).await
-                }
+                // Retweets only from home feed during scrolling — skip on detail view
+                info!("[retweet] Skipping retweet for {tweet_id}: retweets only from home feed");
+                false
             }
         }
         "quote" => {
@@ -506,31 +498,6 @@ pub async fn dispatch_action(
     }
 
     Ok(success)
-}
-
-/// Selector-based retweet logic (used from detail view or as position fallback).
-async fn selector_retweet(api: &TaskContext, tweet_id: &TweetId) -> bool {
-    match retry_with_backoff(
-        || retweet_tweet(api),
-        &RetryConfig::default(),
-        api,
-        "retweet_tweet",
-    )
-    .await
-    {
-        Ok(outcome) => {
-            let ok = engagement_success(&outcome);
-            if !ok {
-                log_engagement_failure(&outcome, "retweet", tweet_id);
-            }
-            ok
-        }
-        Err(e) => {
-            warn!("[retweet] retweet_tweet failed after retries: {e}");
-            api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
-            false
-        }
-    }
 }
 
 /// Selector-based follow logic (used from detail view or as position fallback).

@@ -32,14 +32,20 @@ impl super::Session {
         *self.state.lock() = new_state;
     }
 
-    /// Returns whether the session is currently idle.
-    pub fn is_idle(&self) -> bool {
-        *self.state.lock() == SessionState::Idle
+    /// Returns whether the session has available worker capacity for a new task.
+    /// Replaces the old binary Idle/Busy gate with worker-slot-aware checking.
+    pub fn has_available_workers(&self) -> bool {
+        self.is_healthy() && self.active_workers.load(Ordering::SeqCst) < self.max_workers
     }
 
-    /// Returns whether the session is currently busy.
+    /// Returns whether the session currently has zero active workers.
+    pub fn is_idle(&self) -> bool {
+        self.active_workers.load(Ordering::SeqCst) == 0
+    }
+
+    /// Returns whether the session is currently busy (has at least one active worker).
     pub fn is_busy(&self) -> bool {
-        *self.state.lock() == SessionState::Busy
+        self.active_workers.load(Ordering::SeqCst) > 0
     }
 
     /// Returns whether the session is currently healthy.

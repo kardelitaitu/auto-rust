@@ -10,7 +10,7 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::time::timeout;
 
-pub const DEFAULT_COOKIEBOT_TASK_DURATION_MS: u64 = 30_000;
+pub const DEFAULT_COOKIEBOT_TASK_DURATION_MS: u64 = 300_000;
 
 pub async fn run(api: &TaskContext, payload: Value) -> Result<()> {
     let duration_ms = task_duration_ms();
@@ -144,6 +144,7 @@ mod tests {
     #[test]
     fn task_duration_stays_within_bounds() {
         let duration_ms = task_duration_ms();
-        assert!((24_000..=36_000).contains(&duration_ms));
+        // 5 min ±20% = 240_000..360_000
+        assert!((240_000..=360_000).contains(&duration_ms));
     }
 }

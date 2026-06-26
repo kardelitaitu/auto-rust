@@ -561,7 +561,7 @@ mod tests {
     #[test]
     fn test_get_policy_cookiebot() {
         let policy = get_policy("cookiebot");
-        assert_eq!(policy.max_duration_ms.get(), 30_000);
+        assert_eq!(policy.max_duration_ms.get(), 300_000);
         assert!(policy.permissions.allow_export_cookies);
     }
 

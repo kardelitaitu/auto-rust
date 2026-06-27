@@ -1,4 +1,14 @@
-last audited 26-06-26 by antigravity
+last audited 2026-06-27 by antigravity
+
+## Implementation Status: COMPLETE ✅
+
+Implemented by antigravity on 2026-06-27. All acceptance criteria met:
+
+1. **Tweet Centering**: Feed-level actions (like, retweet, follow, bookmark) scroll the target tweet element to the center of the viewport before acting.
+2. **Dynamic Position Resolution**: Action coordinates are resolved immediately post-scroll to avoid layout drift.
+3. **Retweet Failsafe**: `retweet_at_position` falls back to `RETWEET_CONFIRM_SELECTOR` direct click if coordinate-based popup confirmation fails.
+4. **Test Coverage**: Verified that JS template parsing and substitutions for `js_scroll_and_get_tweet_button` work correctly.
+5. **CI Health**: All checks (SpecLint, Clippy, Format, tests) pass cleanly via `.\check.ps1`.
 
 ## Acceptance Criteria
 

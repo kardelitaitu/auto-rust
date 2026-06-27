@@ -1,9 +1,9 @@
 version: 1
 id: 0032-configurable-stagger-delay
 title: Expose task staggering delay as TASK_STAGGER_DELAY_MS environment override
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-pending
 priority: P3
 area:
   - configuration
@@ -12,9 +12,9 @@ files:
   code:
     - src/config/env.rs
   docs:
-    - docs/specs/_active/0032-configurable-stagger-delay/spec.yaml
-    - docs/specs/_active/0032-configurable-stagger-delay/plan.md
-    - docs/specs/_active/0032-configurable-stagger-delay/validation.md
+    - docs/specs/_done/0032-configurable-stagger-delay/spec.yaml
+    - docs/specs/_done/0032-configurable-stagger-delay/plan.md
+    - docs/specs/_done/0032-configurable-stagger-delay/validation.md
 acceptance:
   - "TASK_STAGGER_DELAY_MS environment variable override is parsed as a u64 and overrides config.orchestrator.task_stagger_delay_ms."
   - "Unit tests verify that task_stagger_delay_ms is correctly loaded from environment overrides."

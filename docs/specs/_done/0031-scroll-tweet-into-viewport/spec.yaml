@@ -1,9 +1,9 @@
 version: 1
 id: 0031-scroll-tweet-into-viewport
 title: Scroll tweet into viewport before feed-level engagement and add retweet confirm fallback
-status: approved
+status: done
 owner: spec-agent
-implementer: pending
+implementer: archived-pending
 priority: P2
 area:
   - anti-detection
@@ -15,9 +15,9 @@ files:
     - src/utils/twitter/twitteractivity_actions.rs
     - src/utils/twitter/js/js_scroll_and_get_tweet_button.js
   docs:
-    - docs/specs/_active/0031-scroll-tweet-into-viewport/spec.yaml
-    - docs/specs/_active/0031-scroll-tweet-into-viewport/plan.md
-    - docs/specs/_active/0031-scroll-tweet-into-viewport/validation.md
+    - docs/specs/_done/0031-scroll-tweet-into-viewport/spec.yaml
+    - docs/specs/_done/0031-scroll-tweet-into-viewport/plan.md
+    - docs/specs/_done/0031-scroll-tweet-into-viewport/validation.md
 acceptance:
   - "Before performing feed-level engagement actions (like, retweet, bookmark), the target tweet is scrolled into the center of the viewport."
   - "The button coordinates are retrieved after the scroll has completed to ensure alignment."

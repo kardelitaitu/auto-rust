@@ -5,9 +5,11 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use super::LlmClient;
+use crate::llm::models::LlmConfig;
 use crate::llm::models::{
     ChatChoice, ChatMessage, ChatResponse, LlmProvider, OpenRouterResponse, Role,
 };
+use reqwest::Client;
 
 pub(crate) fn is_retryable_nvidia_status(status: StatusCode) -> bool {
     status == StatusCode::TOO_MANY_REQUESTS
@@ -53,6 +55,17 @@ fn parse_retry_after(response: &reqwest::Response) -> Option<Duration> {
 /// Cleans output by removing any inline reasoning/thinking blocks wrapped in `<think>` tags.
 /// Also handles partial/cutoff thinking blocks gracefully.
 #[must_use]
+pub fn with_http_client(config: LlmConfig, http: Client) -> LlmClient {
+    LlmClient {
+        config,
+        http,
+        fallback_config: None,
+        rate_limiter: None,
+        ollama_urls: vec![],
+        next_ollama_idx: std::sync::atomic::AtomicUsize::new(0),
+    }
+}
+
 pub fn strip_thinking_tags(text: &str) -> String {
     let mut cleaned = text.to_string();
     while let Some(start_idx) = cleaned.find("<think>") {
@@ -80,13 +93,24 @@ fn openrouter_fallback_delay() -> Duration {
     }
 }
 
+pub(crate) fn parse_routing_entry(entry: &str) -> Option<(LlmProvider, String)> {
+    let (provider_str, model_str) = entry.split_once(':')?;
+    let provider = match provider_str.trim().to_lowercase().as_str() {
+        "ollama" => LlmProvider::Ollama,
+        "openrouter" => LlmProvider::OpenRouter,
+        "nvidia" => LlmProvider::Nvidia,
+        _ => return None,
+    };
+    Some((provider, model_str.trim().to_string()))
+}
+
 impl LlmClient {
     #[allow(clippy::cast_precision_loss)]
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
         match self.config.provider {
-            LlmProvider::Ollama => self.ollama_chat(messages).await,
-            LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
-            LlmProvider::Nvidia => self.nvidia_chat(messages).await,
+            LlmProvider::Ollama => self.ollama_chat(messages, None).await,
+            LlmProvider::OpenRouter => self.openrouter_chat(messages, None).await,
+            LlmProvider::Nvidia => self.nvidia_chat(messages, None).await,
         }
     }
 
@@ -95,30 +119,91 @@ impl LlmClient {
             limiter.acquire().await;
         }
 
-        match self.config.provider {
-            LlmProvider::Ollama => match self.ollama_chat(messages.clone()).await {
-                Ok(response) => Ok(response),
-                Err(e) => {
-                    warn!("Ollama failed: {e}, trying fallback...");
-                    if let Some(ref fallback) = self.fallback_config {
-                        if fallback.provider == LlmProvider::OpenRouter {
-                            let fallback_client = LlmClient::new(fallback.clone());
-                            return fallback_client.openrouter_chat(messages).await;
-                        }
-                    }
-                    Err(e)
+        let fallback_enabled = self.config.fallback_enabled.unwrap_or(true);
+
+        // Build the routing list
+        let mut routing_list = Vec::new();
+        if let Some(ref chain) = self.config.routing_chain {
+            for entry in chain {
+                if let Some((provider, model)) = parse_routing_entry(entry) {
+                    routing_list.push((provider, model));
                 }
-            },
-            LlmProvider::OpenRouter => self.openrouter_chat(messages).await,
-            LlmProvider::Nvidia => self.nvidia_chat(messages).await,
+            }
         }
+
+        // If the routing list is empty, default to the primary provider and model configured
+        if routing_list.is_empty() {
+            let primary_provider = self.config.provider;
+            let primary_model = match primary_provider {
+                LlmProvider::Ollama => self.config.ollama.model.clone(),
+                LlmProvider::OpenRouter => self.config.openrouter.model.clone(),
+                LlmProvider::Nvidia => self.config.nvidia.model.clone(),
+            };
+            routing_list.push((primary_provider, primary_model));
+
+            // Legacy fallback defaults if enabled
+            if fallback_enabled {
+                if let Some(ref fallback) = self.fallback_config {
+                    if fallback.provider != primary_provider {
+                        let fallback_model = match fallback.provider {
+                            LlmProvider::Ollama => fallback.ollama.model.clone(),
+                            LlmProvider::OpenRouter => fallback.openrouter.model.clone(),
+                            LlmProvider::Nvidia => fallback.nvidia.model.clone(),
+                        };
+                        routing_list.push((fallback.provider, fallback_model));
+                    }
+                }
+            }
+        }
+
+        // If fallback is disabled, truncate the list to only the first entry
+        if !fallback_enabled && !routing_list.is_empty() {
+            routing_list.truncate(1);
+        }
+
+        // Execute the chain
+        let mut last_error = None;
+        for (i, (provider, model)) in routing_list.iter().enumerate() {
+            if i > 0 {
+                warn!(
+                    "Primary LLM failed or timed out, trying fallback #{} ({:?}: {})...",
+                    i, provider, model
+                );
+            }
+            let res = match provider {
+                LlmProvider::Ollama => self.ollama_chat(messages.clone(), Some(model)).await,
+                LlmProvider::OpenRouter => {
+                    self.openrouter_chat(messages.clone(), Some(model)).await
+                }
+                LlmProvider::Nvidia => self.nvidia_chat(messages.clone(), Some(model)).await,
+            };
+
+            match res {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    warn!(
+                        "LLM provider {:?} (model: {}) failed: {:?}",
+                        provider, model, e
+                    );
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error
+            .unwrap_or_else(|| anyhow::anyhow!("No LLM providers configured in routing chain")))
     }
 
-    async fn nvidia_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
+    async fn nvidia_chat(
+        &self,
+        messages: Vec<ChatMessage>,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         let url = format!("{}/chat/completions", self.config.nvidia.base_url);
+        let model = model_override.unwrap_or(&self.config.nvidia.model);
 
         let mut request = serde_json::json!({
-            "model": self.config.nvidia.model,
+            "model": model,
             "messages": messages,
             "temperature": self.config.nvidia.temperature,
             "top_p": self.config.nvidia.top_p,
@@ -248,8 +333,22 @@ impl LlmClient {
         anyhow::bail!("NVIDIA API failed after {MAX_ATTEMPTS} attempts")
     }
 
-    async fn ollama_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
-        let url = format!("{}/api/chat", self.config.ollama.base_url);
+    async fn ollama_chat(
+        &self,
+        messages: Vec<ChatMessage>,
+        model_override: Option<&str>,
+    ) -> Result<String> {
+        let base_url = if self.ollama_urls.is_empty() {
+            &self.config.ollama.base_url
+        } else {
+            let idx = self
+                .next_ollama_idx
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                % self.ollama_urls.len();
+            &self.ollama_urls[idx]
+        };
+        let url = format!("{}/api/chat", base_url);
+        let model = model_override.unwrap_or(&self.config.ollama.model);
 
         let mut options = serde_json::json!({
             "temperature": self.config.ollama.temperature,
@@ -303,13 +402,13 @@ impl LlmClient {
         };
 
         let request = serde_json::json!({
-            "model": self.config.ollama.model,
+            "model": model,
             "messages": processed_messages,
             "options": options,
             "stream": false,
         });
 
-        info!("Calling Ollama: {}...", self.config.ollama.model);
+        info!("Calling Ollama ({}): {}...", base_url, model);
 
         let response = self
             .http
@@ -371,12 +470,21 @@ impl LlmClient {
         Ok(content)
     }
 
-    async fn openrouter_chat(&self, messages: Vec<ChatMessage>) -> Result<String> {
+    async fn openrouter_chat(
+        &self,
+        messages: Vec<ChatMessage>,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         let url = format!("{}/chat/completions", self.config.openrouter.base_url);
 
         // Build list of models to try: primary + fallbacks
-        let mut models_to_try = vec![self.config.openrouter.model.clone()];
-        models_to_try.extend(self.config.openrouter.fallback_models.clone());
+        let models_to_try = if let Some(m) = model_override {
+            vec![m.to_string()]
+        } else {
+            let mut list = vec![self.config.openrouter.model.clone()];
+            list.extend(self.config.openrouter.fallback_models.clone());
+            list
+        };
 
         let mut last_error = None;
 

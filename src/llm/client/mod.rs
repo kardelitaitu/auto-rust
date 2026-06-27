@@ -77,6 +77,8 @@ pub struct LlmClient {
     pub(crate) http: Client,
     pub(crate) fallback_config: Option<LlmConfig>,
     pub(crate) rate_limiter: Option<SharedRateLimiter>,
+    pub(crate) ollama_urls: Vec<String>,
+    pub(crate) next_ollama_idx: std::sync::atomic::AtomicUsize,
 }
 
 impl LlmClient {
@@ -109,11 +111,21 @@ impl LlmClient {
             None
         };
 
+        let ollama_urls = config
+            .ollama
+            .base_url
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+
         Self {
             config: config.clone(),
             http,
             fallback_config: Some(config),
             rate_limiter,
+            ollama_urls,
+            next_ollama_idx: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -260,6 +272,19 @@ pub(crate) fn apply_env_overrides(
         }
     }
     config.openrouter.fallback_models = fallbacks;
+
+    if let Some(val) = get_env("LLM_FALLBACK_ENABLED") {
+        config.fallback_enabled = Some(matches!(val.to_lowercase().as_str(), "1" | "true" | "yes"));
+    }
+
+    if let Some(val) = get_env("LLM_ROUTING_CHAIN") {
+        let chain = val
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+        config.routing_chain = Some(chain);
+    }
 
     config
 }

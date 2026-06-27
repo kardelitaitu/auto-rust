@@ -530,6 +530,8 @@ impl LlmClient {
             http,
             fallback_config: Some(config),
             rate_limiter: None,
+            ollama_urls: vec![],
+            next_ollama_idx: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -1440,4 +1442,45 @@ async fn test_rate_limiter_blocking_refill() {
         "Should have waited for refill, took {}ms",
         elapsed.as_millis()
     );
+}
+
+#[test]
+fn test_apply_env_overrides_routing_chain_and_fallback_enabled() {
+    let config = LlmConfig::default();
+    let result = apply_env_overrides(config, |key| match key {
+        "LLM_FALLBACK_ENABLED" => Some("false".to_string()),
+        "LLM_ROUTING_CHAIN" => Some("ollama:test-model, openrouter:test-or-model".to_string()),
+        _ => None,
+    });
+    assert_eq!(result.fallback_enabled, Some(false));
+    assert_eq!(
+        result.routing_chain,
+        Some(vec![
+            "ollama:test-model".to_string(),
+            "openrouter:test-or-model".to_string()
+        ])
+    );
+}
+
+#[test]
+fn test_ollama_urls_parsing_pool() {
+    let mut config = LlmConfig::default();
+    config.ollama.base_url = "http://127.0.0.1:11434, http://192.168.1.100:11434".to_string();
+    let client = LlmClient::new(config);
+    assert_eq!(client.ollama_urls.len(), 2);
+    assert_eq!(client.ollama_urls[0], "http://127.0.0.1:11434");
+    assert_eq!(client.ollama_urls[1], "http://192.168.1.100:11434");
+}
+
+#[test]
+fn test_parse_routing_entry_helper() {
+    use super::fallback::parse_routing_entry;
+    let res = parse_routing_entry("ollama:my-cool-gguf");
+    assert!(res.is_some());
+    let (provider, model) = res.unwrap();
+    assert_eq!(provider, LlmProvider::Ollama);
+    assert_eq!(model, "my-cool-gguf");
+
+    let res_invalid = parse_routing_entry("invalid_provider:model");
+    assert!(res_invalid.is_none());
 }

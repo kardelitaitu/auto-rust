@@ -171,6 +171,10 @@ pub struct LlmConfig {
     pub openrouter: OpenRouterConfig,
     #[serde(default)]
     pub nvidia: NvidiaConfig,
+    #[serde(default)]
+    pub fallback_enabled: Option<bool>,
+    #[serde(default)]
+    pub routing_chain: Option<Vec<String>>,
 }
 
 impl LlmConfig {

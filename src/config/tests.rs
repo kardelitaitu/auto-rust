@@ -770,6 +770,51 @@ fn test_cursor_overlay_show_trail_invalid_env_falls_back() {
 }
 
 #[test]
+fn test_task_stagger_delay_env_override() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    let keys = ["TASK_STAGGER_DELAY_MS"];
+    let saved_env: Vec<(String, Option<std::ffi::OsString>)> = keys
+        .iter()
+        .map(|key| ((*key).to_string(), env::var_os(key)))
+        .collect();
+    for (key, _) in &saved_env {
+        env::remove_var(key);
+    }
+
+    // Test valid override
+    env::set_var("TASK_STAGGER_DELAY_MS", "4500");
+    let config = apply_env_overrides(Config::default()).unwrap();
+    assert_eq!(
+        config.orchestrator.task_stagger_delay_ms, 4500,
+        "TASK_STAGGER_DELAY_MS env var should override stagger delay"
+    );
+
+    // Test invalid value falls back to default
+    env::set_var("TASK_STAGGER_DELAY_MS", "invalid-number");
+    let config = Config {
+        orchestrator: OrchestratorConfig {
+            task_stagger_delay_ms: 1200,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let config = apply_env_overrides(config).unwrap();
+    assert_eq!(
+        config.orchestrator.task_stagger_delay_ms, 1200,
+        "Invalid TASK_STAGGER_DELAY_MS should fall back to existing value (1200)"
+    );
+
+    env::remove_var("TASK_STAGGER_DELAY_MS");
+    for (key, value) in saved_env {
+        match value {
+            Some(val) => env::set_var(key, val),
+            None => env::remove_var(key),
+        }
+    }
+}
+
+#[test]
 fn test_load_config_applies_cursor_overlay_env_overrides() {
     let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
 

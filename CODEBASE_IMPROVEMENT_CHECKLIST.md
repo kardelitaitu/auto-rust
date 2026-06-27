@@ -10,8 +10,8 @@ With 500+ concurrent browser sessions, shared files and states are critical poin
 - [ ] **Database Segmentation / Migration:**
   - Replace the monolithic JSON database (`twitter_activity_v2.json`) with an SQLite database or segment database files per browser profile to prevent file-locking contention.
   - Implement a connection pool (e.g., `sqlx` with SQLite) if moving to a centralized DB.
-- [ ] **Configurable Staggering:**
-  - Expose the task staggering delay (currently in `execute_task_on_session`) as a `.env` variable (`TASK_STAGGER_DELAY_MS`) to allow fine-tuning under different network environments.
+- [x] **Configurable Staggering:**
+  - Expose the task staggering delay (currently in `execute_task_on_session`) as a `.env` variable (`TASK_STAGGER_DELAY_MS`) to allow fine-tuning under different network environments. (Implemented in `src/config/env.rs`, commit `5572088`)
 - [ ] **Non-Blocking Write Queues:**
   - Instead of direct filesystem writing with raw locking in the tasks, introduce an async channel-based writer thread that processes persistent state updates sequentially.
 

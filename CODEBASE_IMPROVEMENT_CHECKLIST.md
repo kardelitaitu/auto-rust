@@ -12,8 +12,8 @@ With 500+ concurrent browser sessions, shared files and states are critical poin
   - Implement a connection pool (e.g., `sqlx` with SQLite) if moving to a centralized DB.
 - [x] **Configurable Staggering:**
   - Expose the task staggering delay (currently in `execute_task_on_session`) as a `.env` variable (`TASK_STAGGER_DELAY_MS`) to allow fine-tuning under different network environments. (Implemented in `src/config/env.rs`, commit `5572088`)
-- [ ] **Non-Blocking Write Queues:**
-  - Instead of direct filesystem writing with raw locking in the tasks, introduce an async channel-based writer thread that processes persistent state updates sequentially.
+- [x] **Non-Blocking Write Queues:**
+  - Instead of direct filesystem writing with raw locking in the tasks, introduce an async channel-based writer thread that processes persistent state updates sequentially. (Implemented async channel-based single-consumer writer queue in `twitteractivity_persistence.rs`, June 2026)
 
 ---
 

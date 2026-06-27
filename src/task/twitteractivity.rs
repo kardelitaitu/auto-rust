@@ -377,7 +377,7 @@ async fn run_inner(api: &TaskContext, config: &Config, task_config: TaskConfig) 
     // Persist inter-session state if enabled
     if config.twitter_activity.persistence_enabled {
         let profile_name = api.behavior_profile().name.as_str();
-        let update_result = crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::update_async(profile_name, |persisted| {
+        let update_result = crate::utils::twitter::twitteractivity_persistence::TwitterPersistenceState::update_async(profile_name, move |persisted| {
             persisted.record_session_end();
             // Aggregate session counters into daily action counts
             for _ in 0..session.counters.likes() {

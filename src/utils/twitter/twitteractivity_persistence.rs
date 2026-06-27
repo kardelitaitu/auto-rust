@@ -15,6 +15,20 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
+
+static PERSISTENCE_SENDER: OnceLock<mpsc::Sender<PersistenceCommand>> = OnceLock::new();
+
+/// Command sent to the background persistence writer task.
+pub enum PersistenceCommand {
+    Update {
+        profile_name: String,
+        update_fn: Box<dyn FnOnce(&mut TwitterPersistenceState) + Send + 'static>,
+        reply_tx: oneshot::Sender<Result<(), String>>,
+    },
+}
 
 /// Persisted state for the twitteractivity task.
 ///
@@ -87,85 +101,63 @@ impl TwitterPersistenceState {
         }
     }
 
-    /// Path to the lock file: `~/.config/auto-rust/twitter-state-<profile_name>.json.lock`
-    fn lock_path(profile_name: &str) -> PathBuf {
-        Self::state_path(profile_name).with_extension("json.lock")
+    fn get_or_init_writer() -> &'static mpsc::Sender<PersistenceCommand> {
+        PERSISTENCE_SENDER.get_or_init(|| {
+            let (tx, rx) = mpsc::channel(100);
+            tokio::spawn(Self::writer_loop(rx));
+            tx
+        })
     }
 
-    /// Try to acquire the lock. Auto-recovers if lock is stale (older than 15s).
-    fn acquire_lock(profile_name: &str) -> bool {
-        let lock_path = Self::lock_path(profile_name);
-        if let Some(parent) = lock_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
+    async fn writer_loop(mut rx: mpsc::Receiver<PersistenceCommand>) {
+        while let Some(cmd) = rx.recv().await {
+            match cmd {
+                PersistenceCommand::Update {
+                    profile_name,
+                    update_fn,
+                    reply_tx,
+                } => {
+                    let res = tokio::task::spawn_blocking(move || {
+                        let mut state = Self::load(&profile_name);
+                        update_fn(&mut state);
+                        state.save(&profile_name);
+                    })
+                    .await;
 
-        // Auto-recover stale lock file (older than 15 seconds)
-        if let Ok(metadata) = std::fs::metadata(&lock_path) {
-            if let Ok(modified) = metadata.modified() {
-                if let Ok(elapsed) = modified.elapsed() {
-                    if elapsed.as_secs() > 15 {
-                        log::warn!(
-                            "[persistence-lock] Stale lock file found ({}s old) for profile '{}', removing to auto-recover",
-                            elapsed.as_secs(),
-                            profile_name
-                        );
-                        let _ = std::fs::remove_file(&lock_path);
-                    }
+                    let response = match res {
+                        Ok(()) => Ok(()),
+                        Err(e) => Err(format!("Task execution panicked: {e:?}")),
+                    };
+
+                    let _ = reply_tx.send(response);
                 }
             }
         }
-
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-            .is_ok()
     }
 
-    /// Release the lock file.
-    fn release_lock(profile_name: &str) {
-        let _ = std::fs::remove_file(Self::lock_path(profile_name));
-    }
-
-    /// Update the state atomically. Blocks until the lock can be acquired or times out.
+    /// Update the state atomically. Offloads file system updates to the background
+    /// queue to prevent file contention and Tokio scheduler blocking.
     pub async fn update_async<F>(profile_name: &str, f: F) -> Result<(), anyhow::Error>
     where
-        F: FnOnce(&mut Self),
+        F: FnOnce(&mut Self) + Send + 'static,
     {
-        let start = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(5);
-
-        while !Self::acquire_lock(profile_name) {
-            if start.elapsed() > timeout {
-                return Err(anyhow::anyhow!(
-                    "Timeout waiting for twitter-state-{}.json lock",
-                    Self::sanitize_profile_name(profile_name)
-                ));
-            }
-            // Sleep briefly and retry (randomize to prevent thundering herd)
-            let sleep_ms = 50 + rand::random::<u64>() % 100;
-            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
-        }
-
-        // LockGuard ensures that the lock is released even if F panics or we return early.
-        struct LockGuard {
-            profile: String,
-        }
-        impl Drop for LockGuard {
-            fn drop(&mut self) {
-                TwitterPersistenceState::release_lock(&self.profile);
-            }
-        }
-
-        let _guard = LockGuard {
-            profile: profile_name.to_string(),
+        let (tx, rx) = oneshot::channel();
+        let cmd = PersistenceCommand::Update {
+            profile_name: profile_name.to_string(),
+            update_fn: Box::new(f),
+            reply_tx: tx,
         };
 
-        let mut state = Self::load(profile_name);
-        f(&mut state);
-        state.save(profile_name);
+        let sender = Self::get_or_init_writer();
+        if sender.send(cmd).await.is_err() {
+            return Err(anyhow::anyhow!(
+                "Background persistence writer task has shut down"
+            ));
+        }
 
-        Ok(())
+        rx.await
+            .map_err(|e| anyhow::anyhow!("Persistence response channel dropped: {e}"))?
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     /// Record a single action, incrementing the daily counter for this action type.

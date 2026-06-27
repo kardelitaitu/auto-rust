@@ -263,3 +263,9 @@
 - **Tests**: Added 2 new integration tests verifying state file roundtripping and concurrent updates.
 - **Verification**: `.\check.ps1` runs clean (4,175/4,175 tests pass). Spec archived to `docs/specs/_done/0033-segmented-twitter-persistence`.
 - **Checklist**: Marked **Database Segmentation / Migration** as complete in `CODEBASE_IMPROVEMENT_CHECKLIST.md`.
+
+### Spec 0034: Introduce async channel-based write queue for Twitter persistence ✅
+- **`src/utils/twitter/twitteractivity_persistence.rs`**: Implemented a global channel-backed background task `writer_loop` using `tokio::sync::mpsc` and `std::sync::OnceLock`. Offloaded all file reads/writes to `tokio::task::spawn_blocking`.
+- **`src/task/twitteractivity.rs`**: Updated the persistence save closure call to pass the `move` keyword to properly transfer ownership to the static-lifetime writer.
+- **Verification**: `.\check.ps1` runs clean (4,175/4,175 tests pass). Spec archived to `docs/specs/_done/0034-non-blocking-write-queues`.
+- **Checklist**: Marked **Non-Blocking Write Queues** as complete in `CODEBASE_IMPROVEMENT_CHECKLIST.md`.

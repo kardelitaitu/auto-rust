@@ -1,0 +1,26 @@
+version: 1
+id: 0033-segmented-twitter-persistence
+title: Segment Twitter persistence state files by browser profile name
+status: done
+owner: spec-agent
+implementer: archived-pending
+priority: P2
+area:
+  - concurrency
+  - twitter
+files:
+  code:
+    - src/utils/twitter/twitteractivity_persistence.rs
+    - src/task/twitteractivity.rs
+  docs:
+    - docs/specs/_done/0033-segmented-twitter-persistence/spec.yaml
+    - docs/specs/_done/0033-segmented-twitter-persistence/plan.md
+    - docs/specs/_done/0033-segmented-twitter-persistence/validation.md
+acceptance:
+  - "The persistence state path contains the browser profile name to prevent lock contention between concurrent profiles."
+  - "If the profile name is empty, it falls back gracefully to a default path."
+  - "Tests pass cleanly with isolated mock profile names."
+non_goals:
+  - "We do not migrate or remove existing monolithic twitter-state.json files automatically."
+risks:
+  - "Invalid character sequences in profile names could theoretically cause invalid file paths. We should sanitize or use a safe path construction."

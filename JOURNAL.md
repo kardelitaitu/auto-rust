@@ -256,3 +256,10 @@
 
 ### Checklist Updates ✅
 - Marked **Configurable Staggering** as complete in `CODEBASE_IMPROVEMENT_CHECKLIST.md`.
+
+### Spec 0033: Segment Twitter persistence state files by browser profile name ✅
+- **`src/utils/twitter/twitteractivity_persistence.rs`**: Updated `load()`, `save()`, and `update_async()` to require and utilize the browser profile name, constructing separate persistence files like `twitter-state-<profile_name>.json` and lock files like `twitter-state-<profile_name>.json.lock`. Includes safe input sanitization.
+- **`src/task/twitteractivity.rs`**: Extracted the browser profile name from `api.behavior_profile().name` and passed it to the persistence layer.
+- **Tests**: Added 2 new integration tests verifying state file roundtripping and concurrent updates.
+- **Verification**: `.\check.ps1` runs clean (4,175/4,175 tests pass). Spec archived to `docs/specs/_done/0033-segmented-twitter-persistence`.
+- **Checklist**: Marked **Database Segmentation / Migration** as complete in `CODEBASE_IMPROVEMENT_CHECKLIST.md`.

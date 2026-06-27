@@ -1,0 +1,29 @@
+version: 1
+id: 0035-llm-router-and-fallback
+title: Configurable LLM routing chain and local Ollama load balancer
+status: approved
+owner: spec-agent
+implementer: pending
+priority: P2
+area:
+  - llm
+  - reliability
+files:
+  code:
+    - src/llm/models.rs
+    - src/llm/client/mod.rs
+    - src/llm/client/fallback.rs
+  docs:
+    - docs/specs/_active/0035-llm-router-and-fallback/spec.yaml
+    - docs/specs/_active/0035-llm-router-and-fallback/plan.md
+    - docs/specs/_active/0035-llm-router-and-fallback/validation.md
+acceptance:
+  - "The LLM client parses LLM_FALLBACK_ENABLED and LLM_ROUTING_CHAIN from the environment."
+  - "If LLM_FALLBACK_ENABLED is false, no fallbacks are executed after the first provider failure."
+  - "If LLM_ROUTING_CHAIN is set, the client executes requests sequentially in the specified order (e.g. Ollama, OpenRouter) and with custom model names."
+  - "If Ollama base URL contains a comma-separated list of URLs, the client load-balances requests in round-robin fashion."
+  - "Existing test suite compiles and runs cleanly."
+non_goals:
+  - "We do not change the default models or provider credentials."
+risks:
+  - "Parsing errors in the environment variable could misconfigure the router. We will parse it defensively and fallback to legacy configs if invalid."

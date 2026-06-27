@@ -1,0 +1,26 @@
+version: 1
+id: 0034-non-blocking-write-queues
+title: Introduce async channel-based write queue for Twitter persistence
+status: done
+owner: spec-agent
+implementer: archived-pending
+priority: P2
+area:
+  - concurrency
+  - performance
+files:
+  code:
+    - src/utils/twitter/twitteractivity_persistence.rs
+  docs:
+    - docs/specs/_done/0034-non-blocking-write-queues/spec.yaml
+    - docs/specs/_done/0034-non-blocking-write-queues/plan.md
+    - docs/specs/_done/0034-non-blocking-write-queues/validation.md
+acceptance:
+  - "TwitterPersistenceState updates are sent to a background write queue asynchronously instead of performing synchronous disk writes on worker threads."
+  - "The background writer runs updates sequentially, avoiding filesystem locks entirely."
+  - "Task workers can queue write commands without blocking on file system locks."
+  - "Existing test suite compiles and runs cleanly."
+non_goals:
+  - "We do not change the persistence schema or database format."
+risks:
+  - "If the application crashes before the queue is processed, updates could be lost. We should ensure the queue is flushed during graceful shutdown."

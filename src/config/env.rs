@@ -143,6 +143,11 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.orchestrator.max_retries =
             retries.parse().unwrap_or(config.orchestrator.max_retries);
     }
+    if let Ok(stagger) = env::var("TASK_STAGGER_DELAY_MS") {
+        config.orchestrator.task_stagger_delay_ms = stagger
+            .parse()
+            .unwrap_or(config.orchestrator.task_stagger_delay_ms);
+    }
     if let Ok(raw_headers) = env::var("BROWSER_EXTRA_HTTP_HEADERS") {
         config.browser.extra_http_headers = raw_headers
             .split(';')

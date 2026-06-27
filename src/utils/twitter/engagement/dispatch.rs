@@ -70,6 +70,28 @@ fn log_follow_failure(outcome: &FollowOutcome, tweet_id: &TweetId) {
     }
 }
 
+async fn scroll_and_get_button_pos(
+    api: &TaskContext,
+    tweet_id: &TweetId,
+    button_name: &str,
+) -> Option<(f64, f64)> {
+    let js = crate::utils::twitter::twitteractivity_selectors::js_scroll_and_get_tweet_button()
+        .replace("{TWEET_ID}", tweet_id.as_str())
+        .replace("{BUTTON_NAME}", button_name);
+    match api.page().evaluate(js).await {
+        Ok(res) => res.value().and_then(|v| {
+            let obj = v.as_object()?;
+            let x = obj.get("x")?.as_f64()?;
+            let y = obj.get("y")?.as_f64()?;
+            Some((x, y))
+        }),
+        Err(e) => {
+            warn!("[dispatch] Failed to resolve button position after scroll: {e}");
+            None
+        }
+    }
+}
+
 /// Dispatch a single engagement action with full retry, validation, and metrics tracking.
 #[allow(clippy::too_many_arguments)]
 pub async fn dispatch_action(
@@ -128,54 +150,37 @@ pub async fn dispatch_action(
                     }
                 }
             } else {
-                // On feed, use position from tweet data with retry
-                if let Some(btn_pos) = extract_tweet_button_position(tweet, "like") {
-                    match retry_with_backoff(
-                        || like_at_position(api, btn_pos.0, btn_pos.1),
-                        &RetryConfig::aggressive(),
-                        api,
-                        "like_at_position",
-                    )
-                    .await
-                    {
-                        Ok(outcome) => {
-                            let ok = engagement_success(&outcome);
-                            if !ok {
-                                log_engagement_failure(&outcome, "like_at_position", tweet_id);
-                            }
-                            ok
-                        }
-                        Err(e) => {
-                            warn!("[like] Like at position failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                            api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
-                            false
-                        }
+                // On feed, dynamically scroll and resolve position, with fallback to candidate data
+                let action_fn = || {
+                    let tweet_id = tweet_id.clone();
+                    async move {
+                        let pos = scroll_and_get_button_pos(api, &tweet_id, "like")
+                            .await
+                            .or_else(|| extract_tweet_button_position(tweet, "like"))
+                            .ok_or_else(|| anyhow::anyhow!("Like button not found"))?;
+                        like_at_position(api, pos.0, pos.1).await
                     }
-                } else {
-                    warn!("[like] Like button position not found in tweet payload for {tweet_id}, falling back to selector-based like");
-                    // Fallback to selector-based like (works on feed too)
-                    match retry_with_backoff(
-                        || like_tweet(api),
-                        &RetryConfig::aggressive(),
-                        api,
-                        "like_tweet",
-                    )
-                    .await
-                    {
-                        Ok(outcome) => {
-                            let ok = engagement_success(&outcome);
-                            if !ok {
-                                log_engagement_failure(&outcome, "selector_like", tweet_id);
-                            }
-                            ok
+                };
+                match retry_with_backoff(
+                    action_fn,
+                    &RetryConfig::aggressive(),
+                    api,
+                    "like_at_position",
+                )
+                .await
+                {
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "like_at_position", tweet_id);
                         }
-                        Err(e) => {
-                            warn!("[like] Selector-based like failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
-                            api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
-                            false
-                        }
+                        ok
+                    }
+                    Err(e) => {
+                        warn!("[like] Like at position failed after retries: {e}");
+                        api.increment_run_counter(RUN_COUNTER_TRANSIENT_ERROR, 1);
+                        api.increment_run_counter(RUN_COUNTER_LIKE_FAILURE, 1);
+                        false
                     }
                 }
             }
@@ -183,32 +188,36 @@ pub async fn dispatch_action(
         "retweet" => {
             if !did_dive {
                 // Position-based retweet from feed (no thread dive needed)
-                if let Some(btn_pos) = extract_tweet_button_position(tweet, "retweet") {
-                    match retry_with_backoff(
-                        || retweet_at_position(api, btn_pos.0, btn_pos.1),
-                        &RetryConfig::default(),
-                        api,
-                        "retweet_at_position",
-                    )
-                    .await
-                    {
-                        Ok(outcome) => {
-                            let ok = engagement_success(&outcome);
-                            if !ok {
-                                log_engagement_failure(&outcome, "retweet", tweet_id);
-                            }
-                            ok
-                        }
-                        Err(e) => {
-                            warn!("[retweet] Feed retweet failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
-                            false
-                        }
+                let action_fn = || {
+                    let tweet_id = tweet_id.clone();
+                    async move {
+                        let pos = scroll_and_get_button_pos(api, &tweet_id, "retweet")
+                            .await
+                            .or_else(|| extract_tweet_button_position(tweet, "retweet"))
+                            .ok_or_else(|| anyhow::anyhow!("Retweet button not found"))?;
+                        retweet_at_position(api, pos.0, pos.1).await
                     }
-                } else {
-                    // No position data — can't retweet from feed without coordinates
-                    warn!("[retweet] Retweet button position not found for {tweet_id}");
-                    false
+                };
+                match retry_with_backoff(
+                    action_fn,
+                    &RetryConfig::default(),
+                    api,
+                    "retweet_at_position",
+                )
+                .await
+                {
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "retweet", tweet_id);
+                        }
+                        ok
+                    }
+                    Err(e) => {
+                        warn!("[retweet] Feed retweet failed after retries: {e}");
+                        api.increment_run_counter(RUN_COUNTER_RETWEET_FAILURE, 1);
+                        false
+                    }
                 }
             } else {
                 // Retweets only from home feed during scrolling — skip on detail view
@@ -284,34 +293,35 @@ pub async fn dispatch_action(
         "follow" => {
             if !did_dive {
                 // Position-based follow from feed
-                if let Some(btn_pos) = extract_tweet_button_position(tweet, "follow") {
-                    match retry_with_backoff(
-                        || follow_at_position(api, btn_pos.0, btn_pos.1),
-                        &RetryConfig::default(),
-                        api,
-                        "follow_at_position",
-                    )
-                    .await
-                    {
-                        Ok(outcome) => {
-                            let ok = engagement_success(&outcome);
-                            if !ok {
-                                log_engagement_failure(&outcome, "follow", tweet_id);
-                            }
-                            ok
-                        }
-                        Err(e) => {
-                            warn!("[follow] Feed follow failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
-                            false
-                        }
+                let action_fn = || {
+                    let tweet_id = tweet_id.clone();
+                    async move {
+                        let pos = scroll_and_get_button_pos(api, &tweet_id, "follow")
+                            .await
+                            .or_else(|| extract_tweet_button_position(tweet, "follow"))
+                            .ok_or_else(|| anyhow::anyhow!("Follow button not found"))?;
+                        follow_at_position(api, pos.0, pos.1).await
                     }
-                } else {
-                    // Fallback to selector-based follow
-                    if !validate_tweet_page(api, did_dive, "follow", tweet_id).await {
+                };
+                match retry_with_backoff(
+                    action_fn,
+                    &RetryConfig::default(),
+                    api,
+                    "follow_at_position",
+                )
+                .await
+                {
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "follow", tweet_id);
+                        }
+                        ok
+                    }
+                    Err(e) => {
+                        warn!("[follow] Feed follow failed after retries: {e}");
+                        api.increment_run_counter(RUN_COUNTER_FOLLOW_FAILURE, 1);
                         false
-                    } else {
-                        retry_follow(api, tweet_id).await
                     }
                 }
             } else {
@@ -397,34 +407,35 @@ pub async fn dispatch_action(
         "bookmark" => {
             if !did_dive {
                 // Position-based bookmark from feed
-                if let Some(btn_pos) = extract_tweet_button_position(tweet, "bookmark") {
-                    match retry_with_backoff(
-                        || bookmark_at_position(api, btn_pos.0, btn_pos.1),
-                        &RetryConfig::aggressive(),
-                        api,
-                        "bookmark_at_position",
-                    )
-                    .await
-                    {
-                        Ok(outcome) => {
-                            let ok = engagement_success(&outcome);
-                            if !ok {
-                                log_engagement_failure(&outcome, "bookmark", tweet_id);
-                            }
-                            ok
-                        }
-                        Err(e) => {
-                            warn!("[bookmark] Feed bookmark failed after retries: {e}");
-                            api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
-                            false
-                        }
+                let action_fn = || {
+                    let tweet_id = tweet_id.clone();
+                    async move {
+                        let pos = scroll_and_get_button_pos(api, &tweet_id, "bookmark")
+                            .await
+                            .or_else(|| extract_tweet_button_position(tweet, "bookmark"))
+                            .ok_or_else(|| anyhow::anyhow!("Bookmark button not found"))?;
+                        bookmark_at_position(api, pos.0, pos.1).await
                     }
-                } else {
-                    // Fallback to selector-based bookmark
-                    if !validate_tweet_page(api, did_dive, "bookmark", tweet_id).await {
+                };
+                match retry_with_backoff(
+                    action_fn,
+                    &RetryConfig::aggressive(),
+                    api,
+                    "bookmark_at_position",
+                )
+                .await
+                {
+                    Ok(outcome) => {
+                        let ok = engagement_success(&outcome);
+                        if !ok {
+                            log_engagement_failure(&outcome, "bookmark", tweet_id);
+                        }
+                        ok
+                    }
+                    Err(e) => {
+                        warn!("[bookmark] Feed bookmark failed after retries: {e}");
+                        api.increment_run_counter(RUN_COUNTER_BOOKMARK_FAILURE, 1);
                         false
-                    } else {
-                        selector_bookmark(api, tweet_id).await
                     }
                 }
             } else {

@@ -240,3 +240,32 @@
 - `llm_validation.rs`: 12 new edge case tests (strip_code_block: trailing content, no newline, lone fence, empty fences, multiple blocks, only backticks; validate_reply: empty content value, banned words after strip, code block+JSON combo, whitespace only, empty content lines, normal text pass-through)
 - `interact.rs`: 7 new parse_button_coordinates edge cases (negative, zero, NaN/null, large values, extra fields)
 - **Total**: 39 keyboard + 46 validation + 51 interact = 136 tests, all passing ✅
+
+## 27-06-26
+
+### Spec 0031: Scroll tweet into viewport and retweet confirmation fallback ✅
+- **`src/utils/twitter/engagement/dispatch.rs`**: Feed-level actions (like, retweet, follow, bookmark) now scroll the target tweet element to the center of the viewport before acting.
+- **`src/utils/twitter/twitteractivity_actions.rs`**: Added selector-based fallback click using `RETWEET_CONFIRM_SELECTOR` in `retweet_at_position` if coordinate-based click fails to open the confirm dropdown.
+- **`src/utils/twitter/js/js_scroll_and_get_tweet_button.js`**: Extracted JS logic to handle the scrolling and coordinate retrieval of the tweet button.
+- **Verification**: `.\check.ps1` runs clean, all tests passing. Spec archived to `docs/specs/_done/0031-scroll-tweet-into-viewport`.
+
+### Spec 0032: Expose task staggering delay as TASK_STAGGER_DELAY_MS environment override ✅
+- **`src/config/env.rs`**: Added logic to load `TASK_STAGGER_DELAY_MS` environment variable to override `config.orchestrator.task_stagger_delay_ms`. Includes graceful fallback if env var is empty or invalid.
+- **`src/config/tests.rs`**: Added unit tests validating env load behavior and graceful fallbacks.
+- **Verification**: `.\check.ps1` runs clean. Spec archived to `docs/specs/_done/0032-configurable-stagger-delay`.
+
+### Checklist Updates ✅
+- Marked **Configurable Staggering** as complete in `CODEBASE_IMPROVEMENT_CHECKLIST.md`.
+
+### Spec 0033: Segment Twitter persistence state files by browser profile name ✅
+- **`src/utils/twitter/twitteractivity_persistence.rs`**: Updated `load()`, `save()`, and `update_async()` to require and utilize the browser profile name, constructing separate persistence files like `twitter-state-<profile_name>.json` and lock files like `twitter-state-<profile_name>.json.lock`. Includes safe input sanitization.
+- **`src/task/twitteractivity.rs`**: Extracted the browser profile name from `api.behavior_profile().name` and passed it to the persistence layer.
+- **Tests**: Added 2 new integration tests verifying state file roundtripping and concurrent updates.
+- **Verification**: `.\check.ps1` runs clean (4,175/4,175 tests pass). Spec archived to `docs/specs/_done/0033-segmented-twitter-persistence`.
+- **Checklist**: Marked **Database Segmentation / Migration** as complete in `CODEBASE_IMPROVEMENT_CHECKLIST.md`.
+
+### Spec 0034: Introduce async channel-based write queue for Twitter persistence ✅
+- **`src/utils/twitter/twitteractivity_persistence.rs`**: Implemented a global channel-backed background task `writer_loop` using `tokio::sync::mpsc` and `std::sync::OnceLock`. Offloaded all file reads/writes to `tokio::task::spawn_blocking`.
+- **`src/task/twitteractivity.rs`**: Updated the persistence save closure call to pass the `move` keyword to properly transfer ownership to the static-lifetime writer.
+- **Verification**: `.\check.ps1` runs clean (4,175/4,175 tests pass). Spec archived to `docs/specs/_done/0034-non-blocking-write-queues`.
+- **Checklist**: Marked **Non-Blocking Write Queues** as complete in `CODEBASE_IMPROVEMENT_CHECKLIST.md`.

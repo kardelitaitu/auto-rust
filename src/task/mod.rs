@@ -45,6 +45,7 @@ pub use crate::utils::twitter::twitteractivity_constants::MIN_ACTION_CHAIN_DELAY
 pub use crate::utils::twitter::twitteractivity_state::TweetActionTracker;
 
 pub const TASK_NAMES: &[&str] = &[
+    "atf",
     "cookiebot",
     "pageview",
     "demo-keyboard",
@@ -144,6 +145,7 @@ async fn execute_single_attempt(
 
     // Otherwise execute as built-in Rust task
     match name {
+        "atf" => atf::run(api, payload.clone()).await,
         "cookiebot" => cookiebot::run(api, payload.clone())
             .await
             .map_err(|e| anyhow::anyhow!(e)),
@@ -205,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_task_names_constant() {
-        assert_eq!(TASK_NAMES.len(), 16);
+        assert_eq!(TASK_NAMES.len(), 17);
         assert!(TASK_NAMES.contains(&"cookiebot"));
         assert!(TASK_NAMES.contains(&"pageview"));
         assert!(TASK_NAMES.contains(&"twitterintent"));

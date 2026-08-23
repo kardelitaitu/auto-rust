@@ -196,6 +196,12 @@ impl Default for BrowserData {
 // Task-specific Policies
 // ============================================================================
 
+/// `Atf` policy - Telegram bot mining: navigate + native mouse click only.
+pub static ATF_POLICY: std::sync::LazyLock<TaskPolicy> = std::sync::LazyLock::new(|| TaskPolicy {
+    max_duration_ms: DurationMs::new_const(crate::task::atf::DEFAULT_ATF_TASK_DURATION_MS),
+    permissions: TaskPermissions::default(),
+});
+
 /// `CookieBot` policy - handles cookie consent dialogs.
 pub static COOKIEBOT_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
@@ -445,6 +451,7 @@ pub fn get_policy_from_registry(task_name: &str) -> &'static TaskPolicy {
 /// Internal helper that maps policy names to their static definitions.
 fn match_policy_by_name(policy_name: &str) -> &'static TaskPolicy {
     match policy_name {
+        "atf" => &ATF_POLICY,
         "cookiebot" => &COOKIEBOT_POLICY,
         "pageview" => &PAGEVIEW_POLICY,
         "twitteractivity" => &TWITTERACTIVITY_POLICY,
@@ -621,6 +628,7 @@ mod tests {
     fn test_all_task_policies_have_valid_timeouts() {
         // Verify all registered policies have valid timeouts
         let task_names = [
+            "atf",
             "cookiebot",
             "pageview",
             "twitteractivity",

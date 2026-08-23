@@ -39,6 +39,8 @@ pub enum BrowserSource {
     RoxyBrowser,
     /// From `IxBrowser` API
     IxBrowser,
+    /// From `ShardBrowser` (shardx-launcher) API
+    ShardBrowser,
     /// Auto-discovered local browser
     Local,
 }
@@ -49,6 +51,7 @@ impl std::fmt::Display for BrowserSource {
             BrowserSource::Configured => write!(f, "configured"),
             BrowserSource::RoxyBrowser => write!(f, "roxybrowser"),
             BrowserSource::IxBrowser => write!(f, "ixbrowser"),
+            BrowserSource::ShardBrowser => write!(f, "shardbrowser"),
             BrowserSource::Local => write!(f, "local"),
         }
     }
@@ -608,6 +611,200 @@ impl BrowserConnector for IxBrowserConnector {
     }
 }
 
+/// Extract a CDP connection hint from a ShardBrowser profile object.
+///
+/// The launcher exposes a `cdp` field on running profiles, either as an object
+/// `{ http_url, port, web_socket_debugger_url }` or as a bare ws/http string.
+/// Returns the most useful hint (`web_socket_debugger_url`, then `http_url`,
+/// then `port`-based address), or `None` when the profile is not running.
+fn extract_cdp_hint(profile: &serde_json::Value) -> Option<String> {
+    match profile.get("cdp") {
+        Some(serde_json::Value::Object(map)) => map
+            .get("web_socket_debugger_url")
+            .or_else(|| map.get("http_url"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                map.get("port")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|port| format!("127.0.0.1:{port}"))
+            }),
+        Some(serde_json::Value::String(s)) if !s.is_empty() => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// Connector for `ShardBrowser` (shardx-launcher) instances.
+pub struct ShardBrowserConnector;
+
+impl ShardBrowserConnector {
+    /// Creates a new `ShardBrowser` connector.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ShardBrowserConnector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl BrowserConnector for ShardBrowserConnector {
+    fn is_available(&self, config: &Config) -> bool {
+        config.browser.shardbrowser.enabled && !config.browser.shardbrowser.api_url.is_empty()
+    }
+
+    async fn discover(&self, config: &Config) -> Result<Vec<BrowserCapabilities>> {
+        let api_url = &config.browser.shardbrowser.api_url;
+        let api_key = &config.browser.shardbrowser.api_key;
+
+        info!("Discovering ShardBrowser from: {api_url}");
+
+        let base_url = api_url.trim_end_matches('/');
+        let client = reqwest::Client::new();
+        let url = format!("{base_url}/profiles");
+
+        // The shardx-launcher API requires `Authorization: Bearer <jwt>`.
+        let response = match client
+            .get(&url)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                warn!("ShardBrowser API request failed: {e}");
+                return Ok(vec![]);
+            }
+        };
+
+        if !response.status().is_success() {
+            warn!(
+                "ShardBrowser API returned status {} for {}",
+                response.status(),
+                url
+            );
+            return Ok(vec![]);
+        }
+
+        // Accept either a bare array or an object wrapping the list.
+        let profiles: Vec<serde_json::Value> = match response.json::<serde_json::Value>().await {
+            Ok(serde_json::Value::Array(arr)) => arr,
+            Ok(serde_json::Value::Object(obj)) => obj
+                .get("profiles")
+                .or_else(|| obj.get("list"))
+                .or_else(|| obj.get("data"))
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            _ => vec![],
+        };
+
+        if profiles.is_empty() {
+            info!("No ShardBrowser profiles found");
+            return Ok(vec![]);
+        }
+
+        let mut capabilities = Vec::new();
+
+        for (i, profile) in profiles.iter().enumerate() {
+            let profile_name = profile
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+
+            // A running profile exposes a `cdp` field — either an object
+            // `{ http_url, port, web_socket_debugger_url }` or a bare string.
+            let Some(cdp_hint) = extract_cdp_hint(profile) else {
+                info!(
+                    "ShardBrowser profile {profile_name} ({i}) has no CDP endpoint (not running, or launched without remote debugging)"
+                );
+                continue;
+            };
+
+            // `cdp` may already be a ws:// URL or an http address needing resolution.
+            let ws_url = if cdp_hint.starts_with("ws://") || cdp_hint.starts_with("wss://") {
+                Some(cdp_hint)
+            } else {
+                resolve_ws_url(&cdp_hint).await
+            };
+
+            let Some(ws_url) = ws_url else {
+                warn!("ShardBrowser profile {i} has no resolvable CDP address, skipping");
+                continue;
+            };
+
+            let profile_id = profile
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(
+                    || format!("shardbrowser-{i}"),
+                    |s| format!("shardbrowser-{s}"),
+                );
+
+            let profile_name = profile
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(|| format!("ShardBrowser-{i}"), str::to_string);
+
+            capabilities.push(BrowserCapabilities {
+                id: profile_id,
+                name: profile_name,
+                browser_type: "shardbrowser".to_string(),
+                ws_url,
+                source: BrowserSource::ShardBrowser,
+            });
+        }
+
+        info!("Found {} running ShardBrowser profiles", capabilities.len());
+
+        Ok(capabilities)
+    }
+
+    async fn connect(&self, capability: &BrowserCapabilities, config: &Config) -> Result<Session> {
+        let connect_timeout =
+            Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
+
+        match tokio::time::timeout(
+            connect_timeout,
+            chromiumoxide::Browser::connect(&capability.ws_url),
+        )
+        .await
+        {
+            Ok(Ok((browser, handler))) => {
+                info!("Connected to ShardBrowser: {}", capability.name);
+                Ok(Session::new(
+                    capability.id.clone(),
+                    capability.name.clone(),
+                    capability.browser_type.clone(),
+                    browser,
+                    handler,
+                    config.browser.max_workers_per_session,
+                    config.browser.cursor_overlay_ms,
+                    Some(config.browser.circuit_breaker.clone()),
+                ))
+            }
+            Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+                format!(
+                    "Failed to connect to ShardBrowser {}: {}",
+                    capability.name, e
+                ),
+            ))),
+            Err(_) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
+                format!(
+                    "Connection timeout to ShardBrowser {} after {}ms",
+                    capability.name,
+                    connect_timeout.as_millis()
+                ),
+            ))),
+        }
+    }
+}
+
 /// Connector for local browser auto-discovery.
 pub struct LocalBrowserConnector {
     brave_port_start: u16,
@@ -842,6 +1039,7 @@ impl ConnectorRegistry {
                 Box::new(ConfiguredProfileConnector::new()),
                 Box::new(RoxyBrowserConnector::new()),
                 Box::new(IxBrowserConnector::new()),
+                Box::new(ShardBrowserConnector::new()),
                 Box::new(LocalBrowserConnector::from_env()),
             ],
         }
@@ -895,6 +1093,7 @@ mod tests {
         assert_eq!(BrowserSource::Configured.to_string(), "configured");
         assert_eq!(BrowserSource::RoxyBrowser.to_string(), "roxybrowser");
         assert_eq!(BrowserSource::IxBrowser.to_string(), "ixbrowser");
+        assert_eq!(BrowserSource::ShardBrowser.to_string(), "shardbrowser");
         assert_eq!(BrowserSource::Local.to_string(), "local");
     }
 
@@ -907,7 +1106,7 @@ mod tests {
     #[test]
     fn test_connector_registry_standard() {
         let registry = ConnectorRegistry::standard();
-        assert_eq!(registry.all().len(), 4);
+        assert_eq!(registry.all().len(), 5);
     }
 
     #[test]
@@ -966,6 +1165,95 @@ mod tests {
             ..Default::default()
         };
         assert!(!connector.is_available(&config));
+    }
+
+    #[test]
+    fn test_shard_connector_available_when_enabled() {
+        let connector = ShardBrowserConnector::new();
+        let config = crate::config::Config {
+            browser: crate::config::BrowserConfig {
+                shardbrowser: crate::config::ShardbrowserConfig {
+                    enabled: true,
+                    api_url: "http://127.0.0.1:40325".to_string(),
+                    api_key: "test-key".to_string(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(connector.is_available(&config));
+    }
+
+    #[test]
+    fn test_shard_connector_not_available_when_disabled() {
+        let connector = ShardBrowserConnector::new();
+        let config = crate::config::Config {
+            browser: crate::config::BrowserConfig {
+                shardbrowser: crate::config::ShardbrowserConfig {
+                    enabled: false,
+                    api_url: "http://127.0.0.1:40325".to_string(),
+                    api_key: "test-key".to_string(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(!connector.is_available(&config));
+    }
+
+    #[test]
+    fn test_extract_cdp_hint_object_with_ws() {
+        let profile = serde_json::json!({
+            "id": "abc",
+            "name": "test",
+            "running": true,
+            "cdp": {
+                "http_url": "http://127.0.0.1:37370",
+                "port": 37370,
+                "web_socket_debugger_url": "ws://127.0.0.1:37370/devtools/browser/uuid"
+            }
+        });
+        assert_eq!(
+            extract_cdp_hint(&profile),
+            Some("ws://127.0.0.1:37370/devtools/browser/uuid".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_cdp_hint_object_http_only() {
+        let profile = serde_json::json!({
+            "cdp": { "http_url": "http://127.0.0.1:8080", "port": 8080 }
+        });
+        assert_eq!(
+            extract_cdp_hint(&profile),
+            Some("http://127.0.0.1:8080".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_cdp_hint_object_port_only() {
+        let profile = serde_json::json!({ "cdp": { "port": 9000 } });
+        assert_eq!(
+            extract_cdp_hint(&profile),
+            Some("127.0.0.1:9000".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_cdp_hint_string() {
+        let profile = serde_json::json!({ "cdp": "ws://127.0.0.1:5555/devtools" });
+        assert_eq!(
+            extract_cdp_hint(&profile),
+            Some("ws://127.0.0.1:5555/devtools".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_cdp_hint_missing_or_empty() {
+        assert_eq!(extract_cdp_hint(&serde_json::json!({})), None);
+        assert_eq!(extract_cdp_hint(&serde_json::json!({ "cdp": null })), None);
+        assert_eq!(extract_cdp_hint(&serde_json::json!({ "cdp": "" })), None);
+        assert_eq!(extract_cdp_hint(&serde_json::json!({ "cdp": 42 })), None);
     }
 
     #[test]

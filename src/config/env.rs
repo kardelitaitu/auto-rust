@@ -14,7 +14,7 @@ use std::path::Path;
 use super::types::{
     BrowserConfig, CircuitBreakerConfig, Config, IxbrowserConfig, NativeClickCalibrationMode,
     NativeInputBackend, NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig,
-    TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig,
+    ShardbrowserConfig, TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig,
 };
 
 /// Load `.env` defaults into the environment (only for keys not already set).
@@ -72,6 +72,11 @@ pub(crate) fn load_code_config() -> Result<Config> {
         .unwrap_or_else(|_| "c6ae203adfe0327a63ccc9174c178dec".to_string());
     let ixbrowser_url =
         env::var("IXBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:53200".to_string());
+    let shardbrowser_url =
+        env::var("SHARDBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:40325".to_string());
+    let shardbrowser_key = env::var("SHARDBROWSER_API_KEY").unwrap_or_default();
+    // Enable only when a key is configured — the ShardBrowser API requires auth.
+    let shardbrowser_enabled = !shardbrowser_key.is_empty();
 
     Ok(Config {
         browser: BrowserConfig {
@@ -93,6 +98,11 @@ pub(crate) fn load_code_config() -> Result<Config> {
             ixbrowser: IxbrowserConfig {
                 enabled: true,
                 api_url: ixbrowser_url,
+            },
+            shardbrowser: ShardbrowserConfig {
+                enabled: shardbrowser_enabled,
+                api_url: shardbrowser_url,
+                api_key: shardbrowser_key,
             },
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
@@ -130,6 +140,18 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
     if let Ok(url) = env::var("IXBROWSER_API_URL") {
         config.browser.ixbrowser.api_url = url;
+    }
+    if let Ok(url) = env::var("SHARDBROWSER_API_URL") {
+        if !url.is_empty() {
+            config.browser.shardbrowser.enabled = true;
+        }
+        config.browser.shardbrowser.api_url = url;
+    }
+    if let Ok(key) = env::var("SHARDBROWSER_API_KEY") {
+        if !key.is_empty() {
+            config.browser.shardbrowser.enabled = true;
+        }
+        config.browser.shardbrowser.api_key = key;
     }
     if let Ok(user_agent) = env::var("BROWSER_USER_AGENT") {
         config.browser.user_agent = Some(user_agent);

@@ -31,6 +31,12 @@ api_key = "c6ae203adfe0327a63ccc9174c178dec"
 enabled = true
 api_url = "http://127.0.0.1:53200"
 
+[browser.shardbrowser]
+enabled = true
+api_url = "http://127.0.0.1:40325"
+# API key is supplied via SHARDBROWSER_API_KEY in .env (JWT); keep it out of VCS.
+api_key = ""
+
 [orchestrator]
 max_global_concurrency = 20
 task_timeout_ms = 1200000

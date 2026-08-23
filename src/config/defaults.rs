@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 
 use super::types::{
     BrowserConfig, BrowserProfile, CircuitBreakerConfig, EngagementLimitsConfig, IxbrowserConfig,
-    NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, TwitterActivityConfig,
-    TwitterLLMConfig, TwitterProbabilitiesConfig,
+    NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, ShardbrowserConfig,
+    TwitterActivityConfig, TwitterLLMConfig, TwitterProbabilitiesConfig,
 };
 
 impl Default for TwitterActivityConfig {
@@ -44,6 +44,7 @@ impl Default for BrowserConfig {
             profiles: vec![],
             roxybrowser: RoxybrowserConfig::default(),
             ixbrowser: IxbrowserConfig::default(),
+            shardbrowser: ShardbrowserConfig::default(),
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,
@@ -97,6 +98,16 @@ impl Default for IxbrowserConfig {
         Self {
             enabled: true,
             api_url: "http://127.0.0.1:53200".to_string(),
+        }
+    }
+}
+
+impl Default for ShardbrowserConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_url: "http://127.0.0.1:40325".to_string(),
+            api_key: String::new(),
         }
     }
 }

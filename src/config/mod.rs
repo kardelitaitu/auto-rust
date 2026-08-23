@@ -26,6 +26,8 @@ pub use validation::*;
 /// # Environment Variables
 /// - `ROXYBROWSER_API_URL`: Override the `RoxyBrowser` API URL
 /// - `ROXYBROWSER_API_KEY`: Override the `RoxyBrowser` API key
+/// - `SHARDBROWSER_API_URL`: Override the `ShardBrowser` (shardx-launcher) API URL
+/// - `SHARDBROWSER_API_KEY`: Override the `ShardBrowser` API key
 ///
 /// # Returns
 /// A complete Config struct with all settings resolved
@@ -318,9 +320,33 @@ impl ConfigValidationReport {
             }
         }
 
+        // ShardBrowser API URL format validation
+        if !config.shardbrowser.api_url.is_empty() {
+            let url = &config.shardbrowser.api_url;
+            if !url.starts_with("http://") && !url.starts_with("https://") {
+                return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                    field: "shardbrowser.api_url".to_string(),
+                    value: url.clone(),
+                    reason: "must start with http:// or https://".to_string(),
+                }));
+            }
+            if url.parse::<reqwest::Url>().is_err() {
+                return Err(OrchestratorError::Config(ConfigError::InvalidValue {
+                    field: "shardbrowser.api_url".to_string(),
+                    value: url.clone(),
+                    reason: "invalid URL format".to_string(),
+                }));
+            }
+        }
+
         // API key validation (warn if empty but don't fail - might not be using RoxyBrowser)
         if config.roxybrowser.enabled && config.roxybrowser.api_key.is_empty() {
             warn!("RoxyBrowser is enabled but api_key is empty. API requests will fail.");
+        }
+
+        // ShardBrowser requires a key for API auth — warn if enabled but missing
+        if config.shardbrowser.enabled && config.shardbrowser.api_key.is_empty() {
+            warn!("ShardBrowser is enabled but api_key is empty. API requests will fail.");
         }
 
         Ok(())

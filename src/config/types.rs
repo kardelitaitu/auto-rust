@@ -34,6 +34,8 @@ pub struct BrowserConfig {
     #[serde(default)]
     pub ixbrowser: IxbrowserConfig,
     #[serde(default)]
+    pub shardbrowser: ShardbrowserConfig,
+    #[serde(default)]
     pub user_agent: Option<String>,
     #[serde(default)]
     pub extra_http_headers: BTreeMap<String, String>,
@@ -179,6 +181,15 @@ pub struct IxbrowserConfig {
     pub enabled: bool,
     #[serde(alias = "apiBaseUrl", alias = "api_base_url")]
     pub api_url: String,
+}
+
+/// Configuration for `ShardBrowser` (shardx-launcher) API integration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ShardbrowserConfig {
+    pub enabled: bool,
+    #[serde(alias = "apiBaseUrl", alias = "api_base_url")]
+    pub api_url: String,
+    pub api_key: String,
 }
 
 /// Configuration for task orchestration and execution behavior.

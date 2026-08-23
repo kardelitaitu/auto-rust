@@ -666,6 +666,7 @@ mod tests {
                     api_key: String::new(),
                 },
                 ixbrowser: auto::config::IxbrowserConfig::default(),
+                shardbrowser: auto::config::ShardbrowserConfig::default(),
                 user_agent: None,
                 extra_http_headers: std::collections::BTreeMap::new(),
                 cursor_overlay_ms: 0,

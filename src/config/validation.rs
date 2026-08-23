@@ -211,6 +211,7 @@ mod tests {
             }],
             roxybrowser: crate::config::RoxybrowserConfig::default(),
             ixbrowser: crate::config::IxbrowserConfig::default(),
+            shardbrowser: crate::config::ShardbrowserConfig::default(),
             user_agent: None,
             extra_http_headers: std::collections::BTreeMap::new(),
             cursor_overlay_ms: 0,

@@ -40,6 +40,9 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
+        log::debug!(
+            "[iframe_click] waiting for iframe '{iframe_selector}' (timeout {timeout_ms}ms)"
+        );
         if !self.wait_for(iframe_selector, timeout_ms).await? {
             return Err(anyhow!(
                 "Iframe '{iframe_selector}' did not appear within {timeout_ms}ms"
@@ -48,6 +51,13 @@ impl TaskContext {
 
         // Iframe's absolute rect in the top viewport.
         let iframe_rect = self.get_element_rect(iframe_selector).await?;
+        log::debug!(
+            "[iframe_click] iframe rect: x={:.1} y={:.1} w={:.1} h={:.1}",
+            iframe_rect.x,
+            iframe_rect.y,
+            iframe_rect.width,
+            iframe_rect.height
+        );
         if iframe_rect.width <= 0.0 || iframe_rect.height <= 0.0 {
             return Err(anyhow!("Iframe '{iframe_selector}' has zero size"));
         }
@@ -58,15 +68,28 @@ impl TaskContext {
             .attr(iframe_selector, "src")
             .await?
             .ok_or_else(|| anyhow!("Iframe '{iframe_selector}' has no src attribute"))?;
+        log::debug!("[iframe_click] iframe src: {}", &src[..src.len().min(160)]);
 
         // Poll inside the frame until the element becomes visible.
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_error: Option<anyhow::Error> = None;
+        let mut attempt = 0u32;
         let (local_x, local_y) = loop {
+            attempt += 1;
             match self.element_point_in_frame(&src, element_selector).await {
-                Ok(Some(point)) => break point,
-                Ok(None) => {}
-                Err(e) => last_error = Some(e),
+                Ok(Some(point)) => {
+                    log::debug!(
+                        "[iframe_click] attempt {attempt}: element found at local ({:.1},{:.1})",
+                        point.0,
+                        point.1
+                    );
+                    break point;
+                }
+                Ok(None) => log::debug!("[iframe_click] attempt {attempt}: element not usable yet"),
+                Err(e) => {
+                    log::debug!("[iframe_click] attempt {attempt}: error: {e}");
+                    last_error = Some(e);
+                }
             }
             if Instant::now() >= deadline {
                 return Err(last_error.unwrap_or_else(|| {
@@ -81,6 +104,7 @@ impl TaskContext {
         // Absolute viewport point = iframe offset + element's local point.
         let x = iframe_rect.x + local_x;
         let y = iframe_rect.y + local_y;
+        log::debug!("[iframe_click] clicking at viewport ({x:.1},{y:.1})");
 
         // Cursor-simulating click at the absolute point (CDP input, cross-origin safe).
         mouse::left_click_at(self.page(), x, y).await?;
@@ -96,45 +120,87 @@ impl TaskContext {
 
     /// Find an element inside a (possibly cross-origin) iframe and return its
     /// center point in the iframe's local viewport coordinates.
+    ///
+    /// The evaluation reports a status so callers can distinguish "missing",
+    /// "zero-size", "hidden", or a genuine JS exception from success.
     async fn element_point_in_frame(
         &self,
         iframe_src: &str,
         element_selector: &str,
     ) -> Result<Option<(f64, f64)>> {
-        let frame_id = find_frame_by_url(self.page(), iframe_src).await?;
-        let Some(ctx) = self.page().frame_execution_context(frame_id).await? else {
+        let frame_id = match find_frame_by_url(self.page(), iframe_src).await {
+            Ok(id) => {
+                log::debug!("[iframe] matched frame id: {id:?}");
+                id
+            }
+            Err(e) => {
+                log::warn!("[iframe] frame lookup failed: {e}");
+                return Err(e);
+            }
+        };
+        let Some(ctx) = self
+            .page()
+            .frame_execution_context(frame_id.clone())
+            .await?
+        else {
+            log::warn!("[iframe] frame {frame_id:?} has no execution context (is it loaded?)");
             return Ok(None);
         };
+        log::debug!("[iframe] execution context: {ctx:?}");
 
         let escaped = element_selector.replace('\\', "\\\\").replace('\'', "\\'");
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector('{escaped}');
-                if (!el) return null;
+                if (!el) return {{ status: 'missing' }};
                 const r = el.getBoundingClientRect();
-                if (r.width <= 0 || r.height <= 0) return null;
+                if (r.width <= 0 || r.height <= 0) return {{ status: 'zero_size', found: true }};
                 const s = window.getComputedStyle(el);
-                if (s.display === 'none' || s.visibility === 'hidden' || Number.parseFloat(s.opacity || '1') === 0) return null;
-                return {{ x: r.x + r.width / 2, y: r.y + r.height / 2 }};
+                if (s.display === 'none' || s.visibility === 'hidden' || Number.parseFloat(s.opacity || '1') === 0) return {{ status: 'hidden', found: true }};
+                return {{ status: 'ok', x: r.x + r.width / 2, y: r.y + r.height / 2 }};
             }})()"#
         );
 
         let mut params = EvaluateParams::new(js);
         params.context_id = Some(ctx);
         let resp = self.page().execute(params).await?;
+
+        if let Some(exc) = &resp.result.exception_details {
+            log::warn!(
+                "[iframe] JS exception while querying '{element_selector}': {}",
+                exc.text
+            );
+            return Ok(None);
+        }
+
         match resp.result.result.value {
             Some(serde_json::Value::Object(map)) => {
-                let x = map
-                    .get("x")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(0.0);
-                let y = map
-                    .get("y")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(0.0);
-                Ok(Some((x, y)))
+                let status = map
+                    .get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("unknown");
+                match status {
+                    "ok" => {
+                        let x = map
+                            .get("x")
+                            .and_then(serde_json::Value::as_f64)
+                            .unwrap_or(0.0);
+                        let y = map
+                            .get("y")
+                            .and_then(serde_json::Value::as_f64)
+                            .unwrap_or(0.0);
+                        Ok(Some((x, y)))
+                    }
+                    other => {
+                        log::debug!("[iframe] element '{element_selector}' status: {other}");
+                        Ok(None)
+                    }
+                }
             }
-            _ => Ok(None),
+            _ => {
+                log::debug!("[iframe] unexpected evaluate result for '{element_selector}'");
+                Ok(None)
+            }
         }
     }
 }
@@ -144,6 +210,22 @@ impl TaskContext {
 async fn find_frame_by_url(page: &Page, src: &str) -> Result<FrameId> {
     let base = src.split('#').next().unwrap_or(src);
     let resp = page.execute(GetFrameTreeParams {}).await?;
+
+    log::debug!("[iframe] frame tree (looking for src base '{base}'):");
+    fn log_tree(tree: &FrameTree, depth: usize) {
+        let indent = "  ".repeat(depth);
+        log::debug!(
+            "[iframe] {indent}frame id={:?} url={}",
+            tree.frame.id,
+            tree.frame.url
+        );
+        if let Some(children) = &tree.child_frames {
+            for child in children {
+                log_tree(child, depth + 1);
+            }
+        }
+    }
+    log_tree(&resp.result.frame_tree, 0);
 
     fn walk(tree: &FrameTree, base: &str) -> Option<FrameId> {
         if frame_url_matches(&tree.frame.url, base) {

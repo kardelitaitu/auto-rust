@@ -200,6 +200,11 @@ impl BrowserConnector for RoxyBrowserConnector {
 
         info!("Discovering RoxyBrowser from: {api_url}");
 
+        if !api_reachable(api_url).await {
+            debug!("RoxyBrowser API not reachable at {api_url}, skipping discovery");
+            return Ok(vec![]);
+        }
+
         let client = crate::api::ApiClient::new(api_url.clone());
 
         #[derive(serde::Deserialize)]
@@ -314,6 +319,35 @@ impl BrowserConnector for RoxyBrowserConnector {
             ))),
         }
     }
+}
+
+/// Budget for the TCP reachability probe used before HTTP discovery calls.
+///
+/// Live local browser APIs accept TCP connections in single-digit ms, while a
+/// dead endpoint on Windows can take ~2s to refuse. Probing with a short budget
+/// lets discovery skip unreachable services almost instantly instead of paying
+/// the full HTTP connect cost per connector.
+const API_REACHABILITY_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Quickly checks whether the host:port of an http(s) base URL accepts TCP
+/// connections within `API_REACHABILITY_TIMEOUT`.
+#[must_use]
+async fn api_reachable(base_url: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(base_url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let port = url.port_or_known_default().unwrap_or(80);
+
+    tokio::time::timeout(
+        API_REACHABILITY_TIMEOUT,
+        tokio::net::TcpStream::connect((host, port)),
+    )
+    .await
+    .map(|res| res.is_ok())
+    .unwrap_or(false)
 }
 
 /// Helper to resolve a WebSocket debugger URL from a host:port or URL string.
@@ -441,6 +475,11 @@ impl BrowserConnector for IxBrowserConnector {
         };
 
         info!("Discovering IxBrowser from: {base_url}");
+
+        if !api_reachable(api_url).await {
+            debug!("IxBrowser API not reachable at {api_url}, skipping discovery");
+            return Ok(vec![]);
+        }
 
         let client = crate::api::ApiClient::new(base_url.clone());
 
@@ -662,6 +701,11 @@ impl BrowserConnector for ShardBrowserConnector {
         let api_key = &config.browser.shardbrowser.api_key;
 
         info!("Discovering ShardBrowser from: {api_url}");
+
+        if !api_reachable(api_url).await {
+            debug!("ShardBrowser API not reachable at {api_url}, skipping discovery");
+            return Ok(vec![]);
+        }
 
         let base_url = api_url.trim_end_matches('/');
         let client = reqwest::Client::new();
@@ -1254,6 +1298,21 @@ mod tests {
         assert_eq!(extract_cdp_hint(&serde_json::json!({ "cdp": null })), None);
         assert_eq!(extract_cdp_hint(&serde_json::json!({ "cdp": "" })), None);
         assert_eq!(extract_cdp_hint(&serde_json::json!({ "cdp": 42 })), None);
+    }
+
+    #[tokio::test]
+    async fn test_api_reachable_invalid_url_is_false() {
+        assert!(!api_reachable("").await);
+        assert!(!api_reachable("not a url").await);
+        assert!(!api_reachable("ftp://127.0.0.1:21").await);
+    }
+
+    #[tokio::test]
+    async fn test_api_reachable_alive_port_is_true() {
+        // A live listener on loopback resolves within the 500ms budget.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        assert!(api_reachable(&format!("http://127.0.0.1:{port}/")).await);
     }
 
     #[test]

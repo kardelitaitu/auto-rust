@@ -255,7 +255,11 @@ impl ApiClient {
                         }
 
                         let response = request.send().await.map_err(|e| {
-                            ApiCallError::retryable(format!("API request failed: {e}"))
+                            // Connection-level failures (refused, DNS, proxy) are not
+                            // transient within the retry window — retrying only adds
+                            // latency for unreachable services. Callers that need
+                            // retries rely on their own policy (e.g. discovery retries).
+                            ApiCallError::permanent(format!("API request failed: {e}"))
                         })?;
 
                         let status = response.status();

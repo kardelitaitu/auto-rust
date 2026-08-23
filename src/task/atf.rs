@@ -9,10 +9,9 @@
 //! 2. Wait a random 2–3 seconds (uniform variance around 2.5s)
 //! 3. Native mouse-click the "Start Mining" command button
 //! 4. Wait for the "Launch" confirmation popup and mouse-click it
-//! 5. Read the mini-app iframe `src` and navigate the tab to it directly
-//!    (the mini-app is a cross-origin iframe that selectors cannot reach)
+//! 5. `api.iframe` — enter the mini-app (cross-origin iframe) via its `src`
 //! 6. Click the mini-app "Go" button
-//! 7. Switch to the "Mine" tab
+//! 7. Re-enter the mini-app if "Go" navigated away, then click the "Mine" tab
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -156,9 +155,23 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     ) {
         bail!("Mini-app Go click failed: {}", outcome.summary());
     }
+    api.pause(2_000).await;
 
-    // Step 7: switch to the "Mine" tab.
-    api.pause(1_500).await;
+    // Step 7: the "Go" handler may navigate the tab to a t.me link — if we
+    // left the mini-app, re-enter it, then click the "Mine" tab.
+    let in_miniapp = api
+        .exists("[onclick=\"switchTab('home')\"]")
+        .await
+        .unwrap_or(false);
+    if !in_miniapp {
+        info!("Go click navigated away; returning to mini-app");
+        api.navigate(
+            &miniapp_url,
+            crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS,
+        )
+        .await?;
+        api.pause(2_000).await;
+    }
     if !api
         .wait_for_visible("[onclick=\"switchTab('home')\"]", MINIAPP_ACTION_TIMEOUT_MS)
         .await?

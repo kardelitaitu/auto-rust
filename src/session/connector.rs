@@ -650,12 +650,51 @@ impl BrowserConnector for IxBrowserConnector {
     }
 }
 
-/// Extract a CDP connection hint from a ShardBrowser profile object.
+/// Fetch a JSON value from the ShardBrowser launcher API with Bearer auth.
+/// Returns `None` on HTTP/network failure (the caller decides whether to retry
+/// or skip).
+async fn fetch_json(base_url: &str, path: &str, auth: &str) -> Option<serde_json::Value> {
+    let client = reqwest::Client::new();
+    let url = format!("{base_url}{path}");
+    let response = client
+        .get(&url)
+        .header("Authorization", auth)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        warn!(
+            "ShardBrowser API returned status {} for {url}",
+            response.status()
+        );
+        return None;
+    }
+    response.json::<serde_json::Value>().await.ok()
+}
+
+/// Fetch a JSON array from the ShardBrowser launcher API.
+/// Handles both bare arrays and objects wrapping the list under `"data"`/`"list"`.
+fn extract_json_array(value: &serde_json::Value) -> Vec<serde_json::Value> {
+    match value {
+        serde_json::Value::Array(arr) => arr.clone(),
+        serde_json::Value::Object(obj) => obj
+            .get("data")
+            .or_else(|| obj.get("list"))
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        _ => vec![],
+    }
+}
+
+/// Extract a CDP connection hint from a ShardBrowser object (a `/running`
+/// instance or a `/profiles` entry).
 ///
-/// The launcher exposes a `cdp` field on running profiles, either as an object
+/// The launcher exposes a `cdp` field on open profiles, either as an object
 /// `{ http_url, port, web_socket_debugger_url }` or as a bare ws/http string.
 /// Returns the most useful hint (`web_socket_debugger_url`, then `http_url`,
-/// then `port`-based address), or `None` when the profile is not running.
+/// then `port`-based address), or `None` when no CDP endpoint is exposed.
 fn extract_cdp_hint(profile: &serde_json::Value) -> Option<String> {
     match profile.get("cdp") {
         Some(serde_json::Value::Object(map)) => map
@@ -708,64 +747,62 @@ impl BrowserConnector for ShardBrowserConnector {
         }
 
         let base_url = api_url.trim_end_matches('/');
-        let client = reqwest::Client::new();
-        let url = format!("{base_url}/profiles");
+        let auth = format!("Bearer {api_key}");
 
-        // The shardx-launcher API requires `Authorization: Bearer <jwt>`.
-        let response = match client
-            .get(&url)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .timeout(Duration::from_secs(5))
-            .send()
+        // Only profiles that are actually OPEN are candidates. The launcher's
+        // `/running` endpoint reports exactly those — do not iterate every
+        // created profile.
+        let running = fetch_json(base_url, "/running", &auth)
             .await
-        {
-            Ok(resp) => resp,
-            Err(e) => {
-                warn!("ShardBrowser API request failed: {e}");
-                return Ok(vec![]);
-            }
-        };
+            .map(|v| extract_json_array(&v))
+            .unwrap_or_default();
 
-        if !response.status().is_success() {
-            warn!(
-                "ShardBrowser API returned status {} for {}",
-                response.status(),
-                url
-            );
+        if running.is_empty() {
+            info!("No ShardBrowser profiles are open");
             return Ok(vec![]);
         }
 
-        // Accept either a bare array or an object wrapping the list.
-        let profiles: Vec<serde_json::Value> = match response.json::<serde_json::Value>().await {
-            Ok(serde_json::Value::Array(arr)) => arr,
-            Ok(serde_json::Value::Object(obj)) => obj
-                .get("profiles")
-                .or_else(|| obj.get("list"))
-                .or_else(|| obj.get("data"))
-                .and_then(serde_json::Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
-            _ => vec![],
-        };
-
-        if profiles.is_empty() {
-            info!("No ShardBrowser profiles found");
-            return Ok(vec![]);
-        }
+        // Fetch profile metadata (names, cdp fallback) once and index by id.
+        let profiles = fetch_json(base_url, "/profiles", &auth)
+            .await
+            .map(|v| extract_json_array(&v))
+            .unwrap_or_default();
+        let by_id: std::collections::HashMap<&str, &serde_json::Value> = profiles
+            .iter()
+            .filter_map(|p| {
+                p.get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|id| (id, p))
+            })
+            .collect();
 
         let mut capabilities = Vec::new();
 
-        for (i, profile) in profiles.iter().enumerate() {
-            let profile_name = profile
+        for (i, instance) in running.iter().enumerate() {
+            let profile_id = instance
+                .get("profile_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+
+            let profile_meta = if !profile_id.is_empty() {
+                by_id.get(profile_id).copied()
+            } else {
+                None
+            }
+            .unwrap_or(instance);
+
+            let profile_name = profile_meta
                 .get("name")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown");
+                .map_or_else(|| format!("ShardBrowser-{i}"), str::to_string);
 
-            // A running profile exposes a `cdp` field — either an object
-            // `{ http_url, port, web_socket_debugger_url }` or a bare string.
-            let Some(cdp_hint) = extract_cdp_hint(profile) else {
-                info!(
-                    "ShardBrowser profile {profile_name} ({i}) has no CDP endpoint (not running, or launched without remote debugging)"
+            // CDP hint comes from the running instance when the launcher
+            // exposes it; fall back to the profile metadata.
+            let Some(cdp_hint) =
+                extract_cdp_hint(instance).or_else(|| extract_cdp_hint(profile_meta))
+            else {
+                warn!(
+                    "ShardBrowser profile '{profile_name}' is open but exposes no CDP endpoint (profiles launched from the app UI lack remote debugging)"
                 );
                 continue;
             };
@@ -778,25 +815,14 @@ impl BrowserConnector for ShardBrowserConnector {
             };
 
             let Some(ws_url) = ws_url else {
-                warn!("ShardBrowser profile {i} has no resolvable CDP address, skipping");
+                warn!(
+                    "ShardBrowser profile '{profile_name}' has no resolvable CDP address, skipping"
+                );
                 continue;
             };
 
-            let profile_id = profile
-                .get("id")
-                .and_then(serde_json::Value::as_str)
-                .map_or_else(
-                    || format!("shardbrowser-{i}"),
-                    |s| format!("shardbrowser-{s}"),
-                );
-
-            let profile_name = profile
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .map_or_else(|| format!("ShardBrowser-{i}"), str::to_string);
-
             capabilities.push(BrowserCapabilities {
-                id: profile_id,
+                id: format!("shardbrowser-{profile_id}"),
                 name: profile_name,
                 browser_type: "shardbrowser".to_string(),
                 ws_url,
@@ -804,7 +830,10 @@ impl BrowserConnector for ShardBrowserConnector {
             });
         }
 
-        info!("Found {} running ShardBrowser profiles", capabilities.len());
+        info!(
+            "Found {} open ShardBrowser profile(s) with CDP",
+            capabilities.len()
+        );
 
         Ok(capabilities)
     }

@@ -8,6 +8,7 @@
 //! 1. Navigate to `https://web.telegram.org/k/#@ATF_AIRDROP_bot`
 //! 2. Wait a random 2–3 seconds (uniform variance around 2.5s)
 //! 3. Native mouse-click the "Start Mining" command button
+//! 4. Wait for the "Launch" confirmation popup and mouse-click it
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -26,14 +27,14 @@ use crate::utils::timing::{duration_with_variance, run_with_timeout};
 /// Default target URL — Telegram Web chat with the ATF airdrop bot.
 const DEFAULT_URL: &str = "https://web.telegram.org/k/#@ATF_AIRDROP_bot";
 
-/// Selector for the "Start Mining" bot command button.
-const START_MINING_SELECTOR: &str = "div.new-message-bot-commands.is-view";
-
 /// Default task runtime budget in milliseconds.
 pub const DEFAULT_ATF_TASK_DURATION_MS: u64 = 60_000;
 
 /// How long to wait for the "Start Mining" button to appear, in milliseconds.
 const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 30_000;
+
+/// How long to wait for the "Launch" confirmation popup, in milliseconds.
+const LAUNCH_POPUP_TIMEOUT_MS: u64 = 20_000;
 
 /// Base wait before clicking, in milliseconds. 20% variance yields 2–3s.
 const PRE_CLICK_WAIT_BASE_MS: u64 = 2_500;
@@ -79,17 +80,21 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.pause_with_variance(PRE_CLICK_WAIT_BASE_MS, PRE_CLICK_WAIT_VARIANCE_PCT)
         .await;
 
-    // Make sure the "Start Mining" command is actually present before clicking.
+    // Step 3: make sure the "Start Mining" command is present, then
+    // mouse-click it with the native cursor.
     if !api
-        .wait_for_visible(START_MINING_SELECTOR, BUTTON_VISIBILITY_TIMEOUT_MS)
+        .wait_for_visible(
+            "div.new-message-bot-commands.is-view",
+            BUTTON_VISIBILITY_TIMEOUT_MS,
+        )
         .await?
     {
         warn!("Start Mining button did not appear within {BUTTON_VISIBILITY_TIMEOUT_MS}ms");
     }
-
-    // Step 3: mouse-click the bot command with the native cursor.
     info!("Mouse-clicking Start Mining");
-    let outcome = api.nativeclick(START_MINING_SELECTOR).await?;
+    let outcome = api
+        .nativeclick("div.new-message-bot-commands.is-view")
+        .await?;
     info!("Click result: {}", outcome.summary());
     if !matches!(
         outcome.click,
@@ -98,8 +103,26 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         bail!("Start Mining click failed: {}", outcome.summary());
     }
 
-    // Brief settle pause after the click.
-    api.pause(1_000).await;
+    // Step 4: the bot shows a "Launch" confirmation popup — wait for it and
+    // mouse-click it. The popup is a floating overlay that animates in.
+    if !api
+        .wait_for_visible("button.popup-button.primary", LAUNCH_POPUP_TIMEOUT_MS)
+        .await?
+    {
+        warn!("Launch confirmation popup did not appear within {LAUNCH_POPUP_TIMEOUT_MS}ms");
+    }
+    info!("Mouse-clicking Launch");
+    let outcome = api.nativeclick("button.popup-button.primary").await?;
+    info!("Launch click result: {}", outcome.summary());
+    if !matches!(
+        outcome.click,
+        crate::utils::mouse::types::ClickStatus::Success
+    ) {
+        bail!("Launch confirmation click failed: {}", outcome.summary());
+    }
+
+    // Settle pause so the mining app opens before the task ends.
+    api.pause(2_000).await;
 
     info!("ATF task completed");
     Ok(())
@@ -111,9 +134,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        task_duration_ms, DEFAULT_ATF_TASK_DURATION_MS, DEFAULT_URL, START_MINING_SELECTOR,
-    };
+    use super::{task_duration_ms, DEFAULT_ATF_TASK_DURATION_MS, DEFAULT_URL};
 
     #[test]
     fn task_duration_stays_within_bounds() {
@@ -129,13 +150,5 @@ mod tests {
     #[test]
     fn default_url_is_telegram_atf_bot() {
         assert_eq!(DEFAULT_URL, "https://web.telegram.org/k/#@ATF_AIRDROP_bot");
-    }
-
-    #[test]
-    fn start_mining_selector_targets_bot_command() {
-        assert_eq!(
-            START_MINING_SELECTOR,
-            "div.new-message-bot-commands.is-view"
-        );
     }
 }

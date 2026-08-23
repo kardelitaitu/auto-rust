@@ -131,25 +131,13 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.pause(2_000).await;
 
     // Step 5: the mini-app opens in a cross-origin iframe — selectors can't
-    // reach inside it. Read its `src` (readable cross-origin) and navigate
-    // the tab directly to the mini-app URL, making it the top document.
-    if !api.wait_for("iframe", MINIAPP_ACTION_TIMEOUT_MS).await? {
-        warn!("Mini-app iframe did not appear within {MINIAPP_ACTION_TIMEOUT_MS}ms");
-    }
-    let miniapp_url = api
-        .attr("iframe", "src")
-        .await?
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("Mini-app iframe has no src attribute"))?;
+    // reach inside it. `api.iframe` reads its `src` (readable cross-origin)
+    // and navigates the tab directly to the mini-app URL.
+    let miniapp_url = api.iframe("iframe", MINIAPP_ACTION_TIMEOUT_MS).await?;
     info!(
-        "Navigating to mini-app: {}",
+        "Entered mini-app: {}",
         &miniapp_url[..miniapp_url.len().min(120)]
     );
-    api.navigate(
-        &miniapp_url,
-        crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS,
-    )
-    .await?;
     api.pause(2_000).await;
 
     // Step 6: inside the mini-app, click the "Go" action button.

@@ -25,6 +25,19 @@ api.title() -> Result<String>
 
 > **DSL equivalent:** [`navigate` action](TASKS/dsl.md#navigate) in declarative task files.
 
+### api.iframe(selector, timeout_ms)
+
+"Enter" an iframe by navigating the tab directly to its `src` URL.
+
+Cross-origin iframes (e.g. Telegram mini-apps) cannot be reached by selectors
+from the top document. Reading the iframe's `src` attribute is allowed
+cross-origin, so this navigates to it, making the frame's content the top
+document where normal selectors and clicks work. Returns the entered URL.
+
+```rust
+let miniapp_url = api.iframe("iframe", 30_000).await?;
+```
+
 ## Clicking
 
 ### api.click(selector)

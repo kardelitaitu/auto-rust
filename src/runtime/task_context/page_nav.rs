@@ -1,6 +1,6 @@
 //! Navigation and page management methods for `TaskContext`.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -135,7 +135,33 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Set a custom user agent string for this session.
+    /// "Enter" an iframe by navigating the tab directly to its `src` URL.
+    ///
+    /// Cross-origin iframes (e.g. Telegram mini-apps) cannot be reached by
+    /// selectors from the top document. Reading the iframe's `src` attribute
+    /// is allowed cross-origin, so navigating to it makes the frame's content
+    /// the top document, where normal selectors and clicks work.
+    ///
+    /// # Arguments
+    /// * `selector` - CSS selector for the iframe (usually `"iframe"`)
+    /// * `timeout_ms` - Max wait for the iframe to appear, and navigation budget
+    ///
+    /// # Returns
+    /// The iframe's `src` URL (the page it entered).
+    pub async fn iframe(&self, selector: &str, timeout_ms: u64) -> Result<String> {
+        if !self.wait_for(selector, timeout_ms).await? {
+            return Err(anyhow!(
+                "Iframe '{selector}' did not appear within {timeout_ms}ms"
+            ));
+        }
+        let src = self
+            .attr(selector, "src")
+            .await?
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow!("Iframe '{selector}' has no src attribute"))?;
+        self.navigate(&src, timeout_ms).await?;
+        Ok(src)
+    }
     pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {
         let escaped = user_agent.replace("'", "\\'");
         self.with_retry(|| async {

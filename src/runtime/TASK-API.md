@@ -16,6 +16,11 @@ api.function_name(real_args).await?;
 api.navigate("https://example.com", 30_000).await?;
 ```
 
+**iframe(selector: &str, timeout_ms: u64)** -- Enter an iframe by navigating the tab to its src URL
+```rust
+let miniapp_url = api.iframe("iframe", 30_000).await?;
+```
+
 **check_page_connected()** -- Check if page is connected
 ```rust
 api.check_page_connected().await?;

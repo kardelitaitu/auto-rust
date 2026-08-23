@@ -63,6 +63,7 @@ pub fn with_http_client(config: LlmConfig, http: Client) -> LlmClient {
         rate_limiter: None,
         ollama_urls: vec![],
         next_ollama_idx: std::sync::atomic::AtomicUsize::new(0),
+        ollama_sem: None,
     }
 }
 
@@ -346,6 +347,12 @@ impl LlmClient {
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                 % self.ollama_urls.len();
             &self.ollama_urls[idx]
+        };
+        // Acquire semaphore permit if concurrency limit is configured
+        let _permit = if let Some(sem) = &self.ollama_sem {
+            Some(sem.clone().acquire_owned().await?)
+        } else {
+            None
         };
         let url = format!("{}/api/chat", base_url);
         let model = model_override.unwrap_or(&self.config.ollama.model);

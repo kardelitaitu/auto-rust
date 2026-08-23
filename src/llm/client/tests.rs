@@ -532,6 +532,7 @@ impl LlmClient {
             rate_limiter: None,
             ollama_urls: vec![],
             next_ollama_idx: std::sync::atomic::AtomicUsize::new(0),
+            ollama_sem: None,
         }
     }
 }

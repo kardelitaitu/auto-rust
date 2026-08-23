@@ -214,7 +214,7 @@ async fn find_frame_by_url(page: &Page, src: &str) -> Result<FrameId> {
     log::info!("[iframe] frame tree (looking for src base '{base}'):");
     fn log_tree(tree: &FrameTree, depth: usize) {
         let indent = "  ".repeat(depth);
-        log::debug!(
+        log::info!(
             "[iframe] {indent}frame id={:?} url={}",
             tree.frame.id,
             tree.frame.url

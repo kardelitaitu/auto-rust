@@ -9,6 +9,10 @@
 //! 2. Wait a random 2–3 seconds (uniform variance around 2.5s)
 //! 3. Native mouse-click the "Start Mining" command button
 //! 4. Wait for the "Launch" confirmation popup and mouse-click it
+//! 5. Read the mini-app iframe `src` and navigate the tab to it directly
+//!    (the mini-app is a cross-origin iframe that selectors cannot reach)
+//! 6. Click the mini-app "Go" button
+//! 7. Switch to the "Mine" tab
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -35,6 +39,9 @@ const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 30_000;
 
 /// How long to wait for the "Launch" confirmation popup, in milliseconds.
 const LAUNCH_POPUP_TIMEOUT_MS: u64 = 20_000;
+
+/// How long to wait for a Telegram mini-app action button, in milliseconds.
+const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
 
 /// Base wait before clicking, in milliseconds. 20% variance yields 2–3s.
 const PRE_CLICK_WAIT_BASE_MS: u64 = 2_500;
@@ -92,9 +99,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         warn!("Start Mining button did not appear within {BUTTON_VISIBILITY_TIMEOUT_MS}ms");
     }
     info!("Mouse-clicking Start Mining");
-    let outcome = api
-        .nativeclick("div.new-message-bot-commands.is-view")
-        .await?;
+    let outcome = api.click("div.new-message-bot-commands.is-view").await?;
     info!("Click result: {}", outcome.summary());
     if !matches!(
         outcome.click,
@@ -102,6 +107,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     ) {
         bail!("Start Mining click failed: {}", outcome.summary());
     }
+
+    api.pause(2_000).await;
 
     // Step 4: the bot shows a "Launch" confirmation popup — wait for it and
     // mouse-click it. The popup is a floating overlay that animates in.
@@ -112,7 +119,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         warn!("Launch confirmation popup did not appear within {LAUNCH_POPUP_TIMEOUT_MS}ms");
     }
     info!("Mouse-clicking Launch");
-    let outcome = api.nativeclick("button.popup-button.primary").await?;
+    let outcome = api.click("button.popup-button.primary").await?;
     info!("Launch click result: {}", outcome.summary());
     if !matches!(
         outcome.click,
@@ -121,8 +128,67 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         bail!("Launch confirmation click failed: {}", outcome.summary());
     }
 
-    // Settle pause so the mining app opens before the task ends.
     api.pause(2_000).await;
+
+    // Step 5: the mini-app opens in a cross-origin iframe — selectors can't
+    // reach inside it. Read its `src` (readable cross-origin) and navigate
+    // the tab directly to the mini-app URL, making it the top document.
+    if !api.wait_for("iframe", MINIAPP_ACTION_TIMEOUT_MS).await? {
+        warn!("Mini-app iframe did not appear within {MINIAPP_ACTION_TIMEOUT_MS}ms");
+    }
+    let miniapp_url = api
+        .attr("iframe", "src")
+        .await?
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Mini-app iframe has no src attribute"))?;
+    info!(
+        "Navigating to mini-app: {}",
+        &miniapp_url[..miniapp_url.len().min(120)]
+    );
+    api.navigate(
+        &miniapp_url,
+        crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS,
+    )
+    .await?;
+    api.pause(2_000).await;
+
+    // Step 6: inside the mini-app, click the "Go" action button.
+    if !api
+        .wait_for_visible("#btn-telegram_react_latest", MINIAPP_ACTION_TIMEOUT_MS)
+        .await?
+    {
+        warn!("Mini-app Go button did not appear within {MINIAPP_ACTION_TIMEOUT_MS}ms");
+    }
+    info!("Mouse-clicking mini-app Go button");
+    let outcome = api.click("#btn-telegram_react_latest").await?;
+    info!("Go click result: {}", outcome.summary());
+    if !matches!(
+        outcome.click,
+        crate::utils::mouse::types::ClickStatus::Success
+    ) {
+        bail!("Mini-app Go click failed: {}", outcome.summary());
+    }
+
+    // Step 7: switch to the "Mine" tab.
+    api.pause(1_500).await;
+    if !api
+        .wait_for_visible("[onclick=\"switchTab('home')\"]", MINIAPP_ACTION_TIMEOUT_MS)
+        .await?
+    {
+        warn!("Mine tab did not appear within {MINIAPP_ACTION_TIMEOUT_MS}ms");
+    }
+    info!("Mouse-clicking Mine tab");
+    let outcome = api.click("[onclick=\"switchTab('home')\"]").await?;
+    info!("Mine tab click result: {}", outcome.summary());
+    if !matches!(
+        outcome.click,
+        crate::utils::mouse::types::ClickStatus::Success
+    ) {
+        bail!("Mine tab click failed: {}", outcome.summary());
+    }
+
+    // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
+    api.pause(200_000).await;
 
     info!("ATF task completed");
     Ok(())

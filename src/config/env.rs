@@ -40,11 +40,15 @@ pub(crate) fn load_dotenv_defaults() {
         };
 
         let key = key.trim();
-        if key.is_empty() || env::var_os(key).is_some() {
+        if key.is_empty() {
             continue;
         }
 
         let mut value = raw_value.trim().to_string();
+        // Skip if value is empty after trimming
+        if value.is_empty() {
+            continue;
+        }
         if value.len() >= 2
             && ((value.starts_with('"') && value.ends_with('"'))
                 || (value.starts_with('\'') && value.ends_with('\'')))
@@ -52,7 +56,10 @@ pub(crate) fn load_dotenv_defaults() {
             value = value[1..value.len() - 1].to_string();
         }
 
-        env::set_var(key, value);
+        // Only set the variable if it's not already defined in the environment.
+        if env::var_os(key).is_none() {
+            env::set_var(key, value);
+        }
     }
 }
 

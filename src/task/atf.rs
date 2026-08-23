@@ -100,9 +100,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     api.pause(2_000).await;
 
-    // The mini-app iframe sits deep in Telegram's DOM — the first `iframe`
-    // on the page is a different one, so target it by its XPath.
-    const MINIAPP_IFRAME: &str = "/html/body/div[10]/div/div[2]/div/div/iframe";
+    // The mini-app iframe has a stable class — select it by CSS rather than
+    // a fragile positional XPath. (XPath is still supported for other cases.)
+    const MINIAPP_IFRAME: &str = "iframe.payment-verification";
 
     // Step 4: click the "Task Menu" tab inside the same iframe.
     info!("Clicking Task Menu tab inside iframe");

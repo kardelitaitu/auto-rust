@@ -196,10 +196,16 @@ impl Default for BrowserData {
 // Task-specific Policies
 // ============================================================================
 
-/// `Atf` policy - Telegram bot mining: navigate + native mouse click only.
+/// `Atf` policy - Telegram bot mining: navigate + mouse click.
+///
+/// Requires `allow_dom_inspection` because `iframe_click` resolves the
+/// iframe's position and evaluates inside the frame's DOM to locate elements.
 pub static ATF_POLICY: std::sync::LazyLock<TaskPolicy> = std::sync::LazyLock::new(|| TaskPolicy {
     max_duration_ms: DurationMs::new_const(crate::task::atf::DEFAULT_ATF_TASK_DURATION_MS),
-    permissions: TaskPermissions::default(),
+    permissions: TaskPermissions {
+        allow_dom_inspection: true,
+        ..Default::default()
+    },
 });
 
 /// `CookieBot` policy - handles cookie consent dialogs.

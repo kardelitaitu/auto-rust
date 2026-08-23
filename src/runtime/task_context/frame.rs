@@ -43,13 +43,15 @@ impl TaskContext {
     ) -> Result<ClickOutcome> {
         // Resolve the iframe element — the selector may be CSS or XPath
         // (e.g. "/html/body/div[10]/div/div[2]/div/div/iframe"). Poll until it
-        // exists and has a non-zero size.
+        // exists and has a non-zero size. The failure reason is logged at info
+        // level (once per distinct status) and included in the final error.
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut last_status = String::new();
         let (iframe_rect, src) = loop {
-            match resolve_iframe(self.page(), iframe_selector).await {
+            let status = match resolve_iframe(self.page(), iframe_selector).await {
                 Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
                     log::info!(
-                        "[iframe_click] iframe rect: x={:.1} y={:.1} w={:.1} h={:.1} src={}",
+                        "[iframe_click] iframe usable: x={:.1} y={:.1} w={:.1} h={:.1} src={}",
                         rect.x,
                         rect.y,
                         rect.width,
@@ -58,18 +60,17 @@ impl TaskContext {
                     );
                     break (rect, src);
                 }
-                Ok(_) => {
-                    log::debug!(
-                        "[iframe_click] iframe '{iframe_selector}' not usable yet, retrying"
-                    );
-                }
-                Err(e) => {
-                    log::debug!("[iframe_click] iframe resolve error: {e}");
-                }
+                Ok(Some((_rect, _src))) => "found but zero-size".to_string(),
+                Ok(None) => "not found (or not an iframe)".to_string(),
+                Err(e) => format!("resolve error: {e}"),
+            };
+            if status != last_status {
+                log::info!("[iframe_click] iframe '{iframe_selector}': {status}");
+                last_status = status;
             }
             if Instant::now() >= deadline {
                 return Err(anyhow!(
-                    "Iframe '{iframe_selector}' did not become usable within {timeout_ms}ms"
+                    "Iframe '{iframe_selector}' did not become usable within {timeout_ms}ms. Last status: {last_status}"
                 ));
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
@@ -319,25 +320,33 @@ async fn resolve_iframe(page: &Page, selector: &str) -> Result<Option<(Rect, Str
     let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
     let js = format!(
         r#"(() => {{
-            const q = '{escaped}';
-            let el = null;
-            if (q.startsWith('/')) {{
-                const xr = document.evaluate(q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                el = xr.singleNodeValue;
-            }} else {{
-                el = document.querySelector(q);
+            try {{
+                const q = '{escaped}';
+                let el = null;
+                if (q.startsWith('/')) {{
+                    const xr = document.evaluate(q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    el = xr.singleNodeValue;
+                }} else {{
+                    el = document.querySelector(q);
+                }}
+                if (!el || el.tagName !== 'IFRAME') return null;
+                const r = el.getBoundingClientRect();
+                return {{
+                    x: r.x, y: r.y, width: r.width, height: r.height,
+                    src: el.getAttribute('src') || ''
+                }};
+            }} catch (e) {{
+                return {{ error: String(e && e.message ? e.message : e) }};
             }}
-            if (!el || el.tagName !== 'IFRAME') return null;
-            const r = el.getBoundingClientRect();
-            return {{
-                x: r.x, y: r.y, width: r.width, height: r.height,
-                src: el.getAttribute('src') || ''
-            }};
         }})()"#
     );
     let resp = page.evaluate(js).await?;
     match resp.value() {
         Some(serde_json::Value::Object(map)) => {
+            if let Some(err) = map.get("error").and_then(Value::as_str) {
+                log::warn!("[iframe] resolve_iframe JS error: {err}");
+                return Err(anyhow!("iframe selector JS error: {err}"));
+            }
             let x = map.get("x").and_then(Value::as_f64).unwrap_or(0.0);
             let y = map.get("y").and_then(Value::as_f64).unwrap_or(0.0);
             let w = map.get("width").and_then(Value::as_f64).unwrap_or(0.0);

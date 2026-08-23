@@ -822,7 +822,7 @@ impl BrowserConnector for ShardBrowserConnector {
             };
 
             capabilities.push(BrowserCapabilities {
-                id: format!("shardbrowser-{profile_id}"),
+                id: format!("shard-{profile_name}"),
                 name: profile_name,
                 browser_type: "shardbrowser".to_string(),
                 ws_url,

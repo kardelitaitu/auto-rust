@@ -8,9 +8,9 @@
 //! 1. Navigate to `https://web.telegram.org/k/#@ATF_AIRDROP_bot`
 //! 2. Wait a random 2–3 seconds (uniform variance around 2.5s)
 //! 3. Mouse-click the "Start Mining" command button (no confirmation handling)
-//! 4. `api.iframe` — enter the mini-app (cross-origin iframe) via its `src`
-//! 5. Click the mini-app "Go" button
-//! 6. Re-enter the mini-app if "Go" navigated away, then click the "Mine" tab
+//! 4. `iframe_click` — click the mini-app "Go" button inside the cross-origin
+//!    iframe, in place (no navigation, no new tab)
+//! 5. `iframe_click` — click the "Mine" tab inside the iframe
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -101,24 +101,17 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.pause(2_000).await;
 
     // Step 4: the mini-app opens in a cross-origin iframe — selectors can't
-    // reach inside it. `api.iframe` reads its `src` (readable cross-origin)
-    // and navigates the tab directly to the mini-app URL.
-    let miniapp_url = api.iframe("iframe", MINIAPP_ACTION_TIMEOUT_MS).await?;
-    info!(
-        "Entered mini-app: {}",
-        &miniapp_url[..miniapp_url.len().min(120)]
-    );
-    api.pause(2_000).await;
-
-    // Step 5: inside the mini-app, click the "Go" action button.
-    if !api
-        .wait_for_visible("#btn-telegram_react_latest", MINIAPP_ACTION_TIMEOUT_MS)
-        .await?
-    {
-        warn!("Mini-app Go button did not appear within {MINIAPP_ACTION_TIMEOUT_MS}ms");
-    }
-    info!("Mouse-clicking mini-app Go button");
-    let outcome = api.click("#btn-telegram_react_latest").await?;
+    // reach inside it. `iframe_click` locates the iframe's frame context via
+    // CDP, finds the "Go" button inside it, and clicks at its position — all
+    // in place, no navigation and no new tabs.
+    info!("Clicking mini-app Go button inside iframe");
+    let outcome = api
+        .iframe_click(
+            "iframe",
+            "#btn-telegram_react_latest",
+            MINIAPP_ACTION_TIMEOUT_MS,
+        )
+        .await?;
     info!("Go click result: {}", outcome.summary());
     if !matches!(
         outcome.click,
@@ -128,29 +121,15 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.pause(2_000).await;
 
-    // Step 6: the "Go" handler may navigate the tab to a t.me link — if we
-    // left the mini-app, re-enter it, then click the "Mine" tab.
-    let in_miniapp = api
-        .exists("[onclick=\"switchTab('home')\"]")
-        .await
-        .unwrap_or(false);
-    if !in_miniapp {
-        info!("Go click navigated away; returning to mini-app");
-        api.navigate(
-            &miniapp_url,
-            crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS,
+    // Step 5: click the "Mine" tab inside the same iframe.
+    info!("Clicking Mine tab inside iframe");
+    let outcome = api
+        .iframe_click(
+            "iframe",
+            "[onclick=\"switchTab('home')\"]",
+            MINIAPP_ACTION_TIMEOUT_MS,
         )
         .await?;
-        api.pause(2_000).await;
-    }
-    if !api
-        .wait_for_visible("[onclick=\"switchTab('home')\"]", MINIAPP_ACTION_TIMEOUT_MS)
-        .await?
-    {
-        warn!("Mine tab did not appear within {MINIAPP_ACTION_TIMEOUT_MS}ms");
-    }
-    info!("Mouse-clicking Mine tab");
-    let outcome = api.click("[onclick=\"switchTab('home')\"]").await?;
     info!("Mine tab click result: {}", outcome.summary());
     if !matches!(
         outcome.click,

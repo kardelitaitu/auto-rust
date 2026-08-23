@@ -38,6 +38,21 @@ document where normal selectors and clicks work. Returns the entered URL.
 let miniapp_url = api.iframe("iframe", 30_000).await?;
 ```
 
+### api.iframe_click(iframe_selector, element_selector, timeout_ms)
+
+Click an element **inside** an iframe, in place — no navigation and no new tab.
+
+Cross-origin iframes (e.g. Telegram mini-apps) cannot be reached by selectors
+from the top document. This method resolves the iframe's own execution context
+via CDP (`Page.getFrameTree` + `Runtime.evaluate` with the frame's context),
+finds the element inside the frame, computes its absolute viewport position,
+then dispatches a cursor-simulating click (CDP `Input` pointer + mouse events,
+which are browser-level and work across origins).
+
+```rust
+let outcome = api.iframe_click("iframe", "#btn-go", 30_000).await?;
+```
+
 ## Clicking
 
 ### api.click(selector)

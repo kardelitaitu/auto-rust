@@ -67,6 +67,7 @@ pub mod clipboard;
 pub mod cookies;
 pub mod data_files;
 pub mod dom_verify;
+pub mod frame;
 pub mod http;
 pub mod interaction;
 pub mod interaction_pipeline;

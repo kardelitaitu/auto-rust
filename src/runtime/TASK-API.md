@@ -21,6 +21,11 @@ api.navigate("https://example.com", 30_000).await?;
 let miniapp_url = api.iframe("iframe", 30_000).await?;
 ```
 
+**iframe_click(iframe_selector: &str, element_selector: &str, timeout_ms: u64)** -- Click an element inside an iframe in place (no navigation, no new tab)
+```rust
+let outcome = api.iframe_click("iframe", "#btn-go", 30_000).await?;
+```
+
 **check_page_connected()** -- Check if page is connected
 ```rust
 api.check_page_connected().await?;

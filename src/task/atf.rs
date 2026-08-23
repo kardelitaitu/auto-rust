@@ -100,14 +100,33 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     api.pause(2_000).await;
 
-    // Step 4: the mini-app opens in a cross-origin iframe — selectors can't
-    // reach inside it. `iframe_click` locates the iframe's frame context via
-    // CDP, finds the "Go" button inside it, and clicks at its position — all
-    // in place, no navigation and no new tabs.
+    // The mini-app iframe sits deep in Telegram's DOM — the first `iframe`
+    // on the page is a different one, so target it by its XPath.
+    const MINIAPP_IFRAME: &str = "/html/body/div[10]/div/div[2]/div/div/iframe";
+
+    // Step 4: click the "Task Menu" tab inside the same iframe.
+    info!("Clicking Task Menu tab inside iframe");
+    let outcome = api
+        .iframe_click(
+            MINIAPP_IFRAME,
+            "[onclick=\"switchTab('tasks')\"]",
+            MINIAPP_ACTION_TIMEOUT_MS,
+        )
+        .await?;
+    info!("Task Menu click result: {}", outcome.summary());
+    if !matches!(
+        outcome.click,
+        crate::utils::mouse::types::ClickStatus::Success
+    ) {
+        bail!("Task Menu click failed: {}", outcome.summary());
+    }
+    api.pause(2_000).await;
+
+    // Step 5: click the "Go" button inside the same iframe.
     info!("Clicking mini-app Go button inside iframe");
     let outcome = api
         .iframe_click(
-            "iframe",
+            MINIAPP_IFRAME,
             "#btn-telegram_react_latest",
             MINIAPP_ACTION_TIMEOUT_MS,
         )
@@ -117,26 +136,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         outcome.click,
         crate::utils::mouse::types::ClickStatus::Success
     ) {
-        bail!("Mini-app Go click failed: {}", outcome.summary());
+        bail!("Task click 'Go' failed: {}", outcome.summary());
     }
     api.pause(2_000).await;
-
-    // Step 5: click the "Mine" tab inside the same iframe.
-    info!("Clicking Mine tab inside iframe");
-    let outcome = api
-        .iframe_click(
-            "iframe",
-            "[onclick=\"switchTab('home')\"]",
-            MINIAPP_ACTION_TIMEOUT_MS,
-        )
-        .await?;
-    info!("Mine tab click result: {}", outcome.summary());
-    if !matches!(
-        outcome.click,
-        crate::utils::mouse::types::ClickStatus::Success
-    ) {
-        bail!("Mine tab click failed: {}", outcome.summary());
-    }
 
     // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
     api.pause(200_000).await;

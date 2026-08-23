@@ -49,8 +49,14 @@ finds the element inside the frame, computes its absolute viewport position,
 then dispatches a cursor-simulating click (CDP `Input` pointer + mouse events,
 which are browser-level and work across origins).
 
+The `iframe_selector` accepts a **CSS selector** or an **XPath** (anything
+starting with `/`), e.g. when the target iframe is not the first on the page:
+
 ```rust
+// CSS:
 let outcome = api.iframe_click("iframe", "#btn-go", 30_000).await?;
+// XPath (deeply nested iframe):
+let outcome = api.iframe_click("/html/body/div[10]/div/div[2]/div/div/iframe", "#btn-go", 30_000).await?;
 ```
 
 ## Clicking

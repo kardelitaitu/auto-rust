@@ -15,8 +15,9 @@ use chromiumoxide::Page;
 use std::time::{Duration, Instant};
 
 use crate::capabilities::mouse;
-use crate::runtime::task_context::TaskContext;
+use crate::runtime::task_context::{Rect, TaskContext};
 use crate::utils::{ClickOutcome, ClickStatus};
+use serde_json::Value;
 
 impl TaskContext {
     /// Click an element INSIDE an iframe, in place — no navigation, no new tab.
@@ -40,35 +41,39 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
-        log::debug!(
-            "[iframe_click] waiting for iframe '{iframe_selector}' (timeout {timeout_ms}ms)"
-        );
-        if !self.wait_for(iframe_selector, timeout_ms).await? {
-            return Err(anyhow!(
-                "Iframe '{iframe_selector}' did not appear within {timeout_ms}ms"
-            ));
-        }
-
-        // Iframe's absolute rect in the top viewport.
-        let iframe_rect = self.get_element_rect(iframe_selector).await?;
-        log::debug!(
-            "[iframe_click] iframe rect: x={:.1} y={:.1} w={:.1} h={:.1}",
-            iframe_rect.x,
-            iframe_rect.y,
-            iframe_rect.width,
-            iframe_rect.height
-        );
-        if iframe_rect.width <= 0.0 || iframe_rect.height <= 0.0 {
-            return Err(anyhow!("Iframe '{iframe_selector}' has zero size"));
-        }
-
-        // The `src` attribute is readable cross-origin and lets us locate the
-        // matching frame in the CDP frame tree.
-        let src = self
-            .attr(iframe_selector, "src")
-            .await?
-            .ok_or_else(|| anyhow!("Iframe '{iframe_selector}' has no src attribute"))?;
-        log::info!("[iframe_click] iframe src: {}", &src[..src.len().min(160)]);
+        // Resolve the iframe element — the selector may be CSS or XPath
+        // (e.g. "/html/body/div[10]/div/div[2]/div/div/iframe"). Poll until it
+        // exists and has a non-zero size.
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let (iframe_rect, src) = loop {
+            match resolve_iframe(self.page(), iframe_selector).await {
+                Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
+                    log::info!(
+                        "[iframe_click] iframe rect: x={:.1} y={:.1} w={:.1} h={:.1} src={}",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        &src[..src.len().min(120)]
+                    );
+                    break (rect, src);
+                }
+                Ok(_) => {
+                    log::debug!(
+                        "[iframe_click] iframe '{iframe_selector}' not usable yet, retrying"
+                    );
+                }
+                Err(e) => {
+                    log::debug!("[iframe_click] iframe resolve error: {e}");
+                }
+            }
+            if Instant::now() >= deadline {
+                return Err(anyhow!(
+                    "Iframe '{iframe_selector}' did not become usable within {timeout_ms}ms"
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        };
 
         // Poll inside the frame until the element becomes visible.
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
@@ -304,6 +309,56 @@ fn scheme_host(url: &str) -> Option<(&str, &str)> {
     let (scheme, rest) = url.split_once("://")?;
     let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
     Some((scheme, host))
+}
+
+/// Resolve an iframe element by CSS selector or XPath, returning its viewport
+/// rect and `src` attribute. Supports both syntaxes:
+/// - CSS: `"iframe.payment-verification"`
+/// - XPath: `"/html/body/div[10]/div/div[2]/div/div/iframe"`
+async fn resolve_iframe(page: &Page, selector: &str) -> Result<Option<(Rect, String)>> {
+    let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
+    let js = format!(
+        r#"(() => {{
+            const q = '{escaped}';
+            let el = null;
+            if (q.startsWith('/')) {{
+                const xr = document.evaluate(q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                el = xr.singleNodeValue;
+            }} else {{
+                el = document.querySelector(q);
+            }}
+            if (!el || el.tagName !== 'IFRAME') return null;
+            const r = el.getBoundingClientRect();
+            return {{
+                x: r.x, y: r.y, width: r.width, height: r.height,
+                src: el.getAttribute('src') || ''
+            }};
+        }})()"#
+    );
+    let resp = page.evaluate(js).await?;
+    match resp.value() {
+        Some(serde_json::Value::Object(map)) => {
+            let x = map.get("x").and_then(Value::as_f64).unwrap_or(0.0);
+            let y = map.get("y").and_then(Value::as_f64).unwrap_or(0.0);
+            let w = map.get("width").and_then(Value::as_f64).unwrap_or(0.0);
+            let h = map.get("height").and_then(Value::as_f64).unwrap_or(0.0);
+            let src = map
+                .get("src")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            Ok(Some((
+                Rect {
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                },
+                src,
+            )))
+        }
+        _ => Ok(None),
+    }
 }
 
 #[cfg(test)]

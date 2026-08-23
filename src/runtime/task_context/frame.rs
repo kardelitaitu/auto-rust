@@ -68,7 +68,7 @@ impl TaskContext {
             .attr(iframe_selector, "src")
             .await?
             .ok_or_else(|| anyhow!("Iframe '{iframe_selector}' has no src attribute"))?;
-        log::debug!("[iframe_click] iframe src: {}", &src[..src.len().min(160)]);
+        log::info!("[iframe_click] iframe src: {}", &src[..src.len().min(160)]);
 
         // Poll inside the frame until the element becomes visible.
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
@@ -104,7 +104,7 @@ impl TaskContext {
         // Absolute viewport point = iframe offset + element's local point.
         let x = iframe_rect.x + local_x;
         let y = iframe_rect.y + local_y;
-        log::debug!("[iframe_click] clicking at viewport ({x:.1},{y:.1})");
+        log::info!("[iframe_click] clicking at viewport ({x:.1},{y:.1})");
 
         // Cursor-simulating click at the absolute point (CDP input, cross-origin safe).
         mouse::left_click_at(self.page(), x, y).await?;
@@ -130,7 +130,7 @@ impl TaskContext {
     ) -> Result<Option<(f64, f64)>> {
         let frame_id = match find_frame_by_url(self.page(), iframe_src).await {
             Ok(id) => {
-                log::debug!("[iframe] matched frame id: {id:?}");
+                log::info!("[iframe] matched frame id: {id:?}");
                 id
             }
             Err(e) => {
@@ -146,7 +146,7 @@ impl TaskContext {
             log::warn!("[iframe] frame {frame_id:?} has no execution context (is it loaded?)");
             return Ok(None);
         };
-        log::debug!("[iframe] execution context: {ctx:?}");
+        log::info!("[iframe] execution context: {ctx:?}");
 
         let escaped = element_selector.replace('\\', "\\\\").replace('\'', "\\'");
         let js = format!(
@@ -192,7 +192,7 @@ impl TaskContext {
                         Ok(Some((x, y)))
                     }
                     other => {
-                        log::debug!("[iframe] element '{element_selector}' status: {other}");
+                        log::info!("[iframe] element '{element_selector}' status: {other}");
                         Ok(None)
                     }
                 }
@@ -211,7 +211,7 @@ async fn find_frame_by_url(page: &Page, src: &str) -> Result<FrameId> {
     let base = src.split('#').next().unwrap_or(src);
     let resp = page.execute(GetFrameTreeParams {}).await?;
 
-    log::debug!("[iframe] frame tree (looking for src base '{base}'):");
+    log::info!("[iframe] frame tree (looking for src base '{base}'):");
     fn log_tree(tree: &FrameTree, depth: usize) {
         let indent = "  ".repeat(depth);
         log::debug!(
@@ -246,10 +246,25 @@ async fn find_frame_by_url(page: &Page, src: &str) -> Result<FrameId> {
 }
 
 /// Match a frame document URL against an iframe `src` base (fragment removed).
+///
+/// Matching order: exact URL → same scheme+host (SPA navigation inside the
+/// frame changes the path/query, so host equality is the reliable signal) →
+/// path-prefix fallback.
 fn frame_url_matches(frame_url: &str, src_base: &str) -> bool {
     if frame_url == src_base {
         return true;
     }
+
+    if let (Some((f_scheme, f_host)), Some((s_scheme, s_host))) =
+        (scheme_host(frame_url), scheme_host(src_base))
+    {
+        // Same scheme + host: the frame is the target even if it navigated
+        // to a different route inside the app.
+        if f_scheme == s_scheme && f_host == s_host {
+            return true;
+        }
+    }
+
     // Fallback: same scheme + host with a path-prefix match (covers redirects
     // and trailing-slash differences).
     let mut f = frame_url.splitn(2, "://");
@@ -259,9 +274,18 @@ fn frame_url_matches(frame_url: &str, src_base: &str) -> bool {
     {
         let f_host_path = f_rest.trim_end_matches('/');
         let s_host_path = s_rest.trim_end_matches('/');
-        return f_scheme == s_scheme && f_host_path.starts_with(s_host_path);
+        if f_scheme == s_scheme && f_host_path.starts_with(s_host_path) {
+            return true;
+        }
     }
     false
+}
+
+/// Split a URL into `(scheme, host)`.
+fn scheme_host(url: &str) -> Option<(&str, &str)> {
+    let (scheme, rest) = url.split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    Some((scheme, host))
 }
 
 #[cfg(test)]
@@ -305,6 +329,16 @@ mod tests {
         assert!(!frame_url_matches(
             "http://atfminers.asloni.online/miner",
             "https://atfminers.asloni.online/miner"
+        ));
+    }
+
+    #[test]
+    fn frame_url_spa_navigation_same_host_matches() {
+        // The mini-app navigated to a different route (SPA) — same host must
+        // still resolve to the iframe.
+        assert!(frame_url_matches(
+            "https://atfminers.asloni.online/miner/tasks/view",
+            "https://atfminers.asloni.online/miner/index.html?v=1786287551"
         ));
     }
 }

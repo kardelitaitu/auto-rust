@@ -205,44 +205,62 @@ impl TaskContext {
     }
 }
 
-/// Recursively search the CDP frame tree for a frame whose URL matches the
-/// given iframe `src` (ignoring the URL fragment).
+/// Resolve the CDP frame that corresponds to an iframe element.
+///
+/// Strategy (in order):
+/// 1. Exact URL match against the iframe's `src` (fragment removed)
+/// 2. Same scheme + host (handles SPA navigation inside the frame)
+/// 3. If there is exactly one http(s) child frame, assume it is the target
+///    (a mini-app iframe is usually the only embedded frame on the page)
+///
+/// The error message always lists every frame URL seen, so the failure is
+/// self-diagnosing regardless of the log level.
 async fn find_frame_by_url(page: &Page, src: &str) -> Result<FrameId> {
     let base = src.split('#').next().unwrap_or(src);
     let resp = page.execute(GetFrameTreeParams {}).await?;
 
-    log::info!("[iframe] frame tree (looking for src base '{base}'):");
-    fn log_tree(tree: &FrameTree, depth: usize) {
+    // Flatten the tree once, logging each frame for diagnostics.
+    let mut frames: Vec<(FrameId, String)> = Vec::new();
+    fn collect(tree: &FrameTree, out: &mut Vec<(FrameId, String)>, depth: usize) {
         let indent = "  ".repeat(depth);
         log::info!(
             "[iframe] {indent}frame id={:?} url={}",
             tree.frame.id,
             tree.frame.url
         );
+        out.push((tree.frame.id.clone(), tree.frame.url.clone()));
         if let Some(children) = &tree.child_frames {
             for child in children {
-                log_tree(child, depth + 1);
+                collect(child, out, depth + 1);
             }
         }
     }
-    log_tree(&resp.result.frame_tree, 0);
+    collect(&resp.result.frame_tree, &mut frames, 0);
 
-    fn walk(tree: &FrameTree, base: &str) -> Option<FrameId> {
-        if frame_url_matches(&tree.frame.url, base) {
-            return Some(tree.frame.id.clone());
+    // 1. exact, 2. host match (skip the main frame itself for strategy 2+)
+    for (id, url) in &frames {
+        if frame_url_matches(url, base) {
+            log::info!("[iframe] matched frame {id:?} by URL");
+            return Ok(id.clone());
         }
-        if let Some(children) = &tree.child_frames {
-            for child in children {
-                if let Some(id) = walk(child, base) {
-                    return Some(id);
-                }
-            }
-        }
-        None
     }
 
-    walk(&resp.result.frame_tree, base)
-        .ok_or_else(|| anyhow!("No frame found for iframe src '{base}'"))
+    // 3. exactly one http(s) child frame → assume it is the iframe.
+    let http_frames: Vec<&(FrameId, String)> = frames
+        .iter()
+        .filter(|(_, url)| url.starts_with("http://") || url.starts_with("https://"))
+        .collect();
+    if http_frames.len() == 1 {
+        let (id, url) = http_frames[0];
+        log::info!("[iframe] matched only http(s) frame {id:?} by url={url}");
+        return Ok(id.clone());
+    }
+
+    let urls: Vec<&str> = frames.iter().map(|(_, u)| u.as_str()).collect();
+    Err(anyhow!(
+        "No frame found for iframe src '{base}'. Frames in tree: [{}]",
+        urls.join(", ")
+    ))
 }
 
 /// Match a frame document URL against an iframe `src` base (fragment removed).

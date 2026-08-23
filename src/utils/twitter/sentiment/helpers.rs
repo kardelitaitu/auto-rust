@@ -969,11 +969,16 @@ mod tests {
 
     #[test]
     fn test_author_prestige_account_30_to_90_days() {
+        use chrono::{Duration, Utc};
         // Account ~60 days old — should get the -0.1 penalty branch
+        // Use a relative date so the test never goes stale as time passes.
+        let created_at = (Utc::now() - Duration::days(60))
+            .format("%Y-%m-%dT12:00:00Z")
+            .to_string();
         let author = json!({
             "followers_count": 500,
             "is_verified": false,
-            "created_at": "2026-04-11T12:00:00Z"
+            "created_at": created_at
         });
         let score = author_prestige(&author);
         // Base 0.5 + 500 followers (neither >10k nor <10) +0.0 + <90d -0.1 = 0.4

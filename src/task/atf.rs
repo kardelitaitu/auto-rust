@@ -7,11 +7,10 @@
 //! # Flow
 //! 1. Navigate to `https://web.telegram.org/k/#@ATF_AIRDROP_bot`
 //! 2. Wait a random 2–3 seconds (uniform variance around 2.5s)
-//! 3. Native mouse-click the "Start Mining" command button
-//! 4. Wait for the "Launch" confirmation popup and mouse-click it
-//! 5. `api.iframe` — enter the mini-app (cross-origin iframe) via its `src`
-//! 6. Click the mini-app "Go" button
-//! 7. Re-enter the mini-app if "Go" navigated away, then click the "Mine" tab
+//! 3. Mouse-click the "Start Mining" command button (no confirmation handling)
+//! 4. `api.iframe` — enter the mini-app (cross-origin iframe) via its `src`
+//! 5. Click the mini-app "Go" button
+//! 6. Re-enter the mini-app if "Go" navigated away, then click the "Mine" tab
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -31,20 +30,13 @@ use crate::utils::timing::{duration_with_variance, run_with_timeout};
 const DEFAULT_URL: &str = "https://web.telegram.org/k/#@ATF_AIRDROP_bot";
 
 /// Default task runtime budget in milliseconds.
-pub const DEFAULT_ATF_TASK_DURATION_MS: u64 = 60_000;
+pub const DEFAULT_ATF_TASK_DURATION_MS: u64 = 150_000;
 
 /// How long to wait for the "Start Mining" button to appear, in milliseconds.
 const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 30_000;
 
-/// How long to wait for the "Launch" confirmation popup, in milliseconds.
-const LAUNCH_POPUP_TIMEOUT_MS: u64 = 20_000;
-
 /// How long to wait for a Telegram mini-app action button, in milliseconds.
 const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
-
-/// Base wait before clicking, in milliseconds. 20% variance yields 2–3s.
-const PRE_CLICK_WAIT_BASE_MS: u64 = 2_500;
-const PRE_CLICK_WAIT_VARIANCE_PCT: u32 = 20;
 
 // ============================================================================
 // Task Entry Point
@@ -83,8 +75,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Step 2: wait a random 2–3 seconds for the Telegram UI to settle.
     info!("Waiting random 2-3s for the page to settle");
-    api.pause_with_variance(PRE_CLICK_WAIT_BASE_MS, PRE_CLICK_WAIT_VARIANCE_PCT)
-        .await;
+    api.pause(2_000).await;
 
     // Step 3: make sure the "Start Mining" command is present, then
     // mouse-click it with the native cursor.
@@ -109,27 +100,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     api.pause(2_000).await;
 
-    // Step 4: the bot shows a "Launch" confirmation popup — wait for it and
-    // mouse-click it. The popup is a floating overlay that animates in.
-    if !api
-        .wait_for_visible("button.popup-button.primary", LAUNCH_POPUP_TIMEOUT_MS)
-        .await?
-    {
-        warn!("Launch confirmation popup did not appear within {LAUNCH_POPUP_TIMEOUT_MS}ms");
-    }
-    info!("Mouse-clicking Launch");
-    let outcome = api.click("button.popup-button.primary").await?;
-    info!("Launch click result: {}", outcome.summary());
-    if !matches!(
-        outcome.click,
-        crate::utils::mouse::types::ClickStatus::Success
-    ) {
-        bail!("Launch confirmation click failed: {}", outcome.summary());
-    }
-
-    api.pause(2_000).await;
-
-    // Step 5: the mini-app opens in a cross-origin iframe — selectors can't
+    // Step 4: the mini-app opens in a cross-origin iframe — selectors can't
     // reach inside it. `api.iframe` reads its `src` (readable cross-origin)
     // and navigates the tab directly to the mini-app URL.
     let miniapp_url = api.iframe("iframe", MINIAPP_ACTION_TIMEOUT_MS).await?;
@@ -139,7 +110,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     );
     api.pause(2_000).await;
 
-    // Step 6: inside the mini-app, click the "Go" action button.
+    // Step 5: inside the mini-app, click the "Go" action button.
     if !api
         .wait_for_visible("#btn-telegram_react_latest", MINIAPP_ACTION_TIMEOUT_MS)
         .await?
@@ -157,7 +128,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.pause(2_000).await;
 
-    // Step 7: the "Go" handler may navigate the tab to a t.me link — if we
+    // Step 6: the "Go" handler may navigate the tab to a t.me link — if we
     // left the mini-app, re-enter it, then click the "Mine" tab.
     let in_miniapp = api
         .exists("[onclick=\"switchTab('home')\"]")

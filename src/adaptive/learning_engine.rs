@@ -43,15 +43,13 @@ impl LearningEngine {
         ttl_days: u32,
     ) -> Result<Self> {
         let path = learning_data_path(session_id, behavior_profile);
-        // Ensure a fresh learning state for new sessions by removing any existing persisted file.
-        if let Some(ref p) = path {
-            if p.exists() {
-                let _ = std::fs::remove_file(p);
-            }
-        }
-        // Call load_learning_state to ensure the function is linked and avoid dead_code warnings.
-        let _ = path.as_ref().map(|p| load_learning_state(p));
-        let state = ClickLearningState::default();
+        // Load existing learning state if present, otherwise start fresh.
+        // Do NOT delete the file — multiple tasks on the same session share
+        // the same persistence path and should accumulate learning data.
+        let state = path
+            .as_ref()
+            .and_then(|p| load_learning_state(p))
+            .unwrap_or_default();
 
         let mut engine = Self {
             state,

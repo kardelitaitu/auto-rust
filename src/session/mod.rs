@@ -271,6 +271,23 @@ impl Session {
     }
 } // end of impl Session block (new() only; lifecycle methods moved to lifecycle.rs)
 
+impl Drop for Session {
+    /// Abort background tasks that would otherwise leak if the session is
+    /// dropped without an explicit `graceful_shutdown`.
+    ///
+    /// The overlay task runs an infinite loop and has no natural exit
+    /// condition — without abort it would spin forever, logging errors
+    /// on every iteration after the browser connection is closed.
+    fn drop(&mut self) {
+        if let Some(task) = self.handler_task.take() {
+            task.abort();
+        }
+        if let Some(task) = self.overlay_task.take() {
+            task.abort();
+        }
+    }
+}
+
 // Worker, page, and circuit breaker logic moved to worker.rs
 
 #[cfg(test)]

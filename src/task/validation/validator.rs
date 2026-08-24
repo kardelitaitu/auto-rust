@@ -870,3 +870,422 @@ impl TaskValidator {
         count
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::dsl::{
+        Action, Condition, LogLevel, ParameterDef, ParameterType, TaskDefinition,
+    };
+    use std::collections::HashMap;
+
+    fn make_def(name: &str, actions: Vec<Action>) -> TaskDefinition {
+        TaskDefinition {
+            name: name.to_string(),
+            description: String::new(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions,
+        }
+    }
+
+    fn valid_actions() -> Vec<Action> {
+        vec![Action::Navigate {
+            url: "https://example.com".to_string(),
+        }]
+    }
+
+    // ── Task structure validation ────────────────────────────────────────
+
+    #[test]
+    fn empty_name_errors() {
+        let v = TaskValidator::new();
+        let report = v.validate(&make_def("", valid_actions()));
+        assert!(!report.is_valid());
+        assert!(report.issues.iter().any(|i| i.message().contains("empty")));
+    }
+
+    #[test]
+    fn name_with_spaces_errors() {
+        let v = TaskValidator::new();
+        let report = v.validate(&make_def("my task", valid_actions()));
+        assert!(!report.is_valid());
+        assert!(report.issues.iter().any(|i| i.message().contains("spaces")));
+    }
+
+    #[test]
+    fn empty_actions_and_includes_errors() {
+        let v = TaskValidator::new();
+        let report = v.validate(&make_def("good-name", vec![]));
+        assert!(!report.is_valid());
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("at least one")));
+    }
+
+    #[test]
+    fn valid_task_no_errors() {
+        let v = TaskValidator::new();
+        let report = v.validate(&make_def("my-task", valid_actions()));
+        assert!(report.is_valid());
+        assert_eq!(report.error_count(), 0);
+    }
+
+    // ── Action validation ────────────────────────────────────────────────
+
+    #[test]
+    fn navigate_empty_url_errors() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Navigate { url: String::new() }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn click_empty_selector_errors() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Click {
+            selector: String::new(),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn wait_zero_duration_warns() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Wait { duration_ms: 0 }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid()); // warning, not error
+        assert!(report.warning_count() > 0);
+    }
+
+    #[test]
+    fn wait_long_duration_warns() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Wait {
+            duration_ms: 120_000,
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    #[test]
+    fn wait_for_zero_timeout_errors() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::WaitFor {
+            selector: "#el".to_string(),
+            timeout_ms: Some(0),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn extract_empty_variable_errors() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Extract {
+            selector: "#el".to_string(),
+            variable: Some(String::new()),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn execute_empty_script_warns() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Execute {
+            script: String::new(),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    #[test]
+    fn log_empty_message_warns() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Log {
+            message: String::new(),
+            level: Some(LogLevel::Info),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    // ── Loop validation ──────────────────────────────────────────────────
+
+    #[test]
+    fn loop_without_count_or_condition_errors() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Loop {
+            count: None,
+            condition: None,
+            actions: vec![],
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn loop_zero_count_warns() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Loop {
+            count: Some(0),
+            condition: None,
+            actions: valid_actions(),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    #[test]
+    fn loop_large_count_warns() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Loop {
+            count: Some(50_000),
+            condition: None,
+            actions: valid_actions(),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    // ── Call validation ──────────────────────────────────────────────────
+
+    #[test]
+    fn call_empty_task_name_errors() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Call {
+            task: String::new(),
+            parameters: None,
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn call_self_circular_errors() {
+        let v = TaskValidator::new().with_current_task("my-task");
+        let actions = vec![Action::Call {
+            task: "my-task".to_string(),
+            parameters: None,
+        }];
+        let report = v.validate(&make_def("my-task", actions));
+        assert!(!report.is_valid());
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("circular")));
+    }
+
+    #[test]
+    fn call_unknown_task_warns_when_known_tasks_set() {
+        let v = TaskValidator::new().with_known_tasks(vec!["known-task"]);
+        let actions = vec![Action::Call {
+            task: "unknown-task".to_string(),
+            parameters: None,
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    #[test]
+    fn call_known_task_no_warning() {
+        let v = TaskValidator::new().with_known_tasks(vec!["known-task"]);
+        let actions = vec![Action::Call {
+            task: "known-task".to_string(),
+            parameters: None,
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.is_valid());
+        assert_eq!(report.warning_count(), 0);
+    }
+
+    // ── Nesting depth ────────────────────────────────────────────────────
+
+    #[test]
+    fn deep_nesting_exceeds_limit() {
+        // Build a chain of nested if-else actions
+        let mut action = Action::If {
+            condition: Condition::True,
+            then: vec![Action::Wait { duration_ms: 100 }],
+            r#else: None,
+        };
+        for _ in 0..15 {
+            action = Action::If {
+                condition: Condition::True,
+                then: vec![action],
+                r#else: None,
+            };
+        }
+        let v = TaskValidator::new().with_max_nesting_depth(10);
+        let report = v.validate(&make_def("t", vec![action]));
+        assert!(!report.is_valid());
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("nesting depth")));
+    }
+
+    // ── Parameter validation ─────────────────────────────────────────────
+
+    #[test]
+    fn parameter_empty_name_errors() {
+        let mut params = HashMap::new();
+        params.insert(
+            String::new(),
+            ParameterDef {
+                r#type: ParameterType::String,
+                required: true,
+                default: None,
+                description: String::new(),
+            },
+        );
+        let v = TaskValidator::new();
+        let mut def = make_def("t", valid_actions());
+        def.parameters = params;
+        let report = v.validate(&def);
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn parameter_name_with_spaces_errors() {
+        let mut params = HashMap::new();
+        params.insert(
+            "my param".to_string(),
+            ParameterDef {
+                r#type: ParameterType::String,
+                required: false,
+                default: None,
+                description: String::new(),
+            },
+        );
+        let v = TaskValidator::new();
+        let mut def = make_def("t", valid_actions());
+        def.parameters = params;
+        let report = v.validate(&def);
+        assert!(!report.is_valid());
+    }
+
+    #[test]
+    fn required_with_default_warns() {
+        let mut params = HashMap::new();
+        params.insert(
+            "p".to_string(),
+            ParameterDef {
+                r#type: ParameterType::String,
+                required: true,
+                default: Some(serde_yaml::Value::String("x".to_string())),
+                description: String::new(),
+            },
+        );
+        let v = TaskValidator::new();
+        let mut def = make_def("t", valid_actions());
+        def.parameters = params;
+        let report = v.validate(&def);
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    #[test]
+    fn optional_without_default_warns() {
+        let mut params = HashMap::new();
+        params.insert(
+            "p".to_string(),
+            ParameterDef {
+                r#type: ParameterType::String,
+                required: false,
+                default: None,
+                description: String::new(),
+            },
+        );
+        let v = TaskValidator::new();
+        let mut def = make_def("t", valid_actions());
+        def.parameters = params;
+        let report = v.validate(&def);
+        assert!(report.is_valid());
+        assert!(report.warning_count() > 0);
+    }
+
+    // ── Include validation ───────────────────────────────────────────────
+
+    #[test]
+    fn include_empty_path_errors() {
+        let v = TaskValidator::new();
+        let mut def = make_def("t", valid_actions());
+        def.include = vec![crate::task::dsl::IncludeSpec {
+            path: String::new(),
+            condition: None,
+        }];
+        let report = v.validate(&def);
+        assert!(!report.is_valid());
+    }
+
+    // ── Action count ─────────────────────────────────────────────────────
+
+    #[test]
+    fn action_count_tracked() {
+        let v = TaskValidator::new();
+        let actions = vec![
+            Action::Navigate {
+                url: "https://a.com".to_string(),
+            },
+            Action::Click {
+                selector: "#btn".to_string(),
+            },
+            Action::Wait { duration_ms: 100 },
+        ];
+        let report = v.validate(&make_def("t", actions));
+        assert_eq!(report.action_count, 3);
+    }
+
+    #[test]
+    fn nested_action_count() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Loop {
+            count: Some(3),
+            condition: None,
+            actions: vec![
+                Action::Wait { duration_ms: 100 },
+                Action::Click {
+                    selector: "#x".to_string(),
+                },
+            ],
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert_eq!(report.action_count, 3); // 1 loop + 2 inner
+    }
+
+    // ── Variable tracking ────────────────────────────────────────────────
+
+    #[test]
+    fn extract_variable_tracked() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Extract {
+            selector: "#el".to_string(),
+            variable: Some("my_var".to_string()),
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.variables_referenced.contains("my_var"));
+    }
+
+    #[test]
+    fn call_tracks_tasks() {
+        let v = TaskValidator::new();
+        let actions = vec![Action::Call {
+            task: "other-task".to_string(),
+            parameters: None,
+        }];
+        let report = v.validate(&make_def("t", actions));
+        assert!(report.tasks_called.contains("other-task"));
+    }
+}

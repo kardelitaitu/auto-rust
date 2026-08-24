@@ -308,32 +308,36 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     const CLAIM_CHECK_TIMEOUT_MS: u64 = 2_000;
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Claim" button is gone.
+        if !api
+            .iframe_has_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-youtube_like_comment",
+                "Claim",
+            )
+            .await?
+        {
+            info!("YouTube 'Claim' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 ".btn-small#btn-youtube_like_comment",
                 "Claim",
                 CLAIM_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!(
-                    "YouTube claim click #{clicks} result: {}",
-                    outcome.summary()
-                );
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("YouTube claim click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("YouTube 'Claim' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!(
+            "YouTube claim click #{clicks} result: {}",
+            outcome.summary()
+        );
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("YouTube claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on YouTube claim button");
@@ -348,32 +352,32 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 10: Click Claim on Twitter Retweet — target by class + id + "Claim" text.
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Claim" button is gone.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-twitter_retweet", "Claim")
+            .await?
+        {
+            info!("Retweet 'Claim' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 ".btn-small#btn-twitter_retweet",
                 "Claim",
                 CLAIM_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!(
-                    "Retweet claim click #{clicks} result: {}",
-                    outcome.summary()
-                );
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("Retweet claim click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("Retweet 'Claim' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!(
+            "Retweet claim click #{clicks} result: {}",
+            outcome.summary()
+        );
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("Retweet claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on Retweet claim button");
@@ -388,32 +392,32 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 11: Click Claim on Visit Website — target by class + id + "Claim" text.
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Claim" button is gone.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-btn-website_visit", "Claim")
+            .await?
+        {
+            info!("Website 'Claim' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 ".btn-small#btn-btn-website_visit",
                 "Claim",
                 CLAIM_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!(
-                    "Website claim click #{clicks} result: {}",
-                    outcome.summary()
-                );
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("Website claim click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("Website 'Claim' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!(
+            "Website claim click #{clicks} result: {}",
+            outcome.summary()
+        );
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("Website claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on Website claim button");
@@ -428,29 +432,33 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 12: Click Claim on React Telegram Post — target by class + id + "Claim" text.
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Claim" button is gone.
+        if !api
+            .iframe_has_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-telegram_react_latest",
+                "Claim",
+            )
+            .await?
+        {
+            info!("React 'Claim' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 ".btn-small#btn-telegram_react_latest",
                 "Claim",
                 CLAIM_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!("React claim click #{clicks} result: {}", outcome.summary());
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("React claim click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("React 'Claim' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!("React claim click #{clicks} result: {}", outcome.summary());
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("React claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on React claim button");

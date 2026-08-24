@@ -118,12 +118,21 @@ impl TaskContext {
                                 Ok(Some((rect2, _))) if rect2.width > 0.0 && rect2.height > 0.0 => {
                                     let cx = rect2.x + lx;
                                     let cy = rect2.y + ly;
-                                    log::info!(
-                                        "[iframe_click] '{element_selector}' local ({lx:.1},{ly:.1}) + iframe ({:.1},{:.1}) -> ({cx:.1},{cy:.1})",
-                                        rect2.x,
-                                        rect2.y
-                                    );
-                                    break (cx, cy);
+                                    // The local center must be INSIDE the iframe —
+                                    // otherwise the click lands on the page below
+                                    // the mini-app and nothing happens.
+                                    if lx < 0.0 || ly < 0.0 || lx > rect2.width || ly > rect2.height
+                                    {
+                                        "element outside iframe viewport (not scrolled into view)"
+                                            .to_string()
+                                    } else {
+                                        log::info!(
+                                            "[iframe_click] '{element_selector}' local ({lx:.1},{ly:.1}) + iframe ({:.1},{:.1}) -> ({cx:.1},{cy:.1})",
+                                            rect2.x,
+                                            rect2.y
+                                        );
+                                        break (cx, cy);
+                                    }
                                 }
                                 _ => "iframe moved or became unusable after element resolve"
                                     .to_string(),
@@ -477,18 +486,42 @@ fn build_element_js(element_selector: &str, skip: Option<(f64, f64)>) -> String 
     format!(
         r#"(() => {{
             {skip_js}
+            function scrollIntoFullView(el) {{
+                el.scrollIntoView({{ block: 'center', inline: 'center' }});
+                // Some mini-apps use nested scroll containers that scrollIntoView
+                // cannot reach — scroll each scrollable ancestor manually so the
+                // element's center lands inside the iframe viewport.
+                let node = el.parentElement;
+                while (node) {{
+                    const cs = getComputedStyle(node);
+                    const overflowY = cs.overflowY;
+                    const scrollable = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+                    if (scrollable && node.scrollHeight > node.clientHeight) {{
+                        const er = el.getBoundingClientRect();
+                        const nr = node.getBoundingClientRect();
+                        const target = node.scrollTop + (er.top - nr.top) - node.clientHeight / 2 + er.height / 2;
+                        node.scrollTop = Math.max(0, Math.min(target, node.scrollHeight - node.clientHeight));
+                    }}
+                    node = node.parentElement;
+                }}
+            }}
+            function inViewport(r) {{
+                return r.width > 0 && r.height > 0 &&
+                    r.x >= 0 && r.y >= 0 &&
+                    r.x + r.width <= window.innerWidth &&
+                    r.y + r.height <= window.innerHeight;
+            }}
             const els = document.querySelectorAll('{escaped}');
             for (const el of els) {{
-                el.scrollIntoView({{ block: 'center' }});
+                scrollIntoFullView(el);
                 const r = el.getBoundingClientRect();
-                if (r.width > 0 && r.height > 0) {{
-                    const cx = r.x + r.width / 2;
-                    const cy = r.y + r.height / 2;
-                    if (skipX !== null && Math.abs(cx - skipX) < 5 && Math.abs(cy - skipY) < 5) continue;
-                    const hit = document.elementFromPoint(cx, cy);
-                    if (hit && (el === hit || el.contains(hit) || hit.contains(el))) {{
-                        return {{ x: cx, y: cy }};
-                    }}
+                if (!inViewport(r)) continue;
+                const cx = r.x + r.width / 2;
+                const cy = r.y + r.height / 2;
+                if (skipX !== null && Math.abs(cx - skipX) < 5 && Math.abs(cy - skipY) < 5) continue;
+                const hit = document.elementFromPoint(cx, cy);
+                if (hit && (el === hit || el.contains(hit) || hit.contains(el))) {{
+                    return {{ x: cx, y: cy }};
                 }}
             }}
             return null;
@@ -589,6 +622,28 @@ mod tests {
         // Selector with a single quote must be escaped inside the JS string.
         let js = build_element_js("button[onclick=\"f('x')\"]", None);
         assert!(js.contains("f(\\'x\\')"));
+    }
+
+    #[test]
+    fn build_element_js_requires_viewport_containment() {
+        // The element must be fully inside the iframe viewport, otherwise the
+        // click would land outside the iframe (below the mini-app).
+        let js = build_element_js(".btn", None);
+        assert!(js.contains("function inViewport"));
+        assert!(js.contains("r.x + r.width <= window.innerWidth"));
+        assert!(js.contains("r.y + r.height <= window.innerHeight"));
+        assert!(js.contains("if (!inViewport(r)) continue;"));
+    }
+
+    #[test]
+    fn build_element_js_scrolls_nested_containers() {
+        // Some mini-apps use nested scroll containers that plain scrollIntoView
+        // cannot reach — the JS must walk scrollable ancestors manually.
+        let js = build_element_js(".btn", None);
+        assert!(js.contains("function scrollIntoFullView"));
+        assert!(js.contains("overflowY"));
+        assert!(js.contains("node.scrollHeight > node.clientHeight"));
+        assert!(js.contains("scrollIntoView({ block: 'center', inline: 'center' })"));
     }
 
     #[test]

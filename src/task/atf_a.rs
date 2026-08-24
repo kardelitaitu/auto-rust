@@ -83,9 +83,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.navigate(url, crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS)
         .await?;
 
-    // Step 2: wait a random 2–5 seconds for the Telegram UI to settle.
+    // Step 2: wait a random 2–4 seconds for the Telegram UI to settle.
     info!("Waiting random 2-5s for the page to settle");
-    api.wait(2_000, 5_000).await;
+    api.wait(2_000, 4_000).await;
 
     // Step 3: make sure the "Start Mining" command button is present, then
     // mouse-click it with the native cursor. The Telegram A client has no
@@ -124,7 +124,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     ) {
         bail!("Task Menu click failed: {}", outcome.summary());
     }
-    api.wait(2_000, 5_000).await;
+    api.wait(1_000, 3_000).await;
 
     // Step 5: Click Go on Youtube Like — target by class + id + text content
     // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
@@ -132,16 +132,16 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // the task starts), with a random 1-2s interval, max 5 retries.
     const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
     const GO_RETRY_MAX: u32 = 5;
-    const GO_CHECK_TIMEOUT_MS: u64 = 5_000;
+    const GO_CHECK_TIMEOUT_MS: u64 = 2_000;
     let mut clicks = 0u32;
     loop {
-        let timeout = if clicks == 0 {
-            MINIAPP_ACTION_TIMEOUT_MS
-        } else {
-            GO_CHECK_TIMEOUT_MS
-        };
         match api
-            .iframe_click_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go", timeout)
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                YOUTUBE_TASK_SELECTOR,
+                "Go",
+                GO_CHECK_TIMEOUT_MS,
+            )
             .await
         {
             Ok(outcome) => {
@@ -166,8 +166,6 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         info!("Waiting random 1-2s before next attempt");
         api.wait(1_000, 2_000).await;
     }
-
-    api.wait(1_000, 3_000).await;
 
     // Step 6: Click Go on Twitter Retweet — target by class + id (the button is
     // `<button class="btn-small" id="btn-twitter_retweet">Go</button>`).

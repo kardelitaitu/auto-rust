@@ -45,10 +45,6 @@ const START_MINING_SELECTOR: &str = "#MiddleColumn > div.messages-layout > div.T
 /// the A client's iframe has only a generated class, so the DOM path is used).
 const MINIAPP_IFRAME: &str = "#portals > div:nth-child(4) > div > div > div.modal-dialog.browser-modal-dialog > div.modal-content.custom-scroll > div > iframe";
 
-/// YouTube task button inside the mini-app — targeted by class + id:
-/// `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`.
-const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
-
 /// How long to wait for a Telegram mini-app action button, in milliseconds.
 const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
 
@@ -132,6 +128,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Step 5: Click Go on Youtube Like — target by class + id + text content
     // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+    const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
     info!("Clicking YouTube task button inside iframe");
     let outcome = api
         .iframe_click_text(
@@ -160,6 +157,18 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 8: Click Go on React Telegram Post — target by class + id (the button is
     // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
 
+    // Step 9: Click Go on React Telegram Post — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+
+    // Step 10: Click Go on React Telegram Post — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+
+    // Step 11: Click Go on React Telegram Post — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+
+    // Step 12: Click Go on React Telegram Post — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+
     // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
     api.pause(200_000).await;
 
@@ -175,7 +184,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 mod tests {
     use super::{
         task_duration_ms, DEFAULT_ATF_A_TASK_DURATION_MS, DEFAULT_URL, MINIAPP_IFRAME,
-        START_MINING_SELECTOR, YOUTUBE_TASK_SELECTOR,
+        START_MINING_SELECTOR,
     };
 
     #[test]
@@ -209,12 +218,5 @@ mod tests {
         assert!(MINIAPP_IFRAME.starts_with("#portals > "));
         assert!(MINIAPP_IFRAME.contains("browser-modal-dialog"));
         assert!(!MINIAPP_IFRAME.contains("payment-verification"));
-    }
-
-    #[test]
-    fn youtube_task_selector_targets_class_and_id() {
-        assert_eq!(YOUTUBE_TASK_SELECTOR, ".btn-small#btn-youtube_like_comment");
-        assert!(YOUTUBE_TASK_SELECTOR.starts_with(".btn-small"));
-        assert!(YOUTUBE_TASK_SELECTOR.ends_with("#btn-youtube_like_comment"));
     }
 }

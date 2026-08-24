@@ -242,9 +242,9 @@ let html = api.html("#content").await?;
 let href = api.attr("#link", "href").await?;
 ```
 
-**focus_tab(url_fragment: &str)** -- Switch browser focus to the tab whose URL contains the fragment (e.g. "web.telegram.org"). Returns true if found & activated
+**focus_tab()** -- Bring the current page's tab to the foreground (Target.activateTarget). Use after a step that opened a new tab
 ```rust
-if !api.focus_tab("web.telegram.org").await? { /* no tab matched */ }
+api.focus_tab().await?;
 ```
 
 **pause(duration_ms: u64)** -- Uniform-random pause with ~20% spread

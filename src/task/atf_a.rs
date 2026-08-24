@@ -216,7 +216,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 7: Click Go on Visit Website — target by class + id + text content
     // (the button is `<button class="btn-small" id="btn-btn-website_visit">Go</button>`).
     // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
-    const WEBSITE_TASK_SELECTOR: &str = ".btn-small#btn-btn-website_visit";
+    const WEBSITE_TASK_SELECTOR: &str = ".btn-small#btn-website_visit";
     const WEBSITE_TASK_RETRY_MAX: u32 = 5;
     const WEBSITE_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
     let mut clicks = 0u32;
@@ -300,6 +300,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.focus_tab().await?;
 
     // long wait until all task validated
+    info!("Waiting random 30-40s until all task synced");
     api.wait(30_000, 40_000).await;
 
     // Step 9: Click Claim on YouTube Like — same button, text now "Claim".
@@ -394,7 +395,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     loop {
         // Probe first — skip instantly when the "Claim" button is gone.
         if !api
-            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-btn-website_visit", "Claim")
+            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-website_visit", "Claim")
             .await?
         {
             info!("Website 'Claim' button gone (clicked {clicks}x)");
@@ -471,6 +472,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.wait(500, 2_000).await;
 
     // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
+    info!("Finalizing Tasks");
     api.pause(200_000).await;
 
     info!("ATF-A task completed");

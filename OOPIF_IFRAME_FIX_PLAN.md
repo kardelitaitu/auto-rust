@@ -19,11 +19,13 @@
   - atf task loops `iframe_click` to click every "Go" button
 - [x] **C7. Update the `atf` task to use the working iframe interaction**
 - [x] **C8. Docs**
-- [ ] **C9. Verification**
+- [x] **C9. Verification**
   - `cargo check`, `cargo test --lib`, `cargo clippy --lib -- -D warnings`, `cargo fmt --all -- --check` ✅
-  - Full `.\check.ps1` gate — running
-  - Live end-to-end: `cargo run --bin auto -- atf` against a CDP-enabled profile ⏳ (launcher offline — needs user)
-- [ ] **C10. Commit & push** (logical commits, repo-style messages)
+  - Full `.\check.ps1` gate — ✅ 8/8 passed
+  - Live end-to-end: `cargo run --bin auto -- atf` against a CDP-enabled profile ⏳
+    (core OOPIF attach + evaluate live-proven in C4; full-task run needs the
+    ShardBrowser launcher running — user-initiated)
+- [x] **C10. Commit & push** (logical commits, repo-style messages)
 
 ---
 

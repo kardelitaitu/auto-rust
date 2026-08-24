@@ -106,6 +106,7 @@ impl SessionFactory {
                     self.max_workers,
                     self.cursor_overlay_ms,
                     Some(self.circuit_breaker_config.clone()),
+                    capability.ws_url.clone(),
                 ))
             }
             Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(

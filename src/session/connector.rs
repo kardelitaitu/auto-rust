@@ -155,6 +155,7 @@ impl BrowserConnector for ConfiguredProfileConnector {
                     config.browser.max_workers_per_session,
                     config.browser.cursor_overlay_ms,
                     Some(config.browser.circuit_breaker.clone()),
+                    capability.ws_url.clone(),
                 ))
             }
             Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
@@ -302,6 +303,7 @@ impl BrowserConnector for RoxyBrowserConnector {
                     config.browser.max_workers_per_session,
                     config.browser.cursor_overlay_ms,
                     Some(config.browser.circuit_breaker.clone()),
+                    capability.ws_url.clone(),
                 ))
             }
             Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
@@ -634,6 +636,7 @@ impl BrowserConnector for IxBrowserConnector {
                     config.browser.max_workers_per_session,
                     config.browser.cursor_overlay_ms,
                     Some(config.browser.circuit_breaker.clone()),
+                    capability.ws_url.clone(),
                 ))
             }
             Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
@@ -859,6 +862,7 @@ impl BrowserConnector for ShardBrowserConnector {
                     config.browser.max_workers_per_session,
                     config.browser.cursor_overlay_ms,
                     Some(config.browser.circuit_breaker.clone()),
+                    capability.ws_url.clone(),
                 ))
             }
             Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(
@@ -1082,6 +1086,7 @@ impl BrowserConnector for LocalBrowserConnector {
                     config.browser.max_workers_per_session,
                     config.browser.cursor_overlay_ms,
                     Some(config.browser.circuit_breaker.clone()),
+                    capability.ws_url.clone(),
                 ))
             }
             Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(

@@ -37,6 +37,7 @@ async fn connect_test_session() -> Option<auto::session::Session> {
         1,
         0,
         None,
+        ws_url,
     );
     Some(session)
 }
@@ -58,6 +59,7 @@ fn build_task_context(
         &test_browser_config(),
         &DEFAULT_TASK_POLICY,
         None,
+        session.browser_ws_url.clone(),
     )
 }
 

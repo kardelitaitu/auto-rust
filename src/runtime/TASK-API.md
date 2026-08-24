@@ -21,9 +21,9 @@ api.navigate("https://example.com", 30_000).await?;
 let miniapp_url = api.iframe("iframe", 30_000).await?;
 ```
 
-**iframe_click(iframe_selector: &str, element_selector: &str, timeout_ms: u64)** -- Click an element inside an iframe in place (no navigation, no new tab). iframe_selector accepts CSS or XPath (starts with /)
+**iframe_click(iframe_selector: &str, element_selector: &str, timeout_ms: u64)** -- Click an element inside an iframe in place (attaches an OOPIF CDP session; works across origins; scrolls first visible match into view). iframe_selector accepts CSS or XPath (starts with /)
 ```rust
-let outcome = api.iframe_click("iframe", "#btn-go", 30_000).await?;
+let outcome = api.iframe_click("iframe.payment-verification", "[id^=\"btn-go\"]", 30_000).await?;
 let outcome = api.iframe_click("/html/body/div[10]/div/div[2]/div/div/iframe", "#btn-go", 30_000).await?;
 ```
 

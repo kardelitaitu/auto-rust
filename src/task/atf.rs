@@ -8,9 +8,9 @@
 //! 1. Navigate to `https://web.telegram.org/k/#@ATF_AIRDROP_bot`
 //! 2. Wait a random 2–3 seconds (uniform variance around 2.5s)
 //! 3. Mouse-click the "Start Mining" command button (no confirmation handling)
-//! 4. `iframe_click` — click the mini-app "Go" button inside the cross-origin
-//!    iframe, in place (no navigation, no new tab)
-//! 5. `iframe_click` — click the "Mine" tab inside the iframe
+//! 4. `iframe_click` — click the "Tasks" tab inside the cross-origin mini-app
+//!    iframe (attaches an OOPIF CDP session; no navigation, no new tab)
+//! 5. `iframe_click` — click each "Go" task button (scrolls through the list)
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -122,21 +122,40 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.pause(2_000).await;
 
-    // Step 5: click the "Go" button inside the same iframe.
-    info!("Clicking mini-app Go button inside iframe");
-    let outcome = api
-        .iframe_click(
-            MINIAPP_IFRAME,
-            "#btn-telegram_react_latest",
-            MINIAPP_ACTION_TIMEOUT_MS,
-        )
-        .await?;
-    info!("Go click result: {}", outcome.summary());
-    if !matches!(
-        outcome.click,
-        crate::utils::mouse::types::ClickStatus::Success
-    ) {
-        bail!("Task click 'Go' failed: {}", outcome.summary());
+    // Step 5: click each "Go" task button inside the iframe. The mini-app
+    // scrolls its task list, so `iframe_click` scrolls each button into view;
+    // loop until no more Go buttons are visible.
+    const GO_LOOP_TIMEOUT_MS: u64 = 8_000;
+    let mut go_clicks = 0u32;
+    loop {
+        match api
+            .iframe_click(
+                MINIAPP_IFRAME,
+                "[id^=\"btn-telegram_\"]",
+                if go_clicks == 0 {
+                    MINIAPP_ACTION_TIMEOUT_MS
+                } else {
+                    GO_LOOP_TIMEOUT_MS
+                },
+            )
+            .await
+        {
+            Ok(outcome) => {
+                go_clicks += 1;
+                info!("Go click #{go_clicks} result: {}", outcome.summary());
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("Task click 'Go' failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("No more Go buttons (clicked {go_clicks}): {e}");
+                break;
+            }
+        }
+        api.pause(1_500).await;
     }
     api.pause(2_000).await;
 

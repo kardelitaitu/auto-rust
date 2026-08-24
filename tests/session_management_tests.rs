@@ -21,6 +21,7 @@ async fn connect_test_session() -> anyhow::Result<Option<Session>> {
         5,    // max_workers
         0,    // cursor_overlay_ms
         None, // circuit_breaker_config
+        ws_url,
     );
     Ok(Some(session))
 }

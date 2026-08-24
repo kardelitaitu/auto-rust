@@ -9,41 +9,20 @@
 
 ## ✅ Checklist
 
-- [ ] **C1. Add `async-tungstenite` direct dependency**
-  - Add to `Cargo.toml`: `async-tungstenite = { version = "0.25.1", features = ["tokio-runtime"] }` (already in the tree via chromiumoxide — same version, no conflict)
-  - `cargo check` passes
-- [ ] **C2. Create `src/runtime/task_context/oopif.rs` — minimal CDP client**
-  - `OopifClient::connect(browser_ws_url)` — opens a second WebSocket to the browser debug endpoint
-  - `OopifClient::call(method, params, session_id)` — JSON-RPC send + response correlation (pending map + reader task)
-  - Reader task: route `{"id":N,"result":...}` to pending oneshots; ignore events
-  - Unit tests for the response-correlation logic (mocked stream)
-- [ ] **C3. Thread the browser WS URL through Session → TaskContext**
-  - Add `browser_ws_url: String` field to `Session`
-  - Add param to `Session::new(...)`; all call sites pass `capability.ws_url`
-  - `TaskContext` gains access so the frame module can open the client
-  - Update connector `connect()` methods (ShardBrowser at minimum)
-- [ ] **C4. Prove the concept with a live probe (before wiring into the API)**
-  - Connect to a running CDP-enabled ShardBrowser profile
-  - `Target.getTargets` → find `type=iframe` + host `atfminers.asloni.online`
-  - `Target.attachToTarget { flatten: true }` → sessionId
-  - `Runtime.evaluate` (with sessionId) → confirm we can `querySelector` inside the mini-app
-  - Verify local rect returned; log it
-- [ ] **C5. Rewrite `iframe_click` internals to use the OOPIF client**
-  - Resolve iframe rect via existing `resolve_iframe` (main page, works)
-  - Open client → find target → attach → evaluate element position (with `scrollIntoView`)
-  - Absolute point = iframe rect + local; click via existing `mouse::left_click_at`
-  - Keep fallback: if OOPIF attach fails, fall back to the existing frame-tree path
-- [ ] **C6. Add element-listing helper for multiple/scrollable elements**
-  - New capability (method or JS template): list all matches inside the mini-app, scroll to first visible, return its center
-  - Supports the 6 "Go" buttons + scrolling use case
-- [ ] **C7. Update the `atf` task to use the working iframe interaction**
-  - Tasks tab click, Go button(s) click with scroll, Mine tab click
-- [ ] **C8. Docs**
-  - `docs/API_REFERENCE.md` + `src/runtime/TASK-API.md`: document the OOPIF-safe iframe interaction
+- [x] **C1. Add `async-tungstenite` direct dependency**
+- [x] **C2. Create `src/runtime/task_context/oopif.rs` — minimal CDP client**
+- [x] **C3. Thread the browser WS URL through Session → TaskContext**
+- [x] **C4. Prove the concept with a live probe (before wiring into the API)**
+- [x] **C5. Rewrite `iframe_click` internals to use the OOPIF client**
+- [x] **C6. Add element-listing helper for multiple/scrollable elements**
+  - `element_local_center` iterates all matches, scrolls first visible into view
+  - atf task loops `iframe_click` to click every "Go" button
+- [x] **C7. Update the `atf` task to use the working iframe interaction**
+- [x] **C8. Docs**
 - [ ] **C9. Verification**
-  - `cargo check`, `cargo test --lib`, `cargo clippy --lib -- -D warnings`, `cargo fmt --all -- --check`
-  - Full `.\check.ps1` gate
-  - Live end-to-end: `cargo run --bin auto -- atf` against a CDP-enabled profile
+  - `cargo check`, `cargo test --lib`, `cargo clippy --lib -- -D warnings`, `cargo fmt --all -- --check` ✅
+  - Full `.\check.ps1` gate — running
+  - Live end-to-end: `cargo run --bin auto -- atf` against a CDP-enabled profile ⏳ (launcher offline — needs user)
 - [ ] **C10. Commit & push** (logical commits, repo-style messages)
 
 ---

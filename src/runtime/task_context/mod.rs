@@ -123,6 +123,8 @@ pub struct TaskContext {
     metrics: Option<Arc<MetricsCollector>>,
     learning_engine: Arc<Mutex<LearningEngine>>,
     policy: &'static TaskPolicy,
+    /// Browser debug WebSocket URL for OOPIF iframe interaction.
+    pub browser_ws_url: String,
     /// When set (orchestrated runs), `pause`/`pause_with_variance`/`pause_human` return early on cancel.
     cancel_token: Option<CancellationToken>,
 }
@@ -160,7 +162,7 @@ impl TaskContext {
     /// # use auto::task::policy::DEFAULT_TASK_POLICY;
     /// # async fn example(page: Arc<Page>, profile: BrowserProfile, runtime: ProfileRuntime) {
     /// let browser_config = BrowserConfig::default();
-    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &browser_config, &DEFAULT_TASK_POLICY, None);
+    /// let api = TaskContext::new("session-1", page, profile, runtime, NativeInteractionConfig::default(), &browser_config, &DEFAULT_TASK_POLICY, None, "ws://127.0.0.1:9222/devtools/browser/abc".to_string());
     /// # }
     /// ```
     #[allow(clippy::too_many_arguments)]
@@ -173,6 +175,7 @@ impl TaskContext {
         browser_config: &BrowserConfig,
         policy: &'static TaskPolicy,
         cancel_token: Option<CancellationToken>,
+        browser_ws_url: String,
     ) -> Self {
         let session_id = session_id.into();
         let clipboard = ClipboardState::new(session_id.clone());
@@ -200,6 +203,7 @@ impl TaskContext {
             metrics: None,
             learning_engine: Arc::new(Mutex::new(learning_engine)),
             policy,
+            browser_ws_url,
             cancel_token,
         }
     }
@@ -218,6 +222,7 @@ impl TaskContext {
         browser_config: &BrowserConfig,
         policy: &'static TaskPolicy,
         cancel_token: Option<CancellationToken>,
+        browser_ws_url: String,
     ) -> Self {
         let mut ctx = Self::new(
             session_id,
@@ -228,6 +233,7 @@ impl TaskContext {
             browser_config,
             policy,
             cancel_token,
+            browser_ws_url,
         );
         ctx.metrics = Some(metrics);
         ctx

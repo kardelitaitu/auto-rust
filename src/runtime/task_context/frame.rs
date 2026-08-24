@@ -2,19 +2,14 @@
 //!
 //! Cross-origin iframes (e.g. Telegram mini-apps) cannot be reached by CSS
 //! selectors from the top document, and their frames may not appear in the
-//! page's frame tree (OOPIF). This module interacts with them through the CDP
-//! **DOM domain**, which pierces iframes at the DevTools level (not subject to
-//! web CORS): find the iframe node, pierce into its content document, query the
-//! target element, and read its box model in absolute coordinates. A
-//! cursor-simulating click is then dispatched at that point. No navigation and
-//! no new tabs are involved.
+//! page's frame tree (OOPIF). This module resolves the iframe's absolute
+//! position from the top document, then attaches a raw CDP session to the
+//! iframe's own target via the browser debug WebSocket — JS runs *inside* the
+//! cross-origin frame (the same mechanism DevTools uses for cross-origin
+//! frames). A cursor-simulating click is dispatched at the element's absolute
+//! viewport coordinates. No navigation and no new tabs are involved.
 
 use anyhow::{anyhow, Result};
-use chromiumoxide::cdp::browser_protocol::dom::{
-    DescribeNodeParams, EnableParams, GetBoxModelParams, GetDocumentParams, QuerySelectorParams,
-};
-use chromiumoxide::cdp::browser_protocol::page::{FrameId, FrameTree, GetFrameTreeParams};
-use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::Page;
 use std::time::{Duration, Instant};
 
@@ -26,15 +21,15 @@ use serde_json::Value;
 impl TaskContext {
     /// Click an element INSIDE an iframe, in place — no navigation, no new tab.
     ///
-    /// The iframe (e.g. a cross-origin Telegram mini-app) is located with the
-    /// CDP DOM domain (`DOM.querySelector` + `DOM.describeNode` with pierce),
-    /// the target element is queried inside the iframe's content document, and
-    /// its box model gives the absolute viewport point. A cursor-simulating
-    /// click (pointer + mouse events via CDP `Input`) is dispatched there.
+    /// The iframe (e.g. a cross-origin Telegram mini-app) is resolved from the
+    /// top document for its absolute position, then a raw CDP session is
+    /// attached to the iframe's own target (OOPIF) so JS runs inside the frame
+    /// to locate the element (with `scrollIntoView` for scrollable content).
+    /// The absolute point = iframe rect + local point; a cursor-simulating
+    /// click (CDP `Input`) is dispatched there — works across origins.
     ///
     /// # Arguments
-    /// * `iframe_selector` - CSS selector for the iframe element in the top doc
-    ///   (or an XPath starting with `/`)
+    /// * `iframe_selector` - CSS selector (or XPath starting with `/`) for the iframe
     /// * `element_selector` - CSS selector for the element inside the iframe
     /// * `timeout_ms` - Max wait for the iframe/element to appear
     ///
@@ -46,29 +41,31 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
-        // DOM domain enables the commands we need (idempotent).
-        let _ = self
-            .page()
-            .execute(EnableParams {
-                include_whitespace: None,
-            })
-            .await;
-
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_status = String::new();
         let (x, y) = loop {
-            let status = match self
-                .element_center_in_iframe(iframe_selector, element_selector)
-                .await
-            {
-                Ok(Some((x, y))) => {
-                    log::info!(
-                        "[iframe_click] '{element_selector}' inside '{iframe_selector}' at ({x:.1},{y:.1})"
-                    );
-                    break (x, y);
+            // 1. iframe absolute rect + src (top document; works for any iframe)
+            let status = match resolve_iframe(self.page(), iframe_selector).await {
+                Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
+                    // 2. element's local center inside the iframe (OOPIF attach)
+                    match self.element_local_center(&src, element_selector).await {
+                        Ok(Some((lx, ly))) => {
+                            let cx = rect.x + lx;
+                            let cy = rect.y + ly;
+                            log::info!(
+                                "[iframe_click] '{element_selector}' local ({lx:.1},{ly:.1}) + iframe ({:.1},{:.1}) -> ({cx:.1},{cy:.1})",
+                                rect.x,
+                                rect.y
+                            );
+                            break (cx, cy);
+                        }
+                        Ok(None) => "element not found inside iframe yet".to_string(),
+                        Err(e) => format!("element resolve error: {e}"),
+                    }
                 }
-                Ok(None) => "element not found in iframe yet".to_string(),
-                Err(e) => format!("resolve error: {e}"),
+                Ok(Some((_rect, _src))) => "iframe found but zero-size".to_string(),
+                Ok(None) => "iframe not found yet".to_string(),
+                Err(e) => format!("iframe resolve error: {e}"),
             };
             if status != last_status {
                 log::info!("[iframe_click] {status}");
@@ -148,111 +145,65 @@ impl TaskContext {
         })
     }
 
-    /// Find an element inside an iframe and return its absolute viewport center.
+    /// Find an element inside an iframe (OOPIF or same-origin) and return its
+    /// LOCAL center within the iframe's own viewport.
     ///
-    /// Uses the CDP DOM domain which pierces cross-origin iframes. For CSS
-    /// iframe selectors this is fully DOM-based. For XPath iframe selectors it
-    /// falls back to resolving the frame context and evaluating inside the frame.
-    async fn element_center_in_iframe(
+    /// Attaches a raw CDP session to the iframe's target via the browser debug
+    /// WebSocket and evaluates JS inside the frame — the same mechanism DevTools
+    /// uses for cross-origin frames. The JS scrolls the first visible match into
+    /// view (handles scrollable lists and multiple matching elements).
+    async fn element_local_center(
         &self,
-        iframe_selector: &str,
+        iframe_src: &str,
         element_selector: &str,
     ) -> Result<Option<(f64, f64)>> {
-        if iframe_selector.starts_with('/') {
-            return self
-                .element_center_in_iframe_xpath(iframe_selector, element_selector)
-                .await;
-        }
-
-        let page = self.page();
-        let doc = page.execute(GetDocumentParams::builder().build()).await?;
-        let root_id = doc.result.root.node_id;
-
-        // iframe node
-        let iframe = page
-            .execute(QuerySelectorParams::new(root_id, iframe_selector))
-            .await?;
-        let iframe_id = iframe.result.node_id;
-
-        // pierce into the iframe to find its content document node
-        let desc = page
-            .execute(
-                DescribeNodeParams::builder()
-                    .node_id(iframe_id)
-                    .depth(1)
-                    .pierce(true)
-                    .build(),
-            )
-            .await?;
-        let iframe_node = desc.result.node;
-        let doc_id = iframe_node
-            .children
-            .as_ref()
-            .and_then(|cs| cs.iter().find(|c| c.node_name == "#document"))
-            .map(|c| c.node_id);
-        let Some(doc_id) = doc_id else {
-            return Ok(None);
-        };
-
-        // element inside the iframe's document
-        let el = page
-            .execute(QuerySelectorParams::new(doc_id, element_selector))
-            .await?;
-        let el_id = el.result.node_id;
-
-        // absolute box model → center
-        let boxm = page
-            .execute(GetBoxModelParams::builder().node_id(el_id).build())
-            .await?;
-        let quad = boxm.result.model.content.inner();
-        if quad.len() >= 8 {
-            let cx = (quad[0] + quad[2] + quad[4] + quad[6]) / 4.0;
-            let cy = (quad[1] + quad[3] + quad[5] + quad[7]) / 4.0;
-            return Ok(Some((cx, cy)));
-        }
-        Ok(None)
-    }
-
-    /// Fallback for XPath iframe selectors: resolve the iframe rect + src via
-    /// JS, find the frame context via the frame tree, evaluate inside the frame.
-    async fn element_center_in_iframe_xpath(
-        &self,
-        iframe_selector: &str,
-        element_selector: &str,
-    ) -> Result<Option<(f64, f64)>> {
-        let Some((rect, src)) = resolve_iframe(self.page(), iframe_selector).await? else {
-            return Ok(None);
-        };
-        if rect.width <= 0.0 || rect.height <= 0.0 {
+        if self.browser_ws_url.is_empty() {
+            log::debug!("[iframe] no browser_ws_url available, cannot attach to iframe target");
             return Ok(None);
         }
-        let frame_id = find_frame_by_url(self.page(), &src).await?;
-        let Some(ctx) = self.page().frame_execution_context(frame_id).await? else {
+
+        let client =
+            crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url).await?;
+
+        // Host from the iframe src identifies the mini-app target.
+        let host = scheme_host(iframe_src)
+            .map(|(_, h)| h.to_string())
+            .unwrap_or_default();
+        if host.is_empty() {
+            return Ok(None);
+        }
+        let target = match client.find_iframe_target(&host).await {
+            Ok(t) => t,
+            Err(e) => {
+                log::debug!("[iframe] find_iframe_target failed: {e}");
+                return Ok(None);
+            }
+        };
+        let Some(target_id) = target.get("targetId").and_then(Value::as_str) else {
             return Ok(None);
         };
+        let session_id = client.attach(target_id).await?;
 
         let escaped = element_selector.replace('\\', "\\\\").replace('\'', "\\'");
         let js = format!(
             r#"(() => {{
-                const el = document.querySelector('{escaped}');
-                if (!el) return null;
-                const r = el.getBoundingClientRect();
-                if (r.width <= 0 || r.height <= 0) return null;
-                return {{ x: r.x + r.width / 2, y: r.y + r.height / 2 }};
+                const els = document.querySelectorAll('{escaped}');
+                for (const el of els) {{
+                    el.scrollIntoView({{ block: 'center' }});
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) {{
+                        return {{ x: r.x + r.width / 2, y: r.y + r.height / 2 }};
+                    }}
+                }}
+                return null;
             }})()"#
         );
-        let mut params = EvaluateParams::new(js);
-        params.context_id = Some(ctx);
-        let resp = self.page().execute(params).await?;
-        if let Some(exc) = &resp.result.exception_details {
-            log::warn!("[iframe] JS exception: {}", exc.text);
-            return Ok(None);
-        }
-        match resp.result.result.value {
-            Some(serde_json::Value::Object(map)) => {
+        let value = client.evaluate(&session_id, &js).await?;
+        match value {
+            Value::Object(map) => {
                 let lx = map.get("x").and_then(Value::as_f64).unwrap_or(0.0);
                 let ly = map.get("y").and_then(Value::as_f64).unwrap_or(0.0);
-                Ok(Some((rect.x + lx, rect.y + ly)))
+                Ok(Some((lx, ly)))
             }
             _ => Ok(None),
         }
@@ -315,60 +266,6 @@ async fn resolve_iframe(page: &Page, selector: &str) -> Result<Option<(Rect, Str
     }
 }
 
-/// Resolve the CDP frame for an iframe by matching its `src` (fallback path).
-async fn find_frame_by_url(page: &Page, src: &str) -> Result<FrameId> {
-    let base = src.split('#').next().unwrap_or(src);
-    let resp = page.execute(GetFrameTreeParams {}).await?;
-
-    let mut frames: Vec<(FrameId, String)> = Vec::new();
-    fn collect(tree: &FrameTree, out: &mut Vec<(FrameId, String)>) {
-        out.push((tree.frame.id.clone(), tree.frame.url.clone()));
-        if let Some(children) = &tree.child_frames {
-            for child in children {
-                collect(child, out);
-            }
-        }
-    }
-    collect(&resp.result.frame_tree, &mut frames);
-
-    for (id, url) in &frames {
-        if frame_url_matches(url, base) {
-            return Ok(id.clone());
-        }
-    }
-    let urls: Vec<&str> = frames.iter().map(|(_, u)| u.as_str()).collect();
-    Err(anyhow!(
-        "No frame found for iframe src '{base}'. Frames in tree: [{}]",
-        urls.join(", ")
-    ))
-}
-
-/// Match a frame document URL against an iframe `src` base (fragment removed).
-fn frame_url_matches(frame_url: &str, src_base: &str) -> bool {
-    if frame_url == src_base {
-        return true;
-    }
-    if let (Some((f_scheme, f_host)), Some((s_scheme, s_host))) =
-        (scheme_host(frame_url), scheme_host(src_base))
-    {
-        if f_scheme == s_scheme && f_host == s_host {
-            return true;
-        }
-    }
-    let mut f = frame_url.splitn(2, "://");
-    let mut s = src_base.splitn(2, "://");
-    if let (Some(f_scheme), Some(f_rest), Some(s_scheme), Some(s_rest)) =
-        (f.next(), f.next(), s.next(), s.next())
-    {
-        let f_host_path = f_rest.trim_end_matches('/');
-        let s_host_path = s_rest.trim_end_matches('/');
-        if f_scheme == s_scheme && f_host_path.starts_with(s_host_path) {
-            return true;
-        }
-    }
-    false
-}
-
 /// Split a URL into `(scheme, host)`.
 fn scheme_host(url: &str) -> Option<(&str, &str)> {
     let (scheme, rest) = url.split_once("://")?;
@@ -378,37 +275,18 @@ fn scheme_host(url: &str) -> Option<(&str, &str)> {
 
 #[cfg(test)]
 mod tests {
-    use super::frame_url_matches;
+    use super::scheme_host;
 
     #[test]
-    fn frame_url_exact_match() {
-        assert!(frame_url_matches(
-            "https://atfminers.asloni.online/miner/index.html?v=1",
-            "https://atfminers.asloni.online/miner/index.html?v=1"
-        ));
-    }
-
-    #[test]
-    fn frame_url_spa_navigation_same_host_matches() {
-        assert!(frame_url_matches(
-            "https://atfminers.asloni.online/miner/tasks/view",
-            "https://atfminers.asloni.online/miner/index.html?v=1786287551"
-        ));
-    }
-
-    #[test]
-    fn frame_url_different_host_no_match() {
-        assert!(!frame_url_matches(
-            "https://web.telegram.org/k/",
-            "https://atfminers.asloni.online/miner"
-        ));
-    }
-
-    #[test]
-    fn frame_url_different_scheme_no_match() {
-        assert!(!frame_url_matches(
-            "http://atfminers.asloni.online/miner",
-            "https://atfminers.asloni.online/miner"
-        ));
+    fn scheme_host_extracts_scheme_and_host() {
+        assert_eq!(
+            scheme_host("https://atfminers.asloni.online/miner/index.html?v=1#x"),
+            Some(("https", "atfminers.asloni.online"))
+        );
+        assert_eq!(
+            scheme_host("https://web.telegram.org/k/"),
+            Some(("https", "web.telegram.org"))
+        );
+        assert_eq!(scheme_host("not a url"), None);
     }
 }

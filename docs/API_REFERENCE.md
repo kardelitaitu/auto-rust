@@ -42,22 +42,28 @@ let miniapp_url = api.iframe("iframe", 30_000).await?;
 
 Click an element **inside** an iframe, in place — no navigation and no new tab.
 
-Cross-origin iframes (e.g. Telegram mini-apps) cannot be reached by selectors
-from the top document. This method resolves the iframe's own execution context
-via CDP (`Page.getFrameTree` + `Runtime.evaluate` with the frame's context),
-finds the element inside the frame, computes its absolute viewport position,
-then dispatches a cursor-simulating click (CDP `Input` pointer + mouse events,
-which are browser-level and work across origins).
+Works with **cross-origin iframes** (e.g. Telegram mini-apps) whose content is
+not reachable by selectors from the top document. The iframe's absolute
+viewport position is resolved from the top document, then a raw CDP session is
+attached to the iframe's own target (`Target.attachToTarget` via the browser
+debug WebSocket) and JS runs **inside the frame** — the same mechanism DevTools
+uses for cross-origin frames. The element is scrolled into view (handles
+scrollable lists) and a cursor-simulating click is dispatched at the absolute
+viewport point (CDP `Input` is browser-level, so it works across origins).
 
 The `iframe_selector` accepts a **CSS selector** or an **XPath** (anything
-starting with `/`), e.g. when the target iframe is not the first on the page:
+starting with `/`):
 
 ```rust
 // CSS:
-let outcome = api.iframe_click("iframe", "#btn-go", 30_000).await?;
+let outcome = api.iframe_click("iframe.payment-verification", "[id^=\"btn-go\"]", 30_000).await?;
 // XPath (deeply nested iframe):
 let outcome = api.iframe_click("/html/body/div[10]/div/div[2]/div/div/iframe", "#btn-go", 30_000).await?;
 ```
+
+The element selector may match **multiple elements** — the first visible match
+is scrolled into view and clicked. Call it repeatedly to click each match in a
+scrolling list (e.g. a list of "Go" buttons).
 
 ## Clicking
 

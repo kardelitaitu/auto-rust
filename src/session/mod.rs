@@ -88,6 +88,9 @@ pub struct Session {
     pub behavior_runtime: ProfileRuntime,
     /// The underlying Chromium Oxide browser instance
     pub browser: Browser,
+    /// Browser debug WebSocket URL (`ws://.../devtools/browser/<id>`).
+    /// Used to open additional CDP sessions (e.g. for OOPIF iframe targets).
+    pub browser_ws_url: String,
     /// Background task handle for event handling (internal use)
     handler_task: Option<tokio::task::JoinHandle<()>>,
     /// Cursor overlay sync interval (0 = disabled)
@@ -143,6 +146,7 @@ impl Session {
     /// * `max_workers` - Maximum number of concurrent workers/pages
     /// * `cursor_overlay_ms` - Cursor overlay sync interval (0 = disabled)
     /// * `circuit_breaker_config` - Optional circuit breaker configuration
+    /// * `browser_ws_url` - Browser debug WebSocket URL for extra CDP sessions
     ///
     /// # Returns
     ///
@@ -174,6 +178,7 @@ impl Session {
     ///     10, // max_workers
     ///     0,  // cursor_overlay_ms (disabled)
     ///     Some(config),
+    ///     "ws://127.0.0.1:9222/devtools/browser/abc".to_string(),
     /// );
     /// ```
     #[allow(clippy::too_many_arguments)]
@@ -188,6 +193,7 @@ impl Session {
         max_workers: usize,
         cursor_overlay_ms: u64,
         circuit_breaker_config: Option<crate::config::CircuitBreakerConfig>,
+        browser_ws_url: String,
     ) -> Self {
         let id_clone = id.clone();
         // Spawn handler polling task - keep it alive for the lifetime of the session
@@ -245,6 +251,7 @@ impl Session {
             behavior_profile,
             behavior_runtime,
             browser,
+            browser_ws_url,
             handler_task: Some(handler_task),
             cursor_overlay_ms,
             overlay_state,

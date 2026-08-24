@@ -43,6 +43,7 @@ pub(crate) async fn connect_test_session() -> anyhow::Result<Option<crate::sessi
         1,
         0,
         None,
+        ws_url,
     );
 
     Ok(Some(session))

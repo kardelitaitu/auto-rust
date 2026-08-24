@@ -17,7 +17,11 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, Mutex};
+
+/// Max time to wait for a CDP command response before failing.
+const CDP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Next JSON-RPC call id for this process.
 fn next_call_id() -> u64 {
@@ -107,9 +111,17 @@ impl OopifClient {
             })
             .await
             .map_err(|_| anyhow!("CDP writer task stopped"))?;
-        let resp = rrx
-            .await
-            .map_err(|_| anyhow!("CDP response channel closed for {method}"))?;
+        let resp = match tokio::time::timeout(CDP_RESPONSE_TIMEOUT, rrx).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(_)) => {
+                self.pending.lock().await.remove(&id);
+                return Err(anyhow!("CDP response channel closed for {method}"));
+            }
+            Err(_) => {
+                self.pending.lock().await.remove(&id);
+                return Err(anyhow!("CDP {method} timed out after 10s"));
+            }
+        };
         if let Some(err) = resp.get("error") {
             return Err(anyhow!("CDP {method} error: {err}"));
         }

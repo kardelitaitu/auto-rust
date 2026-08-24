@@ -41,6 +41,22 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
+        // Open ONE raw CDP session to the browser (reused across the poll loop
+        // below — avoids a new WebSocket per 200ms retry).
+        let client = if self.browser_ws_url.is_empty() {
+            None
+        } else {
+            match crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                .await
+            {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    log::warn!("[iframe_click] OOPIF client connect failed: {e}");
+                    None
+                }
+            }
+        };
+
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_status = String::new();
         let (x, y) = loop {
@@ -48,7 +64,10 @@ impl TaskContext {
             let status = match resolve_iframe(self.page(), iframe_selector).await {
                 Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
                     // 2. element's local center inside the iframe (OOPIF attach)
-                    match self.element_local_center(&src, element_selector).await {
+                    match self
+                        .element_local_center(client.as_ref(), &src, element_selector)
+                        .await
+                    {
                         Ok(Some((lx, ly))) => {
                             let cx = rect.x + lx;
                             let cy = rect.y + ly;
@@ -154,16 +173,14 @@ impl TaskContext {
     /// view (handles scrollable lists and multiple matching elements).
     async fn element_local_center(
         &self,
+        client: Option<&crate::runtime::task_context::oopif::OopifClient>,
         iframe_src: &str,
         element_selector: &str,
     ) -> Result<Option<(f64, f64)>> {
-        if self.browser_ws_url.is_empty() {
-            log::debug!("[iframe] no browser_ws_url available, cannot attach to iframe target");
+        let Some(client) = client else {
+            log::debug!("[iframe] no OOPIF client available, cannot attach to iframe target");
             return Ok(None);
-        }
-
-        let client =
-            crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url).await?;
+        };
 
         // Host from the iframe src identifies the mini-app target.
         let host = scheme_host(iframe_src)

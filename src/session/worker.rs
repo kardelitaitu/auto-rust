@@ -148,6 +148,10 @@ impl super::Session {
     }
 
     /// Releases a page by closing it and cleaning up associated resources.
+    ///
+    /// If the CDP close fails, the page is **not** unregistered from
+    /// `active_pages`. This ensures `cleanup_managed_pages` can retry the
+    /// close during shutdown instead of silently leaking the browser tab.
     pub async fn release_page(&self, page: Arc<chromiumoxide::Page>) {
         let page_id = page.target_id().clone();
         let page_id_text = page_id.as_ref().to_string();
@@ -155,7 +159,13 @@ impl super::Session {
         unbind_page_overlay(&page_id_text);
         let page_to_close = (*page).clone();
         if let Err(e) = page_to_close.close().await {
-            warn!("[{}] Error closing page {:?}: {}", self.id, page_id, e);
+            warn!(
+                "[{}] Error closing page {:?}: {} — will retry during cleanup",
+                self.id, page_id, e
+            );
+            // Do NOT unregister: the CDP page is still open in the browser.
+            // cleanup_managed_pages will find it via active_pages and retry.
+            return;
         }
         self.unregister_page(page_id.as_ref());
     }
@@ -176,6 +186,7 @@ impl super::Session {
         let tracked_set: HashSet<String> = tracked_ids.iter().cloned().collect();
         let pages = self.browser.pages().await?;
         let mut closed = 0usize;
+        let mut closed_ids: Vec<String> = Vec::new();
 
         for page in pages {
             let page_id = page.target_id().clone();
@@ -189,15 +200,20 @@ impl super::Session {
             let page_to_close = page.clone();
             if let Err(e) = page_to_close.close().await {
                 warn!(
-                    "[{}] Error closing managed page {:?}: {}",
+                    "[{}] Error closing managed page {:?}: {} — remaining in active_pages for retry",
                     self.id, page_id, e
                 );
+                // Do NOT unregister: page is still open in the browser.
             } else {
                 closed += 1;
+                closed_ids.push(page_id_text);
             }
         }
 
-        for page_id in tracked_ids {
+        // Only unregister pages that were successfully closed.
+        // Pages that failed to close remain in active_pages so they can be
+        // retried during graceful_shutdown or the next cleanup cycle.
+        for page_id in closed_ids {
             self.unregister_page(&page_id);
         }
 

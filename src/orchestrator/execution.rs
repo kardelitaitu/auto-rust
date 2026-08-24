@@ -69,14 +69,21 @@ pub(super) async fn execute_group_with_cancel(
                     return Ok(());
                 }
 
-                // Stagger task starts to prevent network spikes
-                tokio::select! {
-                    () = cancel_token.cancelled() => {
-                        return Ok(());
+                // Random stagger (0..max) so multiple browsers don't start simultaneously
+                let max_stagger = config.orchestrator.task_stagger_delay_ms;
+                let random_delay = if max_stagger > 0 {
+                    use rand::Rng;
+                    rand::thread_rng().gen_range(0..=max_stagger)
+                } else {
+                    0
+                };
+                if random_delay > 0 {
+                    tokio::select! {
+                        () = cancel_token.cancelled() => {
+                            return Ok(());
+                        }
+                        () = tokio::time::sleep(Duration::from_millis(random_delay)) => {}
                     }
-                    () = tokio::time::sleep(Duration::from_millis(
-                        config.orchestrator.task_stagger_delay_ms,
-                    )) => {}
                 }
 
                 let result = execute_task_on_session(

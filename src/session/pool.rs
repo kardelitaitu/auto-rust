@@ -9,6 +9,7 @@ use crate::session::connector::{BrowserCapabilities, ConnectorRegistry};
 use crate::session::factory::SessionFactory;
 use crate::session::Session;
 use crate::utils::retry::{ExponentialBackoff, RetryConfig};
+use futures::future::join_all;
 use log::{debug, info, warn};
 
 /// Manages a pool of browser sessions with discovery and retry logic.
@@ -61,10 +62,15 @@ impl SessionPoolManager {
     /// # Returns
     /// A list of discovered browser capabilities from all sources
     pub async fn discover(&self, config: &Config) -> Result<Vec<BrowserCapabilities>> {
-        let mut all_capabilities = Vec::new();
+        let connectors = self.registry.available(config);
+        let connector_count = connectors.len();
 
-        for connector in self.registry.available(config) {
-            match connector.discover(config).await {
+        // Probe all connectors in parallel to avoid sequential TCP timeouts
+        let results = join_all(connectors.iter().map(|c| c.discover(config))).await;
+
+        let mut all_capabilities = Vec::new();
+        for result in results {
+            match result {
                 Ok(caps) => {
                     debug!("Connector discovered {} browser(s)", caps.len());
                     all_capabilities.extend(caps);
@@ -78,7 +84,7 @@ impl SessionPoolManager {
         info!(
             "Total discovered browsers: {} (from {} available connectors)",
             all_capabilities.len(),
-            self.registry.available(config).len()
+            connector_count
         );
 
         Ok(all_capabilities)

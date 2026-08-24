@@ -193,6 +193,37 @@ impl OopifClient {
             .ok_or_else(|| anyhow!("No iframe target found for host '{host}'"))
     }
 
+    /// Find a `page`-type target whose URL contains `url_fragment`.
+    pub async fn find_page_target(&self, url_fragment: &str) -> Result<Value> {
+        let result = self.call("Target.getTargets", json!({}), None).await?;
+        let infos = result
+            .get("targetInfos")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for info in infos {
+            let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
+            let url = info.get("url").and_then(Value::as_str).unwrap_or("");
+            if ty == "page" && url.contains(url_fragment) {
+                return Ok(info);
+            }
+        }
+        Err(anyhow!(
+            "No page target found for url fragment '{url_fragment}'"
+        ))
+    }
+
+    /// Bring a target to the foreground (`Target.activateTarget`).
+    pub async fn activate_target(&self, target_id: &str) -> Result<()> {
+        self.call(
+            "Target.activateTarget",
+            json!({ "targetId": target_id }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Attach to a target and return its flattened session id.
     pub async fn attach(&self, target_id: &str) -> Result<String> {
         let result = self

@@ -242,6 +242,11 @@ let html = api.html("#content").await?;
 let href = api.attr("#link", "href").await?;
 ```
 
+**focus_tab(url_fragment: &str)** -- Switch browser focus to the tab whose URL contains the fragment (e.g. "web.telegram.org"). Returns true if found & activated
+```rust
+if !api.focus_tab("web.telegram.org").await? { /* no tab matched */ }
+```
+
 **pause(duration_ms: u64)** -- Uniform-random pause with ~20% spread
 ```rust
 api.pause(1_000).await?;

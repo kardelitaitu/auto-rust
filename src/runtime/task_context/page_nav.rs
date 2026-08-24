@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
+use serde_json::Value;
 use std::time::Duration;
 
 use crate::result::errors::{classify_error_pattern, ErrorPattern};
@@ -133,6 +134,34 @@ impl TaskContext {
         })?;
         self.post_interaction_pause().await;
         Ok(())
+    }
+
+    /// Switch focus to a tab whose URL contains `url_fragment` (e.g. "web.telegram.org").
+    /// Uses `Target.activateTarget` via the browser debug WebSocket. Returns `true` if
+    /// a matching tab was found and activated, `false` if none matched.
+    pub async fn focus_tab(&self, url_fragment: &str) -> Result<bool> {
+        if self.browser_ws_url.is_empty() {
+            return Err(anyhow!("No browser_ws_url available, cannot list tabs"));
+        }
+        let client =
+            crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                .await
+                .map_err(|e| anyhow!("OOPIF client connect failed: {e}"))?;
+        match client.find_page_target(url_fragment).await {
+            Ok(target) => {
+                let target_id = target.get("targetId").and_then(Value::as_str).unwrap_or("");
+                if target_id.is_empty() {
+                    return Ok(false);
+                }
+                client.activate_target(target_id).await?;
+                log::info!("[focus_tab] activated tab '{url_fragment}' (target {target_id})");
+                Ok(true)
+            }
+            Err(e) => {
+                log::warn!("[focus_tab] no tab found for '{url_fragment}': {e}");
+                Ok(false)
+            }
+        }
     }
 
     /// "Enter" an iframe by navigating the tab directly to its `src` URL.

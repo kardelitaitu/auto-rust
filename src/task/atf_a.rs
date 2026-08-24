@@ -292,7 +292,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         info!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
-    //
+
+    // Switch focus back to the Telegram tab — earlier tasks (visit website /
+    // youtube) may have opened a new tab and moved focus to it.
+    if !api.focus_tab("web.telegram.org").await? {
+        warn!("Could not find the Telegram tab to focus — continuing anyway");
+    }
+    api.wait(500, 1_000).await;
+
     // long wait until all task validated
     api.wait(30_000, 40_000).await;
 

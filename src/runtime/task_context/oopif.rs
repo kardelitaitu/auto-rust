@@ -56,28 +56,26 @@ fn build_json_rpc(id: u64, method: &str, params: &Value, session_id: Option<&str
     call
 }
 
-/// Extract the `result.result.value` chain from a CDP response, or Null.
+/// Extract the `result.value` from a CDP evaluate **inner result** (what
+/// `call()` returns — the `result` object of the JSON-RPC response).
 fn extract_result_value(resp: &Value) -> Value {
     resp.get("result")
-        .and_then(|r| r.get("result"))
         .and_then(|r| r.get("value"))
         .cloned()
         .unwrap_or(Value::Null)
 }
 
-/// Extract `result.exceptionDetails.text` from a CDP evaluate response, if present.
+/// Extract `exceptionDetails.text` from a CDP evaluate **inner result**.
 fn extract_exception_text(resp: &Value) -> Option<String> {
-    resp.get("result")
-        .and_then(|r| r.get("exceptionDetails"))
+    resp.get("exceptionDetails")
         .and_then(|e| e.get("text"))
         .and_then(Value::as_str)
         .map(str::to_string)
 }
 
-/// Extract the `result.sessionId` from an attach response.
+/// Extract `sessionId` from an attachToTarget **inner result**.
 fn extract_session_id(resp: &Value) -> Option<String> {
-    resp.get("result")
-        .and_then(|r| r.get("sessionId"))
+    resp.get("sessionId")
         .and_then(Value::as_str)
         .map(str::to_string)
 }
@@ -306,12 +304,9 @@ mod tests {
     #[test]
     fn extract_result_value_nested_path() {
         let resp = json!({
-            "id": 1,
             "result": {
-                "result": {
-                    "type": "object",
-                    "value": { "x": 42.0 }
-                }
+                "type": "object",
+                "value": { "x": 42.0 }
             }
         });
         assert_eq!(extract_result_value(&resp), json!({ "x": 42.0 }));
@@ -322,7 +317,7 @@ mod tests {
         assert_eq!(extract_result_value(&json!({ "id": 1 })), Value::Null);
         assert_eq!(extract_result_value(&json!({ "result": {} })), Value::Null);
         assert_eq!(
-            extract_result_value(&json!({ "result": { "result": { "type": "string" } } })),
+            extract_result_value(&json!({ "result": { "type": "string" } })),
             Value::Null
         );
     }
@@ -330,10 +325,8 @@ mod tests {
     #[test]
     fn extract_exception_text_present_and_absent() {
         let with_exc = json!({
-            "result": {
-                "result": { "type": "object" },
-                "exceptionDetails": { "text": "ReferenceError: x is not defined" }
-            }
+            "result": { "type": "object" },
+            "exceptionDetails": { "text": "ReferenceError: x is not defined" }
         });
         assert_eq!(
             extract_exception_text(&with_exc),
@@ -346,11 +339,11 @@ mod tests {
     #[test]
     fn extract_session_id_present_and_absent() {
         assert_eq!(
-            extract_session_id(&json!({ "result": { "sessionId": "ABC123" } })),
+            extract_session_id(&json!({ "sessionId": "ABC123" })),
             Some("ABC123".to_string())
         );
-        assert_eq!(extract_session_id(&json!({ "result": {} })), None);
         assert_eq!(extract_session_id(&json!({})), None);
+        assert_eq!(extract_session_id(&json!(null)), None);
     }
 
     #[test]
@@ -469,9 +462,7 @@ mod tests {
     #[test]
     fn extract_result_value_string() {
         let resp = json!({
-            "result": {
-                "result": { "type": "string", "value": "hello" }
-            }
+            "result": { "type": "string", "value": "hello" }
         });
         assert_eq!(extract_result_value(&resp), json!("hello"));
     }
@@ -479,9 +470,7 @@ mod tests {
     #[test]
     fn extract_result_value_number() {
         let resp = json!({
-            "result": {
-                "result": { "type": "number", "value": 2.75 }
-            }
+            "result": { "type": "number", "value": 2.75 }
         });
         assert_eq!(extract_result_value(&resp), json!(2.75));
     }
@@ -489,9 +478,7 @@ mod tests {
     #[test]
     fn extract_result_value_boolean() {
         let resp = json!({
-            "result": {
-                "result": { "type": "boolean", "value": true }
-            }
+            "result": { "type": "boolean", "value": true }
         });
         assert_eq!(extract_result_value(&resp), json!(true));
     }
@@ -499,9 +486,7 @@ mod tests {
     #[test]
     fn extract_result_value_null_value() {
         let resp = json!({
-            "result": {
-                "result": { "type": "object", "value": null }
-            }
+            "result": { "type": "object", "value": null }
         });
         assert_eq!(extract_result_value(&resp), Value::Null);
     }
@@ -510,9 +495,7 @@ mod tests {
     fn extract_exception_text_only_text_field() {
         // exceptionDetails present but no text field
         let resp = json!({
-            "result": {
-                "exceptionDetails": { "exceptionId": 1 }
-            }
+            "exceptionDetails": { "exceptionId": 1 }
         });
         assert_eq!(extract_exception_text(&resp), None);
     }
@@ -520,7 +503,7 @@ mod tests {
     #[test]
     fn extract_session_id_empty_string() {
         // sessionId present but empty — should return Some("")
-        let resp = json!({ "result": { "sessionId": "" } });
+        let resp = json!({ "sessionId": "" });
         assert_eq!(extract_session_id(&resp), Some("".to_string()));
     }
 
@@ -566,9 +549,7 @@ mod tests {
     #[test]
     fn extract_result_value_array() {
         let resp = json!({
-            "result": {
-                "result": { "type": "object", "value": [1, 2, 3] }
-            }
+            "result": { "type": "object", "value": [1, 2, 3] }
         });
         assert_eq!(extract_result_value(&resp), json!([1, 2, 3]));
     }

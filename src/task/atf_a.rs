@@ -292,17 +292,169 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         info!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
+    //
+    // long wait until all task validated
+    api.wait(30_000, 40_000).await;
+
+    // Step 9: Click Claim on YouTube Like — same button, text now "Claim".
+    // Repeat clicks until the "Claim" text is gone, random 0.5-2s, max 5.
+    const CLAIM_RETRY_MAX: u32 = 5;
+    const CLAIM_CHECK_TIMEOUT_MS: u64 = 2_000;
+    let mut clicks = 0u32;
+    loop {
+        match api
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-youtube_like_comment",
+                "Claim",
+                CLAIM_CHECK_TIMEOUT_MS,
+            )
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!(
+                    "YouTube claim click #{clicks} result: {}",
+                    outcome.summary()
+                );
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("YouTube claim click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("YouTube 'Claim' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= CLAIM_RETRY_MAX {
+            info!("Reached max {CLAIM_RETRY_MAX} clicks on YouTube claim button");
+            break;
+        }
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
+    }
 
     api.wait(500, 2_000).await;
 
-    // Step 10: Click Go on React Telegram Post — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+    // Step 10: Click Claim on Twitter Retweet — target by class + id + "Claim" text.
+    let mut clicks = 0u32;
+    loop {
+        match api
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-twitter_retweet",
+                "Claim",
+                CLAIM_CHECK_TIMEOUT_MS,
+            )
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!(
+                    "Retweet claim click #{clicks} result: {}",
+                    outcome.summary()
+                );
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("Retweet claim click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("Retweet 'Claim' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= CLAIM_RETRY_MAX {
+            info!("Reached max {CLAIM_RETRY_MAX} clicks on Retweet claim button");
+            break;
+        }
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
+    }
 
-    // Step 11: Click Go on React Telegram Post — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+    api.wait(500, 2_000).await;
 
-    // Step 12: Click Go on React Telegram Post — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+    // Step 11: Click Claim on Visit Website — target by class + id + "Claim" text.
+    let mut clicks = 0u32;
+    loop {
+        match api
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-btn-website_visit",
+                "Claim",
+                CLAIM_CHECK_TIMEOUT_MS,
+            )
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!(
+                    "Website claim click #{clicks} result: {}",
+                    outcome.summary()
+                );
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("Website claim click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("Website 'Claim' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= CLAIM_RETRY_MAX {
+            info!("Reached max {CLAIM_RETRY_MAX} clicks on Website claim button");
+            break;
+        }
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
+    }
+
+    api.wait(500, 2_000).await;
+
+    // Step 12: Click Claim on React Telegram Post — target by class + id + "Claim" text.
+    let mut clicks = 0u32;
+    loop {
+        match api
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-telegram_react_latest",
+                "Claim",
+                CLAIM_CHECK_TIMEOUT_MS,
+            )
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!("React claim click #{clicks} result: {}", outcome.summary());
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("React claim click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("React 'Claim' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= CLAIM_RETRY_MAX {
+            info!("Reached max {CLAIM_RETRY_MAX} clicks on React claim button");
+            break;
+        }
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
+    }
+
+    api.wait(500, 2_000).await;
 
     // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
     api.pause(200_000).await;

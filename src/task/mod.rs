@@ -15,6 +15,7 @@ use crate::prelude::TaskContext;
 use crate::result::{TaskErrorKind, TaskResult, TaskStatus};
 
 pub mod atf;
+pub mod atf_a;
 pub mod cdp_utils;
 pub mod cookiebot;
 pub mod demo_keyboard;
@@ -46,6 +47,7 @@ pub use crate::utils::twitter::twitteractivity_state::TweetActionTracker;
 
 pub const TASK_NAMES: &[&str] = &[
     "atf",
+    "atf-a",
     "cookiebot",
     "pageview",
     "demo-keyboard",
@@ -146,6 +148,7 @@ async fn execute_single_attempt(
     // Otherwise execute as built-in Rust task
     match name {
         "atf" => atf::run(api, payload.clone()).await,
+        "atf-a" => atf_a::run(api, payload.clone()).await,
         "cookiebot" => cookiebot::run(api, payload.clone())
             .await
             .map_err(|e| anyhow::anyhow!(e)),

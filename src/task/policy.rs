@@ -208,6 +208,16 @@ pub static ATF_POLICY: std::sync::LazyLock<TaskPolicy> = std::sync::LazyLock::ne
     },
 });
 
+/// `AtfA` policy - Telegram A web client mining: same permissions as `atf`.
+pub static ATF_A_POLICY: std::sync::LazyLock<TaskPolicy> =
+    std::sync::LazyLock::new(|| TaskPolicy {
+        max_duration_ms: DurationMs::new_const(crate::task::atf_a::DEFAULT_ATF_A_TASK_DURATION_MS),
+        permissions: TaskPermissions {
+            allow_dom_inspection: true,
+            ..Default::default()
+        },
+    });
+
 /// `CookieBot` policy - handles cookie consent dialogs.
 pub static COOKIEBOT_POLICY: std::sync::LazyLock<TaskPolicy> =
     std::sync::LazyLock::new(|| TaskPolicy {
@@ -458,6 +468,7 @@ pub fn get_policy_from_registry(task_name: &str) -> &'static TaskPolicy {
 fn match_policy_by_name(policy_name: &str) -> &'static TaskPolicy {
     match policy_name {
         "atf" => &ATF_POLICY,
+        "atf-a" => &ATF_A_POLICY,
         "cookiebot" => &COOKIEBOT_POLICY,
         "pageview" => &PAGEVIEW_POLICY,
         "twitteractivity" => &TWITTERACTIVITY_POLICY,
@@ -635,6 +646,7 @@ mod tests {
         // Verify all registered policies have valid timeouts
         let task_names = [
             "atf",
+            "atf-a",
             "cookiebot",
             "pageview",
             "twitteractivity",

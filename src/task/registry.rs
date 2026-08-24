@@ -583,7 +583,7 @@ mod tests {
     #[test]
     fn test_registry_has_all_built_in_tasks() {
         let registry = TaskRegistry::with_built_in_tasks();
-        assert_eq!(registry.task_count(), 17);
+        assert_eq!(registry.task_count(), 18);
     }
 
     #[test]
@@ -617,7 +617,7 @@ mod tests {
     fn test_list_tasks_sorted() {
         let registry = TaskRegistry::with_built_in_tasks();
         let tasks = registry.list_tasks();
-        assert_eq!(tasks.len(), 17);
+        assert_eq!(tasks.len(), 18);
 
         // Check sorted order
         let names: Vec<_> = tasks.iter().map(|t| t.name.clone()).collect();
@@ -630,7 +630,7 @@ mod tests {
     fn test_task_names() {
         let registry = TaskRegistry::with_built_in_tasks();
         let names = registry.task_names();
-        assert_eq!(names.len(), 17);
+        assert_eq!(names.len(), 18);
         assert!(names.contains(&"cookiebot".to_string()));
         assert!(names.contains(&"twitteractivity".to_string()));
         assert!(names.contains(&"test-llmreply".to_string()));
@@ -741,11 +741,12 @@ mod tests {
         let registry = TaskRegistry::with_built_in_tasks();
         let diag = registry.diagnostics();
 
-        assert_eq!(diag.total_tasks, 17);
-        assert_eq!(diag.built_in_tasks, 17);
+        assert_eq!(diag.total_tasks, 18);
+        assert_eq!(diag.built_in_tasks, 18);
         assert_eq!(diag.external_tasks, 0);
-        assert_eq!(diag.task_names.len(), 17);
+        assert_eq!(diag.task_names.len(), 18);
         assert!(diag.task_names.contains(&"cookiebot".to_string()));
+        assert!(diag.task_names.contains(&"atf-a".to_string()));
     }
 
     #[test]
@@ -834,7 +835,7 @@ mod tests {
         assert!(output.contains("BuiltInRust"));
         assert!(output.contains("cookiebot"));
         assert!(output.contains("policy=cookiebot"));
-        assert!(output.contains("Total: 17 tasks"));
+        assert!(output.contains("Total: 18 tasks"));
     }
 
     #[test]
@@ -848,7 +849,7 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort();
 
-        assert_eq!(names.len(), 17);
+        assert_eq!(names.len(), 18);
         assert_eq!(names, sorted);
     }
 
@@ -858,7 +859,7 @@ mod tests {
 
         assert!(!output.contains("ConfiguredPath("));
         assert!(!output.contains("external file:"));
-        assert!(output.contains("Total: 17 tasks"));
+        assert!(output.contains("Total: 18 tasks"));
     }
 
     #[test]
@@ -873,8 +874,8 @@ mod tests {
             .unwrap();
 
         let diag = registry.diagnostics();
-        assert_eq!(diag.total_tasks, 18);
-        assert_eq!(diag.built_in_tasks, 17);
+        assert_eq!(diag.total_tasks, 19); // 18 built-in + 1 external
+        assert_eq!(diag.built_in_tasks, 18);
         assert_eq!(diag.external_tasks, 1);
         assert!(diag.task_names.contains(&"sample_external".to_string()));
     }

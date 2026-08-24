@@ -207,3 +207,59 @@ pub async fn dispatch_mouse_action(
 ) -> Result<()> {
     dispatch_single_mouse_event(page, x, y, button_idx, event_type).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{map_cdp_button, map_cdp_event_type, mouse_button_mask};
+    use chromiumoxide::cdp::browser_protocol::input::{
+        DispatchMouseEventType, MouseButton as CdpMouseButton,
+    };
+
+    #[test]
+    fn map_cdp_button_all_valid_indices() {
+        assert_eq!(map_cdp_button(0), Some(CdpMouseButton::Left));
+        assert_eq!(map_cdp_button(1), Some(CdpMouseButton::Middle));
+        assert_eq!(map_cdp_button(2), Some(CdpMouseButton::Right));
+    }
+
+    #[test]
+    fn map_cdp_button_unknown_index_is_none() {
+        assert_eq!(map_cdp_button(3), None);
+        assert_eq!(map_cdp_button(255), None);
+    }
+
+    #[test]
+    fn mouse_button_mask_standard_masks() {
+        assert_eq!(mouse_button_mask(0), 1); // Left
+        assert_eq!(mouse_button_mask(1), 4); // Middle
+        assert_eq!(mouse_button_mask(2), 2); // Right
+    }
+
+    #[test]
+    fn mouse_button_mask_unknown_is_zero() {
+        assert_eq!(mouse_button_mask(7), 0);
+    }
+
+    #[test]
+    fn map_cdp_event_type_known_events() {
+        assert_eq!(
+            map_cdp_event_type("mousedown"),
+            Some(DispatchMouseEventType::MousePressed)
+        );
+        assert_eq!(
+            map_cdp_event_type("mouseup"),
+            Some(DispatchMouseEventType::MouseReleased)
+        );
+        assert_eq!(
+            map_cdp_event_type("mousemove"),
+            Some(DispatchMouseEventType::MouseMoved)
+        );
+    }
+
+    #[test]
+    fn map_cdp_event_type_unknown_events() {
+        assert_eq!(map_cdp_event_type("mouseenter"), None);
+        assert_eq!(map_cdp_event_type("click"), None);
+        assert_eq!(map_cdp_event_type(""), None);
+    }
+}

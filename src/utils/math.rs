@@ -27,8 +27,9 @@ use rand_distr::{Distribution, Normal};
 /// ```
 #[must_use]
 pub fn random_in_range(min: u64, max: u64) -> u64 {
+    let (lo, hi) = if min > max { (max, min) } else { (min, max) };
     let mut rng = rand::thread_rng();
-    rng.gen_range(min..=max)
+    rng.gen_range(lo..=hi)
 }
 
 /// Generates a random number from a Gaussian (normal) distribution,
@@ -397,6 +398,15 @@ mod tests {
     fn test_random_in_range_single_value() {
         let result = random_in_range(42, 42);
         assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn test_random_in_range_inverted_does_not_panic() {
+        // Defensive: min > max must not panic with "cannot sample empty range".
+        let result = random_in_range(10, 5);
+        assert!((5..=10).contains(&result));
+        let zero = random_in_range(0, 0);
+        assert_eq!(zero, 0);
     }
 
     #[test]

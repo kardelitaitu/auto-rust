@@ -136,8 +136,12 @@ pub async fn uniform_pause_with_cancel(
     variance_pct: u32,
 ) {
     let variance = (f64::from(variance_pct) / 100.0).clamp(0.0, 1.0);
-    let min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
+    let mut min_delay = (base_ms as f64 * (1.0 - variance)).max(10.0);
     let max_delay = (base_ms as f64 * (1.0 + variance)).min(30000.0);
+    if min_delay > max_delay {
+        // Large base + 30s clamp can invert the range (e.g. base=200s, max=30s).
+        min_delay = max_delay;
+    }
     let delay = random_in_range(min_delay.round() as u64, max_delay.round() as u64);
     sleep_interruptible(cancel, delay).await;
 }
@@ -555,6 +559,14 @@ mod tests {
         let elapsed = start.elapsed();
         // Should handle gracefully (max with 1)
         assert!(elapsed.as_millis() < 100);
+    }
+
+    #[tokio::test]
+    async fn test_uniform_pause_large_base_does_not_panic() {
+        // Regression: base larger than the 30s clamp used to invert the range
+        // (min=160s > max=30s) and panic with "cannot sample empty range".
+        uniform_pause_with_cancel(None, 200_000, 20).await;
+        // The 30s clamp caps the delay; the important thing is it doesn't panic.
     }
 
     #[tokio::test]

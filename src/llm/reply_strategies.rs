@@ -605,7 +605,11 @@ pub fn get_strategy_instruction(context: &StrategyContext) -> &'static str {
     // Weighted random pick
     let total: u32 = weighted_pool.iter().map(|(_, w)| w).sum();
     let mut rng = rand::thread_rng();
-    let mut r = rng.gen_range(0..total);
+    let mut r = if total > 0 {
+        rng.gen_range(0..total)
+    } else {
+        0
+    };
 
     for (key, weight) in weighted_pool {
         if r < weight {

@@ -163,21 +163,137 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             info!("Reached max {GO_RETRY_MAX} clicks on YouTube task button");
             break;
         }
-        info!("Waiting random 1-2s before next attempt");
-        api.wait(1_000, 2_000).await;
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
     }
 
-    // Step 6: Click Go on Twitter Retweet — target by class + id (the button is
-    // `<button class="btn-small" id="btn-twitter_retweet">Go</button>`).
+    api.wait(500, 2_000).await;
 
-    // Step 7: Click Go on Visit Website — target by class + id (the button is
-    // `<button class="btn-small" id="btn-btn-website_visit">Go</button>`).
+    // Step 6: Click Go on Twitter Retweet — target by class + id + text content
+    // (the button is `<button class="btn-small" id="btn-twitter_retweet">Go</button>`).
+    // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
+    const RETWEET_TASK_SELECTOR: &str = ".btn-small#btn-twitter_retweet";
+    const RETWEET_TASK_RETRY_MAX: u32 = 5;
+    const RETWEET_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
+    let mut clicks = 0u32;
+    loop {
+        match api
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                RETWEET_TASK_SELECTOR,
+                "Go",
+                RETWEET_TASK_CHECK_TIMEOUT_MS,
+            )
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!("Retweet task click #{clicks} result: {}", outcome.summary());
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("Retweet task click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("Retweet task 'Go' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= RETWEET_TASK_RETRY_MAX {
+            info!("Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
+            break;
+        }
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
+    }
 
-    // Step 8: Click Go on React Telegram Post — target by class + id (the button is
-    // `<button class="btn-small" id="btn-telegram_react_latest">Go</button>`).
+    api.wait(500, 2_000).await;
 
-    // Step 9: Click Go on React Telegram Post — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).
+    // Step 7: Click Go on Visit Website — target by class + id + text content
+    // (the button is `<button class="btn-small" id="btn-btn-website_visit">Go</button>`).
+    // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
+    const WEBSITE_TASK_SELECTOR: &str = ".btn-small#btn-btn-website_visit";
+    const WEBSITE_TASK_RETRY_MAX: u32 = 5;
+    const WEBSITE_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
+    let mut clicks = 0u32;
+    loop {
+        match api
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                WEBSITE_TASK_SELECTOR,
+                "Go",
+                WEBSITE_TASK_CHECK_TIMEOUT_MS,
+            )
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!("Website task click #{clicks} result: {}", outcome.summary());
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("Website task click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("Website task 'Go' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= WEBSITE_TASK_RETRY_MAX {
+            info!("Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
+            break;
+        }
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
+    }
+
+    api.wait(500, 2_000).await;
+
+    // Step 8: Click Go on React Telegram Post — target by class + id + text content
+    // (the button is `<button class="btn-small" id="btn-telegram_react_latest">Go</button>`).
+    // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
+    const REACT_TASK_SELECTOR: &str = ".btn-small#btn-telegram_react_latest";
+    const REACT_TASK_RETRY_MAX: u32 = 5;
+    const REACT_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
+    let mut clicks = 0u32;
+    loop {
+        match api
+            .iframe_click_text(
+                MINIAPP_IFRAME,
+                REACT_TASK_SELECTOR,
+                "Go",
+                REACT_TASK_CHECK_TIMEOUT_MS,
+            )
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!("React task click #{clicks} result: {}", outcome.summary());
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("React task click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("React task 'Go' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= REACT_TASK_RETRY_MAX {
+            info!("Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
+            break;
+        }
+        info!("Waiting random 0.5s-2s before next attempt");
+        api.wait(500, 2_000).await;
+    }
+
+    api.wait(500, 2_000).await;
 
     // Step 10: Click Go on React Telegram Post — target by class + id (the button is
     // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).

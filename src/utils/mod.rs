@@ -20,41 +20,30 @@ pub mod twitter;
 pub mod url;
 pub mod zoom;
 
-// Internal implementation module; tasks should import `crate::prelude::*` instead.
+// Re-exports: keep only modules whose items are accessed via `crate::utils::*`.
+// Items accessed through `crate::prelude::*` or direct submodule paths don't need glob re-exports here.
+// Removing a glob re-export does NOT remove access — use the submodule path instead.
+//
+// To find which modules actually need glob re-exports, temporarily remove
+// #[allow(unused_imports)] and run `cargo check` — any new warnings indicate
+// modules that are NOT accessed through `crate::utils::*` and can drop the glob.
 #[cfg(feature = "accessibility-locator")]
-#[allow(unused_imports)]
 pub use accessibility_locator::*;
-#[allow(unused_imports)]
 pub use blockmedia::*;
-#[allow(unused_imports)]
 pub use clipboard::*;
-#[allow(unused_imports)]
 pub use dom::*;
-#[allow(unused_imports)]
 pub use geometry::*;
-#[allow(unused_imports)]
 pub use keyboard::*;
-#[allow(unused_imports)]
 pub use math::*;
-#[allow(unused_imports)]
 pub use mouse::*;
-#[allow(unused_imports)]
 pub use navigation::*;
-#[allow(unused_imports)]
 pub use page_size::*;
-#[allow(unused_imports)]
 pub use payload::*;
-#[allow(unused_imports)]
 pub use profile::*;
-#[allow(unused_imports)]
 pub use scroll::*;
-#[allow(unused_imports)]
 pub use text::{normalize_browser_token, *};
-#[allow(unused_imports)]
 pub use timing::*;
-#[allow(unused_imports)]
 pub use url::*;
-#[allow(unused_imports)]
 pub use zoom::*;
 
 #[cfg(test)]

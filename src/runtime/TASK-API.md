@@ -32,6 +32,11 @@ let outcome = api.iframe_click("/html/body/div[10]/div/div[2]/div/div/iframe", "
 let outcome = api.iframe_click_skip("iframe.payment-verification", "[id^=\"btn-go\"]", 240.0, 310.0, 30_000).await?;
 ```
 
+**iframe_count(iframe_selector: &str, element_selector: &str, timeout_ms: u64)** -- Count visible (non-zero-size) elements inside the iframe (OOPIF-safe) — know how many items exist without polling until timeout
+```rust
+let buttons = api.iframe_count("iframe.payment-verification", "[id^=\"btn-go\"]", 5_000).await?;
+```
+
 **check_page_connected()** -- Check if page is connected
 ```rust
 api.check_page_connected().await?;

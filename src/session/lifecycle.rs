@@ -210,6 +210,36 @@ mod tests {
     }
 
     #[test]
+    fn circuit_breaker_zero_threshold_with_recent_failure() {
+        // Bug regression: cb_check() previously used `failure_count >= threshold`
+        // without guarding threshold==0. With threshold=0: 0>=0 was always true,
+        // causing cb_check to bail (circuit open) while is_circuit_breaker_open
+        // correctly returned false. Both must agree: threshold=0 = disabled.
+        let current_time: usize = 1_700_000_000;
+        assert!(!is_circuit_breaker_open_pure(
+            0,
+            0,
+            current_time,
+            current_time + 5,
+            30
+        ));
+        assert!(!is_circuit_breaker_open_pure(
+            1,
+            0,
+            current_time,
+            current_time + 5,
+            30
+        ));
+        assert!(!is_circuit_breaker_open_pure(
+            100,
+            0,
+            current_time,
+            current_time + 5,
+            30
+        ));
+    }
+
+    #[test]
     fn state_getter_setter_roundtrip() {
         // We can't construct a full Session without a real Browser,
         // so test the state logic directly with parking_lot::Mutex.

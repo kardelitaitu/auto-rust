@@ -127,6 +127,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Track the last clicked local point and skip it on the next iteration so
     // a button that stays visible (marked "done") isn't clicked repeatedly.
     const GO_LOOP_TIMEOUT_MS: u64 = 8_000;
+    let total_go = api
+        .iframe_count(MINIAPP_IFRAME, "[id^=\"btn-telegram_\"]", 5_000)
+        .await
+        .unwrap_or(0);
+    info!("Found {total_go} Go button(s) to click");
     let mut go_clicks = 0u32;
     let mut skip: Option<(f64, f64)> = None;
     loop {

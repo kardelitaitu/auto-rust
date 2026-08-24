@@ -161,6 +161,78 @@ impl TaskContext {
         })
     }
 
+    /// Count elements matching `element_selector` inside the iframe (OOPIF-safe).
+    ///
+    /// Returns the number of visible (non-zero-size) matches. Useful for knowing
+    /// how many items exist (e.g. "Go" buttons) instead of polling until timeout.
+    ///
+    /// # Arguments
+    /// * `iframe_selector` - CSS selector (or XPath starting with `/`) for the iframe
+    /// * `element_selector` - CSS selector for the elements inside the iframe
+    /// * `timeout_ms` - Max wait for the iframe to become usable
+    pub async fn iframe_count(
+        &self,
+        iframe_selector: &str,
+        element_selector: &str,
+        timeout_ms: u64,
+    ) -> Result<usize> {
+        let client = if self.browser_ws_url.is_empty() {
+            None
+        } else {
+            Some(
+                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                    .await
+                    .map_err(|e| {
+                        anyhow!(
+                            "OOPIF client connect to '{}' failed: {e}",
+                            self.browser_ws_url
+                        )
+                    })?,
+            )
+        };
+
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut last_status = String::new();
+        let mut session_cache: Option<(String, String)> = None;
+        loop {
+            let status = match resolve_iframe(self.page(), iframe_selector).await {
+                Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
+                    match self
+                        .element_count_in_iframe(
+                            client.as_ref(),
+                            &src,
+                            element_selector,
+                            &mut session_cache,
+                        )
+                        .await
+                    {
+                        Ok(Some(n)) => {
+                            log::info!(
+                                "[iframe_count] '{element_selector}' inside '{iframe_selector}': {n} visible"
+                            );
+                            return Ok(n);
+                        }
+                        Ok(None) => "iframe target not ready yet".to_string(),
+                        Err(e) => format!("count resolve error: {e}"),
+                    }
+                }
+                Ok(Some((_rect, _src))) => "iframe found but zero-size".to_string(),
+                Ok(None) => "iframe not found yet".to_string(),
+                Err(e) => format!("iframe resolve error: {e}"),
+            };
+            if status != last_status {
+                log::info!("[iframe_count] {status}");
+                last_status = status;
+            }
+            if Instant::now() >= deadline {
+                return Err(anyhow!(
+                    "Iframe '{iframe_selector}' did not become usable within {timeout_ms}ms. Last status: {last_status}"
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
     /// Click at a coordinate INSIDE an iframe, in place — no navigation, no new tab.
     ///
     /// Reliable for cross-origin iframes (e.g. Telegram mini-apps) whose content
@@ -235,11 +307,55 @@ impl TaskContext {
         cached: &mut Option<(String, String)>,
     ) -> Result<Option<(f64, f64)>> {
         let Some(client) = client else {
-            log::debug!("[iframe] no OOPIF client available, cannot attach to iframe target");
             return Ok(None);
         };
+        let Some(session_id) = self
+            .iframe_session_id(Some(client), iframe_src, cached)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let js = build_element_js(element_selector, skip);
+        let value = client.evaluate(&session_id, &js).await?;
+        Ok(parse_local_center(&value))
+    }
 
-        // Host from the iframe src identifies the mini-app target.
+    /// Count visible (non-zero-size) matching elements inside the iframe, using
+    /// the same OOPIF session machinery. Returns `Ok(Some(n))` when the iframe
+    /// target is reachable, `Ok(None)` when not yet ready.
+    async fn element_count_in_iframe(
+        &self,
+        client: Option<&crate::runtime::task_context::oopif::OopifClient>,
+        iframe_src: &str,
+        element_selector: &str,
+        cached: &mut Option<(String, String)>,
+    ) -> Result<Option<usize>> {
+        let Some(client) = client else {
+            return Ok(None);
+        };
+        let Some(session_id) = self
+            .iframe_session_id(Some(client), iframe_src, cached)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let js = build_count_js(element_selector);
+        let value = client.evaluate(&session_id, &js).await?;
+        Ok(value.as_u64().map(|n| n as usize))
+    }
+
+    /// Resolve the iframe target via host and return an attached session id.
+    /// Reuses the cached `(target_id, session_id)` while the target is unchanged.
+    /// Returns `Ok(None)` when the target is not yet found (pollable).
+    async fn iframe_session_id(
+        &self,
+        client: Option<&crate::runtime::task_context::oopif::OopifClient>,
+        iframe_src: &str,
+        cached: &mut Option<(String, String)>,
+    ) -> Result<Option<String>> {
+        let Some(client) = client else {
+            return Ok(None);
+        };
         let host = scheme_host(iframe_src)
             .map(|(_, h)| h.to_string())
             .unwrap_or_default();
@@ -256,8 +372,6 @@ impl TaskContext {
         let Some(target_id) = target.get("targetId").and_then(Value::as_str) else {
             return Ok(None);
         };
-        // Reuse the attached session while the target id is unchanged; re-attach
-        // only when the iframe reloads (new target id).
         let session_id = match cached {
             Some((tid, sid)) if tid == target_id => sid.clone(),
             _ => {
@@ -266,18 +380,22 @@ impl TaskContext {
                 sid
             }
         };
-
-        let js = build_element_js(element_selector, skip);
-        let value = client.evaluate(&session_id, &js).await?;
-        match value {
-            Value::Object(map) => {
-                let lx = map.get("x").and_then(Value::as_f64).unwrap_or(0.0);
-                let ly = map.get("y").and_then(Value::as_f64).unwrap_or(0.0);
-                Ok(Some((lx, ly)))
-            }
-            _ => Ok(None),
-        }
+        Ok(Some(session_id))
     }
+}
+
+/// Parse the evaluated JS result into a local center point.
+///
+/// Strict: both `x` and `y` must be present, numeric, and finite. A partial or
+/// malformed object (e.g. `{x: 5}` missing `y`) returns `None` rather than a
+/// half-known point that would be clicked at the wrong location.
+fn parse_local_center(value: &serde_json::Value) -> Option<(f64, f64)> {
+    let x = value.get("x").and_then(serde_json::Value::as_f64)?;
+    let y = value.get("y").and_then(serde_json::Value::as_f64)?;
+    if !x.is_finite() || !y.is_finite() {
+        return None;
+    }
+    Some((x, y))
 }
 
 /// Resolve an iframe element by CSS selector or XPath, returning its viewport
@@ -314,6 +432,24 @@ async fn resolve_iframe(page: &Page, selector: &str) -> Result<Option<(Rect, Str
     }
 }
 
+/// Build the JS that counts visible (non-zero-size) matches of `element_selector`
+/// inside the iframe. Used to know how many items exist (e.g. "Go" buttons)
+/// without polling until timeout.
+fn build_count_js(element_selector: &str) -> String {
+    let escaped = escape_js_string(element_selector);
+    format!(
+        r#"(() => {{
+            let count = 0;
+            const els = document.querySelectorAll('{escaped}');
+            for (const el of els) {{
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) count++;
+            }}
+            return count;
+        }})()"#
+    )
+}
+
 /// Split a URL into `(scheme, host)`.
 fn scheme_host(url: &str) -> Option<(&str, &str)> {
     let (scheme, rest) = url.split_once("://")?;
@@ -331,7 +467,10 @@ fn escape_js_string(s: &str) -> String {
 /// `skip`, and hit-verify with `elementFromPoint` before returning the center.
 fn build_element_js(element_selector: &str, skip: Option<(f64, f64)>) -> String {
     let escaped = escape_js_string(element_selector);
-    let skip_js = match skip {
+    // A non-finite skip coordinate is meaningless — `Math.abs(cx - NaN) < 5` is
+    // always false, silently disabling the skip. Treat it as "no skip".
+    let finite_skip = skip.filter(|(x, y)| x.is_finite() && y.is_finite());
+    let skip_js = match finite_skip {
         Some((sx, sy)) => format!("const skipX = {sx}, skipY = {sy};"),
         None => "const skipX = null, skipY = null;".to_string(),
     };
@@ -387,7 +526,10 @@ fn build_resolve_iframe_js(selector: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_element_js, build_resolve_iframe_js, escape_js_string, scheme_host};
+    use super::{
+        build_count_js, build_element_js, build_resolve_iframe_js, escape_js_string,
+        parse_local_center, scheme_host,
+    };
 
     #[test]
     fn scheme_host_extracts_scheme_and_host() {
@@ -426,6 +568,23 @@ mod tests {
     }
 
     #[test]
+    fn build_element_js_non_finite_skip_disables_skip() {
+        // A NaN/Infinity skip coordinate is meaningless — `Math.abs(cx - NaN) < 5`
+        // is always false, so the skip would silently never trigger. Spec: treat a
+        // non-finite skip as "no skip" (skipX = null).
+        let nan_js = build_element_js(".btn", Some((f64::NAN, 5.0)));
+        assert!(nan_js.contains("const skipX = null, skipY = null;"));
+        assert!(!nan_js.contains("skipX = NaN"));
+
+        let inf_js = build_element_js(".btn", Some((f64::INFINITY, 5.0)));
+        assert!(inf_js.contains("const skipX = null, skipY = null;"));
+        assert!(!inf_js.contains("skipX = Infinity"));
+
+        let neg_inf_js = build_element_js(".btn", Some((5.0, f64::NEG_INFINITY)));
+        assert!(neg_inf_js.contains("const skipX = null, skipY = null;"));
+    }
+
+    #[test]
     fn build_element_js_escapes_selector_quotes() {
         // Selector with a single quote must be escaped inside the JS string.
         let js = build_element_js("button[onclick=\"f('x')\"]", None);
@@ -449,6 +608,61 @@ mod tests {
     fn build_resolve_iframe_js_escapes_xpath_quotes() {
         let js = build_resolve_iframe_js("//div[@id='main']/iframe");
         assert!(js.contains("\\'main\\'"));
+    }
+
+    #[test]
+    fn parse_local_center_valid_object() {
+        assert_eq!(
+            parse_local_center(&serde_json::json!({ "x": 10.5, "y": 20.0 })),
+            Some((10.5, 20.0))
+        );
+    }
+
+    #[test]
+    fn parse_local_center_requires_both_coordinates() {
+        // Missing y must NOT silently become (x, 0.0) — a half-known point is unusable.
+        assert_eq!(parse_local_center(&serde_json::json!({ "x": 10.5 })), None);
+        assert_eq!(parse_local_center(&serde_json::json!({ "y": 20.0 })), None);
+        assert_eq!(parse_local_center(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn parse_local_center_rejects_non_number_or_non_finite() {
+        assert_eq!(
+            parse_local_center(&serde_json::json!({ "x": "5", "y": 1.0 })),
+            None
+        );
+        assert_eq!(
+            parse_local_center(&serde_json::json!({ "x": 1.0, "y": f64::NAN })),
+            None
+        );
+        assert_eq!(
+            parse_local_center(&serde_json::json!({ "x": f64::INFINITY, "y": 1.0 })),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_local_center_non_object_is_none() {
+        assert_eq!(parse_local_center(&serde_json::json!(null)), None);
+        assert_eq!(parse_local_center(&serde_json::json!([1.0, 2.0])), None);
+        assert_eq!(parse_local_center(&serde_json::Value::Null), None);
+    }
+
+    #[test]
+    fn build_count_js_embeds_selector_and_counts_visible() {
+        let js = build_count_js(".task-btn");
+        assert!(js.contains("document.querySelectorAll('.task-btn')"));
+        // Only counts elements with non-zero size (visible).
+        assert!(js.contains("r.width > 0 && r.height > 0"));
+        assert!(js.contains("count++"));
+        assert!(js.contains("return count"));
+    }
+
+    #[test]
+    fn build_count_js_escapes_selector() {
+        let js = build_count_js("button[onclick=\"f('x')\"]");
+        assert!(js.contains("f(\\'x\\')"));
     }
 
     // ── Additional edge-case coverage ────────────────────────────────

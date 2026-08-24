@@ -76,8 +76,17 @@ pub async fn sleep_interruptible(cancel: Option<&CancellationToken>, ms: u64) {
 /// The delay is uniformly distributed between `min_ms` and `max_ms`.
 /// This function is asynchronous and uses Tokio's sleep timer.
 pub async fn random_delay(min_ms: u64, max_ms: u64) {
+    random_delay_with_cancel(None, min_ms, max_ms).await;
+}
+
+/// Uniform random delay between `min_ms` and `max_ms` with optional cooperative cancel.
+pub async fn random_delay_with_cancel(
+    cancel: Option<&CancellationToken>,
+    min_ms: u64,
+    max_ms: u64,
+) {
     let delay = random_in_range(min_ms, max_ms);
-    sleep(Duration::from_millis(delay)).await;
+    sleep_interruptible(cancel, delay).await;
 }
 
 /// Pauses execution for a human-like duration with Gaussian distribution.

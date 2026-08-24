@@ -242,6 +242,11 @@ let href = api.attr("#link", "href").await?;
 api.pause(1_000).await?;
 ```
 
+**wait(min_ms: u64, max_ms: u64)** -- Uniform random wait between min_ms and max_ms (inclusive), e.g. 2–5s human-like delay
+```rust
+api.wait(2_000, 5_000).await?;
+```
+
 **pause_with_variance(duration_ms: u64, variance_pct: u8)** -- Pause with custom variance
 ```rust
 api.pause_with_variance(1_000, 30).await?;

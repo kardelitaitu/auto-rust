@@ -394,6 +394,14 @@ impl TaskContext {
         timing::uniform_pause_with_cancel(self.cancel_token.as_ref(), base_ms, 20).await;
     }
 
+    /// Uniform random wait between `min_ms` and `max_ms` (inclusive), e.g.
+    /// `api.wait(2_000, 5_000)` for a 2–5 second human-like delay.
+    ///
+    /// Respects the same optional cancel token as [`Self::pause`].
+    pub async fn wait(&self, min_ms: u64, max_ms: u64) {
+        timing::random_delay_with_cancel(self.cancel_token.as_ref(), min_ms, max_ms).await;
+    }
+
     /// Uniform random wait around `base_ms` with spread `variance_pct` (0–100, e.g. 20 for ±20%).
     ///
     /// Same distribution model as [`Self::pause`] but with a configurable spread. For Gaussian

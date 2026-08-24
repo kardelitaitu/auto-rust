@@ -7,7 +7,7 @@
 //!
 //! # Flow
 //! 1. Navigate to `https://web.telegram.org/a/#8233119648`
-//! 2. Wait a random 2–3 seconds (uniform variance around 2.5s)
+//! 2. Wait a random 2–5 seconds (uniform) for the page to settle
 //! 3. Mouse-click the "Start Mining" command button (no confirmation handling)
 //! 4. `iframe_click` — click the "Tasks" tab inside the cross-origin mini-app
 //!    iframe (attaches an OOPIF CDP session; no navigation, no new tab)
@@ -82,9 +82,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.navigate(url, crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS)
         .await?;
 
-    // Step 2: wait a random 2–3 seconds for the Telegram UI to settle.
-    info!("Waiting random 2-3s for the page to settle");
-    api.pause(2_000).await;
+    // Step 2: wait a random 2–5 seconds for the Telegram UI to settle.
+    info!("Waiting random 2-5s for the page to settle");
+    api.wait(2_000, 5_000).await;
 
     // Step 3: make sure the "Start Mining" command button is present, then
     // mouse-click it with the native cursor. The Telegram A client has no

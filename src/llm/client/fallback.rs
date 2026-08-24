@@ -68,16 +68,24 @@ pub fn with_http_client(config: LlmConfig, http: Client) -> LlmClient {
 }
 
 pub fn strip_thinking_tags(text: &str) -> String {
-    let mut cleaned = text.to_string();
-    while let Some(start_idx) = cleaned.find("<think>") {
-        if let Some(end_idx) = cleaned.find("</think>") {
-            cleaned.replace_range(start_idx..end_idx + 8, "");
-        } else {
-            cleaned.replace_range(start_idx.., "");
+    let start_tag = "<think>";
+    let end_tag = "</think>";
+    let mut result = String::with_capacity(text.len());
+    let mut start = 0;
+    loop {
+        let Some(start_idx) = text[start..].find(start_tag) else {
+            result.push_str(&text[start..]);
             break;
-        }
+        };
+        let abs_start = start + start_idx;
+        let Some(end_idx) = text[abs_start..].find(end_tag) else {
+            result.push_str(&text[start..abs_start]);
+            break;
+        };
+        result.push_str(&text[start..abs_start]);
+        start = abs_start + end_idx + end_tag.len();
     }
-    cleaned.trim().to_string()
+    result.trim().to_string()
 }
 
 /// Brief computed delay before an OpenRouter fallback attempt.
@@ -432,9 +440,9 @@ impl LlmClient {
             anyhow::bail!("Ollama error: {status} - {text}");
         }
 
-        // Read raw body first for debug logging (to capture all fields including reasoning/thinking)
+        // Read raw body for parsing (log at debug level to avoid flooding INFO with large LLM responses)
         let body_text = response.text().await?;
-        info!("Raw Ollama response body: {body_text}");
+        debug!("Raw Ollama response body: {body_text}");
 
         let chat_response: ChatResponse = serde_json::from_str(&body_text)?;
 

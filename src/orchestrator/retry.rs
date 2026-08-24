@@ -53,7 +53,7 @@ pub(super) async fn execute_task_with_retry(
     cancel_token: CancellationToken,
 ) -> TaskResult {
     let start = std::time::Instant::now();
-    let max_retries = 0;
+    let max_retries = config.orchestrator.max_retries;
     let policy = crate::task::policy::get_policy(&task_def.name);
 
     // Validate policy before use
@@ -195,6 +195,7 @@ pub(super) async fn execute_task_with_retry(
             &config.browser,
             policy,
             Some(cancel_token.clone()),
+            session.browser_ws_url.clone(),
         );
 
         let task_result = tokio::select! {

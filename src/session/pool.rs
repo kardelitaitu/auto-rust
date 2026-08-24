@@ -228,24 +228,11 @@ impl SessionPoolManager {
         capability: &BrowserCapabilities,
         filters: &[String],
     ) -> bool {
-        if filters.is_empty() {
-            return true;
-        }
-
         let candidate = format!(
             "{} {} {}",
             capability.name, capability.browser_type, capability.id
-        )
-        .to_lowercase();
-
-        filters.iter().any(|filter| {
-            let filter_lower = filter.to_lowercase();
-            let filter_norm = normalize_browser_token(filter);
-
-            !filter_norm.is_empty()
-                && (candidate.contains(&filter_lower)
-                    || normalize_browser_token(&candidate).contains(&filter_norm))
-        })
+        );
+        crate::browser::matches_browser_filters(&candidate, filters)
     }
 
     /// Returns the number of available connectors.
@@ -271,13 +258,12 @@ impl Default for SessionPoolManager {
     }
 }
 
-use crate::utils::normalize_browser_token;
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::connector::{BrowserCapabilities, BrowserSource, ConnectorRegistry};
     use crate::session::factory::SessionFactory;
+    use crate::utils::normalize_browser_token;
 
     #[test]
     fn test_session_pool_manager_default() {

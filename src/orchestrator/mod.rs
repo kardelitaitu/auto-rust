@@ -52,8 +52,8 @@ use tokio_util::sync::CancellationToken;
 /// # }
 /// ```
 pub struct Orchestrator {
-    /// Configuration settings for orchestration behavior
-    config: Config,
+    /// Configuration settings for orchestration behavior (shared via Arc to avoid cloning per task)
+    config: Arc<Config>,
     /// Global counter of currently active tasks across all sessions
     global_active_tasks: Arc<AtomicUsize>,
     /// Semaphore limiting total concurrent tasks across all sessions
@@ -85,10 +85,11 @@ impl Orchestrator {
     /// ```
     #[must_use]
     pub fn new(config: Config) -> Self {
+        let max_concurrency = config.orchestrator.max_global_concurrency;
         Self {
             global_active_tasks: Arc::new(AtomicUsize::new(0)),
-            global_semaphore: Arc::new(Semaphore::new(config.orchestrator.max_global_concurrency)),
-            config,
+            global_semaphore: Arc::new(Semaphore::new(max_concurrency)),
+            config: Arc::new(config),
         }
     }
 
@@ -122,7 +123,7 @@ impl Orchestrator {
         metrics: Arc<MetricsCollector>,
     ) -> Result<()> {
         execution::execute_group_with_cancel(
-            &self.config,
+            Arc::clone(&self.config),
             &self.global_active_tasks,
             &self.global_semaphore,
             group,
@@ -142,7 +143,7 @@ impl Orchestrator {
         cancel_token: CancellationToken,
     ) -> Result<()> {
         execution::execute_group_with_cancel(
-            &self.config,
+            Arc::clone(&self.config),
             &self.global_active_tasks,
             &self.global_semaphore,
             group,

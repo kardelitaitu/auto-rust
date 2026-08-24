@@ -108,6 +108,7 @@ async fn connect_test_session() -> Result<Option<Session>> {
         1,
         0,
         None,
+        ws_url,
     );
     Ok(Some(session))
 }
@@ -126,6 +127,7 @@ fn build_task_context(session: &Session, page: Arc<chromiumoxide::Page>) -> Task
         &test_browser_config(),
         &DEFAULT_TASK_POLICY,
         None,
+        session.browser_ws_url.clone(),
     )
 }
 
@@ -144,6 +146,7 @@ fn build_task_context_with_metrics(
         &test_browser_config(),
         &DEFAULT_TASK_POLICY,
         None,
+        session.browser_ws_url.clone(),
     )
 }
 
@@ -161,6 +164,7 @@ fn build_task_context_with_policy(
         &test_browser_config(),
         policy,
         None,
+        session.browser_ws_url.clone(),
     )
 }
 
@@ -178,6 +182,7 @@ fn build_task_context_with_cancel_token(
         &test_browser_config(),
         &DEFAULT_TASK_POLICY,
         cancel_token,
+        session.browser_ws_url.clone(),
     )
 }
 
@@ -2308,6 +2313,7 @@ async fn screenshot_auto_saves_webp_with_correct_filename() -> Result<()> {
         &test_browser_config(),
         policy,
         None,
+        session.browser_ws_url.clone(),
     );
 
     // Take screenshot
@@ -2428,6 +2434,7 @@ async fn screenshot_creates_directory_if_not_exists() -> Result<()> {
         &test_browser_config(),
         policy,
         None,
+        session.browser_ws_url.clone(),
     );
 
     // Take screenshot - should create directory
@@ -2480,6 +2487,7 @@ async fn screenshot_with_quality_clamps_and_writes_webp() -> Result<()> {
         &test_browser_config(),
         policy,
         None,
+        session.browser_ws_url.clone(),
     );
 
     let screenshot_path = api.screenshot_with_quality(0).await?;

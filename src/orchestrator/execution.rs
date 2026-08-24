@@ -24,7 +24,7 @@ use crate::result::{TaskErrorKind, TaskResult};
 
 /// Execute a group of tasks with an external cancellation token.
 pub(super) async fn execute_group_with_cancel(
-    config: &Config,
+    config: Arc<Config>,
     global_active_tasks: &Arc<AtomicUsize>,
     global_semaphore: &Arc<Semaphore>,
     group: &[CliTaskDefinition],
@@ -58,7 +58,7 @@ pub(super) async fn execute_group_with_cancel(
     let mut task_futures: FuturesUnordered<_> = group
         .iter()
         .map(|task_def| {
-            let config = config.clone();
+            let config = Arc::clone(&config);
             let metrics = metrics.clone();
             let cancel_token = group_cancel.clone();
             let global_active = global_active_tasks.clone();
@@ -82,7 +82,7 @@ pub(super) async fn execute_group_with_cancel(
                 let result = execute_task_on_session(
                     task_def,
                     sessions,
-                    &config,
+                    Arc::clone(&config),
                     metrics.clone(),
                     cancel_token,
                     global_active,
@@ -160,7 +160,7 @@ pub(super) async fn execute_group_with_cancel(
 async fn execute_task_on_session(
     task_def: &CliTaskDefinition,
     sessions: &[Session],
-    config: &Config,
+    config: Arc<Config>,
     metrics: Arc<MetricsCollector>,
     cancel_token: CancellationToken,
     global_active_tasks: Arc<AtomicUsize>,
@@ -172,23 +172,24 @@ async fn execute_task_on_session(
         ));
     }
 
+    // Parse SESSION_STAGGER_DELAY_MS once, not per-session
+    let stagger_delay_ms = std::env::var("SESSION_STAGGER_DELAY_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(config.orchestrator.task_stagger_delay_ms);
+
     // Create parallel tasks for each session
     let session_futures: Vec<_> = sessions
         .iter()
         .enumerate()
         .map(|(idx, session)| {
             let task_def = task_def.clone();
-            let config = config.clone();
+            let config = Arc::clone(&config);
             let metrics = metrics.clone();
             let cancel_token = cancel_token.clone();
             let global_active_tasks = global_active_tasks.clone();
             let global_semaphore = global_semaphore.clone();
             async move {
-                let stagger_delay_ms = std::env::var("SESSION_STAGGER_DELAY_MS")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(config.orchestrator.task_stagger_delay_ms);
-
                 if idx > 0 && stagger_delay_ms > 0 {
                     let stagger_ms = idx as u64 * stagger_delay_ms;
                     info!(

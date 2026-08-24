@@ -36,6 +36,9 @@ pub const DEFAULT_ATF_A_TASK_DURATION_MS: u64 = 150_000;
 /// How long to wait for the "Start Mining" button to appear, in milliseconds.
 const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 30_000;
 
+/// Telegram A client: the bot-command (Start Mining) button in the composer.
+const START_MINING_SELECTOR: &str = "#MiddleColumn > div.messages-layout > div.Transition > div > div.middle-column-footer > div.Composer.is-chat-composer.shown.mounted > div.composer-wrapper > div > button.Button.composer-action-button.bot-menu.open.default.translucent.round";
+
 /// How long to wait for a Telegram mini-app action button, in milliseconds.
 const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
 
@@ -78,19 +81,17 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     info!("Waiting random 2-3s for the page to settle");
     api.pause(2_000).await;
 
-    // Step 3: make sure the "Start Mining" command is present, then
-    // mouse-click it with the native cursor.
+    // Step 3: make sure the "Start Mining" command button is present, then
+    // mouse-click it with the native cursor. The Telegram A client has no
+    // `.new-message-bot-commands` class — the button lives in the composer.
     if !api
-        .wait_for_visible(
-            "div.new-message-bot-commands.is-view",
-            BUTTON_VISIBILITY_TIMEOUT_MS,
-        )
+        .wait_for_visible(START_MINING_SELECTOR, BUTTON_VISIBILITY_TIMEOUT_MS)
         .await?
     {
         warn!("Start Mining button did not appear within {BUTTON_VISIBILITY_TIMEOUT_MS}ms");
     }
     info!("Mouse-clicking Start Mining");
-    let outcome = api.click("div.new-message-bot-commands.is-view").await?;
+    let outcome = api.click(START_MINING_SELECTOR).await?;
     info!("Click result: {}", outcome.summary());
     if !matches!(
         outcome.click,
@@ -189,7 +190,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{task_duration_ms, DEFAULT_ATF_A_TASK_DURATION_MS, DEFAULT_URL};
+    use super::{
+        task_duration_ms, DEFAULT_ATF_A_TASK_DURATION_MS, DEFAULT_URL, START_MINING_SELECTOR,
+    };
 
     #[test]
     fn task_duration_stays_within_bounds() {
@@ -205,5 +208,13 @@ mod tests {
     #[test]
     fn default_url_is_telegram_a_chat() {
         assert_eq!(DEFAULT_URL, "https://web.telegram.org/a/#8233119648");
+    }
+
+    #[test]
+    fn start_mining_selector_targets_composer_button() {
+        // Telegram A composer bot-menu button — must anchor on MiddleColumn.
+        assert!(START_MINING_SELECTOR.starts_with("#MiddleColumn > "));
+        assert!(START_MINING_SELECTOR.contains("composer-action-button"));
+        assert!(START_MINING_SELECTOR.contains("bot-menu"));
     }
 }

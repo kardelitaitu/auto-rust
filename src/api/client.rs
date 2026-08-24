@@ -484,6 +484,20 @@ mod tests {
     }
 
     #[test]
+    fn test_delay_for_attempt_first_attempt_equals_initial_delay() {
+        let policy = RetryPolicy {
+            max_retries: 5,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(60),
+            factor: 2.0,
+            jitter: 0.0,
+        };
+        // Attempt 1 should be exactly initial_delay (factor^0 = 1)
+        let d1 = policy.delay_for_attempt(1);
+        assert_eq!(d1, Duration::from_millis(100));
+    }
+
+    #[test]
     fn test_delay_for_attempt_increases_exponentially() {
         let policy = RetryPolicy {
             max_retries: 5,
@@ -493,13 +507,14 @@ mod tests {
             jitter: 0.0, // disable jitter for deterministic test
         };
 
+        // attempt N → initial * factor^(N-1)
         let d1 = policy.delay_for_attempt(1);
         let d2 = policy.delay_for_attempt(2);
         let d3 = policy.delay_for_attempt(3);
 
-        assert_eq!(d1, Duration::from_millis(200));
-        assert_eq!(d2, Duration::from_millis(400));
-        assert_eq!(d3, Duration::from_millis(800));
+        assert_eq!(d1, Duration::from_millis(100)); // 100 * 2^0
+        assert_eq!(d2, Duration::from_millis(200)); // 100 * 2^1
+        assert_eq!(d3, Duration::from_millis(400)); // 100 * 2^2
     }
 
     #[test]
@@ -512,8 +527,8 @@ mod tests {
             jitter: 0.0,
         };
 
-        // Attempt 5: 100 * 2^5 = 3,200ms -> capped to 1000ms
-        let delay = policy.delay_for_attempt(5);
+        // Attempt 6: 100 * 2^5 = 3,200ms -> capped to 1000ms
+        let delay = policy.delay_for_attempt(6);
         assert_eq!(delay, Duration::from_millis(1000));
     }
 
@@ -651,7 +666,7 @@ mod tests {
         };
         // With 0 retries, delay should still be calculated but only 1 attempt is made
         let delay = policy.delay_for_attempt(1);
-        assert_eq!(delay, Duration::from_millis(200));
+        assert_eq!(delay, Duration::from_millis(100)); // 100 * 2^0 = 100ms
     }
 
     #[test]
@@ -664,8 +679,8 @@ mod tests {
             jitter: 0.0,
         };
         let delay = policy.delay_for_attempt(2);
-        // 100 * 10^2 = 10,000ms = 10s
-        assert_eq!(delay, Duration::from_secs(10));
+        // 100 * 10^1 = 1,000ms = 1s (attempt N → initial * factor^(N-1))
+        assert_eq!(delay, Duration::from_secs(1));
     }
 
     #[test]
@@ -784,12 +799,12 @@ mod tests {
             factor: 2.0,
             jitter: 0.5,
         };
-        // With jitter, delay should be between 0 and capped value
+        // With jitter, delay should be between 0 and initial_delay (attempt 1 = factor^0)
         let delay1 = policy.delay_for_attempt(1);
         let delay2 = policy.delay_for_attempt(1);
         // Due to randomness, delays may differ
-        assert!(delay1 <= Duration::from_millis(200));
-        assert!(delay2 <= Duration::from_millis(200));
+        assert!(delay1 <= Duration::from_millis(100));
+        assert!(delay2 <= Duration::from_millis(100));
     }
 
     #[test]
@@ -803,7 +818,7 @@ mod tests {
         };
         // Negative jitter should be treated as 0 (deterministic)
         let delay = policy.delay_for_attempt(1);
-        assert_eq!(delay, Duration::from_millis(200));
+        assert_eq!(delay, Duration::from_millis(100)); // 100 * 2^0
     }
 
     #[test]
@@ -815,9 +830,9 @@ mod tests {
             factor: 2.0,
             jitter: 2.0,
         };
-        // Jitter > 1.0 should still work
+        // Jitter > 1.0 should still work (gen_range is clamped by max_delay)
         let delay = policy.delay_for_attempt(1);
-        assert!(delay <= Duration::from_millis(200));
+        assert!(delay <= Duration::from_millis(100)); // 100 * 2^0
     }
 
     #[test]
@@ -843,8 +858,8 @@ mod tests {
             jitter: 0.0,
         };
         let delay = policy.delay_for_attempt(1);
-        // 100 * 0^1 = 0
-        assert_eq!(delay, Duration::ZERO);
+        // 100 * 0^0 = 100 (0^0 = 1 in floating point)
+        assert_eq!(delay, Duration::from_millis(100));
     }
 
     #[test]
@@ -857,8 +872,8 @@ mod tests {
             jitter: 0.0,
         };
         let delay = policy.delay_for_attempt(2);
-        // 100 * 0.5^2 = 25ms
-        assert_eq!(delay, Duration::from_millis(25));
+        // 100 * 0.5^1 = 50ms (attempt N → initial * factor^(N-1))
+        assert_eq!(delay, Duration::from_millis(50));
     }
 
     #[test]
@@ -1065,7 +1080,9 @@ impl RetryPolicy {
         if attempt == 0 {
             return Duration::ZERO;
         }
-        let exponential = self.initial_delay.as_millis() as f64 * self.factor.powi(attempt as i32);
+        // attempt is 1-indexed: attempt=1 → factor^0 (just initial_delay), attempt=2 → factor^1
+        let exponential =
+            self.initial_delay.as_millis() as f64 * self.factor.powi((attempt - 1) as i32);
         let capped = exponential.min(self.max_delay.as_millis() as f64);
 
         let delay_ms = if self.jitter <= 0.0 {

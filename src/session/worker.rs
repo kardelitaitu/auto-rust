@@ -60,6 +60,11 @@ impl super::Session {
 
     /// Check circuit breaker state. Returns `current_time` if closed, bails if open.
     fn cb_check(&self) -> anyhow::Result<usize> {
+        // Guard: zero threshold means circuit breaker is disabled (matches is_circuit_breaker_open_pure)
+        if self.cb_failure_threshold == 0 {
+            return Ok(state::unix_timestamp_secs());
+        }
+
         let current_time = state::unix_timestamp_secs();
         let last_failure = self.cb_last_failure_time.load(Ordering::SeqCst);
         let failure_count = self.cb_failure_count.load(Ordering::SeqCst);

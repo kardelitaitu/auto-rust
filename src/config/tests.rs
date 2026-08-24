@@ -3060,3 +3060,32 @@ fn test_twitter_probabilities_config_custom_values() {
     assert_eq!(config.like_probability, 0.5);
     assert_eq!(config.thread_dive_probability, 0.3);
 }
+
+#[test]
+fn validate_total_retry_time_uses_exponential_backoff() {
+    // Regression: validate_orchestrator_config previously used linear formula
+    //   total = retry_delay * max_retries
+    // which underestimates by ~50% vs the actual exponential backoff:
+    //   total = retry_delay * (2^max_retries - 1)
+    //
+    // With retry_delay=500ms, max_retries=2:
+    //   Linear (wrong): 500 * 2 = 1000ms
+    //   Exponential (correct): 500 * (4 - 1) = 1500ms
+    //
+    // The test verifies the config validates without panic and that the
+    // orchestrator accepts configs where exponential total < task_timeout.
+    let config = crate::config::Config {
+        browser: crate::config::BrowserConfig::default(),
+        orchestrator: crate::config::OrchestratorConfig {
+            retry_delay_ms: crate::session::DurationMs::new_const(500),
+            max_retries: 2,
+            task_timeout_ms: crate::session::DurationMs::new_const(600_000),
+            ..Default::default()
+        },
+        twitter_activity: crate::config::TwitterActivityConfig::default(),
+        tracing: crate::config::TracingConfig::default(),
+        task_discovery: crate::config::TaskDiscoveryConfig::default(),
+    };
+    // Should pass validation without error (600s >> 1.5s of retry time)
+    crate::config::validate_config(&config).unwrap();
+}

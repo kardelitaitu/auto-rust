@@ -197,9 +197,20 @@ impl ConfigValidationReport {
             );
         }
 
-        // Cross-field validation: total retry time should not exceed task timeout
-        let total_retry_time = config.retry_delay_ms * u64::from(config.max_retries);
-        if total_retry_time > config.task_timeout_ms {
+        // Cross-field validation: total retry time should not exceed task timeout.
+        // Use geometric series sum to account for exponential backoff:
+        //   total = initial * (factor^max_retries - 1) / (factor - 1)
+        // For factor=2.0: total = initial * (2^n - 1)
+        let total_retry_time = if config.max_retries == 0 {
+            config.retry_delay_ms.get()
+        } else {
+            let factor = 2.0_f64; // matches RetryPolicy default
+            let n = config.max_retries as f64;
+            let geometric_sum = factor.powf(n) - 1.0; // 2^n - 1
+            let initial = config.retry_delay_ms.get() as f64;
+            (initial * geometric_sum).round() as u64
+        };
+        if total_retry_time > config.task_timeout_ms.get() {
             warn!(
                 "Total retry time ({}ms) exceeds task_timeout_ms ({}ms). \
                  Tasks may timeout before all retries are attempted.",

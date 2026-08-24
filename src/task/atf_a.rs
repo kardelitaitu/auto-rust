@@ -18,7 +18,7 @@
 //! renders its command bar without extra interaction.
 
 use anyhow::{bail, Result};
-use log::{info, warn};
+use log::{debug, info, warn};
 use serde_json::Value;
 
 use crate::prelude::TaskContext;
@@ -142,7 +142,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go")
             .await?
         {
-            info!("YouTube task 'Go' button gone (clicked {clicks}x)");
+            debug!("YouTube task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -154,7 +154,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!("YouTube task click #{clicks} result: {}", outcome.summary());
+        debug!("YouTube task click #{clicks} result: {}", outcome.summary());
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
@@ -162,10 +162,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("YouTube task click failed: {}", outcome.summary());
         }
         if clicks >= GO_RETRY_MAX {
-            info!("Reached max {GO_RETRY_MAX} clicks on YouTube task button");
+            debug!("Reached max {GO_RETRY_MAX} clicks on YouTube task button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -184,7 +184,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, RETWEET_TASK_SELECTOR, "Go")
             .await?
         {
-            info!("Retweet task 'Go' button gone (clicked {clicks}x)");
+            debug!("Retweet task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -196,7 +196,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!("Retweet task click #{clicks} result: {}", outcome.summary());
+        debug!("Retweet task click #{clicks} result: {}", outcome.summary());
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
@@ -204,10 +204,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("Retweet task click failed: {}", outcome.summary());
         }
         if clicks >= RETWEET_TASK_RETRY_MAX {
-            info!("Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
+            debug!("Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -226,7 +226,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, WEBSITE_TASK_SELECTOR, "Go")
             .await?
         {
-            info!("Website task 'Go' button gone (clicked {clicks}x)");
+            debug!("Website task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -238,7 +238,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!("Website task click #{clicks} result: {}", outcome.summary());
+        debug!("Website task click #{clicks} result: {}", outcome.summary());
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
@@ -246,10 +246,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("Website task click failed: {}", outcome.summary());
         }
         if clicks >= WEBSITE_TASK_RETRY_MAX {
-            info!("Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
+            debug!("Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -268,7 +268,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, REACT_TASK_SELECTOR, "Go")
             .await?
         {
-            info!("React task 'Go' button gone (clicked {clicks}x)");
+            debug!("React task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -280,7 +280,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!("React task click #{clicks} result: {}", outcome.summary());
+        debug!("React task click #{clicks} result: {}", outcome.summary());
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
@@ -288,10 +288,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("React task click failed: {}", outcome.summary());
         }
         if clicks >= REACT_TASK_RETRY_MAX {
-            info!("Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
+            debug!("Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -318,7 +318,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?
         {
-            info!("YouTube 'Claim' button gone (clicked {clicks}x)");
+            debug!("YouTube 'Claim' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -330,7 +330,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!(
+        debug!(
             "YouTube claim click #{clicks} result: {}",
             outcome.summary()
         );
@@ -341,10 +341,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("YouTube claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on YouTube claim button");
+            debug!("Reached max {CLAIM_RETRY_MAX} clicks on YouTube claim button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -358,7 +358,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-twitter_retweet", "Claim")
             .await?
         {
-            info!("Retweet 'Claim' button gone (clicked {clicks}x)");
+            debug!("Retweet 'Claim' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -370,7 +370,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!(
+        debug!(
             "Retweet claim click #{clicks} result: {}",
             outcome.summary()
         );
@@ -381,10 +381,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("Retweet claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on Retweet claim button");
+            debug!("Reached max {CLAIM_RETRY_MAX} clicks on Retweet claim button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -398,7 +398,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-website_visit", "Claim")
             .await?
         {
-            info!("Website 'Claim' button gone (clicked {clicks}x)");
+            debug!("Website 'Claim' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -410,7 +410,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!(
+        debug!(
             "Website claim click #{clicks} result: {}",
             outcome.summary()
         );
@@ -421,10 +421,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("Website claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on Website claim button");
+            debug!("Reached max {CLAIM_RETRY_MAX} clicks on Website claim button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -442,7 +442,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?
         {
-            info!("React 'Claim' button gone (clicked {clicks}x)");
+            debug!("React 'Claim' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -454,7 +454,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        info!("React claim click #{clicks} result: {}", outcome.summary());
+        debug!("React claim click #{clicks} result: {}", outcome.summary());
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
@@ -462,10 +462,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             bail!("React claim click failed: {}", outcome.summary());
         }
         if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on React claim button");
+            debug!("Reached max {CLAIM_RETRY_MAX} clicks on React claim button");
             break;
         }
-        info!("Waiting random 0.5s-2s before next attempt");
+        debug!("Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 

@@ -423,7 +423,8 @@ async fn ax_locator_action_point(
     quad_center(box_model.model.content.inner()).ok_or_else(|| locator_not_found_error(locator))
 }
 
-#[cfg(feature = "accessibility-locator")]
+/// Compute the center of a content quad (4 pairs of x,y coordinates).
+#[cfg(any(feature = "accessibility-locator", test))]
 fn quad_center(points: &[f64]) -> Option<(f64, f64)> {
     if points.len() < 8 {
         return None;
@@ -860,5 +861,60 @@ pub async fn wait_for_any_visible_selector(
     {
         Ok(result) => result,
         Err(_) => Ok(false), // Timeout elapsed, no selector found
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{quad_center, selector_uses_accessibility_locator};
+
+    #[test]
+    fn plain_css_selector_is_not_an_accessibility_locator() {
+        assert!(!selector_uses_accessibility_locator("button.btn-primary"));
+        assert!(!selector_uses_accessibility_locator("#submit"));
+        assert!(!selector_uses_accessibility_locator(""));
+    }
+
+    #[cfg(feature = "accessibility-locator")]
+    #[test]
+    fn role_prefix_is_an_accessibility_locator() {
+        assert!(selector_uses_accessibility_locator("role=button"));
+        assert!(selector_uses_accessibility_locator(
+            "role=button name=Submit"
+        ));
+        assert!(selector_uses_accessibility_locator("  role=button")); // leading whitespace trimmed
+    }
+
+    #[test]
+    fn quad_center_computes_average_of_corners() {
+        // (0,0) (100,0) (100,100) (0,100) -> center (50,50)
+        let quad = [0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0];
+        assert_eq!(quad_center(&quad), Some((50.0, 50.0)));
+    }
+
+    #[test]
+    fn quad_center_requires_eight_points() {
+        assert_eq!(quad_center(&[]), None);
+        assert_eq!(quad_center(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0]), None);
+        assert_eq!(quad_center(&[0.0; 7]), None);
+    }
+
+    #[test]
+    fn quad_center_rejects_non_finite_values() {
+        assert_eq!(
+            quad_center(&[f64::NAN, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0]),
+            None
+        );
+        assert_eq!(
+            quad_center(&[0.0, 0.0, f64::INFINITY, 0.0, 100.0, 100.0, 0.0, 100.0]),
+            None
+        );
+    }
+
+    #[test]
+    fn quad_center_handles_negative_coordinates() {
+        // (-10,-10) (10,-10) (10,10) (-10,10) -> (0,0)
+        let quad = [-10.0, -10.0, 10.0, -10.0, 10.0, 10.0, -10.0, 10.0];
+        assert_eq!(quad_center(&quad), Some((0.0, 0.0)));
     }
 }

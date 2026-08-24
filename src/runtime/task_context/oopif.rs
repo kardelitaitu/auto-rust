@@ -387,4 +387,189 @@ mod tests {
     fn find_iframe_target_empty_list() {
         assert!(find_iframe_target_in(&[], "any-host").is_none());
     }
+
+    // ── Additional edge-case coverage ────────────────────────────────
+
+    #[test]
+    fn host_of_with_port() {
+        assert_eq!(
+            host_of("http://127.0.0.1:9222/json"),
+            Some("127.0.0.1:9222")
+        );
+    }
+
+    #[test]
+    fn host_of_empty_string() {
+        assert_eq!(host_of(""), None);
+    }
+
+    #[test]
+    fn host_of_no_scheme() {
+        assert_eq!(host_of("just-a-host"), None);
+    }
+
+    #[test]
+    fn host_of_ws_scheme() {
+        assert_eq!(
+            host_of("ws://127.0.0.1:40325/devtools/browser/abc"),
+            Some("127.0.0.1:40325")
+        );
+    }
+
+    #[test]
+    fn route_response_event_without_id() {
+        let mut pending = std::collections::HashMap::new();
+        let event = json!({ "method": "Target.targetCreated", "params": {} });
+        assert!(!route_response(&mut pending, &event));
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn route_response_multiple_pending_ids() {
+        let mut pending = std::collections::HashMap::new();
+        let (tx1, rx1) = oneshot::channel();
+        let (tx2, rx2) = oneshot::channel();
+        pending.insert(1, tx1);
+        pending.insert(2, tx2);
+
+        // Route id=2 first
+        assert!(route_response(
+            &mut pending,
+            &json!({"id": 2, "result": {"b": true}})
+        ));
+        assert_eq!(pending.len(), 1);
+        assert!(pending.contains_key(&1));
+
+        // Route id=1
+        assert!(route_response(
+            &mut pending,
+            &json!({"id": 1, "result": {"a": true}})
+        ));
+        assert!(pending.is_empty());
+
+        assert_eq!(rx2.blocking_recv().unwrap()["result"]["b"], true);
+        assert_eq!(rx1.blocking_recv().unwrap()["result"]["a"], true);
+    }
+
+    #[test]
+    fn build_json_rpc_empty_method() {
+        let call = build_json_rpc(1, "", &json!({}), None);
+        assert_eq!(call["method"], "");
+    }
+
+    #[test]
+    fn build_json_rpc_nested_params() {
+        let params = json!({"expression": "document.title", "returnByValue": true});
+        let call = build_json_rpc(42, "Runtime.evaluate", &params, Some("sess-99"));
+        assert_eq!(call["id"], 42);
+        assert_eq!(call["params"]["expression"], "document.title");
+        assert_eq!(call["sessionId"], "sess-99");
+    }
+
+    #[test]
+    fn extract_result_value_string() {
+        let resp = json!({
+            "result": {
+                "result": { "type": "string", "value": "hello" }
+            }
+        });
+        assert_eq!(extract_result_value(&resp), json!("hello"));
+    }
+
+    #[test]
+    fn extract_result_value_number() {
+        let resp = json!({
+            "result": {
+                "result": { "type": "number", "value": 3.14 }
+            }
+        });
+        assert_eq!(extract_result_value(&resp), json!(3.14));
+    }
+
+    #[test]
+    fn extract_result_value_boolean() {
+        let resp = json!({
+            "result": {
+                "result": { "type": "boolean", "value": true }
+            }
+        });
+        assert_eq!(extract_result_value(&resp), json!(true));
+    }
+
+    #[test]
+    fn extract_result_value_null_value() {
+        let resp = json!({
+            "result": {
+                "result": { "type": "object", "value": null }
+            }
+        });
+        assert_eq!(extract_result_value(&resp), Value::Null);
+    }
+
+    #[test]
+    fn extract_exception_text_only_text_field() {
+        // exceptionDetails present but no text field
+        let resp = json!({
+            "result": {
+                "exceptionDetails": { "exceptionId": 1 }
+            }
+        });
+        assert_eq!(extract_exception_text(&resp), None);
+    }
+
+    #[test]
+    fn extract_session_id_empty_string() {
+        // sessionId present but empty — should return Some("")
+        let resp = json!({ "result": { "sessionId": "" } });
+        assert_eq!(extract_session_id(&resp), Some("".to_string()));
+    }
+
+    #[test]
+    fn find_iframe_target_multiple_iframes_first_match() {
+        let infos = vec![
+            json!({ "type": "iframe", "url": "https://a.example.com/x", "targetId": "f1" }),
+            json!({ "type": "iframe", "url": "https://a.example.com/y", "targetId": "f2" }),
+        ];
+        let found = find_iframe_target_in(&infos, "a.example.com").unwrap();
+        // Should return the first match
+        assert_eq!(found["targetId"], "f1");
+    }
+
+    #[test]
+    fn find_iframe_target_different_hosts() {
+        let infos = vec![
+            json!({ "type": "iframe", "url": "https://a.com/x", "targetId": "f1" }),
+            json!({ "type": "iframe", "url": "https://b.com/y", "targetId": "f2" }),
+        ];
+        assert_eq!(
+            find_iframe_target_in(&infos, "b.com").unwrap()["targetId"],
+            "f2"
+        );
+        assert_eq!(
+            find_iframe_target_in(&infos, "a.com").unwrap()["targetId"],
+            "f1"
+        );
+    }
+
+    #[test]
+    fn find_iframe_target_no_url_field() {
+        let infos = vec![json!({ "type": "iframe", "targetId": "f1" })];
+        assert!(find_iframe_target_in(&infos, "any.com").is_none());
+    }
+
+    #[test]
+    fn find_iframe_target_empty_url() {
+        let infos = vec![json!({ "type": "iframe", "url": "", "targetId": "f1" })];
+        assert!(find_iframe_target_in(&infos, "any.com").is_none());
+    }
+
+    #[test]
+    fn extract_result_value_array() {
+        let resp = json!({
+            "result": {
+                "result": { "type": "object", "value": [1, 2, 3] }
+            }
+        });
+        assert_eq!(extract_result_value(&resp), json!([1, 2, 3]));
+    }
 }

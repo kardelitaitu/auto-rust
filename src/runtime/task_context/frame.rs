@@ -450,4 +450,112 @@ mod tests {
         let js = build_resolve_iframe_js("//div[@id='main']/iframe");
         assert!(js.contains("\\'main\\'"));
     }
+
+    // ── Additional edge-case coverage ────────────────────────────────
+
+    #[test]
+    fn scheme_host_with_port() {
+        assert_eq!(
+            scheme_host("http://127.0.0.1:8080/path"),
+            Some(("http", "127.0.0.1:8080"))
+        );
+    }
+
+    #[test]
+    fn scheme_host_with_query_and_fragment() {
+        assert_eq!(
+            scheme_host("https://example.com/page?q=1#top"),
+            Some(("https", "example.com"))
+        );
+    }
+
+    #[test]
+    fn scheme_host_no_path() {
+        assert_eq!(
+            scheme_host("ws://127.0.0.1:9222"),
+            Some(("ws", "127.0.0.1:9222"))
+        );
+    }
+
+    #[test]
+    fn scheme_host_empty_string() {
+        assert_eq!(scheme_host(""), None);
+    }
+
+    #[test]
+    fn scheme_host_no_scheme() {
+        assert_eq!(scheme_host("example.com/path"), None);
+    }
+
+    #[test]
+    fn scheme_host_wss() {
+        assert_eq!(
+            scheme_host("wss://secure.example.com/ws"),
+            Some(("wss", "secure.example.com"))
+        );
+    }
+
+    #[test]
+    fn escape_js_string_empty() {
+        assert_eq!(escape_js_string(""), "");
+    }
+
+    #[test]
+    fn escape_js_string_multiple_quotes() {
+        assert_eq!(escape_js_string("a'b\"c"), "a\\'b\"c");
+    }
+
+    #[test]
+    fn escape_js_string_multiple_backslashes() {
+        assert_eq!(escape_js_string("\\\\"), "\\\\\\\\");
+    }
+
+    #[test]
+    fn escape_js_string_mixed() {
+        assert_eq!(
+            escape_js_string("it's a \\backslash"),
+            "it\\'s a \\\\backslash"
+        );
+    }
+
+    #[test]
+    fn build_element_js_with_complex_selector() {
+        let js = build_element_js("div.card > button.primary", None);
+        assert!(js.contains("div.card > button.primary"));
+        assert!(js.contains("const skipX = null, skipY = null;"));
+    }
+
+    #[test]
+    fn build_element_js_skip_with_negative_coords() {
+        let js = build_element_js(".btn", Some((-10.0, -5.5)));
+        assert!(js.contains("const skipX = -10, skipY = -5.5;"));
+    }
+
+    #[test]
+    fn build_element_js_skip_with_zero() {
+        let js = build_element_js(".btn", Some((0.0, 0.0)));
+        assert!(js.contains("const skipX = 0, skipY = 0;"));
+    }
+
+    #[test]
+    fn build_resolve_iframe_js_with_special_chars_in_selector() {
+        let js = build_resolve_iframe_js("iframe[data-role='payment']");
+        assert!(js.contains("iframe[data-role=\\'payment\\']"));
+        assert!(js.contains("querySelector"));
+    }
+
+    #[test]
+    fn build_resolve_iframe_js_xpath_deep_nesting() {
+        let xpath = "/html/body/div[1]/div[2]/div[3]/iframe";
+        let js = build_resolve_iframe_js(xpath);
+        assert!(js.contains("q.startsWith('/')"));
+        assert!(js.contains(xpath));
+    }
+
+    #[test]
+    fn build_element_js_selector_with_single_quotes() {
+        let js = build_element_js("input[name='user']", None);
+        // Single quotes in selector get escaped in JS string
+        assert!(js.contains("input[name=\\'user\\']"));
+    }
 }

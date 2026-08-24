@@ -388,9 +388,16 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn load_dotenv_defaults_parses_key_value() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let env_path = tmp.path().join(".env");
         std::fs::write(&env_path, "MY_TEST_VAR=hello\n").unwrap();
@@ -412,6 +419,7 @@ mod tests {
 
     #[test]
     fn load_dotenv_defaults_skips_existing() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let env_path = tmp.path().join(".env");
         std::fs::write(&env_path, "MY_EXISTING_VAR=from_file\n").unwrap();
@@ -433,6 +441,7 @@ mod tests {
 
     #[test]
     fn load_dotenv_defaults_skips_comments_and_empty() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let env_path = tmp.path().join(".env");
         std::fs::write(&env_path, "# this is a comment\n\nKEY=value\n").unwrap();
@@ -453,6 +462,7 @@ mod tests {
 
     #[test]
     fn load_dotenv_defaults_strips_quotes() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let env_path = tmp.path().join(".env");
         std::fs::write(&env_path, "QUOTED=\"hello world\"\nSINGLE='test'\n").unwrap();
@@ -666,6 +676,7 @@ mod tests {
 
     #[test]
     fn load_dotenv_defaults_empty_value_skipped() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let env_path = tmp.path().join(".env");
         std::fs::write(&env_path, "EMPTY_VAR=\n").unwrap();
@@ -688,6 +699,7 @@ mod tests {
 
     #[test]
     fn load_dotenv_defaults_no_file_is_noop() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let orig_dir = env::current_dir().ok();
         env::set_current_dir(tmp.path()).ok();

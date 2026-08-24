@@ -267,31 +267,7 @@ impl TaskContext {
             }
         };
 
-        let escaped = element_selector.replace('\\', "\\\\").replace('\'', "\\'");
-        let skip_js = match skip {
-            Some((sx, sy)) => format!("const skipX = {sx}, skipY = {sy};"),
-            None => "const skipX = null, skipY = null;".to_string(),
-        };
-        let js = format!(
-            r#"(() => {{
-                {skip_js}
-                const els = document.querySelectorAll('{escaped}');
-                for (const el of els) {{
-                    el.scrollIntoView({{ block: 'center' }});
-                    const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0) {{
-                        const cx = r.x + r.width / 2;
-                        const cy = r.y + r.height / 2;
-                        if (skipX !== null && Math.abs(cx - skipX) < 5 && Math.abs(cy - skipY) < 5) continue;
-                        const hit = document.elementFromPoint(cx, cy);
-                        if (hit && (el === hit || el.contains(hit) || hit.contains(el))) {{
-                            return {{ x: cx, y: cy }};
-                        }}
-                    }}
-                }}
-                return null;
-            }})()"#
-        );
+        let js = build_element_js(element_selector, skip);
         let value = client.evaluate(&session_id, &js).await?;
         match value {
             Value::Object(map) => {
@@ -307,29 +283,7 @@ impl TaskContext {
 /// Resolve an iframe element by CSS selector or XPath, returning its viewport
 /// rect and `src` attribute.
 async fn resolve_iframe(page: &Page, selector: &str) -> Result<Option<(Rect, String)>> {
-    let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
-    let js = format!(
-        r#"(() => {{
-            try {{
-                const q = '{escaped}';
-                let el = null;
-                if (q.startsWith('/')) {{
-                    const xr = document.evaluate(q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                    el = xr.singleNodeValue;
-                }} else {{
-                    el = document.querySelector(q);
-                }}
-                if (!el || el.tagName !== 'IFRAME') return null;
-                const r = el.getBoundingClientRect();
-                return {{
-                    x: r.x, y: r.y, width: r.width, height: r.height,
-                    src: el.getAttribute('src') || ''
-                }};
-            }} catch (e) {{
-                return {{ error: String(e && e.message ? e.message : e) }};
-            }}
-        }})()"#
-    );
+    let js = build_resolve_iframe_js(selector);
     let resp = page.evaluate(js).await?;
     match resp.value() {
         Some(serde_json::Value::Object(map)) => {
@@ -367,9 +321,73 @@ fn scheme_host(url: &str) -> Option<(&str, &str)> {
     Some((scheme, host))
 }
 
+/// Escape a selector for embedding in a single-quoted JS string.
+fn escape_js_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+/// Build the JS that resolves the mini-app element's local center inside the
+/// iframe: iterate matches, scroll each into view, skip the point within 5px of
+/// `skip`, and hit-verify with `elementFromPoint` before returning the center.
+fn build_element_js(element_selector: &str, skip: Option<(f64, f64)>) -> String {
+    let escaped = escape_js_string(element_selector);
+    let skip_js = match skip {
+        Some((sx, sy)) => format!("const skipX = {sx}, skipY = {sy};"),
+        None => "const skipX = null, skipY = null;".to_string(),
+    };
+    format!(
+        r#"(() => {{
+            {skip_js}
+            const els = document.querySelectorAll('{escaped}');
+            for (const el of els) {{
+                el.scrollIntoView({{ block: 'center' }});
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {{
+                    const cx = r.x + r.width / 2;
+                    const cy = r.y + r.height / 2;
+                    if (skipX !== null && Math.abs(cx - skipX) < 5 && Math.abs(cy - skipY) < 5) continue;
+                    const hit = document.elementFromPoint(cx, cy);
+                    if (hit && (el === hit || el.contains(hit) || hit.contains(el))) {{
+                        return {{ x: cx, y: cy }};
+                    }}
+                }}
+            }}
+            return null;
+        }})()"#
+    )
+}
+
+/// Build the JS that resolves the iframe element (CSS or XPath) into its
+/// viewport rect and `src` attribute.
+fn build_resolve_iframe_js(selector: &str) -> String {
+    let escaped = escape_js_string(selector);
+    format!(
+        r#"(() => {{
+            try {{
+                const q = '{escaped}';
+                let el = null;
+                if (q.startsWith('/')) {{
+                    const xr = document.evaluate(q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    el = xr.singleNodeValue;
+                }} else {{
+                    el = document.querySelector(q);
+                }}
+                if (!el || el.tagName !== 'IFRAME') return null;
+                const r = el.getBoundingClientRect();
+                return {{
+                    x: r.x, y: r.y, width: r.width, height: r.height,
+                    src: el.getAttribute('src') || ''
+                }};
+            }} catch (e) {{
+                return {{ error: String(e && e.message ? e.message : e) }};
+            }}
+        }})()"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::scheme_host;
+    use super::{build_element_js, build_resolve_iframe_js, escape_js_string, scheme_host};
 
     #[test]
     fn scheme_host_extracts_scheme_and_host() {
@@ -382,5 +400,54 @@ mod tests {
             Some(("https", "web.telegram.org"))
         );
         assert_eq!(scheme_host("not a url"), None);
+    }
+
+    #[test]
+    fn escape_js_string_escapes_quotes_and_backslashes() {
+        assert_eq!(escape_js_string("plain"), "plain");
+        assert_eq!(escape_js_string("it's"), "it\\'s");
+        assert_eq!(escape_js_string("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn build_element_js_embeds_selector_and_skip() {
+        let js = build_element_js("[id^=\"btn-x\"]", Some((10.5, 20.0)));
+        assert!(js.contains("querySelectorAll('[id^=\"btn-x\"]')"));
+        assert!(js.contains("const skipX = 10.5, skipY = 20;"));
+        assert!(js.contains("elementFromPoint"));
+        assert!(js.contains("scrollIntoView"));
+    }
+
+    #[test]
+    fn build_element_js_no_skip_sets_null() {
+        let js = build_element_js(".btn", None);
+        assert!(js.contains("const skipX = null, skipY = null;"));
+        assert!(!js.contains("skipX = 0"));
+    }
+
+    #[test]
+    fn build_element_js_escapes_selector_quotes() {
+        // Selector with a single quote must be escaped inside the JS string.
+        let js = build_element_js("button[onclick=\"f('x')\"]", None);
+        assert!(js.contains("f(\\'x\\')"));
+    }
+
+    #[test]
+    fn build_resolve_iframe_js_handles_css_and_xpath() {
+        let css_js = build_resolve_iframe_js("iframe.payment-verification");
+        assert!(css_js.contains("const q = 'iframe.payment-verification';"));
+        assert!(css_js.contains("document.querySelector(q)"));
+        assert!(css_js.contains("tagName !== 'IFRAME'"));
+
+        let xpath_js = build_resolve_iframe_js("/html/body/div[10]/div/div[2]/div/div/iframe");
+        assert!(xpath_js.contains("q.startsWith('/')"));
+        assert!(xpath_js.contains("XPathResult.FIRST_ORDERED_NODE_TYPE"));
+        assert!(xpath_js.contains("error: String"));
+    }
+
+    #[test]
+    fn build_resolve_iframe_js_escapes_xpath_quotes() {
+        let js = build_resolve_iframe_js("//div[@id='main']/iframe");
+        assert!(js.contains("\\'main\\'"));
     }
 }

@@ -11,6 +11,7 @@
 
 - [x] **C1. Add `async-tungstenite` direct dependency**
 - [x] **C2. Create `src/runtime/task_context/oopif.rs` — minimal CDP client**
+  - unit tests: response routing, host extraction, JSON-RPC build, result/exception/session extraction, target matching (14 tests)
 - [x] **C3. Thread the browser WS URL through Session → TaskContext**
 - [x] **C4. Prove the concept with a live probe (before wiring into the API)**
 - [x] **C5. Rewrite `iframe_click` internals to use the OOPIF client**

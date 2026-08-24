@@ -47,6 +47,53 @@ fn route_response(pending: &mut HashMap<u64, oneshot::Sender<Value>>, msg: &Valu
     false
 }
 
+/// Build a JSON-RPC call value (used by the writer task; testable in isolation).
+fn build_json_rpc(id: u64, method: &str, params: &Value, session_id: Option<&str>) -> Value {
+    let mut call = json!({ "id": id, "method": method, "params": params });
+    if let Some(sid) = session_id {
+        call["sessionId"] = json!(sid);
+    }
+    call
+}
+
+/// Extract the `result.result.value` chain from a CDP response, or Null.
+fn extract_result_value(resp: &Value) -> Value {
+    resp.get("result")
+        .and_then(|r| r.get("result"))
+        .and_then(|r| r.get("value"))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+/// Extract `result.exceptionDetails.text` from a CDP evaluate response, if present.
+fn extract_exception_text(resp: &Value) -> Option<String> {
+    resp.get("result")
+        .and_then(|r| r.get("exceptionDetails"))
+        .and_then(|e| e.get("text"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Extract the `result.sessionId` from an attach response.
+fn extract_session_id(resp: &Value) -> Option<String> {
+    resp.get("result")
+        .and_then(|r| r.get("sessionId"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Find an iframe target whose URL host matches `host` exactly from a target list.
+fn find_iframe_target_in(infos: &[Value], host: &str) -> Option<Value> {
+    for info in infos {
+        let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
+        let url = info.get("url").and_then(Value::as_str).unwrap_or("");
+        if ty == "iframe" && host_of(url) == Some(host) {
+            return Some(info.clone());
+        }
+    }
+    None
+}
+
 /// A CDP call queued for the writer task.
 struct Outgoing {
     id: u64,
@@ -76,14 +123,8 @@ impl OopifClient {
         // Writer task: drain queued commands to the socket.
         let writer = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                let mut call = json!({
-                    "id": msg.id,
-                    "method": msg.method,
-                    "params": msg.params,
-                });
-                if let Some(sid) = &msg.session_id {
-                    call["sessionId"] = json!(sid);
-                }
+                let call =
+                    build_json_rpc(msg.id, &msg.method, &msg.params, msg.session_id.as_deref());
                 if sink.send(WsMessage::Text(call.to_string())).await.is_err() {
                     break;
                 }
@@ -150,14 +191,8 @@ impl OopifClient {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        for info in infos {
-            let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
-            let url = info.get("url").and_then(Value::as_str).unwrap_or("");
-            if ty == "iframe" && host_of(url) == Some(host) {
-                return Ok(info);
-            }
-        }
-        Err(anyhow!("No iframe target found for host '{host}'"))
+        find_iframe_target_in(&infos, host)
+            .ok_or_else(|| anyhow!("No iframe target found for host '{host}'"))
     }
 
     /// Attach to a target and return its flattened session id.
@@ -169,11 +204,7 @@ impl OopifClient {
                 None,
             )
             .await?;
-        result
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .ok_or_else(|| anyhow!("attachToTarget returned no sessionId"))
+        extract_session_id(&result).ok_or_else(|| anyhow!("attachToTarget returned no sessionId"))
     }
 
     /// Evaluate JS in the given session and return its JSON value.
@@ -185,22 +216,20 @@ impl OopifClient {
                 Some(session_id),
             )
             .await?;
-        if let Some(exc) = result.get("exceptionDetails") {
-            let text = exc.get("text").and_then(Value::as_str).unwrap_or("unknown");
+        if let Some(text) = extract_exception_text(&result) {
             return Err(anyhow!("JS exception in iframe: {text}"));
         }
-        Ok(result
-            .get("result")
-            .and_then(|r| r.get("value"))
-            .cloned()
-            .unwrap_or(Value::Null))
+        Ok(extract_result_value(&result))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{host_of, next_call_id, route_response};
-    use serde_json::json;
+    use super::{
+        build_json_rpc, extract_exception_text, extract_result_value, extract_session_id,
+        find_iframe_target_in, host_of, next_call_id, route_response,
+    };
+    use serde_json::{json, Value};
     use tokio::sync::oneshot;
 
     #[test]
@@ -242,16 +271,120 @@ mod tests {
     #[test]
     fn route_response_ignores_unknown_or_event_messages() {
         let mut pending = std::collections::HashMap::new();
-        // Unknown id
         assert!(!route_response(
             &mut pending,
             &json!({ "id": 999, "result": {} })
         ));
-        // Event message without id
         assert!(!route_response(
             &mut pending,
             &json!({ "method": "Target.targetCreated" })
         ));
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn build_json_rpc_without_session() {
+        let call = build_json_rpc(5, "Target.getTargets", &json!({}), None);
+        assert_eq!(call["id"], 5);
+        assert_eq!(call["method"], "Target.getTargets");
+        assert_eq!(call["params"], json!({}));
+        assert!(call.get("sessionId").is_none());
+    }
+
+    #[test]
+    fn build_json_rpc_with_session() {
+        let call = build_json_rpc(
+            9,
+            "Runtime.evaluate",
+            &json!({"expression": "1"}),
+            Some("sess-1"),
+        );
+        assert_eq!(call["sessionId"], "sess-1");
+        assert_eq!(call["params"]["expression"], "1");
+    }
+
+    #[test]
+    fn extract_result_value_nested_path() {
+        let resp = json!({
+            "id": 1,
+            "result": {
+                "result": {
+                    "type": "object",
+                    "value": { "x": 42.0 }
+                }
+            }
+        });
+        assert_eq!(extract_result_value(&resp), json!({ "x": 42.0 }));
+    }
+
+    #[test]
+    fn extract_result_value_missing_paths() {
+        assert_eq!(extract_result_value(&json!({ "id": 1 })), Value::Null);
+        assert_eq!(extract_result_value(&json!({ "result": {} })), Value::Null);
+        assert_eq!(
+            extract_result_value(&json!({ "result": { "result": { "type": "string" } } })),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn extract_exception_text_present_and_absent() {
+        let with_exc = json!({
+            "result": {
+                "result": { "type": "object" },
+                "exceptionDetails": { "text": "ReferenceError: x is not defined" }
+            }
+        });
+        assert_eq!(
+            extract_exception_text(&with_exc),
+            Some("ReferenceError: x is not defined".to_string())
+        );
+        assert_eq!(extract_exception_text(&json!({ "result": {} })), None);
+        assert_eq!(extract_exception_text(&json!({})), None);
+    }
+
+    #[test]
+    fn extract_session_id_present_and_absent() {
+        assert_eq!(
+            extract_session_id(&json!({ "result": { "sessionId": "ABC123" } })),
+            Some("ABC123".to_string())
+        );
+        assert_eq!(extract_session_id(&json!({ "result": {} })), None);
+        assert_eq!(extract_session_id(&json!({})), None);
+    }
+
+    #[test]
+    fn find_iframe_target_exact_host_match() {
+        let infos = vec![
+            json!({ "type": "page", "url": "https://web.telegram.org/k/", "targetId": "p1" }),
+            json!({ "type": "iframe", "url": "https://atfminers.asloni.online/miner/index.html", "targetId": "f1" }),
+        ];
+        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        assert_eq!(found["targetId"], "f1");
+    }
+
+    #[test]
+    fn find_iframe_target_ignores_wrong_type_or_host() {
+        let infos = vec![
+            json!({ "type": "page", "url": "https://atfminers.asloni.online/x", "targetId": "p1" }),
+            json!({ "type": "iframe", "url": "https://other.example.com/y", "targetId": "f1" }),
+        ];
+        assert!(find_iframe_target_in(&infos, "atfminers.asloni.online").is_none());
+    }
+
+    #[test]
+    fn find_iframe_target_no_substring_matching() {
+        // "asloni.online" must NOT match "atfminers.asloni.online" — exact host only.
+        let infos = vec![json!({
+            "type": "iframe",
+            "url": "https://atfminers.asloni.online/miner",
+            "targetId": "f1"
+        })];
+        assert!(find_iframe_target_in(&infos, "asloni.online").is_none());
+    }
+
+    #[test]
+    fn find_iframe_target_empty_list() {
+        assert!(find_iframe_target_in(&[], "any-host").is_none());
     }
 }

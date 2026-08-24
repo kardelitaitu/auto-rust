@@ -1289,3 +1289,660 @@ mod tests {
         assert!(report.tasks_called.contains("other-task"));
     }
 }
+
+#[cfg(test)]
+mod tests_extended {
+    use super::*;
+    use crate::task::dsl::{IncludeSpec, ParameterType, TaskDefinition};
+
+    fn def(actions: Vec<Action>) -> TaskDefinition {
+        TaskDefinition {
+            name: "test-task".to_string(),
+            description: String::new(),
+            policy: "default".to_string(),
+            parameters: HashMap::new(),
+            include: vec![],
+            actions,
+        }
+    }
+
+    fn report_for(actions: Vec<Action>) -> ValidationReport {
+        TaskValidator::new().validate(&def(actions))
+    }
+
+    fn param(required: bool, default: Option<serde_yaml::Value>) -> ParameterDef {
+        ParameterDef {
+            r#type: ParameterType::String,
+            description: String::new(),
+            default,
+            required,
+        }
+    }
+
+    // ========================================================================
+    // Selector edge cases
+    // ========================================================================
+
+    #[test]
+    fn selector_unbalanced_brackets_is_error() {
+        let report = report_for(vec![Action::Click {
+            selector: "[data-x".into(),
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("unbalanced brackets")));
+    }
+
+    #[test]
+    fn selector_unbalanced_parens_is_error() {
+        let report = report_for(vec![Action::Click {
+            selector: "div(2".into(),
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("unbalanced parentheses")));
+    }
+
+    #[test]
+    fn selector_unbalanced_quotes_is_error() {
+        let single = report_for(vec![Action::Click {
+            selector: "a[title='x]".into(),
+        }]);
+        assert!(single
+            .issues
+            .iter()
+            .any(|i| i.message().contains("unbalanced single quotes")));
+        let double = report_for(vec![Action::Click {
+            selector: "a[title=\"x]".into(),
+        }]);
+        assert!(double
+            .issues
+            .iter()
+            .any(|i| i.message().contains("unbalanced double quotes")));
+    }
+
+    #[test]
+    fn selector_consecutive_spaces_is_warning() {
+        let report = report_for(vec![Action::Click {
+            selector: "div  .btn".into(),
+        }]);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("multiple consecutive spaces")));
+    }
+
+    // ========================================================================
+    // More simple actions
+    // ========================================================================
+
+    #[test]
+    fn navigate_non_http_url_is_warning() {
+        let report = report_for(vec![Action::Navigate {
+            url: "ftp://x.com".into(),
+        }]);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("does not start with http")));
+    }
+
+    #[test]
+    fn navigate_with_variable_skips_scheme_warning() {
+        let report = report_for(vec![Action::Navigate {
+            url: "${base_url}/page".into(),
+        }]);
+        assert_eq!(report.warning_count(), 0);
+        assert!(report.variables_referenced.contains("base_url"));
+    }
+
+    #[test]
+    fn type_empty_text_is_warning() {
+        let report = report_for(vec![Action::Type {
+            selector: "#in".into(),
+            text: String::new(),
+        }]);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("text is empty")));
+    }
+
+    #[test]
+    fn extract_records_variable_reference() {
+        let report = report_for(vec![Action::Extract {
+            selector: "#x".into(),
+            variable: Some("result".into()),
+        }]);
+        assert!(report.variables_referenced.contains("result"));
+    }
+
+    #[test]
+    fn log_extracts_variables() {
+        let report = report_for(vec![Action::Log {
+            message: "done ${total}".into(),
+            level: Some(crate::task::dsl::LogLevel::Info),
+        }]);
+        assert!(report.variables_referenced.contains("total"));
+    }
+
+    // ========================================================================
+    // If / Parallel
+    // ========================================================================
+
+    #[test]
+    fn if_paths_are_labeled() {
+        let nested = report_for(vec![Action::If {
+            condition: Condition::True,
+            then: vec![Action::Click {
+                selector: String::new(),
+            }],
+            r#else: Some(vec![Action::Click {
+                selector: String::new(),
+            }]),
+        }]);
+        assert!(nested
+            .issues
+            .iter()
+            .any(|i| i.message().contains("actions[0].then[0]")));
+        assert!(nested
+            .issues
+            .iter()
+            .any(|i| i.message().contains("actions[0].else[0]")));
+    }
+
+    #[test]
+    fn parallel_concurrency_zero_is_error() {
+        let report = report_for(vec![Action::Parallel {
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_concurrency: Some(0),
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("max_concurrency cannot be 0")));
+    }
+
+    #[test]
+    fn parallel_concurrency_above_count_warns() {
+        let report = report_for(vec![Action::Parallel {
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_concurrency: Some(5),
+        }]);
+        assert!(report.issues.iter().any(|i| i
+            .message()
+            .contains("max_concurrency (5) > action count (1)")));
+    }
+
+    #[test]
+    fn parallel_empty_actions_warns() {
+        let report = report_for(vec![Action::Parallel {
+            actions: vec![],
+            max_concurrency: None,
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("no actions")));
+    }
+
+    // ========================================================================
+    // Retry
+    // ========================================================================
+
+    #[test]
+    fn retry_zero_attempts_is_error() {
+        let report = report_for(vec![Action::Retry {
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_attempts: Some(0),
+            initial_delay_ms: None,
+            max_delay_ms: None,
+            backoff_multiplier: None,
+            jitter: None,
+            retry_on: None,
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("max_attempts cannot be 0")));
+    }
+
+    #[test]
+    fn retry_inverted_delays_is_error() {
+        let report = report_for(vec![Action::Retry {
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_attempts: None,
+            initial_delay_ms: Some(5000),
+            max_delay_ms: Some(1000),
+            backoff_multiplier: None,
+            jitter: None,
+            retry_on: None,
+        }]);
+        assert!(report.issues.iter().any(|i| i
+            .message()
+            .contains("initial_delay_ms (5000) > max_delay_ms (1000)")));
+    }
+
+    #[test]
+    fn retry_low_multiplier_is_error() {
+        let report = report_for(vec![Action::Retry {
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_attempts: None,
+            initial_delay_ms: None,
+            max_delay_ms: None,
+            backoff_multiplier: Some(0.5),
+            jitter: None,
+            retry_on: None,
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("backoff_multiplier (0.5) < 1.0")));
+    }
+
+    #[test]
+    fn retry_empty_patterns_is_warning() {
+        let report = report_for(vec![Action::Retry {
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_attempts: None,
+            initial_delay_ms: None,
+            max_delay_ms: None,
+            backoff_multiplier: None,
+            jitter: None,
+            retry_on: Some(vec![]),
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("retry_on patterns are empty")));
+    }
+
+    // ========================================================================
+    // Foreach / While / Try
+    // ========================================================================
+
+    #[test]
+    fn foreach_empty_variable_is_error() {
+        let report = report_for(vec![Action::Foreach {
+            variable: String::new(),
+            collection: ForeachCollection::Array {
+                values: vec![serde_yaml::Value::String("a".into())],
+            },
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: None,
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Variable name cannot be empty")));
+    }
+
+    #[test]
+    fn foreach_zero_max_iterations_is_error() {
+        let report = report_for(vec![Action::Foreach {
+            variable: "x".into(),
+            collection: ForeachCollection::Array {
+                values: vec![serde_yaml::Value::String("a".into())],
+            },
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: Some(0),
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("max_iterations cannot be 0")));
+    }
+
+    #[test]
+    fn while_zero_max_iterations_is_error() {
+        let report = report_for(vec![Action::While {
+            condition: Condition::True,
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: Some(0),
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("max_iterations cannot be 0")));
+    }
+
+    #[test]
+    fn try_empty_blocks_and_error_var() {
+        let empty_try = report_for(vec![Action::Try {
+            try_actions: vec![],
+            catch_actions: None,
+            error_variable: None,
+            finally_actions: None,
+        }]);
+        assert!(empty_try
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Try block has no actions")));
+
+        let empty_catch = report_for(vec![Action::Try {
+            try_actions: vec![Action::Wait { duration_ms: 1 }],
+            catch_actions: Some(vec![]),
+            error_variable: None,
+            finally_actions: None,
+        }]);
+        assert!(empty_catch
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Catch block has no actions")));
+
+        let empty_finally = report_for(vec![Action::Try {
+            try_actions: vec![Action::Wait { duration_ms: 1 }],
+            catch_actions: None,
+            error_variable: None,
+            finally_actions: Some(vec![]),
+        }]);
+        assert!(empty_finally
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Finally block has no actions")));
+
+        let empty_err_var = report_for(vec![Action::Try {
+            try_actions: vec![Action::Wait { duration_ms: 1 }],
+            catch_actions: None,
+            error_variable: Some(String::new()),
+            finally_actions: None,
+        }]);
+        assert!(empty_err_var
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Error variable name cannot be empty")));
+    }
+
+    // ========================================================================
+    // Conditions
+    // ========================================================================
+
+    #[test]
+    fn condition_element_exists_empty_selector_is_error() {
+        let report = report_for(vec![Action::If {
+            condition: Condition::ElementExists {
+                selector: String::new(),
+            },
+            then: vec![Action::Wait { duration_ms: 1 }],
+            r#else: None,
+        }]);
+        assert!(report.has_errors());
+    }
+
+    #[test]
+    fn condition_text_matches_invalid_regex_is_error() {
+        let report = report_for(vec![Action::While {
+            condition: Condition::TextMatches {
+                selector: "#x".into(),
+                pattern: "[invalid".into(),
+            },
+            actions: vec![],
+            max_iterations: None,
+        }]);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("pattern is invalid regex")));
+    }
+
+    #[test]
+    fn condition_variable_equals_empty_name_is_error() {
+        let report = report_for(vec![Action::If {
+            condition: Condition::VariableEquals {
+                name: String::new(),
+                value: serde_yaml::Value::String("x".into()),
+            },
+            then: vec![],
+            r#else: None,
+        }]);
+        assert!(report.has_errors());
+    }
+
+    #[test]
+    fn condition_numeric_range_inverted_is_warning() {
+        let report = report_for(vec![Action::While {
+            condition: Condition::NumericRange {
+                name: "n".into(),
+                min: 10.0,
+                max: 5.0,
+            },
+            actions: vec![],
+            max_iterations: None,
+        }]);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("min (10) is greater than max (5)")));
+    }
+
+    #[test]
+    fn condition_date_empty_is_warning() {
+        let report = report_for(vec![Action::If {
+            condition: Condition::DateBefore {
+                name: "d".into(),
+                date: String::new(),
+                format: Some(String::new()),
+            },
+            then: vec![],
+            r#else: None,
+        }]);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("date is empty")));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Date format is empty")));
+    }
+
+    #[test]
+    fn condition_array_length_no_constraints_is_warning() {
+        let report = report_for(vec![Action::If {
+            condition: Condition::ArrayLength {
+                name: "arr".into(),
+                min: None,
+                max: None,
+                exact: None,
+            },
+            then: vec![],
+            r#else: None,
+        }]);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("has no constraints")));
+    }
+
+    #[test]
+    fn condition_nested_and_or_not_validated() {
+        let report = report_for(vec![Action::If {
+            condition: Condition::And {
+                conditions: vec![
+                    Condition::Not {
+                        condition: Box::new(Condition::ElementVisible {
+                            selector: String::new(),
+                        }),
+                    },
+                    Condition::Or { conditions: vec![] },
+                ],
+            },
+            then: vec![],
+            r#else: None,
+        }]);
+        assert!(report.has_errors());
+    }
+
+    #[test]
+    fn condition_true_false_no_issues() {
+        let t = report_for(vec![Action::If {
+            condition: Condition::True,
+            then: vec![Action::Wait { duration_ms: 1 }],
+            r#else: None,
+        }]);
+        assert!(t.is_valid());
+        let f = report_for(vec![Action::If {
+            condition: Condition::False,
+            then: vec![Action::Wait { duration_ms: 1 }],
+            r#else: None,
+        }]);
+        assert!(f.is_valid());
+    }
+
+    // ========================================================================
+    // Collections
+    // ========================================================================
+
+    #[test]
+    fn collection_array_empty_is_warning() {
+        let report = report_for(vec![Action::Foreach {
+            variable: "x".into(),
+            collection: ForeachCollection::Array { values: vec![] },
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: None,
+        }]);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Array collection is empty")));
+    }
+
+    #[test]
+    fn collection_range_inverted_is_error_and_huge_warns() {
+        let inverted = report_for(vec![Action::Foreach {
+            variable: "x".into(),
+            collection: ForeachCollection::Range { start: 5, end: 2 },
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: None,
+        }]);
+        assert!(inverted
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Range start (5) >= end (2)")));
+
+        let huge = report_for(vec![Action::Foreach {
+            variable: "x".into(),
+            collection: ForeachCollection::Range {
+                start: 0,
+                end: 20_000,
+            },
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: None,
+        }]);
+        assert_eq!(huge.error_count(), 0);
+        assert!(huge.issues.iter().any(|i| i.message().contains("> 10000")));
+    }
+
+    #[test]
+    fn collection_elements_empty_selector_is_error() {
+        let report = report_for(vec![Action::Foreach {
+            variable: "x".into(),
+            collection: ForeachCollection::Elements {
+                selector: String::new(),
+            },
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: None,
+        }]);
+        assert!(report.has_errors());
+    }
+
+    #[test]
+    fn collection_variable_empty_name_is_error() {
+        let report = report_for(vec![Action::Foreach {
+            variable: "x".into(),
+            collection: ForeachCollection::Variable {
+                name: String::new(),
+            },
+            actions: vec![Action::Wait { duration_ms: 1 }],
+            max_iterations: None,
+        }]);
+        assert!(report.has_errors());
+    }
+
+    // ========================================================================
+    // Variables / counts / includes
+    // ========================================================================
+
+    #[test]
+    fn extract_variables_multiple_and_incomplete() {
+        let validator = TaskValidator::new();
+        let mut report = ValidationReport::new("t".to_string());
+        validator.extract_variables("a ${x} b ${y} c ${", &mut report);
+        assert!(report.variables_referenced.contains("x"));
+        assert!(report.variables_referenced.contains("y"));
+        assert!(!report.variables_referenced.contains(""));
+    }
+
+    #[test]
+    fn count_actions_recursive() {
+        let report = report_for(vec![Action::If {
+            condition: Condition::True,
+            then: vec![
+                Action::Wait { duration_ms: 1 },
+                Action::Loop {
+                    count: Some(2),
+                    condition: None,
+                    actions: vec![Action::Click {
+                        selector: "#n".into(),
+                    }],
+                },
+            ],
+            r#else: Some(vec![Action::Retry {
+                actions: vec![
+                    Action::Wait { duration_ms: 1 },
+                    Action::Wait { duration_ms: 1 },
+                ],
+                max_attempts: None,
+                initial_delay_ms: None,
+                max_delay_ms: None,
+                backoff_multiplier: None,
+                jitter: None,
+                retry_on: None,
+            }]),
+        }]);
+        assert_eq!(report.action_count, 7);
+    }
+
+    #[test]
+    fn include_empty_path_is_error() {
+        let mut d = def(vec![Action::Wait { duration_ms: 100 }]);
+        d.include = vec![IncludeSpec {
+            path: String::new(),
+            condition: None,
+        }];
+        let report = TaskValidator::new().validate(&d);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("Path cannot be empty")));
+    }
+
+    #[test]
+    fn required_param_with_default_warns_and_optional_without_default_warns() {
+        let mut d = def(vec![Action::Wait { duration_ms: 100 }]);
+        d.parameters.insert(
+            "a".to_string(),
+            param(true, Some(serde_yaml::Value::String("x".into()))),
+        );
+        d.parameters.insert("b".to_string(), param(false, None));
+        let report = TaskValidator::new().validate(&d);
+        assert_eq!(report.error_count(), 0);
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("required but has a default")));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.message().contains("optional but has no default")));
+    }
+}

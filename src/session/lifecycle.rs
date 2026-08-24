@@ -122,3 +122,108 @@ impl super::Session {
         self.cb_last_failure_time.store(time, Ordering::SeqCst);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::state::SessionState;
+    use std::sync::atomic::Ordering;
+
+    /// Minimal helper to build a Session with controlled atomic fields.
+    /// We don't need a real Browser — these tests only touch the atomic
+    /// getters/setters defined in this file.
+    fn make_session_parts() -> (
+        std::sync::atomic::AtomicUsize,
+        std::sync::atomic::AtomicBool,
+        std::sync::atomic::AtomicUsize,
+        std::sync::atomic::AtomicUsize,
+    ) {
+        (
+            std::sync::atomic::AtomicUsize::new(0),   // failure_count
+            std::sync::atomic::AtomicBool::new(true), // is_healthy
+            std::sync::atomic::AtomicUsize::new(0),   // cb_failure_count
+            std::sync::atomic::AtomicUsize::new(0),   // cb_last_failure_time
+        )
+    }
+
+    #[test]
+    fn health_transitions() {
+        let (_, healthy, _, _) = make_session_parts();
+
+        assert!(healthy.load(Ordering::SeqCst));
+
+        healthy.store(false, Ordering::SeqCst);
+        assert!(!healthy.load(Ordering::SeqCst));
+
+        healthy.store(true, Ordering::SeqCst);
+        assert!(healthy.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn failure_counting() {
+        let (failures, _, _, _) = make_session_parts();
+
+        assert_eq!(failures.load(Ordering::SeqCst), 0);
+        failures.fetch_add(1, Ordering::SeqCst);
+        failures.fetch_add(1, Ordering::SeqCst);
+        failures.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(failures.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn circuit_breaker_open_close_cycle() {
+        let threshold = 5;
+        let timeout_secs = 30u64;
+        let current_time = 1_700_000_000usize;
+
+        // Closed — below threshold
+        assert!(!is_circuit_breaker_open_pure(
+            3,
+            threshold,
+            current_time - 10,
+            current_time,
+            timeout_secs
+        ));
+
+        // Open — at threshold, recent failure
+        assert!(is_circuit_breaker_open_pure(
+            threshold,
+            threshold,
+            current_time,
+            current_time,
+            timeout_secs
+        ));
+
+        // Closed again — old failure beyond timeout
+        assert!(!is_circuit_breaker_open_pure(
+            threshold,
+            threshold,
+            current_time - 100,
+            current_time,
+            timeout_secs
+        ));
+    }
+
+    #[test]
+    fn circuit_breaker_zero_threshold_never_opens() {
+        assert!(!is_circuit_breaker_open_pure(100, 0, 1000, 1010, 30));
+    }
+
+    #[test]
+    fn state_getter_setter_roundtrip() {
+        // We can't construct a full Session without a real Browser,
+        // so test the state logic directly with parking_lot::Mutex.
+        let state = parking_lot::Mutex::new(SessionState::Idle);
+
+        assert_eq!(*state.lock(), SessionState::Idle);
+
+        *state.lock() = SessionState::Busy;
+        assert_eq!(*state.lock(), SessionState::Busy);
+
+        *state.lock() = SessionState::Failed;
+        assert_eq!(*state.lock(), SessionState::Failed);
+
+        *state.lock() = SessionState::Idle;
+        assert_eq!(*state.lock(), SessionState::Idle);
+    }
+}

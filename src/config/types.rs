@@ -475,3 +475,360 @@ pub(crate) fn default_max_consecutive_scroll_failures() -> u32 {
 pub(crate) fn default_max_consecutive_empty_scans() -> u32 {
     3
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_toml_partial_uses_defaults() {
+        // Only specify browser + orchestrator, let twitter_activity/tracing/task_discovery use defaults
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 5000
+            max_discovery_retries = 2
+            discovery_retry_delay_ms = 1000
+
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 3
+            success_threshold = 2
+            half_open_time_ms = 15000
+
+            [[browser.profiles]]
+            name = "test"
+            type = "brave"
+            ws_endpoint = "ws://localhost:9222"
+
+            [orchestrator]
+            max_global_concurrency = 10
+            task_timeout_ms = 300000
+            group_timeout_ms = 300000
+            worker_wait_timeout_ms = 5000
+            task_stagger_delay_ms = 500
+            max_retries = 1
+            retry_delay_ms = 200
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.browser.connection_timeout_ms.get(), 5000);
+        assert_eq!(config.browser.max_discovery_retries, 2);
+        assert_eq!(config.orchestrator.max_retries, 1);
+        assert_eq!(config.orchestrator.task_stagger_delay_ms, 500);
+        // Defaults for omitted fields
+        assert_eq!(config.browser.cursor_overlay_ms, 0);
+        assert_eq!(config.browser.max_workers_per_session, 5);
+        assert!(!config.browser.roxybrowser.enabled);
+    }
+
+    #[test]
+    fn browser_config_partial_toml_uses_defaults() {
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 5000
+            max_discovery_retries = 2
+            discovery_retry_delay_ms = 1000
+
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 3
+            success_threshold = 2
+            half_open_time_ms = 15000
+
+            [[browser.profiles]]
+            name = "test"
+            type = "brave"
+            ws_endpoint = "ws://localhost:9222"
+
+            [orchestrator]
+            max_global_concurrency = 10
+            task_timeout_ms = 300000
+            group_timeout_ms = 300000
+            worker_wait_timeout_ms = 5000
+            task_stagger_delay_ms = 500
+            max_retries = 1
+            retry_delay_ms = 200
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.browser.connection_timeout_ms.get(), 5000);
+        assert_eq!(config.browser.max_discovery_retries, 2);
+        assert_eq!(config.orchestrator.max_retries, 1);
+        assert_eq!(config.orchestrator.task_stagger_delay_ms, 500);
+        // Defaults for omitted fields
+        assert_eq!(config.browser.cursor_overlay_ms, 0);
+        assert_eq!(config.browser.max_workers_per_session, 5);
+        assert!(!config.browser.roxybrowser.enabled);
+    }
+
+    #[test]
+    fn native_click_calibration_mode_from_env() {
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("mac"),
+            NativeClickCalibrationMode::Mac
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("darwin"),
+            NativeClickCalibrationMode::Mac
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("osx"),
+            NativeClickCalibrationMode::Mac
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("linux"),
+            NativeClickCalibrationMode::Linux
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("windows"),
+            NativeClickCalibrationMode::Windows
+        );
+        assert_eq!(
+            NativeClickCalibrationMode::from_env_value("bogus"),
+            NativeClickCalibrationMode::Windows
+        );
+    }
+
+    #[test]
+    fn native_click_calibration_mode_as_str() {
+        assert_eq!(NativeClickCalibrationMode::Windows.as_str(), "windows");
+        assert_eq!(NativeClickCalibrationMode::Mac.as_str(), "mac");
+        assert_eq!(NativeClickCalibrationMode::Linux.as_str(), "linux");
+    }
+
+    #[test]
+    fn native_input_backend_from_env() {
+        assert_eq!(
+            NativeInputBackend::from_env_value("enigo"),
+            NativeInputBackend::Enigo
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("sendinput"),
+            NativeInputBackend::Sendinput
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("send_input"),
+            NativeInputBackend::Sendinput
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("win32"),
+            NativeInputBackend::Sendinput
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("rdev"),
+            NativeInputBackend::Rdev
+        );
+        assert_eq!(
+            NativeInputBackend::from_env_value("bogus"),
+            NativeInputBackend::Enigo
+        );
+    }
+
+    #[test]
+    fn native_input_backend_as_str() {
+        assert_eq!(NativeInputBackend::Enigo.as_str(), "enigo");
+        assert_eq!(NativeInputBackend::Sendinput.as_str(), "sendinput");
+        assert_eq!(NativeInputBackend::Rdev.as_str(), "rdev");
+    }
+
+    #[test]
+    fn twitter_activity_config_defaults_via_toml() {
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 1000
+            max_discovery_retries = 1
+            discovery_retry_delay_ms = 100
+            profiles = []
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 1
+            success_threshold = 1
+            half_open_time_ms = 1000
+            [orchestrator]
+            max_global_concurrency = 1
+            task_timeout_ms = 1000
+            group_timeout_ms = 1000
+            worker_wait_timeout_ms = 1000
+            task_stagger_delay_ms = 0
+            max_retries = 0
+            retry_delay_ms = 100
+            [twitter_activity]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let ta = &config.twitter_activity;
+        assert_eq!(ta.feed_scan_duration_ms.get(), 60_000);
+        assert_eq!(ta.feed_scroll_count, 10);
+        assert_eq!(ta.engagement_candidate_count, 5);
+        assert_eq!(ta.engagement_limits.max_likes, 5);
+        assert_eq!(ta.engagement_limits.max_total_actions, 10);
+    }
+
+    #[test]
+    fn task_discovery_config_defaults_via_toml() {
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 1000
+            max_discovery_retries = 1
+            discovery_retry_delay_ms = 100
+            profiles = []
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 1
+            success_threshold = 1
+            half_open_time_ms = 1000
+            [orchestrator]
+            max_global_concurrency = 1
+            task_timeout_ms = 1000
+            group_timeout_ms = 1000
+            worker_wait_timeout_ms = 1000
+            task_stagger_delay_ms = 0
+            max_retries = 0
+            retry_delay_ms = 100
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(!config.task_discovery.enabled);
+        assert!(config.task_discovery.roots.is_empty());
+        assert_eq!(config.task_discovery.extensions, vec!["task".to_string()]);
+    }
+
+    #[test]
+    fn tracing_config_defaults_from_toml() {
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 1000
+            max_discovery_retries = 1
+            discovery_retry_delay_ms = 100
+            profiles = []
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 1
+            success_threshold = 1
+            half_open_time_ms = 1000
+            [orchestrator]
+            max_global_concurrency = 1
+            task_timeout_ms = 1000
+            group_timeout_ms = 1000
+            worker_wait_timeout_ms = 1000
+            task_stagger_delay_ms = 0
+            max_retries = 0
+            retry_delay_ms = 100
+            [tracing]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(!config.tracing.enabled);
+        assert_eq!(config.tracing.otlp_endpoint, "http://localhost:4317");
+        assert_eq!(config.tracing.service_name, "auto");
+    }
+
+    #[test]
+    fn shardbrowser_config_alias_api_base_url() {
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 1000
+            max_discovery_retries = 1
+            discovery_retry_delay_ms = 100
+            profiles = []
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 1
+            success_threshold = 1
+            half_open_time_ms = 1000
+            [browser.shardbrowser]
+            enabled = true
+            apiBaseUrl = "http://127.0.0.1:40325"
+            api_key = "test"
+            [orchestrator]
+            max_global_concurrency = 1
+            task_timeout_ms = 1000
+            group_timeout_ms = 1000
+            worker_wait_timeout_ms = 1000
+            task_stagger_delay_ms = 0
+            max_retries = 0
+            retry_delay_ms = 100
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.browser.shardbrowser.enabled);
+        assert_eq!(
+            config.browser.shardbrowser.api_url,
+            "http://127.0.0.1:40325"
+        );
+    }
+
+    #[test]
+    fn engagement_limits_toml_round_trip() {
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 1000
+            max_discovery_retries = 1
+            discovery_retry_delay_ms = 100
+            profiles = []
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 1
+            success_threshold = 1
+            half_open_time_ms = 1000
+            [orchestrator]
+            max_global_concurrency = 1
+            task_timeout_ms = 1000
+            group_timeout_ms = 1000
+            worker_wait_timeout_ms = 1000
+            task_stagger_delay_ms = 0
+            max_retries = 0
+            retry_delay_ms = 100
+            [twitter_activity.engagement_limits]
+            max_likes = 10
+            max_retweets = 5
+            max_follows = 1
+            max_replies = 2
+            max_thread_dives = 4
+            max_bookmarks = 3
+            max_quote_tweets = 2
+            max_total_actions = 20
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let limits = &config.twitter_activity.engagement_limits;
+        assert_eq!(limits.max_likes, 10);
+        assert_eq!(limits.max_retweets, 5);
+        assert_eq!(limits.max_follows, 1);
+        assert_eq!(limits.max_total_actions, 20);
+    }
+
+    #[test]
+    fn llm_config_toml_round_trip() {
+        let toml_str = r#"
+            [browser]
+            connection_timeout_ms = 1000
+            max_discovery_retries = 1
+            discovery_retry_delay_ms = 100
+            profiles = []
+            [browser.circuit_breaker]
+            enabled = false
+            failure_threshold = 1
+            success_threshold = 1
+            half_open_time_ms = 1000
+            [orchestrator]
+            max_global_concurrency = 1
+            task_timeout_ms = 1000
+            group_timeout_ms = 1000
+            worker_wait_timeout_ms = 1000
+            task_stagger_delay_ms = 0
+            max_retries = 0
+            retry_delay_ms = 100
+            [twitter_activity.llm]
+            enabled = true
+            provider = "openrouter"
+            model = "gpt-4"
+            temperature = 0.5
+            max_tokens = 200
+            timeout_ms = 15000
+            reply_probability = 0.1
+            quote_tweet_probability = 0.2
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let llm = &config.twitter_activity.llm;
+        assert!(llm.enabled);
+        assert_eq!(llm.provider, "openrouter");
+        assert_eq!(llm.model, "gpt-4");
+        assert!((llm.temperature - 0.5).abs() < f64::EPSILON);
+        assert_eq!(llm.max_tokens, 200);
+        assert_eq!(llm.timeout_ms, 15000);
+    }
+}

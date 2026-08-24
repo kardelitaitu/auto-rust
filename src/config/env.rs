@@ -384,3 +384,316 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
 
     Ok(config)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_dotenv_defaults_parses_key_value() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env_path = tmp.path().join(".env");
+        std::fs::write(&env_path, "MY_TEST_VAR=hello\n").unwrap();
+        let old = env::var("MY_TEST_VAR").ok();
+        env::remove_var("MY_TEST_VAR");
+        let orig_dir = env::current_dir().ok();
+        env::set_current_dir(tmp.path()).ok();
+        load_dotenv_defaults();
+        assert_eq!(env::var("MY_TEST_VAR").unwrap(), "hello");
+        if let Some(v) = old {
+            env::set_var("MY_TEST_VAR", v);
+        } else {
+            env::remove_var("MY_TEST_VAR");
+        }
+        if let Some(d) = orig_dir {
+            env::set_current_dir(d).ok();
+        }
+    }
+
+    #[test]
+    fn load_dotenv_defaults_skips_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env_path = tmp.path().join(".env");
+        std::fs::write(&env_path, "MY_EXISTING_VAR=from_file\n").unwrap();
+        let old = env::var("MY_EXISTING_VAR").ok();
+        env::set_var("MY_EXISTING_VAR", "from_env");
+        let orig_dir = env::current_dir().ok();
+        env::set_current_dir(tmp.path()).ok();
+        load_dotenv_defaults();
+        assert_eq!(env::var("MY_EXISTING_VAR").unwrap(), "from_env");
+        if let Some(v) = old {
+            env::set_var("MY_EXISTING_VAR", v);
+        } else {
+            env::remove_var("MY_EXISTING_VAR");
+        }
+        if let Some(d) = orig_dir {
+            env::set_current_dir(d).ok();
+        }
+    }
+
+    #[test]
+    fn load_dotenv_defaults_skips_comments_and_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env_path = tmp.path().join(".env");
+        std::fs::write(&env_path, "# this is a comment\n\nKEY=value\n").unwrap();
+        let old = env::var("KEY").ok();
+        env::remove_var("KEY");
+        let orig_dir = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+        load_dotenv_defaults();
+        let result = env::var("KEY");
+        env::set_current_dir(&orig_dir).unwrap();
+        if let Some(v) = old {
+            env::set_var("KEY", v);
+        } else {
+            env::remove_var("KEY");
+        }
+        assert_eq!(result.unwrap(), "value");
+    }
+
+    #[test]
+    fn load_dotenv_defaults_strips_quotes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env_path = tmp.path().join(".env");
+        std::fs::write(&env_path, "QUOTED=\"hello world\"\nSINGLE='test'\n").unwrap();
+        let old_quoted = env::var("QUOTED").ok();
+        let old_single = env::var("SINGLE").ok();
+        env::remove_var("QUOTED");
+        env::remove_var("SINGLE");
+        let orig_dir = env::current_dir().ok();
+        env::set_current_dir(tmp.path()).ok();
+        load_dotenv_defaults();
+        assert_eq!(env::var("QUOTED").unwrap(), "hello world");
+        assert_eq!(env::var("SINGLE").unwrap(), "test");
+        if let Some(v) = old_quoted {
+            env::set_var("QUOTED", v);
+        } else {
+            env::remove_var("QUOTED");
+        }
+        if let Some(v) = old_single {
+            env::set_var("SINGLE", v);
+        } else {
+            env::remove_var("SINGLE");
+        }
+        if let Some(d) = orig_dir {
+            env::set_current_dir(d).ok();
+        }
+    }
+
+    #[test]
+    fn apply_env_overrides_roxybrowser() {
+        let old_url = env::var("ROXYBROWSER_API_URL").ok();
+        let old_key = env::var("ROXYBROWSER_API_KEY").ok();
+
+        env::set_var("ROXYBROWSER_API_URL", "http://override:9999/");
+        env::set_var("ROXYBROWSER_API_KEY", "override-key");
+
+        let mut config = load_code_config().unwrap();
+        config = apply_env_overrides(config).unwrap();
+
+        assert_eq!(config.browser.roxybrowser.api_url, "http://override:9999/");
+        assert_eq!(config.browser.roxybrowser.api_key, "override-key");
+
+        if let Some(v) = old_url {
+            env::set_var("ROXYBROWSER_API_URL", v);
+        } else {
+            env::remove_var("ROXYBROWSER_API_URL");
+        }
+        if let Some(v) = old_key {
+            env::set_var("ROXYBROWSER_API_KEY", v);
+        } else {
+            env::remove_var("ROXYBROWSER_API_KEY");
+        }
+    }
+
+    #[test]
+    fn apply_env_overrides_shardbrowser() {
+        let old_url = env::var("SHARDBROWSER_API_URL").ok();
+        let old_key = env::var("SHARDBROWSER_API_KEY").ok();
+
+        env::set_var("SHARDBROWSER_API_URL", "http://shard:1234");
+        env::set_var("SHARDBROWSER_API_KEY", "shard-key");
+
+        let mut config = load_code_config().unwrap();
+        config = apply_env_overrides(config).unwrap();
+
+        assert_eq!(config.browser.shardbrowser.api_url, "http://shard:1234");
+        assert_eq!(config.browser.shardbrowser.api_key, "shard-key");
+        assert!(config.browser.shardbrowser.enabled);
+
+        if let Some(v) = old_url {
+            env::set_var("SHARDBROWSER_API_URL", v);
+        } else {
+            env::remove_var("SHARDBROWSER_API_URL");
+        }
+        if let Some(v) = old_key {
+            env::set_var("SHARDBROWSER_API_KEY", v);
+        } else {
+            env::remove_var("SHARDBROWSER_API_KEY");
+        }
+    }
+
+    #[test]
+    fn apply_env_overrides_orchestrator() {
+        let old_retries = env::var("MAX_RETRIES").ok();
+        let old_stagger = env::var("TASK_STAGGER_DELAY_MS").ok();
+        let old_timeout = env::var("TASK_TIMEOUT_MS").ok();
+
+        env::set_var("MAX_RETRIES", "5");
+        env::set_var("TASK_STAGGER_DELAY_MS", "100");
+        env::set_var("TASK_TIMEOUT_MS", "120000");
+
+        let mut config = load_code_config().unwrap();
+        config = apply_env_overrides(config).unwrap();
+
+        assert_eq!(config.orchestrator.max_retries, 5);
+        assert_eq!(config.orchestrator.task_stagger_delay_ms, 100);
+        assert_eq!(config.orchestrator.task_timeout_ms.get(), 120000);
+
+        if let Some(v) = old_retries {
+            env::set_var("MAX_RETRIES", v);
+        } else {
+            env::remove_var("MAX_RETRIES");
+        }
+        if let Some(v) = old_stagger {
+            env::set_var("TASK_STAGGER_DELAY_MS", v);
+        } else {
+            env::remove_var("TASK_STAGGER_DELAY_MS");
+        }
+        if let Some(v) = old_timeout {
+            env::set_var("TASK_TIMEOUT_MS", v);
+        } else {
+            env::remove_var("TASK_TIMEOUT_MS");
+        }
+    }
+
+    #[test]
+    fn apply_env_overrides_twitter_limits() {
+        let old_likes = env::var("TWITTER_MAX_LIKES").ok();
+        let old_retweets = env::var("TWITTER_MAX_RETWEETS").ok();
+        let old_total = env::var("TWITTER_MAX_TOTAL_ACTIONS").ok();
+
+        env::set_var("TWITTER_MAX_LIKES", "10");
+        env::set_var("TWITTER_MAX_RETWEETS", "5");
+        env::set_var("TWITTER_MAX_TOTAL_ACTIONS", "25");
+
+        let mut config = load_code_config().unwrap();
+        config = apply_env_overrides(config).unwrap();
+
+        assert_eq!(config.twitter_activity.engagement_limits.max_likes, 10);
+        assert_eq!(config.twitter_activity.engagement_limits.max_retweets, 5);
+        assert_eq!(
+            config.twitter_activity.engagement_limits.max_total_actions,
+            25
+        );
+
+        if let Some(v) = old_likes {
+            env::set_var("TWITTER_MAX_LIKES", v);
+        } else {
+            env::remove_var("TWITTER_MAX_LIKES");
+        }
+        if let Some(v) = old_retweets {
+            env::set_var("TWITTER_MAX_RETWEETS", v);
+        } else {
+            env::remove_var("TWITTER_MAX_RETWEETS");
+        }
+        if let Some(v) = old_total {
+            env::set_var("TWITTER_MAX_TOTAL_ACTIONS", v);
+        } else {
+            env::remove_var("TWITTER_MAX_TOTAL_ACTIONS");
+        }
+    }
+
+    #[test]
+    fn apply_env_overrides_twitter_llm() {
+        let old_enabled = env::var("TWITTER_LLM_ENABLED").ok();
+        let old_provider = env::var("TWITTER_LLM_PROVIDER").ok();
+        let old_model = env::var("TWITTER_LLM_MODEL").ok();
+
+        env::set_var("TWITTER_LLM_ENABLED", "true");
+        env::set_var("TWITTER_LLM_PROVIDER", "openrouter");
+        env::set_var("TWITTER_LLM_MODEL", "gpt-4");
+
+        let mut config = load_code_config().unwrap();
+        config = apply_env_overrides(config).unwrap();
+
+        assert!(config.twitter_activity.llm.enabled);
+        assert_eq!(config.twitter_activity.llm.provider, "openrouter");
+        assert_eq!(config.twitter_activity.llm.model, "gpt-4");
+
+        if let Some(v) = old_enabled {
+            env::set_var("TWITTER_LLM_ENABLED", v);
+        } else {
+            env::remove_var("TWITTER_LLM_ENABLED");
+        }
+        if let Some(v) = old_provider {
+            env::set_var("TWITTER_LLM_PROVIDER", v);
+        } else {
+            env::remove_var("TWITTER_LLM_PROVIDER");
+        }
+        if let Some(v) = old_model {
+            env::set_var("TWITTER_LLM_MODEL", v);
+        } else {
+            env::remove_var("TWITTER_LLM_MODEL");
+        }
+    }
+
+    #[test]
+    fn apply_env_overrides_cursor_overlay() {
+        let old_ms = env::var("CURSOR_OVERLAY_MS").ok();
+        let old_color = env::var("CURSOR_OVERLAY_COLOR").ok();
+
+        env::set_var("CURSOR_OVERLAY_MS", "50");
+        env::set_var("CURSOR_OVERLAY_COLOR", "#00ff00");
+
+        let mut config = load_code_config().unwrap();
+        config = apply_env_overrides(config).unwrap();
+
+        assert_eq!(config.browser.cursor_overlay_ms, 50);
+        assert_eq!(config.browser.cursor_overlay_color, "#00ff00");
+
+        if let Some(v) = old_ms {
+            env::set_var("CURSOR_OVERLAY_MS", v);
+        } else {
+            env::remove_var("CURSOR_OVERLAY_MS");
+        }
+        if let Some(v) = old_color {
+            env::set_var("CURSOR_OVERLAY_COLOR", v);
+        } else {
+            env::remove_var("CURSOR_OVERLAY_COLOR");
+        }
+    }
+
+    #[test]
+    fn load_dotenv_defaults_empty_value_skipped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env_path = tmp.path().join(".env");
+        std::fs::write(&env_path, "EMPTY_VAR=\n").unwrap();
+        let old = env::var("EMPTY_VAR").ok();
+        env::remove_var("EMPTY_VAR");
+        let orig_dir = env::current_dir().ok();
+        env::set_current_dir(tmp.path()).ok();
+        load_dotenv_defaults();
+        assert!(
+            env::var("EMPTY_VAR").is_err(),
+            "Empty value should not be set"
+        );
+        if let Some(v) = old {
+            env::set_var("EMPTY_VAR", v);
+        }
+        if let Some(d) = orig_dir {
+            env::set_current_dir(d).ok();
+        }
+    }
+
+    #[test]
+    fn load_dotenv_defaults_no_file_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let orig_dir = env::current_dir().ok();
+        env::set_current_dir(tmp.path()).ok();
+        load_dotenv_defaults();
+        if let Some(d) = orig_dir {
+            env::set_current_dir(d).ok();
+        }
+    }
+}

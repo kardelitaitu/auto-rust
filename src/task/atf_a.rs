@@ -11,7 +11,8 @@
 //! 3. Mouse-click the "Start Mining" command button (no confirmation handling)
 //! 4. `iframe_click` — click the "Tasks" tab inside the cross-origin mini-app
 //!    iframe (attaches an OOPIF CDP session; no navigation, no new tab)
-//! 5. `iframe_click` — click each "Go" task button (scrolls through the list)
+//! 5. `iframe_click` — click the YouTube task's "Go" button (targeted by
+//!    class + id, scrolled into view)
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -43,6 +44,10 @@ const START_MINING_SELECTOR: &str = "#MiddleColumn > div.messages-layout > div.T
 /// `#portals` (the K client used a stable `iframe.payment-verification` class;
 /// the A client's iframe has only a generated class, so the DOM path is used).
 const MINIAPP_IFRAME: &str = "#portals > div:nth-child(4) > div > div > div.modal-dialog.browser-modal-dialog > div.modal-content.custom-scroll > div > iframe";
+
+/// YouTube task button inside the mini-app — targeted by class + id:
+/// `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`.
+const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
 
 /// How long to wait for a Telegram mini-app action button, in milliseconds.
 const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
@@ -105,7 +110,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         bail!("Start Mining click failed: {}", outcome.summary());
     }
 
-    api.pause(2_000).await;
+    api.wait(2_000, 5_000).await;
 
     // Step 4: click the "Task Menu" tab inside the same iframe.
     info!("Clicking Task Menu tab inside iframe");
@@ -123,60 +128,27 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     ) {
         bail!("Task Menu click failed: {}", outcome.summary());
     }
-    api.pause(2_000).await;
+    api.wait(2_000, 5_000).await;
 
-    // Step 5: click each "Go" task button inside the iframe. The mini-app
-    // scrolls its task list; `iframe_click` scrolls each button into view.
-    // Track the last clicked local point and skip it on the next iteration so
-    // a button that stays visible (marked "done") isn't clicked repeatedly.
-    const GO_LOOP_TIMEOUT_MS: u64 = 8_000;
-    let total_go = api
-        .iframe_count(MINIAPP_IFRAME, "[id^=\"btn-telegram_\"]", 5_000)
-        .await
-        .unwrap_or(0);
-    info!("Found {total_go} Go button(s) to click");
-    let mut go_clicks = 0u32;
-    let mut skip: Option<(f64, f64)> = None;
-    loop {
-        let timeout = if go_clicks == 0 {
-            MINIAPP_ACTION_TIMEOUT_MS
-        } else {
-            GO_LOOP_TIMEOUT_MS
-        };
-        let outcome = match skip {
-            None => {
-                api.iframe_click(MINIAPP_IFRAME, "[id^=\"btn-telegram_\"]", timeout)
-                    .await
-            }
-            Some((sx, sy)) => {
-                api.iframe_click_skip(MINIAPP_IFRAME, "[id^=\"btn-telegram_\"]", sx, sy, timeout)
-                    .await
-            }
-        };
-        match outcome {
-            Ok(outcome) => {
-                go_clicks += 1;
-                info!("Go click #{go_clicks} result: {}", outcome.summary());
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("Task click 'Go' failed: {}", outcome.summary());
-                }
-                // Convert the clicked absolute point back to iframe-local coords
-                // so the next iteration skips this button.
-                if let Ok(rect) = api.get_element_rect(MINIAPP_IFRAME).await {
-                    skip = Some((outcome.x - rect.x, outcome.y - rect.y));
-                }
-            }
-            Err(e) => {
-                info!("No more Go buttons (clicked {go_clicks}): {e}");
-                break;
-            }
-        }
-        api.pause(1_500).await;
+    // Step 5: Click Go on Youtube Like — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+    info!("Clicking YouTube task button inside iframe");
+    let outcome = api
+        .iframe_click(
+            MINIAPP_IFRAME,
+            YOUTUBE_TASK_SELECTOR,
+            MINIAPP_ACTION_TIMEOUT_MS,
+        )
+        .await?;
+    info!("YouTube task click result: {}", outcome.summary());
+    if !matches!(
+        outcome.click,
+        crate::utils::mouse::types::ClickStatus::Success
+    ) {
+        bail!("YouTube task click failed: {}", outcome.summary());
     }
-    api.pause(2_000).await;
+
+    api.wait(2_000, 5_000).await;
 
     // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
     api.pause(200_000).await;
@@ -193,7 +165,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 mod tests {
     use super::{
         task_duration_ms, DEFAULT_ATF_A_TASK_DURATION_MS, DEFAULT_URL, MINIAPP_IFRAME,
-        START_MINING_SELECTOR,
+        START_MINING_SELECTOR, YOUTUBE_TASK_SELECTOR,
     };
 
     #[test]
@@ -227,5 +199,12 @@ mod tests {
         assert!(MINIAPP_IFRAME.starts_with("#portals > "));
         assert!(MINIAPP_IFRAME.contains("browser-modal-dialog"));
         assert!(!MINIAPP_IFRAME.contains("payment-verification"));
+    }
+
+    #[test]
+    fn youtube_task_selector_targets_class_and_id() {
+        assert_eq!(YOUTUBE_TASK_SELECTOR, ".btn-small#btn-youtube_like_comment");
+        assert!(YOUTUBE_TASK_SELECTOR.starts_with(".btn-small"));
+        assert!(YOUTUBE_TASK_SELECTOR.ends_with("#btn-youtube_like_comment"));
     }
 }

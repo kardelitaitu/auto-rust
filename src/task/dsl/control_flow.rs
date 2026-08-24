@@ -5,7 +5,6 @@
 
 use crate::task::dsl::{Action, Condition};
 use anyhow::Result;
-use futures::future::join_all;
 
 // Retry configuration parameters
 #[derive(Debug, Clone)]
@@ -318,45 +317,14 @@ impl<T: super::DslApi> super::DslExecutor<'_, T> {
         // Use a semaphore to limit concurrency if specified
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrency));
 
-        // Create futures for all actions
-        let mut handles = Vec::with_capacity(actions.len());
+        // NOTE: True parallel execution requires interior mutability on the executor,
+        // which is a larger architectural change. For now, execute sequentially while
+        // respecting the concurrency limit via semaphore. This ensures parallel: blocks
+        // work correctly even without true concurrency.
         for (idx, action) in actions.iter().enumerate() {
-            let permit = semaphore.clone().acquire_owned().await?;
-            let action_clone = action.clone();
-            let task_name = format!("{}[{}]", self.task_def.name, idx);
-
-            // We need to create a new executor for each parallel action
-            // since they can't share mutable state
-            log::debug!("Starting parallel action {idx}: {action_clone:?}");
-
-            // For now, execute sequentially within each parallel branch
-            // Full parallel would require redesigning executor for interior mutability
-            let future = async move {
-                let _permit = permit; // Hold permit until completion
-                log::debug!("Executing parallel action {idx} for '{task_name}'");
-                // Note: In a full implementation, we'd spawn a new executor here
-                // For now, we just log and return Ok
-                Ok::<(), anyhow::Error>(())
-            };
-            handles.push(future);
-        }
-
-        // Execute all futures and wait for completion
-        let results: Vec<Result<(), anyhow::Error>> = join_all(handles).await;
-
-        // Check for any failures
-        let mut errors = Vec::new();
-        for (idx, result) in results.iter().enumerate() {
-            if let Err(e) = result {
-                errors.push(format!("Action {idx} failed: {e}"));
-            }
-        }
-
-        if !errors.is_empty() {
-            return Err(anyhow::anyhow!(
-                "Parallel execution failed:\n{}",
-                errors.join("\n")
-            ));
+            let _permit = semaphore.clone().acquire_owned().await?;
+            log::debug!("Executing parallel action {idx} (sequential fallback)");
+            Box::pin(self.execute_action(action)).await?;
         }
 
         log::info!("Parallel execution complete");
@@ -385,15 +353,15 @@ impl<T: super::DslApi> super::DslExecutor<'_, T> {
                 // Try succeeded, do nothing
             }
             Err(e) => {
+                // Set error variable BEFORE catch block so catch actions can reference it
+                if let Some(var_name) = error_variable {
+                    self.variables.insert(var_name.to_string(), e.to_string());
+                }
                 // Try failed, execute catch block
                 if let Some(catch) = catch_actions {
                     for action in catch {
                         Box::pin(self.execute_action(action)).await?;
                     }
-                }
-                // Set error variable if specified
-                if let Some(var_name) = error_variable {
-                    self.variables.insert(var_name.to_string(), e.to_string());
                 }
             }
         }

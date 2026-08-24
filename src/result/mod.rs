@@ -432,8 +432,9 @@ mod tests {
 
     #[test]
     fn test_task_error_kind_classify_page_error() {
+        // "not found" errors are permanent (wrong selector), not session-level
         let kind = TaskErrorKind::classify("page not found");
-        assert_eq!(kind, TaskErrorKind::Session);
+        assert_eq!(kind, TaskErrorKind::Validation);
     }
 
     #[test]

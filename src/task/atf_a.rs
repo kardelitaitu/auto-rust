@@ -128,34 +128,55 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Step 5: Click Go on Youtube Like — target by class + id + text content
     // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+    // Repeat clicks until the "Go" text is gone (the mini-app replaces it after
+    // the task starts), with a random 1-2s interval, max 5 retries.
     const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
-    info!("Clicking YouTube task button inside iframe");
-    let outcome = api
-        .iframe_click_text(
-            MINIAPP_IFRAME,
-            YOUTUBE_TASK_SELECTOR,
-            "Go",
-            MINIAPP_ACTION_TIMEOUT_MS,
-        )
-        .await?;
-    info!("YouTube task click result: {}", outcome.summary());
-    if !matches!(
-        outcome.click,
-        crate::utils::mouse::types::ClickStatus::Success
-    ) {
-        bail!("YouTube task click failed: {}", outcome.summary());
+    const GO_RETRY_MAX: u32 = 5;
+    const GO_CHECK_TIMEOUT_MS: u64 = 5_000;
+    let mut clicks = 0u32;
+    loop {
+        let timeout = if clicks == 0 {
+            MINIAPP_ACTION_TIMEOUT_MS
+        } else {
+            GO_CHECK_TIMEOUT_MS
+        };
+        match api
+            .iframe_click_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go", timeout)
+            .await
+        {
+            Ok(outcome) => {
+                clicks += 1;
+                info!("YouTube task click #{clicks} result: {}", outcome.summary());
+                if !matches!(
+                    outcome.click,
+                    crate::utils::mouse::types::ClickStatus::Success
+                ) {
+                    bail!("YouTube task click failed: {}", outcome.summary());
+                }
+            }
+            Err(e) => {
+                info!("YouTube task 'Go' button gone (clicked {clicks}x): {e}");
+                break;
+            }
+        }
+        if clicks >= GO_RETRY_MAX {
+            info!("Reached max {GO_RETRY_MAX} clicks on YouTube task button");
+            break;
+        }
+        info!("Waiting random 1-2s before next attempt");
+        api.wait(1_000, 2_000).await;
     }
 
-    api.wait(1_000, 2_000).await;
+    api.wait(1_000, 3_000).await;
 
     // Step 6: Click Go on Twitter Retweet — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+    // `<button class="btn-small" id="btn-twitter_retweet">Go</button>`).
 
     // Step 7: Click Go on Visit Website — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+    // `<button class="btn-small" id="btn-btn-website_visit">Go</button>`).
 
     // Step 8: Click Go on React Telegram Post — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+    // `<button class="btn-small" id="btn-telegram_react_latest">Go</button>`).
 
     // Step 9: Click Go on React Telegram Post — target by class + id (the button is
     // `<button class="btn-small" id="btn-youtube_like_comment">Claim</button>`).

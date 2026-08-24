@@ -130,34 +130,36 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
     // Repeat clicks until the "Go" text is gone (the mini-app replaces it after
     // the task starts), with a random 1-2s interval, max 5 retries.
+    info!("Starting STEP 5 --- CLICKING GO button on Youtube Like");
     const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
     const GO_RETRY_MAX: u32 = 5;
     const GO_CHECK_TIMEOUT_MS: u64 = 2_000;
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Go" button is gone, instead of
+        // polling the full click timeout to discover it.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("YouTube task 'Go' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 YOUTUBE_TASK_SELECTOR,
                 "Go",
                 GO_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!("YouTube task click #{clicks} result: {}", outcome.summary());
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("YouTube task click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("YouTube task 'Go' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!("YouTube task click #{clicks} result: {}", outcome.summary());
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("YouTube task click failed: {}", outcome.summary());
         }
         if clicks >= GO_RETRY_MAX {
             info!("Reached max {GO_RETRY_MAX} clicks on YouTube task button");
@@ -177,29 +179,29 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     const RETWEET_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Go" button is gone.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, RETWEET_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("Retweet task 'Go' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 RETWEET_TASK_SELECTOR,
                 "Go",
                 RETWEET_TASK_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!("Retweet task click #{clicks} result: {}", outcome.summary());
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("Retweet task click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("Retweet task 'Go' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!("Retweet task click #{clicks} result: {}", outcome.summary());
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("Retweet task click failed: {}", outcome.summary());
         }
         if clicks >= RETWEET_TASK_RETRY_MAX {
             info!("Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
@@ -219,29 +221,29 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     const WEBSITE_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Go" button is gone.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, WEBSITE_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("Website task 'Go' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 WEBSITE_TASK_SELECTOR,
                 "Go",
                 WEBSITE_TASK_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!("Website task click #{clicks} result: {}", outcome.summary());
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("Website task click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("Website task 'Go' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!("Website task click #{clicks} result: {}", outcome.summary());
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("Website task click failed: {}", outcome.summary());
         }
         if clicks >= WEBSITE_TASK_RETRY_MAX {
             info!("Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
@@ -261,29 +263,29 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     const REACT_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
     let mut clicks = 0u32;
     loop {
-        match api
+        // Probe first — skip instantly when the "Go" button is gone.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, REACT_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("React task 'Go' button gone (clicked {clicks}x)");
+            break;
+        }
+        let outcome = api
             .iframe_click_text(
                 MINIAPP_IFRAME,
                 REACT_TASK_SELECTOR,
                 "Go",
                 REACT_TASK_CHECK_TIMEOUT_MS,
             )
-            .await
-        {
-            Ok(outcome) => {
-                clicks += 1;
-                info!("React task click #{clicks} result: {}", outcome.summary());
-                if !matches!(
-                    outcome.click,
-                    crate::utils::mouse::types::ClickStatus::Success
-                ) {
-                    bail!("React task click failed: {}", outcome.summary());
-                }
-            }
-            Err(e) => {
-                info!("React task 'Go' button gone (clicked {clicks}x): {e}");
-                break;
-            }
+            .await?;
+        clicks += 1;
+        info!("React task click #{clicks} result: {}", outcome.summary());
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("React task click failed: {}", outcome.summary());
         }
         if clicks >= REACT_TASK_RETRY_MAX {
             info!("Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
@@ -296,7 +298,6 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Switch focus back to the Telegram tab — earlier tasks (visit website /
     // youtube) may have opened a new tab and moved focus to it.
     api.focus_tab().await?;
-    api.wait(500, 1_000).await;
 
     // long wait until all task validated
     api.wait(30_000, 40_000).await;

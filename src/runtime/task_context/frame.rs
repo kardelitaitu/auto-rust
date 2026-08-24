@@ -87,6 +87,59 @@ impl TaskContext {
         .await
     }
 
+    /// Quick single-shot probe: check whether an element matching `element_selector`
+    /// with text `text_filter` exists inside the iframe. Returns immediately with
+    /// `true`/`false` (no poll loop). Useful as a fast "skip" check before
+    /// committing to a full `iframe_click_text` (which would otherwise poll for
+    /// the whole timeout just to discover the element is gone).
+    pub async fn iframe_has_text(
+        &self,
+        iframe_selector: &str,
+        element_selector: &str,
+        text_filter: &str,
+    ) -> Result<bool> {
+        if self.browser_ws_url.is_empty() {
+            return Ok(false);
+        }
+        let client =
+            match crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                .await
+            {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    log::warn!("[iframe_has_text] connect failed: {e}");
+                    return Ok(false);
+                }
+            };
+        let Some((rect, src)) = resolve_iframe(self.page(), iframe_selector).await? else {
+            return Ok(false);
+        };
+        if rect.width <= 0.0 || rect.height <= 0.0 {
+            return Ok(false);
+        }
+        let mut session_cache: Option<(String, String)> = None;
+        let Some(session_id) = self
+            .iframe_session_id(client.as_ref(), &src, &mut session_cache)
+            .await?
+        else {
+            return Ok(false);
+        };
+        let Some(client) = client.as_ref() else {
+            return Ok(false);
+        };
+        let escaped = escape_js_string(element_selector);
+        let text_escaped = escape_js_string(text_filter);
+        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector('{escaped}');
+                if (!el) return false;
+                return (el.textContent || '').trim() === '{text_escaped}';
+            }})()"#
+        );
+        let value = client.evaluate(&session_id, &js).await?;
+        Ok(value.as_bool().unwrap_or(false))
+    }
+
     /// Shared implementation for [`Self::iframe_click`] / [`Self::iframe_click_skip`]
     /// / [`Self::iframe_click_text`].
     async fn iframe_click_inner(

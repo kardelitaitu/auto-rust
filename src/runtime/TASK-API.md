@@ -21,10 +21,15 @@ api.navigate("https://example.com", 30_000).await?;
 let miniapp_url = api.iframe("iframe", 30_000).await?;
 ```
 
-**iframe_click(iframe_selector: &str, element_selector: &str, timeout_ms: u64)** -- Click an element inside an iframe in place (attaches an OOPIF CDP session; works across origins; scrolls first visible match into view). iframe_selector accepts CSS or XPath (starts with /)
+**iframe_click(iframe_selector: &str, element_selector: &str, timeout_ms: u64)** -- Click an element inside an iframe in place (attaches an OOPIF CDP session; works across origins; scrolls + hit-verifies the first visible match). iframe_selector accepts CSS or XPath (starts with /)
 ```rust
 let outcome = api.iframe_click("iframe.payment-verification", "[id^=\"btn-go\"]", 30_000).await?;
 let outcome = api.iframe_click("/html/body/div[10]/div/div[2]/div/div/iframe", "#btn-go", 30_000).await?;
+```
+
+**iframe_click_skip(iframe_selector: &str, element_selector: &str, skip_x: f64, skip_y: f64, timeout_ms: u64)** -- Like iframe_click but skips the element whose local center is within 5px of (skip_x, skip_y) — for clicking each item in a scrolling list
+```rust
+let outcome = api.iframe_click_skip("iframe.payment-verification", "[id^=\"btn-go\"]", 240.0, 310.0, 30_000).await?;
 ```
 
 **check_page_connected()** -- Check if page is connected

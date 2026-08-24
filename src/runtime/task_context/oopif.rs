@@ -29,6 +29,24 @@ fn next_call_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Extract the host from a URL.
+fn host_of(url: &str) -> Option<&str> {
+    let rest = url.split_once("://")?.1;
+    Some(rest.split(['/', '?', '#']).next().unwrap_or(rest))
+}
+
+/// Route a JSON-RPC response to its pending oneshot by call id.
+/// Returns `true` when a pending sender was found and notified.
+fn route_response(pending: &mut HashMap<u64, oneshot::Sender<Value>>, msg: &Value) -> bool {
+    if let Some(id) = msg.get("id").and_then(Value::as_u64) {
+        if let Some(tx) = pending.remove(&id) {
+            let _ = tx.send(msg.clone());
+            return true;
+        }
+    }
+    false
+}
+
 /// A CDP call queued for the writer task.
 struct Outgoing {
     id: u64,
@@ -84,11 +102,7 @@ impl OopifClient {
                 let Ok(v) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
-                if let Some(id) = v.get("id").and_then(Value::as_u64) {
-                    if let Some(tx) = pending_reader.lock().await.remove(&id) {
-                        let _ = tx.send(v.clone());
-                    }
-                }
+                route_response(&mut *pending_reader.lock().await, &v);
             }
         });
         let _ = (writer, reader);
@@ -128,8 +142,8 @@ impl OopifClient {
         Ok(resp.get("result").cloned().unwrap_or(Value::Null))
     }
 
-    /// Find an `iframe`-type target whose URL contains `host_hint`.
-    pub async fn find_iframe_target(&self, host_hint: &str) -> Result<Value> {
+    /// Find an `iframe`-type target whose URL host matches `host` exactly.
+    pub async fn find_iframe_target(&self, host: &str) -> Result<Value> {
         let result = self.call("Target.getTargets", json!({}), None).await?;
         let infos = result
             .get("targetInfos")
@@ -139,11 +153,11 @@ impl OopifClient {
         for info in infos {
             let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
             let url = info.get("url").and_then(Value::as_str).unwrap_or("");
-            if ty == "iframe" && url.contains(host_hint) {
+            if ty == "iframe" && host_of(url) == Some(host) {
                 return Ok(info);
             }
         }
-        Err(anyhow!("No iframe target found for host '{host_hint}'"))
+        Err(anyhow!("No iframe target found for host '{host}'"))
     }
 
     /// Attach to a target and return its flattened session id.
@@ -185,12 +199,59 @@ impl OopifClient {
 
 #[cfg(test)]
 mod tests {
-    use super::next_call_id;
+    use super::{host_of, next_call_id, route_response};
+    use serde_json::json;
+    use tokio::sync::oneshot;
 
     #[test]
     fn call_ids_increment() {
         let a = next_call_id();
         let b = next_call_id();
         assert!(b > a);
+    }
+
+    #[test]
+    fn host_of_extracts_host() {
+        assert_eq!(
+            host_of("https://atfminers.asloni.online/miner/index.html?v=1#x"),
+            Some("atfminers.asloni.online")
+        );
+        assert_eq!(
+            host_of("https://web.telegram.org/k/"),
+            Some("web.telegram.org")
+        );
+        assert_eq!(
+            host_of("ws://127.0.0.1:9222/devtools"),
+            Some("127.0.0.1:9222")
+        );
+        assert_eq!(host_of("not a url"), None);
+    }
+
+    #[test]
+    fn route_response_delivers_to_pending() {
+        let mut pending = std::collections::HashMap::new();
+        let (tx, rx) = oneshot::channel();
+        pending.insert(7, tx);
+        let msg = json!({ "id": 7, "result": { "ok": true } });
+        assert!(route_response(&mut pending, &msg));
+        assert!(pending.is_empty());
+        let received = rx.blocking_recv().expect("response delivered");
+        assert_eq!(received["result"]["ok"], true);
+    }
+
+    #[test]
+    fn route_response_ignores_unknown_or_event_messages() {
+        let mut pending = std::collections::HashMap::new();
+        // Unknown id
+        assert!(!route_response(
+            &mut pending,
+            &json!({ "id": 999, "result": {} })
+        ));
+        // Event message without id
+        assert!(!route_response(
+            &mut pending,
+            &json!({ "method": "Target.targetCreated" })
+        ));
+        assert!(pending.is_empty());
     }
 }

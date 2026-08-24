@@ -62,8 +62,20 @@ let outcome = api.iframe_click("/html/body/div[10]/div/div[2]/div/div/iframe", "
 ```
 
 The element selector may match **multiple elements** — the first visible match
-is scrolled into view and clicked. Call it repeatedly to click each match in a
-scrolling list (e.g. a list of "Go" buttons).
+is scrolled into view, hit-verified, and clicked. Call it repeatedly to click
+each match in a scrolling list (e.g. a list of "Go" buttons).
+
+### api.iframe_click_skip(iframe_selector, element_selector, skip_x, skip_y, timeout_ms)
+
+Like `api.iframe_click`, but skips the element whose **local center** is within
+5px of `(skip_x, skip_y)`. This is the right tool for clicking each item in a
+scrolling list one at a time: after clicking item N, convert its absolute
+outcome back to local coordinates (`absolute - iframe rect`) and pass it as the
+skip point so the same item is not clicked again even if it stays visible.
+
+```rust
+let outcome = api.iframe_click_skip("iframe.payment-verification", "[id^=\"btn-go\"]", 240.0, 310.0, 30_000).await?;
+```
 
 ## Clicking
 

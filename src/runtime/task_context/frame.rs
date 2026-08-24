@@ -41,42 +41,93 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
-        // Open ONE raw CDP session to the browser (reused across the poll loop
-        // below — avoids a new WebSocket per 200ms retry).
+        self.iframe_click_inner(iframe_selector, element_selector, None, timeout_ms)
+            .await
+    }
+
+    /// Like [`Self::iframe_click`], but skips the element whose local center is
+    /// within 5px of `(skip_x, skip_y)`. Useful for clicking each item in a
+    /// scrolling list one at a time (the previously clicked item stays visible).
+    pub async fn iframe_click_skip(
+        &self,
+        iframe_selector: &str,
+        element_selector: &str,
+        skip_x: f64,
+        skip_y: f64,
+        timeout_ms: u64,
+    ) -> Result<ClickOutcome> {
+        self.iframe_click_inner(
+            iframe_selector,
+            element_selector,
+            Some((skip_x, skip_y)),
+            timeout_ms,
+        )
+        .await
+    }
+
+    /// Shared implementation for [`Self::iframe_click`] / [`Self::iframe_click_skip`].
+    async fn iframe_click_inner(
+        &self,
+        iframe_selector: &str,
+        element_selector: &str,
+        skip: Option<(f64, f64)>,
+        timeout_ms: u64,
+    ) -> Result<ClickOutcome> {
+        // Open ONE raw CDP session to the browser (reused across the poll loop).
+        // Fail fast when the URL is configured but the browser is unreachable —
+        // don't silently degrade into a misleading "element not found".
         let client = if self.browser_ws_url.is_empty() {
             None
         } else {
-            match crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
-                .await
-            {
-                Ok(c) => Some(c),
-                Err(e) => {
-                    log::warn!("[iframe_click] OOPIF client connect failed: {e}");
-                    None
-                }
-            }
+            Some(
+                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                    .await
+                    .map_err(|e| {
+                        anyhow!(
+                            "OOPIF client connect to '{}' failed: {e}",
+                            self.browser_ws_url
+                        )
+                    })?,
+            )
         };
 
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_status = String::new();
+        // Cache the attached (target_id, session_id); re-attach only when the
+        // iframe target changes (e.g. the frame reloaded).
+        let mut session_cache: Option<(String, String)> = None;
         let (x, y) = loop {
             // 1. iframe absolute rect + src (top document; works for any iframe)
             let status = match resolve_iframe(self.page(), iframe_selector).await {
                 Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
                     // 2. element's local center inside the iframe (OOPIF attach)
                     match self
-                        .element_local_center(client.as_ref(), &src, element_selector)
+                        .element_local_center(
+                            client.as_ref(),
+                            &src,
+                            element_selector,
+                            skip,
+                            &mut session_cache,
+                        )
                         .await
                     {
                         Ok(Some((lx, ly))) => {
-                            let cx = rect.x + lx;
-                            let cy = rect.y + ly;
-                            log::info!(
-                                "[iframe_click] '{element_selector}' local ({lx:.1},{ly:.1}) + iframe ({:.1},{:.1}) -> ({cx:.1},{cy:.1})",
-                                rect.x,
-                                rect.y
-                            );
-                            break (cx, cy);
+                            // Re-read the iframe rect: `scrollIntoView` inside the
+                            // frame can scroll the parent page, moving the iframe.
+                            match resolve_iframe(self.page(), iframe_selector).await {
+                                Ok(Some((rect2, _))) if rect2.width > 0.0 && rect2.height > 0.0 => {
+                                    let cx = rect2.x + lx;
+                                    let cy = rect2.y + ly;
+                                    log::info!(
+                                        "[iframe_click] '{element_selector}' local ({lx:.1},{ly:.1}) + iframe ({:.1},{:.1}) -> ({cx:.1},{cy:.1})",
+                                        rect2.x,
+                                        rect2.y
+                                    );
+                                    break (cx, cy);
+                                }
+                                _ => "iframe moved or became unusable after element resolve"
+                                    .to_string(),
+                            }
                         }
                         Ok(None) => "element not found inside iframe yet".to_string(),
                         Err(e) => format!("element resolve error: {e}"),
@@ -169,13 +220,19 @@ impl TaskContext {
     ///
     /// Attaches a raw CDP session to the iframe's target via the browser debug
     /// WebSocket and evaluates JS inside the frame — the same mechanism DevTools
-    /// uses for cross-origin frames. The JS scrolls the first visible match into
-    /// view (handles scrollable lists and multiple matching elements).
+    /// uses for cross-origin frames. The JS:
+    /// - iterates all matching elements, scrolling each into view
+    /// - skips elements whose local center is within 5px of `skip` (if set)
+    /// - verifies the element is the topmost at the click point (`elementFromPoint`)
+    ///   so a covered element is not clicked
+    /// - returns the center of the first passing element
     async fn element_local_center(
         &self,
         client: Option<&crate::runtime::task_context::oopif::OopifClient>,
         iframe_src: &str,
         element_selector: &str,
+        skip: Option<(f64, f64)>,
+        cached: &mut Option<(String, String)>,
     ) -> Result<Option<(f64, f64)>> {
         let Some(client) = client else {
             log::debug!("[iframe] no OOPIF client available, cannot attach to iframe target");
@@ -199,17 +256,37 @@ impl TaskContext {
         let Some(target_id) = target.get("targetId").and_then(Value::as_str) else {
             return Ok(None);
         };
-        let session_id = client.attach(target_id).await?;
+        // Reuse the attached session while the target id is unchanged; re-attach
+        // only when the iframe reloads (new target id).
+        let session_id = match cached {
+            Some((tid, sid)) if tid == target_id => sid.clone(),
+            _ => {
+                let sid = client.attach(target_id).await?;
+                *cached = Some((target_id.to_string(), sid.clone()));
+                sid
+            }
+        };
 
         let escaped = element_selector.replace('\\', "\\\\").replace('\'', "\\'");
+        let skip_js = match skip {
+            Some((sx, sy)) => format!("const skipX = {sx}, skipY = {sy};"),
+            None => "const skipX = null, skipY = null;".to_string(),
+        };
         let js = format!(
             r#"(() => {{
+                {skip_js}
                 const els = document.querySelectorAll('{escaped}');
                 for (const el of els) {{
                     el.scrollIntoView({{ block: 'center' }});
                     const r = el.getBoundingClientRect();
                     if (r.width > 0 && r.height > 0) {{
-                        return {{ x: r.x + r.width / 2, y: r.y + r.height / 2 }};
+                        const cx = r.x + r.width / 2;
+                        const cy = r.y + r.height / 2;
+                        if (skipX !== null && Math.abs(cx - skipX) < 5 && Math.abs(cy - skipY) < 5) continue;
+                        const hit = document.elementFromPoint(cx, cy);
+                        if (hit && (el === hit || el.contains(hit) || hit.contains(el))) {{
+                            return {{ x: cx, y: cy }};
+                        }}
                     }}
                 }}
                 return null;

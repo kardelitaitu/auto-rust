@@ -123,23 +123,29 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.pause(2_000).await;
 
     // Step 5: click each "Go" task button inside the iframe. The mini-app
-    // scrolls its task list, so `iframe_click` scrolls each button into view;
-    // loop until no more Go buttons are visible.
+    // scrolls its task list; `iframe_click` scrolls each button into view.
+    // Track the last clicked local point and skip it on the next iteration so
+    // a button that stays visible (marked "done") isn't clicked repeatedly.
     const GO_LOOP_TIMEOUT_MS: u64 = 8_000;
     let mut go_clicks = 0u32;
+    let mut skip: Option<(f64, f64)> = None;
     loop {
-        match api
-            .iframe_click(
-                MINIAPP_IFRAME,
-                "[id^=\"btn-telegram_\"]",
-                if go_clicks == 0 {
-                    MINIAPP_ACTION_TIMEOUT_MS
-                } else {
-                    GO_LOOP_TIMEOUT_MS
-                },
-            )
-            .await
-        {
+        let timeout = if go_clicks == 0 {
+            MINIAPP_ACTION_TIMEOUT_MS
+        } else {
+            GO_LOOP_TIMEOUT_MS
+        };
+        let outcome = match skip {
+            None => {
+                api.iframe_click(MINIAPP_IFRAME, "[id^=\"btn-telegram_\"]", timeout)
+                    .await
+            }
+            Some((sx, sy)) => {
+                api.iframe_click_skip(MINIAPP_IFRAME, "[id^=\"btn-telegram_\"]", sx, sy, timeout)
+                    .await
+            }
+        };
+        match outcome {
             Ok(outcome) => {
                 go_clicks += 1;
                 info!("Go click #{go_clicks} result: {}", outcome.summary());
@@ -148,6 +154,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                     crate::utils::mouse::types::ClickStatus::Success
                 ) {
                     bail!("Task click 'Go' failed: {}", outcome.summary());
+                }
+                // Convert the clicked absolute point back to iframe-local coords
+                // so the next iteration skips this button.
+                if let Ok(rect) = api.get_element_rect(MINIAPP_IFRAME).await {
+                    skip = Some((outcome.x - rect.x, outcome.y - rect.y));
                 }
             }
             Err(e) => {

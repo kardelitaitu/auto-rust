@@ -71,6 +71,7 @@ pub mod frame;
 pub mod http;
 pub mod interaction;
 pub mod interaction_pipeline;
+pub mod oopif;
 pub mod page_nav;
 mod pointer;
 pub mod query;

@@ -297,6 +297,7 @@ version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "async-tungstenite",
  "bacon-pipeline",
  "chromiumoxide",
  "chrono",

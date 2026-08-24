@@ -39,6 +39,11 @@ const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 30_000;
 /// Telegram A client: the bot-command (Start Mining) button in the composer.
 const START_MINING_SELECTOR: &str = "#MiddleColumn > div.messages-layout > div.Transition > div > div.middle-column-footer > div.Composer.is-chat-composer.shown.mounted > div.composer-wrapper > div > button.Button.composer-action-button.bot-menu.open.default.translucent.round";
 
+/// Telegram A client: the mini-app iframe lives in the browser modal under
+/// `#portals` (the K client used a stable `iframe.payment-verification` class;
+/// the A client's iframe has only a generated class, so the DOM path is used).
+const MINIAPP_IFRAME: &str = "#portals > div:nth-child(4) > div > div > div.modal-dialog.browser-modal-dialog > div.modal-content.custom-scroll > div > iframe";
+
 /// How long to wait for a Telegram mini-app action button, in milliseconds.
 const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
 
@@ -101,10 +106,6 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
 
     api.pause(2_000).await;
-
-    // The mini-app iframe has a stable class — select it by CSS rather than
-    // a fragile positional XPath. (XPath is still supported for other cases.)
-    const MINIAPP_IFRAME: &str = "iframe.payment-verification";
 
     // Step 4: click the "Task Menu" tab inside the same iframe.
     info!("Clicking Task Menu tab inside iframe");
@@ -191,7 +192,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        task_duration_ms, DEFAULT_ATF_A_TASK_DURATION_MS, DEFAULT_URL, START_MINING_SELECTOR,
+        task_duration_ms, DEFAULT_ATF_A_TASK_DURATION_MS, DEFAULT_URL, MINIAPP_IFRAME,
+        START_MINING_SELECTOR,
     };
 
     #[test]
@@ -216,5 +218,14 @@ mod tests {
         assert!(START_MINING_SELECTOR.starts_with("#MiddleColumn > "));
         assert!(START_MINING_SELECTOR.contains("composer-action-button"));
         assert!(START_MINING_SELECTOR.contains("bot-menu"));
+    }
+
+    #[test]
+    fn miniapp_iframe_selector_targets_portals_modal() {
+        // Telegram A hosts the mini-app in the #portals browser modal,
+        // NOT the K client's `iframe.payment-verification` class.
+        assert!(MINIAPP_IFRAME.starts_with("#portals > "));
+        assert!(MINIAPP_IFRAME.contains("browser-modal-dialog"));
+        assert!(!MINIAPP_IFRAME.contains("payment-verification"));
     }
 }

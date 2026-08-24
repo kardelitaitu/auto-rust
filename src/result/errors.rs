@@ -205,8 +205,8 @@ impl TaskErrorKind {
     pub fn classify(error: &str) -> Self {
         match classify_error_pattern(error) {
             ErrorPattern::Timeout => TaskErrorKind::Timeout,
-            ErrorPattern::NotFound => TaskErrorKind::Session, // not found = session issue
-            ErrorPattern::PermissionDenied => TaskErrorKind::Browser,
+            ErrorPattern::NotFound => TaskErrorKind::Validation, // not found = permanent (wrong selector, not a session issue)
+            ErrorPattern::PermissionDenied => TaskErrorKind::Validation, // permission denied = permanent (not a browser issue)
             ErrorPattern::TargetTerminated => TaskErrorKind::Browser,
             ErrorPattern::Connection => TaskErrorKind::Browser,
             ErrorPattern::Network => TaskErrorKind::Browser,
@@ -766,17 +766,19 @@ mod tests {
 
     #[test]
     fn kind_classify_not_found() {
+        // NotFound maps to Validation (permanent, not retryable, not session-unhealthy)
         assert_eq!(
             TaskErrorKind::classify("element not found"),
-            TaskErrorKind::Session
+            TaskErrorKind::Validation
         );
     }
 
     #[test]
     fn kind_classify_permission_denied() {
+        // PermissionDenied maps to Validation (permanent, not retryable, not session-unhealthy)
         assert_eq!(
             TaskErrorKind::classify("permission denied"),
-            TaskErrorKind::Browser
+            TaskErrorKind::Validation
         );
     }
 

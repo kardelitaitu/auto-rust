@@ -277,7 +277,7 @@ pub(super) async fn execute_task_with_retry(
 
         if !last_failure
             .as_ref()
-            .is_some_and(|failure| failure.kind.is_retryable())
+            .is_some_and(|failure| failure.kind.is_retryable() && !failure.cancelled)
         {
             break;
         }

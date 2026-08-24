@@ -59,8 +59,8 @@ pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
         ErrorPattern::Disconnected => true,
         ErrorPattern::RateLimited => true,
 
-        // TaskErrorKind-specific patterns - treat as transient (safe default)
-        ErrorPattern::Validation => true,
+        // TaskErrorKind-specific patterns
+        ErrorPattern::Validation => false, // validation/permission errors are permanent
         ErrorPattern::Navigation => true,
         ErrorPattern::SessionChannel => true,
 

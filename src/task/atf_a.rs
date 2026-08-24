@@ -130,13 +130,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.wait(2_000, 5_000).await;
 
-    // Step 5: Click Go on Youtube Like — target by class + id (the button is
-    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+    // Step 5: Click Go on Youtube Like — target by class + id + text content
+    // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
     info!("Clicking YouTube task button inside iframe");
     let outcome = api
-        .iframe_click(
+        .iframe_click_text(
             MINIAPP_IFRAME,
             YOUTUBE_TASK_SELECTOR,
+            "Go",
             MINIAPP_ACTION_TIMEOUT_MS,
         )
         .await?;
@@ -148,7 +149,16 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         bail!("YouTube task click failed: {}", outcome.summary());
     }
 
-    api.wait(2_000, 5_000).await;
+    api.wait(1_000, 2_000).await;
+
+    // Step 6: Click Go on Twitter Retweet — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+
+    // Step 7: Click Go on Visit Website — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
+
+    // Step 8: Click Go on React Telegram Post — target by class + id (the button is
+    // `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
 
     // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
     api.pause(200_000).await;

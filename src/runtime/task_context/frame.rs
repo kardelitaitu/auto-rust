@@ -41,7 +41,7 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
-        self.iframe_click_inner(iframe_selector, element_selector, None, timeout_ms)
+        self.iframe_click_inner(iframe_selector, element_selector, None, None, timeout_ms)
             .await
     }
 
@@ -60,17 +60,41 @@ impl TaskContext {
             iframe_selector,
             element_selector,
             Some((skip_x, skip_y)),
+            None,
             timeout_ms,
         )
         .await
     }
 
-    /// Shared implementation for [`Self::iframe_click`] / [`Self::iframe_click_skip`].
+    /// Like [`Self::iframe_click`], but also requires the element's exact trimmed
+    /// text content to match `text_filter`. Useful when a CSS selector alone may
+    /// match multiple elements (e.g. `.btn-small#btn-youtube_like_comment` +
+    /// text "Go").
+    pub async fn iframe_click_text(
+        &self,
+        iframe_selector: &str,
+        element_selector: &str,
+        text_filter: &str,
+        timeout_ms: u64,
+    ) -> Result<ClickOutcome> {
+        self.iframe_click_inner(
+            iframe_selector,
+            element_selector,
+            None,
+            Some(text_filter),
+            timeout_ms,
+        )
+        .await
+    }
+
+    /// Shared implementation for [`Self::iframe_click`] / [`Self::iframe_click_skip`]
+    /// / [`Self::iframe_click_text`].
     async fn iframe_click_inner(
         &self,
         iframe_selector: &str,
         element_selector: &str,
         skip: Option<(f64, f64)>,
+        text_filter: Option<&str>,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
         // Open ONE raw CDP session to the browser (reused across the poll loop).
@@ -108,6 +132,7 @@ impl TaskContext {
                             element_selector,
                             skip,
                             &mut session_cache,
+                            text_filter,
                         )
                         .await
                     {
@@ -314,6 +339,7 @@ impl TaskContext {
         element_selector: &str,
         skip: Option<(f64, f64)>,
         cached: &mut Option<(String, String)>,
+        text_filter: Option<&str>,
     ) -> Result<Option<(f64, f64)>> {
         let Some(client) = client else {
             return Ok(None);
@@ -324,7 +350,7 @@ impl TaskContext {
         else {
             return Ok(None);
         };
-        let js = build_element_js(element_selector, skip);
+        let js = build_element_js(element_selector, skip, text_filter);
         let value = client.evaluate(&session_id, &js).await?;
         Ok(parse_local_center(&value))
     }
@@ -473,8 +499,13 @@ fn escape_js_string(s: &str) -> String {
 
 /// Build the JS that resolves the mini-app element's local center inside the
 /// iframe: iterate matches, scroll each into view, skip the point within 5px of
-/// `skip`, and hit-verify with `elementFromPoint` before returning the center.
-fn build_element_js(element_selector: &str, skip: Option<(f64, f64)>) -> String {
+/// `skip`, optionally require an exact trimmed text content (`text_filter`),
+/// and hit-verify with `elementFromPoint` before returning the center.
+fn build_element_js(
+    element_selector: &str,
+    skip: Option<(f64, f64)>,
+    text_filter: Option<&str>,
+) -> String {
     let escaped = escape_js_string(element_selector);
     // A non-finite skip coordinate is meaningless — `Math.abs(cx - NaN) < 5` is
     // always false, silently disabling the skip. Treat it as "no skip".
@@ -483,9 +514,14 @@ fn build_element_js(element_selector: &str, skip: Option<(f64, f64)>) -> String 
         Some((sx, sy)) => format!("const skipX = {sx}, skipY = {sy};"),
         None => "const skipX = null, skipY = null;".to_string(),
     };
+    let text_js = match text_filter {
+        Some(text) => format!("const textFilter = '{}';", escape_js_string(text)),
+        None => "const textFilter = null;".to_string(),
+    };
     format!(
         r#"(() => {{
             {skip_js}
+            {text_js}
             function scrollIntoFullView(el) {{
                 el.scrollIntoView({{ block: 'center', inline: 'center' }});
                 // Some mini-apps use nested scroll containers that scrollIntoView
@@ -513,6 +549,7 @@ fn build_element_js(element_selector: &str, skip: Option<(f64, f64)>) -> String 
             }}
             const els = document.querySelectorAll('{escaped}');
             for (const el of els) {{
+                if (textFilter !== null && (el.textContent || '').trim() !== textFilter) continue;
                 scrollIntoFullView(el);
                 const r = el.getBoundingClientRect();
                 if (!inViewport(r)) continue;
@@ -586,7 +623,7 @@ mod tests {
 
     #[test]
     fn build_element_js_embeds_selector_and_skip() {
-        let js = build_element_js("[id^=\"btn-x\"]", Some((10.5, 20.0)));
+        let js = build_element_js("[id^=\"btn-x\"]", Some((10.5, 20.0)), None);
         assert!(js.contains("querySelectorAll('[id^=\"btn-x\"]')"));
         assert!(js.contains("const skipX = 10.5, skipY = 20;"));
         assert!(js.contains("elementFromPoint"));
@@ -595,7 +632,7 @@ mod tests {
 
     #[test]
     fn build_element_js_no_skip_sets_null() {
-        let js = build_element_js(".btn", None);
+        let js = build_element_js(".btn", None, None);
         assert!(js.contains("const skipX = null, skipY = null;"));
         assert!(!js.contains("skipX = 0"));
     }
@@ -605,22 +642,22 @@ mod tests {
         // A NaN/Infinity skip coordinate is meaningless — `Math.abs(cx - NaN) < 5`
         // is always false, so the skip would silently never trigger. Spec: treat a
         // non-finite skip as "no skip" (skipX = null).
-        let nan_js = build_element_js(".btn", Some((f64::NAN, 5.0)));
+        let nan_js = build_element_js(".btn", Some((f64::NAN, 5.0)), None);
         assert!(nan_js.contains("const skipX = null, skipY = null;"));
         assert!(!nan_js.contains("skipX = NaN"));
 
-        let inf_js = build_element_js(".btn", Some((f64::INFINITY, 5.0)));
+        let inf_js = build_element_js(".btn", Some((f64::INFINITY, 5.0)), None);
         assert!(inf_js.contains("const skipX = null, skipY = null;"));
         assert!(!inf_js.contains("skipX = Infinity"));
 
-        let neg_inf_js = build_element_js(".btn", Some((5.0, f64::NEG_INFINITY)));
+        let neg_inf_js = build_element_js(".btn", Some((5.0, f64::NEG_INFINITY)), None);
         assert!(neg_inf_js.contains("const skipX = null, skipY = null;"));
     }
 
     #[test]
     fn build_element_js_escapes_selector_quotes() {
         // Selector with a single quote must be escaped inside the JS string.
-        let js = build_element_js("button[onclick=\"f('x')\"]", None);
+        let js = build_element_js("button[onclick=\"f('x')\"]", None, None);
         assert!(js.contains("f(\\'x\\')"));
     }
 
@@ -628,7 +665,7 @@ mod tests {
     fn build_element_js_requires_viewport_containment() {
         // The element must be fully inside the iframe viewport, otherwise the
         // click would land outside the iframe (below the mini-app).
-        let js = build_element_js(".btn", None);
+        let js = build_element_js(".btn", None, None);
         assert!(js.contains("function inViewport"));
         assert!(js.contains("r.x + r.width <= window.innerWidth"));
         assert!(js.contains("r.y + r.height <= window.innerHeight"));
@@ -639,7 +676,7 @@ mod tests {
     fn build_element_js_scrolls_nested_containers() {
         // Some mini-apps use nested scroll containers that plain scrollIntoView
         // cannot reach — the JS must walk scrollable ancestors manually.
-        let js = build_element_js(".btn", None);
+        let js = build_element_js(".btn", None, None);
         assert!(js.contains("function scrollIntoFullView"));
         assert!(js.contains("overflowY"));
         assert!(js.contains("node.scrollHeight > node.clientHeight"));
@@ -789,21 +826,40 @@ mod tests {
 
     #[test]
     fn build_element_js_with_complex_selector() {
-        let js = build_element_js("div.card > button.primary", None);
+        let js = build_element_js("div.card > button.primary", None, None);
         assert!(js.contains("div.card > button.primary"));
         assert!(js.contains("const skipX = null, skipY = null;"));
     }
 
     #[test]
     fn build_element_js_skip_with_negative_coords() {
-        let js = build_element_js(".btn", Some((-10.0, -5.5)));
+        let js = build_element_js(".btn", Some((-10.0, -5.5)), None);
         assert!(js.contains("const skipX = -10, skipY = -5.5;"));
     }
 
     #[test]
     fn build_element_js_skip_with_zero() {
-        let js = build_element_js(".btn", Some((0.0, 0.0)));
+        let js = build_element_js(".btn", Some((0.0, 0.0)), None);
         assert!(js.contains("const skipX = 0, skipY = 0;"));
+    }
+
+    #[test]
+    fn build_element_js_with_text_filter() {
+        let js = build_element_js(".btn-small#btn-youtube_like_comment", None, Some("Go"));
+        assert!(js.contains("const textFilter = 'Go';"));
+        assert!(js.contains("(el.textContent || '').trim() !== textFilter"));
+    }
+
+    #[test]
+    fn build_element_js_without_text_filter_sets_null() {
+        let js = build_element_js(".btn", None, None);
+        assert!(js.contains("const textFilter = null;"));
+    }
+
+    #[test]
+    fn build_element_js_escapes_text_filter_quotes() {
+        let js = build_element_js(".btn", None, Some("it's Go"));
+        assert!(js.contains("const textFilter = 'it\\'s Go';"));
     }
 
     #[test]
@@ -823,7 +879,7 @@ mod tests {
 
     #[test]
     fn build_element_js_selector_with_single_quotes() {
-        let js = build_element_js("input[name='user']", None);
+        let js = build_element_js("input[name='user']", None, None);
         // Single quotes in selector get escaped in JS string
         assert!(js.contains("input[name=\\'user\\']"));
     }

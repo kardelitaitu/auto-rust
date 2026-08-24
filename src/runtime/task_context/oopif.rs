@@ -480,10 +480,10 @@ mod tests {
     fn extract_result_value_number() {
         let resp = json!({
             "result": {
-                "result": { "type": "number", "value": 3.14 }
+                "result": { "type": "number", "value": 2.75 }
             }
         });
-        assert_eq!(extract_result_value(&resp), json!(3.14));
+        assert_eq!(extract_result_value(&resp), json!(2.75));
     }
 
     #[test]

@@ -75,8 +75,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         .await?;
 
     // Step 2: wait a random 2–5 seconds for the Telegram UI to settle.
-    info!("Waiting random 2-5s for the page to settle");
-    api.wait(2_000, 5_000).await;
+    info!("Waiting random 2-4s for the page to settle");
+    api.wait(2_000, 4_000).await;
 
     // Step 3: make sure the "Start Mining" command is present, then
     // mouse-click it with the native cursor.
@@ -107,6 +107,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Step 4: click the "Task Menu" tab inside the same iframe.
     info!("[Step 4] Clicking Task Menu tab inside iframe");
+    api.wait(2_000, 3_000).await;
     let outcome = api
         .iframe_click(
             MINIAPP_IFRAME,
@@ -161,6 +162,15 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         ) {
             bail!("[Step 5] YouTube task click failed: {}", outcome.summary());
         }
+        // Post-click probe: detect the state change (busy/done) right away
+        // instead of only noticing it on the next pre-click probe.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("[Step 5] YouTube task done (clicked {clicks}x)");
+            break;
+        }
         if clicks >= GO_RETRY_MAX {
             info!("[Step 5] Reached max {GO_RETRY_MAX} clicks on YouTube task button");
             break;
@@ -208,6 +218,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             crate::utils::mouse::types::ClickStatus::Success
         ) {
             bail!("[Step 6] Retweet task click failed: {}", outcome.summary());
+        }
+        // Post-click probe: stop as soon as the task state changes.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, RETWEET_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("[Step 6] Retweet task done (clicked {clicks}x)");
+            break;
         }
         if clicks >= RETWEET_TASK_RETRY_MAX {
             info!("[Step 6] Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
@@ -260,6 +278,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         ) {
             bail!("[Step 7] Website task click failed: {}", outcome.summary());
         }
+        // Post-click probe: stop as soon as the task state changes.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, WEBSITE_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("[Step 7] Website task done (clicked {clicks}x)");
+            break;
+        }
         if clicks >= WEBSITE_TASK_RETRY_MAX {
             info!("[Step 7] Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
             break;
@@ -307,6 +333,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             crate::utils::mouse::types::ClickStatus::Success
         ) {
             bail!("[Step 8] React task click failed: {}", outcome.summary());
+        }
+        // Post-click probe: stop as soon as the task state changes.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, REACT_TASK_SELECTOR, "Go")
+            .await?
+        {
+            info!("[Step 8] React task done (clicked {clicks}x)");
+            break;
         }
         if clicks >= REACT_TASK_RETRY_MAX {
             info!("[Step 8] Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
@@ -361,6 +395,18 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         ) {
             bail!("YouTube claim click failed: {}", outcome.summary());
         }
+        // Post-click probe: stop as soon as the task state changes.
+        if !api
+            .iframe_has_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-youtube_like_comment",
+                "Claim",
+            )
+            .await?
+        {
+            info!("YouTube claim done (clicked {clicks}x)");
+            break;
+        }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on YouTube claim button");
             break;
@@ -400,6 +446,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             crate::utils::mouse::types::ClickStatus::Success
         ) {
             bail!("Retweet claim click failed: {}", outcome.summary());
+        }
+        // Post-click probe: stop as soon as the task state changes.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-twitter_retweet", "Claim")
+            .await?
+        {
+            info!("Retweet claim done (clicked {clicks}x)");
+            break;
         }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on Retweet claim button");
@@ -441,6 +495,14 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         ) {
             bail!("Website claim click failed: {}", outcome.summary());
         }
+        // Post-click probe: stop as soon as the task state changes.
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-website_visit", "Claim")
+            .await?
+        {
+            info!("Website claim done (clicked {clicks}x)");
+            break;
+        }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on Website claim button");
             break;
@@ -481,6 +543,18 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             crate::utils::mouse::types::ClickStatus::Success
         ) {
             bail!("React claim click failed: {}", outcome.summary());
+        }
+        // Post-click probe: stop as soon as the task state changes.
+        if !api
+            .iframe_has_text(
+                MINIAPP_IFRAME,
+                ".btn-small#btn-telegram_react_latest",
+                "Claim",
+            )
+            .await?
+        {
+            info!("React claim done (clicked {clicks}x)");
+            break;
         }
         if clicks >= CLAIM_RETRY_MAX {
             info!("Reached max {CLAIM_RETRY_MAX} clicks on React claim button");

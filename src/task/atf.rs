@@ -57,7 +57,7 @@ const STATE_SCAN_JS: &str = r#"(() => {
     const text = b => (b.textContent || '').trim();
     const claimAction = q('.btn-main.state-claim#actionBtn');
     const tasksTab = q('#tab-tasks');
-    const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="overlay"],[id*="overlay"]')]
+    const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="dialog"],[id*="dialog"],[class*="popup"],[id*="popup"]')]
         .find(visible);
     const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
     return JSON.stringify({

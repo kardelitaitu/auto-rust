@@ -47,9 +47,14 @@ pub async fn goto_light(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
     goto_raw(page, url, timeout_ms).await
 }
 
+use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
+
 pub async fn goto_raw(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
     timeout(Duration::from_millis(timeout_ms), async {
-        page.goto(url).await?;
+        if let Err(e) = page.execute(NavigateParams::new(url)).await {
+            log::debug!("Page.navigate returned {e}, falling back to page.goto");
+            page.goto(url).await?;
+        }
         Ok::<(), anyhow::Error>(())
     })
     .await??;
@@ -78,6 +83,56 @@ pub async fn set_extra_http_headers(
     Ok(())
 }
 
+/// Injects stealth/evasion scripts into the page to prevent bot detection.
+pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
+    let stealth_js = r#"(() => {
+        try {
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+                configurable: true
+            });
+        } catch (_) {}
+        try {
+            if (!window.chrome) {
+                window.chrome = { runtime: {}, app: {}, loadTimes: () => ({}), csi: () => ({}) };
+            }
+        } catch (_) {}
+        try {
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+                configurable: true
+            });
+        } catch (_) {}
+        try {
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+                configurable: true
+            });
+        } catch (_) {}
+        try {
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+        } catch (_) {}
+    })()"#;
+
+    // Register script to execute on every new document / navigation
+    let _ = page
+        .execute(
+            chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams::new(
+                stealth_js,
+            ),
+        )
+        .await;
+
+    // Also evaluate in the currently active document
+    let _ = page.evaluate(stealth_js).await;
+    Ok(())
+}
+
 pub async fn page_url(page: &Page) -> Result<String> {
     let result = page.evaluate("window.location.href").await?;
     let value = result
@@ -97,20 +152,19 @@ pub async fn page_title(page: &Page) -> Result<String> {
 pub async fn wait_for_load(page: &Page, timeout_ms: u64) -> Result<()> {
     timeout(
         Duration::from_millis(timeout_ms),
-        wait_for_page_settle(page),
+        wait_for_page_settle(page, timeout_ms),
     )
     .await??;
     Ok(())
 }
 
-async fn wait_for_page_settle(page: &Page) -> Result<()> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+async fn wait_for_page_settle(page: &Page, timeout_ms: u64) -> Result<()> {
+    let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        let state = page
-            .evaluate("document.readyState")
-            .await?
-            .value()
-            .and_then(|v| v.as_str().map(str::to_string));
+        let state = match page.evaluate("document.readyState").await {
+            Ok(res) => res.value().and_then(|v| v.as_str().map(str::to_string)),
+            Err(_) => None, // Ignore transient CDP context destruction during redirects
+        };
 
         if matches!(state.as_deref(), Some("interactive" | "complete")) {
             return Ok(());
@@ -161,8 +215,17 @@ mod tests {
 
     #[test]
     fn test_page_settle_deadline() {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        let timeout_ms = 10_000u64;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
         assert!(deadline > std::time::Instant::now());
+    }
+
+    #[test]
+    fn test_headers_serialization() {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("X-Custom-Header".to_string(), "Value123".to_string());
+        let json_val = serde_json::to_value(&map).expect("serialization works");
+        assert_eq!(json_val["X-Custom-Header"], "Value123");
     }
 
     #[test]

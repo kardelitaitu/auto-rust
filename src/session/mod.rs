@@ -35,7 +35,6 @@ use dashmap::DashSet;
 use futures::StreamExt;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Semaphore;
 
 /// Represents a browser session with connection management and health monitoring.
@@ -196,20 +195,12 @@ impl Session {
         browser_ws_url: String,
     ) -> Self {
         let id_clone = id.clone();
-        // Spawn handler polling task - keep it alive for the lifetime of the session
+        // Spawn handler continuous stream task - keep it alive for the lifetime of the session
         let handler_task = tokio::spawn(async move {
             let mut handler = handler;
-            loop {
-                match tokio::time::timeout(Duration::from_secs(5), handler.next()).await {
-                    Ok(Some(Ok(()))) => {}
-                    Ok(Some(Err(_))) => {}
-                    Ok(None) => {
-                        // Handler stream ended
-                        break;
-                    }
-                    Err(_) => {
-                        // Non-fatal handler timeouts are expected on idle sessions and are suppressed.
-                    }
+            while let Some(msg) = handler.next().await {
+                if let Err(e) = msg {
+                    log::debug!("[{id_clone}] CDP handler error: {e}");
                 }
             }
             log::debug!("Handler task ended for session {id_clone}");

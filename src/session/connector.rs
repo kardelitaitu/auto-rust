@@ -112,11 +112,15 @@ impl BrowserConnector for ConfiguredProfileConnector {
         let mut capabilities = Vec::new();
 
         for profile in &config.browser.profiles {
+            let ws_url = resolve_ws_url(&profile.ws_endpoint)
+                .await
+                .unwrap_or_else(|| profile.ws_endpoint.clone());
+
             capabilities.push(BrowserCapabilities {
                 id: format!("config-{}", profile.name),
                 name: profile.name.clone(),
                 browser_type: profile.r#type.clone(),
-                ws_url: profile.ws_endpoint.clone(),
+                ws_url,
                 source: BrowserSource::Configured,
             });
         }
@@ -135,12 +139,16 @@ impl BrowserConnector for ConfiguredProfileConnector {
             )));
         }
 
+        let ws_url = resolve_ws_url(&capability.ws_url)
+            .await
+            .unwrap_or_else(|| capability.ws_url.clone());
+
         let connect_timeout =
             Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
 
         match tokio::time::timeout(
             connect_timeout,
-            chromiumoxide::Browser::connect(&capability.ws_url),
+            chromiumoxide::Browser::connect(&ws_url),
         )
         .await
         {
@@ -248,9 +256,11 @@ impl BrowserConnector for RoxyBrowserConnector {
                 .map(str::to_string);
 
             let ws_url = if let Some(url) = ws_url {
-                url
+                resolve_ws_url(&url).await.unwrap_or(url)
             } else if let Some(http) = http_url {
-                http.replace("http", "ws")
+                resolve_ws_url(&http)
+                    .await
+                    .unwrap_or_else(|| http.replace("http", "ws"))
             } else {
                 warn!("Profile {i} missing ws/http, skipping");
                 continue;
@@ -325,11 +335,10 @@ impl BrowserConnector for RoxyBrowserConnector {
 
 /// Budget for the TCP reachability probe used before HTTP discovery calls.
 ///
-/// Live local browser APIs accept TCP connections in single-digit ms, while a
-/// dead endpoint on Windows can take ~2s to refuse. Probing with a short budget
-/// lets discovery skip unreachable services almost instantly instead of paying
-/// the full HTTP connect cost per connector.
-const API_REACHABILITY_TIMEOUT: Duration = Duration::from_millis(500);
+/// Live local browser APIs accept TCP connections quickly, but slow proxy setups
+/// or anti-detect browser APIs on Windows can take longer to accept initial sockets.
+/// Probing with a 2000ms budget prevents skipping active anti-detect browsers.
+const API_REACHABILITY_TIMEOUT: Duration = Duration::from_millis(2000);
 
 /// Quickly checks whether the host:port of an http(s) base URL accepts TCP
 /// connections within `API_REACHABILITY_TIMEOUT`.

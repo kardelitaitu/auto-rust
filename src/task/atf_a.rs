@@ -38,7 +38,7 @@ const DEFAULT_URL: &str = "https://web.telegram.org/a/#8233119648";
 pub const DEFAULT_ATF_A_TASK_DURATION_MS: u64 = 180_000;
 
 /// Navigation timeout for slow connections, in milliseconds.
-const NAVIGATION_TIMEOUT_MS: u64 = 90_000;
+const NAVIGATION_TIMEOUT_MS: u64 = 120_000;
 
 /// How long to wait for the "Start Mining" button to appear, in milliseconds.
 const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 45_000;
@@ -68,7 +68,7 @@ const STATE_SCAN_JS: &str = r#"(() => {
     const tasksTab = q('#tab-tasks');
     const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="dialog"],[id*="dialog"],[class*="popup"],[id*="popup"]')]
         .find(visible);
-    const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
+    const busyModalText = busyEl ? (busyEl.innerText || '') : '';
     return JSON.stringify({
         claimAction: !!claimAction && visible(claimAction) && text(claimAction) === 'CLAIM',
         tasksActive: !!tasksTab && tasksTab.classList.contains('active'),
@@ -76,7 +76,7 @@ const STATE_SCAN_JS: &str = r#"(() => {
         claimButtons: btns.filter(b => text(b) === 'Claim').map(b => b.id),
         busyModal: !!busyEl,
         busyModalId: busyEl ? (busyEl.id || busyEl.className || busyEl.tagName).toString().slice(0, 80) : '',
-        busyText: /Processing|Please wait/i.test(body)
+        busyText: /Processing|Please wait/i.test(busyModalText)
     });
 })()"#;
 
@@ -223,12 +223,30 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     ensure_tasks_visible(api).await?;
 
     // Steps 5-8: click each "Go" task button.
-    click_task_button(api, ".btn-small#btn-youtube_like_comment", "Go", "[Step 5]").await?;
-    click_task_button(api, ".btn-small#btn-twitter_retweet", "Go", "[Step 6]").await?;
-    click_task_button(api, ".btn-small#btn-website_visit", "Go", "[Step 7]").await?;
     click_task_button(
         api,
-        ".btn-small#btn-telegram_react_latest",
+        ".btn-small#btn-youtube_like_comment, #btn-youtube_like_comment, [id*='youtube']",
+        "Go",
+        "[Step 5]",
+    )
+    .await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-twitter_retweet, #btn-twitter_retweet, [id*='twitter'], [id*='retweet']",
+        "Go",
+        "[Step 6]",
+    )
+    .await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-website_visit, #btn-website_visit, [id*='website'], [id*='visit']",
+        "Go",
+        "[Step 7]",
+    )
+    .await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-telegram_react_latest, #btn-telegram_react_latest, [id*='telegram'], [id*='react']",
         "Go",
         "[Step 8]",
     )
@@ -241,16 +259,28 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Steps 9-12: click each "Claim" task button.
     click_task_button(
         api,
-        ".btn-small#btn-youtube_like_comment",
+        ".btn-small#btn-youtube_like_comment, #btn-youtube_like_comment, [id*='youtube']",
         "Claim",
         "[Step 9]",
     )
     .await?;
-    click_task_button(api, ".btn-small#btn-twitter_retweet", "Claim", "[Step 10]").await?;
-    click_task_button(api, ".btn-small#btn-website_visit", "Claim", "[Step 11]").await?;
     click_task_button(
         api,
-        ".btn-small#btn-telegram_react_latest",
+        ".btn-small#btn-twitter_retweet, #btn-twitter_retweet, [id*='twitter'], [id*='retweet']",
+        "Claim",
+        "[Step 10]",
+    )
+    .await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-website_visit, #btn-website_visit, [id*='website'], [id*='visit']",
+        "Claim",
+        "[Step 11]",
+    )
+    .await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-telegram_react_latest, #btn-telegram_react_latest, [id*='telegram'], [id*='react']",
         "Claim",
         "[Step 12]",
     )
@@ -372,12 +402,15 @@ async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
             other => other,
         };
         let tasks_active = value["tasksActive"].as_bool().unwrap_or(false);
-        let go = value["goButtons"].as_array().map(|a| a.len()).unwrap_or(0);
-        let claim = value["claimButtons"]
-            .as_array()
-            .map(|a| a.len())
-            .unwrap_or(0);
-        if tasks_active && (go > 0 || claim > 0) {
+        let go_buttons = value["goButtons"].as_array().cloned().unwrap_or_default();
+        let claim_buttons = value["claimButtons"].as_array().cloned().unwrap_or_default();
+        info!(
+            "[tasks] Scan attempt {}: active={tasks_active}, goButtons={:?}, claimButtons={:?}",
+            attempt + 1,
+            go_buttons,
+            claim_buttons
+        );
+        if tasks_active && (!go_buttons.is_empty() || !claim_buttons.is_empty()) {
             return Ok(());
         }
         if !tasks_active {
@@ -389,16 +422,14 @@ async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
         }
         api.wait(1_000, 2_000).await;
     }
-    info!("[tasks] tasks not visible after retries — proceeding");
+    info!("[tasks] tasks scan completed — proceeding to task steps");
     Ok(())
 }
 
 /// Click a task button (by selector + exact text) until its state changes.
 ///
-/// Robust per-step helper: waits for busy to clear, ensures the Tasks tab is
-/// visible, probes before AND after each click, and stops when the button is
-/// gone/disabled/busy or its text no longer matches. Max 5 clicks, 0.5-2s
-/// between attempts. Skips cleanly if the button is never present (returns false).
+/// Robust per-step helper: directly tries `iframe_click_text` with a 3s poll
+/// timeout so async DOM rendering never trips an instant false skip.
 async fn click_task_button(
     api: &TaskContext,
     selector: &str,
@@ -406,30 +437,22 @@ async fn click_task_button(
     label: &str,
 ) -> Result<bool> {
     const MAX_RETRY: u32 = 3;
-    const TIMEOUT_MS: u64 = 5_000;
+    const TIMEOUT_MS: u64 = 3_000;
     wait_not_busy(api).await?;
-    ensure_tasks_visible(api).await?;
     let mut clicks = 0u32;
     loop {
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, selector, text)
-            .await
-            .unwrap_or(false)
-        {
-            info!("[{label}] skipped — no '{text}' button");
-            return Ok(clicks > 0);
-        }
         let _ = api.focus_tab().await;
-        // The click itself re-resolves the element (scrollIntoView + hit-test).
-        // If it can't be found (blank area / iframe changed), skip the step
-        // instead of crashing the whole task.
         let outcome = match api
             .iframe_click_text(MINIAPP_IFRAME, selector, text, TIMEOUT_MS)
             .await
         {
             Ok(o) => o,
             Err(e) => {
-                info!("[{label}] click target not found — skipping (clicked {clicks}x): {e}");
+                if clicks == 0 {
+                    info!("[{label}] skipped — no '{text}' button: {e}");
+                } else {
+                    info!("[{label}] done after {clicks} click(s) — button state changed away from '{text}'");
+                }
                 return Ok(clicks > 0);
             }
         };
@@ -443,21 +466,9 @@ async fn click_task_button(
             return Ok(clicks > 0);
         }
         // Allow mini-app JS time to process click event and update DOM state
-        // (e.g. 'Go' -> 'Processing' / 'Claim' / disabled).
-        api.wait(600, 900).await;
+        api.wait(600, 1_000).await;
         // Close any spawned tabs (e.g. YouTube / Twitter / Web) and return focus
         let _ = api.focus_tab().await;
-        // Post-click probe: stop as soon as the state changes away from 'text'.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, selector, text)
-            .await
-            .unwrap_or(false)
-        {
-            info!(
-                "[{label}] button state changed away from '{text}' — done after {clicks} click(s)"
-            );
-            return Ok(true);
-        }
         if clicks >= MAX_RETRY {
             info!("[{label}] max retries ({clicks}x) — moving on");
             return Ok(true);

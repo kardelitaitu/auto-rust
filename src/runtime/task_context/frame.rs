@@ -209,10 +209,21 @@ impl TaskContext {
         element_selector: &str,
         text_filter: &str,
     ) -> Result<bool> {
-        Ok(self
-            .iframe_has_text_once(iframe_selector, element_selector, text_filter)
-            .await?
-            .unwrap_or(false))
+        let deadline = Instant::now() + Duration::from_millis(2_000);
+        loop {
+            match self
+                .iframe_has_text_once(iframe_selector, element_selector, text_filter)
+                .await?
+            {
+                Some(answer) => return Ok(answer),
+                None => {
+                    if Instant::now() >= deadline {
+                        return Ok(false);
+                    }
+                    tokio::time::sleep(Duration::from_millis(150)).await;
+                }
+            }
+        }
     }
 
     /// One-shot probe. Returns:
@@ -285,12 +296,11 @@ impl TaskContext {
                 const tabCount = document.querySelectorAll('[onclick^="switchTab("]').length;
                 const body = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').trim().slice(0, 200);
                 const docUrl = location.href.slice(0, 80);
-                const ready = document.readyState;
-                // Busy detection: a genuinely visible modal/dialog/popup, or
-                // task-processing text. Hidden modal shells (visibility:hidden /
-                // opacity:0) still have a non-zero rect, so check computed style.
-                // 'overlay' alone is excluded — decorative effects (lightning,
-                // particles) and backdrops match it and cause false positives.
+                // Busy detection: a genuinely visible modal/dialog/popup.
+                // Hidden modal shells (visibility:hidden / opacity:0) still have a
+                // non-zero rect, so check computed style. 'overlay' alone is excluded —
+                // decorative effects (lightning, particles) and backdrops match it and
+                // cause false positives.
                 const visible = n => {{
                     const r = n.getBoundingClientRect();
                     if (r.width <= 0 || r.height <= 0) return false;
@@ -299,7 +309,7 @@ impl TaskContext {
                 }};
                 const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="dialog"],[id*="dialog"],[class*="popup"],[id*="popup"]')]
                     .find(visible);
-                const busy = !!busyEl || /Processing|Please wait/i.test(body);
+                const busy = !!busyEl;
                 if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready, busy }});
                 return JSON.stringify({{
                     found: true,

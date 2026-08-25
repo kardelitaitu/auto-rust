@@ -140,7 +140,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         bail!("Start Mining click failed: {}", outcome.summary());
     }
 
-    api.wait(1_000, 3_000).await;
+    api.wait(3_000, 6_000).await;
 
     // ── Interaction steps (each independent) ──────────────────────────────
     // Every step reads the current mini-app state before acting, and skips
@@ -203,35 +203,17 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     click_task_button(api, ".btn-small#btn-youtube_like_comment", "Go", "[Step 5]").await?;
     click_task_button(api, ".btn-small#btn-twitter_retweet", "Go", "[Step 6]").await?;
     click_task_button(api, ".btn-small#btn-website_visit", "Go", "[Step 7]").await?;
-    click_task_button(
-        api,
-        ".btn-small#btn-telegram_react_latest",
-        "Go",
-        "[Step 8]",
-    )
-    .await?;
+    click_task_button(api, ".btn-small#btn-telegram_react_latest", "Go", "[Step 8]").await?;
 
     // Wait for the mini-app to validate the tasks (buttons become "Claim").
     info!("Waiting random 30-40s until all task synced");
-    api.wait(30_000, 40_000).await;
+    api.wait(30_000, 35_000).await;
 
     // Steps 9-12: click each "Claim" task button.
-    click_task_button(
-        api,
-        ".btn-small#btn-youtube_like_comment",
-        "Claim",
-        "[Step 9]",
-    )
-    .await?;
+    click_task_button(api, ".btn-small#btn-youtube_like_comment", "Claim", "[Step 9]").await?;
     click_task_button(api, ".btn-small#btn-twitter_retweet", "Claim", "[Step 10]").await?;
     click_task_button(api, ".btn-small#btn-website_visit", "Claim", "[Step 11]").await?;
-    click_task_button(
-        api,
-        ".btn-small#btn-telegram_react_latest",
-        "Claim",
-        "[Step 12]",
-    )
-    .await?;
+    click_task_button(api, ".btn-small#btn-telegram_react_latest", "Claim", "[Step 12]").await?;
 
     api.wait(500, 2_000).await;
 

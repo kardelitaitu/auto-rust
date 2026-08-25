@@ -423,7 +423,59 @@ impl TaskContext {
                                     .to_string(),
                             }
                         }
-                        Ok(None) => "element not found inside iframe yet".to_string(),
+                        Ok(None) => {
+                            // Diagnose WHY the element couldn't be resolved: how
+                            // many matched, how many passed text filter, how many
+                            // ended up in viewport, and what elementFromPoint sees
+                            // at the first candidate's center.
+                            if let Ok(Some((_dr, dsrc))) =
+                                resolve_iframe(self.page(), iframe_selector).await
+                            {
+                                if let Ok(Some(dsession)) =
+                                    self.iframe_session_id(client.as_ref(), &dsrc).await
+                                {
+                                    let dsel = escape_js_string(element_selector);
+                                    let dtf = match text_filter {
+                                        Some(t) => {
+                                            format!("const textFilter = '{}';", escape_js_string(t))
+                                        }
+                                        None => "const textFilter = null;".to_string(),
+                                    };
+                                    let djs = format!(
+                                        r#"(() => {{
+                                            {dtf}
+                                            const els = [...document.querySelectorAll('{dsel}')];
+                                            const txt = e => (e.textContent || '').trim();
+                                            const inVp = r => r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0 && r.x + r.width <= innerWidth && r.y + r.height <= innerHeight;
+                                            const withText = els.filter(e => textFilter === null || txt(e) === textFilter);
+                                            const visible = withText.filter(e => inVp(e.getBoundingClientRect()));
+                                            const first = visible[0];
+                                            let hit = null;
+                                            if (first) {{
+                                                const r = first.getBoundingClientRect();
+                                                const h = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
+                                                hit = h ? (h.id || h.className || h.tagName).toString().slice(0,40) : 'null';
+                                            }}
+                                            return JSON.stringify({{
+                                                matches: els.length,
+                                                withText: withText.length,
+                                                inViewport: visible.length,
+                                                firstRect: first ? (() => {{ const r = first.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]; }})() : null,
+                                                hit
+                                            }});
+                                        }})()"#
+                                    );
+                                    if let Some(dclient) = client.as_ref() {
+                                        if let Ok(dval) = dclient.evaluate(&dsession, &djs).await {
+                                            log::info!(
+                                                "[iframe_click] '{element_selector}' resolve diag: {dval}"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            "element not found inside iframe yet".to_string()
+                        }
                         Err(e) => format!("element resolve error: {e}"),
                     }
                 }
@@ -788,6 +840,11 @@ fn build_element_js(
                     r.y + r.height <= window.innerHeight;
             }}
             const els = document.querySelectorAll('{escaped}');
+            // Best-effort fallback: first in-viewport candidate whose center we
+            // can return even if the topmost hit-test fails (a transparent or
+            // non-interactive element covering the button). We never return an
+            // off-viewport / zero-size center, so we don't click blank areas.
+            let fallback = null;
             for (const el of els) {{
                 if (textFilter !== null && (el.textContent || '').trim() !== textFilter) continue;
                 scrollIntoFullView(el);
@@ -796,12 +853,13 @@ fn build_element_js(
                 const cx = r.x + r.width / 2;
                 const cy = r.y + r.height / 2;
                 if (skipX !== null && Math.abs(cx - skipX) < 5 && Math.abs(cy - skipY) < 5) continue;
+                if (fallback === null) fallback = {{ x: cx, y: cy }};
                 const hit = document.elementFromPoint(cx, cy);
                 if (hit && (el === hit || el.contains(hit) || hit.contains(el))) {{
                     return {{ x: cx, y: cy }};
                 }}
             }}
-            return null;
+            return fallback;
         }})()"#
     )
 }

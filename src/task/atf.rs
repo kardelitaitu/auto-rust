@@ -113,15 +113,18 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     const MINIAPP_IFRAME: &str = "iframe.payment-verification";
     const STATE_SCAN_JS: &str = r#"(() => {
         const q = s => document.querySelector(s);
-        const btns = [...document.querySelectorAll('.btn-small')];
+        const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        // Only VISIBLE buttons — hidden tabs (friends/profile/miners) also have
+        // .btn-small buttons in the DOM; we must not act on them.
+        const btns = [...document.querySelectorAll('.btn-small')].filter(visible);
         const text = b => (b.textContent || '').trim();
         const claimAction = q('.btn-main.state-claim#actionBtn');
         const tasksTab = q('#tab-tasks');
         const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="overlay"],[id*="overlay"]')]
-            .find(n => { const r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+            .find(visible);
         const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
         return JSON.stringify({
-            claimAction: !!claimAction && text(claimAction) === 'CLAIM',
+            claimAction: !!claimAction && visible(claimAction) && text(claimAction) === 'CLAIM',
             tasksActive: !!tasksTab && tasksTab.classList.contains('active'),
             goButtons: btns.filter(b => text(b) === 'Go').map(b => b.id),
             claimButtons: btns.filter(b => text(b) === 'Claim').map(b => b.id),
@@ -138,9 +141,16 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             warn!("[state] max rounds reached — stopping interaction loop");
             break;
         }
-        let raw = api
-            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 15_000)
-            .await?;
+        let raw = match api.iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 15_000).await {
+            Ok(v) => v,
+            Err(e) => {
+                // Transient iframe glitch (modal re-render) — retry instead of
+                // aborting the whole task.
+                warn!("[state] iframe scan failed: {e} — waiting 2s");
+                api.wait(1_000, 2_000).await;
+                continue;
+            }
+        };
         let value = match raw {
             Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
             other => other,

@@ -138,23 +138,23 @@ impl TaskContext {
                 const sample = [...document.querySelectorAll('[id*="btn-"]')]
                     .slice(0, 8).map(b => b.id).join(',');
                 const tabCount = document.querySelectorAll('[onclick^="switchTab("]').length;
-                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount }});
+                const body = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').trim().slice(0, 200);
+                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body }});
                 return JSON.stringify({{
                     found: true,
                     text: (el.textContent || '').trim(),
                     disabled: !!el.disabled,
                     btnCount,
                     sample,
-                    tabCount
+                    tabCount,
+                    body
                 }});
             }})()"#
         );
         let value = client.evaluate(&session_id, &js).await?;
-        // Probe returns found + text + disabled + btnCount + a sample of button
-        // ids + tab count so we can diagnose why a match failed:
-        //   btnCount=0 & tabCount>0  -> tasks view rendered but no .btn-small
-        //   btnCount=0 & tabCount=0  -> tab switch never rendered the tasks view
-        //   btnCount>0 & sample!=... -> view rendered but ids differ
+        // Probe returns found + text + disabled + btnCount + button-id sample +
+        // tab count + first 200 chars of on-screen text so we can see what view
+        // the mini-app is actually showing when a match fails.
         let text = value.get("text").and_then(Value::as_str).unwrap_or("");
         let found = value.get("found").and_then(Value::as_bool).unwrap_or(false);
         let disabled = value
@@ -164,8 +164,9 @@ impl TaskContext {
         let btn_count = value.get("btnCount").and_then(Value::as_u64).unwrap_or(0);
         let sample = value.get("sample").and_then(Value::as_str).unwrap_or("");
         let tab_count = value.get("tabCount").and_then(Value::as_u64).unwrap_or(0);
+        let body = value.get("body").and_then(Value::as_str).unwrap_or("");
         log::info!(
-            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] text='{text}' (filter='{text_filter}')"
+            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] body='{body}' text='{text}' (filter='{text_filter}')"
         );
         Ok(found && !disabled && text == text_filter)
     }

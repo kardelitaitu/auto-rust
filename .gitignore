@@ -60,6 +60,7 @@ click-learning/
 .migration-steps/
 
 # Tool-specific state
+.freebuff/
 .pi/
 .qwen/
 .nodejs-reference

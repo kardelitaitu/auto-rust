@@ -161,7 +161,7 @@ impl TaskContext {
             );
             if let Ok(resp) = self.page().evaluate(js).await {
                 if let Some(list) = resp.value().and_then(serde_json::Value::as_str) {
-                    log::info!(
+                    log::debug!(
                         "[iframe_has_text] resolved '{iframe_selector}' -> {list} (using src='{src}')"
                     );
                 }
@@ -234,7 +234,7 @@ impl TaskContext {
         let body = value.get("body").and_then(Value::as_str).unwrap_or("");
         let doc_url = value.get("docUrl").and_then(Value::as_str).unwrap_or("");
         let ready = value.get("ready").and_then(Value::as_str).unwrap_or("");
-        log::info!(
+        log::debug!(
             "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} busy={busy} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] docUrl='{doc_url}' ready={ready} body='{body}' text='{text}' (filter='{text_filter}')"
         );
         if found {

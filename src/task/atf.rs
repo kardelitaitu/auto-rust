@@ -208,6 +208,43 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.wait(500, 2_000).await;
 
+    // [Random Activity 1] 10% chance to click Home tab and view it briefly.
+    if random_in_range(1, 100) <= 10 {
+        let _ = api.focus_tab().await;
+        info!("[Random Activity 1] 10% chance triggered — clicking Home tab");
+        if let Ok(outcome) = api
+            .iframe_click(
+                MINIAPP_IFRAME,
+                "[onclick=\"switchTab('home')\"]",
+                MINIAPP_ACTION_TIMEOUT_MS,
+            )
+            .await
+        {
+            info!("[Random Activity 1] Home tab click: {}", outcome.summary());
+        }
+        api.wait(2_000, 4_000).await;
+    }
+
+    // [Random Activity 2] 10% chance to click Friends tab and view it briefly.
+    if random_in_range(1, 100) <= 10 {
+        let _ = api.focus_tab().await;
+        info!("[Random Activity 2] 10% chance triggered — clicking Friends tab");
+        if let Ok(outcome) = api
+            .iframe_click(
+                MINIAPP_IFRAME,
+                "[onclick=\"switchTab('friends')\"]",
+                MINIAPP_ACTION_TIMEOUT_MS,
+            )
+            .await
+        {
+            info!(
+                "[Random Activity 2] Friends tab click: {}",
+                outcome.summary()
+            );
+        }
+        api.wait(2_000, 4_000).await;
+    }
+
     // Step 4b: activate the Tasks tab. Try coordinate click first, with fallback to JS switchTab.
     let _ = api.focus_tab().await;
     info!("[Step 4b] Opening Tasks tab");
@@ -260,6 +297,24 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         "[Step 12]",
     )
     .await?;
+
+    // [Random Activity 3] it only has 10% change to be activated
+    // wrapper for 10% change{
+    // simple api.click (iframe element = "[onclick=\"switchTab('profile')\"]")
+    // then api.wait(2_000, 4_000).await;
+    // }
+
+    // [Random Activity 4] it only has 10% change to be activated
+    // wrapper for 10% change{
+    // simple api.click (iframe element = "[onclick=\"switchTab('home')\"]")
+    // then api.wait(2_000, 4_000).await;
+    // }
+
+    // [Random Activity 5] it only has 10% change to be activated
+    // wrapper for 10% change{
+    // simple api.click (iframe element = "[onclick=\"switchTab('miners')\"]")
+    // then api.wait(2_000, 4_000).await;
+    // }
 
     // random time before it finish
     info!("Finalizing Tasks");

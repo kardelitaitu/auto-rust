@@ -192,39 +192,19 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.wait(500, 2_000).await;
 
-    // Step 4b: make sure the Tasks tab is active AND its buttons are visible.
-    // Unlike steps 5-12, the tasks view is REQUIRED — if it can't be opened,
-    // there's nothing to automate, so fail with a clear message.
-    info!("[Step 4b] Ensuring Tasks tab is active");
-    let before = api
-        .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
-        .await?;
-    let before = match before {
-        Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
-        other => other,
-    };
-    let had_visible_buttons = before["goButtons"]
-        .as_array()
-        .map(|a| !a.is_empty())
-        .unwrap_or(false)
-        || before["claimButtons"]
-            .as_array()
-            .map(|a| !a.is_empty())
-            .unwrap_or(false);
-    if !had_visible_buttons {
-        let outcome = api
-            .iframe_click(
-                MINIAPP_IFRAME,
-                "[onclick=\"switchTab('tasks')\"]",
-                MINIAPP_ACTION_TIMEOUT_MS,
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("[Step 4b] Tasks tab click target not found: {e}"))?;
-        info!("[Step 4b] Tasks tab click: {}", outcome.summary());
-        api.wait(1_000, 2_000).await;
-    } else {
-        info!("[Step 4b] Tasks buttons already visible");
-    }
+    // Step 4b: activate the Tasks tab. Click exactly ONCE — it always succeeds,
+    // and the click is harmless if the tab is already active.
+    info!("[Step 4b] Opening Tasks tab");
+    let outcome = api
+        .iframe_click(
+            MINIAPP_IFRAME,
+            "[onclick=\"switchTab('tasks')\"]",
+            MINIAPP_ACTION_TIMEOUT_MS,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("[Step 4b] Tasks tab click target not found: {e}"))?;
+    info!("[Step 4b] Tasks tab click: {}", outcome.summary());
+    api.wait(1_000, 2_000).await;
     ensure_tasks_visible(api).await?;
 
     // Steps 5-8: click each "Go" task button.
@@ -301,9 +281,9 @@ async fn wait_not_busy(api: &TaskContext) -> Result<()> {
     Ok(())
 }
 
-/// Make sure the Tasks tab is active AND its buttons are actually visible
-/// (have non-zero size). A hidden tab's buttons exist in the DOM but render
-/// at 0×0 — the probe finds them but the click can't resolve them.
+/// Wait until the Tasks buttons are actually visible (have non-zero size).
+/// Step 4b already clicked the tab ONCE (it always succeeds) — this helper
+/// only waits for the buttons to render; it never re-clicks, so it can't loop.
 async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
     for _ in 0..4 {
         let raw = api
@@ -320,17 +300,6 @@ async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
             .unwrap_or(0);
         if go > 0 || claim > 0 {
             return Ok(());
-        }
-        let active = value["tasksActive"].as_bool().unwrap_or(false);
-        if !active {
-            info!("[tasks] Tasks tab not active — clicking it");
-            let _ = api
-                .iframe_click(
-                    MINIAPP_IFRAME,
-                    "[onclick=\"switchTab('tasks')\"]",
-                    MINIAPP_ACTION_TIMEOUT_MS,
-                )
-                .await;
         }
         api.wait(1_000, 2_000).await;
     }

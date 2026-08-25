@@ -235,10 +235,6 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         api.wait(500, 2_000).await;
     }
 
-    // Wait for development inspection
-    info!("Wait for development inspection");
-    api.wait(550_000, 600_000).await;
-
     api.wait(500, 2_000).await;
 
     // Step 7: Click Go on Visit Website — target by class + id + text content

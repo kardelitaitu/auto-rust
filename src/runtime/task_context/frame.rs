@@ -485,7 +485,7 @@ impl TaskContext {
                                     );
                                     if let Some(dclient) = client.as_ref() {
                                         if let Ok(dval) = dclient.evaluate(&dsession, &djs).await {
-                                            log::info!(
+                                            log::debug!(
                                                 "[iframe_click] '{element_selector}' resolve diag: {dval}"
                                             );
                                         }

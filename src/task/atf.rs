@@ -192,11 +192,26 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.wait(500, 2_000).await;
 
-    // Step 4b: open the Tasks tab (only if not already active).
+    // Step 4b: make sure the Tasks tab is active AND its buttons are visible.
     // Unlike steps 5-12, the tasks view is REQUIRED — if it can't be opened,
     // there's nothing to automate, so fail with a clear message.
-    info!("[Step 4b] Opening Tasks tab");
-    if !tasks_tab_active(api).await? {
+    info!("[Step 4b] Ensuring Tasks tab is active");
+    let before = api
+        .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
+        .await?;
+    let before = match before {
+        Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+        other => other,
+    };
+    let had_visible_buttons = before["goButtons"]
+        .as_array()
+        .map(|a| !a.is_empty())
+        .unwrap_or(false)
+        || before["claimButtons"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
+    if !had_visible_buttons {
         let outcome = api
             .iframe_click(
                 MINIAPP_IFRAME,
@@ -206,10 +221,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("[Step 4b] Tasks tab click target not found: {e}"))?;
         info!("[Step 4b] Tasks tab click: {}", outcome.summary());
+        api.wait(1_000, 2_000).await;
     } else {
-        info!("[Step 4b] Tasks tab already active");
+        info!("[Step 4b] Tasks buttons already visible");
     }
-    api.wait(1_000, 2_000).await;
+    ensure_tasks_visible(api).await?;
 
     // Steps 5-8: click each "Go" task button.
     click_task_button(api, ".btn-small#btn-youtube_like_comment", "Go", "[Step 5]").await?;
@@ -285,24 +301,49 @@ async fn wait_not_busy(api: &TaskContext) -> Result<()> {
     Ok(())
 }
 
-/// Whether the mini-app's Tasks tab is the active view.
-async fn tasks_tab_active(api: &TaskContext) -> Result<bool> {
-    let raw = api
-        .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
-        .await?;
-    let value = match raw {
-        Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
-        other => other,
-    };
-    Ok(value["tasksActive"].as_bool().unwrap_or(false))
+/// Make sure the Tasks tab is active AND its buttons are actually visible
+/// (have non-zero size). A hidden tab's buttons exist in the DOM but render
+/// at 0×0 — the probe finds them but the click can't resolve them.
+async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
+    for _ in 0..4 {
+        let raw = api
+            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
+            .await?;
+        let value = match raw {
+            Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+            other => other,
+        };
+        let go = value["goButtons"].as_array().map(|a| a.len()).unwrap_or(0);
+        let claim = value["claimButtons"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        if go > 0 || claim > 0 {
+            return Ok(());
+        }
+        let active = value["tasksActive"].as_bool().unwrap_or(false);
+        if !active {
+            info!("[tasks] Tasks tab not active — clicking it");
+            let _ = api
+                .iframe_click(
+                    MINIAPP_IFRAME,
+                    "[onclick=\"switchTab('tasks')\"]",
+                    MINIAPP_ACTION_TIMEOUT_MS,
+                )
+                .await;
+        }
+        api.wait(1_000, 2_000).await;
+    }
+    info!("[tasks] tasks not visible after retries — proceeding");
+    Ok(())
 }
 
 /// Click a task button (by selector + exact text) until its state changes.
 ///
-/// Robust per-step helper: waits for busy to clear, probes before AND after
-/// each click, and stops when the button is gone/disabled/busy or its text no
-/// longer matches. Max 5 clicks, 0.5-2s between attempts. Skips cleanly if the
-/// button is never present (returns false).
+/// Robust per-step helper: waits for busy to clear, ensures the Tasks tab is
+/// visible, probes before AND after each click, and stops when the button is
+/// gone/disabled/busy or its text no longer matches. Max 5 clicks, 0.5-2s
+/// between attempts. Skips cleanly if the button is never present (returns false).
 async fn click_task_button(
     api: &TaskContext,
     selector: &str,
@@ -312,6 +353,7 @@ async fn click_task_button(
     const MAX_RETRY: u32 = 5;
     const TIMEOUT_MS: u64 = 5_000;
     wait_not_busy(api).await?;
+    ensure_tasks_visible(api).await?;
     let mut clicks = 0u32;
     loop {
         if !api.iframe_has_text(MINIAPP_IFRAME, selector, text).await? {

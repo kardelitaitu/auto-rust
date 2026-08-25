@@ -298,23 +298,62 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     )
     .await?;
 
-    // [Random Activity 3] it only has 10% change to be activated
-    // wrapper for 10% change{
-    // simple api.click (iframe element = "[onclick=\"switchTab('profile')\"]")
-    // then api.wait(2_000, 4_000).await;
-    // }
+    // [Random Activity 3] 10% chance to click Profile tab and view it briefly.
+    if random_in_range(1, 100) <= 10 {
+        let _ = api.focus_tab().await;
+        info!("[Random Activity 3] 10% chance triggered — clicking Profile tab");
+        if let Ok(outcome) = api
+            .iframe_click(
+                MINIAPP_IFRAME,
+                "[onclick=\"switchTab('profile')\"]",
+                MINIAPP_ACTION_TIMEOUT_MS,
+            )
+            .await
+        {
+            info!(
+                "[Random Activity 3] Profile tab click: {}",
+                outcome.summary()
+            );
+        }
+        api.wait(2_000, 4_000).await;
+    }
 
-    // [Random Activity 4] it only has 10% change to be activated
-    // wrapper for 10% change{
-    // simple api.click (iframe element = "[onclick=\"switchTab('home')\"]")
-    // then api.wait(2_000, 4_000).await;
-    // }
+    // [Random Activity 4] 10% chance to click Home tab and view it briefly.
+    if random_in_range(1, 100) <= 10 {
+        let _ = api.focus_tab().await;
+        info!("[Random Activity 4] 10% chance triggered — clicking Home tab");
+        if let Ok(outcome) = api
+            .iframe_click(
+                MINIAPP_IFRAME,
+                "[onclick=\"switchTab('home')\"]",
+                MINIAPP_ACTION_TIMEOUT_MS,
+            )
+            .await
+        {
+            info!("[Random Activity 4] Home tab click: {}", outcome.summary());
+        }
+        api.wait(2_000, 4_000).await;
+    }
 
-    // [Random Activity 5] it only has 10% change to be activated
-    // wrapper for 10% change{
-    // simple api.click (iframe element = "[onclick=\"switchTab('miners')\"]")
-    // then api.wait(2_000, 4_000).await;
-    // }
+    // [Random Activity 5] 10% chance to click Miners tab and view it briefly.
+    if random_in_range(1, 100) <= 10 {
+        let _ = api.focus_tab().await;
+        info!("[Random Activity 5] 10% chance triggered — clicking Miners tab");
+        if let Ok(outcome) = api
+            .iframe_click(
+                MINIAPP_IFRAME,
+                "[onclick=\"switchTab('miners')\"]",
+                MINIAPP_ACTION_TIMEOUT_MS,
+            )
+            .await
+        {
+            info!(
+                "[Random Activity 5] Miners tab click: {}",
+                outcome.summary()
+            );
+        }
+        api.wait(2_000, 4_000).await;
+    }
 
     // random time before it finish
     info!("Finalizing Tasks");

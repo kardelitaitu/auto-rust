@@ -98,8 +98,36 @@ impl TaskContext {
         element_selector: &str,
         text_filter: &str,
     ) -> Result<bool> {
+        // The mini-app can re-create its iframe (blank doc) after a tab click,
+        // so a single shot can miss. Retry briefly (up to ~4s) while the
+        // document looks blank; a definite answer (element found, or a populated
+        // doc without the element) returns immediately.
+        for _ in 0..8 {
+            match self
+                .iframe_has_text_once(iframe_selector, element_selector, text_filter)
+                .await?
+            {
+                Some(answer) => return Ok(answer),
+                None => tokio::time::sleep(Duration::from_millis(500)).await,
+            }
+        }
+        Ok(false)
+    }
+
+    /// One-shot probe. Returns:
+    /// - `Some(true)` — element found with matching text (and not disabled)
+    /// - `Some(false)` — definite miss (populated doc without the element, or
+    ///   element found with different text / disabled)
+    /// - `None` — ambiguous (iframe/session not ready, or document is blank) —
+    ///   caller should retry.
+    async fn iframe_has_text_once(
+        &self,
+        iframe_selector: &str,
+        element_selector: &str,
+        text_filter: &str,
+    ) -> Result<Option<bool>> {
         if self.browser_ws_url.is_empty() {
-            return Ok(false);
+            return Ok(Some(false));
         }
         let client =
             match crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
@@ -108,27 +136,24 @@ impl TaskContext {
                 Ok(c) => Some(c),
                 Err(e) => {
                     log::warn!("[iframe_has_text] connect failed: {e}");
-                    return Ok(false);
+                    return Ok(Some(false));
                 }
             };
         let Some((rect, src)) = resolve_iframe(self.page(), iframe_selector).await? else {
-            log::warn!("[iframe_has_text] iframe not found: '{iframe_selector}'");
-            return Ok(false);
+            return Ok(None);
         };
         if rect.width <= 0.0 || rect.height <= 0.0 {
-            log::warn!("[iframe_has_text] iframe zero-size: '{iframe_selector}'");
-            return Ok(false);
+            return Ok(None);
         }
         let mut session_cache: Option<(String, String)> = None;
         let Some(session_id) = self
             .iframe_session_id(client.as_ref(), &src, &mut session_cache)
             .await?
         else {
-            log::warn!("[iframe_has_text] no iframe target session for src '{src}'");
-            return Ok(false);
+            return Ok(None);
         };
         let Some(client) = client.as_ref() else {
-            return Ok(false);
+            return Ok(Some(false));
         };
         let escaped = escape_js_string(element_selector);
         let js = format!(
@@ -168,7 +193,17 @@ impl TaskContext {
         log::info!(
             "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] body='{body}' text='{text}' (filter='{text_filter}')"
         );
-        Ok(found && !disabled && text == text_filter)
+        if found {
+            // Definite: element present — disabled or text mismatch means "gone".
+            return Ok(Some(found && !disabled && text == text_filter));
+        }
+        // Element absent. If the document has real content, this is a definite
+        // miss; a blank document means the iframe may still be loading — retry.
+        if body.is_empty() && btn_count == 0 && tab_count == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(false))
+        }
     }
 
     /// Shared implementation for [`Self::iframe_click`] / [`Self::iframe_click_skip`]

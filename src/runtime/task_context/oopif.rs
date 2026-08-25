@@ -82,14 +82,23 @@ fn extract_session_id(resp: &Value) -> Option<String> {
 
 /// Find an iframe target whose URL host matches `host` exactly from a target list.
 fn find_iframe_target_in(infos: &[Value], host: &str) -> Option<Value> {
+    // Prefer the real mini-app page target (URL with the app path) over any
+    // sibling iframe on the same host — a blank/secondary iframe may otherwise
+    // come first in the target list after a re-render.
+    let mut fallback = None;
     for info in infos {
         let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
         let url = info.get("url").and_then(Value::as_str).unwrap_or("");
-        if ty == "iframe" && host_of(url) == Some(host) {
-            return Some(info.clone());
+        if ty == "iframe" && host_of(url) == Some(host) && !url.is_empty() {
+            if url.contains("miner") || url.contains("index.html") {
+                return Some(info.clone());
+            }
+            if fallback.is_none() {
+                fallback = Some(info.clone());
+            }
         }
     }
-    None
+    fallback
 }
 
 /// A CDP call queued for the writer task.
@@ -583,5 +592,33 @@ mod tests {
             "result": { "type": "object", "value": [1, 2, 3] }
         });
         assert_eq!(extract_result_value(&resp), json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn find_iframe_target_prefers_mini_app_page_over_blank_sibling() {
+        // After a re-render there can be a blank iframe first in the list —
+        // the real mini-app page (…/miner/index.html) must win.
+        let infos = vec![
+            json!({ "type": "iframe", "url": "about:blank", "targetId": "blank" }),
+            json!({
+                "type": "iframe",
+                "url": "https://atfminers.asloni.online/miner/index.html?v=1",
+                "targetId": "real"
+            }),
+        ];
+        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        assert_eq!(found["targetId"], "real");
+    }
+
+    #[test]
+    fn find_iframe_target_falls_back_to_any_host_iframe() {
+        // No miner/index.html target — fall back to the first host match.
+        let infos = vec![json!({
+            "type": "iframe",
+            "url": "https://atfminers.asloni.online/other",
+            "targetId": "f1"
+        })];
+        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        assert_eq!(found["targetId"], "f1");
     }
 }

@@ -193,6 +193,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.wait(500, 2_000).await;
 
     // Step 4b: open the Tasks tab (only if not already active).
+    // Unlike steps 5-12, the tasks view is REQUIRED — if it can't be opened,
+    // there's nothing to automate, so fail with a clear message.
     info!("[Step 4b] Opening Tasks tab");
     if !tasks_tab_active(api).await? {
         let outcome = api
@@ -201,7 +203,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                 "[onclick=\"switchTab('tasks')\"]",
                 MINIAPP_ACTION_TIMEOUT_MS,
             )
-            .await?;
+            .await
+            .map_err(|e| anyhow::anyhow!("[Step 4b] Tasks tab click target not found: {e}"))?;
         info!("[Step 4b] Tasks tab click: {}", outcome.summary());
     } else {
         info!("[Step 4b] Tasks tab already active");
@@ -315,16 +318,27 @@ async fn click_task_button(
             info!("[{label}] skipped — no '{text}' button");
             return Ok(clicks > 0);
         }
-        let outcome = api
+        // The click itself re-resolves the element (scrollIntoView + hit-test).
+        // If it can't be found (blank area / iframe changed), skip the step
+        // instead of crashing the whole task.
+        let outcome = match api
             .iframe_click_text(MINIAPP_IFRAME, selector, text, TIMEOUT_MS)
-            .await?;
+            .await
+        {
+            Ok(o) => o,
+            Err(e) => {
+                info!("[{label}] click target not found — skipping (clicked {clicks}x): {e}");
+                return Ok(clicks > 0);
+            }
+        };
         clicks += 1;
         info!("[{label}] click #{clicks}: {}", outcome.summary());
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
         ) {
-            bail!("[{label}] click failed: {}", outcome.summary());
+            info!("[{label}] click did not land — moving on (clicked {clicks}x)");
+            return Ok(clicks > 0);
         }
         // Post-click probe: stop as soon as the state changes.
         if !api.iframe_has_text(MINIAPP_IFRAME, selector, text).await? {

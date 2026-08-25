@@ -128,13 +128,18 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             tasksActive: !!tasksTab && tasksTab.classList.contains('active'),
             goButtons: btns.filter(b => text(b) === 'Go').map(b => b.id),
             claimButtons: btns.filter(b => text(b) === 'Claim').map(b => b.id),
-            busy: !!busyEl || /Processing|Verifying|Connecting|Please wait|Claiming|In progress/i.test(body)
+            // Busy = a visible modal/overlay, or task-processing text. Keep the
+            // text narrow — broad words like 'Connecting' match persistent UI.
+            busyModal: !!busyEl,
+            busyText: /Processing|Please wait/i.test(body)
         });
     })()"#;
 
     const MAX_STATE_ROUNDS: u32 = 120;
+    const MAX_BUSY_ROUNDS: u32 = 20;
     let mut rounds = 0u32;
     let mut idle_rounds = 0u32;
+    let mut busy_rounds = 0u32;
     loop {
         rounds += 1;
         if rounds > MAX_STATE_ROUNDS {
@@ -157,7 +162,6 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         };
         let claim_action = value["claimAction"].as_bool().unwrap_or(false);
         let tasks_active = value["tasksActive"].as_bool().unwrap_or(false);
-        let busy = value["busy"].as_bool().unwrap_or(false);
         let go_buttons: Vec<String> = value["goButtons"]
             .as_array()
             .map(|a| {
@@ -174,13 +178,24 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
                     .collect()
             })
             .unwrap_or_default();
+        let busy_modal = value["busyModal"].as_bool().unwrap_or(false);
+        let busy_text = value["busyText"].as_bool().unwrap_or(false);
 
-        // 1. Busy (modal / processing) — wait for it to clear.
-        if busy {
-            info!("[state] mini-app busy (modal/processing) — waiting 1-2s");
-            api.wait(1_000, 2_000).await;
-            idle_rounds = 0;
-            continue;
+        // 1. Busy (modal / processing) — wait for it to clear, but cap the wait
+        //    so a persistent modal (e.g. a leftover overlay) can't hang the task.
+        if busy_modal || busy_text {
+            busy_rounds += 1;
+            info!("[state] busy (modal={busy_modal} text={busy_text}) round {busy_rounds}");
+            if busy_rounds > MAX_BUSY_ROUNDS {
+                warn!("[state] busy persisted — proceeding anyway");
+                busy_rounds = 0;
+            } else {
+                api.wait(1_000, 2_000).await;
+                idle_rounds = 0;
+                continue;
+            }
+        } else {
+            busy_rounds = 0;
         }
         // 2. CLAIM action button (hourly miner) — click with jitter.
         if claim_action {

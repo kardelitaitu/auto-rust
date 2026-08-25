@@ -150,7 +150,19 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         bail!("Start Mining click failed: {}", outcome.summary());
     }
 
-    api.wait(3_000, 6_000).await;
+    api.wait(2_000, 4_000).await;
+
+    // Step 3b: Ensure the mini-app iframe is loaded and ready.
+    info!("[Step 3b] Waiting for mini-app iframe to load . . .");
+    if !api
+        .wait_for_visible(MINIAPP_IFRAME, BUTTON_VISIBILITY_TIMEOUT_MS)
+        .await?
+    {
+        warn!(
+            "[Step 3b] Mini-app iframe '{MINIAPP_IFRAME}' did not appear within {BUTTON_VISIBILITY_TIMEOUT_MS}ms"
+        );
+    }
+    wait_not_busy(api).await?;
 
     // ── Interaction steps (each independent) ──────────────────────────────
     // Every step reads the current mini-app state before acting, and skips
@@ -245,11 +257,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     )
     .await?;
 
-    api.wait(500, 2_000).await;
-
-    // Settle pause so the mining app opens before the task ends. DO NOT REMOVE THIS
+    // random time before it finish
     info!("Finalizing Tasks");
-    api.pause(200_000).await;
+    api.wait(500, 3_000).await;
 
     info!("ATF task completed");
     Ok(())

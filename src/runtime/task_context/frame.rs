@@ -112,11 +112,11 @@ impl TaskContext {
                 }
             };
         let Some((rect, src)) = resolve_iframe(self.page(), iframe_selector).await? else {
-            log::debug!("[iframe_has_text] iframe not found: '{iframe_selector}'");
+            log::warn!("[iframe_has_text] iframe not found: '{iframe_selector}'");
             return Ok(false);
         };
         if rect.width <= 0.0 || rect.height <= 0.0 {
-            log::debug!("[iframe_has_text] iframe zero-size: '{iframe_selector}'");
+            log::warn!("[iframe_has_text] iframe zero-size: '{iframe_selector}'");
             return Ok(false);
         }
         let mut session_cache: Option<(String, String)> = None;
@@ -124,7 +124,7 @@ impl TaskContext {
             .iframe_session_id(client.as_ref(), &src, &mut session_cache)
             .await?
         else {
-            log::debug!("[iframe_has_text] no iframe target session for src '{src}'");
+            log::warn!("[iframe_has_text] no iframe target session for src '{src}'");
             return Ok(false);
         };
         let Some(client) = client.as_ref() else {
@@ -152,7 +152,7 @@ impl TaskContext {
             .get("disabled")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        log::debug!(
+        log::info!(
             "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} text='{text}' (filter='{text_filter}')"
         );
         Ok(found && !disabled && text == text_filter)

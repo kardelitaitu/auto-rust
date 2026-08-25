@@ -84,7 +84,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         .await?;
 
     // Step 2: wait a random 2–4 seconds for the Telegram UI to settle.
-    info!("Waiting random 2-3s for Telegram page to settle");
+    info!("[Step 2] Waiting random 2-3s for Telegram page to settle");
     api.wait(2_000, 3_000).await;
 
     // Step 3: make sure the "Start Mining" command button is present, then
@@ -130,7 +130,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
     // Repeat clicks until the "Go" text is gone (the mini-app replaces it after
     // the task starts), with a random 1-2s interval, max 5 retries.
-    debug!("Starting STEP 5 --- CLICKING GO button on Youtube Like");
+    info!("[Step 5] Starting . . .");
     const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
     const GO_RETRY_MAX: u32 = 5;
     const GO_CHECK_TIMEOUT_MS: u64 = 2_000;
@@ -142,7 +142,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go")
             .await?
         {
-            debug!("YouTube task 'Go' button gone (clicked {clicks}x)");
+            debug!("[Step 5] YouTube task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -154,18 +154,21 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        debug!("YouTube task click #{clicks} result: {}", outcome.summary());
+        debug!(
+            "[Step 5] YouTube task click #{clicks} result: {}",
+            outcome.summary()
+        );
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
         ) {
-            bail!("YouTube task click failed: {}", outcome.summary());
+            bail!("[Step 5] YouTube task click failed: {}", outcome.summary());
         }
         if clicks >= GO_RETRY_MAX {
-            debug!("Reached max {GO_RETRY_MAX} clicks on YouTube task button");
+            debug!("[Step 5] Reached max {GO_RETRY_MAX} clicks on YouTube task button");
             break;
         }
-        debug!("Waiting random 0.5s-2s before next attempt");
+        debug!("[Step 5] Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -176,6 +179,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
     // Step 5 may have opened a new tab (YouTube) — refocus the Telegram tab first.
     api.focus_tab().await?;
+    info!("[Step 6] Starting . . .");
     const RETWEET_TASK_SELECTOR: &str = ".btn-small#btn-twitter_retweet";
     const RETWEET_TASK_RETRY_MAX: u32 = 5;
     const RETWEET_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
@@ -186,7 +190,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, RETWEET_TASK_SELECTOR, "Go")
             .await?
         {
-            debug!("Retweet task 'Go' button gone (clicked {clicks}x)");
+            debug!("[Step 6] Retweet task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -198,20 +202,27 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        debug!("Retweet task click #{clicks} result: {}", outcome.summary());
+        debug!(
+            "[Step 6] Retweet task click #{clicks} result: {}",
+            outcome.summary()
+        );
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
         ) {
-            bail!("Retweet task click failed: {}", outcome.summary());
+            bail!("[Step 6] Retweet task click failed: {}", outcome.summary());
         }
         if clicks >= RETWEET_TASK_RETRY_MAX {
-            debug!("Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
+            debug!("[Step 6] Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
             break;
         }
-        debug!("Waiting random 0.5s-2s before next attempt");
+        debug!("[Step 6] Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
+
+    // Wait for development inspection
+    info!("Wait for development inspection");
+    api.wait(550_000, 600_000).await;
 
     api.wait(500, 2_000).await;
 
@@ -219,6 +230,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // (the button is `<button class="btn-small" id="btn-website_visit">Go</button>`).
     // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
     api.focus_tab().await?;
+    info!("[Step 7] Starting . . .");
     const WEBSITE_TASK_SELECTOR: &str = ".btn-small#btn-website_visit";
     const WEBSITE_TASK_RETRY_MAX: u32 = 5;
     const WEBSITE_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
@@ -229,7 +241,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, WEBSITE_TASK_SELECTOR, "Go")
             .await?
         {
-            debug!("Website task 'Go' button gone (clicked {clicks}x)");
+            debug!("[Step 7] Website task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -241,18 +253,21 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        debug!("Website task click #{clicks} result: {}", outcome.summary());
+        debug!(
+            "[Step 7] Website task click #{clicks} result: {}",
+            outcome.summary()
+        );
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
         ) {
-            bail!("Website task click failed: {}", outcome.summary());
+            bail!("[Step 7] Website task click failed: {}", outcome.summary());
         }
         if clicks >= WEBSITE_TASK_RETRY_MAX {
-            debug!("Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
+            debug!("[Step 7] Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
             break;
         }
-        debug!("Waiting random 0.5s-2s before next attempt");
+        debug!("[Step 7] Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 
@@ -263,6 +278,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
     // Step 7 (Visit Website) likely opened a new tab — refocus first.
     api.focus_tab().await?;
+    info!("[Step 8] Starting . . .");
     const REACT_TASK_SELECTOR: &str = ".btn-small#btn-telegram_react_latest";
     const REACT_TASK_RETRY_MAX: u32 = 5;
     const REACT_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
@@ -273,7 +289,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             .iframe_has_text(MINIAPP_IFRAME, REACT_TASK_SELECTOR, "Go")
             .await?
         {
-            debug!("React task 'Go' button gone (clicked {clicks}x)");
+            debug!("[Step 8] React task 'Go' button gone (clicked {clicks}x)");
             break;
         }
         let outcome = api
@@ -285,18 +301,21 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             )
             .await?;
         clicks += 1;
-        debug!("React task click #{clicks} result: {}", outcome.summary());
+        debug!(
+            "[Step 8] React task click #{clicks} result: {}",
+            outcome.summary()
+        );
         if !matches!(
             outcome.click,
             crate::utils::mouse::types::ClickStatus::Success
         ) {
-            bail!("React task click failed: {}", outcome.summary());
+            bail!("[Step 8] React task click failed: {}", outcome.summary());
         }
         if clicks >= REACT_TASK_RETRY_MAX {
-            debug!("Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
+            debug!("[Step 8] Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
             break;
         }
-        debug!("Waiting random 0.5s-2s before next attempt");
+        debug!("[Step 8] Waiting random 0.5s-2s before next attempt");
         api.wait(500, 2_000).await;
     }
 

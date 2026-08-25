@@ -9,9 +9,10 @@ use crate::session::DurationMs;
 use std::collections::BTreeMap;
 
 use super::types::{
-    BrowserConfig, BrowserProfile, CircuitBreakerConfig, EngagementLimitsConfig, IxbrowserConfig,
-    NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig, ShardbrowserConfig,
-    TwitterActivityConfig, TwitterLLMConfig, TwitterProbabilitiesConfig,
+    BraveConfig, BrowserConfig, BrowserProfile, ChromeConfig, CircuitBreakerConfig,
+    EngagementLimitsConfig, IxbrowserConfig, NativeInteractionConfig, OrchestratorConfig,
+    RoxybrowserConfig, ShardbrowserConfig, TwitterActivityConfig, TwitterLLMConfig,
+    TwitterProbabilitiesConfig,
 };
 
 impl Default for TwitterActivityConfig {
@@ -45,6 +46,8 @@ impl Default for BrowserConfig {
             roxybrowser: RoxybrowserConfig::default(),
             ixbrowser: IxbrowserConfig::default(),
             shardbrowser: ShardbrowserConfig::default(),
+            chrome: ChromeConfig::default(),
+            brave: BraveConfig::default(),
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
             cursor_overlay_ms: 0,

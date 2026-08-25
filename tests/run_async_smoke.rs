@@ -13,6 +13,6 @@ fn test_binary_list_tasks_smoke() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Available Tasks:"));
-    // Since test-llmreply was added, there are 16 tasks now instead of 15
-    assert!(stdout.contains("Total: 16 tasks"));
+    // Total built-in tasks registered
+    assert!(stdout.contains("Total: 18 tasks"));
 }

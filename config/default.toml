@@ -37,6 +37,16 @@ api_url = "http://127.0.0.1:40325"
 # API key is supplied via SHARDBROWSER_API_KEY in .env (JWT); keep it out of VCS.
 api_key = ""
 
+[browser.chrome]
+enabled = true
+port_start = 9222
+port_end = 9230
+
+[browser.brave]
+enabled = true
+port_start = 9001
+port_end = 9050
+
 [orchestrator]
 max_global_concurrency = 20
 task_timeout_ms = 1200000

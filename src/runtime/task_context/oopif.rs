@@ -169,7 +169,7 @@ impl OopifClient {
         let id = next_call_id();
         let (rtx, rrx) = oneshot::channel();
         self.pending.lock().await.insert(id, rtx);
-        if let Err(_) = self
+        if self
             .tx
             .send(Outgoing {
                 id,
@@ -178,6 +178,7 @@ impl OopifClient {
                 session_id: session_id.map(str::to_string),
             })
             .await
+            .is_err()
         {
             self.pending.lock().await.remove(&id);
             return Err(anyhow!("CDP writer task stopped"));
@@ -240,6 +241,45 @@ impl OopifClient {
         )
         .await?;
         Ok(())
+    }
+
+    /// Close a target (`Target.closeTarget`).
+    pub async fn close_target(&self, target_id: &str) -> Result<()> {
+        self.call("Target.closeTarget", json!({ "targetId": target_id }), None)
+            .await?;
+        Ok(())
+    }
+
+    /// Close all page-type targets except `main_target_id`, then activate `main_target_id`.
+    pub async fn close_other_tabs(&self, main_target_id: &str) -> Result<usize> {
+        let result = match self.call("Target.getTargets", json!({}), None).await {
+            Ok(v) => v,
+            Err(_) => return Ok(0),
+        };
+        let infos = result
+            .get("targetInfos")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut closed_count = 0;
+        for info in infos {
+            let target_id = info.get("targetId").and_then(Value::as_str).unwrap_or("");
+            let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
+            let url = info.get("url").and_then(Value::as_str).unwrap_or("");
+
+            if ty == "page" && !target_id.is_empty() && target_id != main_target_id {
+                log::info!("[close_other_tabs] closing spawned tab {target_id} ({url})");
+                if let Err(e) = self.close_target(target_id).await {
+                    log::warn!("[close_other_tabs] failed to close target {target_id}: {e}");
+                } else {
+                    closed_count += 1;
+                }
+            }
+        }
+
+        let _ = self.activate_target(main_target_id).await;
+        Ok(closed_count)
     }
 
     /// Attach to a target and return its flattened session id.

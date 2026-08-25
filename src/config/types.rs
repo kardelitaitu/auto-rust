@@ -36,6 +36,10 @@ pub struct BrowserConfig {
     #[serde(default)]
     pub shardbrowser: ShardbrowserConfig,
     #[serde(default)]
+    pub chrome: ChromeConfig,
+    #[serde(default)]
+    pub brave: BraveConfig,
+    #[serde(default)]
     pub user_agent: Option<String>,
     #[serde(default)]
     pub extra_http_headers: BTreeMap<String, String>,
@@ -190,6 +194,44 @@ pub struct ShardbrowserConfig {
     #[serde(alias = "apiBaseUrl", alias = "api_base_url")]
     pub api_url: String,
     pub api_key: String,
+}
+
+/// Configuration for Chrome browser integration & local discovery.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct ChromeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_chrome_port_start")]
+    pub port_start: u16,
+    #[serde(default = "default_chrome_port_end")]
+    pub port_end: u16,
+}
+
+fn default_chrome_port_start() -> u16 {
+    9222
+}
+
+fn default_chrome_port_end() -> u16 {
+    9230
+}
+
+/// Configuration for Brave browser integration & local discovery.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct BraveConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_brave_port_start")]
+    pub port_start: u16,
+    #[serde(default = "default_brave_port_end")]
+    pub port_end: u16,
+}
+
+fn default_brave_port_start() -> u16 {
+    9001
+}
+
+fn default_brave_port_end() -> u16 {
+    9050
 }
 
 /// Configuration for task orchestration and execution behavior.

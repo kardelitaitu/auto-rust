@@ -137,7 +137,8 @@ impl TaskContext {
 
     /// Bring the current page's tab to the foreground (`Target.activateTarget`).
     /// Earlier steps (e.g. visiting a link) may open a new tab and move focus
-    /// away; this returns focus to the tab this session is attached to.
+    /// Bring the current page's tab to the foreground (Target.activateTarget) and close
+    /// any secondary tabs that were spawned (e.g. via target="_blank" links or window.open).
     /// Returns `Ok(true)` when the tab was activated.
     pub async fn focus_tab(&self) -> Result<bool> {
         if self.browser_ws_url.is_empty() {
@@ -148,9 +149,25 @@ impl TaskContext {
             crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
                 .await
                 .map_err(|e| anyhow!("OOPIF client connect failed: {e}"))?;
-        client.activate_target(&target_id).await?;
-        log::info!("[focus_tab] activated current tab (target {target_id})");
+        let closed = client.close_other_tabs(&target_id).await.unwrap_or(0);
+        log::info!(
+            "[focus_tab] activated current tab (target {target_id}), closed {closed} extra tab(s)"
+        );
         Ok(true)
+    }
+
+    /// Close any secondary spawned tabs (other than the primary page target)
+    /// without erroring if no extra tabs exist.
+    pub async fn close_other_tabs(&self) -> Result<usize> {
+        if self.browser_ws_url.is_empty() {
+            return Ok(0);
+        }
+        let target_id = self.page().target_id().as_ref().to_string();
+        let client =
+            crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                .await
+                .map_err(|e| anyhow!("OOPIF client connect failed: {e}"))?;
+        client.close_other_tabs(&target_id).await
     }
 
     /// "Enter" an iframe by navigating the tab directly to its `src` URL.

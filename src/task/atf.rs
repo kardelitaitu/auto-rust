@@ -44,9 +44,6 @@ const NAVIGATION_TIMEOUT_MS: u64 = 90_000;
 /// How long to wait for the "Start Mining" button to appear, in milliseconds.
 const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 45_000;
 
-/// How long to wait for a Telegram mini-app action button, in milliseconds.
-const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
-
 /// The cross-origin mini-app iframe (Telegram Web K client).
 const MINIAPP_IFRAME: &str = "iframe.payment-verification";
 
@@ -179,8 +176,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     if let Some((cx, cy)) = api
         .iframe_center(
             MINIAPP_IFRAME,
-            ".btn-main.state-claim#actionBtn",
-            MINIAPP_ACTION_TIMEOUT_MS,
+            ".btn-main.state-claim#actionBtn, .state-claim",
+            3_000,
         )
         .await?
     {
@@ -210,57 +207,21 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // [Random Activity 1] 10% chance to click Home tab and view it briefly.
     if random_in_range(1, 100) <= 10 {
-        let _ = api.focus_tab().await;
         info!("[Random Activity 1] 10% chance triggered — clicking Home tab");
-        if let Ok(outcome) = api
-            .iframe_click(
-                MINIAPP_IFRAME,
-                "[onclick=\"switchTab('home')\"]",
-                MINIAPP_ACTION_TIMEOUT_MS,
-            )
-            .await
-        {
-            info!("[Random Activity 1] Home tab click: {}", outcome.summary());
-        }
+        let _ = switch_tab(api, "home").await;
         api.wait(2_000, 4_000).await;
     }
 
     // [Random Activity 2] 10% chance to click Friends tab and view it briefly.
     if random_in_range(1, 100) <= 10 {
-        let _ = api.focus_tab().await;
         info!("[Random Activity 2] 10% chance triggered — clicking Friends tab");
-        if let Ok(outcome) = api
-            .iframe_click(
-                MINIAPP_IFRAME,
-                "[onclick=\"switchTab('friends')\"]",
-                MINIAPP_ACTION_TIMEOUT_MS,
-            )
-            .await
-        {
-            info!(
-                "[Random Activity 2] Friends tab click: {}",
-                outcome.summary()
-            );
-        }
+        let _ = switch_tab(api, "friends").await;
         api.wait(2_000, 4_000).await;
     }
 
     // Step 4b: activate the Tasks tab. Try coordinate click first, with fallback to JS switchTab.
-    let _ = api.focus_tab().await;
     info!("[Step 4b] Opening Tasks tab");
-    match api
-        .iframe_click(
-            MINIAPP_IFRAME,
-            "[onclick=\"switchTab('tasks')\"]",
-            MINIAPP_ACTION_TIMEOUT_MS,
-        )
-        .await
-    {
-        Ok(outcome) => info!("[Step 4b] Tasks tab click: {}", outcome.summary()),
-        Err(e) => {
-            warn!("[Step 4b] Tasks tab click target not found ({e}) — fallback to JS switchTab")
-        }
-    }
+    switch_tab(api, "tasks").await?;
     api.wait(1_000, 2_000).await;
     ensure_tasks_visible(api).await?;
 
@@ -300,58 +261,22 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // [Random Activity 3] 10% chance to click Profile tab and view it briefly.
     if random_in_range(1, 100) <= 10 {
-        let _ = api.focus_tab().await;
         info!("[Random Activity 3] 10% chance triggered — clicking Profile tab");
-        if let Ok(outcome) = api
-            .iframe_click(
-                MINIAPP_IFRAME,
-                "[onclick=\"switchTab('profile')\"]",
-                MINIAPP_ACTION_TIMEOUT_MS,
-            )
-            .await
-        {
-            info!(
-                "[Random Activity 3] Profile tab click: {}",
-                outcome.summary()
-            );
-        }
+        let _ = switch_tab(api, "profile").await;
         api.wait(2_000, 4_000).await;
     }
 
     // [Random Activity 4] 10% chance to click Home tab and view it briefly.
     if random_in_range(1, 100) <= 10 {
-        let _ = api.focus_tab().await;
         info!("[Random Activity 4] 10% chance triggered — clicking Home tab");
-        if let Ok(outcome) = api
-            .iframe_click(
-                MINIAPP_IFRAME,
-                "[onclick=\"switchTab('home')\"]",
-                MINIAPP_ACTION_TIMEOUT_MS,
-            )
-            .await
-        {
-            info!("[Random Activity 4] Home tab click: {}", outcome.summary());
-        }
+        let _ = switch_tab(api, "home").await;
         api.wait(2_000, 4_000).await;
     }
 
     // [Random Activity 5] 10% chance to click Miners tab and view it briefly.
     if random_in_range(1, 100) <= 10 {
-        let _ = api.focus_tab().await;
         info!("[Random Activity 5] 10% chance triggered — clicking Miners tab");
-        if let Ok(outcome) = api
-            .iframe_click(
-                MINIAPP_IFRAME,
-                "[onclick=\"switchTab('miners')\"]",
-                MINIAPP_ACTION_TIMEOUT_MS,
-            )
-            .await
-        {
-            info!(
-                "[Random Activity 5] Miners tab click: {}",
-                outcome.summary()
-            );
-        }
+        let _ = switch_tab(api, "miners").await;
         api.wait(2_000, 4_000).await;
     }
 
@@ -360,6 +285,46 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.wait(500, 3_000).await;
 
     info!("ATF task completed");
+    Ok(())
+}
+
+/// Activate a tab in the ATF mini-app by tab name (e.g., "tasks", "home", "friends", "profile", "miners").
+/// First attempts fast DOM clicking with flexible selector variants (1.5s timeout per selector),
+/// then falls back to `window.switchTab(name)` via JS.
+async fn switch_tab(api: &TaskContext, tab_name: &str) -> Result<()> {
+    let _ = api.focus_tab().await;
+
+    let selectors = [
+        format!("[onclick*=\"switchTab('{tab_name}')\"]"),
+        format!("[onclick*=\"switchTab(\\\"{tab_name}\\\")\"]"),
+        format!("[onclick*=\"{tab_name}\"]"),
+        format!("[data-tab=\"{tab_name}\"]"),
+        format!("#tab-{tab_name}"),
+        format!(".tab-{tab_name}"),
+    ];
+
+    let mut clicked = false;
+    for sel in &selectors {
+        if let Ok(outcome) = api.iframe_click(MINIAPP_IFRAME, sel, 1_500).await {
+            info!(
+                "[tab] Activated '{tab_name}' tab via selector '{sel}': {}",
+                outcome.summary()
+            );
+            clicked = true;
+            break;
+        }
+    }
+
+    if !clicked {
+        let js = format!(
+            "(() => {{ if (typeof window.switchTab === 'function') {{ window.switchTab('{tab_name}'); return true; }} return false; }})()"
+        );
+        match api.iframe_eval(MINIAPP_IFRAME, &js, 3_000).await {
+            Ok(_) => info!("[tab] Activated '{tab_name}' tab via JS switchTab('{tab_name}')"),
+            Err(e) => warn!("[tab] Failed to switch tab to '{tab_name}': {e}"),
+        }
+    }
+
     Ok(())
 }
 
@@ -424,13 +389,7 @@ async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
                 "[tasks] Tasks tab not active (attempt {}), invoking switchTab('tasks')",
                 attempt + 1
             );
-            let _ = api
-                .iframe_eval(
-                    MINIAPP_IFRAME,
-                    "(() => { if (typeof window.switchTab === 'function') { window.switchTab('tasks'); return true; } return false; })()",
-                    5_000,
-                )
-                .await;
+            let _ = switch_tab(api, "tasks").await;
         }
         api.wait(1_000, 2_000).await;
     }
@@ -490,6 +449,8 @@ async fn click_task_button(
         // Allow mini-app JS time to process click event and update DOM state
         // (e.g. 'Go' -> 'Processing' / 'Claim' / disabled).
         api.wait(600, 900).await;
+        // Close any spawned tabs (e.g. YouTube / Twitter / Web) and return focus
+        let _ = api.focus_tab().await;
         // Post-click probe: stop as soon as the state changes away from 'text'.
         if !api
             .iframe_has_text(MINIAPP_IFRAME, selector, text)

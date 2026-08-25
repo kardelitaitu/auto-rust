@@ -24,10 +24,17 @@ pub use validation::*;
 /// variable overrides. Falls back to hardcoded defaults if no config file exists.
 ///
 /// # Environment Variables
+/// - `ROXYBROWSER_ENABLED`: Enable or disable `RoxyBrowser` integration (`true`/`false`)
 /// - `ROXYBROWSER_API_URL`: Override the `RoxyBrowser` API URL
 /// - `ROXYBROWSER_API_KEY`: Override the `RoxyBrowser` API key
+/// - `IXBROWSER_ENABLED`: Enable or disable `IxBrowser` integration (`true`/`false`)
+/// - `IXBROWSER_API_URL`: Override the `IxBrowser` API URL
+/// - `SHARDBROWSER_ENABLED`: Enable or disable `ShardBrowser` integration (`true`/`false`)
 /// - `SHARDBROWSER_API_URL`: Override the `ShardBrowser` (shardx-launcher) API URL
 /// - `SHARDBROWSER_API_KEY`: Override the `ShardBrowser` API key
+/// - `CHROME_ENABLED`: Enable or disable `Chrome` integration (`true`/`false`)
+/// - `BRAVE_ENABLED`: Enable or disable `Brave` integration (`true`/`false`)
+/// - `ENABLED_BROWSERS`: Comma-separated browser names or types to enable (e.g. `chrome,brave,roxybrowser`)
 ///
 /// # Returns
 /// A complete Config struct with all settings resolved

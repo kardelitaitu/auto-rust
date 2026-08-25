@@ -1020,32 +1020,58 @@ impl Default for LocalBrowserConnector {
 
 #[async_trait]
 impl BrowserConnector for LocalBrowserConnector {
-    fn is_available(&self, _config: &Config) -> bool {
-        // Local connector is only available if we can actually discover browsers
-        // For now, always return false since we can't check port availability
-        // without actually scanning
-        false
+    fn is_available(&self, config: &Config) -> bool {
+        config.browser.chrome.enabled || config.browser.brave.enabled
     }
 
     async fn discover(&self, config: &Config) -> Result<Vec<BrowserCapabilities>> {
         use futures::stream::{self, StreamExt};
 
-        let brave_ports: Vec<u16> =
-            (self.brave_port_start..=self.brave_port_end.clamp(MIN_PORT, MAX_PORT)).collect();
-        let chrome_ports: Vec<u16> =
-            (self.chrome_port_start..=self.chrome_port_end.clamp(MIN_PORT, MAX_PORT)).collect();
+        let brave_start = if config.browser.brave.port_start > 0 {
+            config.browser.brave.port_start
+        } else {
+            self.brave_port_start
+        };
+        let brave_end = if config.browser.brave.port_end > 0 {
+            config.browser.brave.port_end
+        } else {
+            self.brave_port_end
+        };
 
-        let brave_caps: Vec<Option<BrowserCapabilities>> = stream::iter(brave_ports)
-            .map(|port| async move { self.check_port(port, "Brave", config).await })
-            .buffer_unordered(50)
-            .collect()
-            .await;
+        let chrome_start = if config.browser.chrome.port_start > 0 {
+            config.browser.chrome.port_start
+        } else {
+            self.chrome_port_start
+        };
+        let chrome_end = if config.browser.chrome.port_end > 0 {
+            config.browser.chrome.port_end
+        } else {
+            self.chrome_port_end
+        };
 
-        let chrome_caps: Vec<Option<BrowserCapabilities>> = stream::iter(chrome_ports)
-            .map(|port| async move { self.check_port(port, "Chrome", config).await })
-            .buffer_unordered(50)
-            .collect()
-            .await;
+        let brave_caps: Vec<Option<BrowserCapabilities>> = if config.browser.brave.enabled {
+            let brave_ports: Vec<u16> =
+                (brave_start..=brave_end.clamp(MIN_PORT, MAX_PORT)).collect();
+            stream::iter(brave_ports)
+                .map(|port| async move { self.check_port(port, "Brave", config).await })
+                .buffer_unordered(50)
+                .collect()
+                .await
+        } else {
+            Vec::new()
+        };
+
+        let chrome_caps: Vec<Option<BrowserCapabilities>> = if config.browser.chrome.enabled {
+            let chrome_ports: Vec<u16> =
+                (chrome_start..=chrome_end.clamp(MIN_PORT, MAX_PORT)).collect();
+            stream::iter(chrome_ports)
+                .map(|port| async move { self.check_port(port, "Chrome", config).await })
+                .buffer_unordered(50)
+                .collect()
+                .await
+        } else {
+            Vec::new()
+        };
 
         let capabilities: Vec<BrowserCapabilities> = brave_caps
             .into_iter()
@@ -1056,10 +1082,10 @@ impl BrowserConnector for LocalBrowserConnector {
         info!(
             "Local discovery found {} browsers (Brave: {}-{}, Chrome: {}-{})",
             capabilities.len(),
-            self.brave_port_start,
-            self.brave_port_end,
-            self.chrome_port_start,
-            self.chrome_port_end
+            brave_start,
+            brave_end,
+            chrome_start,
+            chrome_end
         );
 
         Ok(capabilities)

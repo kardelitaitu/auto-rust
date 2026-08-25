@@ -40,11 +40,52 @@ fn parse_browser_filters_normalizes_case() {
 /// Test browser filter parsing with empty input
 #[test]
 fn parse_browser_filters_empty() {
+    let old_enabled = std::env::var("ENABLED_BROWSERS").ok();
+    let old_browsers = std::env::var("BROWSERS").ok();
+    std::env::remove_var("ENABLED_BROWSERS");
+    std::env::remove_var("BROWSERS");
+
     let filters = parse_browser_filters(None);
     assert!(filters.is_empty());
 
     let filters = parse_browser_filters(Some(""));
     assert!(filters.is_empty());
+
+    if let Some(v) = old_enabled {
+        std::env::set_var("ENABLED_BROWSERS", v);
+    }
+    if let Some(v) = old_browsers {
+        std::env::set_var("BROWSERS", v);
+    }
+}
+
+/// Test browser filter parsing with environment variable overrides
+#[test]
+fn parse_browser_filters_env_override() {
+    let old_enabled = std::env::var("ENABLED_BROWSERS").ok();
+    let old_browsers = std::env::var("BROWSERS").ok();
+
+    std::env::set_var("ENABLED_BROWSERS", "brave, roxybrowser");
+    let filters = parse_browser_filters(None);
+    assert_eq!(
+        filters,
+        vec!["brave".to_string(), "roxybrowser".to_string()]
+    );
+
+    // CLI parameter takes precedence over environment variable
+    let filters = parse_browser_filters(Some("chrome"));
+    assert_eq!(filters, vec!["chrome".to_string()]);
+
+    if let Some(v) = old_enabled {
+        std::env::set_var("ENABLED_BROWSERS", v);
+    } else {
+        std::env::remove_var("ENABLED_BROWSERS");
+    }
+    if let Some(v) = old_browsers {
+        std::env::set_var("BROWSERS", v);
+    } else {
+        std::env::remove_var("BROWSERS");
+    }
 }
 
 /// Test browser filter parsing with whitespace trimming

@@ -12,9 +12,10 @@ use std::fs;
 use std::path::Path;
 
 use super::types::{
-    BrowserConfig, CircuitBreakerConfig, Config, IxbrowserConfig, NativeClickCalibrationMode,
-    NativeInputBackend, NativeInteractionConfig, OrchestratorConfig, RoxybrowserConfig,
-    ShardbrowserConfig, TaskDiscoveryConfig, TracingConfig, TwitterActivityConfig,
+    BraveConfig, BrowserConfig, ChromeConfig, CircuitBreakerConfig, Config, IxbrowserConfig,
+    NativeClickCalibrationMode, NativeInputBackend, NativeInteractionConfig, OrchestratorConfig,
+    RoxybrowserConfig, ShardbrowserConfig, TaskDiscoveryConfig, TracingConfig,
+    TwitterActivityConfig,
 };
 
 /// Load `.env` defaults into the environment (only for keys not already set).
@@ -70,13 +71,40 @@ pub(crate) fn load_code_config() -> Result<Config> {
         env::var("ROXYBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:50000/".to_string());
     let roxybrowser_key = env::var("ROXYBROWSER_API_KEY")
         .unwrap_or_else(|_| "c6ae203adfe0327a63ccc9174c178dec".to_string());
+    let roxybrowser_enabled = env::var("ROXYBROWSER_ENABLED")
+        .or_else(|_| env::var("BROWSER_ROXYBROWSER_ENABLED"))
+        .ok()
+        .and_then(|v| parse_env_bool(&v))
+        .unwrap_or(true);
+
     let ixbrowser_url =
         env::var("IXBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:53200".to_string());
+    let ixbrowser_enabled = env::var("IXBROWSER_ENABLED")
+        .or_else(|_| env::var("BROWSER_IXBROWSER_ENABLED"))
+        .ok()
+        .and_then(|v| parse_env_bool(&v))
+        .unwrap_or(true);
+
     let shardbrowser_url =
         env::var("SHARDBROWSER_API_URL").unwrap_or_else(|_| "http://127.0.0.1:40325".to_string());
     let shardbrowser_key = env::var("SHARDBROWSER_API_KEY").unwrap_or_default();
-    // Enable only when a key is configured — the ShardBrowser API requires auth.
-    let shardbrowser_enabled = !shardbrowser_key.is_empty();
+    let shardbrowser_enabled = env::var("SHARDBROWSER_ENABLED")
+        .or_else(|_| env::var("BROWSER_SHARDBROWSER_ENABLED"))
+        .ok()
+        .and_then(|v| parse_env_bool(&v))
+        .unwrap_or(!shardbrowser_key.is_empty());
+
+    let chrome_enabled = env::var("CHROME_ENABLED")
+        .or_else(|_| env::var("BROWSER_CHROME_ENABLED"))
+        .ok()
+        .and_then(|v| parse_env_bool(&v))
+        .unwrap_or(true);
+
+    let brave_enabled = env::var("BRAVE_ENABLED")
+        .or_else(|_| env::var("BROWSER_BRAVE_ENABLED"))
+        .ok()
+        .and_then(|v| parse_env_bool(&v))
+        .unwrap_or(true);
 
     Ok(Config {
         browser: BrowserConfig {
@@ -91,18 +119,26 @@ pub(crate) fn load_code_config() -> Result<Config> {
             },
             profiles: vec![],
             roxybrowser: RoxybrowserConfig {
-                enabled: true,
+                enabled: roxybrowser_enabled,
                 api_url: roxybrowser_url,
                 api_key: roxybrowser_key,
             },
             ixbrowser: IxbrowserConfig {
-                enabled: true,
+                enabled: ixbrowser_enabled,
                 api_url: ixbrowser_url,
             },
             shardbrowser: ShardbrowserConfig {
                 enabled: shardbrowser_enabled,
                 api_url: shardbrowser_url,
                 api_key: shardbrowser_key,
+            },
+            chrome: ChromeConfig {
+                enabled: chrome_enabled,
+                ..ChromeConfig::default()
+            },
+            brave: BraveConfig {
+                enabled: brave_enabled,
+                ..BraveConfig::default()
             },
             user_agent: None,
             extra_http_headers: BTreeMap::new(),
@@ -112,11 +148,11 @@ pub(crate) fn load_code_config() -> Result<Config> {
             native_interaction: NativeInteractionConfig::default(),
             max_workers_per_session: 5,
             enable_learning_persistence: true,
-            learning_ttl_days: 30,
+            learning_ttl_days: 90,
         },
         orchestrator: OrchestratorConfig {
             max_global_concurrency: 20,
-            task_timeout_ms: DurationMs::new_const(600_000),
+            task_timeout_ms: DurationMs::new_const(1_200_000),
             group_timeout_ms: DurationMs::new_const(600_000),
             worker_wait_timeout_ms: DurationMs::new_const(10000),
             task_stagger_delay_ms: 2000,
@@ -129,6 +165,17 @@ pub(crate) fn load_code_config() -> Result<Config> {
     })
 }
 
+/// Helper function to parse boolean value from environment variable string.
+/// Recognizes `true`, `1`, `yes`, `on` as true, and `false`, `0`, `no`, `off` as false (case-insensitive).
+pub(crate) fn parse_env_bool(val: &str) -> Option<bool> {
+    let clean = val.split('#').next().unwrap_or(val).trim();
+    match clean.to_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
 /// Apply environment variable overrides to an already-loaded `Config`.
 pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
     // Environment variable overrides
@@ -138,8 +185,22 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
     if let Ok(key) = env::var("ROXYBROWSER_API_KEY") {
         config.browser.roxybrowser.api_key = key;
     }
+    if let Ok(enabled) =
+        env::var("ROXYBROWSER_ENABLED").or_else(|_| env::var("BROWSER_ROXYBROWSER_ENABLED"))
+    {
+        if let Some(b) = parse_env_bool(&enabled) {
+            config.browser.roxybrowser.enabled = b;
+        }
+    }
     if let Ok(url) = env::var("IXBROWSER_API_URL") {
         config.browser.ixbrowser.api_url = url;
+    }
+    if let Ok(enabled) =
+        env::var("IXBROWSER_ENABLED").or_else(|_| env::var("BROWSER_IXBROWSER_ENABLED"))
+    {
+        if let Some(b) = parse_env_bool(&enabled) {
+            config.browser.ixbrowser.enabled = b;
+        }
     }
     if let Ok(url) = env::var("SHARDBROWSER_API_URL") {
         if !url.is_empty() {
@@ -152,6 +213,44 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
             config.browser.shardbrowser.enabled = true;
         }
         config.browser.shardbrowser.api_key = key;
+    }
+    if let Ok(enabled) =
+        env::var("SHARDBROWSER_ENABLED").or_else(|_| env::var("BROWSER_SHARDBROWSER_ENABLED"))
+    {
+        if let Some(b) = parse_env_bool(&enabled) {
+            config.browser.shardbrowser.enabled = b;
+        }
+    }
+    if let Ok(enabled) = env::var("CHROME_ENABLED").or_else(|_| env::var("BROWSER_CHROME_ENABLED"))
+    {
+        if let Some(b) = parse_env_bool(&enabled) {
+            config.browser.chrome.enabled = b;
+        }
+    }
+    if let Ok(start) = env::var("CHROME_PORT_START") {
+        if let Ok(p) = start.parse() {
+            config.browser.chrome.port_start = p;
+        }
+    }
+    if let Ok(end) = env::var("CHROME_PORT_END") {
+        if let Ok(p) = end.parse() {
+            config.browser.chrome.port_end = p;
+        }
+    }
+    if let Ok(enabled) = env::var("BRAVE_ENABLED").or_else(|_| env::var("BROWSER_BRAVE_ENABLED")) {
+        if let Some(b) = parse_env_bool(&enabled) {
+            config.browser.brave.enabled = b;
+        }
+    }
+    if let Ok(start) = env::var("BRAVE_PORT_START") {
+        if let Ok(p) = start.parse() {
+            config.browser.brave.port_start = p;
+        }
+    }
+    if let Ok(end) = env::var("BRAVE_PORT_END") {
+        if let Ok(p) = end.parse() {
+            config.browser.brave.port_end = p;
+        }
     }
     if let Ok(user_agent) = env::var("BROWSER_USER_AGENT") {
         config.browser.user_agent = Some(user_agent);
@@ -491,7 +590,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_env_bool_variants() {
+        assert_eq!(parse_env_bool("true"), Some(true));
+        assert_eq!(parse_env_bool("TRUE"), Some(true));
+        assert_eq!(parse_env_bool("1"), Some(true));
+        assert_eq!(parse_env_bool("yes # comment"), Some(true));
+        assert_eq!(parse_env_bool("on"), Some(true));
+
+        assert_eq!(parse_env_bool("false"), Some(false));
+        assert_eq!(parse_env_bool("0"), Some(false));
+        assert_eq!(parse_env_bool("no"), Some(false));
+        assert_eq!(parse_env_bool("off # disabled"), Some(false));
+
+        assert_eq!(parse_env_bool("invalid"), None);
+    }
+
+    #[test]
     fn apply_env_overrides_roxybrowser() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let old_url = env::var("ROXYBROWSER_API_URL").ok();
         let old_key = env::var("ROXYBROWSER_API_KEY").ok();
 
@@ -517,7 +633,43 @@ mod tests {
     }
 
     #[test]
+    fn apply_env_overrides_browser_enabled() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let old_roxy = env::var("ROXYBROWSER_ENABLED").ok();
+        let old_ix = env::var("IXBROWSER_ENABLED").ok();
+        let old_shard = env::var("SHARDBROWSER_ENABLED").ok();
+
+        env::set_var("ROXYBROWSER_ENABLED", "false");
+        env::set_var("IXBROWSER_ENABLED", "0");
+        env::set_var("SHARDBROWSER_ENABLED", "true");
+
+        let mut config = Config::default();
+        config = apply_env_overrides(config).unwrap();
+
+        assert!(!config.browser.roxybrowser.enabled);
+        assert!(!config.browser.ixbrowser.enabled);
+        assert!(config.browser.shardbrowser.enabled);
+
+        if let Some(v) = old_roxy {
+            env::set_var("ROXYBROWSER_ENABLED", v);
+        } else {
+            env::remove_var("ROXYBROWSER_ENABLED");
+        }
+        if let Some(v) = old_ix {
+            env::set_var("IXBROWSER_ENABLED", v);
+        } else {
+            env::remove_var("IXBROWSER_ENABLED");
+        }
+        if let Some(v) = old_shard {
+            env::set_var("SHARDBROWSER_ENABLED", v);
+        } else {
+            env::remove_var("SHARDBROWSER_ENABLED");
+        }
+    }
+
+    #[test]
     fn apply_env_overrides_shardbrowser() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let old_url = env::var("SHARDBROWSER_API_URL").ok();
         let old_key = env::var("SHARDBROWSER_API_KEY").ok();
 

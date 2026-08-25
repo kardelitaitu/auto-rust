@@ -46,11 +46,18 @@ pub struct CliTaskDefinition {
 /// ```
 #[must_use]
 pub fn parse_browser_filters(value: Option<&str>) -> Vec<String> {
+    let raw = match value {
+        Some(v) if !v.trim().is_empty() => v.to_string(),
+        _ => std::env::var("ENABLED_BROWSERS")
+            .or_else(|_| std::env::var("BROWSERS"))
+            .or_else(|_| std::env::var("BROWSER_FILTERS"))
+            .or_else(|_| std::env::var("BROWSER_ENABLED"))
+            .unwrap_or_default(),
+    };
+
     let mut seen = HashSet::new();
 
-    value
-        .unwrap_or("")
-        .split(',')
+    raw.split(',')
         .map(|item| item.trim().to_lowercase())
         .filter(|item| !item.is_empty())
         .filter(|item| seen.insert(item.clone()))

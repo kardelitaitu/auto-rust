@@ -667,6 +667,8 @@ mod tests {
                 },
                 ixbrowser: auto::config::IxbrowserConfig::default(),
                 shardbrowser: auto::config::ShardbrowserConfig::default(),
+                chrome: auto::config::ChromeConfig::default(),
+                brave: auto::config::BraveConfig::default(),
                 user_agent: None,
                 extra_http_headers: std::collections::BTreeMap::new(),
                 cursor_overlay_ms: 0,

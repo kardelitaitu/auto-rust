@@ -138,6 +138,56 @@ impl TaskContext {
         }
     }
 
+    /// Evaluate arbitrary JS inside the iframe (OOPIF-safe) and return its JSON
+    /// value. The primary "read/scan/parse" primitive: pass a script that
+    /// returns a JSON object describing the mini-app state, and drive actions
+    /// from the parsed result. Returns `Err` only if the iframe cannot be
+    /// reached (the script itself should return null on empty state).
+    pub async fn iframe_eval(
+        &self,
+        iframe_selector: &str,
+        expression: &str,
+        timeout_ms: u64,
+    ) -> Result<serde_json::Value> {
+        let client = if self.browser_ws_url.is_empty() {
+            None
+        } else {
+            Some(
+                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                    .await
+                    .map_err(|e| {
+                        anyhow!(
+                            "OOPIF client connect to '{}' failed: {e}",
+                            self.browser_ws_url
+                        )
+                    })?,
+            )
+        };
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut session_cache: Option<(String, String)> = None;
+        loop {
+            if let Ok(Some((rect, src))) = resolve_iframe(self.page(), iframe_selector).await {
+                if rect.width > 0.0 && rect.height > 0.0 {
+                    if let Ok(Some(session_id)) = self
+                        .iframe_session_id(client.as_ref(), &src, &mut session_cache)
+                        .await
+                    {
+                        if let Some(client) = client.as_ref() {
+                            let value = client.evaluate(&session_id, expression).await?;
+                            return Ok(value);
+                        }
+                    }
+                }
+            }
+            if Instant::now() >= deadline {
+                return Err(anyhow!(
+                    "iframe_eval: iframe '{iframe_selector}' not usable within {timeout_ms}ms"
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
     /// Quick single-shot probe: check whether an element matching `element_selector`
     /// with text `text_filter` exists inside the iframe. Returns immediately with
     /// `true`/`false` (no poll loop). Useful as a fast "skip" check before

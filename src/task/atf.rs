@@ -8,9 +8,14 @@
 //! 1. Navigate to `https://web.telegram.org/k/#@ATF_AIRDROP_bot`
 //! 2. Wait a random 2–5 seconds (uniform) for the page to settle
 //! 3. Mouse-click the "Start Mining" command button (no confirmation handling)
-//! 4. `iframe_click` — click the "Tasks" tab inside the cross-origin mini-app
-//!    iframe (attaches an OOPIF CDP session; no navigation, no new tab)
-//! 5. `iframe_click` — click each "Go" task button (scrolls through the list)
+//! 4. **State-driven loop** — read/scan/parse the mini-app iframe each iteration
+//!    and act on what's actually present:
+//!    - busy (modal/"Processing") → wait for it to clear
+//!    - CLAIM action button (hourly miner) → click 2–4× with jitter
+//!    - Tasks tab not active → activate it
+//!    - `.btn-small` "Go" buttons → click the first one
+//!    - `.btn-small` "Claim" buttons → click the first one
+//!    - nothing actionable → wait 30–40s for validation, then finish
 //!
 //! Assumes the Telegram Web session is already logged in and the bot chat
 //! renders its command bar without extra interaction.
@@ -102,501 +107,144 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     api.wait(1_000, 3_000).await;
 
-    // The mini-app iframe has a stable class — select it by CSS rather than
-    // a fragile positional XPath. (XPath is still supported for other cases.)
+    // ── State-driven interaction loop ─────────────────────────────────────
+    // Read / scan / parse the mini-app state each iteration and act on what
+    // is actually present, adapting to whatever state the app is in.
     const MINIAPP_IFRAME: &str = "iframe.payment-verification";
+    const STATE_SCAN_JS: &str = r#"(() => {
+        const q = s => document.querySelector(s);
+        const btns = [...document.querySelectorAll('.btn-small')];
+        const text = b => (b.textContent || '').trim();
+        const claimAction = q('.btn-main.state-claim#actionBtn');
+        const tasksTab = q('#tab-tasks');
+        const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="overlay"],[id*="overlay"]')]
+            .find(n => { const r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+        const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
+        return JSON.stringify({
+            claimAction: !!claimAction && text(claimAction) === 'CLAIM',
+            tasksActive: !!tasksTab && tasksTab.classList.contains('active'),
+            goButtons: btns.filter(b => text(b) === 'Go').map(b => b.id),
+            claimButtons: btns.filter(b => text(b) === 'Claim').map(b => b.id),
+            busy: !!busyEl || /Processing|Verifying|Connecting|Please wait|Claiming|In progress/i.test(body)
+        });
+    })()"#;
 
-    // Step 4a: click the "Claim hourly miner" CLAIM button 2-4 times with a
-    // small random offset each time (not the exact same position), random
-    // 0.5-1s between clicks. No verification.
-    // (the button is `<button class="btn-main state-claim" id="actionBtn">CLAIM</button>`)
-    const ACTION_BTN_SELECTOR: &str = ".btn-main.state-claim#actionBtn";
-    info!("[Step 4a] Starting . . .");
-    if let Some((cx, cy)) = api
-        .iframe_center(
-            MINIAPP_IFRAME,
-            ACTION_BTN_SELECTOR,
-            MINIAPP_ACTION_TIMEOUT_MS,
-        )
-        .await?
-    {
-        let clicks = random_in_range(2, 4);
-        info!("[Step 4a] Claim button found, clicking {clicks}x");
-        for i in 0..clicks {
-            let jx = random_in_range(0, 16) as f64 - 8.0;
-            let jy = random_in_range(0, 16) as f64 - 8.0;
-            let outcome = api
-                .iframe_click_at(MINIAPP_IFRAME, cx + jx, cy + jy, 5_000)
-                .await?;
-            info!(
-                "[Step 4a] Claim click #{}/{} result: {}",
-                i + 1,
-                clicks,
-                outcome.summary()
-            );
-            if i + 1 < clicks {
-                api.wait(500, 1_000).await;
+    const MAX_STATE_ROUNDS: u32 = 120;
+    let mut rounds = 0u32;
+    let mut idle_rounds = 0u32;
+    loop {
+        rounds += 1;
+        if rounds > MAX_STATE_ROUNDS {
+            warn!("[state] max rounds reached — stopping interaction loop");
+            break;
+        }
+        let raw = api
+            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 15_000)
+            .await?;
+        let value = match raw {
+            Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+            other => other,
+        };
+        let claim_action = value["claimAction"].as_bool().unwrap_or(false);
+        let tasks_active = value["tasksActive"].as_bool().unwrap_or(false);
+        let busy = value["busy"].as_bool().unwrap_or(false);
+        let go_buttons: Vec<String> = value["goButtons"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let claim_buttons: Vec<String> = value["claimButtons"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // 1. Busy (modal / processing) — wait for it to clear.
+        if busy {
+            info!("[state] mini-app busy (modal/processing) — waiting 1-2s");
+            api.wait(1_000, 2_000).await;
+            idle_rounds = 0;
+            continue;
+        }
+        // 2. CLAIM action button (hourly miner) — click with jitter.
+        if claim_action {
+            if let Some((cx, cy)) = api
+                .iframe_center(MINIAPP_IFRAME, ".btn-main.state-claim#actionBtn", 10_000)
+                .await?
+            {
+                let jx = random_in_range(0, 16) as f64 - 8.0;
+                let jy = random_in_range(0, 16) as f64 - 8.0;
+                let outcome = api
+                    .iframe_click_at(MINIAPP_IFRAME, cx + jx, cy + jy, 5_000)
+                    .await?;
+                info!("[state] CLAIM action clicked: {}", outcome.summary());
+            } else {
+                info!("[state] CLAIM action gone — skip");
             }
+            api.wait(500, 1_000).await;
+            idle_rounds = 0;
+            continue;
         }
-    } else {
-        info!("[Step 4a] Claim button not found — skipping");
-    }
-
-    api.wait(500, 2_000).await;
-
-    // Step 4b: click the "Task Menu" tab inside the same iframe.
-    info!("[Step 4b] Clicking Task Menu tab inside iframe");
-    api.wait(2_000, 3_000).await;
-    let outcome = api
-        .iframe_click(
-            MINIAPP_IFRAME,
-            "[onclick=\"switchTab('tasks')\"]",
-            MINIAPP_ACTION_TIMEOUT_MS,
-        )
-        .await?;
-    info!("[Step 4b] Task Menu click result: {}", outcome.summary());
-    if !matches!(
-        outcome.click,
-        crate::utils::mouse::types::ClickStatus::Success
-    ) {
-        bail!("[Step 4b] Task Menu click failed: {}", outcome.summary());
-    }
-    api.wait(1_000, 3_000).await;
-
-    // Step 5: Click Go on Youtube Like — target by class + id + text content
-    // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
-    // Repeat clicks until the "Go" text is gone (the mini-app replaces it after
-    // the task starts), with a random 1-2s interval, max 5 retries.
-    info!("[Step 5] Starting . . .");
-    const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
-    const GO_RETRY_MAX: u32 = 5;
-    const GO_CHECK_TIMEOUT_MS: u64 = 2_000;
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Go" button is gone, instead of
-        // polling the full click timeout to discover it.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 5] YouTube task 'Go' button gone (clicked {clicks}x)");
-            break;
+        // 3. Tasks tab not active — activate it.
+        if !tasks_active {
+            info!("[state] opening Tasks tab");
+            let outcome = api
+                .iframe_click(
+                    MINIAPP_IFRAME,
+                    "[onclick=\"switchTab('tasks')\"]",
+                    MINIAPP_ACTION_TIMEOUT_MS,
+                )
+                .await?;
+            info!("[state] Tasks tab click: {}", outcome.summary());
+            api.wait(1_000, 2_000).await;
+            idle_rounds = 0;
+            continue;
         }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                YOUTUBE_TASK_SELECTOR,
-                "Go",
-                GO_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!(
-            "[Step 5] YouTube task click #{clicks} result: {}",
-            outcome.summary()
-        );
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("[Step 5] YouTube task click failed: {}", outcome.summary());
+        // 4. Go task buttons — click the first one.
+        if let Some(id) = go_buttons.first() {
+            let selector = format!(".btn-small#{id}");
+            info!("[state] Go task '{id}'");
+            match api
+                .iframe_click_text(MINIAPP_IFRAME, &selector, "Go", 5_000)
+                .await
+            {
+                Ok(outcome) => info!("[state] Go '{id}' clicked: {}", outcome.summary()),
+                Err(e) => info!("[state] Go '{id}' gone: {e}"),
+            }
+            api.wait(500, 2_000).await;
+            idle_rounds = 0;
+            continue;
         }
-        // Post-click probe: detect the state change (busy/done) right away
-        // instead of only noticing it on the next pre-click probe.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, YOUTUBE_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 5] YouTube task done (clicked {clicks}x)");
-            break;
+        // 5. Claim task buttons — click the first one.
+        if let Some(id) = claim_buttons.first() {
+            let selector = format!(".btn-small#{id}");
+            info!("[state] Claim task '{id}'");
+            match api
+                .iframe_click_text(MINIAPP_IFRAME, &selector, "Claim", 5_000)
+                .await
+            {
+                Ok(outcome) => info!("[state] Claim '{id}' clicked: {}", outcome.summary()),
+                Err(e) => info!("[state] Claim '{id}' gone: {e}"),
+            }
+            api.wait(500, 2_000).await;
+            idle_rounds = 0;
+            continue;
         }
-        if clicks >= GO_RETRY_MAX {
-            info!("[Step 5] Reached max {GO_RETRY_MAX} clicks on YouTube task button");
-            break;
+        // 6. Nothing actionable — first idle waits for validation, second is done.
+        idle_rounds += 1;
+        if idle_rounds == 1 {
+            info!("[state] nothing actionable — waiting 30-40s for validation");
+            api.wait(30_000, 40_000).await;
+            continue;
         }
-        info!("[Step 5] Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
-    }
-
-    api.wait(500, 2_000).await;
-
-    // Step 6: Click Go on Twitter Retweet — target by class + id + text content
-    // (the button is `<button class="btn-small" id="btn-twitter_retweet">Go</button>`).
-    // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
-    // Step 5 may have opened a new tab (YouTube) — refocus the Telegram tab first.
-    api.focus_tab().await?;
-    info!("[Step 6] Starting . . .");
-    const RETWEET_TASK_SELECTOR: &str = ".btn-small#btn-twitter_retweet";
-    const RETWEET_TASK_RETRY_MAX: u32 = 5;
-    const RETWEET_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Go" button is gone.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, RETWEET_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 6] Retweet task 'Go' button gone (clicked {clicks}x)");
-            break;
-        }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                RETWEET_TASK_SELECTOR,
-                "Go",
-                RETWEET_TASK_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!(
-            "[Step 6] Retweet task click #{clicks} result: {}",
-            outcome.summary()
-        );
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("[Step 6] Retweet task click failed: {}", outcome.summary());
-        }
-        // Post-click probe: stop as soon as the task state changes.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, RETWEET_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 6] Retweet task done (clicked {clicks}x)");
-            break;
-        }
-        if clicks >= RETWEET_TASK_RETRY_MAX {
-            info!("[Step 6] Reached max {RETWEET_TASK_RETRY_MAX} clicks on Retweet task button");
-            break;
-        }
-        info!("[Step 6] Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
-    }
-
-    api.wait(500, 2_000).await;
-
-    // Step 7: Click Go on Visit Website — target by class + id + text content
-    // (the button is `<button class="btn-small" id="btn-website_visit">Go</button>`).
-    // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
-    api.focus_tab().await?;
-    info!("[Step 7] Starting . . .");
-    const WEBSITE_TASK_SELECTOR: &str = ".btn-small#btn-website_visit";
-    const WEBSITE_TASK_RETRY_MAX: u32 = 5;
-    const WEBSITE_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Go" button is gone.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, WEBSITE_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 7] Website task 'Go' button gone (clicked {clicks}x)");
-            break;
-        }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                WEBSITE_TASK_SELECTOR,
-                "Go",
-                WEBSITE_TASK_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!(
-            "[Step 7] Website task click #{clicks} result: {}",
-            outcome.summary()
-        );
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("[Step 7] Website task click failed: {}", outcome.summary());
-        }
-        // Post-click probe: stop as soon as the task state changes.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, WEBSITE_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 7] Website task done (clicked {clicks}x)");
-            break;
-        }
-        if clicks >= WEBSITE_TASK_RETRY_MAX {
-            info!("[Step 7] Reached max {WEBSITE_TASK_RETRY_MAX} clicks on Website task button");
-            break;
-        }
-        info!("[Step 7] Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
-    }
-
-    api.wait(500, 2_000).await;
-
-    // Step 8: Click Go on React Telegram Post — target by class + id + text content
-    // (the button is `<button class="btn-small" id="btn-telegram_react_latest">Go</button>`).
-    // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
-    // Step 7 (Visit Website) likely opened a new tab — refocus first.
-    api.focus_tab().await?;
-    info!("[Step 8] Starting . . .");
-    const REACT_TASK_SELECTOR: &str = ".btn-small#btn-telegram_react_latest";
-    const REACT_TASK_RETRY_MAX: u32 = 5;
-    const REACT_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Go" button is gone.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, REACT_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 8] React task 'Go' button gone (clicked {clicks}x)");
-            break;
-        }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                REACT_TASK_SELECTOR,
-                "Go",
-                REACT_TASK_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!(
-            "[Step 8] React task click #{clicks} result: {}",
-            outcome.summary()
-        );
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("[Step 8] React task click failed: {}", outcome.summary());
-        }
-        // Post-click probe: stop as soon as the task state changes.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, REACT_TASK_SELECTOR, "Go")
-            .await?
-        {
-            info!("[Step 8] React task done (clicked {clicks}x)");
-            break;
-        }
-        if clicks >= REACT_TASK_RETRY_MAX {
-            info!("[Step 8] Reached max {REACT_TASK_RETRY_MAX} clicks on React task button");
-            break;
-        }
-        info!("[Step 8] Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
-    }
-
-    // Switch focus back to the Telegram tab — earlier tasks (visit website /
-    // youtube) may have opened a new tab and moved focus to it.
-    api.focus_tab().await?;
-
-    // long wait until all task validated
-    info!("Waiting random 30-40s until all task synced");
-    api.wait(30_000, 40_000).await;
-
-    // Step 9: Click Claim on YouTube Like — same button, text now "Claim".
-    // Repeat clicks until the "Claim" text is gone, random 0.5-2s, max 5.
-    const CLAIM_RETRY_MAX: u32 = 5;
-    const CLAIM_CHECK_TIMEOUT_MS: u64 = 2_000;
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Claim" button is gone.
-        if !api
-            .iframe_has_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-youtube_like_comment",
-                "Claim",
-            )
-            .await?
-        {
-            info!("YouTube 'Claim' button gone (clicked {clicks}x)");
-            break;
-        }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-youtube_like_comment",
-                "Claim",
-                CLAIM_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!(
-            "YouTube claim click #{clicks} result: {}",
-            outcome.summary()
-        );
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("YouTube claim click failed: {}", outcome.summary());
-        }
-        // Post-click probe: stop as soon as the task state changes.
-        if !api
-            .iframe_has_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-youtube_like_comment",
-                "Claim",
-            )
-            .await?
-        {
-            info!("YouTube claim done (clicked {clicks}x)");
-            break;
-        }
-        if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on YouTube claim button");
-            break;
-        }
-        info!("Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
-    }
-
-    api.wait(500, 2_000).await;
-
-    // Step 10: Click Claim on Twitter Retweet — target by class + id + "Claim" text.
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Claim" button is gone.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-twitter_retweet", "Claim")
-            .await?
-        {
-            info!("Retweet 'Claim' button gone (clicked {clicks}x)");
-            break;
-        }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-twitter_retweet",
-                "Claim",
-                CLAIM_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!(
-            "Retweet claim click #{clicks} result: {}",
-            outcome.summary()
-        );
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("Retweet claim click failed: {}", outcome.summary());
-        }
-        // Post-click probe: stop as soon as the task state changes.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-twitter_retweet", "Claim")
-            .await?
-        {
-            info!("Retweet claim done (clicked {clicks}x)");
-            break;
-        }
-        if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on Retweet claim button");
-            break;
-        }
-        info!("Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
-    }
-
-    api.wait(500, 2_000).await;
-
-    // Step 11: Click Claim on Visit Website — target by class + id + "Claim" text.
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Claim" button is gone.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-website_visit", "Claim")
-            .await?
-        {
-            info!("Website 'Claim' button gone (clicked {clicks}x)");
-            break;
-        }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-website_visit",
-                "Claim",
-                CLAIM_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!(
-            "Website claim click #{clicks} result: {}",
-            outcome.summary()
-        );
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("Website claim click failed: {}", outcome.summary());
-        }
-        // Post-click probe: stop as soon as the task state changes.
-        if !api
-            .iframe_has_text(MINIAPP_IFRAME, ".btn-small#btn-website_visit", "Claim")
-            .await?
-        {
-            info!("Website claim done (clicked {clicks}x)");
-            break;
-        }
-        if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on Website claim button");
-            break;
-        }
-        info!("Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
-    }
-
-    api.wait(500, 2_000).await;
-
-    // Step 12: Click Claim on React Telegram Post — target by class + id + "Claim" text.
-    let mut clicks = 0u32;
-    loop {
-        // Probe first — skip instantly when the "Claim" button is gone.
-        if !api
-            .iframe_has_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-telegram_react_latest",
-                "Claim",
-            )
-            .await?
-        {
-            info!("React 'Claim' button gone (clicked {clicks}x)");
-            break;
-        }
-        let outcome = api
-            .iframe_click_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-telegram_react_latest",
-                "Claim",
-                CLAIM_CHECK_TIMEOUT_MS,
-            )
-            .await?;
-        clicks += 1;
-        info!("React claim click #{clicks} result: {}", outcome.summary());
-        if !matches!(
-            outcome.click,
-            crate::utils::mouse::types::ClickStatus::Success
-        ) {
-            bail!("React claim click failed: {}", outcome.summary());
-        }
-        // Post-click probe: stop as soon as the task state changes.
-        if !api
-            .iframe_has_text(
-                MINIAPP_IFRAME,
-                ".btn-small#btn-telegram_react_latest",
-                "Claim",
-            )
-            .await?
-        {
-            info!("React claim done (clicked {clicks}x)");
-            break;
-        }
-        if clicks >= CLAIM_RETRY_MAX {
-            info!("Reached max {CLAIM_RETRY_MAX} clicks on React claim button");
-            break;
-        }
-        info!("Waiting random 0.5s-2s before next attempt");
-        api.wait(500, 2_000).await;
+        info!("[state] nothing actionable after validation wait — done");
+        break;
     }
 
     api.wait(500, 2_000).await;

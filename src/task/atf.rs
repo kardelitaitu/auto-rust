@@ -333,7 +333,7 @@ async fn click_task_button(
     text: &str,
     label: &str,
 ) -> Result<bool> {
-    const MAX_RETRY: u32 = 5;
+    const MAX_RETRY: u32 = 3;
     const TIMEOUT_MS: u64 = 5_000;
     wait_not_busy(api).await?;
     ensure_tasks_visible(api).await?;
@@ -365,16 +365,21 @@ async fn click_task_button(
             info!("[{label}] click did not land — moving on (clicked {clicks}x)");
             return Ok(clicks > 0);
         }
-        // Post-click probe: stop as soon as the state changes.
+        // Allow mini-app JS time to process click event and update DOM state
+        // (e.g. 'Go' -> 'Processing' / 'Claim' / disabled).
+        api.wait(600, 900).await;
+        // Post-click probe: stop as soon as the state changes away from 'text'.
         if !api.iframe_has_text(MINIAPP_IFRAME, selector, text).await? {
-            info!("[{label}] done after {clicks} click(s)");
+            info!(
+                "[{label}] button state changed away from '{text}' — done after {clicks} click(s)"
+            );
             return Ok(true);
         }
         if clicks >= MAX_RETRY {
             info!("[{label}] max retries ({clicks}x) — moving on");
             return Ok(true);
         }
-        api.wait(500, 2_000).await;
+        api.wait(500, 1_000).await;
     }
 }
 // ============================================================================

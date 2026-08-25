@@ -45,6 +45,41 @@ const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 30_000;
 /// How long to wait for a Telegram mini-app action button, in milliseconds.
 const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
 
+/// The cross-origin mini-app iframe (Telegram Web K client).
+const MINIAPP_IFRAME: &str = "iframe.payment-verification";
+
+/// Scans the mini-app state: busy modal/text, tasks tab active, and the
+/// visible Go/Claim task buttons.
+const STATE_SCAN_JS: &str = r#"(() => {
+    const q = s => document.querySelector(s);
+    const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const btns = [...document.querySelectorAll('.btn-small')].filter(visible);
+    const text = b => (b.textContent || '').trim();
+    const claimAction = q('.btn-main.state-claim#actionBtn');
+    const tasksTab = q('#tab-tasks');
+    const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="overlay"],[id*="overlay"]')]
+        .find(visible);
+    const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
+    return JSON.stringify({
+        claimAction: !!claimAction && visible(claimAction) && text(claimAction) === 'CLAIM',
+        tasksActive: !!tasksTab && tasksTab.classList.contains('active'),
+        goButtons: btns.filter(b => text(b) === 'Go').map(b => b.id),
+        claimButtons: btns.filter(b => text(b) === 'Claim').map(b => b.id),
+        busyModal: !!busyEl,
+        busyModalId: busyEl ? (busyEl.id || busyEl.className || busyEl.tagName).toString().slice(0, 80) : '',
+        busyText: /Processing|Please wait/i.test(body)
+    });
+})()"#;
+
+/// Best-effort modal dismissal: click any visible close/backdrop element.
+const DISMISS_MODAL_JS: &str = r#"(() => {
+    const candidates = [...document.querySelectorAll(
+        '[class*="close"],[id*="close"],[aria-label*="Close"],[data-dismiss],[class*="backdrop"],[class*="overlay"]'
+    )].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    for (const el of candidates) { try { el.click(); } catch (_) {} }
+    return candidates.length;
+})()"#;
+
 // ============================================================================
 // Task Entry Point
 // ============================================================================
@@ -107,193 +142,96 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     api.wait(1_000, 3_000).await;
 
-    // ── State-driven interaction loop ─────────────────────────────────────
-    // Read / scan / parse the mini-app state each iteration and act on what
-    // is actually present, adapting to whatever state the app is in.
-    const MINIAPP_IFRAME: &str = "iframe.payment-verification";
-    const STATE_SCAN_JS: &str = r#"(() => {
-        const q = s => document.querySelector(s);
-        const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-        // Only VISIBLE buttons — hidden tabs (friends/profile/miners) also have
-        // .btn-small buttons in the DOM; we must not act on them.
-        const btns = [...document.querySelectorAll('.btn-small')].filter(visible);
-        const text = b => (b.textContent || '').trim();
-        const claimAction = q('.btn-main.state-claim#actionBtn');
-        const tasksTab = q('#tab-tasks');
-        const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="overlay"],[id*="overlay"]')]
-            .find(visible);
-        const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
-        return JSON.stringify({
-            claimAction: !!claimAction && visible(claimAction) && text(claimAction) === 'CLAIM',
-            tasksActive: !!tasksTab && tasksTab.classList.contains('active'),
-            goButtons: btns.filter(b => text(b) === 'Go').map(b => b.id),
-            claimButtons: btns.filter(b => text(b) === 'Claim').map(b => b.id),
-            // Busy = a visible modal/overlay, or task-processing text. Keep the
-            // text narrow — broad words like 'Connecting' match persistent UI.
-            busyModal: !!busyEl,
-            busyModalId: busyEl ? (busyEl.id || busyEl.className || busyEl.tagName).toString().slice(0, 80) : '',
-            busyText: /Processing|Please wait/i.test(body)
-        });
-    })()"#;
+    // ── Interaction steps (each independent) ──────────────────────────────
+    // Every step reads the current mini-app state before acting, and skips
+    // gracefully when its button is not present. Add / remove / reorder steps
+    // freely without touching the others.
 
-    // Best-effort modal dismissal: click any visible close/backdrop element.
-    const DISMISS_MODAL_JS: &str = r#"(() => {
-        const candidates = [...document.querySelectorAll(
-            '[class*="close"],[id*="close"],[aria-label*="Close"],[data-dismiss],[class*="backdrop"],[class*="overlay"]'
-        )].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
-        for (const el of candidates) { try { el.click(); } catch (_) {} }
-        return candidates.length;
-    })()"#;
-
-    const MAX_STATE_ROUNDS: u32 = 120;
-    const MAX_BUSY_ROUNDS: u32 = 20;
-    let mut rounds = 0u32;
-    let mut idle_rounds = 0u32;
-    let mut busy_rounds = 0u32;
-    loop {
-        rounds += 1;
-        if rounds > MAX_STATE_ROUNDS {
-            warn!("[state] max rounds reached — stopping interaction loop");
-            break;
-        }
-        let raw = match api.iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 15_000).await {
-            Ok(v) => v,
-            Err(e) => {
-                // Transient iframe glitch (modal re-render) — retry instead of
-                // aborting the whole task.
-                warn!("[state] iframe scan failed: {e} — waiting 2s");
-                api.wait(1_000, 2_000).await;
-                continue;
-            }
-        };
-        let value = match raw {
-            Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
-            other => other,
-        };
-        let claim_action = value["claimAction"].as_bool().unwrap_or(false);
-        let tasks_active = value["tasksActive"].as_bool().unwrap_or(false);
-        let go_buttons: Vec<String> = value["goButtons"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let claim_buttons: Vec<String> = value["claimButtons"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let busy_modal = value["busyModal"].as_bool().unwrap_or(false);
-        let busy_text = value["busyText"].as_bool().unwrap_or(false);
-
-        // 1. Busy (modal / processing) — wait for it to clear, but cap the wait
-        //    so a persistent modal (e.g. a leftover overlay) can't hang the task.
-        if busy_modal || busy_text {
-            busy_rounds += 1;
-            let modal_id = value["busyModalId"].as_str().unwrap_or("");
-            info!(
-                "[state] busy (modal={busy_modal} id='{modal_id}' text={busy_text}) round {busy_rounds}"
-            );
-            // After a few rounds, best-effort dismiss (click close/backdrop).
-            if busy_rounds == 3 {
-                info!("[state] trying to dismiss the modal");
-                let _ = api
-                    .iframe_eval(MINIAPP_IFRAME, DISMISS_MODAL_JS, 5_000)
-                    .await;
-                api.wait(1_000, 2_000).await;
-                idle_rounds = 0;
-                continue;
-            }
-            if busy_rounds > MAX_BUSY_ROUNDS {
-                warn!("[state] busy persisted — proceeding anyway");
-                busy_rounds = 0;
-            } else {
-                api.wait(1_000, 2_000).await;
-                idle_rounds = 0;
-                continue;
-            }
-        } else {
-            busy_rounds = 0;
-        }
-        // 2. CLAIM action button (hourly miner) — click with jitter.
-        if claim_action {
-            if let Some((cx, cy)) = api
-                .iframe_center(MINIAPP_IFRAME, ".btn-main.state-claim#actionBtn", 10_000)
-                .await?
-            {
-                let jx = random_in_range(0, 16) as f64 - 8.0;
-                let jy = random_in_range(0, 16) as f64 - 8.0;
-                let outcome = api
-                    .iframe_click_at(MINIAPP_IFRAME, cx + jx, cy + jy, 5_000)
-                    .await?;
-                info!("[state] CLAIM action clicked: {}", outcome.summary());
-            } else {
-                info!("[state] CLAIM action gone — skip");
-            }
-            api.wait(500, 1_000).await;
-            idle_rounds = 0;
-            continue;
-        }
-        // 3. Tasks tab not active — activate it.
-        if !tasks_active {
-            info!("[state] opening Tasks tab");
+    // Step 4a: click the "Claim hourly miner" CLAIM action button 2-4 times
+    // with a small random offset each time (not the exact same position),
+    // random 0.5-1s between clicks. No verification.
+    // (the button is `<button class="btn-main state-claim" id="actionBtn">CLAIM</button>`)
+    info!("[Step 4a] Starting . . .");
+    if let Some((cx, cy)) = api
+        .iframe_center(
+            MINIAPP_IFRAME,
+            ".btn-main.state-claim#actionBtn",
+            MINIAPP_ACTION_TIMEOUT_MS,
+        )
+        .await?
+    {
+        let clicks = random_in_range(1, 3);
+        info!("[Step 4a] Claim button found, clicking {clicks}x");
+        for i in 0..clicks {
+            let jx = random_in_range(0, 16) as f64 - 8.0;
+            let jy = random_in_range(0, 16) as f64 - 8.0;
             let outcome = api
-                .iframe_click(
-                    MINIAPP_IFRAME,
-                    "[onclick=\"switchTab('tasks')\"]",
-                    MINIAPP_ACTION_TIMEOUT_MS,
-                )
+                .iframe_click_at(MINIAPP_IFRAME, cx + jx, cy + jy, 5_000)
                 .await?;
-            info!("[state] Tasks tab click: {}", outcome.summary());
-            api.wait(1_000, 2_000).await;
-            idle_rounds = 0;
-            continue;
-        }
-        // 4. Go task buttons — click the first one.
-        if let Some(id) = go_buttons.first() {
-            let selector = format!(".btn-small#{id}");
-            info!("[state] Go task '{id}'");
-            match api
-                .iframe_click_text(MINIAPP_IFRAME, &selector, "Go", 5_000)
-                .await
-            {
-                Ok(outcome) => info!("[state] Go '{id}' clicked: {}", outcome.summary()),
-                Err(e) => info!("[state] Go '{id}' gone: {e}"),
+            info!(
+                "[Step 4a] Claim click #{}/{} result: {}",
+                i + 1,
+                clicks,
+                outcome.summary()
+            );
+            if i + 1 < clicks {
+                api.wait(500, 1_000).await;
             }
-            api.wait(500, 2_000).await;
-            idle_rounds = 0;
-            continue;
         }
-        // 5. Claim task buttons — click the first one.
-        if let Some(id) = claim_buttons.first() {
-            let selector = format!(".btn-small#{id}");
-            info!("[state] Claim task '{id}'");
-            match api
-                .iframe_click_text(MINIAPP_IFRAME, &selector, "Claim", 5_000)
-                .await
-            {
-                Ok(outcome) => info!("[state] Claim '{id}' clicked: {}", outcome.summary()),
-                Err(e) => info!("[state] Claim '{id}' gone: {e}"),
-            }
-            api.wait(500, 2_000).await;
-            idle_rounds = 0;
-            continue;
-        }
-        // 6. Nothing actionable — first idle waits for validation, second is done.
-        idle_rounds += 1;
-        if idle_rounds == 1 {
-            info!("[state] nothing actionable — waiting 30-40s for validation");
-            api.wait(30_000, 40_000).await;
-            continue;
-        }
-        info!("[state] nothing actionable after validation wait — done");
-        break;
+    } else {
+        info!("[Step 4a] Claim button not found — skipping");
     }
+    api.wait(500, 2_000).await;
+
+    // Step 4b: open the Tasks tab (only if not already active).
+    info!("[Step 4b] Opening Tasks tab");
+    if !tasks_tab_active(api).await? {
+        let outcome = api
+            .iframe_click(
+                MINIAPP_IFRAME,
+                "[onclick=\"switchTab('tasks')\"]",
+                MINIAPP_ACTION_TIMEOUT_MS,
+            )
+            .await?;
+        info!("[Step 4b] Tasks tab click: {}", outcome.summary());
+    } else {
+        info!("[Step 4b] Tasks tab already active");
+    }
+    api.wait(1_000, 2_000).await;
+
+    // Steps 5-8: click each "Go" task button.
+    click_task_button(api, ".btn-small#btn-youtube_like_comment", "Go", "[Step 5]").await?;
+    click_task_button(api, ".btn-small#btn-twitter_retweet", "Go", "[Step 6]").await?;
+    click_task_button(api, ".btn-small#btn-website_visit", "Go", "[Step 7]").await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-telegram_react_latest",
+        "Go",
+        "[Step 8]",
+    )
+    .await?;
+
+    // Wait for the mini-app to validate the tasks (buttons become "Claim").
+    info!("Waiting random 30-40s until all task synced");
+    api.wait(30_000, 40_000).await;
+
+    // Steps 9-12: click each "Claim" task button.
+    click_task_button(
+        api,
+        ".btn-small#btn-youtube_like_comment",
+        "Claim",
+        "[Step 9]",
+    )
+    .await?;
+    click_task_button(api, ".btn-small#btn-twitter_retweet", "Claim", "[Step 10]").await?;
+    click_task_button(api, ".btn-small#btn-website_visit", "Claim", "[Step 11]").await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-telegram_react_latest",
+        "Claim",
+        "[Step 12]",
+    )
+    .await?;
 
     api.wait(500, 2_000).await;
 
@@ -305,6 +243,88 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     Ok(())
 }
 
+/// Wait for a modal/"Processing" busy state to clear (up to ~20s).
+async fn wait_not_busy(api: &TaskContext) -> Result<()> {
+    for _ in 0..10 {
+        let raw = api
+            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
+            .await?;
+        let value = match raw {
+            Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+            other => other,
+        };
+        let modal = value["busyModal"].as_bool().unwrap_or(false);
+        let text = value["busyText"].as_bool().unwrap_or(false);
+        if !modal && !text {
+            return Ok(());
+        }
+        let modal_id = value["busyModalId"].as_str().unwrap_or("");
+        info!("[busy] waiting for state to clear (modal={modal} id='{modal_id}' text={text})");
+        let _ = api
+            .iframe_eval(MINIAPP_IFRAME, DISMISS_MODAL_JS, 5_000)
+            .await;
+        api.wait(1_000, 2_000).await;
+    }
+    warn!("[busy] state did not clear after 20s — proceeding anyway");
+    Ok(())
+}
+
+/// Whether the mini-app's Tasks tab is the active view.
+async fn tasks_tab_active(api: &TaskContext) -> Result<bool> {
+    let raw = api
+        .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
+        .await?;
+    let value = match raw {
+        Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+        other => other,
+    };
+    Ok(value["tasksActive"].as_bool().unwrap_or(false))
+}
+
+/// Click a task button (by selector + exact text) until its state changes.
+///
+/// Robust per-step helper: waits for busy to clear, probes before AND after
+/// each click, and stops when the button is gone/disabled/busy or its text no
+/// longer matches. Max 5 clicks, 0.5-2s between attempts. Skips cleanly if the
+/// button is never present (returns false).
+async fn click_task_button(
+    api: &TaskContext,
+    selector: &str,
+    text: &str,
+    label: &str,
+) -> Result<bool> {
+    const MAX_RETRY: u32 = 5;
+    const TIMEOUT_MS: u64 = 5_000;
+    wait_not_busy(api).await?;
+    let mut clicks = 0u32;
+    loop {
+        if !api.iframe_has_text(MINIAPP_IFRAME, selector, text).await? {
+            info!("[{label}] skipped — no '{text}' button");
+            return Ok(clicks > 0);
+        }
+        let outcome = api
+            .iframe_click_text(MINIAPP_IFRAME, selector, text, TIMEOUT_MS)
+            .await?;
+        clicks += 1;
+        info!("[{label}] click #{clicks}: {}", outcome.summary());
+        if !matches!(
+            outcome.click,
+            crate::utils::mouse::types::ClickStatus::Success
+        ) {
+            bail!("[{label}] click failed: {}", outcome.summary());
+        }
+        // Post-click probe: stop as soon as the state changes.
+        if !api.iframe_has_text(MINIAPP_IFRAME, selector, text).await? {
+            info!("[{label}] done after {clicks} click(s)");
+            return Ok(true);
+        }
+        if clicks >= MAX_RETRY {
+            info!("[{label}] max retries ({clicks}x) — moving on");
+            return Ok(true);
+        }
+        api.wait(500, 2_000).await;
+    }
+}
 // ============================================================================
 // Tests
 // ============================================================================

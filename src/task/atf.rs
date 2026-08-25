@@ -36,11 +36,13 @@ use crate::utils::timing::{duration_with_variance, run_with_timeout};
 const DEFAULT_URL: &str = "https://web.telegram.org/k/#@ATF_AIRDROP_bot";
 
 /// Default task runtime budget in milliseconds.
-/// Large enough to cover the dev-hold pause (550-600s) plus the full flow.
 pub const DEFAULT_ATF_TASK_DURATION_MS: u64 = 720_000;
 
+/// Navigation timeout for slow connections, in milliseconds.
+const NAVIGATION_TIMEOUT_MS: u64 = 90_000;
+
 /// How long to wait for the "Start Mining" button to appear, in milliseconds.
-const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 30_000;
+const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 45_000;
 
 /// How long to wait for a Telegram mini-app action button, in milliseconds.
 const MINIAPP_ACTION_TIMEOUT_MS: u64 = 30_000;
@@ -121,12 +123,11 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         .filter(|s| !s.is_empty())
         .unwrap_or(DEFAULT_URL);
     info!("Navigating to: {url}");
-    api.navigate(url, crate::utils::timing::DEFAULT_NAVIGATION_TIMEOUT_MS)
-        .await?;
+    api.navigate(url, NAVIGATION_TIMEOUT_MS).await?;
 
-    // Step 2: wait a random 2–5 seconds for the Telegram UI to settle.
-    info!("Waiting random 2-4s for the page to settle");
-    api.wait(2_000, 4_000).await;
+    // Step 2: wait 5–10 seconds for the Telegram UI to settle on slow connections.
+    info!("Waiting random 5-10s for the page to settle");
+    api.wait(5_000, 10_000).await;
 
     // Step 3: make sure the "Start Mining" command is present, then
     // mouse-click it with the native cursor.

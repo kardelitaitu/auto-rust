@@ -292,13 +292,23 @@ impl TaskContext {
             // Definite: element present. Stop when it's disabled, its text no
             // longer matches, or the mini-app shows a busy state (modal /
             // "Processing") — the button text may stay "Go" while a task runs.
-            return Ok(Some(found && !disabled && !busy && text == text_filter));
+            let answer = found && !disabled && !busy && text == text_filter;
+            if !answer {
+                // Surface WHY the step skipped (audit aid), once per definite no.
+                log::info!(
+                    "[iframe_has_text] skip '{element_selector}': disabled={disabled} busy={busy} text='{text}' (filter='{text_filter}')"
+                );
+            }
+            return Ok(Some(answer));
         }
         // Element absent. If the document has real content, this is a definite
         // miss; a blank document means the iframe may still be loading — retry.
         if body.is_empty() && btn_count == 0 && tab_count == 0 {
             Ok(None)
         } else {
+            log::info!(
+                "[iframe_has_text] skip '{element_selector}': not found (btnCount={btn_count} tabCount={tab_count})"
+            );
             Ok(Some(false))
         }
     }

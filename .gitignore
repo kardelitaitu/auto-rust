@@ -141,3 +141,9 @@ codebase-index.ps1
 
 .aider*
 nul
+
+# dev / debug artifacts (telegram atf work)
+mini_app_screenshot.png
+telegram_atf.html
+atf_tree.txt
+src/task/atf_tree.txt

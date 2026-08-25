@@ -20,6 +20,7 @@ use log::{info, warn};
 use serde_json::Value;
 
 use crate::prelude::TaskContext;
+use crate::utils::math::random_in_range;
 use crate::utils::timing::{duration_with_variance, run_with_timeout};
 
 // ============================================================================
@@ -105,8 +106,46 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // a fragile positional XPath. (XPath is still supported for other cases.)
     const MINIAPP_IFRAME: &str = "iframe.payment-verification";
 
-    // Step 4: click the "Task Menu" tab inside the same iframe.
-    info!("[Step 4] Clicking Task Menu tab inside iframe");
+    // Step 4a: click the "Claim hourly miner" CLAIM button 2-4 times with a
+    // small random offset each time (not the exact same position), random
+    // 0.5-1s between clicks. No verification.
+    // (the button is `<button class="btn-main state-claim" id="actionBtn">CLAIM</button>`)
+    const ACTION_BTN_SELECTOR: &str = ".btn-main.state-claim#actionBtn";
+    info!("[Step 4a] Starting . . .");
+    if let Some((cx, cy)) = api
+        .iframe_center(
+            MINIAPP_IFRAME,
+            ACTION_BTN_SELECTOR,
+            MINIAPP_ACTION_TIMEOUT_MS,
+        )
+        .await?
+    {
+        let clicks = random_in_range(2, 4);
+        info!("[Step 4a] Claim button found, clicking {clicks}x");
+        for i in 0..clicks {
+            let jx = random_in_range(0, 16) as f64 - 8.0;
+            let jy = random_in_range(0, 16) as f64 - 8.0;
+            let outcome = api
+                .iframe_click_at(MINIAPP_IFRAME, cx + jx, cy + jy, 5_000)
+                .await?;
+            info!(
+                "[Step 4a] Claim click #{}/{} result: {}",
+                i + 1,
+                clicks,
+                outcome.summary()
+            );
+            if i + 1 < clicks {
+                api.wait(500, 1_000).await;
+            }
+        }
+    } else {
+        info!("[Step 4a] Claim button not found — skipping");
+    }
+
+    api.wait(500, 2_000).await;
+
+    // Step 4b: click the "Task Menu" tab inside the same iframe.
+    info!("[Step 4b] Clicking Task Menu tab inside iframe");
     api.wait(2_000, 3_000).await;
     let outcome = api
         .iframe_click(
@@ -115,12 +154,12 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             MINIAPP_ACTION_TIMEOUT_MS,
         )
         .await?;
-    info!("[Step 4] Task Menu click result: {}", outcome.summary());
+    info!("[Step 4b] Task Menu click result: {}", outcome.summary());
     if !matches!(
         outcome.click,
         crate::utils::mouse::types::ClickStatus::Success
     ) {
-        bail!("[Step 4] Task Menu click failed: {}", outcome.summary());
+        bail!("[Step 4b] Task Menu click failed: {}", outcome.summary());
     }
     api.wait(1_000, 3_000).await;
 

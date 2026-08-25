@@ -87,6 +87,57 @@ impl TaskContext {
         .await
     }
 
+    /// Resolve an element's LOCAL center inside the iframe (OOPIF-safe), without
+    /// clicking. Returns `Ok(None)` when the element is not yet found. Combine
+    /// with [`Self::iframe_click_at`] + a small random offset to click at varied
+    /// positions instead of the exact same center every time.
+    pub async fn iframe_center(
+        &self,
+        iframe_selector: &str,
+        element_selector: &str,
+        timeout_ms: u64,
+    ) -> Result<Option<(f64, f64)>> {
+        let client = if self.browser_ws_url.is_empty() {
+            None
+        } else {
+            Some(
+                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
+                    .await
+                    .map_err(|e| {
+                        anyhow!(
+                            "OOPIF client connect to '{}' failed: {e}",
+                            self.browser_ws_url
+                        )
+                    })?,
+            )
+        };
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut session_cache: Option<(String, String)> = None;
+        loop {
+            if let Ok(Some((rect, src))) = resolve_iframe(self.page(), iframe_selector).await {
+                if rect.width > 0.0 && rect.height > 0.0 {
+                    if let Ok(Some(center)) = self
+                        .element_local_center(
+                            client.as_ref(),
+                            &src,
+                            element_selector,
+                            None,
+                            &mut session_cache,
+                            None,
+                        )
+                        .await
+                    {
+                        return Ok(Some(center));
+                    }
+                }
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
     /// Quick single-shot probe: check whether an element matching `element_selector`
     /// with text `text_filter` exists inside the iframe. Returns immediately with
     /// `true`/`false` (no poll loop). Useful as a fast "skip" check before

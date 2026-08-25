@@ -84,8 +84,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         .await?;
 
     // Step 2: wait a random 2–4 seconds for the Telegram UI to settle.
-    info!("Waiting random 2-5s for the page to settle");
-    api.wait(2_000, 4_000).await;
+    info!("Waiting random 2-3s for Telegram page to settle");
+    api.wait(2_000, 3_000).await;
 
     // Step 3: make sure the "Start Mining" command button is present, then
     // mouse-click it with the native cursor. The Telegram A client has no
@@ -130,7 +130,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // (the button is `<button class="btn-small" id="btn-youtube_like_comment">Go</button>`).
     // Repeat clicks until the "Go" text is gone (the mini-app replaces it after
     // the task starts), with a random 1-2s interval, max 5 retries.
-    info!("Starting STEP 5 --- CLICKING GO button on Youtube Like");
+    debug!("Starting STEP 5 --- CLICKING GO button on Youtube Like");
     const YOUTUBE_TASK_SELECTOR: &str = ".btn-small#btn-youtube_like_comment";
     const GO_RETRY_MAX: u32 = 5;
     const GO_CHECK_TIMEOUT_MS: u64 = 2_000;
@@ -174,6 +174,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 6: Click Go on Twitter Retweet — target by class + id + text content
     // (the button is `<button class="btn-small" id="btn-twitter_retweet">Go</button>`).
     // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
+    // Step 5 may have opened a new tab (YouTube) — refocus the Telegram tab first.
+    api.focus_tab().await?;
     const RETWEET_TASK_SELECTOR: &str = ".btn-small#btn-twitter_retweet";
     const RETWEET_TASK_RETRY_MAX: u32 = 5;
     const RETWEET_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
@@ -214,8 +216,9 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     api.wait(500, 2_000).await;
 
     // Step 7: Click Go on Visit Website — target by class + id + text content
-    // (the button is `<button class="btn-small" id="btn-btn-website_visit">Go</button>`).
+    // (the button is `<button class="btn-small" id="btn-website_visit">Go</button>`).
     // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
+    api.focus_tab().await?;
     const WEBSITE_TASK_SELECTOR: &str = ".btn-small#btn-website_visit";
     const WEBSITE_TASK_RETRY_MAX: u32 = 5;
     const WEBSITE_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;
@@ -258,6 +261,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // Step 8: Click Go on React Telegram Post — target by class + id + text content
     // (the button is `<button class="btn-small" id="btn-telegram_react_latest">Go</button>`).
     // Repeat clicks until the "Go" text is gone, random 0.5-2s interval, max 5.
+    // Step 7 (Visit Website) likely opened a new tab — refocus first.
+    api.focus_tab().await?;
     const REACT_TASK_SELECTOR: &str = ".btn-small#btn-telegram_react_latest";
     const REACT_TASK_RETRY_MAX: u32 = 5;
     const REACT_TASK_CHECK_TIMEOUT_MS: u64 = 2_000;

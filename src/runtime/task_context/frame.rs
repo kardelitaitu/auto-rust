@@ -206,6 +206,11 @@ impl TaskContext {
         // Probe returns found + text + disabled + btnCount + button-id sample +
         // tab count + on-screen text + the attached document's URL/readyState so
         // we can see what view (or which iframe) the probe is actually hitting.
+        // The JS returns JSON.stringify(...) — parse the string back into an object.
+        let value = match value {
+            Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+            other => other,
+        };
         let text = value.get("text").and_then(Value::as_str).unwrap_or("");
         let found = value.get("found").and_then(Value::as_bool).unwrap_or(false);
         let disabled = value

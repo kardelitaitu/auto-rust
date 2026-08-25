@@ -188,7 +188,16 @@ impl TaskContext {
                 const body = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').trim().slice(0, 200);
                 const docUrl = location.href.slice(0, 80);
                 const ready = document.readyState;
-                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready }});
+                // Busy detection: a visible modal/overlay, or processing text
+                // anywhere in the document. The mini-app shows "Processing"
+                // in an overlay while the task button's text stays "Go".
+                const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="overlay"],[id*="overlay"]')]
+                    .find(n => {{
+                        const r = n.getBoundingClientRect();
+                        return r.width > 0 && r.height > 0;
+                    }});
+                const busy = !!busyEl || /Processing|Verifying|Connecting|Please wait|Claiming|In progress/i.test(body);
+                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready, busy }});
                 return JSON.stringify({{
                     found: true,
                     text: (el.textContent || '').trim(),
@@ -198,7 +207,8 @@ impl TaskContext {
                     tabCount,
                     body,
                     docUrl,
-                    ready
+                    ready,
+                    busy
                 }});
             }})()"#
         );
@@ -217,6 +227,7 @@ impl TaskContext {
             .get("disabled")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let busy = value.get("busy").and_then(Value::as_bool).unwrap_or(false);
         let btn_count = value.get("btnCount").and_then(Value::as_u64).unwrap_or(0);
         let sample = value.get("sample").and_then(Value::as_str).unwrap_or("");
         let tab_count = value.get("tabCount").and_then(Value::as_u64).unwrap_or(0);
@@ -224,11 +235,13 @@ impl TaskContext {
         let doc_url = value.get("docUrl").and_then(Value::as_str).unwrap_or("");
         let ready = value.get("ready").and_then(Value::as_str).unwrap_or("");
         log::info!(
-            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] docUrl='{doc_url}' ready={ready} body='{body}' text='{text}' (filter='{text_filter}')"
+            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} busy={busy} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] docUrl='{doc_url}' ready={ready} body='{body}' text='{text}' (filter='{text_filter}')"
         );
         if found {
-            // Definite: element present — disabled or text mismatch means "gone".
-            return Ok(Some(found && !disabled && text == text_filter));
+            // Definite: element present. Stop when it's disabled, its text no
+            // longer matches, or the mini-app shows a busy state (modal /
+            // "Processing") — the button text may stay "Go" while a task runs.
+            return Ok(Some(found && !disabled && !busy && text == text_filter));
         }
         // Element absent. If the document has real content, this is a definite
         // miss; a blank document means the iframe may still be loading — retry.

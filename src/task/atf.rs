@@ -36,7 +36,7 @@ use crate::utils::timing::{duration_with_variance, run_with_timeout};
 const DEFAULT_URL: &str = "https://web.telegram.org/k/#@ATF_AIRDROP_bot";
 
 /// Default task runtime budget in milliseconds.
-pub const DEFAULT_ATF_TASK_DURATION_MS: u64 = 720_000;
+pub const DEFAULT_ATF_TASK_DURATION_MS: u64 = 180_000;
 
 /// Navigation timeout for slow connections, in milliseconds.
 const NAVIGATION_TIMEOUT_MS: u64 = 90_000;
@@ -208,19 +208,22 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     }
     api.wait(500, 2_000).await;
 
-    // Step 4b: activate the Tasks tab. Click exactly ONCE — it always succeeds,
-    // and the click is harmless if the tab is already active.
+    // Step 4b: activate the Tasks tab. Try coordinate click first, with fallback to JS switchTab.
     let _ = api.focus_tab().await;
     info!("[Step 4b] Opening Tasks tab");
-    let outcome = api
+    match api
         .iframe_click(
             MINIAPP_IFRAME,
             "[onclick=\"switchTab('tasks')\"]",
             MINIAPP_ACTION_TIMEOUT_MS,
         )
         .await
-        .map_err(|e| anyhow::anyhow!("[Step 4b] Tasks tab click target not found: {e}"))?;
-    info!("[Step 4b] Tasks tab click: {}", outcome.summary());
+    {
+        Ok(outcome) => info!("[Step 4b] Tasks tab click: {}", outcome.summary()),
+        Err(e) => {
+            warn!("[Step 4b] Tasks tab click target not found ({e}) — fallback to JS switchTab")
+        }
+    }
     api.wait(1_000, 2_000).await;
     ensure_tasks_visible(api).await?;
 
@@ -270,9 +273,10 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 async fn wait_not_busy(api: &TaskContext) -> Result<()> {
     let start = std::time::Instant::now();
     loop {
-        let raw = api
-            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
-            .await?;
+        let raw = match api.iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000).await {
+            Ok(v) => v,
+            Err(_) => break,
+        };
         let value = match raw {
             Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
             other => other,
@@ -301,9 +305,13 @@ async fn wait_not_busy(api: &TaskContext) -> Result<()> {
 /// the iframe to guarantee tab activation.
 async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
     for attempt in 0..5 {
-        let raw = api
-            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
-            .await?;
+        let raw = match api.iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000).await {
+            Ok(v) => v,
+            Err(_) => {
+                api.wait(1_000, 2_000).await;
+                continue;
+            }
+        };
         let value = match raw {
             Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
             other => other,
@@ -354,7 +362,11 @@ async fn click_task_button(
     ensure_tasks_visible(api).await?;
     let mut clicks = 0u32;
     loop {
-        if !api.iframe_has_text(MINIAPP_IFRAME, selector, text).await? {
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, selector, text)
+            .await
+            .unwrap_or(false)
+        {
             info!("[{label}] skipped — no '{text}' button");
             return Ok(clicks > 0);
         }
@@ -385,7 +397,11 @@ async fn click_task_button(
         // (e.g. 'Go' -> 'Processing' / 'Claim' / disabled).
         api.wait(600, 900).await;
         // Post-click probe: stop as soon as the state changes away from 'text'.
-        if !api.iframe_has_text(MINIAPP_IFRAME, selector, text).await? {
+        if !api
+            .iframe_has_text(MINIAPP_IFRAME, selector, text)
+            .await
+            .unwrap_or(false)
+        {
             info!(
                 "[{label}] button state changed away from '{text}' — done after {clicks} click(s)"
             );

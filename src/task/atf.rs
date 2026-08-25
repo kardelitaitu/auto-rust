@@ -131,8 +131,18 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             // Busy = a visible modal/overlay, or task-processing text. Keep the
             // text narrow — broad words like 'Connecting' match persistent UI.
             busyModal: !!busyEl,
+            busyModalId: busyEl ? (busyEl.id || busyEl.className || busyEl.tagName).toString().slice(0, 80) : '',
             busyText: /Processing|Please wait/i.test(body)
         });
+    })()"#;
+
+    // Best-effort modal dismissal: click any visible close/backdrop element.
+    const DISMISS_MODAL_JS: &str = r#"(() => {
+        const candidates = [...document.querySelectorAll(
+            '[class*="close"],[id*="close"],[aria-label*="Close"],[data-dismiss],[class*="backdrop"],[class*="overlay"]'
+        )].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+        for (const el of candidates) { try { el.click(); } catch (_) {} }
+        return candidates.length;
     })()"#;
 
     const MAX_STATE_ROUNDS: u32 = 120;
@@ -185,7 +195,20 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         //    so a persistent modal (e.g. a leftover overlay) can't hang the task.
         if busy_modal || busy_text {
             busy_rounds += 1;
-            info!("[state] busy (modal={busy_modal} text={busy_text}) round {busy_rounds}");
+            let modal_id = value["busyModalId"].as_str().unwrap_or("");
+            info!(
+                "[state] busy (modal={busy_modal} id='{modal_id}' text={busy_text}) round {busy_rounds}"
+            );
+            // After a few rounds, best-effort dismiss (click close/backdrop).
+            if busy_rounds == 3 {
+                info!("[state] trying to dismiss the modal");
+                let _ = api
+                    .iframe_eval(MINIAPP_IFRAME, DISMISS_MODAL_JS, 5_000)
+                    .await;
+                api.wait(1_000, 2_000).await;
+                idle_rounds = 0;
+                continue;
+            }
             if busy_rounds > MAX_BUSY_ROUNDS {
                 warn!("[state] busy persisted — proceeding anyway");
                 busy_rounds = 0;

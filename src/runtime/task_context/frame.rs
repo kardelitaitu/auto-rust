@@ -134,26 +134,29 @@ impl TaskContext {
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector('{escaped}');
-                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false }});
+                const btnCount = document.querySelectorAll('.btn-small').length;
+                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount }});
                 return JSON.stringify({{
                     found: true,
                     text: (el.textContent || '').trim(),
-                    disabled: !!el.disabled
+                    disabled: !!el.disabled,
+                    btnCount
                 }});
             }})()"#
         );
         let value = client.evaluate(&session_id, &js).await?;
-        // Probe returns found + actual text + disabled so we can diagnose why a
-        // match failed, and so a cooldown (disabled) button stops the loop even
-        // when its textContent still reads e.g. "Claim".
+        // Probe returns found + actual text + disabled + btnCount so we can
+        // diagnose why a match failed: btnCount=0 means the tasks view never
+        // rendered (tab switch failed), btnCount>0 means ids differ.
         let text = value.get("text").and_then(Value::as_str).unwrap_or("");
         let found = value.get("found").and_then(Value::as_bool).unwrap_or(false);
         let disabled = value
             .get("disabled")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let btn_count = value.get("btnCount").and_then(Value::as_u64).unwrap_or(0);
         log::info!(
-            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} text='{text}' (filter='{text_filter}')"
+            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} btnCount={btn_count} text='{text}' (filter='{text_filter}')"
         );
         Ok(found && !disabled && text == text_filter)
     }

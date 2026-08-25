@@ -112,9 +112,11 @@ impl TaskContext {
                 }
             };
         let Some((rect, src)) = resolve_iframe(self.page(), iframe_selector).await? else {
+            log::debug!("[iframe_has_text] iframe not found: '{iframe_selector}'");
             return Ok(false);
         };
         if rect.width <= 0.0 || rect.height <= 0.0 {
+            log::debug!("[iframe_has_text] iframe zero-size: '{iframe_selector}'");
             return Ok(false);
         }
         let mut session_cache: Option<(String, String)> = None;
@@ -122,22 +124,38 @@ impl TaskContext {
             .iframe_session_id(client.as_ref(), &src, &mut session_cache)
             .await?
         else {
+            log::debug!("[iframe_has_text] no iframe target session for src '{src}'");
             return Ok(false);
         };
         let Some(client) = client.as_ref() else {
             return Ok(false);
         };
         let escaped = escape_js_string(element_selector);
-        let text_escaped = escape_js_string(text_filter);
         let js = format!(
             r#"(() => {{
                 const el = document.querySelector('{escaped}');
-                if (!el) return false;
-                return (el.textContent || '').trim() === '{text_escaped}';
+                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false }});
+                return JSON.stringify({{
+                    found: true,
+                    text: (el.textContent || '').trim(),
+                    disabled: !!el.disabled
+                }});
             }})()"#
         );
         let value = client.evaluate(&session_id, &js).await?;
-        Ok(value.as_bool().unwrap_or(false))
+        // Probe returns found + actual text + disabled so we can diagnose why a
+        // match failed, and so a cooldown (disabled) button stops the loop even
+        // when its textContent still reads e.g. "Claim".
+        let text = value.get("text").and_then(Value::as_str).unwrap_or("");
+        let found = value.get("found").and_then(Value::as_bool).unwrap_or(false);
+        let disabled = value
+            .get("disabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        log::debug!(
+            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} text='{text}' (filter='{text_filter}')"
+        );
+        Ok(found && !disabled && text == text_filter)
     }
 
     /// Shared implementation for [`Self::iframe_click`] / [`Self::iframe_click_skip`]

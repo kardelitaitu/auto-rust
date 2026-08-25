@@ -139,6 +139,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     {
         warn!("Start Mining button did not appear within {BUTTON_VISIBILITY_TIMEOUT_MS}ms");
     }
+    let _ = api.focus_tab().await;
     info!("Mouse-clicking Start Mining");
     let outcome = api.click("div.new-message-bot-commands.is-view").await?;
     info!("Click result: {}", outcome.summary());
@@ -160,6 +161,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     // with a small random offset each time (not the exact same position),
     // random 0.5-1s between clicks. No verification.
     // (the button is `<button class="btn-main state-claim" id="actionBtn">CLAIM</button>`)
+    let _ = api.focus_tab().await;
     info!("[Step 4a] Starting . . .");
     if let Some((cx, cy)) = api
         .iframe_center(
@@ -174,6 +176,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
         for i in 0..clicks {
             let jx = random_in_range(0, 16) as f64 - 8.0;
             let jy = random_in_range(0, 16) as f64 - 8.0;
+            let _ = api.focus_tab().await;
             let outcome = api
                 .iframe_click_at(MINIAPP_IFRAME, cx + jx, cy + jy, 5_000)
                 .await?;
@@ -194,6 +197,7 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
     // Step 4b: activate the Tasks tab. Click exactly ONCE — it always succeeds,
     // and the click is harmless if the tab is already active.
+    let _ = api.focus_tab().await;
     info!("[Step 4b] Opening Tasks tab");
     let outcome = api
         .iframe_click(
@@ -343,6 +347,7 @@ async fn click_task_button(
             info!("[{label}] skipped — no '{text}' button");
             return Ok(clicks > 0);
         }
+        let _ = api.focus_tab().await;
         // The click itself re-resolves the element (scrollIntoView + hit-test).
         // If it can't be found (blank area / iframe changed), skip the step
         // instead of crashing the whole task.

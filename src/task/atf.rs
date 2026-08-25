@@ -52,7 +52,16 @@ const MINIAPP_IFRAME: &str = "iframe.payment-verification";
 /// visible Go/Claim task buttons.
 const STATE_SCAN_JS: &str = r#"(() => {
     const q = s => document.querySelector(s);
-    const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    // Truly visible: has layout size AND is not hidden via display/visibility/opacity.
+    // Hidden modal shells (e.g. #withdrawModal with visibility:hidden) still have
+    // a non-zero rect — size alone is not enough.
+    const visible = el => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        const s = window.getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) !== 0;
+    };
     const btns = [...document.querySelectorAll('.btn-small')].filter(visible);
     const text = b => (b.textContent || '').trim();
     const claimAction = q('.btn-main.state-claim#actionBtn');
@@ -203,17 +212,35 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
     click_task_button(api, ".btn-small#btn-youtube_like_comment", "Go", "[Step 5]").await?;
     click_task_button(api, ".btn-small#btn-twitter_retweet", "Go", "[Step 6]").await?;
     click_task_button(api, ".btn-small#btn-website_visit", "Go", "[Step 7]").await?;
-    click_task_button(api, ".btn-small#btn-telegram_react_latest", "Go", "[Step 8]").await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-telegram_react_latest",
+        "Go",
+        "[Step 8]",
+    )
+    .await?;
 
     // Wait for the mini-app to validate the tasks (buttons become "Claim").
     info!("Waiting random 30-40s until all task synced");
     api.wait(30_000, 35_000).await;
 
     // Steps 9-12: click each "Claim" task button.
-    click_task_button(api, ".btn-small#btn-youtube_like_comment", "Claim", "[Step 9]").await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-youtube_like_comment",
+        "Claim",
+        "[Step 9]",
+    )
+    .await?;
     click_task_button(api, ".btn-small#btn-twitter_retweet", "Claim", "[Step 10]").await?;
     click_task_button(api, ".btn-small#btn-website_visit", "Claim", "[Step 11]").await?;
-    click_task_button(api, ".btn-small#btn-telegram_react_latest", "Claim", "[Step 12]").await?;
+    click_task_button(
+        api,
+        ".btn-small#btn-telegram_react_latest",
+        "Claim",
+        "[Step 12]",
+    )
+    .await?;
 
     api.wait(500, 2_000).await;
 

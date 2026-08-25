@@ -289,15 +289,20 @@ impl TaskContext {
                 const body = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').trim().slice(0, 200);
                 const docUrl = location.href.slice(0, 80);
                 const ready = document.readyState;
-                // Busy detection: a visible modal/overlay, or processing text
-                // anywhere in the document. The mini-app shows "Processing"
-                // in an overlay while the task button's text stays "Go".
-                const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="overlay"],[id*="overlay"]')]
-                    .find(n => {{
-                        const r = n.getBoundingClientRect();
-                        return r.width > 0 && r.height > 0;
-                    }});
-                const busy = !!busyEl || /Processing|Verifying|Connecting|Please wait|Claiming|In progress/i.test(body);
+                // Busy detection: a genuinely visible modal/dialog/popup, or
+                // task-processing text. Hidden modal shells (visibility:hidden /
+                // opacity:0) still have a non-zero rect, so check computed style.
+                // 'overlay' alone is excluded — decorative effects (lightning,
+                // particles) and backdrops match it and cause false positives.
+                const visible = n => {{
+                    const r = n.getBoundingClientRect();
+                    if (r.width <= 0 || r.height <= 0) return false;
+                    const s = window.getComputedStyle(n);
+                    return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) !== 0;
+                }};
+                const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="dialog"],[id*="dialog"],[class*="popup"],[id*="popup"]')]
+                    .find(visible);
+                const busy = !!busyEl || /Processing|Please wait/i.test(body);
                 if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready, busy }});
                 return JSON.stringify({{
                     found: true,

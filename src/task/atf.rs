@@ -282,10 +282,10 @@ async fn wait_not_busy(api: &TaskContext) -> Result<()> {
 }
 
 /// Wait until the Tasks buttons are actually visible (have non-zero size).
-/// Step 4b already clicked the tab ONCE (it always succeeds) — this helper
-/// only waits for the buttons to render; it never re-clicks, so it can't loop.
+/// If the Tasks tab is not active, invokes `window.switchTab('tasks')` inside
+/// the iframe to guarantee tab activation.
 async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
-    for _ in 0..4 {
+    for attempt in 0..5 {
         let raw = api
             .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
             .await?;
@@ -293,13 +293,27 @@ async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
             Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
             other => other,
         };
+        let tasks_active = value["tasksActive"].as_bool().unwrap_or(false);
         let go = value["goButtons"].as_array().map(|a| a.len()).unwrap_or(0);
         let claim = value["claimButtons"]
             .as_array()
             .map(|a| a.len())
             .unwrap_or(0);
-        if go > 0 || claim > 0 {
+        if tasks_active && (go > 0 || claim > 0) {
             return Ok(());
+        }
+        if !tasks_active {
+            info!(
+                "[tasks] Tasks tab not active (attempt {}), invoking switchTab('tasks')",
+                attempt + 1
+            );
+            let _ = api
+                .iframe_eval(
+                    MINIAPP_IFRAME,
+                    "(() => { if (typeof window.switchTab === 'function') { window.switchTab('tasks'); return true; } return false; })()",
+                    5_000,
+                )
+                .await;
         }
         api.wait(1_000, 2_000).await;
     }

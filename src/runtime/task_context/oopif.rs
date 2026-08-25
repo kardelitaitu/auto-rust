@@ -80,16 +80,18 @@ fn extract_session_id(resp: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Find an iframe target whose URL host matches `host` exactly from a target list.
+/// Find an iframe target whose URL host matches `host` (case-insensitive) from a target list.
 fn find_iframe_target_in(infos: &[Value], host: &str) -> Option<Value> {
     // Prefer the real mini-app page target (URL with the app path) over any
     // sibling iframe on the same host — a blank/secondary iframe may otherwise
     // come first in the target list after a re-render.
+    let host_lower = host.to_lowercase();
     let mut fallback = None;
     for info in infos {
         let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
         let url = info.get("url").and_then(Value::as_str).unwrap_or("");
-        if ty == "iframe" && host_of(url) == Some(host) && !url.is_empty() {
+        let target_host_lower = host_of(url).unwrap_or("").to_lowercase();
+        if ty == "iframe" && target_host_lower == host_lower && !url.is_empty() {
             if url.contains("miner") || url.contains("index.html") {
                 return Some(info.clone());
             }
@@ -152,6 +154,9 @@ impl OopifClient {
                 };
                 route_response(&mut *pending_reader.lock().await, &v);
             }
+            // Stream ended or errored: drop pending oneshots so callers fail immediately
+            // with "channel closed" instead of waiting 10s for CDP timeout.
+            pending_reader.lock().await.clear();
         });
         let _ = (writer, reader);
 
@@ -164,7 +169,8 @@ impl OopifClient {
         let id = next_call_id();
         let (rtx, rrx) = oneshot::channel();
         self.pending.lock().await.insert(id, rtx);
-        self.tx
+        if let Err(_) = self
+            .tx
             .send(Outgoing {
                 id,
                 method: method.to_string(),
@@ -172,7 +178,10 @@ impl OopifClient {
                 session_id: session_id.map(str::to_string),
             })
             .await
-            .map_err(|_| anyhow!("CDP writer task stopped"))?;
+        {
+            self.pending.lock().await.remove(&id);
+            return Err(anyhow!("CDP writer task stopped"));
+        }
         let resp = match tokio::time::timeout(CDP_RESPONSE_TIMEOUT, rrx).await {
             Ok(Ok(resp)) => resp,
             Ok(Err(_)) => {
@@ -624,6 +633,17 @@ mod tests {
         let infos = vec![json!({
             "type": "iframe",
             "url": "https://atfminers.asloni.online/other",
+            "targetId": "f1"
+        })];
+        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        assert_eq!(found["targetId"], "f1");
+    }
+
+    #[test]
+    fn find_iframe_target_case_insensitive_host() {
+        let infos = vec![json!({
+            "type": "iframe",
+            "url": "https://ATFMiners.Asloni.Online/miner/index.html",
             "targetId": "f1"
         })];
         let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");

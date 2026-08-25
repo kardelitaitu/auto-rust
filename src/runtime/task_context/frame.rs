@@ -112,12 +112,20 @@ impl TaskContext {
             )
         };
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut session_cache: Option<(String, String)> = None;
 
         loop {
             if let Ok(Some((rect, src))) = resolve_iframe(self.page(), iframe_selector).await {
                 if rect.width > 0.0 && rect.height > 0.0 {
                     if let Ok(Some(center)) = self
-                        .element_local_center(client.as_ref(), &src, element_selector, None, None)
+                        .element_local_center(
+                            client.as_ref(),
+                            &src,
+                            element_selector,
+                            None,
+                            None,
+                            Some(&mut session_cache),
+                        )
                         .await
                     {
                         return Ok(Some(center));
@@ -157,16 +165,25 @@ impl TaskContext {
             )
         };
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut session_cache: Option<(String, String)> = None;
 
         loop {
             if let Ok(Some((rect, src))) = resolve_iframe(self.page(), iframe_selector).await {
                 if rect.width > 0.0 && rect.height > 0.0 {
-                    if let Ok(Some(session_id)) =
-                        self.iframe_session_id(client.as_ref(), &src).await
+                    if let Ok(Some(session_id)) = self
+                        .iframe_session_id(client.as_ref(), &src, Some(&mut session_cache))
+                        .await
                     {
                         if let Some(client) = client.as_ref() {
-                            let value = client.evaluate(&session_id, expression).await?;
-                            return Ok(value);
+                            match client.evaluate(&session_id, expression).await {
+                                Ok(value) => return Ok(value),
+                                Err(e) => {
+                                    log::debug!(
+                                        "[iframe] iframe_eval evaluate failed, clearing session cache: {e}"
+                                    );
+                                    session_cache = None;
+                                }
+                            }
                         }
                     }
                 }
@@ -252,7 +269,7 @@ impl TaskContext {
             }
         }
 
-        let Some(session_id) = self.iframe_session_id(client.as_ref(), &src).await? else {
+        let Some(session_id) = self.iframe_session_id(client.as_ref(), &src, None).await? else {
             return Ok(None);
         };
         let Some(client) = client.as_ref() else {
@@ -380,6 +397,7 @@ impl TaskContext {
         let mut last_status = String::new();
         // Cache the attached (target_id, session_id); re-attach only when the
         // iframe target changes (e.g. the frame reloaded).
+        let mut session_cache: Option<(String, String)> = None;
 
         let (x, y) = loop {
             // 1. iframe absolute rect + src (top document; works for any iframe)
@@ -393,6 +411,7 @@ impl TaskContext {
                             element_selector,
                             skip,
                             text_filter,
+                            Some(&mut session_cache),
                         )
                         .await
                     {
@@ -432,7 +451,7 @@ impl TaskContext {
                                 resolve_iframe(self.page(), iframe_selector).await
                             {
                                 if let Ok(Some(dsession)) =
-                                    self.iframe_session_id(client.as_ref(), &dsrc).await
+                                    self.iframe_session_id(client.as_ref(), &dsrc, None).await
                                 {
                                     let dsel = escape_js_string(element_selector);
                                     let dtf = match text_filter {
@@ -446,7 +465,12 @@ impl TaskContext {
                                             {dtf}
                                             const els = [...document.querySelectorAll('{dsel}')];
                                             const txt = e => (e.textContent || '').trim();
-                                            const inVp = r => r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0 && r.x + r.width <= innerWidth && r.y + r.height <= innerHeight;
+                                            const inVp = r => {{
+                                                if (!r || r.width <= 0 || r.height <= 0) return false;
+                                                const cx = r.x + r.width / 2;
+                                                const cy = r.y + r.height / 2;
+                                                return cx >= 0 && cy >= 0 && cx <= innerWidth && cy <= innerHeight;
+                                            }};
                                             const withText = els.filter(e => textFilter === null || txt(e) === textFilter);
                                             const first = withText[0];
                                             const scrollToFull = el => {{
@@ -485,7 +509,7 @@ impl TaskContext {
                                     );
                                     if let Some(dclient) = client.as_ref() {
                                         if let Ok(dval) = dclient.evaluate(&dsession, &djs).await {
-                                            log::debug!(
+                                            log::info!(
                                                 "[iframe_click] '{element_selector}' resolve diag: {dval}"
                                             );
                                         }
@@ -557,12 +581,18 @@ impl TaskContext {
 
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_status = String::new();
+        let mut session_cache: Option<(String, String)> = None;
 
         loop {
             let status = match resolve_iframe(self.page(), iframe_selector).await {
                 Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
                     match self
-                        .element_count_in_iframe(client.as_ref(), &src, element_selector)
+                        .element_count_in_iframe(
+                            client.as_ref(),
+                            &src,
+                            element_selector,
+                            Some(&mut session_cache),
+                        )
                         .await
                     {
                         Ok(Some(n)) => {
@@ -664,16 +694,31 @@ impl TaskContext {
         element_selector: &str,
         skip: Option<(f64, f64)>,
         text_filter: Option<&str>,
+        mut session_cache: Option<&mut Option<(String, String)>>,
     ) -> Result<Option<(f64, f64)>> {
         let Some(client) = client else {
             return Ok(None);
         };
-        let Some(session_id) = self.iframe_session_id(Some(client), iframe_src).await? else {
-            return Ok(None);
+        let session_id = match self
+            .iframe_session_id(Some(client), iframe_src, session_cache.as_deref_mut())
+            .await
+        {
+            Ok(Some(sid)) => sid,
+            _ => return Ok(None),
         };
         let js = build_element_js(element_selector, skip, text_filter);
-        let value = client.evaluate(&session_id, &js).await?;
-        Ok(parse_local_center(&value))
+        match client.evaluate(&session_id, &js).await {
+            Ok(value) => Ok(parse_local_center(&value)),
+            Err(e) => {
+                log::debug!(
+                    "[iframe] element_local_center evaluate failed, clearing session cache: {e}"
+                );
+                if let Some(cache) = session_cache {
+                    *cache = None;
+                }
+                Ok(None)
+            }
+        }
     }
 
     /// Count visible (non-zero-size) matching elements inside the iframe, using
@@ -684,26 +729,42 @@ impl TaskContext {
         client: Option<&crate::runtime::task_context::oopif::OopifClient>,
         iframe_src: &str,
         element_selector: &str,
+        mut session_cache: Option<&mut Option<(String, String)>>,
     ) -> Result<Option<usize>> {
         let Some(client) = client else {
             return Ok(None);
         };
-        let Some(session_id) = self.iframe_session_id(Some(client), iframe_src).await? else {
-            return Ok(None);
+        let session_id = match self
+            .iframe_session_id(Some(client), iframe_src, session_cache.as_deref_mut())
+            .await
+        {
+            Ok(Some(sid)) => sid,
+            _ => return Ok(None),
         };
         let js = build_count_js(element_selector);
-        let value = client.evaluate(&session_id, &js).await?;
-        Ok(value.as_u64().map(|n| n as usize))
+        match client.evaluate(&session_id, &js).await {
+            Ok(value) => Ok(value.as_u64().map(|n| n as usize)),
+            Err(e) => {
+                log::debug!(
+                    "[iframe] element_count_in_iframe evaluate failed, clearing session cache: {e}"
+                );
+                if let Some(cache) = session_cache {
+                    *cache = None;
+                }
+                Ok(None)
+            }
+        }
     }
 
-    /// Resolve the iframe target via host and attach a fresh session id.
-    /// No caching — every call re-asks the browser for the current target so
-    /// the result reflects the live iframe (the mini-app can re-create it).
-    /// Returns `Ok(None)` when the target is not yet found (pollable).
+    /// Resolve the iframe target via host and attach a session id.
+    /// Reuses `session_cache` when target_id matches, avoiding redundant
+    /// `attachToTarget` calls on every poll loop iteration.
+    /// Returns `Ok(None)` when the target is not yet found or not ready (pollable).
     async fn iframe_session_id(
         &self,
         client: Option<&crate::runtime::task_context::oopif::OopifClient>,
         iframe_src: &str,
+        session_cache: Option<&mut Option<(String, String)>>,
     ) -> Result<Option<String>> {
         let Some(client) = client else {
             return Ok(None);
@@ -724,7 +785,28 @@ impl TaskContext {
         let Some(target_id) = target.get("targetId").and_then(Value::as_str) else {
             return Ok(None);
         };
-        let session_id = client.attach(target_id).await?;
+
+        // Reuse cached session_id if target_id matches
+        if let Some(cache) = session_cache.as_ref() {
+            if let Some((cached_target_id, session_id)) = cache.as_ref() {
+                if cached_target_id == target_id {
+                    return Ok(Some(session_id.clone()));
+                }
+            }
+        }
+
+        let session_id = match client.attach(target_id).await {
+            Ok(sid) => sid,
+            Err(e) => {
+                log::debug!("[iframe] attach to target '{target_id}' failed: {e}");
+                return Ok(None);
+            }
+        };
+
+        if let Some(cache) = session_cache {
+            *cache = Some((target_id.to_string(), session_id.clone()));
+        }
+
         Ok(Some(session_id))
     }
 }
@@ -859,10 +941,10 @@ fn build_element_js(
                 window.scrollTo(0, r3.top + window.scrollY - window.innerHeight / 2 + r3.height / 2);
             }}
             function inViewport(r) {{
-                return r.width > 0 && r.height > 0 &&
-                    r.x >= 0 && r.y >= 0 &&
-                    r.x + r.width <= window.innerWidth &&
-                    r.y + r.height <= window.innerHeight;
+                if (r.width <= 0 || r.height <= 0) return false;
+                const cx = r.x + r.width / 2;
+                const cy = r.y + r.height / 2;
+                return cx >= 0 && cy >= 0 && cx <= window.innerWidth && cy <= window.innerHeight;
             }}
             const els = document.querySelectorAll('{escaped}');
             // Best-effort fallback: first in-viewport candidate whose center we
@@ -904,7 +986,7 @@ fn build_resolve_iframe_js(selector: &str) -> String {
                 }} else {{
                     el = document.querySelector(q);
                 }}
-                if (!el || el.tagName !== 'IFRAME') return null;
+                if (!el || el.tagName.toUpperCase() !== 'IFRAME') return null;
                 const r = el.getBoundingClientRect();
                 return {{
                     x: r.x, y: r.y, width: r.width, height: r.height,
@@ -986,12 +1068,12 @@ mod tests {
 
     #[test]
     fn build_element_js_requires_viewport_containment() {
-        // The element must be fully inside the iframe viewport, otherwise the
+        // The element's center must be inside the iframe viewport, otherwise the
         // click would land outside the iframe (below the mini-app).
         let js = build_element_js(".btn", None, None);
         assert!(js.contains("function inViewport"));
-        assert!(js.contains("r.x + r.width <= window.innerWidth"));
-        assert!(js.contains("r.y + r.height <= window.innerHeight"));
+        assert!(js.contains("cx <= window.innerWidth"));
+        assert!(js.contains("cy <= window.innerHeight"));
         assert!(js.contains("if (!inViewport(r)) continue;"));
     }
 
@@ -1011,7 +1093,7 @@ mod tests {
         let css_js = build_resolve_iframe_js("iframe.payment-verification");
         assert!(css_js.contains("const q = 'iframe.payment-verification';"));
         assert!(css_js.contains("document.querySelector(q)"));
-        assert!(css_js.contains("tagName !== 'IFRAME'"));
+        assert!(css_js.contains("tagName.toUpperCase() !== 'IFRAME'"));
 
         let xpath_js = build_resolve_iframe_js("/html/body/div[10]/div/div[2]/div/div/iframe");
         assert!(xpath_js.contains("q.startsWith('/')"));
@@ -1205,5 +1287,11 @@ mod tests {
         let js = build_element_js("input[name='user']", None, None);
         // Single quotes in selector get escaped in JS string
         assert!(js.contains("input[name=\\'user\\']"));
+    }
+
+    #[test]
+    fn build_resolve_iframe_js_checks_uppercase_tag_name() {
+        let js = build_resolve_iframe_js("iframe");
+        assert!(js.contains("el.tagName.toUpperCase() !== 'IFRAME'"));
     }
 }

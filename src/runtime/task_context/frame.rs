@@ -112,19 +112,12 @@ impl TaskContext {
             )
         };
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-        let mut session_cache: Option<(String, String)> = None;
+
         loop {
             if let Ok(Some((rect, src))) = resolve_iframe(self.page(), iframe_selector).await {
                 if rect.width > 0.0 && rect.height > 0.0 {
                     if let Ok(Some(center)) = self
-                        .element_local_center(
-                            client.as_ref(),
-                            &src,
-                            element_selector,
-                            None,
-                            &mut session_cache,
-                            None,
-                        )
+                        .element_local_center(client.as_ref(), &src, element_selector, None, None)
                         .await
                     {
                         return Ok(Some(center));
@@ -164,13 +157,12 @@ impl TaskContext {
             )
         };
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-        let mut session_cache: Option<(String, String)> = None;
+
         loop {
             if let Ok(Some((rect, src))) = resolve_iframe(self.page(), iframe_selector).await {
                 if rect.width > 0.0 && rect.height > 0.0 {
-                    if let Ok(Some(session_id)) = self
-                        .iframe_session_id(client.as_ref(), &src, &mut session_cache)
-                        .await
+                    if let Ok(Some(session_id)) =
+                        self.iframe_session_id(client.as_ref(), &src).await
                     {
                         if let Some(client) = client.as_ref() {
                             let value = client.evaluate(&session_id, expression).await?;
@@ -193,26 +185,17 @@ impl TaskContext {
     /// `true`/`false` (no poll loop). Useful as a fast "skip" check before
     /// committing to a full `iframe_click_text` (which would otherwise poll for
     /// the whole timeout just to discover the element is gone).
+    /// Every call gets a fresh connection + fresh session — no caching.
     pub async fn iframe_has_text(
         &self,
         iframe_selector: &str,
         element_selector: &str,
         text_filter: &str,
     ) -> Result<bool> {
-        // The mini-app can re-create its iframe (blank doc) after a tab click,
-        // so a single shot can miss. Retry briefly (up to ~4s) while the
-        // document looks blank; a definite answer (element found, or a populated
-        // doc without the element) returns immediately.
-        for _ in 0..8 {
-            match self
-                .iframe_has_text_once(iframe_selector, element_selector, text_filter)
-                .await?
-            {
-                Some(answer) => return Ok(answer),
-                None => tokio::time::sleep(Duration::from_millis(500)).await,
-            }
-        }
-        Ok(false)
+        Ok(self
+            .iframe_has_text_once(iframe_selector, element_selector, text_filter)
+            .await?
+            .unwrap_or(false))
     }
 
     /// One-shot probe. Returns:
@@ -268,11 +251,8 @@ impl TaskContext {
                 }
             }
         }
-        let mut session_cache: Option<(String, String)> = None;
-        let Some(session_id) = self
-            .iframe_session_id(client.as_ref(), &src, &mut session_cache)
-            .await?
-        else {
+
+        let Some(session_id) = self.iframe_session_id(client.as_ref(), &src).await? else {
             return Ok(None);
         };
         let Some(client) = client.as_ref() else {
@@ -400,7 +380,7 @@ impl TaskContext {
         let mut last_status = String::new();
         // Cache the attached (target_id, session_id); re-attach only when the
         // iframe target changes (e.g. the frame reloaded).
-        let mut session_cache: Option<(String, String)> = None;
+
         let (x, y) = loop {
             // 1. iframe absolute rect + src (top document; works for any iframe)
             let status = match resolve_iframe(self.page(), iframe_selector).await {
@@ -412,7 +392,6 @@ impl TaskContext {
                             &src,
                             element_selector,
                             skip,
-                            &mut session_cache,
                             text_filter,
                         )
                         .await
@@ -508,17 +487,12 @@ impl TaskContext {
 
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_status = String::new();
-        let mut session_cache: Option<(String, String)> = None;
+
         loop {
             let status = match resolve_iframe(self.page(), iframe_selector).await {
                 Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
                     match self
-                        .element_count_in_iframe(
-                            client.as_ref(),
-                            &src,
-                            element_selector,
-                            &mut session_cache,
-                        )
+                        .element_count_in_iframe(client.as_ref(), &src, element_selector)
                         .await
                     {
                         Ok(Some(n)) => {
@@ -619,16 +593,12 @@ impl TaskContext {
         iframe_src: &str,
         element_selector: &str,
         skip: Option<(f64, f64)>,
-        cached: &mut Option<(String, String)>,
         text_filter: Option<&str>,
     ) -> Result<Option<(f64, f64)>> {
         let Some(client) = client else {
             return Ok(None);
         };
-        let Some(session_id) = self
-            .iframe_session_id(Some(client), iframe_src, cached)
-            .await?
-        else {
+        let Some(session_id) = self.iframe_session_id(Some(client), iframe_src).await? else {
             return Ok(None);
         };
         let js = build_element_js(element_selector, skip, text_filter);
@@ -644,15 +614,11 @@ impl TaskContext {
         client: Option<&crate::runtime::task_context::oopif::OopifClient>,
         iframe_src: &str,
         element_selector: &str,
-        cached: &mut Option<(String, String)>,
     ) -> Result<Option<usize>> {
         let Some(client) = client else {
             return Ok(None);
         };
-        let Some(session_id) = self
-            .iframe_session_id(Some(client), iframe_src, cached)
-            .await?
-        else {
+        let Some(session_id) = self.iframe_session_id(Some(client), iframe_src).await? else {
             return Ok(None);
         };
         let js = build_count_js(element_selector);
@@ -660,14 +626,14 @@ impl TaskContext {
         Ok(value.as_u64().map(|n| n as usize))
     }
 
-    /// Resolve the iframe target via host and return an attached session id.
-    /// Reuses the cached `(target_id, session_id)` while the target is unchanged.
+    /// Resolve the iframe target via host and attach a fresh session id.
+    /// No caching — every call re-asks the browser for the current target so
+    /// the result reflects the live iframe (the mini-app can re-create it).
     /// Returns `Ok(None)` when the target is not yet found (pollable).
     async fn iframe_session_id(
         &self,
         client: Option<&crate::runtime::task_context::oopif::OopifClient>,
         iframe_src: &str,
-        cached: &mut Option<(String, String)>,
     ) -> Result<Option<String>> {
         let Some(client) = client else {
             return Ok(None);
@@ -688,14 +654,7 @@ impl TaskContext {
         let Some(target_id) = target.get("targetId").and_then(Value::as_str) else {
             return Ok(None);
         };
-        let session_id = match cached {
-            Some((tid, sid)) if tid == target_id => sid.clone(),
-            _ => {
-                let sid = client.attach(target_id).await?;
-                *cached = Some((target_id.to_string(), sid.clone()));
-                sid
-            }
-        };
+        let session_id = client.attach(target_id).await?;
         Ok(Some(session_id))
     }
 }

@@ -242,7 +242,15 @@ impl OopifClient {
                 None,
             )
             .await?;
-        extract_session_id(&result).ok_or_else(|| anyhow!("attachToTarget returned no sessionId"))
+        let session_id = extract_session_id(&result)
+            .ok_or_else(|| anyhow!("attachToTarget returned no sessionId"))?;
+        // Ensure the session reports execution contexts so Runtime.evaluate lands
+        // in the page's main world — without Runtime.enable, a freshly re-created
+        // OOPIF can leave evaluate stuck in a blank default context.
+        let _ = self
+            .call("Runtime.enable", json!({}), Some(&session_id))
+            .await;
+        Ok(session_id)
     }
 
     /// Evaluate JS in the given session and return its JSON value.

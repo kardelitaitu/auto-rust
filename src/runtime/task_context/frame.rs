@@ -448,20 +448,38 @@ impl TaskContext {
                                             const txt = e => (e.textContent || '').trim();
                                             const inVp = r => r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0 && r.x + r.width <= innerWidth && r.y + r.height <= innerHeight;
                                             const withText = els.filter(e => textFilter === null || txt(e) === textFilter);
-                                            const visible = withText.filter(e => inVp(e.getBoundingClientRect()));
-                                            const first = visible[0];
-                                            let hit = null;
-                                            if (first) {{
-                                                const r = first.getBoundingClientRect();
-                                                const h = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
-                                                hit = h ? (h.id || h.className || h.tagName).toString().slice(0,40) : 'null';
-                                            }}
+                                            const first = withText[0];
+                                            const scrollToFull = el => {{
+                                                el.scrollIntoView({{ block: 'center', inline: 'center' }});
+                                                window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - innerHeight / 2 + el.getBoundingClientRect().height / 2);
+                                                let node = el.parentElement;
+                                                while (node) {{
+                                                    const cs = getComputedStyle(node);
+                                                    const ov = cs.overflowY;
+                                                    if ((ov === 'auto' || ov === 'scroll' || ov === 'overlay') && node.scrollHeight > node.clientHeight) {{
+                                                        const er = el.getBoundingClientRect();
+                                                        const nr = node.getBoundingClientRect();
+                                                        node.scrollTop = Math.max(0, Math.min(node.scrollTop + (er.top - nr.top) - node.clientHeight / 2 + er.height / 2, node.scrollHeight - node.clientHeight));
+                                                    }}
+                                                    node = node.parentElement;
+                                                }}
+                                            }};
+                                            if (first) scrollToFull(first);
+                                            const r = first ? first.getBoundingClientRect() : null;
                                             return JSON.stringify({{
                                                 matches: els.length,
                                                 withText: withText.length,
-                                                inViewport: visible.length,
-                                                firstRect: first ? (() => {{ const r = first.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]; }})() : null,
-                                                hit
+                                                innerW: innerWidth,
+                                                innerH: innerHeight,
+                                                scrollY: Math.round(window.scrollY),
+                                                docH: document.documentElement.scrollHeight,
+                                                rectAfterScroll: r ? [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)] : null,
+                                                inViewportAfterScroll: r ? inVp(r) : false,
+                                                hit: (() => {{
+                                                    if (!r) return null;
+                                                    const h = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
+                                                    return h ? (h.id || h.className || h.tagName).toString().slice(0,40) : 'null';
+                                                }})()
                                             }});
                                         }})()"#
                                     );
@@ -816,6 +834,10 @@ fn build_element_js(
             {text_js}
             function scrollIntoFullView(el) {{
                 el.scrollIntoView({{ block: 'center', inline: 'center' }});
+                // Some mini-apps scroll their own window/document instead of a
+                // container — scroll the window to center the element too.
+                const er = el.getBoundingClientRect();
+                window.scrollTo(0, er.top + window.scrollY - window.innerHeight / 2 + er.height / 2);
                 // Some mini-apps use nested scroll containers that scrollIntoView
                 // cannot reach — scroll each scrollable ancestor manually so the
                 // element's center lands inside the iframe viewport.
@@ -825,13 +847,16 @@ fn build_element_js(
                     const overflowY = cs.overflowY;
                     const scrollable = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
                     if (scrollable && node.scrollHeight > node.clientHeight) {{
-                        const er = el.getBoundingClientRect();
+                        const r2 = el.getBoundingClientRect();
                         const nr = node.getBoundingClientRect();
-                        const target = node.scrollTop + (er.top - nr.top) - node.clientHeight / 2 + er.height / 2;
+                        const target = node.scrollTop + (r2.top - nr.top) - node.clientHeight / 2 + r2.height / 2;
                         node.scrollTop = Math.max(0, Math.min(target, node.scrollHeight - node.clientHeight));
                     }}
                     node = node.parentElement;
                 }}
+                // Ancestor scrolling moved the element — recenter the window.
+                const r3 = el.getBoundingClientRect();
+                window.scrollTo(0, r3.top + window.scrollY - window.innerHeight / 2 + r3.height / 2);
             }}
             function inViewport(r) {{
                 return r.width > 0 && r.height > 0 &&

@@ -145,6 +145,28 @@ impl TaskContext {
         if rect.width <= 0.0 || rect.height <= 0.0 {
             return Ok(None);
         }
+        // Diagnose which iframe element we resolved: count all matches on the
+        // main page and their srcs — Telegram may keep several mini-app iframes
+        // in the DOM, and querySelector picks the first (possibly a stale one).
+        {
+            let sel = escape_js_string(iframe_selector);
+            let js = format!(
+                r#"(() => {{
+                    const els = document.querySelectorAll('{sel}');
+                    return JSON.stringify([...els].map(e => ({{
+                        src: (e.getAttribute('src') || '').slice(0, 60),
+                        w: e.getBoundingClientRect().width
+                    }})));
+                }})()"#
+            );
+            if let Ok(resp) = self.page().evaluate(js).await {
+                if let Some(list) = resp.value().and_then(serde_json::Value::as_str) {
+                    log::info!(
+                        "[iframe_has_text] resolved '{iframe_selector}' -> {list} (using src='{src}')"
+                    );
+                }
+            }
+        }
         let mut session_cache: Option<(String, String)> = None;
         let Some(session_id) = self
             .iframe_session_id(client.as_ref(), &src, &mut session_cache)
@@ -164,7 +186,9 @@ impl TaskContext {
                     .slice(0, 8).map(b => b.id).join(',');
                 const tabCount = document.querySelectorAll('[onclick^="switchTab("]').length;
                 const body = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').trim().slice(0, 200);
-                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body }});
+                const docUrl = location.href.slice(0, 80);
+                const ready = document.readyState;
+                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready }});
                 return JSON.stringify({{
                     found: true,
                     text: (el.textContent || '').trim(),
@@ -172,14 +196,16 @@ impl TaskContext {
                     btnCount,
                     sample,
                     tabCount,
-                    body
+                    body,
+                    docUrl,
+                    ready
                 }});
             }})()"#
         );
         let value = client.evaluate(&session_id, &js).await?;
         // Probe returns found + text + disabled + btnCount + button-id sample +
-        // tab count + first 200 chars of on-screen text so we can see what view
-        // the mini-app is actually showing when a match fails.
+        // tab count + on-screen text + the attached document's URL/readyState so
+        // we can see what view (or which iframe) the probe is actually hitting.
         let text = value.get("text").and_then(Value::as_str).unwrap_or("");
         let found = value.get("found").and_then(Value::as_bool).unwrap_or(false);
         let disabled = value
@@ -190,8 +216,10 @@ impl TaskContext {
         let sample = value.get("sample").and_then(Value::as_str).unwrap_or("");
         let tab_count = value.get("tabCount").and_then(Value::as_u64).unwrap_or(0);
         let body = value.get("body").and_then(Value::as_str).unwrap_or("");
+        let doc_url = value.get("docUrl").and_then(Value::as_str).unwrap_or("");
+        let ready = value.get("ready").and_then(Value::as_str).unwrap_or("");
         log::info!(
-            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] body='{body}' text='{text}' (filter='{text_filter}')"
+            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] docUrl='{doc_url}' ready={ready} body='{body}' text='{text}' (filter='{text_filter}')"
         );
         if found {
             // Definite: element present — disabled or text mismatch means "gone".

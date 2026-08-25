@@ -227,7 +227,8 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
 
 /// Wait for a modal/"Processing" busy state to clear (up to ~20s).
 async fn wait_not_busy(api: &TaskContext) -> Result<()> {
-    for _ in 0..10 {
+    let start = std::time::Instant::now();
+    loop {
         let raw = api
             .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000)
             .await?;
@@ -245,9 +246,12 @@ async fn wait_not_busy(api: &TaskContext) -> Result<()> {
         let _ = api
             .iframe_eval(MINIAPP_IFRAME, DISMISS_MODAL_JS, 5_000)
             .await;
-        api.wait(1_000, 2_000).await;
+        if start.elapsed().as_millis() >= 5_000 {
+            break;
+        }
+        api.wait(1_000, 1_500).await;
     }
-    warn!("[busy] state did not clear after 20s — proceeding anyway");
+    warn!("[busy] state did not clear within 5s — proceeding anyway");
     Ok(())
 }
 

@@ -210,10 +210,11 @@ mod tests {
 
     #[test]
     fn test_task_names_constant() {
-        assert_eq!(TASK_NAMES.len(), 17);
+        assert_eq!(TASK_NAMES.len(), 18);
         assert!(TASK_NAMES.contains(&"cookiebot"));
         assert!(TASK_NAMES.contains(&"pageview"));
         assert!(TASK_NAMES.contains(&"twitterintent"));
+        assert!(TASK_NAMES.contains(&"atf-a"));
     }
 
     #[test]

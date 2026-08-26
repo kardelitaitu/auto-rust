@@ -86,29 +86,144 @@ pub async fn set_extra_http_headers(
 /// Injects stealth/evasion scripts into the page to prevent bot detection.
 pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
     let stealth_js = r#"(() => {
+        // 1. Fix navigator.webdriver prototype leak (eliminates hasOwnProperty('webdriver') === true)
         try {
-            Object.defineProperty(navigator, 'webdriver', {
+            const proto = Object.getPrototypeOf(navigator) || Navigator.prototype;
+            delete proto.webdriver;
+            Object.defineProperty(proto, 'webdriver', {
                 get: () => undefined,
+                enumerable: true,
                 configurable: true
             });
         } catch (_) {}
+
+        // 2. Realistic Chrome PluginArray & MimeTypeArray
+        try {
+            const makePlugin = (name, filename, description) => {
+                const plugin = {
+                    0: { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: null },
+                    1: { type: 'text/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: null },
+                    description,
+                    filename,
+                    name,
+                    length: 2,
+                    item: function(i) { return this[i] || null; },
+                    namedItem: function(n) { return (this[0] && this[0].type === n) ? this[0] : (this[1] && this[1].type === n ? this[1] : null); }
+                };
+                plugin[0].enabledPlugin = plugin;
+                plugin[1].enabledPlugin = plugin;
+                return plugin;
+            };
+
+            const plugins = [
+                makePlugin('PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                makePlugin('Chrome PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                makePlugin('Chromium PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                makePlugin('Microsoft Edge PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                makePlugin('WebKit built-in PDF', 'internal-pdf-viewer', 'Portable Document Format')
+            ];
+
+            const pluginArray = Object.assign(plugins, {
+                item: (i) => plugins[i] || null,
+                namedItem: (n) => plugins.find(p => p.name === n) || null,
+                refresh: () => {},
+                length: plugins.length
+            });
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => pluginArray,
+                enumerable: true,
+                configurable: true
+            });
+
+            const mimeTypes = [
+                { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: plugins[0] },
+                { type: 'text/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: plugins[0] }
+            ];
+            const mimeTypeArray = Object.assign(mimeTypes, {
+                item: (i) => mimeTypes[i] || null,
+                namedItem: (n) => mimeTypes.find(m => m.type === n) || null,
+                length: mimeTypes.length
+            });
+            Object.defineProperty(navigator, 'mimeTypes', {
+                get: () => mimeTypeArray,
+                enumerable: true,
+                configurable: true
+            });
+        } catch (_) {}
+
+        // 3. Mock window.chrome with native code toString protection
         try {
             if (!window.chrome) {
-                window.chrome = { runtime: {}, app: {}, loadTimes: () => ({}), csi: () => ({}) };
+                const makeNativeFn = (name) => {
+                    const fn = function() {};
+                    Object.defineProperty(fn, 'name', { value: name, configurable: true });
+                    fn.toString = () => `function ${name}() { [native code] }`;
+                    return fn;
+                };
+                window.chrome = {
+                    app: {
+                        isInstalled: false,
+                        InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+                        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
+                    },
+                    runtime: {
+                        OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' },
+                        OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic', PROFILE_ERROR: 'profile_error' },
+                        PlatformArch: { ARM: 'arm', ARM64: 'arm64', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                        PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                        PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
+                        connect: makeNativeFn('connect'),
+                        sendMessage: makeNativeFn('sendMessage')
+                    },
+                    csi: makeNativeFn('csi'),
+                    loadTimes: makeNativeFn('loadTimes')
+                };
             }
         } catch (_) {}
+
+        // 4. Ensure standard browser languages
         try {
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['en-US', 'en'],
+                enumerable: true,
                 configurable: true
             });
         } catch (_) {}
+
+        // 5. Mock navigator.userAgentData (Client Hints)
         try {
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-                configurable: true
-            });
+            if (!navigator.userAgentData) {
+                const userAgentData = {
+                    brands: [
+                        { brand: 'Chromium', version: '124' },
+                        { brand: 'Google Chrome', version: '124' },
+                        { brand: 'Not-A.Brand', version: '99' }
+                    ],
+                    mobile: false,
+                    platform: 'Windows',
+                    getHighEntropyValues: (hints) => Promise.resolve({
+                        architecture: 'x86',
+                        bitness: '64',
+                        brands: [
+                            { brand: 'Chromium', version: '124' },
+                            { brand: 'Google Chrome', version: '124' },
+                            { brand: 'Not-A.Brand', version: '99' }
+                        ],
+                        mobile: false,
+                        model: '',
+                        platform: 'Windows',
+                        platformVersion: '15.0.0'
+                    })
+                };
+                Object.defineProperty(navigator, 'userAgentData', {
+                    get: () => userAgentData,
+                    enumerable: true,
+                    configurable: true
+                });
+            }
         } catch (_) {}
+
+        // 6. Permissions API consistency
         try {
             const originalQuery = window.navigator.permissions.query;
             window.navigator.permissions.query = (parameters) => (

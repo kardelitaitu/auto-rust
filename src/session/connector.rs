@@ -340,6 +340,17 @@ impl BrowserConnector for RoxyBrowserConnector {
 /// Probing with a 2000ms budget prevents skipping active anti-detect browsers.
 const API_REACHABILITY_TIMEOUT: Duration = Duration::from_millis(2000);
 
+/// Normalizes localhost and IPv6 loopback addresses to IPv4 literal `127.0.0.1`.
+///
+/// On Windows, connecting to `localhost` or `[::1]` can trigger a 20-60 second
+/// IPv6 SYN timeout when local browser debugging servers are bound only to IPv4.
+#[must_use]
+pub fn normalize_ws_url(url: &str) -> String {
+    url.replace("localhost", "127.0.0.1")
+        .replace("[::1]", "127.0.0.1")
+        .replace("::1", "127.0.0.1")
+}
+
 /// Quickly checks whether the host:port of an http(s) base URL accepts TCP
 /// connections within `API_REACHABILITY_TIMEOUT`.
 #[must_use]
@@ -347,8 +358,16 @@ async fn api_reachable(base_url: &str) -> bool {
     let Ok(url) = reqwest::Url::parse(base_url) else {
         return false;
     };
-    let Some(host) = url.host_str() else {
+    let Some(host_str) = url.host_str() else {
         return false;
+    };
+    let host = if host_str.eq_ignore_ascii_case("localhost")
+        || host_str == "::1"
+        || host_str == "[::1]"
+    {
+        "127.0.0.1"
+    } else {
+        host_str
     };
     let port = url.port_or_known_default().unwrap_or(80);
 
@@ -362,28 +381,39 @@ async fn api_reachable(base_url: &str) -> bool {
 }
 
 /// Helper to resolve a WebSocket debugger URL from a host:port or URL string.
-async fn resolve_ws_url(address: &str) -> Option<String> {
+pub async fn resolve_ws_url(address: &str) -> Option<String> {
     let address = address.trim();
     if address.is_empty() {
         return None;
     }
 
-    // If it's already a ws/wss URL, return it
-    if address.starts_with("ws://") || address.starts_with("wss://") {
-        return Some(address.to_string());
+    // Force IPv4 loopback to prevent Windows IPv6 lookup timeout
+    let address = normalize_ws_url(address);
+
+    // If it's already a ws/wss URL with a full devtools browser path, return it directly
+    if (address.starts_with("ws://") || address.starts_with("wss://"))
+        && address.contains("/devtools/")
+    {
+        return Some(address);
     }
 
     // Prepare HTTP URL for json/version
-    let http_url = if address.starts_with("http://") || address.starts_with("https://") {
-        if address.ends_with("/json/version") {
-            address.to_string()
-        } else if address.ends_with('/') {
-            format!("{}json/version", address)
-        } else {
-            format!("{}/json/version", address)
-        }
+    let http_url = if address.starts_with("ws://") {
+        address.replacen("ws://", "http://", 1)
+    } else if address.starts_with("wss://") {
+        address.replacen("wss://", "https://", 1)
+    } else if address.starts_with("http://") || address.starts_with("https://") {
+        address
     } else {
-        format!("http://{}/json/version", address)
+        format!("http://{address}")
+    };
+
+    let http_url = if http_url.ends_with("/json/version") {
+        http_url
+    } else if http_url.ends_with('/') {
+        format!("{http_url}json/version")
+    } else {
+        format!("{http_url}/json/version")
     };
 
     let client = reqwest::Client::new();
@@ -400,7 +430,7 @@ async fn resolve_ws_url(address: &str) -> Option<String> {
                 .get("webSocketDebuggerUrl")
                 .and_then(serde_json::Value::as_str)
             {
-                return Some(ws_url.to_string());
+                return Some(normalize_ws_url(ws_url));
             }
         }
     }
@@ -979,7 +1009,7 @@ impl LocalBrowserConnector {
             id: format!("{browser_type}-{port}"),
             name: format!("{browser_type} on port {port}"),
             browser_type: format!("local{browser_type}"),
-            ws_url: ws_url.to_string(),
+            ws_url: normalize_ws_url(ws_url),
             source: BrowserSource::Local,
         }
     }

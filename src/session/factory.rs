@@ -78,16 +78,18 @@ impl SessionFactory {
             )));
         }
 
+        let ws_url = crate::session::connector::normalize_ws_url(&capability.ws_url);
+
         debug!(
             "Connecting to {} (source: {}): {}",
-            capability.name, capability.source, capability.ws_url
+            capability.name, capability.source, ws_url
         );
 
         let connect_timeout = Duration::from_millis(self.connection_timeout_ms);
 
         match tokio::time::timeout(
             connect_timeout,
-            chromiumoxide::Browser::connect(&capability.ws_url),
+            chromiumoxide::Browser::connect(&ws_url),
         )
         .await
         {
@@ -106,7 +108,7 @@ impl SessionFactory {
                     self.max_workers,
                     self.cursor_overlay_ms,
                     Some(self.circuit_breaker_config.clone()),
-                    capability.ws_url.clone(),
+                    ws_url,
                 ))
             }
             Ok(Err(e)) => Err(OrchestratorError::Browser(BrowserError::ConnectionFailed(

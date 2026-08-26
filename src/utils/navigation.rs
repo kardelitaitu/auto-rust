@@ -86,18 +86,45 @@ pub async fn set_extra_http_headers(
 /// Injects stealth/evasion scripts into the page to prevent bot detection.
 pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
     let stealth_js = r#"(() => {
-        // 1. Fix navigator.webdriver prototype leak (eliminates hasOwnProperty('webdriver') === true)
+        // 1. SOTA Function.prototype.toString Cloaking
+        let nativeFunctions = new Set();
+        try {
+            const originalFunctionToString = Function.prototype.toString;
+            const nativeToStringFunctionString = 'function toString() { [native code] }';
+
+            Function.prototype.toString = function() {
+                if (this === Function.prototype.toString) {
+                    return nativeToStringFunctionString;
+                }
+                if (nativeFunctions.has(this)) {
+                    return `function ${this.name || ''}() { [native code] }`;
+                }
+                return originalFunctionToString.call(this);
+            };
+            nativeFunctions.add(Function.prototype.toString);
+        } catch (_) {}
+
+        const makeNativeFn = (name, fnImpl) => {
+            const fn = fnImpl || function() {};
+            try {
+                Object.defineProperty(fn, 'name', { value: name, configurable: true });
+                nativeFunctions.add(fn);
+            } catch (_) {}
+            return fn;
+        };
+
+        // 2. Fix navigator.webdriver prototype leak
         try {
             const proto = Object.getPrototypeOf(navigator) || Navigator.prototype;
             delete proto.webdriver;
             Object.defineProperty(proto, 'webdriver', {
-                get: () => undefined,
+                get: makeNativeFn('get webdriver', () => undefined),
                 enumerable: true,
                 configurable: true
             });
         } catch (_) {}
 
-        // 2. Realistic Chrome PluginArray & MimeTypeArray
+        // 3. Realistic Chrome PluginArray & MimeTypeArray
         try {
             const makePlugin = (name, filename, description) => {
                 const plugin = {
@@ -107,8 +134,8 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
                     filename,
                     name,
                     length: 2,
-                    item: function(i) { return this[i] || null; },
-                    namedItem: function(n) { return (this[0] && this[0].type === n) ? this[0] : (this[1] && this[1].type === n ? this[1] : null); }
+                    item: makeNativeFn('item', function(i) { return this[i] || null; }),
+                    namedItem: makeNativeFn('namedItem', function(n) { return (this[0] && this[0].type === n) ? this[0] : (this[1] && this[1].type === n ? this[1] : null); })
                 };
                 plugin[0].enabledPlugin = plugin;
                 plugin[1].enabledPlugin = plugin;
@@ -124,13 +151,13 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
             ];
 
             const pluginArray = Object.assign(plugins, {
-                item: (i) => plugins[i] || null,
-                namedItem: (n) => plugins.find(p => p.name === n) || null,
-                refresh: () => {},
+                item: makeNativeFn('item', (i) => plugins[i] || null),
+                namedItem: makeNativeFn('namedItem', (n) => plugins.find(p => p.name === n) || null),
+                refresh: makeNativeFn('refresh', () => {}),
                 length: plugins.length
             });
             Object.defineProperty(navigator, 'plugins', {
-                get: () => pluginArray,
+                get: makeNativeFn('get plugins', () => pluginArray),
                 enumerable: true,
                 configurable: true
             });
@@ -140,26 +167,25 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
                 { type: 'text/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: plugins[0] }
             ];
             const mimeTypeArray = Object.assign(mimeTypes, {
-                item: (i) => mimeTypes[i] || null,
-                namedItem: (n) => mimeTypes.find(m => m.type === n) || null,
+                item: makeNativeFn('item', (i) => mimeTypes[i] || null),
+                namedItem: makeNativeFn('namedItem', (n) => mimeTypes.find(m => m.type === n) || null),
                 length: mimeTypes.length
             });
             Object.defineProperty(navigator, 'mimeTypes', {
-                get: () => mimeTypeArray,
+                get: makeNativeFn('get mimeTypes', () => mimeTypeArray),
+                enumerable: true,
+                configurable: true
+            });
+            Object.defineProperty(navigator, 'pdfViewerEnabled', {
+                get: makeNativeFn('get pdfViewerEnabled', () => true),
                 enumerable: true,
                 configurable: true
             });
         } catch (_) {}
 
-        // 3. Mock window.chrome with native code toString protection
+        // 4. Mock window.chrome with complete native prototypes
         try {
             if (!window.chrome) {
-                const makeNativeFn = (name) => {
-                    const fn = function() {};
-                    Object.defineProperty(fn, 'name', { value: name, configurable: true });
-                    fn.toString = () => `function ${name}() { [native code] }`;
-                    return fn;
-                };
                 window.chrome = {
                     app: {
                         isInstalled: false,
@@ -181,16 +207,30 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
             }
         } catch (_) {}
 
-        // 4. Ensure standard browser languages
+        // 5. Ensure standard browser languages & hardware concurrency
         try {
             Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en'],
+                get: makeNativeFn('get languages', () => ['en-US', 'en']),
                 enumerable: true,
                 configurable: true
             });
+            if (navigator.hardwareConcurrency < 4) {
+                Object.defineProperty(navigator, 'hardwareConcurrency', {
+                    get: makeNativeFn('get hardwareConcurrency', () => 8),
+                    enumerable: true,
+                    configurable: true
+                });
+            }
+            if (!navigator.deviceMemory || navigator.deviceMemory < 4) {
+                Object.defineProperty(navigator, 'deviceMemory', {
+                    get: makeNativeFn('get deviceMemory', () => 8),
+                    enumerable: true,
+                    configurable: true
+                });
+            }
         } catch (_) {}
 
-        // 5. Mock navigator.userAgentData (Client Hints)
+        // 6. Mock navigator.userAgentData (Client Hints)
         try {
             if (!navigator.userAgentData) {
                 const userAgentData = {
@@ -201,7 +241,7 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
                     ],
                     mobile: false,
                     platform: 'Windows',
-                    getHighEntropyValues: (hints) => Promise.resolve({
+                    getHighEntropyValues: makeNativeFn('getHighEntropyValues', (hints) => Promise.resolve({
                         architecture: 'x86',
                         bitness: '64',
                         brands: [
@@ -213,24 +253,66 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
                         model: '',
                         platform: 'Windows',
                         platformVersion: '15.0.0'
-                    })
+                    }))
                 };
                 Object.defineProperty(navigator, 'userAgentData', {
-                    get: () => userAgentData,
+                    get: makeNativeFn('get userAgentData', () => userAgentData),
                     enumerable: true,
                     configurable: true
                 });
             }
         } catch (_) {}
 
-        // 6. Permissions API consistency
+        // 7. WebGL GPU Vendor & Renderer Spoofing
+        try {
+            const getParameterProxy = function(parameter) {
+                // UNMASKED_VENDOR_WEBGL = 37445
+                if (parameter === 37445) {
+                    return 'Google Inc. (NVIDIA)';
+                }
+                // UNMASKED_RENDERER_WEBGL = 37446
+                if (parameter === 37446) {
+                    return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                }
+                return this.rawGetParameter(parameter);
+            };
+
+            if (window.WebGLRenderingContext) {
+                const origGetParam1 = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.rawGetParameter = origGetParam1;
+                WebGLRenderingContext.prototype.getParameter = makeNativeFn('getParameter', getParameterProxy);
+            }
+            if (window.WebGL2RenderingContext) {
+                const origGetParam2 = WebGL2RenderingContext.prototype.getParameter;
+                WebGL2RenderingContext.prototype.rawGetParameter = origGetParam2;
+                WebGL2RenderingContext.prototype.getParameter = makeNativeFn('getParameter', getParameterProxy);
+            }
+        } catch (_) {}
+
+        // 8. Headless Window Outer Dimensions Normalization
+        try {
+            if (window.outerWidth === 0 && window.outerHeight === 0) {
+                Object.defineProperty(window, 'outerWidth', {
+                    get: makeNativeFn('get outerWidth', () => window.innerWidth),
+                    enumerable: true,
+                    configurable: true
+                });
+                Object.defineProperty(window, 'outerHeight', {
+                    get: makeNativeFn('get outerHeight', () => window.innerHeight + 85),
+                    enumerable: true,
+                    configurable: true
+                });
+            }
+        } catch (_) {}
+
+        // 9. Permissions API consistency
         try {
             const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
+            window.navigator.permissions.query = makeNativeFn('query', (parameters) => (
+                parameters && parameters.name === 'notifications' ?
                     Promise.resolve({ state: Notification.permission }) :
                     originalQuery(parameters)
-            );
+            ));
         } catch (_) {}
     })()"#;
 

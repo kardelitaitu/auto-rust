@@ -345,6 +345,76 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
                     originalQuery(parameters)
             ));
         } catch (_) {}
+
+        // 10. Screen Dimensions & Available Resolution Emulation (20 Popular Variants)
+        try {
+            const currentW = window.screen.width;
+            const currentH = window.screen.height;
+            const isDefaultOrSmall = (currentW === 1280 && currentH === 800) || (currentW === 800 && currentH === 600) || (currentW === 0);
+
+            if (isDefaultOrSmall) {
+                const popularScreens = [
+                    { w: 1920, h: 1080, dpr: 1.0, availHDiff: 40 },  // 1080p Desktop (#1 most popular, 23%)
+                    { w: 1366, h: 768,  dpr: 1.0, availHDiff: 40 },  // Standard Laptop (#2, 14%)
+                    { w: 1536, h: 864,  dpr: 1.25, availHDiff: 40 }, // Windows 125% scaling (#3, 10%)
+                    { w: 1440, h: 900,  dpr: 1.0, availHDiff: 40 },  // MacBook / 16:10 standard (6%)
+                    { w: 1600, h: 900,  dpr: 1.0, availHDiff: 40 },  // HD+ Desktop (4%)
+                    { w: 2560, h: 1440, dpr: 1.0, availHDiff: 48 },  // 2K QHD Gaming (4%)
+                    { w: 1680, h: 1050, dpr: 1.0, availHDiff: 40 },  // WSXGA+ Widescreen (2%)
+                    { w: 1920, h: 1200, dpr: 1.0, availHDiff: 40 },  // WUXGA 16:10 (2%)
+                    { w: 2560, h: 1600, dpr: 2.0, availHDiff: 0 },   // Retina 13" / 16:10 (2%)
+                    { w: 3840, h: 2160, dpr: 1.5, availHDiff: 48 },  // 4K UHD 150% (1.5%)
+                    { w: 1280, h: 1024, dpr: 1.0, availHDiff: 40 },  // 5:4 Standard LCD (1.5%)
+                    { w: 1440, h: 960,  dpr: 1.5, availHDiff: 40 },  // Surface 3:2 Display (1%)
+                    { w: 2880, h: 1800, dpr: 2.0, availHDiff: 0 },   // Retina 15" Display (1%)
+                    { w: 1360, h: 768,  dpr: 1.0, availHDiff: 40 },  // 768p Desktop (1%)
+                    { w: 1792, h: 1120, dpr: 2.0, availHDiff: 0 },   // MacBook Pro 16" (1%)
+                    { w: 2256, h: 1504, dpr: 1.5, availHDiff: 40 },  // Surface Laptop (1%)
+                    { w: 3440, h: 1440, dpr: 1.0, availHDiff: 48 },  // UltraWide 21:9 (1%)
+                    { w: 2304, h: 1440, dpr: 2.0, availHDiff: 0 },   // MacBook 12" (1%)
+                    { w: 1280, h: 720,  dpr: 1.0, availHDiff: 40 },  // 720p HD (1%)
+                    { w: 1920, h: 1080, dpr: 1.25, availHDiff: 40 }  // 1080p with 125% scaling (1%)
+                ];
+
+                const chosen = popularScreens[Math.floor(Math.random() * popularScreens.length)];
+
+                Object.defineProperty(window.screen, 'width', {
+                    get: makeNativeFn('get width', () => chosen.w),
+                    enumerable: true,
+                    configurable: true
+                });
+                Object.defineProperty(window.screen, 'height', {
+                    get: makeNativeFn('get height', () => chosen.h),
+                    enumerable: true,
+                    configurable: true
+                });
+                Object.defineProperty(window.screen, 'availWidth', {
+                    get: makeNativeFn('get availWidth', () => chosen.w),
+                    enumerable: true,
+                    configurable: true
+                });
+                Object.defineProperty(window.screen, 'availHeight', {
+                    get: makeNativeFn('get availHeight', () => chosen.h - chosen.availHDiff),
+                    enumerable: true,
+                    configurable: true
+                });
+                Object.defineProperty(window.screen, 'colorDepth', {
+                    get: makeNativeFn('get colorDepth', () => 24),
+                    enumerable: true,
+                    configurable: true
+                });
+                Object.defineProperty(window.screen, 'pixelDepth', {
+                    get: makeNativeFn('get pixelDepth', () => 24),
+                    enumerable: true,
+                    configurable: true
+                });
+                Object.defineProperty(window, 'devicePixelRatio', {
+                    get: makeNativeFn('get devicePixelRatio', () => chosen.dpr),
+                    enumerable: true,
+                    configurable: true
+                });
+            }
+        } catch (_) {}
     })()"#;
 
     // Register script to execute on every new document / navigation

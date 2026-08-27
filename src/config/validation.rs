@@ -223,6 +223,7 @@ mod tests {
             max_workers_per_session: 5,
             enable_learning_persistence: true,
             learning_ttl_days: 30,
+            random_screen_size_brave_and_chrome: true,
         }
     }
 

@@ -817,6 +817,9 @@ export TASK_TIMEOUT_MS="300000"# Cursor Overlay
 export CURSOR_OVERLAY_COLOR="#ff6600"   # Accent color (CSS hex or named color)
 export CURSOR_OVERLAY_SHOW_TRAIL=true   # Show/hide ghost trail dots
 
+# Stealth & Fingerprint Customization
+export RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME="true" # Randomize screen size across 20 popular variants (Brave/Chrome)
+
 # Logging
 
 export RUST_LOG="info,orchestrator=debug"
@@ -830,6 +833,7 @@ export RUST_LOG="info,orchestrator=debug"
 | `cursor_overlay_ms` | ≥0 | 0 (disabled) |
 | `cursor_overlay_color` | Valid CSS hex color (`#RGB`, `#RRGGBB`, `#RGBA`, `#RRGGBBAA`) | `#ff6600` |
 | `cursor_overlay_show_trail` | `true` / `false` | `true` |
+| `random_screen_size_brave_and_chrome` | `true` / `false` | `true` |
 | `task_timeout_ms` | >5000 | 600000 |
 | `max_retries` | 0-10 | 2 |
 

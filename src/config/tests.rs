@@ -623,6 +623,10 @@ fn test_browser_config_cursor_overlay_defaults() {
         config.cursor_overlay_show_trail,
         "cursor_overlay_show_trail should default to true"
     );
+    assert!(
+        config.random_screen_size_brave_and_chrome,
+        "random_screen_size_brave_and_chrome should default to true"
+    );
 }
 
 #[test]

@@ -57,6 +57,8 @@ pub struct BrowserConfig {
     pub enable_learning_persistence: bool,
     #[serde(default = "default_learning_ttl_days")]
     pub learning_ttl_days: u32,
+    #[serde(default = "default_random_screen_size_brave_and_chrome")]
+    pub random_screen_size_brave_and_chrome: bool,
 }
 
 /// Calibration mode for native cursor and click coordinate mapping.
@@ -486,6 +488,9 @@ fn default_enable_learning_persistence() -> bool {
 }
 fn default_learning_ttl_days() -> u32 {
     30
+}
+fn default_random_screen_size_brave_and_chrome() -> bool {
+    true
 }
 fn default_native_interaction_stability_wait_ms() -> DurationMs {
     DurationMs::new_const(5_000)

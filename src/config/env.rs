@@ -149,6 +149,7 @@ pub(crate) fn load_code_config() -> Result<Config> {
             max_workers_per_session: 5,
             enable_learning_persistence: true,
             learning_ttl_days: 90,
+            random_screen_size_brave_and_chrome: true,
         },
         orchestrator: OrchestratorConfig {
             max_global_concurrency: 20,
@@ -297,6 +298,14 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.browser.cursor_overlay_show_trail = show_trail
             .parse()
             .unwrap_or(config.browser.cursor_overlay_show_trail);
+    }
+    if let Ok(val) = env::var("RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME")
+        .or_else(|_| env::var("RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME"))
+    {
+        config.browser.random_screen_size_brave_and_chrome = val
+            .trim()
+            .parse()
+            .unwrap_or(config.browser.random_screen_size_brave_and_chrome);
     }
     if let Ok(mode) = env::var("native_click_calibration") {
         config.browser.native_interaction.calibration_mode =

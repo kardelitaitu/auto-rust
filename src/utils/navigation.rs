@@ -112,7 +112,14 @@ pub async fn set_extra_http_headers(
 
 /// Injects stealth/evasion scripts into the page to prevent bot detection.
 pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
-    let stealth_js = r#"(() => {
+    let enable_random_screen = std::env::var("RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME")
+        .or_else(|_| std::env::var("RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME"))
+        .map(|v| !v.trim().eq_ignore_ascii_case("false") && v.trim() != "0")
+        .unwrap_or(true);
+
+    let screen_flag = if enable_random_screen { "true" } else { "false" };
+
+    let stealth_template = r#"(() => {
         // 1. SOTA Function.prototype.toString Cloaking
         let nativeFunctions = new Set();
         try {
@@ -348,11 +355,12 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
 
         // 10. Screen Dimensions & Available Resolution Emulation (20 Popular Variants)
         try {
+            const enableRandomScreen = __ENABLE_RANDOM_SCREEN__;
             const currentW = window.screen.width;
             const currentH = window.screen.height;
             const isDefaultOrSmall = (currentW === 1280 && currentH === 800) || (currentW === 800 && currentH === 600) || (currentW === 0);
 
-            if (isDefaultOrSmall) {
+            if (enableRandomScreen && isDefaultOrSmall) {
                 const popularScreens = [
                     { w: 1920, h: 1080, dpr: 1.0, availHDiff: 40 },  // 1080p Desktop (#1 most popular, 23%)
                     { w: 1366, h: 768,  dpr: 1.0, availHDiff: 40 },  // Standard Laptop (#2, 14%)
@@ -408,7 +416,7 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
                     enumerable: true,
                     configurable: true
                 });
-                Object.defineProperty(window, 'devicePixelRatio', {
+                Object.defineProperty(window.devicePixelRatio ? window : Object.getPrototypeOf(window), 'devicePixelRatio', {
                     get: makeNativeFn('get devicePixelRatio', () => chosen.dpr),
                     enumerable: true,
                     configurable: true
@@ -417,11 +425,13 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
         } catch (_) {}
     })()"#;
 
+    let stealth_js = stealth_template.replace("__ENABLE_RANDOM_SCREEN__", screen_flag);
+
     // Register script to execute on every new document / navigation
     let _ = page
         .execute(
             chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams::new(
-                stealth_js,
+                stealth_js.clone(),
             ),
         )
         .await;

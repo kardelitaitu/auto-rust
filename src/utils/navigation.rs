@@ -207,21 +207,23 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
             }
         } catch (_) {}
 
-        // 5. Ensure standard browser languages & hardware concurrency
+        // 5. Ensure browser languages & hardware concurrency (only if missing/virtualized)
         try {
-            Object.defineProperty(navigator, 'languages', {
-                get: makeNativeFn('get languages', () => ['en-US', 'en']),
-                enumerable: true,
-                configurable: true
-            });
-            if (navigator.hardwareConcurrency < 4) {
+            if (!navigator.languages || navigator.languages.length === 0) {
+                Object.defineProperty(navigator, 'languages', {
+                    get: makeNativeFn('get languages', () => ['en-US', 'en']),
+                    enumerable: true,
+                    configurable: true
+                });
+            }
+            if (!navigator.hardwareConcurrency || navigator.hardwareConcurrency < 2) {
                 Object.defineProperty(navigator, 'hardwareConcurrency', {
                     get: makeNativeFn('get hardwareConcurrency', () => 8),
                     enumerable: true,
                     configurable: true
                 });
             }
-            if (!navigator.deviceMemory || navigator.deviceMemory < 4) {
+            if (!navigator.deviceMemory || navigator.deviceMemory < 2) {
                 Object.defineProperty(navigator, 'deviceMemory', {
                     get: makeNativeFn('get deviceMemory', () => 8),
                     enumerable: true,
@@ -230,7 +232,7 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
             }
         } catch (_) {}
 
-        // 6. Mock navigator.userAgentData (Client Hints)
+        // 6. Mock navigator.userAgentData only if missing
         try {
             if (!navigator.userAgentData) {
                 const userAgentData = {
@@ -263,16 +265,18 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
             }
         } catch (_) {}
 
-        // 7. WebGL GPU Vendor & Renderer Spoofing
+        // 7. WebGL GPU Vendor & Renderer (only fallback if software/headless SwiftShader is detected)
         try {
             const getParameterProxy = function(parameter) {
-                // UNMASKED_VENDOR_WEBGL = 37445
-                if (parameter === 37445) {
-                    return 'Google Inc. (NVIDIA)';
-                }
-                // UNMASKED_RENDERER_WEBGL = 37446
-                if (parameter === 37446) {
-                    return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                // UNMASKED_VENDOR_WEBGL = 37445, UNMASKED_RENDERER_WEBGL = 37446
+                if (parameter === 37445 || parameter === 37446) {
+                    const rawVal = this.rawGetParameter(parameter) || '';
+                    const isSoftware = /SwiftShader|llvmpipe|Mesa|Software/i.test(rawVal);
+                    if (isSoftware) {
+                        if (parameter === 37445) return 'Google Inc. (NVIDIA)';
+                        if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                    }
+                    return rawVal;
                 }
                 return this.rawGetParameter(parameter);
             };
@@ -289,7 +293,7 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
             }
         } catch (_) {}
 
-        // 8. Headless Window Outer Dimensions Normalization
+        // 8. Headless Window Outer Dimensions (only if running headless 0x0)
         try {
             if (window.outerWidth === 0 && window.outerHeight === 0) {
                 Object.defineProperty(window, 'outerWidth', {

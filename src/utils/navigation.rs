@@ -110,13 +110,7 @@ pub async fn set_extra_http_headers(
     Ok(())
 }
 
-/// Injects stealth/evasion scripts into the page to prevent bot detection.
-pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
-    let enable_random_screen = std::env::var("RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME")
-        .or_else(|_| std::env::var("RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME"))
-        .map(|v| !v.trim().eq_ignore_ascii_case("false") && v.trim() != "0")
-        .unwrap_or(true);
-
+pub fn build_stealth_script(enable_random_screen: bool) -> String {
     let screen_flag = if enable_random_screen { "true" } else { "false" };
 
     let stealth_template = r#"(() => {
@@ -425,7 +419,17 @@ pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
         } catch (_) {}
     })()"#;
 
-    let stealth_js = stealth_template.replace("__ENABLE_RANDOM_SCREEN__", screen_flag);
+    stealth_template.replace("__ENABLE_RANDOM_SCREEN__", screen_flag)
+}
+
+/// Injects stealth/evasion scripts into the page to prevent bot detection.
+pub async fn inject_stealth_scripts(page: &Page) -> Result<()> {
+    let enable_random_screen = std::env::var("RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME")
+        .or_else(|_| std::env::var("RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME"))
+        .map(|v| !v.trim().eq_ignore_ascii_case("false") && v.trim() != "0")
+        .unwrap_or(true);
+
+    let stealth_js = build_stealth_script(enable_random_screen);
 
     // Register script to execute on every new document / navigation
     let _ = page
@@ -479,7 +483,7 @@ async fn wait_for_page_settle(page: &Page, timeout_ms: u64) -> Result<()> {
         }
 
         if std::time::Instant::now() >= deadline {
-            return Ok(());
+            anyhow::bail!("Page navigation timeout: readyState did not reach interactive/complete");
         }
 
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -488,6 +492,22 @@ async fn wait_for_page_settle(page: &Page, timeout_ms: u64) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_stealth_script_random_screen_true() {
+        let script = build_stealth_script(true);
+        assert!(script.contains("const enableRandomScreen = true;"));
+        assert!(script.contains("1920, h: 1080"));
+        assert!(script.contains("isDefaultOrSmall"));
+    }
+
+    #[test]
+    fn test_build_stealth_script_random_screen_false() {
+        let script = build_stealth_script(false);
+        assert!(script.contains("const enableRandomScreen = false;"));
+    }
+
     #[test]
     fn test_referrers_array_has_values() {
         let referrers = [

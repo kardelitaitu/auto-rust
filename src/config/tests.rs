@@ -819,6 +819,41 @@ fn test_task_stagger_delay_env_override() {
 }
 
 #[test]
+fn test_random_screen_size_env_override_true_and_false() {
+    let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
+
+    // 1. Test explicit "false"
+    env::set_var("RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME", "false");
+    let base_config = Config::default();
+    let config = apply_env_overrides(base_config).unwrap();
+    assert!(
+        !config.browser.random_screen_size_brave_and_chrome,
+        "RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME=false should set config to false"
+    );
+
+    // 2. Test explicit "true"
+    env::set_var("RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME", "true");
+    let base_config = Config::default();
+    let config = apply_env_overrides(base_config).unwrap();
+    assert!(
+        config.browser.random_screen_size_brave_and_chrome,
+        "RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME=true should set config to true"
+    );
+
+    // 3. Test single underscore variant "RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME"
+    env::remove_var("RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME");
+    env::set_var("RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME", "false");
+    let base_config = Config::default();
+    let config = apply_env_overrides(base_config).unwrap();
+    assert!(
+        !config.browser.random_screen_size_brave_and_chrome,
+        "RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME=false should also set config to false"
+    );
+
+    env::remove_var("RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME");
+}
+
+#[test]
 fn test_load_config_applies_cursor_overlay_env_overrides() {
     let _guard = config_test_lock().lock().unwrap_or_else(|e| e.into_inner());
 

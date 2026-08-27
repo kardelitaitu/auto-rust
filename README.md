@@ -818,7 +818,7 @@ export CURSOR_OVERLAY_COLOR="#ff6600"   # Accent color (CSS hex or named color)
 export CURSOR_OVERLAY_SHOW_TRAIL=true   # Show/hide ghost trail dots
 
 # Stealth & Fingerprint Customization
-export RANDOM_SCREEN_SIZE_BRAVE__AND_CHROME="true" # Randomize screen size across 20 popular variants (Brave/Chrome)
+export RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME="true"  # Randomize screen size across 20 popular variants (Brave/Chrome)
 
 # Logging
 

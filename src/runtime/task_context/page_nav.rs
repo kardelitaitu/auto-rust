@@ -226,7 +226,7 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Injects stealth and anti-bot evasion scripts into the current page.
+    /// Injects stealth and anti-bot evasion scripts into the current page and initializes port scan defense.
     pub async fn apply_stealth(&self) -> Result<()> {
         self.with_retry(|| async {
             navigation::inject_stealth_scripts(self.page())
@@ -234,6 +234,7 @@ impl TaskContext {
                 .map_err(anyhow::Error::from)
         })
         .await?;
+        let _ = navigation::apply_port_scan_defense(self.page(), "").await;
         Ok(())
     }
 

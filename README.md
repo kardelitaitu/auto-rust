@@ -20,6 +20,7 @@ A high-performance, multi-browser automation framework built in Rust. Execute au
 - [Architecture](#architecture)
 - [Current Status](#current-status)
 - [Configuration](#configuration)
+- [CDP Security & Anti-Detection Defense](#cdp-security-anti-detection--port-defense)
 - [Troubleshooting](#troubleshooting)
 - [Documentation](#documentation)
 - [Git Hooks](#git-hooks)
@@ -816,6 +817,9 @@ export TASK_TIMEOUT_MS="300000"# Cursor Overlay
 export CURSOR_OVERLAY_COLOR="#ff6600"   # Accent color (CSS hex or named color)
 export CURSOR_OVERLAY_SHOW_TRAIL=true   # Show/hide ghost trail dots
 
+# Stealth & Fingerprint Customization
+export RANDOM_SCREEN_SIZE_BRAVE_AND_CHROME="true"  # Randomize screen size across 20 popular variants (Brave/Chrome)
+
 # Logging
 
 export RUST_LOG="info,orchestrator=debug"
@@ -829,8 +833,45 @@ export RUST_LOG="info,orchestrator=debug"
 | `cursor_overlay_ms` | ≥0 | 0 (disabled) |
 | `cursor_overlay_color` | Valid CSS hex color (`#RGB`, `#RRGGBB`, `#RGBA`, `#RRGGBBAA`) | `#ff6600` |
 | `cursor_overlay_show_trail` | `true` / `false` | `true` |
+| `random_screen_size_brave_and_chrome` | `true` / `false` | `true` |
 | `task_timeout_ms` | >5000 | 600000 |
 | `max_retries` | 0-10 | 2 |
+
+## 🛡️ CDP Security, Anti-Detection & Port Defense
+
+Auto includes a State-of-the-Art (SOTA) anti-detection engine and network defense layer designed to bypass modern bot-detection systems (Cloudflare Turnstile, DataDome, Kasada, Akamai, and CreepJS).
+
+### 1. Defending the Open CDP Port Against Scans
+
+Websites running anti-fraud scripts often perform in-page port scans (via `fetch()` or `WebSocket`) targeting `127.0.0.1:9222` to detect active debuggers. Follow these security guidelines:
+
+* **In-Page Loopback Blocking (via CDP):**
+  Auto can instruct the browser to drop all in-page outbound requests targeting `127.0.0.1:*` or `localhost:*` using `Network.setBlockedURLs`. Target websites receive `net::ERR_BLOCKED_BY_CLIENT` before any TCP connection can be established.
+* **Randomized Ephemeral Ports (`40000+`):**
+  Never use default ports (`9222`, `9001`, `9515`) in sensitive environments. Start your browser on a random high port (e.g. `--remote-debugging-port=49812`) or use `--remote-debugging-port=0` to instruct Chromium to allocate a random free port.
+* **Strict Loopback Binding:**
+  Always launch with `--remote-debugging-address=127.0.0.1` (never `0.0.0.0`) so the debugging socket is inaccessible over LAN or public networks.
+* **Zero-Port Mode (`--remote-debugging-pipe`):**
+  For spawned processes, Chromium supports native IPC over standard pipes 3/4 instead of TCP sockets. This eliminates listening ports entirely—port scanners see zero open ports.
+
+### 2. SOTA Stealth & JavaScript Evasion
+
+Every page navigation automatically evaluates our SOTA stealth script via CDP `Page.addScriptToEvaluateOnNewDocument` before target scripts run:
+
+* **`Navigator.prototype.webdriver` Cleanup:**
+  Redefines `webdriver` on `Navigator.prototype` instead of the instance, ensuring `navigator.hasOwnProperty('webdriver') === false` and `navigator.webdriver === undefined`.
+* **`Function.prototype.toString` Native Cloaking:**
+  Hooks `Function.prototype.toString` so that `Function.prototype.toString.call(mockMethod)` and `Reflect.apply` authentically return `function ${name}() { [native code] }`.
+* **Realistic `PluginArray` & `MimeTypeArray`:**
+  Accurately models Chrome's 5 default PDF plugins (`PDF Viewer`, `Chrome PDF Viewer`, etc.) supporting `.item()`, `.namedItem()`, and linked `navigator.mimeTypes`.
+* **Client Hints (`navigator.userAgentData`):**
+  Synchronizes `brands`, `mobile: false`, and `platform: "Windows"` with HTTP Client Hints.
+* **Adaptive Safety Net for Anti-Detect Browsers:**
+  When connected to anti-detect browsers (`ShardBrowser`, `RoxyBrowser`, `IxBrowser`) or custom profiles, real hardware profiles (AMD, Intel, Apple Silicon, NVIDIA), custom window dimensions, and language settings are **preserved 100% untouched**. WebGL hardware spoofing only activates as a fallback if software rendering (`SwiftShader`/`llvmpipe`) is detected in headless runs.
+
+### 3. Windows IPv4 Normalization
+
+On Windows, resolving `localhost` queries `getaddrinfo`, which prioritizes IPv6 (`[::1]`) before IPv4 (`127.0.0.1`). Because Chrome DevTools binds only to IPv4, connecting to `ws://localhost:...` triggers a 20–60 second IPv6 SYN connection timeout. Auto automatically normalizes all internal WebSocket endpoints and HTTP reachability probes to explicit `127.0.0.1` literals, establishing connections in `< 0.5 ms`.
 
 ## Troubleshooting
 

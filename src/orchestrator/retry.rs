@@ -198,6 +198,22 @@ pub(super) async fn execute_task_with_retry(
             session.browser_ws_url.clone(),
         );
 
+        let headers_vec: Vec<(String, String)> = config
+            .browser
+            .extra_http_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if config.browser.user_agent.is_some() || !headers_vec.is_empty() {
+            if let Err(e) = task_ctx
+                .apply_browser_context(config.browser.user_agent.as_deref(), &headers_vec)
+                .await
+            {
+                warn!("[{}] Failed to apply browser context: {e}", session.id);
+            }
+        }
+        let _ = task_ctx.apply_stealth().await;
+
         let task_result = tokio::select! {
             () = cancel_token.cancelled() => {
                 drop(task_ctx);

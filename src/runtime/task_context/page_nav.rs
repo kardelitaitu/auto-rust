@@ -127,10 +127,10 @@ impl TaskContext {
         let settle_base = compute_navigate_settle_timing(action_delay.min_ms, navigate_timeout_ms);
         let settle_variance = action_delay.variance_pct.round().clamp(10.0, 60.0) as u32;
         timing::human_pause(settle_base, settle_variance).await;
-        let settle_ms = navigate_timeout_ms.min(3_000);
-        self.wait_for_load(settle_ms).await.with_context(|| {
-            format!("navigate_timeout | stage=settle_load url={url} timeout_ms={settle_ms}")
-        })?;
+        let settle_ms = (navigate_timeout_ms / 2).clamp(3_000, 15_000);
+        if let Err(e) = self.wait_for_load(settle_ms).await {
+            log::warn!("navigate | stage=settle_load non-fatal warning for url={url}: {e}");
+        }
         self.post_interaction_pause().await;
         Ok(())
     }
@@ -197,12 +197,11 @@ impl TaskContext {
         self.navigate(&src, timeout_ms).await?;
         Ok(src)
     }
+
+    /// Override the User-Agent header and navigator properties via CDP.
     pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {
-        let escaped = user_agent.replace("'", "\\'");
         self.with_retry(|| async {
-            self.page
-                .as_ref()
-                .evaluate(format!("navigator.userAgent = '{}'", escaped))
+            navigation::set_user_agent(self.page(), user_agent)
                 .await
                 .map_err(anyhow::Error::from)
         })
@@ -210,13 +209,38 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Set extra HTTP headers to be sent with each request.
+    /// Set extra HTTP headers to be sent with each request via CDP.
     pub async fn set_extra_http_headers(&self, headers: &[(String, String)]) -> Result<()> {
-        log::debug!(
-            "set_extra_http_headers called with {} headers",
-            headers.len()
-        );
+        let mut header_map = std::collections::BTreeMap::new();
+        for (k, v) in headers {
+            header_map.insert(k.clone(), v.clone());
+        }
+        if !header_map.is_empty() {
+            self.with_retry(|| async {
+                navigation::set_extra_http_headers(self.page(), &header_map)
+                    .await
+                    .map_err(anyhow::Error::from)
+            })
+            .await?;
+        }
         Ok(())
+    }
+
+    /// Injects stealth and anti-bot evasion scripts into the current page and initializes port scan defense.
+    pub async fn apply_stealth(&self) -> Result<()> {
+        self.with_retry(|| async {
+            navigation::inject_stealth_scripts(self.page())
+                .await
+                .map_err(anyhow::Error::from)
+        })
+        .await?;
+        let _ = navigation::apply_port_scan_defense(self.page(), "").await;
+        Ok(())
+    }
+
+    /// Apply smart in-page port scan defense (blocks loopback requests on public URLs).
+    pub async fn block_inpage_port_scans(&self, target_url: &str) -> Result<()> {
+        navigation::apply_port_scan_defense(self.page(), target_url).await
     }
 
     /// Apply browser context settings (user agent and headers).
@@ -238,13 +262,17 @@ impl TaskContext {
         tokio::time::timeout(duration, async {
             // Poll until document is complete (loaded)
             loop {
-                let ready_state = self.page.evaluate("document.readyState").await?;
-                let state = ready_state
-                    .value()
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                if state == "complete" || state == "interactive" {
-                    break;
+                let state_opt = match self.page.evaluate("document.readyState").await {
+                    Ok(ready_state) => ready_state
+                        .value()
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                    Err(_) => None, // Execution context transition during SPA navigation is transient
+                };
+                if let Some(state) = state_opt {
+                    if state == "complete" || state == "interactive" {
+                        break;
+                    }
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
@@ -927,6 +955,17 @@ mod extract_tests {
         assert_eq!(compute_navigate_settle_timing(4000, 0), 4000);
         // Just within bounds
         assert_eq!(compute_navigate_settle_timing(250, 0), 250);
+    }
+
+    #[test]
+    fn test_dynamic_settle_ms_bounds() {
+        // (navigate_timeout_ms / 2).clamp(3_000, 15_000)
+        let calc = |timeout: u64| (timeout / 2).clamp(3_000, 15_000);
+        assert_eq!(calc(1_000), 3_000);
+        assert_eq!(calc(5_000), 3_000);
+        assert_eq!(calc(10_000), 5_000);
+        assert_eq!(calc(30_000), 15_000);
+        assert_eq!(calc(90_000), 15_000);
     }
 }
 

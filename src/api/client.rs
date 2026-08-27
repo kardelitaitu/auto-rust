@@ -43,6 +43,9 @@ impl ApiClient {
     /// A new `ApiClient` instance ready for making requests
     #[must_use]
     pub fn new(base_url: String) -> Self {
+        let base_url = base_url
+            .replace("localhost", "127.0.0.1")
+            .replace("[::1]", "127.0.0.1");
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -66,6 +69,9 @@ impl ApiClient {
     /// A new `ApiClient` instance with circuit breaker enabled
     #[must_use]
     pub fn with_circuit_breaker(base_url: String, circuit_breaker: CircuitBreaker) -> Self {
+        let base_url = base_url
+            .replace("localhost", "127.0.0.1")
+            .replace("[::1]", "127.0.0.1");
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()

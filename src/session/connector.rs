@@ -112,11 +112,15 @@ impl BrowserConnector for ConfiguredProfileConnector {
         let mut capabilities = Vec::new();
 
         for profile in &config.browser.profiles {
+            let ws_url = resolve_ws_url(&profile.ws_endpoint)
+                .await
+                .unwrap_or_else(|| profile.ws_endpoint.clone());
+
             capabilities.push(BrowserCapabilities {
                 id: format!("config-{}", profile.name),
                 name: profile.name.clone(),
                 browser_type: profile.r#type.clone(),
-                ws_url: profile.ws_endpoint.clone(),
+                ws_url,
                 source: BrowserSource::Configured,
             });
         }
@@ -135,12 +139,16 @@ impl BrowserConnector for ConfiguredProfileConnector {
             )));
         }
 
+        let ws_url = resolve_ws_url(&capability.ws_url)
+            .await
+            .unwrap_or_else(|| capability.ws_url.clone());
+
         let connect_timeout =
             Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
 
         match tokio::time::timeout(
             connect_timeout,
-            chromiumoxide::Browser::connect(&capability.ws_url),
+            chromiumoxide::Browser::connect(&ws_url),
         )
         .await
         {
@@ -248,9 +256,11 @@ impl BrowserConnector for RoxyBrowserConnector {
                 .map(str::to_string);
 
             let ws_url = if let Some(url) = ws_url {
-                url
+                resolve_ws_url(&url).await.unwrap_or(url)
             } else if let Some(http) = http_url {
-                http.replace("http", "ws")
+                resolve_ws_url(&http)
+                    .await
+                    .unwrap_or_else(|| http.replace("http", "ws"))
             } else {
                 warn!("Profile {i} missing ws/http, skipping");
                 continue;
@@ -325,11 +335,21 @@ impl BrowserConnector for RoxyBrowserConnector {
 
 /// Budget for the TCP reachability probe used before HTTP discovery calls.
 ///
-/// Live local browser APIs accept TCP connections in single-digit ms, while a
-/// dead endpoint on Windows can take ~2s to refuse. Probing with a short budget
-/// lets discovery skip unreachable services almost instantly instead of paying
-/// the full HTTP connect cost per connector.
-const API_REACHABILITY_TIMEOUT: Duration = Duration::from_millis(500);
+/// Live local browser APIs accept TCP connections quickly, but slow proxy setups
+/// or anti-detect browser APIs on Windows can take longer to accept initial sockets.
+/// Probing with a 2000ms budget prevents skipping active anti-detect browsers.
+const API_REACHABILITY_TIMEOUT: Duration = Duration::from_millis(2000);
+
+/// Normalizes localhost and IPv6 loopback addresses to IPv4 literal `127.0.0.1`.
+///
+/// On Windows, connecting to `localhost` or `[::1]` can trigger a 20-60 second
+/// IPv6 SYN timeout when local browser debugging servers are bound only to IPv4.
+#[must_use]
+pub fn normalize_ws_url(url: &str) -> String {
+    url.replace("localhost", "127.0.0.1")
+        .replace("[::1]", "127.0.0.1")
+        .replace("::1", "127.0.0.1")
+}
 
 /// Quickly checks whether the host:port of an http(s) base URL accepts TCP
 /// connections within `API_REACHABILITY_TIMEOUT`.
@@ -338,8 +358,16 @@ async fn api_reachable(base_url: &str) -> bool {
     let Ok(url) = reqwest::Url::parse(base_url) else {
         return false;
     };
-    let Some(host) = url.host_str() else {
+    let Some(host_str) = url.host_str() else {
         return false;
+    };
+    let host = if host_str.eq_ignore_ascii_case("localhost")
+        || host_str == "::1"
+        || host_str == "[::1]"
+    {
+        "127.0.0.1"
+    } else {
+        host_str
     };
     let port = url.port_or_known_default().unwrap_or(80);
 
@@ -353,28 +381,39 @@ async fn api_reachable(base_url: &str) -> bool {
 }
 
 /// Helper to resolve a WebSocket debugger URL from a host:port or URL string.
-async fn resolve_ws_url(address: &str) -> Option<String> {
+pub async fn resolve_ws_url(address: &str) -> Option<String> {
     let address = address.trim();
     if address.is_empty() {
         return None;
     }
 
-    // If it's already a ws/wss URL, return it
-    if address.starts_with("ws://") || address.starts_with("wss://") {
-        return Some(address.to_string());
+    // Force IPv4 loopback to prevent Windows IPv6 lookup timeout
+    let address = normalize_ws_url(address);
+
+    // If it's already a ws/wss URL with a full devtools browser path, return it directly
+    if (address.starts_with("ws://") || address.starts_with("wss://"))
+        && address.contains("/devtools/")
+    {
+        return Some(address);
     }
 
     // Prepare HTTP URL for json/version
-    let http_url = if address.starts_with("http://") || address.starts_with("https://") {
-        if address.ends_with("/json/version") {
-            address.to_string()
-        } else if address.ends_with('/') {
-            format!("{}json/version", address)
-        } else {
-            format!("{}/json/version", address)
-        }
+    let http_url = if address.starts_with("ws://") {
+        address.replacen("ws://", "http://", 1)
+    } else if address.starts_with("wss://") {
+        address.replacen("wss://", "https://", 1)
+    } else if address.starts_with("http://") || address.starts_with("https://") {
+        address
     } else {
-        format!("http://{}/json/version", address)
+        format!("http://{address}")
+    };
+
+    let http_url = if http_url.ends_with("/json/version") {
+        http_url
+    } else if http_url.ends_with('/') {
+        format!("{http_url}json/version")
+    } else {
+        format!("{http_url}/json/version")
     };
 
     let client = reqwest::Client::new();
@@ -391,7 +430,7 @@ async fn resolve_ws_url(address: &str) -> Option<String> {
                 .get("webSocketDebuggerUrl")
                 .and_then(serde_json::Value::as_str)
             {
-                return Some(ws_url.to_string());
+                return Some(normalize_ws_url(ws_url));
             }
         }
     }
@@ -970,7 +1009,7 @@ impl LocalBrowserConnector {
             id: format!("{browser_type}-{port}"),
             name: format!("{browser_type} on port {port}"),
             browser_type: format!("local{browser_type}"),
-            ws_url: ws_url.to_string(),
+            ws_url: normalize_ws_url(ws_url),
             source: BrowserSource::Local,
         }
     }

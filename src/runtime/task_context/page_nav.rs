@@ -237,6 +237,11 @@ impl TaskContext {
         Ok(())
     }
 
+    /// Apply smart in-page port scan defense (blocks loopback requests on public URLs).
+    pub async fn block_inpage_port_scans(&self, target_url: &str) -> Result<()> {
+        navigation::apply_port_scan_defense(self.page(), target_url).await
+    }
+
     /// Apply browser context settings (user agent and headers).
     /// If user_agent is None, skips setting it.
     pub async fn apply_browser_context(

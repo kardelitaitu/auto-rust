@@ -5,10 +5,38 @@
 
 use anyhow::Result;
 use chromiumoxide::cdp::browser_protocol::network::{
-    Headers, SetExtraHttpHeadersParams, SetUserAgentOverrideParams,
+    EnableParams as NetworkEnableParams, Headers, SetBlockedUrLsParams, SetExtraHttpHeadersParams,
+    SetUserAgentOverrideParams,
 };
+use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
 use chromiumoxide::Page;
 use tokio::time::{timeout, Duration};
+
+/// Smart defense: blocks in-page JavaScript from port-scanning local CDP ports (127.0.0.1/localhost)
+/// when browsing external websites, while automatically allowing local web app testing.
+pub async fn apply_port_scan_defense(page: &Page, target_url: &str) -> Result<()> {
+    let is_local_dev = target_url.contains("://localhost")
+        || target_url.contains("://127.0.0.1")
+        || target_url.contains("://0.0.0.0")
+        || target_url.starts_with("localhost:")
+        || target_url.starts_with("127.0.0.1:");
+
+    if is_local_dev {
+        let _ = page.execute(SetBlockedUrLsParams::new(vec![])).await;
+        return Ok(());
+    }
+
+    let _ = page.execute(NetworkEnableParams::default()).await;
+    let blocked_patterns = vec![
+        "*://127.0.0.1:*".to_string(),
+        "*://localhost:*".to_string(),
+        "*://[::1]:*".to_string(),
+    ];
+    let _ = page
+        .execute(SetBlockedUrLsParams::new(blocked_patterns))
+        .await;
+    Ok(())
+}
 
 use crate::utils::math::random_in_range;
 use crate::utils::timing::human_pause;
@@ -47,9 +75,8 @@ pub async fn goto_light(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
     goto_raw(page, url, timeout_ms).await
 }
 
-use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
-
 pub async fn goto_raw(page: &Page, url: &str, timeout_ms: u64) -> Result<()> {
+    let _ = apply_port_scan_defense(page, url).await;
     timeout(Duration::from_millis(timeout_ms), async {
         if let Err(e) = page.execute(NavigateParams::new(url)).await {
             log::debug!("Page.navigate returned {e}, falling back to page.goto");

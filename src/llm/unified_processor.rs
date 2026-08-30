@@ -104,8 +104,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_replies_batch() {
-        // Skip test if LLM config is not available
-        let processor = match UnifiedLLMProcessor::try_new() {
+        // Skip test if LLM config is not available.
+        // `try_new` -> `Llm::new` -> `load_env_file()` writes every unset key
+        // from the repo `.env` into the process environment; serialize it with
+        // the config env tests (guard scoped to the sync call so the future
+        // stays Send).
+        let tried = {
+            let _env_guard = crate::config::env_test_lock()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            UnifiedLLMProcessor::try_new()
+        };
+        let processor = match tried {
             Ok(p) => p,
             Err(_) => {
                 println!("Skipping test: LLM config not available");
@@ -144,8 +154,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_quote_with_sentiment() {
-        // Skip test if LLM config is not available
-        let processor = match UnifiedLLMProcessor::try_new() {
+        // Skip test if LLM config is not available (see
+        // test_process_replies_batch for why try_new needs the env lock).
+        let tried = {
+            let _env_guard = crate::config::env_test_lock()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            UnifiedLLMProcessor::try_new()
+        };
+        let processor = match tried {
             Ok(p) => p,
             Err(_) => {
                 println!("Skipping test: LLM config not available");

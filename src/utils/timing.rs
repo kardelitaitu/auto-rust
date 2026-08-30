@@ -336,8 +336,11 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(20, 0).await;
         let elapsed = start.elapsed();
-        // Should be approximately 20ms
-        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 50);
+        // Should be approximately 20ms. Upper bound widened for OS scheduling
+        // jitter under parallel test load (same precedent as
+        // test_human_pause_very_small_base); the >= 10 lower bound still
+        // proves the sleep actually happened.
+        assert!(elapsed.as_millis() >= 10 && elapsed.as_millis() < 100);
     }
 
     #[tokio::test]
@@ -854,8 +857,10 @@ mod tests {
         let start = std::time::Instant::now();
         uniform_pause(10, 10).await;
         let elapsed = start.elapsed();
-        // Small base, should clamp to minimum
-        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 30);
+        // Small base, should clamp to minimum (10-11ms). Upper bound widened
+        // for OS scheduling jitter (was 5-30ms) — the 30ms ceiling was hit
+        // under parallel test load; see test_human_pause_very_small_base.
+        assert!(elapsed.as_millis() >= 5 && elapsed.as_millis() < 100);
     }
 
     #[tokio::test]

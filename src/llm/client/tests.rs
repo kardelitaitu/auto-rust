@@ -23,6 +23,13 @@ fn test_llm_client_has_fallback() {
 
 #[test]
 fn test_create_llm_client_from_config_default() {
+    // `create_llm_client_from_config` calls `load_env_file()`, which writes
+    // every not-yet-set key from the repo `.env` into the process environment
+    // (e.g. CURSOR_OVERLAY_MS=50). Serialize it with the config module's
+    // env tests so it cannot leak into their remove→load→assert windows.
+    let _guard = crate::config::env_test_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     // Test that the function exists and returns a result
     // Skip actual config file check since it may not exist
     let result = create_llm_client_from_config();

@@ -493,15 +493,20 @@ pub(crate) fn apply_env_overrides(mut config: Config) -> Result<Config> {
     Ok(config)
 }
 
+/// Shared mutex for every test in the `config` module that mutates the
+/// process environment. `std::env` is process-global state, so all such
+/// tests — in `env.rs` and in `tests.rs` (which aliases this as
+/// `config_test_lock`) — must serialize through this single lock.
+#[cfg(test)]
+pub(crate) fn env_test_lock() -> &'static std::sync::Mutex<()> {
+    use std::sync::{Mutex, OnceLock};
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     #[test]
     fn load_dotenv_defaults_parses_key_value() {
@@ -706,6 +711,7 @@ mod tests {
 
     #[test]
     fn apply_env_overrides_orchestrator() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let old_retries = env::var("MAX_RETRIES").ok();
         let old_stagger = env::var("TASK_STAGGER_DELAY_MS").ok();
         let old_timeout = env::var("TASK_TIMEOUT_MS").ok();
@@ -740,6 +746,7 @@ mod tests {
 
     #[test]
     fn apply_env_overrides_twitter_limits() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let old_likes = env::var("TWITTER_MAX_LIKES").ok();
         let old_retweets = env::var("TWITTER_MAX_RETWEETS").ok();
         let old_total = env::var("TWITTER_MAX_TOTAL_ACTIONS").ok();
@@ -777,6 +784,7 @@ mod tests {
 
     #[test]
     fn apply_env_overrides_twitter_llm() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let old_enabled = env::var("TWITTER_LLM_ENABLED").ok();
         let old_provider = env::var("TWITTER_LLM_PROVIDER").ok();
         let old_model = env::var("TWITTER_LLM_MODEL").ok();
@@ -811,6 +819,7 @@ mod tests {
 
     #[test]
     fn apply_env_overrides_cursor_overlay() {
+        let _guard = env_test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let old_ms = env::var("CURSOR_OVERLAY_MS").ok();
         let old_color = env::var("CURSOR_OVERLAY_COLOR").ok();
 

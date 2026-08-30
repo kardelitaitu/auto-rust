@@ -3,12 +3,13 @@ use crate::session::DurationMs;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use tempfile::TempDir;
 
+/// Delegates to the single shared env-test mutex (see `env::env_test_lock`)
+/// so every env-mutating test in the `config` module serializes together.
 fn config_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+    crate::config::env::env_test_lock()
 }
 
 #[test]

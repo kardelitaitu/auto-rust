@@ -200,12 +200,8 @@ impl TaskContext {
 
     /// Override the User-Agent header and navigator properties via CDP.
     pub async fn set_user_agent(&self, user_agent: &str) -> Result<()> {
-        self.with_retry(|| async {
-            navigation::set_user_agent(self.page(), user_agent)
-                .await
-                .map_err(anyhow::Error::from)
-        })
-        .await?;
+        self.with_retry(|| async { navigation::set_user_agent(self.page(), user_agent).await })
+            .await?;
         Ok(())
     }
 
@@ -217,9 +213,7 @@ impl TaskContext {
         }
         if !header_map.is_empty() {
             self.with_retry(|| async {
-                navigation::set_extra_http_headers(self.page(), &header_map)
-                    .await
-                    .map_err(anyhow::Error::from)
+                navigation::set_extra_http_headers(self.page(), &header_map).await
             })
             .await?;
         }
@@ -228,12 +222,8 @@ impl TaskContext {
 
     /// Injects stealth and anti-bot evasion scripts into the current page and initializes port scan defense.
     pub async fn apply_stealth(&self) -> Result<()> {
-        self.with_retry(|| async {
-            navigation::inject_stealth_scripts(self.page())
-                .await
-                .map_err(anyhow::Error::from)
-        })
-        .await?;
+        self.with_retry(|| async { navigation::inject_stealth_scripts(self.page()).await })
+            .await?;
         let _ = navigation::apply_port_scan_defense(self.page(), "").await;
         Ok(())
     }

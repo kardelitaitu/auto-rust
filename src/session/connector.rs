@@ -146,11 +146,7 @@ impl BrowserConnector for ConfiguredProfileConnector {
         let connect_timeout =
             Duration::from_millis(config.browser.connection_timeout_ms.get().max(5000));
 
-        match tokio::time::timeout(
-            connect_timeout,
-            chromiumoxide::Browser::connect(&ws_url),
-        )
-        .await
+        match tokio::time::timeout(connect_timeout, chromiumoxide::Browser::connect(&ws_url)).await
         {
             Ok(Ok((browser, handler))) => {
                 debug!("Connected to configured profile: {}", capability.name);
@@ -361,14 +357,12 @@ async fn api_reachable(base_url: &str) -> bool {
     let Some(host_str) = url.host_str() else {
         return false;
     };
-    let host = if host_str.eq_ignore_ascii_case("localhost")
-        || host_str == "::1"
-        || host_str == "[::1]"
-    {
-        "127.0.0.1"
-    } else {
-        host_str
-    };
+    let host =
+        if host_str.eq_ignore_ascii_case("localhost") || host_str == "::1" || host_str == "[::1]" {
+            "127.0.0.1"
+        } else {
+            host_str
+        };
     let port = url.port_or_known_default().unwrap_or(80);
 
     tokio::time::timeout(

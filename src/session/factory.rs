@@ -87,11 +87,7 @@ impl SessionFactory {
 
         let connect_timeout = Duration::from_millis(self.connection_timeout_ms);
 
-        match tokio::time::timeout(
-            connect_timeout,
-            chromiumoxide::Browser::connect(&ws_url),
-        )
-        .await
+        match tokio::time::timeout(connect_timeout, chromiumoxide::Browser::connect(&ws_url)).await
         {
             Ok(Ok((browser, handler))) => {
                 info!(

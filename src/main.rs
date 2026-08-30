@@ -678,6 +678,7 @@ mod tests {
                 max_workers_per_session: 1,
                 enable_learning_persistence: false,
                 learning_ttl_days: 0,
+                random_screen_size_brave_and_chrome: true,
             },
             orchestrator: auto::config::OrchestratorConfig {
                 max_global_concurrency: 1,

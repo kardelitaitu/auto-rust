@@ -111,7 +111,11 @@ pub async fn set_extra_http_headers(
 }
 
 pub fn build_stealth_script(enable_random_screen: bool) -> String {
-    let screen_flag = if enable_random_screen { "true" } else { "false" };
+    let screen_flag = if enable_random_screen {
+        "true"
+    } else {
+        "false"
+    };
 
     let stealth_template = r#"(() => {
         // 1. SOTA Function.prototype.toString Cloaking

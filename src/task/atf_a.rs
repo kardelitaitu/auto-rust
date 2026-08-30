@@ -403,7 +403,10 @@ async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
         };
         let tasks_active = value["tasksActive"].as_bool().unwrap_or(false);
         let go_buttons = value["goButtons"].as_array().cloned().unwrap_or_default();
-        let claim_buttons = value["claimButtons"].as_array().cloned().unwrap_or_default();
+        let claim_buttons = value["claimButtons"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         info!(
             "[tasks] Scan attempt {}: active={tasks_active}, goButtons={:?}, claimButtons={:?}",
             attempt + 1,

@@ -47,6 +47,14 @@ const BUTTON_VISIBILITY_TIMEOUT_MS: u64 = 45_000;
 /// The cross-origin mini-app iframe (Telegram Web K client).
 const MINIAPP_IFRAME: &str = "iframe.payment-verification";
 
+/// Time budget for one mini-app state scan (`STATE_SCAN_JS`). The iframe's
+/// presence is already verified before any scan runs, so this only gates the
+/// "iframe went unusable mid-task" path — keep it small, because a slow scan
+/// repeated across `wait_not_busy` (9 calls) and `ensure_tasks_visible`
+/// (5 attempts) can otherwise eat the whole `run_with_timeout` budget and
+/// hard-kill an otherwise-healthy task.
+const SCAN_EVAL_TIMEOUT_MS: u64 = 4_000;
+
 /// Scans the mini-app state: busy modal/text, tasks tab active, and the
 /// visible Go/Claim task buttons.
 const STATE_SCAN_JS: &str = r#"(() => {
@@ -187,9 +195,20 @@ async fn run_inner(api: &TaskContext, payload: Value) -> Result<()> {
             let jx = random_in_range(0, 16) as f64 - 8.0;
             let jy = random_in_range(0, 16) as f64 - 8.0;
             let _ = api.focus_tab().await;
-            let outcome = api
+            let outcome = match api
                 .iframe_click_at(MINIAPP_IFRAME, cx + jx, cy + jy, 5_000)
-                .await?;
+                .await
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    // Transient mini-app state (re-render, modal swap) must not
+                    // abort the whole task — same soft-skip policy as every
+                    // other step. Remaining clicks are pointless if the iframe
+                    // went unusable, so stop the burst.
+                    warn!("[Step 4a] Claim click #{} failed — moving on: {e}", i + 1);
+                    break;
+                }
+            };
             info!(
                 "[Step 4a] Claim click #{}/{} result: {}",
                 i + 1,
@@ -362,7 +381,10 @@ async fn switch_tab(api: &TaskContext, tab_name: &str) -> Result<()> {
 async fn wait_not_busy(api: &TaskContext) -> Result<()> {
     let start = std::time::Instant::now();
     loop {
-        let raw = match api.iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000).await {
+        let raw = match api
+            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, SCAN_EVAL_TIMEOUT_MS)
+            .await
+        {
             Ok(v) => v,
             Err(_) => break,
         };
@@ -394,7 +416,10 @@ async fn wait_not_busy(api: &TaskContext) -> Result<()> {
 /// the iframe to guarantee tab activation.
 async fn ensure_tasks_visible(api: &TaskContext) -> Result<()> {
     for attempt in 0..5 {
-        let raw = match api.iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, 10_000).await {
+        let raw = match api
+            .iframe_eval(MINIAPP_IFRAME, STATE_SCAN_JS, SCAN_EVAL_TIMEOUT_MS)
+            .await
+        {
             Ok(v) => v,
             Err(_) => {
                 api.wait(1_000, 2_000).await;

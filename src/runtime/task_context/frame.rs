@@ -22,10 +22,6 @@ use serde_json::Value;
 /// Interval between poll iterations while waiting for an iframe/element to
 /// become usable.
 const IFRAME_POLL_INTERVAL: Duration = Duration::from_millis(200);
-/// Overall time budget of the `iframe_has_text` probe.
-const HAS_TEXT_DEADLINE: Duration = Duration::from_millis(2_000);
-/// Interval between `iframe_has_text` probe attempts.
-const HAS_TEXT_POLL_INTERVAL: Duration = Duration::from_millis(150);
 
 impl TaskContext {
     /// Open ONE raw CDP connection for the duration of a public call (reused
@@ -196,139 +192,6 @@ impl TaskContext {
                 ));
             }
             tokio::time::sleep(IFRAME_POLL_INTERVAL).await;
-        }
-    }
-
-    /// Quick probe: check whether an element matching `element_selector` with
-    /// text `text_filter` exists inside the iframe. Polls for up to
-    /// [`HAS_TEXT_DEADLINE`] — one CDP connection is opened and reused across
-    /// all probe attempts. Useful as a fast "skip" check before committing to
-    /// a full `iframe_click_text` (which would otherwise poll for the whole
-    /// timeout just to discover the element is gone).
-    pub async fn iframe_has_text(
-        &self,
-        iframe_selector: &str,
-        element_selector: &str,
-        text_filter: &str,
-    ) -> Result<bool> {
-        let client = self.oopif_client().await?;
-        let deadline = Instant::now() + HAS_TEXT_DEADLINE;
-        loop {
-            match self
-                .iframe_has_text_once(&client, iframe_selector, element_selector, text_filter)
-                .await?
-            {
-                Some(answer) => return Ok(answer),
-                None => {
-                    if Instant::now() >= deadline {
-                        return Ok(false);
-                    }
-                    tokio::time::sleep(HAS_TEXT_POLL_INTERVAL).await;
-                }
-            }
-        }
-    }
-
-    /// One-shot probe on the shared `client`. Returns:
-    /// - `Some(true)` — element found with matching text (and not disabled/busy)
-    /// - `Some(false)` — definite miss (populated doc without the element, or
-    ///   element found with different text / disabled / busy)
-    /// - `None` — ambiguous (iframe/session not ready, blank document, or the
-    ///   probe script threw) — caller should retry.
-    async fn iframe_has_text_once(
-        &self,
-        client: &OopifClient,
-        iframe_selector: &str,
-        element_selector: &str,
-        text_filter: &str,
-    ) -> Result<Option<bool>> {
-        let Some((rect, src)) = resolve_iframe(self.page(), iframe_selector).await? else {
-            return Ok(None);
-        };
-        if rect.width <= 0.0 || rect.height <= 0.0 {
-            return Ok(None);
-        }
-        // Diagnose which iframe element we resolved: count all matches on the
-        // main page and their srcs — Telegram may keep several mini-app iframes
-        // in the DOM, and querySelector picks the first (possibly a stale one).
-        {
-            let sel = js_string_literal(iframe_selector);
-            let js = format!(
-                r#"(() => {{
-                    const els = document.querySelectorAll({sel});
-                    return JSON.stringify([...els].map(e => ({{
-                        src: (e.getAttribute('src') || '').slice(0, 60),
-                        w: e.getBoundingClientRect().width
-                    }})));
-                }})()"#
-            );
-            if let Ok(resp) = self.page().evaluate(js).await {
-                if let Some(list) = resp.value().and_then(serde_json::Value::as_str) {
-                    log::debug!(
-                        "[iframe_has_text] resolved '{iframe_selector}' -> {list} (using src='{src}')"
-                    );
-                }
-            }
-        }
-
-        let Some(session_id) = self.iframe_session_id(client, &src, None).await? else {
-            return Ok(None);
-        };
-        let js = build_has_text_probe_js(element_selector);
-        let value = client.evaluate(&session_id, &js).await?;
-        // Probe returns found + text + disabled + btnCount + button-id sample +
-        // tab count + on-screen text + the attached document's URL/readyState so
-        // we can see what view (or which iframe) the probe is actually hitting.
-        // The JS returns JSON.stringify(...) — parse the string back into an object.
-        let value = match value {
-            Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
-            other => other,
-        };
-        // The probe wraps its body in try/catch: an `error` field means the
-        // script itself failed in this document — ambiguous, let the caller
-        // retry rather than propagating a hard error.
-        if let Some(err) = value.get("error").and_then(Value::as_str) {
-            log::warn!("[iframe_has_text] probe JS error: {err}");
-            return Ok(None);
-        }
-        let text = value.get("text").and_then(Value::as_str).unwrap_or("");
-        let found = value.get("found").and_then(Value::as_bool).unwrap_or(false);
-        let disabled = value
-            .get("disabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let busy = value.get("busy").and_then(Value::as_bool).unwrap_or(false);
-        let btn_count = value.get("btnCount").and_then(Value::as_u64).unwrap_or(0);
-        let sample = value.get("sample").and_then(Value::as_str).unwrap_or("");
-        let tab_count = value.get("tabCount").and_then(Value::as_u64).unwrap_or(0);
-        let body = value.get("body").and_then(Value::as_str).unwrap_or("");
-        let doc_url = value.get("docUrl").and_then(Value::as_str).unwrap_or("");
-        let ready = value.get("ready").and_then(Value::as_str).unwrap_or("");
-        log::debug!(
-            "[iframe_has_text] '{element_selector}' found={found} disabled={disabled} busy={busy} btnCount={btn_count} tabCount={tab_count} sample=[{sample}] docUrl='{doc_url}' ready={ready} body='{body}' text='{text}' (filter='{text_filter}')"
-        );
-        if found {
-            // Definite: element present. Stop when it's disabled, its text no
-            // longer matches, or the mini-app shows a busy state (modal /
-            // "Processing") — the button text may stay "Go" while a task runs.
-            let answer = found && !disabled && !busy && text == text_filter;
-            if !answer {
-                // Surface WHY the step skipped (audit aid), once per definite no.
-                log::info!(
-                    "[iframe_has_text] skip '{element_selector}': disabled={disabled} busy={busy} text='{text}' (filter='{text_filter}')"
-                );
-            }
-            return Ok(Some(answer));
-        }
-        // Element absent. If the document has real content, this is a definite
-        // miss; a blank document means the iframe may still be loading — retry.
-        if body.is_empty() && btn_count == 0 && tab_count == 0 {
-            Ok(None)
-        } else {
-            log::info!(
-                "[iframe_has_text] skip '{element_selector}': not found (btnCount={btn_count} tabCount={tab_count})"
-            );
-            Ok(Some(false))
         }
     }
 
@@ -924,64 +787,11 @@ fn build_resolve_iframe_js(selector: &str) -> String {
     )
 }
 
-/// Build the `iframe_has_text` probe JS: reports whether `element_selector`
-/// exists, its trimmed text, disabled/busy state, plus surrounding context
-/// (button counts, id samples, body text, document URL + readyState) so logs
-/// show exactly which view the probe is hitting. Wrapped in try/catch so a
-/// failure inside the probe surfaces as `{error}` for a retry instead of a
-/// hard evaluate error.
-fn build_has_text_probe_js(element_selector: &str) -> String {
-    let escaped = js_string_literal(element_selector);
-    format!(
-        r#"(() => {{
-            try {{
-                const el = document.querySelector({escaped});
-                const btnCount = document.querySelectorAll('.btn-small').length;
-                const sample = [...document.querySelectorAll('[id*="btn-"]')]
-                    .slice(0, 8).map(b => b.id).join(',');
-                const tabCount = document.querySelectorAll('[onclick^="switchTab("]').length;
-                const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim().slice(0, 200);
-                const docUrl = location.href.slice(0, 80);
-                const ready = document.readyState;
-                // Busy detection: a genuinely visible modal/dialog/popup.
-                // Hidden modal shells (visibility:hidden / opacity:0) still have a
-                // non-zero rect, so check computed style. 'overlay' alone is excluded —
-                // decorative effects (lightning, particles) and backdrops match it and
-                // cause false positives.
-                const visible = n => {{
-                    const r = n.getBoundingClientRect();
-                    if (r.width <= 0 || r.height <= 0) return false;
-                    const s = window.getComputedStyle(n);
-                    return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) !== 0;
-                }};
-                const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="dialog"],[id*="dialog"],[class*="popup"],[id*="popup"]')]
-                    .find(visible);
-                const busy = !!busyEl;
-                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready, busy }});
-                return JSON.stringify({{
-                    found: true,
-                    text: (el.textContent || '').trim(),
-                    disabled: !!el.disabled,
-                    btnCount,
-                    sample,
-                    tabCount,
-                    body,
-                    docUrl,
-                    ready,
-                    busy
-                }});
-            }} catch (e) {{
-                return JSON.stringify({{ error: String(e && e.message ? e.message : e) }});
-            }}
-        }})()"#
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        build_count_js, build_element_js, build_has_text_probe_js, build_resolve_iframe_js,
-        js_string_literal, parse_local_center,
+        build_count_js, build_element_js, build_resolve_iframe_js, js_string_literal,
+        parse_local_center,
     };
 
     #[test]
@@ -1138,38 +948,6 @@ mod tests {
         assert_eq!(js_string_literal("Go\nConfirm"), "\"Go\\nConfirm\"");
         assert_eq!(js_string_literal("a\tb"), "\"a\\tb\"");
         assert_eq!(js_string_literal("a\r\nb"), "\"a\\r\\nb\"");
-    }
-
-    #[test]
-    fn probe_js_defines_ready_const() {
-        // Regression (B1): commit 6d6bc09 deleted `const ready = document.readyState;`
-        // while both return objects still referenced `ready` — the probe threw
-        // ReferenceError inside the page.
-        let js = build_has_text_probe_js(".btn");
-        assert!(js.contains("const ready = document.readyState;"));
-        assert!(js.contains("ready,"));
-    }
-
-    #[test]
-    fn probe_js_collapses_whitespace_correctly() {
-        // Regression (B4): inside a Rust raw string, `/\\s+/` reached the JS as
-        // a literal backslash + s, so whitespace collapsing never worked.
-        let js = build_has_text_probe_js(".btn");
-        assert!(js.contains(r#".replace(/\s+/g, ' ')"#));
-        assert!(!js.contains(r#"/\\s+/g"#));
-    }
-
-    #[test]
-    fn probe_js_wraps_body_in_try_catch() {
-        let js = build_has_text_probe_js(".btn");
-        assert!(js.contains("try {"));
-        assert!(js.contains("error: String"));
-    }
-
-    #[test]
-    fn probe_js_embeds_selector() {
-        let js = build_has_text_probe_js(".btn-small#x");
-        assert!(js.contains(r#"querySelector(".btn-small#x")"#));
     }
 
     #[test]

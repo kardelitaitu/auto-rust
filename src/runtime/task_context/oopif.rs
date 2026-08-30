@@ -23,16 +23,26 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 /// Max time to wait for a CDP command response before failing.
 const CDP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Capacity of the outgoing command queue shared by all callers of one client.
+const OUTGOING_CHANNEL_CAPACITY: usize = 64;
+
 /// Next JSON-RPC call id for this process.
 fn next_call_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Split a URL into `(scheme, host)`. The single canonical URL parser for
+/// the OOPIF machinery — `frame.rs` imports this instead of duplicating it.
+pub(crate) fn scheme_host(url: &str) -> Option<(&str, &str)> {
+    let (scheme, rest) = url.split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    Some((scheme, host))
+}
+
 /// Extract the host from a URL.
 fn host_of(url: &str) -> Option<&str> {
-    let rest = url.split_once("://")?.1;
-    Some(rest.split(['/', '?', '#']).next().unwrap_or(rest))
+    scheme_host(url).map(|(_, host)| host)
 }
 
 /// Route a JSON-RPC response to its pending oneshot by call id.
@@ -80,27 +90,56 @@ fn extract_session_id(resp: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Find an iframe target whose URL host matches `host` (case-insensitive) from a target list.
-fn find_iframe_target_in(infos: &[Value], host: &str) -> Option<Value> {
-    // Prefer the real mini-app page target (URL with the app path) over any
-    // sibling iframe on the same host — a blank/secondary iframe may otherwise
-    // come first in the target list after a re-render.
+/// Score how strongly a target URL corresponds to the iframe's `src`:
+/// the length of their common prefix. A frame that navigated internally
+/// still shares its origin; a blank or secondary sibling shares only the
+/// scheme. Generic replacement for the old site-specific "miner"/"index.html"
+/// preference — works for any mini-app.
+fn url_affinity(url: &str, src_url: &str) -> usize {
+    url.bytes()
+        .zip(src_url.bytes())
+        .take_while(|(a, b)| a == b)
+        .count()
+}
+
+/// Find an iframe target whose URL host matches `host` (case-insensitive)
+/// from a target list, preferring the one whose URL most closely matches
+/// `src_url` (the iframe element's resolved src).
+///
+/// When NO host match exists but the page has exactly one iframe target,
+/// that target is returned as a fallback: a mini-app that redirected to a
+/// different host keeps its original `src` attribute, so host equality alone
+/// would never find it. With several iframe targets this fallback is refused
+/// — guessing between frames risks attaching to the wrong one.
+fn find_iframe_target_in(infos: &[Value], host: &str, src_url: &str) -> Option<Value> {
     let host_lower = host.to_lowercase();
-    let mut fallback = None;
+    let mut best: Option<(usize, Value)> = None;
+    let mut iframe_total: usize = 0;
+    let mut sole_iframe: Option<Value> = None;
     for info in infos {
         let ty = info.get("type").and_then(Value::as_str).unwrap_or("");
         let url = info.get("url").and_then(Value::as_str).unwrap_or("");
+        if ty != "iframe" || url.is_empty() {
+            continue;
+        }
+        iframe_total += 1;
+        sole_iframe = Some(info.clone());
         let target_host_lower = host_of(url).unwrap_or("").to_lowercase();
-        if ty == "iframe" && target_host_lower == host_lower && !url.is_empty() {
-            if url.contains("miner") || url.contains("index.html") {
-                return Some(info.clone());
-            }
-            if fallback.is_none() {
-                fallback = Some(info.clone());
+        if target_host_lower == host_lower {
+            let score = url_affinity(url, src_url);
+            if best.as_ref().is_none_or(|(s, _)| score > *s) {
+                best = Some((score, info.clone()));
             }
         }
     }
-    fallback
+    if let Some((_, info)) = best {
+        return Some(info);
+    }
+    if iframe_total == 1 {
+        sole_iframe
+    } else {
+        None
+    }
 }
 
 /// A CDP call queued for the writer task.
@@ -126,7 +165,7 @@ impl OopifClient {
             .await
             .map_err(|e| anyhow!("OOPIF CDP connect to '{ws_url}' failed: {e}"))?;
         let (mut sink, mut stream) = ws.split();
-        let (tx, mut rx) = mpsc::channel::<Outgoing>(64);
+        let (tx, mut rx) = mpsc::channel::<Outgoing>(OUTGOING_CHANNEL_CAPACITY);
         let pending = Arc::new(Mutex::new(HashMap::<u64, oneshot::Sender<Value>>::new()));
 
         // Writer task: drain queued commands to the socket.
@@ -143,7 +182,14 @@ impl OopifClient {
         // Reader task: route `{"id": N, ...}` responses to pending oneshots.
         let pending_reader = pending.clone();
         let reader = tokio::spawn(async move {
-            while let Some(Ok(msg)) = stream.next().await {
+            while let Some(msg) = stream.next().await {
+                let msg = match msg {
+                    Ok(m) => m,
+                    Err(e) => {
+                        log::warn!("[oopif] CDP websocket read error, connection ending: {e}");
+                        break;
+                    }
+                };
                 let text = match msg {
                     WsMessage::Text(t) => t,
                     WsMessage::Binary(b) => String::from_utf8_lossy(&b).to_string(),
@@ -191,7 +237,9 @@ impl OopifClient {
             }
             Err(_) => {
                 self.pending.lock().await.remove(&id);
-                return Err(anyhow!("CDP {method} timed out after 10s"));
+                return Err(anyhow!(
+                    "CDP {method} timed out after {CDP_RESPONSE_TIMEOUT:?}"
+                ));
             }
         };
         if let Some(err) = resp.get("error") {
@@ -200,16 +248,30 @@ impl OopifClient {
         Ok(resp.get("result").cloned().unwrap_or(Value::Null))
     }
 
-    /// Find an `iframe`-type target whose URL host matches `host` exactly.
-    pub async fn find_iframe_target(&self, host: &str) -> Result<Value> {
+    /// Find an `iframe`-type target whose URL host matches the iframe `src`'s
+    /// host exactly, preferring the target whose URL most closely matches
+    /// `src_url`. Falls back to the sole iframe target when the frame
+    /// redirected off its src host (see [`find_iframe_target_in`]).
+    pub async fn find_iframe_target(&self, src_url: &str) -> Result<Value> {
+        let host = host_of(src_url)
+            .ok_or_else(|| anyhow!("Iframe src '{src_url}' has no host to match"))?;
         let result = self.call("Target.getTargets", json!({}), None).await?;
         let infos = result
             .get("targetInfos")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        find_iframe_target_in(&infos, host)
-            .ok_or_else(|| anyhow!("No iframe target found for host '{host}'"))
+        let found = find_iframe_target_in(&infos, host, src_url)
+            .ok_or_else(|| anyhow!("No iframe target found for host '{host}'"))?;
+        if let Some(url) = found.get("url").and_then(Value::as_str) {
+            if host_of(url).map(|h| h.eq_ignore_ascii_case(host)) != Some(true) {
+                log::warn!(
+                    "[oopif] no host match for '{host}' — using sole iframe target (url '{url}'); \
+                     the frame likely redirected off its src host"
+                );
+            }
+        }
+        Ok(found)
     }
 
     /// Find a `page`-type target whose URL contains `url_fragment`.
@@ -303,11 +365,19 @@ impl OopifClient {
     }
 
     /// Evaluate JS in the given session and return its JSON value.
+    ///
+    /// `awaitPromise` makes an expression that returns a Promise resolve
+    /// before the value comes back — without it, async JS handed to
+    /// `iframe_eval` would silently serialize to `{}` instead of its result.
     pub async fn evaluate(&self, session_id: &str, expression: &str) -> Result<Value> {
         let result = self
             .call(
                 "Runtime.evaluate",
-                json!({ "expression": expression, "returnByValue": true }),
+                json!({
+                    "expression": expression,
+                    "returnByValue": true,
+                    "awaitPromise": true
+                }),
                 Some(session_id),
             )
             .await?;
@@ -322,7 +392,7 @@ impl OopifClient {
 mod tests {
     use super::{
         build_json_rpc, extract_exception_text, extract_result_value, extract_session_id,
-        find_iframe_target_in, host_of, next_call_id, route_response,
+        find_iframe_target_in, host_of, next_call_id, route_response, scheme_host, url_affinity,
     };
     use serde_json::{json, Value};
     use tokio::sync::oneshot;
@@ -449,33 +519,83 @@ mod tests {
             json!({ "type": "page", "url": "https://web.telegram.org/k/", "targetId": "p1" }),
             json!({ "type": "iframe", "url": "https://atfminers.asloni.online/miner/index.html", "targetId": "f1" }),
         ];
-        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        let found = find_iframe_target_in(
+            &infos,
+            "atfminers.asloni.online",
+            "https://atfminers.asloni.online/miner/index.html",
+        )
+        .expect("found");
         assert_eq!(found["targetId"], "f1");
     }
 
     #[test]
     fn find_iframe_target_ignores_wrong_type_or_host() {
+        // Two iframe targets on wrong hosts — no host match and the sole-iframe
+        // fallback is refused (guessing between frames is unsafe).
         let infos = vec![
             json!({ "type": "page", "url": "https://atfminers.asloni.online/x", "targetId": "p1" }),
             json!({ "type": "iframe", "url": "https://other.example.com/y", "targetId": "f1" }),
+            json!({ "type": "iframe", "url": "https://third.example.com/z", "targetId": "f2" }),
         ];
-        assert!(find_iframe_target_in(&infos, "atfminers.asloni.online").is_none());
+        assert!(find_iframe_target_in(
+            &infos,
+            "atfminers.asloni.online",
+            "https://atfminers.asloni.online/x"
+        )
+        .is_none());
     }
 
     #[test]
     fn find_iframe_target_no_substring_matching() {
-        // "asloni.online" must NOT match "atfminers.asloni.online" — exact host only.
-        let infos = vec![json!({
-            "type": "iframe",
-            "url": "https://atfminers.asloni.online/miner",
-            "targetId": "f1"
-        })];
-        assert!(find_iframe_target_in(&infos, "asloni.online").is_none());
+        // "asloni.online" must NOT host-match "atfminers.asloni.online".
+        // With a second iframe present there is also no sole-iframe fallback,
+        // so the result must be None.
+        let infos = vec![
+            json!({ "type": "iframe", "url": "https://atfminers.asloni.online/miner", "targetId": "f1" }),
+            json!({ "type": "iframe", "url": "https://cdn.example.com/blank", "targetId": "f2" }),
+        ];
+        assert!(
+            find_iframe_target_in(&infos, "asloni.online", "https://asloni.online/x").is_none()
+        );
+    }
+
+    #[test]
+    fn find_iframe_target_sole_iframe_fallback_on_redirect() {
+        // The mini-app redirected off its src host: no host match, but exactly
+        // one iframe target exists — use it (logged by the caller).
+        let infos = vec![
+            json!({ "type": "page", "url": "https://web.telegram.org/k/", "targetId": "p1" }),
+            json!({ "type": "iframe", "url": "https://cdn.redirected.host/app", "targetId": "f1" }),
+        ];
+        let found = find_iframe_target_in(
+            &infos,
+            "atfminers.asloni.online",
+            "https://atfminers.asloni.online/miner",
+        )
+        .expect("sole iframe fallback");
+        assert_eq!(found["targetId"], "f1");
+    }
+
+    #[test]
+    fn find_iframe_target_prefers_closest_src_url_among_same_host() {
+        // Same-host siblings: the target whose URL shares the longest prefix
+        // with the iframe src wins, regardless of list order.
+        let infos = vec![
+            json!({ "type": "iframe", "url": "https://a.example.com/other", "targetId": "f-other" }),
+            json!({ "type": "iframe", "url": "https://a.example.com/miner/index.html?v=1", "targetId": "f-real" }),
+        ];
+        let found = find_iframe_target_in(
+            &infos,
+            "a.example.com",
+            "https://a.example.com/miner/index.html?v=1",
+        )
+        .expect("found");
+        assert_eq!(found["targetId"], "f-real");
     }
 
     #[test]
     fn find_iframe_target_empty_list() {
-        assert!(find_iframe_target_in(&[], "any-host").is_none());
+        assert!(find_iframe_target_in(&[], "any-host", "https://any-host/x").is_none());
     }
 
     // ── Additional edge-case coverage ────────────────────────────────
@@ -503,6 +623,43 @@ mod tests {
         assert_eq!(
             host_of("ws://127.0.0.1:40325/devtools/browser/abc"),
             Some("127.0.0.1:40325")
+        );
+    }
+
+    // ── scheme_host (canonical URL splitter, shared with frame.rs) ───
+
+    #[test]
+    fn scheme_host_extracts_scheme_and_host() {
+        assert_eq!(
+            scheme_host("https://atfminers.asloni.online/miner/index.html?v=1#x"),
+            Some(("https", "atfminers.asloni.online"))
+        );
+        assert_eq!(
+            scheme_host("https://web.telegram.org/k/"),
+            Some(("https", "web.telegram.org"))
+        );
+        assert_eq!(scheme_host("not a url"), None);
+    }
+
+    #[test]
+    fn scheme_host_edge_cases() {
+        assert_eq!(
+            scheme_host("http://127.0.0.1:8080/path"),
+            Some(("http", "127.0.0.1:8080"))
+        );
+        assert_eq!(
+            scheme_host("https://example.com/page?q=1#top"),
+            Some(("https", "example.com"))
+        );
+        assert_eq!(
+            scheme_host("ws://127.0.0.1:9222"),
+            Some(("ws", "127.0.0.1:9222"))
+        );
+        assert_eq!(scheme_host(""), None);
+        assert_eq!(scheme_host("example.com/path"), None);
+        assert_eq!(
+            scheme_host("wss://secure.example.com/ws"),
+            Some(("wss", "secure.example.com"))
         );
     }
 
@@ -610,8 +767,9 @@ mod tests {
             json!({ "type": "iframe", "url": "https://a.example.com/x", "targetId": "f1" }),
             json!({ "type": "iframe", "url": "https://a.example.com/y", "targetId": "f2" }),
         ];
-        let found = find_iframe_target_in(&infos, "a.example.com").unwrap();
-        // Should return the first match
+        let found =
+            find_iframe_target_in(&infos, "a.example.com", "https://a.example.com/x").unwrap();
+        // src affinity picks the matching URL
         assert_eq!(found["targetId"], "f1");
     }
 
@@ -622,11 +780,11 @@ mod tests {
             json!({ "type": "iframe", "url": "https://b.com/y", "targetId": "f2" }),
         ];
         assert_eq!(
-            find_iframe_target_in(&infos, "b.com").unwrap()["targetId"],
+            find_iframe_target_in(&infos, "b.com", "https://b.com/y").unwrap()["targetId"],
             "f2"
         );
         assert_eq!(
-            find_iframe_target_in(&infos, "a.com").unwrap()["targetId"],
+            find_iframe_target_in(&infos, "a.com", "https://a.com/x").unwrap()["targetId"],
             "f1"
         );
     }
@@ -634,13 +792,13 @@ mod tests {
     #[test]
     fn find_iframe_target_no_url_field() {
         let infos = vec![json!({ "type": "iframe", "targetId": "f1" })];
-        assert!(find_iframe_target_in(&infos, "any.com").is_none());
+        assert!(find_iframe_target_in(&infos, "any.com", "https://any.com/x").is_none());
     }
 
     #[test]
     fn find_iframe_target_empty_url() {
         let infos = vec![json!({ "type": "iframe", "url": "", "targetId": "f1" })];
-        assert!(find_iframe_target_in(&infos, "any.com").is_none());
+        assert!(find_iframe_target_in(&infos, "any.com", "https://any.com/x").is_none());
     }
 
     #[test]
@@ -663,19 +821,29 @@ mod tests {
                 "targetId": "real"
             }),
         ];
-        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        let found = find_iframe_target_in(
+            &infos,
+            "atfminers.asloni.online",
+            "https://atfminers.asloni.online/miner/index.html?v=1",
+        )
+        .expect("found");
         assert_eq!(found["targetId"], "real");
     }
 
     #[test]
     fn find_iframe_target_falls_back_to_any_host_iframe() {
-        // No miner/index.html target — fall back to the first host match.
+        // No affinity competition — the only host match wins.
         let infos = vec![json!({
             "type": "iframe",
             "url": "https://atfminers.asloni.online/other",
             "targetId": "f1"
         })];
-        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        let found = find_iframe_target_in(
+            &infos,
+            "atfminers.asloni.online",
+            "https://atfminers.asloni.online/other",
+        )
+        .expect("found");
         assert_eq!(found["targetId"], "f1");
     }
 
@@ -686,7 +854,19 @@ mod tests {
             "url": "https://ATFMiners.Asloni.Online/miner/index.html",
             "targetId": "f1"
         })];
-        let found = find_iframe_target_in(&infos, "atfminers.asloni.online").expect("found");
+        let found = find_iframe_target_in(
+            &infos,
+            "atfminers.asloni.online",
+            "https://ATFMiners.Asloni.Online/miner/index.html",
+        )
+        .expect("found");
         assert_eq!(found["targetId"], "f1");
+    }
+
+    #[test]
+    fn url_affinity_scores_common_prefix() {
+        assert_eq!(url_affinity("https://a.com/x", "https://a.com/x"), 15);
+        assert_eq!(url_affinity("https://a.com/y", "https://a.com/x"), 14);
+        assert_eq!(url_affinity("", "https://a.com"), 0);
     }
 }

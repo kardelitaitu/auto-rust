@@ -1,6 +1,8 @@
 # Plan: Cross-Origin OOPIF Iframe Interaction (Rust CDP Client)
 
-**Status:** Draft — awaiting approval to implement
+**Status:** ✅ Completed & merged to `main` (shipped via `ollama-queue`; superseded
+by post-merge hardening — session caching, JSON-string escaping, affinity target
+matching, fail-fast when `browser_ws_url` is unset). Kept as historical record.
 **Date:** 2026-08-23
 **Owner:** auto-rust (Rust orchestrator)
 **Branch:** `ollama-queue`
@@ -129,7 +131,10 @@ impl OopifClient {
 5. evaluate(session_id, js)                 → element local center (scrollIntoView first)
 6. absolute = (rect.x + local.x, rect.y + local.y)
 7. mouse::left_click_at(page, absolute)     [existing chromiumoxide Input]
-8. fallback: if any step fails → existing frame-tree path (best effort)
+8. ~~fallback: if any step fails → existing frame-tree path (best effort)~~
+   (NOT implemented — deliberately dropped: a silent degrade produced
+   misleading "element not found" errors; current code fails fast when the
+   browser debug URL is unset/unreachable. See `TaskContext::oopif_client`.)
 ```
 
 JS for step 5 (handles scrolling + first-visible element):
@@ -180,8 +185,8 @@ unexpected Chromium restriction during C4.
 
 ## 10. Definition of Done
 
-- [ ] C1–C10 all checked
-- [ ] Live proof: automation clicks the Tasks tab and a Go button inside the
+- [x] C1–C10 all checked
+- [x] Live proof: automation clicks the Tasks tab and a Go button inside the
       mini-app at any window size, including scrolling to a Go button
-- [ ] Full `.\check.ps1` green
-- [ ] Committed & pushed to `ollama-queue`
+- [x] Full `.\check.ps1` green
+- [x] Committed & pushed (merged to `main`)

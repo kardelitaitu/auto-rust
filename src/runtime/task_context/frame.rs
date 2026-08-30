@@ -14,11 +14,41 @@ use chromiumoxide::Page;
 use std::time::{Duration, Instant};
 
 use crate::capabilities::mouse;
+use crate::runtime::task_context::oopif::OopifClient;
 use crate::runtime::task_context::{Rect, TaskContext};
 use crate::utils::{ClickOutcome, ClickStatus};
 use serde_json::Value;
 
+/// Interval between poll iterations while waiting for an iframe/element to
+/// become usable.
+const IFRAME_POLL_INTERVAL: Duration = Duration::from_millis(200);
+/// Overall time budget of the `iframe_has_text` probe.
+const HAS_TEXT_DEADLINE: Duration = Duration::from_millis(2_000);
+/// Interval between `iframe_has_text` probe attempts.
+const HAS_TEXT_POLL_INTERVAL: Duration = Duration::from_millis(150);
+
 impl TaskContext {
+    /// Open ONE raw CDP connection for the duration of a public call (reused
+    /// across that call's poll loop). Fails fast when the browser debug URL is
+    /// not configured or unreachable — instead of degrading into a misleading
+    /// "element not found" after the full timeout.
+    async fn oopif_client(&self) -> Result<OopifClient> {
+        if self.browser_ws_url.is_empty() {
+            return Err(anyhow!(
+                "OOPIF iframe access requires a browser debug WebSocket URL \
+                 (browser_ws_url is not configured)"
+            ));
+        }
+        OopifClient::connect(&self.browser_ws_url)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "OOPIF client connect to '{}' failed: {e}",
+                    self.browser_ws_url
+                )
+            })
+    }
+
     /// Click an element INSIDE an iframe, in place — no navigation, no new tab.
     ///
     /// The iframe (e.g. a cross-origin Telegram mini-app) is resolved from the
@@ -97,20 +127,7 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<Option<(f64, f64)>> {
-        let client = if self.browser_ws_url.is_empty() {
-            None
-        } else {
-            Some(
-                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
-                    .await
-                    .map_err(|e| {
-                        anyhow!(
-                            "OOPIF client connect to '{}' failed: {e}",
-                            self.browser_ws_url
-                        )
-                    })?,
-            )
-        };
+        let client = self.oopif_client().await?;
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut session_cache: Option<(String, String)> = None;
 
@@ -119,7 +136,7 @@ impl TaskContext {
                 if rect.width > 0.0 && rect.height > 0.0 {
                     if let Ok(Some(center)) = self
                         .element_local_center(
-                            client.as_ref(),
+                            &client,
                             &src,
                             element_selector,
                             None,
@@ -135,7 +152,7 @@ impl TaskContext {
             if Instant::now() >= deadline {
                 return Ok(None);
             }
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(IFRAME_POLL_INTERVAL).await;
         }
     }
 
@@ -150,20 +167,7 @@ impl TaskContext {
         expression: &str,
         timeout_ms: u64,
     ) -> Result<serde_json::Value> {
-        let client = if self.browser_ws_url.is_empty() {
-            None
-        } else {
-            Some(
-                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
-                    .await
-                    .map_err(|e| {
-                        anyhow!(
-                            "OOPIF client connect to '{}' failed: {e}",
-                            self.browser_ws_url
-                        )
-                    })?,
-            )
-        };
+        let client = self.oopif_client().await?;
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut session_cache: Option<(String, String)> = None;
 
@@ -171,18 +175,16 @@ impl TaskContext {
             if let Ok(Some((rect, src))) = resolve_iframe(self.page(), iframe_selector).await {
                 if rect.width > 0.0 && rect.height > 0.0 {
                     if let Ok(Some(session_id)) = self
-                        .iframe_session_id(client.as_ref(), &src, Some(&mut session_cache))
+                        .iframe_session_id(&client, &src, Some(&mut session_cache))
                         .await
                     {
-                        if let Some(client) = client.as_ref() {
-                            match client.evaluate(&session_id, expression).await {
-                                Ok(value) => return Ok(value),
-                                Err(e) => {
-                                    log::debug!(
-                                        "[iframe] iframe_eval evaluate failed, clearing session cache: {e}"
-                                    );
-                                    session_cache = None;
-                                }
+                        match client.evaluate(&session_id, expression).await {
+                            Ok(value) => return Ok(value),
+                            Err(e) => {
+                                log::debug!(
+                                    "[iframe] iframe_eval evaluate failed, clearing session cache: {e}"
+                                );
+                                session_cache = None;
                             }
                         }
                     }
@@ -193,26 +195,27 @@ impl TaskContext {
                     "iframe_eval: iframe '{iframe_selector}' not usable within {timeout_ms}ms"
                 ));
             }
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(IFRAME_POLL_INTERVAL).await;
         }
     }
 
-    /// Quick single-shot probe: check whether an element matching `element_selector`
-    /// with text `text_filter` exists inside the iframe. Returns immediately with
-    /// `true`/`false` (no poll loop). Useful as a fast "skip" check before
-    /// committing to a full `iframe_click_text` (which would otherwise poll for
-    /// the whole timeout just to discover the element is gone).
-    /// Every call gets a fresh connection + fresh session — no caching.
+    /// Quick probe: check whether an element matching `element_selector` with
+    /// text `text_filter` exists inside the iframe. Polls for up to
+    /// [`HAS_TEXT_DEADLINE`] — one CDP connection is opened and reused across
+    /// all probe attempts. Useful as a fast "skip" check before committing to
+    /// a full `iframe_click_text` (which would otherwise poll for the whole
+    /// timeout just to discover the element is gone).
     pub async fn iframe_has_text(
         &self,
         iframe_selector: &str,
         element_selector: &str,
         text_filter: &str,
     ) -> Result<bool> {
-        let deadline = Instant::now() + Duration::from_millis(2_000);
+        let client = self.oopif_client().await?;
+        let deadline = Instant::now() + HAS_TEXT_DEADLINE;
         loop {
             match self
-                .iframe_has_text_once(iframe_selector, element_selector, text_filter)
+                .iframe_has_text_once(&client, iframe_selector, element_selector, text_filter)
                 .await?
             {
                 Some(answer) => return Ok(answer),
@@ -220,37 +223,25 @@ impl TaskContext {
                     if Instant::now() >= deadline {
                         return Ok(false);
                     }
-                    tokio::time::sleep(Duration::from_millis(150)).await;
+                    tokio::time::sleep(HAS_TEXT_POLL_INTERVAL).await;
                 }
             }
         }
     }
 
-    /// One-shot probe. Returns:
-    /// - `Some(true)` — element found with matching text (and not disabled)
+    /// One-shot probe on the shared `client`. Returns:
+    /// - `Some(true)` — element found with matching text (and not disabled/busy)
     /// - `Some(false)` — definite miss (populated doc without the element, or
-    ///   element found with different text / disabled)
-    /// - `None` — ambiguous (iframe/session not ready, or document is blank) —
-    ///   caller should retry.
+    ///   element found with different text / disabled / busy)
+    /// - `None` — ambiguous (iframe/session not ready, blank document, or the
+    ///   probe script threw) — caller should retry.
     async fn iframe_has_text_once(
         &self,
+        client: &OopifClient,
         iframe_selector: &str,
         element_selector: &str,
         text_filter: &str,
     ) -> Result<Option<bool>> {
-        if self.browser_ws_url.is_empty() {
-            return Ok(Some(false));
-        }
-        let client =
-            match crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
-                .await
-            {
-                Ok(c) => Some(c),
-                Err(e) => {
-                    log::warn!("[iframe_has_text] connect failed: {e}");
-                    return Ok(Some(false));
-                }
-            };
         let Some((rect, src)) = resolve_iframe(self.page(), iframe_selector).await? else {
             return Ok(None);
         };
@@ -261,10 +252,10 @@ impl TaskContext {
         // main page and their srcs — Telegram may keep several mini-app iframes
         // in the DOM, and querySelector picks the first (possibly a stale one).
         {
-            let sel = escape_js_string(iframe_selector);
+            let sel = js_string_literal(iframe_selector);
             let js = format!(
                 r#"(() => {{
-                    const els = document.querySelectorAll('{sel}');
+                    const els = document.querySelectorAll({sel});
                     return JSON.stringify([...els].map(e => ({{
                         src: (e.getAttribute('src') || '').slice(0, 60),
                         w: e.getBoundingClientRect().width
@@ -280,51 +271,10 @@ impl TaskContext {
             }
         }
 
-        let Some(session_id) = self.iframe_session_id(client.as_ref(), &src, None).await? else {
+        let Some(session_id) = self.iframe_session_id(client, &src, None).await? else {
             return Ok(None);
         };
-        let Some(client) = client.as_ref() else {
-            return Ok(Some(false));
-        };
-        let escaped = escape_js_string(element_selector);
-        let js = format!(
-            r#"(() => {{
-                const el = document.querySelector('{escaped}');
-                const btnCount = document.querySelectorAll('.btn-small').length;
-                const sample = [...document.querySelectorAll('[id*="btn-"]')]
-                    .slice(0, 8).map(b => b.id).join(',');
-                const tabCount = document.querySelectorAll('[onclick^="switchTab("]').length;
-                const body = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').trim().slice(0, 200);
-                const docUrl = location.href.slice(0, 80);
-                // Busy detection: a genuinely visible modal/dialog/popup.
-                // Hidden modal shells (visibility:hidden / opacity:0) still have a
-                // non-zero rect, so check computed style. 'overlay' alone is excluded —
-                // decorative effects (lightning, particles) and backdrops match it and
-                // cause false positives.
-                const visible = n => {{
-                    const r = n.getBoundingClientRect();
-                    if (r.width <= 0 || r.height <= 0) return false;
-                    const s = window.getComputedStyle(n);
-                    return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) !== 0;
-                }};
-                const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="dialog"],[id*="dialog"],[class*="popup"],[id*="popup"]')]
-                    .find(visible);
-                const busy = !!busyEl;
-                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready, busy }});
-                return JSON.stringify({{
-                    found: true,
-                    text: (el.textContent || '').trim(),
-                    disabled: !!el.disabled,
-                    btnCount,
-                    sample,
-                    tabCount,
-                    body,
-                    docUrl,
-                    ready,
-                    busy
-                }});
-            }})()"#
-        );
+        let js = build_has_text_probe_js(element_selector);
         let value = client.evaluate(&session_id, &js).await?;
         // Probe returns found + text + disabled + btnCount + button-id sample +
         // tab count + on-screen text + the attached document's URL/readyState so
@@ -334,6 +284,13 @@ impl TaskContext {
             Value::String(s) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
             other => other,
         };
+        // The probe wraps its body in try/catch: an `error` field means the
+        // script itself failed in this document — ambiguous, let the caller
+        // retry rather than propagating a hard error.
+        if let Some(err) = value.get("error").and_then(Value::as_str) {
+            log::warn!("[iframe_has_text] probe JS error: {err}");
+            return Ok(None);
+        }
         let text = value.get("text").and_then(Value::as_str).unwrap_or("");
         let found = value.get("found").and_then(Value::as_bool).unwrap_or(false);
         let disabled = value
@@ -385,23 +342,7 @@ impl TaskContext {
         text_filter: Option<&str>,
         timeout_ms: u64,
     ) -> Result<ClickOutcome> {
-        // Open ONE raw CDP session to the browser (reused across the poll loop).
-        // Fail fast when the URL is configured but the browser is unreachable —
-        // don't silently degrade into a misleading "element not found".
-        let client = if self.browser_ws_url.is_empty() {
-            None
-        } else {
-            Some(
-                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
-                    .await
-                    .map_err(|e| {
-                        anyhow!(
-                            "OOPIF client connect to '{}' failed: {e}",
-                            self.browser_ws_url
-                        )
-                    })?,
-            )
-        };
+        let client = self.oopif_client().await?;
 
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_status = String::new();
@@ -416,7 +357,7 @@ impl TaskContext {
                     // 2. element's local center inside the iframe (OOPIF attach)
                     match self
                         .element_local_center(
-                            client.as_ref(),
+                            &client,
                             &src,
                             element_selector,
                             skip,
@@ -453,79 +394,16 @@ impl TaskContext {
                             }
                         }
                         Ok(None) => {
-                            // Diagnose WHY the element couldn't be resolved: how
-                            // many matched, how many passed text filter, how many
-                            // ended up in viewport, and what elementFromPoint sees
-                            // at the first candidate's center.
-                            if let Ok(Some((_dr, dsrc))) =
-                                resolve_iframe(self.page(), iframe_selector).await
-                            {
-                                if let Ok(Some(dsession)) =
-                                    self.iframe_session_id(client.as_ref(), &dsrc, None).await
-                                {
-                                    let dsel = escape_js_string(element_selector);
-                                    let dtf = match text_filter {
-                                        Some(t) => {
-                                            format!("const textFilter = '{}';", escape_js_string(t))
-                                        }
-                                        None => "const textFilter = null;".to_string(),
-                                    };
-                                    let djs = format!(
-                                        r#"(() => {{
-                                            {dtf}
-                                            const els = [...document.querySelectorAll('{dsel}')];
-                                            const txt = e => (e.textContent || '').trim();
-                                            const inVp = r => {{
-                                                if (!r || r.width <= 0 || r.height <= 0) return false;
-                                                const cx = r.x + r.width / 2;
-                                                const cy = r.y + r.height / 2;
-                                                return cx >= 0 && cy >= 0 && cx <= innerWidth && cy <= innerHeight;
-                                            }};
-                                            const withText = els.filter(e => textFilter === null || txt(e) === textFilter);
-                                            const first = withText[0];
-                                            const scrollToFull = el => {{
-                                                el.scrollIntoView({{ block: 'center', inline: 'center' }});
-                                                window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - innerHeight / 2 + el.getBoundingClientRect().height / 2);
-                                                let node = el.parentElement;
-                                                while (node) {{
-                                                    const cs = getComputedStyle(node);
-                                                    const ov = cs.overflowY;
-                                                    if ((ov === 'auto' || ov === 'scroll' || ov === 'overlay') && node.scrollHeight > node.clientHeight) {{
-                                                        const er = el.getBoundingClientRect();
-                                                        const nr = node.getBoundingClientRect();
-                                                        node.scrollTop = Math.max(0, Math.min(node.scrollTop + (er.top - nr.top) - node.clientHeight / 2 + er.height / 2, node.scrollHeight - node.clientHeight));
-                                                    }}
-                                                    node = node.parentElement;
-                                                }}
-                                            }};
-                                            if (first) scrollToFull(first);
-                                            const r = first ? first.getBoundingClientRect() : null;
-                                            return JSON.stringify({{
-                                                matches: els.length,
-                                                withText: withText.length,
-                                                innerW: innerWidth,
-                                                innerH: innerHeight,
-                                                scrollY: Math.round(window.scrollY),
-                                                docH: document.documentElement.scrollHeight,
-                                                rectAfterScroll: r ? [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)] : null,
-                                                inViewportAfterScroll: r ? inVp(r) : false,
-                                                hit: (() => {{
-                                                    if (!r) return null;
-                                                    const h = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
-                                                    return h ? (h.id || h.className || h.tagName).toString().slice(0,40) : 'null';
-                                                }})()
-                                            }});
-                                        }})()"#
-                                    );
-                                    if let Some(dclient) = client.as_ref() {
-                                        if let Ok(dval) = dclient.evaluate(&dsession, &djs).await {
-                                            log::info!(
-                                                "[iframe_click] '{element_selector}' resolve diag: {dval}"
-                                            );
-                                        }
-                                    }
-                                }
-                            }
+                            // Diagnose WHY the element couldn't be resolved
+                            // (read-only, shares the cached session).
+                            self.log_click_diag(
+                                &client,
+                                &src,
+                                element_selector,
+                                text_filter,
+                                &mut session_cache,
+                            )
+                            .await;
                             "element not found inside iframe yet".to_string()
                         }
                         Err(e) => format!("element resolve error: {e}"),
@@ -544,7 +422,7 @@ impl TaskContext {
                     "Element '{element_selector}' inside iframe '{iframe_selector}' not found within {timeout_ms}ms. Last status: {last_status}"
                 ));
             }
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(IFRAME_POLL_INTERVAL).await;
         };
 
         log::info!("[iframe_click] clicking at viewport ({x:.1},{y:.1})");
@@ -574,20 +452,7 @@ impl TaskContext {
         element_selector: &str,
         timeout_ms: u64,
     ) -> Result<usize> {
-        let client = if self.browser_ws_url.is_empty() {
-            None
-        } else {
-            Some(
-                crate::runtime::task_context::oopif::OopifClient::connect(&self.browser_ws_url)
-                    .await
-                    .map_err(|e| {
-                        anyhow!(
-                            "OOPIF client connect to '{}' failed: {e}",
-                            self.browser_ws_url
-                        )
-                    })?,
-            )
-        };
+        let client = self.oopif_client().await?;
 
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut last_status = String::new();
@@ -598,7 +463,7 @@ impl TaskContext {
                 Ok(Some((rect, src))) if rect.width > 0.0 && rect.height > 0.0 => {
                     match self
                         .element_count_in_iframe(
-                            client.as_ref(),
+                            &client,
                             &src,
                             element_selector,
                             Some(&mut session_cache),
@@ -628,7 +493,7 @@ impl TaskContext {
                     "Iframe '{iframe_selector}' did not become usable within {timeout_ms}ms. Last status: {last_status}"
                 ));
             }
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(IFRAME_POLL_INTERVAL).await;
         }
     }
 
@@ -671,7 +536,7 @@ impl TaskContext {
                     "Iframe '{iframe_selector}' did not become usable within {timeout_ms}ms"
                 ));
             }
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(IFRAME_POLL_INTERVAL).await;
         };
 
         log::info!("[iframe_click_at] clicking at viewport ({x:.1},{y:.1})");
@@ -684,6 +549,68 @@ impl TaskContext {
             screen_x: None,
             screen_y: None,
         })
+    }
+
+    /// Read-only diagnostic for a failed element resolve: reports how many
+    /// elements matched, how many passed the text filter, the first candidate's
+    /// rect/viewport state, and what `elementFromPoint` sees at its center.
+    /// Shares the caller's session cache (no extra `attachToTarget` per poll)
+    /// and never mutates page state — the old inline version re-attached on
+    /// every iteration and scrolled the frame as a side effect.
+    async fn log_click_diag(
+        &self,
+        client: &OopifClient,
+        iframe_src: &str,
+        element_selector: &str,
+        text_filter: Option<&str>,
+        session_cache: &mut Option<(String, String)>,
+    ) {
+        let Ok(Some(dsession)) = self
+            .iframe_session_id(client, iframe_src, Some(session_cache))
+            .await
+        else {
+            return;
+        };
+        let dsel = js_string_literal(element_selector);
+        let dtf = match text_filter {
+            Some(t) => format!("const textFilter = {};", js_string_literal(t)),
+            None => "const textFilter = null;".to_string(),
+        };
+        let djs = format!(
+            r#"(() => {{
+                {dtf}
+                const els = [...document.querySelectorAll({dsel})];
+                const txt = e => (e.textContent || '').trim();
+                const inVp = r => {{
+                    if (!r || r.width <= 0 || r.height <= 0) return false;
+                    const cx = r.x + r.width / 2;
+                    const cy = r.y + r.height / 2;
+                    return cx >= 0 && cy >= 0 && cx <= innerWidth && cy <= innerHeight;
+                }};
+                const withText = els.filter(e => textFilter === null || txt(e) === textFilter);
+                const first = withText[0];
+                const r = first ? first.getBoundingClientRect() : null;
+                return JSON.stringify({{
+                    matches: els.length,
+                    withText: withText.length,
+                    innerW: innerWidth,
+                    innerH: innerHeight,
+                    scrollY: Math.round(window.scrollY),
+                    docH: document.documentElement.scrollHeight,
+                    rect: r ? [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)] : null,
+                    inViewport: r ? inVp(r) : false,
+                    hit: (() => {{
+                        if (!r) return null;
+                        const h = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
+                        return h ? (h.id || h.className || h.tagName).toString().slice(0,40) : 'null';
+                    }})()
+                }});
+            }})()"#
+        );
+        match client.evaluate(&dsession, &djs).await {
+            Ok(dval) => log::info!("[iframe_click] '{element_selector}' resolve diag: {dval}"),
+            Err(e) => log::debug!("[iframe_click] resolve diag failed: {e}"),
+        }
     }
 
     /// Find an element inside an iframe (OOPIF or same-origin) and return its
@@ -699,18 +626,15 @@ impl TaskContext {
     /// - returns the center of the first passing element
     async fn element_local_center(
         &self,
-        client: Option<&crate::runtime::task_context::oopif::OopifClient>,
+        client: &OopifClient,
         iframe_src: &str,
         element_selector: &str,
         skip: Option<(f64, f64)>,
         text_filter: Option<&str>,
         mut session_cache: Option<&mut Option<(String, String)>>,
     ) -> Result<Option<(f64, f64)>> {
-        let Some(client) = client else {
-            return Ok(None);
-        };
         let session_id = match self
-            .iframe_session_id(Some(client), iframe_src, session_cache.as_deref_mut())
+            .iframe_session_id(client, iframe_src, session_cache.as_deref_mut())
             .await
         {
             Ok(Some(sid)) => sid,
@@ -736,16 +660,13 @@ impl TaskContext {
     /// target is reachable, `Ok(None)` when not yet ready.
     async fn element_count_in_iframe(
         &self,
-        client: Option<&crate::runtime::task_context::oopif::OopifClient>,
+        client: &OopifClient,
         iframe_src: &str,
         element_selector: &str,
         mut session_cache: Option<&mut Option<(String, String)>>,
     ) -> Result<Option<usize>> {
-        let Some(client) = client else {
-            return Ok(None);
-        };
         let session_id = match self
-            .iframe_session_id(Some(client), iframe_src, session_cache.as_deref_mut())
+            .iframe_session_id(client, iframe_src, session_cache.as_deref_mut())
             .await
         {
             Ok(Some(sid)) => sid,
@@ -766,26 +687,17 @@ impl TaskContext {
         }
     }
 
-    /// Resolve the iframe target via host and attach a session id.
+    /// Resolve the iframe target from its `src` URL and attach a session id.
     /// Reuses `session_cache` when target_id matches, avoiding redundant
     /// `attachToTarget` calls on every poll loop iteration.
     /// Returns `Ok(None)` when the target is not yet found or not ready (pollable).
     async fn iframe_session_id(
         &self,
-        client: Option<&crate::runtime::task_context::oopif::OopifClient>,
+        client: &OopifClient,
         iframe_src: &str,
         session_cache: Option<&mut Option<(String, String)>>,
     ) -> Result<Option<String>> {
-        let Some(client) = client else {
-            return Ok(None);
-        };
-        let host = scheme_host(iframe_src)
-            .map(|(_, h)| h.to_string())
-            .unwrap_or_default();
-        if host.is_empty() {
-            return Ok(None);
-        }
-        let target = match client.find_iframe_target(&host).await {
+        let target = match client.find_iframe_target(iframe_src).await {
             Ok(t) => t,
             Err(e) => {
                 log::debug!("[iframe] find_iframe_target failed: {e}");
@@ -873,11 +785,11 @@ async fn resolve_iframe(page: &Page, selector: &str) -> Result<Option<(Rect, Str
 /// inside the iframe. Used to know how many items exist (e.g. "Go" buttons)
 /// without polling until timeout.
 fn build_count_js(element_selector: &str) -> String {
-    let escaped = escape_js_string(element_selector);
+    let escaped = js_string_literal(element_selector);
     format!(
         r#"(() => {{
             let count = 0;
-            const els = document.querySelectorAll('{escaped}');
+            const els = document.querySelectorAll({escaped});
             for (const el of els) {{
                 const r = el.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) count++;
@@ -887,16 +799,12 @@ fn build_count_js(element_selector: &str) -> String {
     )
 }
 
-/// Split a URL into `(scheme, host)`.
-fn scheme_host(url: &str) -> Option<(&str, &str)> {
-    let (scheme, rest) = url.split_once("://")?;
-    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
-    Some((scheme, host))
-}
-
-/// Escape a selector for embedding in a single-quoted JS string.
-fn escape_js_string(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\'', "\\'")
+/// Render a Rust string as a complete JS string literal (quotes included).
+/// JSON escaping is a subset of JS string syntax and covers every control
+/// character — scraped text containing newlines (e.g. button labels) can no
+/// longer break the generated script, unlike the old quote-only escaper.
+fn js_string_literal(s: &str) -> String {
+    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
 }
 
 /// Build the JS that resolves the mini-app element's local center inside the
@@ -908,7 +816,7 @@ fn build_element_js(
     skip: Option<(f64, f64)>,
     text_filter: Option<&str>,
 ) -> String {
-    let escaped = escape_js_string(element_selector);
+    let escaped = js_string_literal(element_selector);
     // A non-finite skip coordinate is meaningless — `Math.abs(cx - NaN) < 5` is
     // always false, silently disabling the skip. Treat it as "no skip".
     let finite_skip = skip.filter(|(x, y)| x.is_finite() && y.is_finite());
@@ -917,7 +825,7 @@ fn build_element_js(
         None => "const skipX = null, skipY = null;".to_string(),
     };
     let text_js = match text_filter {
-        Some(text) => format!("const textFilter = '{}';", escape_js_string(text)),
+        Some(text) => format!("const textFilter = {};", js_string_literal(text)),
         None => "const textFilter = null;".to_string(),
     };
     format!(
@@ -956,7 +864,7 @@ fn build_element_js(
                 const cy = r.y + r.height / 2;
                 return cx >= 0 && cy >= 0 && cx <= window.innerWidth && cy <= window.innerHeight;
             }}
-            const els = document.querySelectorAll('{escaped}');
+            const els = document.querySelectorAll({escaped});
             // Best-effort fallback: first in-viewport candidate whose center we
             // can return even if the topmost hit-test fails (a transparent or
             // non-interactive element covering the button). We never return an
@@ -984,11 +892,11 @@ fn build_element_js(
 /// Build the JS that resolves the iframe element (CSS or XPath) into its
 /// viewport rect and `src` attribute.
 fn build_resolve_iframe_js(selector: &str) -> String {
-    let escaped = escape_js_string(selector);
+    let escaped = js_string_literal(selector);
     format!(
         r#"(() => {{
             try {{
-                const q = '{escaped}';
+                const q = {escaped};
                 let el = null;
                 if (q.startsWith('/')) {{
                     const xr = document.evaluate(q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
@@ -998,9 +906,16 @@ fn build_resolve_iframe_js(selector: &str) -> String {
                 }}
                 if (!el || el.tagName.toUpperCase() !== 'IFRAME') return null;
                 const r = el.getBoundingClientRect();
+                // Resolve src against the document base so a relative attribute
+                // (e.g. "/miner/index.html") still yields a host for target matching.
+                const raw = el.getAttribute('src') || '';
+                let src = raw;
+                try {{
+                    if (raw) src = new URL(raw, location.href).href;
+                }} catch (e) {{ /* unparseable base — keep raw */ }}
                 return {{
                     x: r.x, y: r.y, width: r.width, height: r.height,
-                    src: el.getAttribute('src') || ''
+                    src
                 }};
             }} catch (e) {{
                 return {{ error: String(e && e.message ? e.message : e) }};
@@ -1009,37 +924,79 @@ fn build_resolve_iframe_js(selector: &str) -> String {
     )
 }
 
+/// Build the `iframe_has_text` probe JS: reports whether `element_selector`
+/// exists, its trimmed text, disabled/busy state, plus surrounding context
+/// (button counts, id samples, body text, document URL + readyState) so logs
+/// show exactly which view the probe is hitting. Wrapped in try/catch so a
+/// failure inside the probe surfaces as `{error}` for a retry instead of a
+/// hard evaluate error.
+fn build_has_text_probe_js(element_selector: &str) -> String {
+    let escaped = js_string_literal(element_selector);
+    format!(
+        r#"(() => {{
+            try {{
+                const el = document.querySelector({escaped});
+                const btnCount = document.querySelectorAll('.btn-small').length;
+                const sample = [...document.querySelectorAll('[id*="btn-"]')]
+                    .slice(0, 8).map(b => b.id).join(',');
+                const tabCount = document.querySelectorAll('[onclick^="switchTab("]').length;
+                const body = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim().slice(0, 200);
+                const docUrl = location.href.slice(0, 80);
+                const ready = document.readyState;
+                // Busy detection: a genuinely visible modal/dialog/popup.
+                // Hidden modal shells (visibility:hidden / opacity:0) still have a
+                // non-zero rect, so check computed style. 'overlay' alone is excluded —
+                // decorative effects (lightning, particles) and backdrops match it and
+                // cause false positives.
+                const visible = n => {{
+                    const r = n.getBoundingClientRect();
+                    if (r.width <= 0 || r.height <= 0) return false;
+                    const s = window.getComputedStyle(n);
+                    return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) !== 0;
+                }};
+                const busyEl = [...document.querySelectorAll('[class*="modal"],[id*="modal"],[class*="dialog"],[id*="dialog"],[class*="popup"],[id*="popup"]')]
+                    .find(visible);
+                const busy = !!busyEl;
+                if (!el) return JSON.stringify({{ found: false, text: null, disabled: false, btnCount, sample, tabCount, body, docUrl, ready, busy }});
+                return JSON.stringify({{
+                    found: true,
+                    text: (el.textContent || '').trim(),
+                    disabled: !!el.disabled,
+                    btnCount,
+                    sample,
+                    tabCount,
+                    body,
+                    docUrl,
+                    ready,
+                    busy
+                }});
+            }} catch (e) {{
+                return JSON.stringify({{ error: String(e && e.message ? e.message : e) }});
+            }}
+        }})()"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_count_js, build_element_js, build_resolve_iframe_js, escape_js_string,
-        parse_local_center, scheme_host,
+        build_count_js, build_element_js, build_has_text_probe_js, build_resolve_iframe_js,
+        js_string_literal, parse_local_center,
     };
 
     #[test]
-    fn scheme_host_extracts_scheme_and_host() {
-        assert_eq!(
-            scheme_host("https://atfminers.asloni.online/miner/index.html?v=1#x"),
-            Some(("https", "atfminers.asloni.online"))
-        );
-        assert_eq!(
-            scheme_host("https://web.telegram.org/k/"),
-            Some(("https", "web.telegram.org"))
-        );
-        assert_eq!(scheme_host("not a url"), None);
-    }
-
-    #[test]
-    fn escape_js_string_escapes_quotes_and_backslashes() {
-        assert_eq!(escape_js_string("plain"), "plain");
-        assert_eq!(escape_js_string("it's"), "it\\'s");
-        assert_eq!(escape_js_string("a\\b"), "a\\\\b");
+    fn js_string_literal_quotes_and_escapes() {
+        assert_eq!(js_string_literal("plain"), "\"plain\"");
+        assert_eq!(js_string_literal("it's"), "\"it's\"");
+        assert_eq!(js_string_literal("a\"b"), "\"a\\\"b\"");
+        assert_eq!(js_string_literal("a\\b"), "\"a\\\\b\"");
+        assert_eq!(js_string_literal(""), "\"\"");
     }
 
     #[test]
     fn build_element_js_embeds_selector_and_skip() {
         let js = build_element_js("[id^=\"btn-x\"]", Some((10.5, 20.0)), None);
-        assert!(js.contains("querySelectorAll('[id^=\"btn-x\"]')"));
+        assert!(js.contains(r#"querySelectorAll("[id^=\"btn-x\"]")"#));
         assert!(js.contains("const skipX = 10.5, skipY = 20;"));
         assert!(js.contains("elementFromPoint"));
         assert!(js.contains("scrollIntoView"));
@@ -1071,9 +1028,9 @@ mod tests {
 
     #[test]
     fn build_element_js_escapes_selector_quotes() {
-        // Selector with a single quote must be escaped inside the JS string.
+        // Selector with both quote kinds must survive as one valid literal.
         let js = build_element_js("button[onclick=\"f('x')\"]", None, None);
-        assert!(js.contains("f(\\'x\\')"));
+        assert!(js.contains(r#""button[onclick=\"f('x')\"]""#));
     }
 
     #[test]
@@ -1101,7 +1058,7 @@ mod tests {
     #[test]
     fn build_resolve_iframe_js_handles_css_and_xpath() {
         let css_js = build_resolve_iframe_js("iframe.payment-verification");
-        assert!(css_js.contains("const q = 'iframe.payment-verification';"));
+        assert!(css_js.contains(r#"const q = "iframe.payment-verification";"#));
         assert!(css_js.contains("document.querySelector(q)"));
         assert!(css_js.contains("tagName.toUpperCase() !== 'IFRAME'"));
 
@@ -1114,7 +1071,7 @@ mod tests {
     #[test]
     fn build_resolve_iframe_js_escapes_xpath_quotes() {
         let js = build_resolve_iframe_js("//div[@id='main']/iframe");
-        assert!(js.contains("\\'main\\'"));
+        assert!(js.contains(r#""//div[@id='main']/iframe""#));
     }
 
     #[test]
@@ -1159,7 +1116,7 @@ mod tests {
     #[test]
     fn build_count_js_embeds_selector_and_counts_visible() {
         let js = build_count_js(".task-btn");
-        assert!(js.contains("document.querySelectorAll('.task-btn')"));
+        assert!(js.contains(r#"document.querySelectorAll(".task-btn")"#));
         // Only counts elements with non-zero size (visible).
         assert!(js.contains("r.width > 0 && r.height > 0"));
         assert!(js.contains("count++"));
@@ -1169,74 +1126,58 @@ mod tests {
     #[test]
     fn build_count_js_escapes_selector() {
         let js = build_count_js("button[onclick=\"f('x')\"]");
-        assert!(js.contains("f(\\'x\\')"));
+        assert!(js.contains(r#""button[onclick=\"f('x')\"]""#));
     }
 
     // ── Additional edge-case coverage ────────────────────────────────
 
     #[test]
-    fn scheme_host_with_port() {
-        assert_eq!(
-            scheme_host("http://127.0.0.1:8080/path"),
-            Some(("http", "127.0.0.1:8080"))
-        );
+    fn js_string_literal_escapes_control_chars() {
+        // Regression (B3): the old quote-only escaper let raw newlines through,
+        // producing a SyntaxError inside the single-quoted JS string.
+        assert_eq!(js_string_literal("Go\nConfirm"), "\"Go\\nConfirm\"");
+        assert_eq!(js_string_literal("a\tb"), "\"a\\tb\"");
+        assert_eq!(js_string_literal("a\r\nb"), "\"a\\r\\nb\"");
     }
 
     #[test]
-    fn scheme_host_with_query_and_fragment() {
-        assert_eq!(
-            scheme_host("https://example.com/page?q=1#top"),
-            Some(("https", "example.com"))
-        );
+    fn probe_js_defines_ready_const() {
+        // Regression (B1): commit 6d6bc09 deleted `const ready = document.readyState;`
+        // while both return objects still referenced `ready` — the probe threw
+        // ReferenceError inside the page.
+        let js = build_has_text_probe_js(".btn");
+        assert!(js.contains("const ready = document.readyState;"));
+        assert!(js.contains("ready,"));
     }
 
     #[test]
-    fn scheme_host_no_path() {
-        assert_eq!(
-            scheme_host("ws://127.0.0.1:9222"),
-            Some(("ws", "127.0.0.1:9222"))
-        );
+    fn probe_js_collapses_whitespace_correctly() {
+        // Regression (B4): inside a Rust raw string, `/\\s+/` reached the JS as
+        // a literal backslash + s, so whitespace collapsing never worked.
+        let js = build_has_text_probe_js(".btn");
+        assert!(js.contains(r#".replace(/\s+/g, ' ')"#));
+        assert!(!js.contains(r#"/\\s+/g"#));
     }
 
     #[test]
-    fn scheme_host_empty_string() {
-        assert_eq!(scheme_host(""), None);
+    fn probe_js_wraps_body_in_try_catch() {
+        let js = build_has_text_probe_js(".btn");
+        assert!(js.contains("try {"));
+        assert!(js.contains("error: String"));
     }
 
     #[test]
-    fn scheme_host_no_scheme() {
-        assert_eq!(scheme_host("example.com/path"), None);
+    fn probe_js_embeds_selector() {
+        let js = build_has_text_probe_js(".btn-small#x");
+        assert!(js.contains(r#"querySelector(".btn-small#x")"#));
     }
 
     #[test]
-    fn scheme_host_wss() {
-        assert_eq!(
-            scheme_host("wss://secure.example.com/ws"),
-            Some(("wss", "secure.example.com"))
-        );
-    }
-
-    #[test]
-    fn escape_js_string_empty() {
-        assert_eq!(escape_js_string(""), "");
-    }
-
-    #[test]
-    fn escape_js_string_multiple_quotes() {
-        assert_eq!(escape_js_string("a'b\"c"), "a\\'b\"c");
-    }
-
-    #[test]
-    fn escape_js_string_multiple_backslashes() {
-        assert_eq!(escape_js_string("\\\\"), "\\\\\\\\");
-    }
-
-    #[test]
-    fn escape_js_string_mixed() {
-        assert_eq!(
-            escape_js_string("it's a \\backslash"),
-            "it\\'s a \\\\backslash"
-        );
+    fn build_resolve_iframe_js_resolves_relative_src() {
+        // Regression (R2): a relative src attribute must be absolutized against
+        // the document base, or host matching can never find the OOPIF target.
+        let js = build_resolve_iframe_js("iframe");
+        assert!(js.contains("new URL(raw, location.href).href"));
     }
 
     #[test]
@@ -1261,7 +1202,7 @@ mod tests {
     #[test]
     fn build_element_js_with_text_filter() {
         let js = build_element_js(".btn-small#btn-youtube_like_comment", None, Some("Go"));
-        assert!(js.contains("const textFilter = 'Go';"));
+        assert!(js.contains("const textFilter = \"Go\";"));
         assert!(js.contains("(el.textContent || '').trim() !== textFilter"));
     }
 
@@ -1274,13 +1215,22 @@ mod tests {
     #[test]
     fn build_element_js_escapes_text_filter_quotes() {
         let js = build_element_js(".btn", None, Some("it's Go"));
-        assert!(js.contains("const textFilter = 'it\\'s Go';"));
+        assert!(js.contains("const textFilter = \"it's Go\";"));
+    }
+
+    #[test]
+    fn build_element_js_escapes_newline_in_text_filter() {
+        // Scraped button text can contain line breaks — they must be escaped,
+        // never emitted raw into the generated script.
+        let js = build_element_js(".btn", None, Some("Go\nConfirm"));
+        assert!(js.contains(r#"const textFilter = "Go\nConfirm";"#));
+        assert!(!js.contains("Go\nConfirm"));
     }
 
     #[test]
     fn build_resolve_iframe_js_with_special_chars_in_selector() {
         let js = build_resolve_iframe_js("iframe[data-role='payment']");
-        assert!(js.contains("iframe[data-role=\\'payment\\']"));
+        assert!(js.contains(r#""iframe[data-role='payment']""#));
         assert!(js.contains("querySelector"));
     }
 
@@ -1295,8 +1245,8 @@ mod tests {
     #[test]
     fn build_element_js_selector_with_single_quotes() {
         let js = build_element_js("input[name='user']", None, None);
-        // Single quotes in selector get escaped in JS string
-        assert!(js.contains("input[name=\\'user\\']"));
+        // JSON-style literal: single quotes need no escaping.
+        assert!(js.contains(r#"querySelectorAll("input[name='user']")"#));
     }
 
     #[test]

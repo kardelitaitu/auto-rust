@@ -19,10 +19,6 @@ feature-depth = 1
 # db-path = "~/.cargo/advisory-db"
 # db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
-    # serde_yml 0.0.13 — upgraded from 0.0.12 to fix RUSTSEC-2025-0067,
-    # but 0.0.13 has its own RUSTSEC-2025-0068 (unsound).
-    # Migration to a maintained alternative is tracked in docs/TODO.md.
-    "RUSTSEC-2025-0068",
     # async-std 1.13.2 — marked unmaintained (RUSTSEC-2025-0052).
     # All async operations are via tokio directly, this is only a transitive dep.
     "RUSTSEC-2025-0052",
